@@ -51,7 +51,7 @@ namespace Psi {
       Head&& head;
       RestType rest;
 
-      FunctorList(Head&& head_, Rest&&... rest_) : head(head_), rest(rest_...) {}
+      FunctorList(Head&& head_, Rest&&... rest_) : head(std::forward<Head>(head_)), rest(std::forward<Rest>(rest_)...) {}
     };
 
     template<typename ResultType, typename Arg, typename Functors, typename Enable=void>
@@ -75,7 +75,7 @@ namespace Psi {
       typedef FunctorList<Functors...> FunctorsType;
       FunctorsType functors;
 
-      AutoVisitor(Functors&&... functors_) : functors(functors_...) {
+      AutoVisitor(Functors&&... functors_) : functors(std::forward<Functors>(functors_)...) {
       }
 
       template<typename T>
@@ -168,6 +168,15 @@ namespace Psi {
         return AssignHelper<T, Args...>::call(rhs, storage) + 1;
       }
     };
+
+    template<typename T>
+    struct DefaultVisitor {
+      T value;
+
+      template<typename U> T operator () (U&&) {
+        return std::move(value);
+      }
+    };
   }
 
   struct None {
@@ -177,6 +186,8 @@ namespace Psi {
 
   template<typename... Args> class Variant {
   public:
+    typedef Variant<Args...> this_type;
+
     Variant() : m_which(0) {
     }
 
@@ -228,12 +239,30 @@ namespace Psi {
 
     template<typename... Functors> typename VariantDetail::SelectVisitorResult<Functors...>::type visit(Functors&&... fs) {
       typedef typename VariantDetail::SelectVisitorResult<Functors...>::type ResultType;
-      VariantDetail::AutoVisitor<ResultType, Functors...> visitor(fs...);
-      if (m_which != 0) {
-        return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which);
-      } else {
-        return visitor(None());
-      }
+      return visit_internal<ResultType>(std::forward<Functors>(fs)...);
+    }
+
+    template<typename... Functors> typename VariantDetail::SelectVisitorResult<Functors...>::type visit(Functors&&... fs) const {
+      typedef typename VariantDetail::SelectVisitorResult<Functors...>::type ResultType;
+      return visit_internal<ResultType>(std::forward<Functors>(fs)...);
+    }
+
+    template<typename... Functors> typename VariantDetail::SelectVisitorResult<Functors...>::type visit2(Functors&&... fs) {
+      typedef typename VariantDetail::SelectVisitorResult<Functors...>::type ResultType;
+      return visit_internal<ResultType>(std::forward<Functors>(fs)..., [] (None) -> ResultType {throw std::runtime_error("visited empty variant");});
+    }
+
+    template<typename... Functors> typename VariantDetail::SelectVisitorResult<Functors...>::type visit2(Functors&&... fs) const {
+      typedef typename VariantDetail::SelectVisitorResult<Functors...>::type ResultType;
+      return visit_internal<ResultType>(std::forward<Functors>(fs)..., [] (None) -> ResultType {throw std::runtime_error("visited empty variant");});
+    }
+
+    template<typename T, typename... Functors> T visit_default(T def, Functors&&... fs) {
+      return visit_internal<T>(std::forward<Functors>(fs)..., VariantDetail::DefaultVisitor<T>{std::move(def)});
+    }
+
+    template<typename T, typename... Functors> T visit_default(T def, Functors&&... fs) const {
+      return visit_internal<T>(std::forward<Functors>(fs)..., VariantDetail::DefaultVisitor<T>{std::move(def)});
     }
 
   private:
@@ -256,6 +285,24 @@ namespace Psi {
     template<typename T>
     void entry_assign(T&& rhs) {
       m_which = VariantDetail::AssignHelper<typename std::remove_reference<T>::type, Args...>::call(rhs, &m_storage);
+    }
+
+    template<typename ResultType, typename... Functors> ResultType visit_internal(Functors&&... fs) {
+      VariantDetail::AutoVisitor<ResultType, Functors...> visitor(std::forward<Functors>(fs)...);
+      if (m_which != 0) {
+        return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which);
+      } else {
+        return visitor(None());
+      }
+    }
+
+    template<typename ResultType, typename... Functors> ResultType visit_internal(Functors&&... fs) const {
+      VariantDetail::AutoVisitor<ResultType, Functors...> visitor(std::forward<Functors>(fs)...);
+      if (m_which != 0) {
+        return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which);
+      } else {
+        return visitor(None());
+      }
     }
 
     int m_which;
