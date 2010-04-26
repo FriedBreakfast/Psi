@@ -2,6 +2,7 @@
 #define HPP_PSI_TYPESYSTEM
 
 #include <functional>
+#include <iosfwd>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -223,6 +224,25 @@ namespace Psi {
 
 namespace Psi {
   namespace TypeSystem2 {
+    template<typename Tag> class Identifier;
+    class Constraint;
+
+    template<typename T>
+    struct ContextHash : std::unary_function<T, std::size_t> {
+      std::size_t operator () (const T& var) const {
+	return hash(var);
+      }
+    };
+  }
+}
+
+namespace std {
+  template<typename T> struct hash<Psi::TypeSystem2::Identifier<T> > : Psi::TypeSystem2::ContextHash<Psi::TypeSystem2::Identifier<T> > {};
+  //template<> struct hash<Psi::TypeSystem2::Constraint> : Psi::TypeSystem2::ContextHash<Psi::TypeSystem2::Constraint> {};
+}
+
+namespace Psi {
+  namespace TypeSystem2 {
     template<typename Tag>
     class Identifier {
     public:
@@ -233,8 +253,8 @@ namespace Psi {
         return {std::make_shared<char>()};
       }
 
-      std::size_t hash() const {
-        return std::hash<void*>()(m_ptr.get());
+      friend std::size_t hash(const Identifier& self) {
+        return std::hash<void*>()(self.m_ptr.get());
       }
 
       bool operator == (const Identifier& rhs) const {
@@ -250,22 +270,11 @@ namespace Psi {
       }
 
     private:
-      std::shared_ptr<void> m_ptr;
+      Identifier(std::shared_ptr<char> ptr) : m_ptr(std::move(ptr)) {}
+
+      std::shared_ptr<char> m_ptr;
     };
-  }
-}
 
-namespace std {
-  template<typename T>
-  struct hash<Psi::TypeSystem2::Identifier<T> > {
-    std::size_t operator () (const Psi::TypeSystem2::Identifier<T>& id) const {
-      return id.hash();
-    }
-  };
-}
-
-namespace Psi {
-  namespace TypeSystem2 {
     struct VariableTag;
     struct ConstructorTag;
     struct PredicateTag;
@@ -306,7 +315,32 @@ namespace Psi {
       Implies term;
     };
 
-    typedef ForAll Type;
+    class Type {
+    public:
+      Type(Variable var);
+      Type(Apply apply);
+      Type(Exists exists);
+      Type(Implies implies);
+      Type(ForAll for_all);
+      ~Type();
+
+      bool is_variable();
+      const Variable* as_variable() const;
+      bool occurs(const std::unordered_set<Variable>& variables) const;
+
+      const ForAll& for_all() const {return m_for_all;}
+      ForAll& for_all() {return m_for_all;}
+
+    private:
+      ForAll m_for_all;
+    };
+
+    Type for_all(const std::unordered_set<Variable>& variables, const Type& term);
+    Type exists(const std::unordered_set<Variable>& variables, const Type& term);
+    Type for_all(const std::unordered_set<Variable>& variables, const Type& term, const std::unordered_set<Constraint>& constraints);
+    Type exists(const std::unordered_set<Variable>& variables, const Type& term, const std::unordered_set<Constraint>& constraints);
+    Type implies(const std::vector<Type>& lhs, const Type& rhs);
+    Type apply(Constructor constructor, std::vector<Type> parameters);
 
     Maybe<Type> apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments);
 
@@ -320,6 +354,61 @@ namespace Psi {
      * checked for.
      */
     bool occurs(const Type& type, const std::unordered_set<Variable>& variables);
+
+    struct TermNamer {
+      std::function<std::string(const Variable&)> variable_namer;
+      std::function<std::string(const Constructor&)> constructor_namer;
+      std::function<std::string(const Predicate&)> predicate_namer;
+    };
+
+    class TypePrinter {
+    public:
+      TypePrinter(TermNamer term_namer);
+      ~TypePrinter();
+
+      void print(std::ostream& os, const Type& t) {print_forall(os, t.for_all(), false);}
+      void print(std::ostream& os, const ForAll& fa) {print_forall(os, fa, false);}
+
+    private:
+      TermNamer m_term_namer;
+
+      std::unordered_map<Variable, std::string> m_generated_names;
+      std::vector<char> m_last_name;
+
+      std::string generate_name();
+
+      class ScopeEnter;
+      class BracketHandler;
+
+      void print_forall(std::ostream& os, const ForAll& fa, bool bracket);
+      void print_implies(std::ostream& os, const Implies& im, bool bracket);
+      void print_exists(std::ostream& os, const Exists& ex, bool bracket);
+      void print_quantifier(std::ostream& os, const Quantifier& q);
+      void print_variable(std::ostream& os, const Variable& v);
+      void print_apply(std::ostream& os, const Apply& apply, bool bracket);
+    };
+
+    template<typename T>
+    class BoundTypePrinter {
+    public:
+      BoundTypePrinter(BoundTypePrinter&&) = default;
+
+      BoundTypePrinter(TypePrinter tp, const T* t) : m_tp(std::move(tp)), m_t(t) {
+      }
+
+      friend std::ostream& operator << (std::ostream& os, BoundTypePrinter&& pr) {
+	pr.m_tp.print(os, *pr.m_t);
+	return os;
+      }
+
+    private:
+      TypePrinter m_tp;
+      const T *m_t;
+    };
+
+    BoundTypePrinter<Type> print(const Type& ty, TermNamer term_namer) {
+      return BoundTypePrinter<Type>(TypePrinter(std::move(term_namer)), &ty);
+    }
   }
 }
 

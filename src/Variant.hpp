@@ -155,18 +155,18 @@ namespace Psi {
 
     template<typename T, typename... Args>
     struct AssignHelper<T, T, Args...> {
-      template<typename V>
-      static int call(V&& rhs, void *storage) {
-        new (storage) T(std::forward<V>(rhs));
+      template<typename... Args2>
+      static int call(void *storage, Args2&&... args) {
+        new (storage) T(std::forward<Args2>(args)...);
         return 1;
       }
     };
 
     template<typename T, typename U, typename... Args>
     struct AssignHelper<T, U, Args...> {
-      template<typename V>
-      static int call(V&& rhs, void *storage) {
-        return AssignHelper<T, Args...>::call(rhs, storage) + 1;
+      template<typename... Args2>
+      static int call(void *storage, Args2&&... args) {
+        return AssignHelper<T, Args...>::call(storage, std::forward<Args2>(args)...) + 1;
       }
     };
 
@@ -188,6 +188,10 @@ namespace Psi {
     template<typename T, typename U, typename... Args> struct IndexOf<T, U, Args...> {
       static const int value = IndexOf<T, Args...>::value + 1;
     };
+
+    template<typename T> struct RemoveConstRef {typedef T type;};
+    template<typename T> struct RemoveConstRef<const T&> {typedef T type;};
+    template<typename T> struct RemoveConstRef<T&&> {typedef T type;};
   }
   /// \endcond
 
@@ -213,7 +217,7 @@ namespace Psi {
 
     template<typename T>
     Variant(T&& rhs) {
-      entry_assign(std::forward<T>(rhs));
+      entry_assign<typename VariantDetail::RemoveConstRef<T>::type>(std::forward<T>(rhs));
     }
 
     ~Variant() {
@@ -244,8 +248,7 @@ namespace Psi {
     }
 
     template<typename T> const Variant& operator = (T&& rhs) {
-      clear();
-      entry_assign(std::forward<T>(rhs));
+      assign<typename VariantDetail::RemoveConstRef<T>::type>(std::forward<T>(rhs));
       return *this;
     }
 
@@ -292,6 +295,12 @@ namespace Psi {
       return contains<T>() ? static_cast<const T*>(static_cast<const void*>(&m_storage)) : 0;
     }
 
+    template<typename T, typename... Args2>
+    void assign(Args2&&... args) {
+      clear();
+      entry_assign<T>(std::forward<Args2>(args)...);
+    }
+
   private:
     typedef typename std::aligned_storage<VariantDetail::MaxSize<Args...>::value, VariantDetail::MaxAlign<Args...>::value>::type storage_type;
 
@@ -309,9 +318,9 @@ namespace Psi {
       m_which = rhs.m_which;
     }
 
-    template<typename T>
-    void entry_assign(T&& rhs) {
-      m_which = VariantDetail::AssignHelper<typename std::remove_reference<T>::type, Args...>::call(rhs, &m_storage);
+    template<typename T, typename... Args2>
+    void entry_assign(Args2&&... args) {
+      m_which = VariantDetail::AssignHelper<typename std::remove_reference<T>::type, Args...>::call(&m_storage, args...);
     }
 
     template<typename ResultType, typename... Functors> ResultType visit_internal(Functors&&... fs) {
