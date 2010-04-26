@@ -11,4 +11,6 @@ if(NOT Boost_FOUND)
   message(SEND_ERROR "Boost not found")
 endif()
 
+find_package(Doxygen)
+
 add_subdirectory(src)

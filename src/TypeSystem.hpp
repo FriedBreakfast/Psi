@@ -221,4 +221,106 @@ namespace Psi {
   }
 }
 
+namespace Psi {
+  namespace TypeSystem2 {
+    template<typename Tag>
+    class Identifier {
+    public:
+      Identifier() {}
+      Identifier(Identifier&&) = default;
+
+      static Identifier new_() {
+        return {std::make_shared<char>()};
+      }
+
+      std::size_t hash() const {
+        return std::hash<void*>()(m_ptr.get());
+      }
+
+      bool operator == (const Identifier& rhs) const {
+        return m_ptr == rhs.m_ptr;
+      }
+
+      bool operator != (const Identifier& rhs) const {
+        return m_ptr != rhs.m_ptr;
+      }
+
+      explicit operator bool () const {
+        return m_ptr;
+      }
+
+    private:
+      std::shared_ptr<void> m_ptr;
+    };
+  }
+}
+
+namespace std {
+  template<typename T>
+  struct hash<Psi::TypeSystem2::Identifier<T> > {
+    std::size_t operator () (const Psi::TypeSystem2::Identifier<T>& id) const {
+      return id.hash();
+    }
+  };
+}
+
+namespace Psi {
+  namespace TypeSystem2 {
+    struct VariableTag;
+    struct ConstructorTag;
+    struct PredicateTag;
+
+    typedef Identifier<VariableTag> Variable;
+    typedef Identifier<ConstructorTag> Constructor;
+    typedef Identifier<PredicateTag> Predicate;
+
+    struct ForAll;
+
+    struct Apply {
+      Constructor constructor;
+      std::vector<ForAll> parameters;
+    };
+
+    struct Constraint {
+      Predicate predicate;
+      std::vector<ForAll> parameters;
+    };
+
+    struct Quantifier {
+      std::unordered_set<Constraint> constraints;
+      std::unordered_set<Variable> variables;
+    };
+
+    struct Exists {
+      Quantifier quantifier;
+      Variant<Variable, Apply> term;
+    };
+
+    struct Implies {
+      std::vector<ForAll> lhs;
+      Exists rhs;
+    };
+
+    struct ForAll {
+      Quantifier quantifier;
+      Implies term;
+    };
+
+    typedef ForAll Type;
+
+    Maybe<Type> apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments);
+
+    /**
+     * \brief Do an occurs check on \c type.
+     *
+     * This checks whether any of the variables listed in \c variables
+     * appear anywhere in \c type. Note that they should not be
+     * quantified over anywhere in \c type; if they are the result of
+     * this check is meaningless. However, this error condition is not
+     * checked for.
+     */
+    bool occurs(const Type& type, const std::unordered_set<Variable>& variables);
+  }
+}
+
 #endif

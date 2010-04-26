@@ -100,6 +100,8 @@ namespace Psi {
       return m_empty;
     }
 
+    explicit operator bool () const {return !empty();}
+
     bool operator == (const Maybe& rhs) const {return compare(rhs, true, false, false, [](const value_type& x, const value_type& y) {return x==y;});}
     bool operator < (const Maybe& rhs) const {return compare(rhs, false, false, true, [](const value_type& x, const value_type& y) {return x<y;});}
     bool operator > (const Maybe& rhs) const {return compare(rhs, false, true, false, [](const value_type& x, const value_type& y) {return x>y;});}

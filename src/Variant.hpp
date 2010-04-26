@@ -7,6 +7,7 @@
 #include <functional>
 
 namespace Psi {
+  /// \cond internal
   namespace VariantDetail {
     template<typename... Args> struct MaxSize;
 
@@ -177,7 +178,18 @@ namespace Psi {
         return std::move(value);
       }
     };
+
+    template<typename T, typename... Args> struct IndexOf;
+
+    template<typename T, typename... Args> struct IndexOf<T, T, Args...> {
+      static const int value = 0;
+    };
+
+    template<typename T, typename U, typename... Args> struct IndexOf<T, U, Args...> {
+      static const int value = IndexOf<T, Args...>::value + 1;
+    };
   }
+  /// \endcond
 
   struct None {
     None() = default;
@@ -263,6 +275,21 @@ namespace Psi {
 
     template<typename T, typename... Functors> T visit_default(T def, Functors&&... fs) const {
       return visit_internal<T>(std::forward<Functors>(fs)..., VariantDetail::DefaultVisitor<T>{std::move(def)});
+    }
+
+    template<typename T>
+    bool contains() const {
+      return m_which == VariantDetail::IndexOf<T, Args...>::value + 1;
+    }
+
+    template<typename T>
+    T* get() {
+      return contains<T>() ? static_cast<T*>(static_cast<void*>(&m_storage)) : 0;
+    }
+
+    template<typename T>
+    const T* get() const {
+      return contains<T>() ? static_cast<const T*>(static_cast<const void*>(&m_storage)) : 0;
     }
 
   private:
