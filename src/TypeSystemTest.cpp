@@ -8,7 +8,7 @@
 #define EXISTS "\u2203"
 #define ARROW "\u2192"
 
-using namespace Psi::TypeSystem2;
+using namespace Psi::TypeSystem;
 
 template<typename T, typename U>
 typename U::mapped_type lookup(const U& map, const T& key) {
@@ -47,14 +47,52 @@ struct Fixture {
     y = Variable::new_();
   }
 
-  std::string compare_message(const Type& lhs, const Type& rhs) {
-    std::stringstream ss;
-    ss << "\"" << print(lhs, m_namer.namer) << "\" != \"" << print(rhs, m_namer.namer) << "\"";
-    return ss.str();
+  void check_apply(const Type& expected, const Type& function, const std::vector<Type>& parameters) {
+    auto result = do_apply(function, parameters);
+
+    BOOST_CHECK(result);
+    if (result) {
+      BOOST_CHECK_MESSAGE(*result == expected,
+                          "\"" << print(*result, m_namer.namer) << "\" != \"" << print(expected, m_namer.namer) << "\"");
+    }                
+  }
+
+  void check_apply_fail(const Type& function, const std::vector<Type>& parameters) {
+    auto result = do_apply(function, parameters);
+    BOOST_CHECK(!result);
   }
 
 private:
   MapNamer m_namer;
+
+  struct ParameterPrinter {
+    friend std::ostream& operator << (std::ostream& os, const ParameterPrinter& printer) {
+      for (auto it = printer.parameters->begin(); it != printer.parameters->end(); ++it)
+        os << " // " << print(*it, *printer.namer);
+      return os;
+    }
+
+    const std::vector<Type> *parameters;
+    TermNamer *namer;
+  };
+
+  Psi::Maybe<Type> do_apply(const Type& function, const std::vector<Type>& parameters) {
+    std::unordered_map<unsigned, Type> parameters_map;
+    unsigned pos = 0;
+    for (auto it = parameters.begin(); it != parameters.end(); ++it, ++pos)
+      parameters_map.insert({pos, *it});
+
+    auto result = function_apply(function, parameters_map);
+
+    ParameterPrinter parameter_printer = {&parameters, &m_namer.namer};
+    if (result) {
+      BOOST_TEST_MESSAGE(print(function, m_namer.namer) << parameter_printer << " ==> " << print(*result, m_namer.namer));
+    } else {
+      BOOST_TEST_MESSAGE(print(function, m_namer.namer) << parameter_printer << " failed");
+    }
+
+    return result;
+  }
 };
 
 BOOST_FIXTURE_TEST_SUITE(TypeSystemTest, Fixture)
@@ -70,65 +108,56 @@ BOOST_AUTO_TEST_CASE(TestPrint) {
 
   ss << print(x, namer.namer);
   BOOST_CHECK_EQUAL(ss.str(), "x");
-  BOOST_TEST_MESSAGE(ss.str());
   ss.str("");
 
   ss << print(for_all({q1}, q1), namer.namer);
   BOOST_CHECK_EQUAL(ss.str(), FOR_ALL " a.a");
-  BOOST_TEST_MESSAGE(ss.str());
   ss.str("");
 
   ss << print(for_all({q1}, implies({Type(q1)}, q1)), namer.namer);
   BOOST_CHECK_EQUAL(ss.str(), FOR_ALL " a.a " ARROW " a");
-  BOOST_TEST_MESSAGE(ss.str());
   ss.str("");
 }
 
 BOOST_AUTO_TEST_CASE(TestApplyId) {
-  auto fn = for_all({x}, implies({Type(x)}, x));
-
-  std::unordered_map<unsigned, Type> parameters = {{0, P}};
-  auto result = function_apply(fn, parameters);
-  BOOST_REQUIRE(result);
-  BOOST_CHECK_MESSAGE(false /* *result == P*/, compare_message(*result, P));
+  check_apply(P,
+              for_all({x}, implies({Type(x)}, x)),
+              {Type(P)});
 }
 
 BOOST_AUTO_TEST_CASE(TestApplyId2) {
-  auto fn = for_all({x, y}, implies({Type(x), Type(y), Type(x)}, y));
-
-  std::unordered_map<unsigned, Type> parameters = {{0, P}, {1, Q}};
-  auto expected = implies({Type(P)}, Q);
-  auto result = function_apply(fn, parameters);
-  BOOST_REQUIRE(result);
-  BOOST_CHECK_MESSAGE(false /* *result == expected*/, compare_message(*result, expected));
+  check_apply(implies({Type(P)}, Q),
+              for_all({x, y}, implies({Type(x), Type(y), Type(x)}, y)),
+              {Type(P), Type(Q)});
 }
 
 BOOST_AUTO_TEST_CASE(TestSpecializeFunction) {
-  auto param = for_all({x, y}, implies({Type(x), Type(y)}, y));
-  auto fn = implies({for_all({x}, implies({Type(x), Type(P)}, P))}, P);
+  check_apply(Q,
+              implies({for_all({x}, implies({Type(x), Type(P)}, P))}, Q),
+              {for_all({x, y}, implies({Type(x), Type(y)}, y))});
+}
 
-  std::unordered_map<unsigned, Type> parameters = {{0, param}};
-  auto result = function_apply(fn, parameters);
-  BOOST_REQUIRE(result);
-  BOOST_CHECK_MESSAGE(false /* *result == P*/, compare_message(*result, P));
+BOOST_AUTO_TEST_CASE(TestSpecializeFunction2) {
+  check_apply(P,
+              for_all({y}, implies({for_all({x}, implies({Type(x), Type(y)}, y))}, y)),
+              {for_all({x}, implies({Type(x), Type(P)}, P))});
+}
+
+BOOST_AUTO_TEST_CASE(TestSpecializeFunction3) {
+  check_apply(for_all({x}, x),
+              for_all({y}, implies({for_all({x}, implies({Type(x), Type(y)}, y))}, y)),
+              {for_all({x, y}, implies({Type(x), Type(y)}, y))});
 }
 
 BOOST_AUTO_TEST_CASE(TestSpecializeFunctionFail) {
-  auto param = for_all({x}, implies({Type(x), Type(P)}, P));
-  auto fn = implies({for_all({x, y}, implies({Type(x), Type(y)}, y))}, P);
-
-  std::unordered_map<unsigned, Type> parameters = {{0, param}};
-  auto result = function_apply(fn, parameters);
-  BOOST_CHECK(!result);
+  check_apply_fail(implies({for_all({x, y}, implies({Type(x), Type(y)}, y))}, P),
+                   {for_all({x}, implies({Type(x), Type(P)}, P))});
 }
 
 BOOST_AUTO_TEST_CASE(TestMoveForAll) {
-  auto fn = for_all({x}, implies({Type(P)}, x));
-  std::unordered_map<unsigned, Type> parameters = {{0, Type(P)}};
-  auto result = function_apply(fn, parameters);
-  auto expected = for_all({x}, x);
-  BOOST_REQUIRE(result);
-  BOOST_CHECK_MESSAGE(false /* *result == expected*/, compare_message(*result, expected));
+  check_apply(for_all({x}, x),
+              for_all({x}, implies({Type(P)}, x)),
+              {Type(P)});
 }
 
 BOOST_AUTO_TEST_SUITE_END()
