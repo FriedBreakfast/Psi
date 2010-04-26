@@ -326,7 +326,10 @@ namespace Psi {
 
       bool is_variable();
       const Variable* as_variable() const;
-      bool occurs(const std::unordered_set<Variable>& variables) const;
+      /**
+       * \brief Find which of the specified variables are used in a given type.
+       */
+      std::unordered_set<Variable> occurs(const std::unordered_set<Variable>& variables) const;
 
       const ForAll& for_all() const {return m_for_all;}
       ForAll& for_all() {return m_for_all;}
@@ -342,18 +345,9 @@ namespace Psi {
     Type implies(const std::vector<Type>& lhs, const Type& rhs);
     Type apply(Constructor constructor, std::vector<Type> parameters);
 
-    Maybe<Type> apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments);
+    Type substitute(const Type& type, const std::unordered_map<Variable, Type>& substitutions);
 
-    /**
-     * \brief Do an occurs check on \c type.
-     *
-     * This checks whether any of the variables listed in \c variables
-     * appear anywhere in \c type. Note that they should not be
-     * quantified over anywhere in \c type; if they are the result of
-     * this check is meaningless. However, this error condition is not
-     * checked for.
-     */
-    bool occurs(const Type& type, const std::unordered_set<Variable>& variables);
+    Maybe<Type> function_apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments);
 
     struct TermNamer {
       std::function<std::string(const Variable&)> variable_namer;
@@ -368,6 +362,8 @@ namespace Psi {
 
       void print(std::ostream& os, const Type& t) {print_forall(os, t.for_all(), false);}
       void print(std::ostream& os, const ForAll& fa) {print_forall(os, fa, false);}
+
+      void reset();
 
     private:
       TermNamer m_term_namer;
@@ -396,13 +392,14 @@ namespace Psi {
       BoundTypePrinter(TypePrinter tp, const T* t) : m_tp(std::move(tp)), m_t(t) {
       }
 
-      friend std::ostream& operator << (std::ostream& os, BoundTypePrinter&& pr) {
-	pr.m_tp.print(os, *pr.m_t);
-	return os;
+      friend std::ostream& operator << (std::ostream& os, const BoundTypePrinter& pr) {
+        pr.m_tp.reset();
+        pr.m_tp.print(os, *pr.m_t);
+        return os;
       }
 
     private:
-      TypePrinter m_tp;
+      mutable TypePrinter m_tp;
       const T *m_t;
     };
 

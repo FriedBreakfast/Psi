@@ -152,40 +152,41 @@ namespace Psi {
   namespace TypeSystem2 {
     namespace {
       class OccursChecker {
-        const std::unordered_set<Variable> m_variables;
+        const std::unordered_set<Variable> *m_variables;
 
       public:
-        OccursChecker(const std::unordered_set<Variable>& variables) : m_variables(variables) {
+        OccursChecker(const std::unordered_set<Variable>& variables) : m_variables(&variables) {
         }
 
-        bool forall_list(const std::vector<ForAll>& list);
-        bool forall(const ForAll& type);
-        bool quantifier(const Quantifier& quantifier);
+        void forall_list(const std::vector<ForAll>& list);
+        void forall(const ForAll& type);
+        void quantifier(const Quantifier& quantifier);
+
+        std::unordered_set<Variable> result;
+
+      private:
       };
 
-      bool OccursChecker::forall(const ForAll& type) {
-        return 
-          quantifier(type.quantifier) ||
-          quantifier(type.term.rhs.quantifier) ||
-          forall_list(type.term.lhs) ||
-          type.term.rhs.term.visit2([this] (const Apply& apply) {return this->forall_list(apply.parameters);},
-                                    [this] (const Variable& v) {return m_variables.find(v) != m_variables.end();});
+      void OccursChecker::forall(const ForAll& type) {
+        quantifier(type.quantifier);
+        quantifier(type.term.rhs.quantifier);
+        forall_list(type.term.lhs);
+        type.term.rhs.term.visit2
+          ([this] (const Apply& apply) {this->forall_list(apply.parameters);},
+           [this] (const Variable& v) {
+             if (m_variables->find(v) != m_variables->end())
+               result.insert(v);
+           });
       }
 
-      bool OccursChecker::forall_list(const std::vector<ForAll>& list) {
-        for (auto it = list.begin(); it != list.end(); ++it) {
-          if (forall(*it))
-            return true;
-        }
-        return false;
+      void OccursChecker::forall_list(const std::vector<ForAll>& list) {
+        for (auto it = list.begin(); it != list.end(); ++it)
+          forall(*it);
       }
 
-      bool OccursChecker::quantifier(const Quantifier& quantifier) {
-        for (auto it = quantifier.constraints.begin(); it != quantifier.constraints.end(); ++it) {
-          if (forall_list(it->parameters))
-            return true;
-        }
-        return false;
+      void OccursChecker::quantifier(const Quantifier& quantifier) {
+        for (auto it = quantifier.constraints.begin(); it != quantifier.constraints.end(); ++it)
+          forall_list(it->parameters);
       }
 
       class Matcher {
@@ -198,6 +199,9 @@ namespace Psi {
         bool exists(const Exists& pattern, const Exists& binding, bool exact);
         bool variable(const Variable& pattern, const Variable& binding, bool exact);
         bool apply(const Apply& pattern, const Apply& binding);
+
+        std::unordered_set<Variable> quantified_variables();
+        std::unordered_map<Variable, Type> build_substitutions();
 
       private:
         std::list<Variable> m_quantified;
@@ -506,6 +510,10 @@ namespace Psi {
 	if (rename_type != m_rename_map.end())
 	  return {to_for_all(rename_type->second)};
 
+        // Prolog-style occurs check
+        if (var == type)
+          return {};
+
 	for (auto it = m_quantified.begin(); it != m_quantified.end(); ++it) {
 	  if (*it == var) {
 	    auto type_sub = m_substitutions.find(type);
@@ -523,7 +531,8 @@ namespace Psi {
 	  }
 	}
 
-	return {};
+        // Should never reach here since var should be in m_quantified
+        assert(false);
       }
 
       Maybe<Type> Matcher::rename_apply(const Variable& var, const Apply& type) {
@@ -538,6 +547,25 @@ namespace Psi {
 	}
 
 	return {to_for_all(std::move(result))};
+      }
+
+      std::unordered_set<Variable> Matcher::quantified_variables() {
+        std::unordered_set<Variable> result;
+        for (auto it = m_quantified.begin(); it != m_quantified.end(); ++it) {
+          if (m_substitutions.find(*it) == m_substitutions.end())
+            result.insert(*it);
+        }
+        return result;
+      }
+
+      std::unordered_map<Variable, Type> Matcher::build_substitutions() {
+        std::unordered_map<Variable, Type> result;
+        for (auto it = m_quantified.begin(); it != m_quantified.end(); ++it) {
+          auto jt = m_substitutions.find(*it);
+          if (jt != m_substitutions.end())
+            result.insert({*it, substitute(jt->second, result)});
+        }
+        return result;
       }
 
       class Renamer {
@@ -575,6 +603,8 @@ namespace Psi {
 	     [&] (const Apply& a) {
 	       result.term = this->rename_apply(a);
 	     });
+
+          assert(!result.term.empty());
 
 	  return result;
 	}
@@ -667,11 +697,13 @@ namespace Psi {
       return 0;
     }
 
-    bool Type::occurs(const std::unordered_set<Variable>& variables) const {
-      return OccursChecker(variables).forall(m_for_all);
+    std::unordered_set<Variable> Type::occurs(const std::unordered_set<Variable>& variables) const {
+      OccursChecker checker(variables);
+      checker.forall(m_for_all);
+      return std::move(checker.result);
     }
 
-    Maybe<Type> apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments) {
+    Maybe<Type> function_apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments) {
       Matcher matcher(function.for_all().quantifier.variables);
 
       for (auto it = arguments.begin(); it != arguments.end(); ++it) {
@@ -681,7 +713,30 @@ namespace Psi {
           return {};
       }
 
-      return {};
+      auto quantified = matcher.quantified_variables();
+      auto substitutions = matcher.build_substitutions();
+
+      auto rhs = substitute(function.for_all().term.rhs, substitutions);
+      auto quantified_used = rhs.occurs(quantified);
+
+      std::vector<Type> lhs;
+      unsigned index = 0;
+      for (auto it = function.for_all().term.lhs.begin();
+           it != function.for_all().term.lhs.end(); ++it, ++index) {
+        if (arguments.find(index) == arguments.end()) {
+          auto term = substitute(*it, substitutions);
+          auto used = term.occurs(quantified);
+          quantified_used.insert(used.begin(), used.end());
+          lhs.push_back(std::move(term));
+        }
+      }
+
+#if 0
+      // Need to substitute constraints and check which ones are still
+      // necessary
+#endif
+
+      return for_all(quantified_used, implies(lhs, rhs));
     }
 
     Type for_all(const std::unordered_set<Variable>& variables, const Type& term) {
@@ -746,6 +801,70 @@ namespace Psi {
     }
 
     namespace {
+      class Substituter {
+      public:
+        Substituter(const std::unordered_map<Variable, Type>& substitutions) : m_substitutions(&substitutions) {
+        }
+
+        Type sub_forall(const ForAll& fa) const {
+          return for_all(fa.quantifier.variables, sub_implies(fa.term),
+                         sub_constraints(fa.quantifier.constraints));
+        }
+
+        Type sub_implies(const Implies& im) const {
+          std::vector<Type> lhs;
+          for (auto it = im.lhs.begin(); it != im.lhs.end(); ++it)
+            lhs.push_back(sub_forall(*it));
+          return implies(std::move(lhs), sub_exists(im.rhs));
+        }
+
+        Type sub_exists(const Exists& ex) const {
+          Type rhs = ex.term.visit2
+            ([this] (const Variable& var) {return this->sub_variable(var);},
+             [this] (const Apply& apply) {return this->sub_apply(apply);});
+
+          return exists(ex.quantifier.variables, rhs,
+                        sub_constraints(ex.quantifier.constraints));
+        }
+
+        Type sub_variable(const Variable& var) const {
+          auto it = m_substitutions->find(var);
+          if (it != m_substitutions->end())
+            return it->second;
+          return var;
+        }
+
+        Type sub_apply(const Apply& ap) const {
+          std::vector<Type> parameters;
+          for (auto it = ap.parameters.begin(); it != ap.parameters.end(); ++it)
+            parameters.push_back(sub_forall(*it));
+          return apply(ap.constructor, std::move(parameters));
+        }
+
+        std::unordered_set<Constraint> sub_constraints(const std::unordered_set<Constraint>& cons) const {
+          std::unordered_set<Constraint> new_cons;
+#if 0
+          for (auto it = cons.begin(); it != cons.end(); ++it) {
+            Constraint current;
+            current.predicate = it->predicate;
+            for (auto jt = it->parameters.begin(); jt != it->parameters.end(); ++jt)
+              current.parameters.push_back(std::move(sub_forall(*jt)));
+            new_cons.insert(std::move(current));
+          }
+#endif
+          return new_cons;
+        }
+
+      private:
+        const std::unordered_map<Variable, Type> *m_substitutions;
+      };
+    }
+
+    Type substitute(const Type& type, const std::unordered_map<Variable, Type>& substitutions) {
+      return Substituter(substitutions).sub_forall(type.for_all());
+    }
+
+    namespace {
       const char *for_all_str = u8"\u2200";
       const char *exists_str = u8"\u2203";
       const char *right_arrow_str = u8"\u2192";
@@ -797,6 +916,10 @@ namespace Psi {
     }
 
     TypePrinter::~TypePrinter() {
+    }
+
+    void TypePrinter::reset() {
+      m_last_name.clear();
     }
 
     std::string TypePrinter::generate_name() {
