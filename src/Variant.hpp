@@ -179,6 +179,15 @@ namespace Psi {
       }
     };
 
+    struct EqualsVisitor {
+      const void *rhs_ptr;
+
+      template<typename T>
+      bool operator () (const T& lhs) const {
+        return lhs == *static_cast<const T*>(rhs_ptr);
+      }
+    };
+
     template<typename T, typename... Args> struct IndexOf;
 
     template<typename T, typename... Args> struct IndexOf<T, T, Args...> {
@@ -190,8 +199,11 @@ namespace Psi {
     };
 
     template<typename T> struct RemoveConstRef {typedef T type;};
+    template<typename T> struct RemoveConstRef<const T> {typedef T type;};
     template<typename T> struct RemoveConstRef<const T&> {typedef T type;};
-    template<typename T> struct RemoveConstRef<T&&> {typedef T type;};
+
+    template<typename A, typename B> struct IsSame {static const bool value = false;};
+    template<typename A> struct IsSame<A,A> {static const bool value = true;};
   }
   /// \endcond
 
@@ -215,7 +227,12 @@ namespace Psi {
       move_assign(rhs);
     }
 
-    template<typename T>
+    /**
+     * The SFINAE here is needed to make the following case work:
+     *
+     * const Variant<char, std::string> t = std::string("Hello World");
+     */
+    template<typename T, typename U=typename std::enable_if<!VariantDetail::IsSame<typename VariantDetail::RemoveConstRef<T>::type, Variant>::value>::type>
     Variant(T&& rhs) {
       entry_assign<typename VariantDetail::RemoveConstRef<T>::type>(std::forward<T>(rhs));
     }
@@ -299,6 +316,17 @@ namespace Psi {
     void assign(Args2&&... args) {
       clear();
       entry_assign<T>(std::forward<Args2>(args)...);
+    }
+
+    bool operator == (const Variant& rhs) const {
+      if (m_which != rhs.m_which)
+        return false;
+
+      return VariantDetail::VisitImpl<bool, Args...>::call(VariantDetail::EqualsVisitor{&rhs.m_storage}, &m_storage, m_which);
+    }
+
+    bool operator != (const Variant& rhs) const {
+      return !(*this == rhs);
     }
 
   private:

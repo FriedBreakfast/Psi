@@ -124,13 +124,24 @@ namespace Psi {
        */
       bool Matcher::check_one_to_one(const std::unordered_set<Variable>& from,
                                      const std::unordered_set<Variable>& to) {
+        assert(from.size() == to.size());
+
         std::unordered_set<Variable> matched = to;
         for (auto it = from.begin(); it != from.end(); ++it) {
-          if (!matched.erase(*it))
+          auto jt = m_substitutions.find(*it);
+          if (jt == m_substitutions.end())
+            return false;
+
+          const Variable *var = jt->second.as_variable();
+          if (!var)
+            return false;
+
+          if (!matched.erase(*var))
             return false;
         }
 
-        return matched.empty();
+        assert(matched.empty());
+        return true;
       }
 
       bool Matcher::forall(const ForAll& pattern, const ForAll& binding, bool exact) {
@@ -163,7 +174,7 @@ namespace Psi {
 
         StackEnter scope(this, binding.quantifier.variables);
 
-        bool result = pattern.term.visit2
+        if (!pattern.term.visit2
           (
            [&] (const Variable& pattern_var) {
              return binding.term.visit2
@@ -184,12 +195,13 @@ namespace Psi {
 	      [&] (const Apply& binding_apply) {
 		return this->apply(pattern_apply, binding_apply);
 	      });
-           });
+           }))
+          return false;
 
         if (exact && !check_one_to_one(binding.quantifier.variables, pattern.quantifier.variables))
           return false;
 
-        return result;
+        return true;
       }
 
       bool Matcher::variable_apply(const Apply& pattern, const Variable& binding) {
@@ -221,7 +233,7 @@ namespace Psi {
 	if (pattern == binding)
 	  return true;
 
-	bool pattern_q, binding_q, pattern_first;
+	bool pattern_q = false, binding_q = false, pattern_first;
 	for (auto it = m_quantified.begin(); it != m_quantified.end(); ++it) {
 	  if (*it == pattern) {
 	    pattern_q = true;
@@ -247,13 +259,18 @@ namespace Psi {
 		  m_substitutions.insert({binding, to_for_all(pattern)});
 		  return true;
 		} else {
-		  auto sub = rename_forall(pattern, binding_sub->second.for_all());
-		  if (sub) {
-		    m_substitutions.insert({pattern, std::move(*sub)});
-		    return true;
-		  } else {
-		    return false;
-		  }
+                  const Variable *binding_var = binding_sub->second.as_variable();
+                  if (binding_var && (*binding_var == pattern)) {
+                    return true;
+                  } else {
+                    auto sub = rename_forall(pattern, binding_sub->second.for_all());
+                    if (sub) {
+                      m_substitutions.insert({pattern, std::move(*sub)});
+                      return true;
+                    } else {
+                      return false;
+                    }
+                  }
 		}
 	      } else {
 		m_substitutions.insert({pattern, to_for_all(binding)});
@@ -266,13 +283,18 @@ namespace Psi {
 		  m_substitutions.insert({binding, to_for_all(pattern)});
 		  return true;
 		} else {
-		  auto sub = rename_forall(binding, pattern_sub->second.for_all());
-		  if (sub) {
-		    m_substitutions.insert({binding, std::move(*sub)});
-		    return true;
-		  } else {
-		    return false;
-		  }
+                  const Variable *pattern_var = pattern_sub->second.as_variable();
+                  if (pattern_var && (*pattern_var == binding)) {
+                    return true;
+                  } else {
+                    auto sub = rename_forall(binding, pattern_sub->second.for_all());
+                    if (sub) {
+                      m_substitutions.insert({binding, std::move(*sub)});
+                      return true;
+                    } else {
+                      return false;
+                    }
+                  }
 		}
 	      } else {
 		return forall(pattern_sub->second.for_all(), binding_sub->second.for_all(), exact);
@@ -293,7 +315,7 @@ namespace Psi {
 	    auto binding_sub = m_substitutions.find(binding);
 	    if (binding_sub != m_substitutions.end()) {
 	      auto binding_sub_var = binding_sub->second.as_variable();
-	      return binding_sub_var && (*binding_sub_var == binding);
+	      return binding_sub_var && (*binding_sub_var == pattern);
 	    } else {
 	      m_substitutions.insert({binding, pattern});
 	      return true;
@@ -338,7 +360,7 @@ namespace Psi {
         RenameEnter scope_exists(this, type.term.rhs.quantifier);
         result.term.rhs.quantifier = std::move(scope_exists.new_quantifier);
 
-	auto rhs = result.term.rhs.term.visit2
+	auto rhs = type.term.rhs.term.visit2
 	  ([&] (const Variable& type_var) {return this->rename_variable(var, type_var);},
 	   [&] (const Apply& apply) {return this->rename_apply(var, apply);});
 

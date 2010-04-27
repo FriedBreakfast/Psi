@@ -35,14 +35,13 @@ BOOST_AUTO_TEST_CASE(TestConstAnonymous) {
 }
 
 BOOST_AUTO_TEST_CASE(AssignConstruct) {
-  /*
-   * For some reason the version below fails to compile:
-   *
-   * const Psi::Variant<char, std::string> t = std::string("Hello World");
-   */
-  const Psi::Variant<char, std::string> t(std::string("Hello World"));
+  // This might seem trivial, but see note on the Variant from-element constructor
+  const Psi::Variant<char, std::string> t = std::string("Hello World");
   const Psi::Variant<char, std::string> u = t;
   const Psi::Variant<char, std::string> v(u);
+  BOOST_CHECK(t == u);
+  BOOST_CHECK(u == v);
+  BOOST_CHECK(t == v);
 }
 
 BOOST_AUTO_TEST_CASE(DefaultVisit) {
