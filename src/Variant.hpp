@@ -188,6 +188,13 @@ namespace Psi {
       }
     };
 
+    struct HashVisitor {
+      template<typename T>
+      bool operator () (const T& value) const {
+	return std::hash<T>()(value);
+      }
+    };
+
     template<typename T, typename... Args> struct IndexOf;
 
     template<typename T, typename... Args> struct IndexOf<T, T, Args...> {
@@ -329,6 +336,13 @@ namespace Psi {
       return !(*this == rhs);
     }
 
+    std::size_t hash() const {
+      if (m_which == 0)
+	return 0;
+
+      return VariantDetail::VisitImpl<std::size_t, Args...>::call(VariantDetail::HashVisitor(), &m_storage, m_which);
+    }
+
   private:
     typedef typename std::aligned_storage<VariantDetail::MaxSize<Args...>::value, VariantDetail::MaxAlign<Args...>::value>::type storage_type;
 
@@ -371,6 +385,15 @@ namespace Psi {
 
     int m_which;
     storage_type m_storage;
+  };
+}
+
+namespace std {
+  template<typename... Args>
+  struct hash<Psi::Variant<Args...> >  : std::unary_function<Psi::Variant<Args...>, std::size_t> {
+    std::size_t operator () (const Psi::Variant<Args...>& var) const {
+      return var.hash();
+    }
   };
 }
 

@@ -14,7 +14,14 @@
 namespace Psi {
   namespace TypeSystem {
     template<typename Tag> class Identifier;
-    class Constraint;
+
+    struct Apply;
+    struct Constraint;
+    struct Quantifier;
+    struct Exists;
+    struct Implies;
+    struct ForAll;
+    class Type;
 
     template<typename T>
     struct ContextHash : std::unary_function<T, std::size_t> {
@@ -27,7 +34,13 @@ namespace Psi {
 
 namespace std {
   template<typename T> struct hash<Psi::TypeSystem::Identifier<T> > : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Identifier<T> > {};
-  //template<> struct hash<Psi::TypeSystem::Constraint> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Constraint> {};
+  template<> struct hash<Psi::TypeSystem::Apply> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Apply> {};
+  template<> struct hash<Psi::TypeSystem::Constraint> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Constraint> {};
+  template<> struct hash<Psi::TypeSystem::Quantifier> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Quantifier> {};
+  template<> struct hash<Psi::TypeSystem::Exists> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Exists> {};
+  template<> struct hash<Psi::TypeSystem::Implies> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Implies> {};
+  template<> struct hash<Psi::TypeSystem::ForAll> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::ForAll> {};
+  template<> struct hash<Psi::TypeSystem::Type> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Type> {};
 }
 
 namespace Psi {
@@ -79,9 +92,11 @@ namespace Psi {
       std::vector<ForAll> parameters;
     };
 
+    typedef Variant<Variable, Apply> Atom;
+
     struct Constraint {
       Predicate predicate;
-      std::vector<ForAll> parameters;
+      std::vector<Atom> parameters;
     };
 
     struct Quantifier {
@@ -91,7 +106,7 @@ namespace Psi {
 
     struct Exists {
       Quantifier quantifier;
-      Variant<Variable, Apply> term;
+      Atom term;
     };
 
     struct Implies {
@@ -103,6 +118,25 @@ namespace Psi {
       Quantifier quantifier;
       Implies term;
     };
+
+    bool operator == (const Apply&, const Apply&);
+    bool operator == (const Constraint&, const Constraint&);
+    bool operator == (const Exists&, const Exists&);
+    bool operator == (const Implies&, const Implies&);
+    bool operator == (const ForAll&, const ForAll&);
+
+    std::size_t hash(const Apply&);
+    std::size_t hash(const Constraint&);
+    std::size_t hash(const Quantifier&);
+    std::size_t hash(const Exists&);
+    std::size_t hash(const Implies&);
+    std::size_t hash(const ForAll&);
+
+    bool operator != (const Apply& lhs, const Apply& rhs) {return !(lhs == rhs);}
+    bool operator != (const Constraint& lhs, const Constraint& rhs) {return !(lhs == rhs);}
+    bool operator != (const Exists& lhs, const Exists& rhs) {return !(lhs == rhs);}
+    bool operator != (const Implies& lhs, const Implies& rhs) {return !(lhs == rhs);}
+    bool operator != (const ForAll& lhs, const ForAll& rhs) {return !(lhs == rhs);}
 
     class Type {
     public:
@@ -125,6 +159,10 @@ namespace Psi {
 
       const ForAll& for_all() const {return m_for_all;}
       ForAll& for_all() {return m_for_all;}
+
+      friend std::size_t hash(const Type& ty) {
+	return hash(ty.m_for_all);
+      }
 
     private:
       ForAll m_for_all;
