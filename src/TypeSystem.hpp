@@ -86,28 +86,24 @@ namespace Psi {
     typedef Identifier<ConstructorTag> Constructor;
 
     struct Constraint;
-    struct Variable;
-
-    struct Quantifier {
-      std::unordered_set<Constraint> constraints;
-      std::unordered_set<Variable> variables;
-    };
 
     class Predicate {
     public:
       Predicate() {
       }
 
-      Predicate new_(Quantifier quantifier) {
-        return {std::make_shared(std::move(quantifier))};
+      friend Predicate predicate(const std::vector<Variable>& parameters, std::vector<Constraint> constraints);
+
+      const std::vector<Variable>& parameters() const {
+	return m_data->parameters;
       }
 
-      const Quantifier& quantifier() const {
-        return m_quantifier;
+      const std::vector<Constraint>& constraints() const {
+	return m_data->constraints;
       }
 
       bool operator == (const Predicate& rhs) const {
-        return m_quantifier == rhs.m_quantifier;
+        return m_data == rhs.m_data;
       }
 
       bool operator != (const Predicate& rhs) const {
@@ -115,15 +111,28 @@ namespace Psi {
       }
 
       friend std::size_t hash(const Predicate& p) {
-        return std::hash<void*>()(self.m_quantifier.get());
+        return std::hash<const void*>()(p.m_data.get());
       }
 
     private:
-      std::shared_ptr<const Quantifier> m_quantifier;
+      struct Data {
+	Data() = default;
+	Data(Data&&) = default;
 
-      Predicate(std::shared_ptr<const Quantifier> quantifier)
-        : m_quantifier(std::move(quantifier)) {
+	std::vector<Variable> parameters;
+	std::vector<Constraint> constraints;
+      };
+
+      std::shared_ptr<const Data> m_data;
+
+      Predicate(std::shared_ptr<const Data> data)
+        : m_data(std::move(data)) {
       }
+    };
+
+    struct Quantifier {
+      std::vector<Constraint> constraints;
+      std::unordered_set<Variable> variables;
     };
 
     struct ForAll;
@@ -186,9 +195,15 @@ namespace Psi {
       bool is_variable();
       const Variable* as_variable() const;
       /**
-       * \brief Find which of the specified variables are used in a given type.
+       * \brief Find which of the specified variables are used in this
+       * type.
        */
       std::unordered_set<Variable> occurs(const std::unordered_set<Variable>& variables) const;
+      /**
+       * \brief Find whether any of the specified variables are used
+       * in this type.
+       */
+      bool occurs_check(const std::unordered_set<Variable>& variables) const;
 
       bool operator == (const Type& rhs) const;
       bool operator != (const Type& rhs) const;
@@ -206,14 +221,32 @@ namespace Psi {
 
     Type for_all(const std::unordered_set<Variable>& variables, const Type& term);
     Type exists(const std::unordered_set<Variable>& variables, const Type& term);
-    Type for_all(const std::unordered_set<Variable>& variables, const Type& term, const std::unordered_set<Constraint>& constraints);
-    Type exists(const std::unordered_set<Variable>& variables, const Type& term, const std::unordered_set<Constraint>& constraints);
+    Type for_all(const std::unordered_set<Variable>& variables, const Type& term, const std::vector<Constraint>& constraints);
+    Type exists(const std::unordered_set<Variable>& variables, const Type& term, const std::vector<Constraint>& constraints);
     Type implies(const std::vector<Type>& lhs, const Type& rhs);
     Type apply(Constructor constructor, std::vector<Type> parameters);
+    Predicate predicate(const std::vector<Variable>& parameters, std::vector<Constraint> constraints);
+    Constraint constraint(const Predicate& pred, std::vector<Type> parameters);
 
     Type substitute(const Type& type, const std::unordered_map<Variable, Type>& substitutions);
 
-    Maybe<Type> function_apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments);
+    Constraint constraint_substitute(const Constraint& cons, const std::unordered_map<Variable, Type>& substitutions);
+    bool constraint_occurs_check(const Constraint& cons, const std::unordered_set<Variable>& variables);
+
+    /**
+     * Lists implementations available.
+     */
+    class TypeContext {
+    public:
+      void add(Constraint c);
+
+    private:
+      friend Maybe<Type> function_apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments, const TypeContext& context);
+
+      std::unordered_map<Predicate, std::vector<Constraint> > m_implementations;
+    };
+
+    Maybe<Type> function_apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments, const TypeContext& context);
 
     struct TermNamer {
       std::function<std::string(const Variable&)> variable_namer;

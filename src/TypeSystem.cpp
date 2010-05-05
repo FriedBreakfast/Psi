@@ -8,37 +8,140 @@
 namespace Psi {
   namespace TypeSystem {
     namespace {
+      class Renamer {
+      public:
+	Renamer() {
+	}
+
+	Renamer(std::unordered_map<Variable, Variable> name_map) : m_name_map(std::move(name_map)) {
+	}
+
+	Type rename(const Type& t) {
+	  return rename_forall(t.for_all());
+	}
+
+	ForAll rename_forall(const ForAll& fa) {
+	  PushQuantifier pq(this, fa.quantifier);
+
+	  ForAll result;
+	  result.quantifier = std::move(pq.new_quantifier);
+
+	  for (auto it = fa.term.lhs.begin(); it != fa.term.lhs.end(); ++it)
+	    result.term.lhs.push_back(rename_forall(*it));
+
+	  result.term.rhs = rename_exists(fa.term.rhs);
+
+	  return result;
+	}
+
+	Exists rename_exists(const Exists& ex) {
+	  PushQuantifier pq(this, ex.quantifier);
+	  return {std::move(pq.new_quantifier), rename_atom(ex.term)};
+	}
+
+	Atom rename_atom(const Atom& at) {
+	  Atom result = at.visit2
+	    (
+	     [&] (const Variable& v) -> Atom {
+	       auto it = m_name_map.find(v);
+	       return (it == m_name_map.end()) ? v : it->second;
+	     },
+	     [&] (const Apply& a) -> Atom {
+	       return this->rename_apply(a);
+	     });
+
+	  assert(!result.empty());
+
+	  return result;
+	}
+
+	Apply rename_apply(const Apply& a) {
+	  Apply result;
+	  result.constructor = a.constructor;
+
+	  for (auto it = a.parameters.begin(); it != a.parameters.end(); ++it)
+	    result.parameters.push_back(rename_forall(*it));
+
+	  return result;
+	}
+
+	Constraint rename_constraint(const Constraint& c) {
+	  Constraint result;
+	  result.predicate = c.predicate;
+	  for (auto it = c.parameters.begin(); it != c.parameters.end(); ++it)
+	    result.parameters.push_back(std::move(rename_forall(*it)));
+	  return result;
+	}
+
+      private:
+	std::unordered_map<Variable, Variable> m_name_map;
+
+	class PushQuantifier {
+	public:
+	  PushQuantifier(Renamer *self, const Quantifier& q) : m_self(self), m_q(&q) {
+	    for (auto it = m_q->variables.begin(); it != m_q->variables.end(); ++it) {
+	      Variable v = Variable::new_();
+	      m_self->m_name_map.insert({*it, v});
+	      new_quantifier.variables.insert(v);
+	    }
+
+	    for (auto it = m_q->constraints.begin(); it != m_q->constraints.end(); ++it)
+	      new_quantifier.constraints.push_back(m_self->rename_constraint(*it));
+	  }
+
+	  ~PushQuantifier() {
+	  }
+
+	  Quantifier new_quantifier;
+
+	private:
+	  Renamer *m_self;
+	  const Quantifier *m_q;
+	};
+      };
+
       class OccursChecker {
+	bool m_check_only;
         const std::unordered_set<Variable> *m_variables;
 
       public:
-        OccursChecker(const std::unordered_set<Variable>& variables) : m_variables(&variables) {
+        OccursChecker(bool check_only, const std::unordered_set<Variable>& variables) : m_check_only(check_only), m_variables(&variables), found(false) {
         }
 
 	void atom(const Atom& atom);
         void forall(const ForAll& type);
         void forall_list(const std::vector<ForAll>& list);
         void quantifier(const Quantifier& quantifier);
+	void constraint(const Constraint& constraint);
 
+	bool found;
         std::unordered_set<Variable> result;
       };
 
       void OccursChecker::forall(const ForAll& type) {
         quantifier(type.quantifier);
+	if (m_check_only && found) return;
         quantifier(type.term.rhs.quantifier);
+	if (m_check_only && found) return;
         forall_list(type.term.lhs);
+	if (m_check_only && found) return;
 	atom(type.term.rhs.term);
       }
 
       void OccursChecker::forall_list(const std::vector<ForAll>& list) {
-	for (auto it = list.begin(); it != list.end(); ++it)
+	for (auto it = list.begin(); it != list.end(); ++it) {
 	  forall(*it);
+	  if (m_check_only && found)
+	    return;
+	}
       }
 
       void OccursChecker::quantifier(const Quantifier& quantifier) {
-        for (auto it = quantifier.constraints.begin(); it != quantifier.constraints.end(); ++it)
-	  for (auto jt = it->parameters.begin(); jt != it->parameters.end(); ++jt)
-	    forall(*jt);
+        for (auto it = quantifier.constraints.begin(); it != quantifier.constraints.end(); ++it) {
+	  constraint(*it);
+	  if (m_check_only && found)
+	    return;
+	}
       }
 
       void OccursChecker::atom(const Atom& atom) {
@@ -48,9 +151,21 @@ namespace Psi {
 	     this->forall_list(apply.parameters);
 	   },
            [this] (const Variable& v) {
-             if (m_variables->find(v) != m_variables->end())
-               result.insert(v);
+             if (m_variables->find(v) != m_variables->end()) {
+	       if (m_check_only)
+		 found = true;
+	       else
+		 result.insert(v);
+	     }
            });
+      }
+
+      void OccursChecker::constraint(const Constraint& cons) {
+	for (auto it = cons.parameters.begin(); it != cons.parameters.end(); ++it) {
+	  forall(*it);
+	  if (m_check_only && found)
+	    return;
+	}
       }
 
       class Matcher {
@@ -66,6 +181,7 @@ namespace Psi {
         bool exists(const Exists& pattern, const Exists& binding, bool exact);
         bool variable(const Variable& pattern, const Variable& binding, bool exact);
         bool apply(const Apply& pattern, const Apply& binding);
+	bool constraint(const Constraint& pattern, const Constraint& binding, bool exact);
 
         std::unordered_set<Variable> quantified_variables();
         std::unordered_map<Variable, Type> build_substitutions();
@@ -74,6 +190,7 @@ namespace Psi {
         std::list<Variable> m_quantified;
         std::unordered_map<Variable, Type> m_substitutions;
         std::unordered_map<Variable, Variable> m_rename_map;
+	std::unordered_map<Variable, Type> m_predicate_binding_map;
 
         class StackEnter {
         public:
@@ -94,70 +211,6 @@ namespace Psi {
         private:
           Matcher *m_matcher;
           std::list<Variable>::iterator m_it;
-        };
-
-        class RollbackEnter {
-        public:
-          RollbackEnter(Matcher *matcher) : m_matcher(matcher) {
-            update();
-          }
-
-          ~RollbackEnter() {
-            try {
-              reset();
-            } catch (...) {
-            }
-          }
-
-          void reset() const {
-            m_matcher->m_quantified.assign(m_quantified.begin(), m_quantified.end());
-            for (auto it = m_matcher->m_substitutions.begin(); it != m_matcher->m_substitutions.end();) {
-              auto jt = m_substitution_keys.find(it->first);
-              if (jt == m_substitution_keys.end()) {
-                it = m_matcher->m_substitutions.erase(it);
-              } else {
-                ++it;
-              }
-            }
-          }
-
-          void commit() {
-            m_quantified.assign(m_matcher->m_quantified.begin(), m_matcher->m_quantified.end());
-            m_substitutions_keys.clear();
-            for (auto it = m_matcher->m_substitutions.begin(); it != m_matcher->m_substitutions.end(); ++it)
-              m_substitutions_keys.insert(it->first);
-          }
-
-        private:
-          Matcher *m_matcher;
-          bool m_committed;
-          std::unordered_set<Variable> m_substitution_keys;
-          std::vector<Variable> m_quantified;
-        };
-
-        class RenameEnter {
-        public:
-          RenameEnter(Matcher *matcher, const Quantifier& quantifier) : m_matcher(matcher), m_quantifier(&quantifier) {
-            for (auto it = m_quantifier->variables.begin(); it != m_quantifier->variables.end(); ++it) {
-              Variable v = Variable::new_();
-              m_matcher->m_rename_map.insert({*it, v});
-              new_quantifier.variables.insert(new_quantifier.variables.end(), v);
-            }
-          }
-
-          ~RenameEnter() {
-            try {
-              for (auto it = m_quantifier->variables.begin(); it != m_quantifier->variables.end(); ++it)
-                m_matcher->m_rename_map.erase(*it);
-            } catch (...) {
-            }
-          }
-
-          Quantifier new_quantifier;
-
-        private:
-          Matcher *m_matcher;
-          const Quantifier *m_quantifier;
         };
 
         bool variable_apply(const Apply& pattern, const Variable& binding);
@@ -210,9 +263,6 @@ namespace Psi {
 
         StackEnter scope(this, binding.quantifier);
 
-        if (!quantifier(pattern.quantifier, binding.quantifier, exact))
-          return false;
-
         for (auto it = pattern.term.lhs.begin(), jt = binding.term.lhs.begin();
              it != pattern.term.lhs.end(); ++it, ++jt) {
           if (!forall(*jt, *it, exact))
@@ -220,6 +270,12 @@ namespace Psi {
         }
 
         if (!exists(binding.term.rhs, pattern.term.rhs, exact))
+          return false;
+
+	// Need to check this last so that all inner bindings have
+	// been generated, since constraint checks cannot generate
+	// bindings themselves.
+        if (!quantifier(pattern.quantifier, binding.quantifier, exact))
           return false;
 
         if (exact && !check_one_to_one(binding.quantifier.variables, pattern.quantifier.variables))
@@ -234,10 +290,7 @@ namespace Psi {
 
         StackEnter scope(this, binding.quantifier);
 
-        if (!quantifier(pattern.quantifier, binding.quantifier, exact))
-          return false;
-
-        if (!pattern.term.visit2
+	if (!pattern.term.visit2
           (
            [&] (const Variable& pattern_var) {
              return binding.term.visit2
@@ -261,6 +314,9 @@ namespace Psi {
            }))
           return false;
 
+        if (!quantifier(pattern.quantifier, binding.quantifier, exact))
+          return false;
+
         if (exact && !check_one_to_one(binding.quantifier.variables, pattern.quantifier.variables))
           return false;
 
@@ -271,46 +327,78 @@ namespace Psi {
         if (exact && (pattern.constraints.size() != binding.constraints.size()))
           return false;
 
-        RollbackEnter rb(this);
+	class HideQuantified {
+	public:
+	  HideQuantified(Matcher *matcher) : m_matcher(matcher) {
+	    std::swap(m_quantified, m_matcher->m_quantified);
+	  }
+	
+	  ~HideQuantified() {
+	    try {
+	      std::swap(m_quantified, m_matcher->m_quantified);
+	    } catch(...) {
+	    }
+	  }
+
+	private:
+	  Matcher *m_matcher;
+	  std::list<Variable> m_quantified;
+	};
+	// Need to hide quantified variables to prevent bindings to these being generated
+	HideQuantified hq(this);
 
         for (auto it = pattern.constraints.begin(); it != pattern.constraints.end(); ++it) {
           bool found = false;
           for (auto jt = binding.constraints.begin(); jt != binding.constraints.end(); ++jt) {
-            rb.reset();
+	    if (constraint(*it, *jt, exact)) {
+	      found = true;
+	      break;
+	    }
+	  }
 
-            if (exact) {
-              if (it->predicate != jt->predicate)
-                continue;
-
-              assert(it->parameters.size() == jt->parameters.size());
-
-              bool good = true;
-              for (auto kt = it->parameters.begin(), lt = jt->parameters.begin(); kt != it->parameters.end(); ++jt, ++kt) {
-                if (!forall(*kt, *lt, true)) {
-                  good = false;
-                  break;
-                }
-              }
-
-              if (good) {
-                found = true;
-                break;
-              }
-            } else {
-            }
-          }
-
-          if (found)
-            rb.commit();
-          else
-            return false;
+	  if (!found)
+	    return false;
         }
 
         return true;
       }
 
-      bool Matcher::quantifier_search(RollbackEnter *rollback, const Quantifier& pattern) {
-        
+      bool Matcher::constraint(const Constraint& pattern, const Constraint& binding, bool exact) {
+	if (pattern.predicate == binding.predicate) {
+	  assert(pattern.parameters.size() == binding.parameters.size());
+	  bool good = true;
+	  for (auto it = pattern.parameters.begin(), jt = binding.parameters.begin(); it != pattern.parameters.end(); ++it, ++jt) {
+	    if (!forall(*it, *jt, true)) {
+	      good = false;
+	      break;
+	    }
+	  }
+
+	  if (good)
+	    return true;
+	} else if (!exact) {
+	  assert(binding.parameters.size() == binding.predicate.parameters().size());
+	  std::unordered_map<Variable, Type> substitutions;
+	  {
+	    auto it = binding.parameters.begin();
+	    auto jt = binding.predicate.parameters().begin();
+	    for (; it != binding.parameters.end(); ++it)
+	      substitutions.insert({*jt, *it});
+	  }
+
+	  for (auto it = binding.predicate.constraints().begin(); it != binding.predicate.constraints().end(); ++it) {
+	    Constraint child_binding;
+	    child_binding.predicate = it->predicate;
+
+	    for (auto jt = it->parameters.begin(); jt != it->parameters.end(); ++jt)
+	      child_binding.parameters.push_back(std::move(substitute(*jt, substitutions).for_all()));
+
+	    if (constraint(pattern, child_binding, exact))
+	      return true;
+	  }
+	}
+
+	return false;
       }
 
       bool Matcher::variable_apply(const Apply& pattern, const Variable& binding) {
@@ -454,6 +542,31 @@ namespace Psi {
       }
 
       Maybe<Type> Matcher::rename_forall(const Variable& var, const ForAll& type) {
+        class RenameEnter {
+        public:
+          RenameEnter(Matcher *matcher, const Quantifier& quantifier) : m_matcher(matcher), m_quantifier(&quantifier) {
+            for (auto it = m_quantifier->variables.begin(); it != m_quantifier->variables.end(); ++it) {
+              Variable v = Variable::new_();
+              m_matcher->m_rename_map.insert({*it, v});
+              new_quantifier.variables.insert(new_quantifier.variables.end(), v);
+            }
+          }
+
+          ~RenameEnter() {
+            try {
+              for (auto it = m_quantifier->variables.begin(); it != m_quantifier->variables.end(); ++it)
+                m_matcher->m_rename_map.erase(*it);
+            } catch (...) {
+            }
+          }
+
+          Quantifier new_quantifier;
+
+        private:
+          Matcher *m_matcher;
+          const Quantifier *m_quantifier;
+        };
+
         RenameEnter scope_all(this, type.quantifier);
 
         ForAll result;
@@ -481,7 +594,8 @@ namespace Psi {
 	result.quantifier.variables.insert(rhs_type.quantifier.variables.begin(),
 					   rhs_type.quantifier.variables.end());
 
-	result.quantifier.constraints.insert(rhs_type.quantifier.constraints.begin(),
+	result.quantifier.constraints.insert(result.quantifier.constraints.end(),
+					     rhs_type.quantifier.constraints.begin(),
 					     rhs_type.quantifier.constraints.end());
 
 	result.term.lhs.insert(result.term.lhs.end(), rhs_type.term.lhs.begin(), rhs_type.term.lhs.end());
@@ -554,93 +668,9 @@ namespace Psi {
         return result;
       }
 
-      class Renamer {
-      public:
-	Type rename(const Type& t) {
-	  return rename_forall(t.for_all());
-	}
-
-	ForAll rename_forall(const ForAll& fa) {
-	  PushQuantifier pq(this, fa.quantifier);
-
-	  ForAll result;
-	  result.quantifier = std::move(pq.new_quantifier);
-
-	  for (auto it = fa.term.lhs.begin(); it != fa.term.lhs.end(); ++it)
-	    result.term.lhs.push_back(rename_forall(*it));
-
-	  result.term.rhs = rename_exists(fa.term.rhs);
-
-	  return result;
-	}
-
-	Exists rename_exists(const Exists& ex) {
-	  PushQuantifier pq(this, ex.quantifier);
-	  return {std::move(pq.new_quantifier), rename_atom(ex.term)};
-	}
-
-	Atom rename_atom(const Atom& at) {
-	  Atom result = at.visit2
-	    (
-	     [&] (const Variable& v) -> Atom {
-	       auto it = m_name_map.find(v);
-	       return (it == m_name_map.end()) ? v : it->second;
-	     },
-	     [&] (const Apply& a) -> Atom {
-	       return this->rename_apply(a);
-	     });
-
-	  assert(!result.empty());
-
-	  return result;
-	}
-
-	Apply rename_apply(const Apply& a) {
-	  Apply result;
-	  result.constructor = a.constructor;
-
-	  for (auto it = a.parameters.begin(); it != a.parameters.end(); ++it)
-	    result.parameters.push_back(rename_forall(*it));
-
-	  return result;
-	}
-
-      private:
-	std::unordered_map<Variable, Variable> m_name_map;
-
-	class PushQuantifier {
-	public:
-	  PushQuantifier(Renamer *self, const Quantifier& q) : m_self(self), m_q(&q) {
-	    for (auto it = m_q->variables.begin(); it != m_q->variables.end(); ++it) {
-	      Variable v = Variable::new_();
-	      m_self->m_name_map.insert({*it, v});
-	      new_quantifier.variables.insert(v);
-	    }
-
-	    for (auto it = m_q->constraints.begin(); it != m_q->constraints.end(); ++it) {
-	      Constraint c;
-	      c.predicate = it->predicate;
-	      for (auto jt = it->parameters.begin(); jt != it->parameters.end(); ++jt) {
-		c.parameters.push_back(std::move(m_self->rename_forall(*jt)));
-	      }
-	      new_quantifier.constraints.insert(std::move(c));
-	    }
-	  }
-
-	  ~PushQuantifier() {
-	  }
-
-	  Quantifier new_quantifier;
-
-	private:
-	  Renamer *m_self;
-	  const Quantifier *m_q;
-	};
-      };
-
       void merge_quantifier(Quantifier& to, const Quantifier& from) {
 	to.variables.insert(from.variables.begin(), from.variables.end());
-	to.constraints.insert(from.constraints.begin(), from.constraints.end());
+	to.constraints.insert(to.constraints.end(), from.constraints.begin(), from.constraints.end());
       }
     }
 
@@ -688,12 +718,16 @@ namespace Psi {
     }
 
     std::unordered_set<Variable> Type::occurs(const std::unordered_set<Variable>& variables) const {
-      OccursChecker checker(variables);
+      OccursChecker checker(false, variables);
       checker.forall(m_for_all);
       return std::move(checker.result);
     }
 
-    Maybe<Type> function_apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments) {
+    void TypeContext::add(Constraint c) {
+      m_implementations[c.predicate].push_back(c);
+    }
+
+    Maybe<Type> function_apply(const Type& function, const std::unordered_map<unsigned, Type>& arguments, const TypeContext& context) {
       Matcher matcher(function.for_all().quantifier.variables);
 
       for (auto it = arguments.begin(); it != arguments.end(); ++it) {
@@ -721,30 +755,51 @@ namespace Psi {
         }
       }
 
-#if 0
-      // Need to substitute constraints and check which ones are still
-      // necessary
-#endif
+      std::vector<Constraint> constraints;
+      Matcher matcher2;
+      for (auto it = function.for_all().quantifier.constraints.begin();
+	   it != function.for_all().quantifier.constraints.end(); ++it) {
+	Constraint c = constraint_substitute(c, substitutions);
+	if (!constraint_occurs_check(c, quantified_used)) {
+	  // Need to ensure this constraint is satisfied now since it
+	  // is not dependent on any remaining quantified variables
+	  auto jt = context.m_implementations.find(c.predicate);
+	  bool found = false;
+	  if (jt != context.m_implementations.end()) {
+	    for (auto kt = jt->second.begin(); kt != jt->second.end(); ++kt) {
+	      if (matcher2.constraint(c, *kt, false)) {
+		found = true;
+		break;
+	      }
+	    }
+	  }
 
-      return for_all(quantified_used, implies(lhs, rhs));
+	  if (!found)
+	    return {}; // Not satisfied
+	} else {
+	  constraints.push_back(std::move(c));
+	}
+      }
+
+      return for_all(std::move(quantified_used), implies(std::move(lhs), std::move(rhs)), std::move(constraints));
     }
 
     Type for_all(const std::unordered_set<Variable>& variables, const Type& term) {
-      return for_all(variables, term, std::unordered_set<Constraint>());
+      return for_all(variables, term, std::vector<Constraint>());
     }
 
     Type exists(const std::unordered_set<Variable>& variables, const Type& term) {
-      return exists(variables, term, std::unordered_set<Constraint>());
+      return exists(variables, term, std::vector<Constraint>());
     }
 
-    Type for_all(const std::unordered_set<Variable>& variables, const Type& term, const std::unordered_set<Constraint>& constraints) {
+    Type for_all(const std::unordered_set<Variable>& variables, const Type& term, const std::vector<Constraint>& constraints) {
       ForAll result = term.for_all();
       result.quantifier.variables.insert(variables.begin(), variables.end());
-      result.quantifier.constraints.insert(constraints.begin(), constraints.end());
+      result.quantifier.constraints.insert(result.quantifier.constraints.end(), constraints.begin(), constraints.end());
       return Renamer().rename_forall(result);
     }
 
-    Type exists(const std::unordered_set<Variable>& variables, const Type& term, const std::unordered_set<Constraint>& constraints) {
+    Type exists(const std::unordered_set<Variable>& variables, const Type& term, const std::vector<Constraint>& constraints) {
       const ForAll& fa = term.for_all();
       if (!fa.quantifier.variables.empty() ||
 	  !fa.term.lhs.empty()) {
@@ -753,7 +808,7 @@ namespace Psi {
 
       Exists result = fa.term.rhs;
       result.quantifier.variables.insert(variables.begin(), variables.end());
-      result.quantifier.constraints.insert(constraints.begin(), constraints.end());
+      result.quantifier.constraints.insert(result.quantifier.constraints.end(), constraints.begin(), constraints.end());
       return Renamer().rename_exists(result);
     }
 
@@ -784,6 +839,50 @@ namespace Psi {
       for (auto it = parameters.begin(); it != parameters.end(); ++it)
 	my_parameters.push_back(std::move(it->for_all()));
       return Type(Apply({std::move(constructor), std::move(my_parameters)}));
+    }
+
+    Predicate predicate(const std::vector<Variable>& parameters, std::vector<Constraint> constraints) {
+      Predicate::Data d;
+
+      std::unordered_map<Variable, Variable> rename_map;
+      for (auto it = parameters.begin(); it != parameters.end(); ++it) {
+	auto v = Variable::new_();
+	d.parameters.push_back(v);
+	rename_map.insert({*it, v});
+      }
+
+      Renamer renamer(std::move(rename_map));
+
+      // Work out which constraints we actually need
+      Matcher matcher;
+      for (auto it = constraints.begin(); it != constraints.end();) {
+	bool found = false;
+	for (auto jt = constraints.begin(); jt != constraints.end(); ++jt) {
+	  if ((it != jt) && matcher.constraint(*it, *jt, false)) {
+	    found = true;
+	    break;
+	  }
+	}
+
+	if (!found)
+	  ++it;
+	else
+	  it = constraints.erase(it);
+      }
+
+      for (auto it = constraints.begin(); it != constraints.end(); ++it)
+	d.constraints.push_back(renamer.rename_constraint(*it));
+
+      return {std::make_shared<Predicate::Data>(std::move(d))};
+    }
+
+    Constraint constraint(const Predicate& pred, std::vector<Type> parameters) {
+      if (parameters.size() != pred.parameters().size())
+	throw std::runtime_error("incorrect number of arguments to predicate when constructing constraint");
+      std::vector<ForAll> new_parameters;
+      for (auto it = parameters.begin(); it != parameters.end(); ++it)
+	new_parameters.push_back(std::move(it->for_all()));
+      return {pred, std::move(new_parameters)};
     }
 
     namespace {
@@ -827,18 +926,19 @@ namespace Psi {
           return apply(ap.constructor, std::move(parameters));
         }
 
-        std::unordered_set<Constraint> sub_constraints(const std::unordered_set<Constraint>& cons) const {
-          std::unordered_set<Constraint> new_cons;
+	Constraint sub_constraint(const Constraint& cons) const {
+	  Constraint result;
+	  result.predicate = cons.predicate;
+	  for (auto it = cons.parameters.begin(); it != cons.parameters.end(); ++it)
+	    result.parameters.push_back(std::move(sub_forall(*it).for_all()));
+	  return result;
+	}
 
-          for (auto it = cons.begin(); it != cons.end(); ++it) {
-            Constraint current;
-            current.predicate = it->predicate;
-            for (auto jt = it->parameters.begin(); jt != it->parameters.end(); ++jt)
-              current.parameters.push_back(std::move(sub_forall(*jt).for_all()));
-            new_cons.insert(std::move(current));
-          }
-
-          return new_cons;
+        std::vector<Constraint> sub_constraints(const std::vector<Constraint>& cons) const {
+          std::vector<Constraint> result;
+          for (auto it = cons.begin(); it != cons.end(); ++it)
+	    result.push_back(sub_constraint(*it));
+          return result;
         }
 
       private:
@@ -848,6 +948,16 @@ namespace Psi {
 
     Type substitute(const Type& type, const std::unordered_map<Variable, Type>& substitutions) {
       return Substituter(substitutions).sub_forall(type.for_all());
+    }
+
+    Constraint constraint_substitute(const Constraint& cons, const std::unordered_map<Variable, Type>& substitutions) {
+      return Substituter(substitutions).sub_constraint(cons);
+    }
+
+    bool constraint_occurs_check(const Constraint& cons, const std::unordered_set<Variable>& variables) {
+      OccursChecker oc(true, variables);
+      oc.constraint(cons);
+      return oc.found;
     }
 
     namespace {
@@ -980,6 +1090,7 @@ namespace Psi {
       const char *for_all_str = u8"\u2200";
       const char *exists_str = u8"\u2203";
       const char *right_arrow_str = u8"\u2192";
+      const char *double_arrow_str = u8"\u21d2";
     }
 
     class TypePrinter::ScopeEnter {
@@ -1093,6 +1204,24 @@ namespace Psi {
 	print_variable(os, *it);
       }
       os << ".";
+
+      if (!q.constraints.empty()) {
+	bool first = true;
+	for (auto it = q.constraints.begin(); it != q.constraints.end(); ++it) {
+	  if (first) {
+	    first = false;
+	  } else {
+	    os << ", ";
+	  }
+	  os << m_term_namer.predicate_namer(it->predicate);
+	  for (auto jt = it->parameters.begin(); jt != it->parameters.end(); ++jt) {
+	    os << " ";
+	    print_forall(os, *jt, true);
+	  }
+	}
+
+	os << " " << double_arrow_str << " ";
+      }
     }
 
     void TypePrinter::print_variable(std::ostream& os, const Variable& v) {

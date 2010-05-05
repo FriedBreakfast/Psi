@@ -35,6 +35,7 @@ namespace {
   };
 
   struct Fixture {
+    Predicate A, B;
     Variable P, Q;
     Variable x, y;
 
@@ -46,6 +47,10 @@ namespace {
       // Variables which should be quantified
       x = Variable::new_();
       y = Variable::new_();
+
+      // Predicates
+      A = predicate({x}, {}); m_namer.predicates.insert({A, "A"});
+      B = predicate({x, y}, {}); m_namer.predicates.insert({B, "B"});
     }
 
     void check_apply(const Type& expected, const Type& function, const std::vector<Type>& parameters) {
@@ -55,13 +60,15 @@ namespace {
       if (result) {
         BOOST_CHECK_MESSAGE(*result == expected,
                             "\"" << print(*result, m_namer.namer) << "\" != \"" << print(expected, m_namer.namer) << "\"");
-      }                
+      }
     }
 
     void check_apply_fail(const Type& function, const std::vector<Type>& parameters) {
       auto result = do_apply(function, parameters);
       BOOST_CHECK(!result);
     }
+
+    TypeContext context;
 
   private:
     MapNamer m_namer;
@@ -83,7 +90,7 @@ namespace {
       for (auto it = parameters.begin(); it != parameters.end(); ++it, ++pos)
         parameters_map.insert({pos, *it});
 
-      auto result = function_apply(function, parameters_map);
+      auto result = function_apply(function, parameters_map, context);
 
       ParameterPrinter parameter_printer = {&parameters, &m_namer.namer};
       if (result) {
@@ -172,6 +179,18 @@ BOOST_AUTO_TEST_CASE(TestMoveForAll2) {
   check_apply(for_all({x}, x),
               for_all({x}, implies({Type(x)}, x)),
               {for_all({y}, y)});
+}
+
+BOOST_AUTO_TEST_CASE(TestConstraintFail) {
+  check_apply_fail(for_all({x}, implies({Type(x)}, P), {constraint(A, {Type(x)})}),
+		   {Type(P)});
+}
+
+BOOST_AUTO_TEST_CASE(TestConstraint) {
+  context.add(constraint(A, {Type(P)}));
+  check_apply(P,
+	      for_all({x}, implies({Type(x)}, P), {constraint(A, {Type(x)})}),
+	      {Type(P)});
 }
 
 BOOST_AUTO_TEST_SUITE_END()
