@@ -100,7 +100,7 @@ namespace Psi {
     template<typename ResultType, typename... Args>
     struct VisitImpl {
       template<typename Visitor>
-      static ResultType call(Visitor&& visitor, const void *storage, int which, int current=1) {
+      static ResultType call(Visitor&&, const void *, int, int) {
         throw std::logic_error("Invalid variant state");
       };
     };
@@ -108,7 +108,7 @@ namespace Psi {
     template<typename ResultType, typename First, typename... Args>
     struct VisitImpl<ResultType, First, Args...> {
       template<typename Visitor>
-      static ResultType call(Visitor&& visitor, void *storage, int which, int current=1) {
+      static ResultType call(Visitor&& visitor, void *storage, int which, int current) {
         if (which == current) {
           return visitor(*static_cast<First*>(storage));
         } else {
@@ -117,7 +117,7 @@ namespace Psi {
       };
 
       template<typename Visitor>
-      static ResultType call(Visitor&& visitor, const void *storage, int which, int current=1) {
+      static ResultType call(Visitor&& visitor, const void *storage, int which, int current) {
         if (which == current) {
           return visitor(*static_cast<const First*>(storage));
         } else {
@@ -254,7 +254,7 @@ namespace Psi {
 
     void clear() {
       if (m_which != 0) {
-        VariantDetail::VisitImpl<int, Args...>::call(VariantDetail::ClearVisitor(), &m_storage, m_which);
+        VariantDetail::VisitImpl<int, Args...>::call(VariantDetail::ClearVisitor(), &m_storage, m_which, 1);
         m_which = 0;
       }
     }
@@ -329,7 +329,7 @@ namespace Psi {
       if (m_which != rhs.m_which)
         return false;
 
-      return VariantDetail::VisitImpl<bool, Args...>::call(VariantDetail::EqualsVisitor{&rhs.m_storage}, &m_storage, m_which);
+      return VariantDetail::VisitImpl<bool, Args...>::call(VariantDetail::EqualsVisitor{&rhs.m_storage}, &m_storage, m_which, 1);
     }
 
     bool operator != (const Variant& rhs) const {
@@ -348,14 +348,14 @@ namespace Psi {
 
     void copy_assign(const Variant& rhs) {
       if (rhs.m_which != 0) {
-        VariantDetail::VisitImpl<int, Args...>::call(VariantDetail::CopyVisitor{&m_storage}, &rhs.m_storage, rhs.m_which);
+        VariantDetail::VisitImpl<int, Args...>::call(VariantDetail::CopyVisitor{&m_storage}, &rhs.m_storage, rhs.m_which, 1);
       }
       m_which = rhs.m_which;
     }
 
     void move_assign(Variant& rhs) {
       if (rhs.m_which != 0) {
-        VariantDetail::VisitImpl<int, Args...>::call(VariantDetail::MoveVisitor{&m_storage}, &rhs.m_storage, rhs.m_which);
+        VariantDetail::VisitImpl<int, Args...>::call(VariantDetail::MoveVisitor{&m_storage}, &rhs.m_storage, rhs.m_which, 1);
       }
       m_which = rhs.m_which;
     }
@@ -368,7 +368,7 @@ namespace Psi {
     template<typename ResultType, typename... Functors> ResultType visit_internal(Functors&&... fs) {
       VariantDetail::AutoVisitor<ResultType, Functors...> visitor(std::forward<Functors>(fs)...);
       if (m_which != 0) {
-        return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which);
+        return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which, 1);
       } else {
         return visitor(None());
       }
@@ -377,7 +377,7 @@ namespace Psi {
     template<typename ResultType, typename... Functors> ResultType visit_internal(Functors&&... fs) const {
       VariantDetail::AutoVisitor<ResultType, Functors...> visitor(std::forward<Functors>(fs)...);
       if (m_which != 0) {
-        return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which);
+        return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which, 1);
       } else {
         return visitor(None());
       }

@@ -188,9 +188,15 @@ BOOST_AUTO_TEST_CASE(TestConstraintFail) {
 
 BOOST_AUTO_TEST_CASE(TestConstraint) {
   context.add(constraint(A, {Type(P)}));
-  check_apply(P,
-	      for_all({x}, implies({Type(x)}, P), {constraint(A, {Type(x)})}),
+  check_apply(Q,
+	      for_all({x}, implies({Type(x)}, Q), {constraint(A, {Type(x)})}),
 	      {Type(P)});
+}
+
+BOOST_AUTO_TEST_CASE(TestBinaryConstraint) {
+  check_apply(for_all({x}, implies({Type(x)}, Q), {constraint(B, {Type(P), Type(x)})}),
+              for_all({x, y}, implies({Type(y), Type(x)}, Q), {constraint(B, {Type(y), Type(x)})}),
+              {Type(P)});
 }
 
 BOOST_AUTO_TEST_SUITE_END()

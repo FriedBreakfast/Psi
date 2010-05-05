@@ -402,28 +402,21 @@ namespace Psi {
       }
 
       bool Matcher::variable_apply(const Apply& pattern, const Variable& binding) {
-        auto it = std::find(m_quantified.begin(), m_quantified.end(), binding);
-        if (it != m_quantified.end()) {
-          auto jt = m_substitutions.find(binding);
-          if (jt != m_substitutions.end()) {
-            return forall(to_for_all(pattern), jt->second.for_all(), true);
-          } else {
-            auto binding_sub = m_substitutions.find(binding);
-            if (binding_sub == m_substitutions.end()) {
-              Maybe<Type> t = rename_apply(binding, pattern);
-              if (t) {
-                m_substitutions.insert({binding, std::move(*t)});
-                return true;
-              } else {
-                return false;
-              }
-            } else {
-              return forall(to_for_all(pattern), binding_sub->second.for_all(), true);
-            }
-          }
-        } else {
-          return false;
+        auto it = m_substitutions.find(binding);
+        if (it != m_substitutions.end()) {
+          return forall(to_for_all(pattern), it->second.for_all(), true);
         }
+
+        auto jt = std::find(m_quantified.begin(), m_quantified.end(), binding);
+        if (jt != m_quantified.end()) {
+          auto t = rename_apply(binding, pattern);
+          if (t) {
+            m_substitutions.insert({binding, std::move(*t)});
+            return true;
+          }
+        }
+
+        return false;
       }
 
       bool Matcher::variable(const Variable& pattern, const Variable& binding, bool exact) {
@@ -431,98 +424,64 @@ namespace Psi {
 	  return true;
 
 	bool pattern_q = false, binding_q = false, pattern_first;
-	for (auto it = m_quantified.begin(); it != m_quantified.end(); ++it) {
-	  if (*it == pattern) {
-	    pattern_q = true;
-	    pattern_first = true;
-	    binding_q = std::find(it, m_quantified.end(), binding) != m_quantified.end();
-	    break;
-	  } else if (*it == binding) {
-	    binding_q = true;
-	    pattern_first = false;
-	    pattern_q = std::find(it, m_quantified.end(), pattern) != m_quantified.end();
-	    break;
-	  }
-	}
+        for (auto it = m_quantified.begin(); it != m_quantified.end(); ++it) {
+          if (*it == pattern) {
+            pattern_q = true;
+            pattern_first = true;
+            binding_q = std::find(it, m_quantified.end(), binding) != m_quantified.end();
+          } else if (*it == binding) {
+            binding_q = true;
+            pattern_first = false;
+            pattern_q = std::find(it, m_quantified.end(), pattern) != m_quantified.end();
+          }
+        }
 
-	if (pattern_q) {
-	  if (binding_q) {
-	    auto pattern_sub = m_substitutions.find(pattern);
+        auto pattern_sub = m_substitutions.find(pattern);
+        auto binding_sub = m_substitutions.find(binding);
 
-	    if (pattern_sub == m_substitutions.end()) {
-	      if (pattern_first) {
-		auto binding_sub = m_substitutions.find(binding);
-		if (binding_sub == m_substitutions.end()) {
-		  m_substitutions.insert({binding, to_for_all(pattern)});
-		  return true;
-		} else {
-                  const Variable *binding_var = binding_sub->second.as_variable();
-                  if (binding_var && (*binding_var == pattern)) {
-                    return true;
-                  } else {
-                    auto sub = rename_forall(pattern, binding_sub->second.for_all());
-                    if (sub) {
-                      m_substitutions.insert({pattern, std::move(*sub)});
-                      return true;
-                    } else {
-                      return false;
-                    }
-                  }
-		}
-	      } else {
-		m_substitutions.insert({pattern, to_for_all(binding)});
-		return true;
-	      }
-	    } else {
-	      auto binding_sub = m_substitutions.find(binding);
-	      if (binding_sub == m_substitutions.end()) {
-		if (pattern_first) {
-		  m_substitutions.insert({binding, to_for_all(pattern)});
-		  return true;
-		} else {
-                  const Variable *pattern_var = pattern_sub->second.as_variable();
-                  if (pattern_var && (*pattern_var == binding)) {
-                    return true;
-                  } else {
-                    auto sub = rename_forall(binding, pattern_sub->second.for_all());
-                    if (sub) {
-                      m_substitutions.insert({binding, std::move(*sub)});
-                      return true;
-                    } else {
-                      return false;
-                    }
-                  }
-		}
-	      } else {
-		return forall(pattern_sub->second.for_all(), binding_sub->second.for_all(), exact);
-	      }
-	    }
-	  } else {
-	    auto pattern_sub = m_substitutions.find(pattern);
-	    if (pattern_sub != m_substitutions.end()) {
-	      auto pattern_sub_var = pattern_sub->second.as_variable();
-	      return pattern_sub_var && (*pattern_sub_var == binding);
-	    } else {
-	      m_substitutions.insert({pattern, binding});
-	      return true;
-	    }
-	  }
-	} else {
-	  if (binding_q) {
-	    auto binding_sub = m_substitutions.find(binding);
-	    if (binding_sub != m_substitutions.end()) {
-	      auto binding_sub_var = binding_sub->second.as_variable();
-	      return binding_sub_var && (*binding_sub_var == pattern);
-	    } else {
-	      m_substitutions.insert({binding, pattern});
-	      return true;
-	    }
-	  } else {
-	    // Neither quantified - since pattern==binding already
-	    // checked, this is a mismatch.
-	    return false;
-	  }
-	}
+        if (pattern_sub != m_substitutions.end()) {
+          if (binding_sub != m_substitutions.end()) {
+            return forall(pattern_sub->second.for_all(), binding_sub->second.for_all(), exact);
+          } else if (binding_q) {
+            if (pattern_first) {
+              m_substitutions.insert({binding, to_for_all(pattern)});
+              return true;
+            } else {
+              auto sub = rename_forall(binding, pattern_sub->second.for_all());
+              if (sub) {
+                m_substitutions.insert({binding, std::move(*sub)});
+                return true;
+              }
+            }
+          } else {
+            return forall(pattern_sub->second.for_all(), to_for_all(binding), exact);
+          }
+        } else if (pattern_q) {
+          if (!pattern_first || !binding_q) {
+            m_substitutions.insert({pattern, to_for_all(binding)});
+            return true;
+          } else {
+            if (binding_sub != m_substitutions.end()) {
+              auto sub = rename_forall(pattern, binding_sub->second.for_all());
+              if (sub) {
+                m_substitutions.insert({pattern, std::move(*sub)});
+                return true;
+              }
+            } else /*(pattern_first && binding_q)*/ {
+              m_substitutions.insert({binding, to_for_all(pattern)});
+              return true;
+            }
+          }
+        } else {
+          if (binding_sub != m_substitutions.end()) {
+            return forall(to_for_all(pattern), binding_sub->second.for_all(), exact);
+          } else if (binding_q) {
+            m_substitutions.insert({binding, to_for_all(pattern)});
+            return true;
+          }
+        }
+
+        return false;
       }
 
       bool Matcher::apply(const Apply& pattern, const Apply& binding) {
@@ -674,16 +633,16 @@ namespace Psi {
       }
     }
 
-    Type::Type(Variable var) : m_for_all({{}, {{}, {{}, std::move(var)}}}) {
+    Type::Type(Variable var) : m_for_all({{{}, {}}, {{}, {{{}, {}}, std::move(var)}}}) {
     }
 
-    Type::Type(Apply apply) : m_for_all({{}, {{}, {{}, std::move(apply)}}}) {
+    Type::Type(Apply apply) : m_for_all({{{}, {}}, {{}, {{{}, {}}, std::move(apply)}}}) {
     }
 
-    Type::Type(Exists exists) : m_for_all({{}, {{}, std::move(exists)}}) {
+    Type::Type(Exists exists) : m_for_all({{{}, {}}, {{}, std::move(exists)}}) {
     }
 
-    Type::Type(Implies implies) : m_for_all({{}, std::move(implies)}) {
+    Type::Type(Implies implies) : m_for_all({{{}, {}}, std::move(implies)}) {
     }
 
     Type::Type(ForAll for_all) : m_for_all(std::move(for_all)) {
@@ -759,7 +718,7 @@ namespace Psi {
       Matcher matcher2;
       for (auto it = function.for_all().quantifier.constraints.begin();
 	   it != function.for_all().quantifier.constraints.end(); ++it) {
-	Constraint c = constraint_substitute(c, substitutions);
+	Constraint c = constraint_substitute(*it, substitutions);
 	if (!constraint_occurs_check(c, quantified_used)) {
 	  // Need to ensure this constraint is satisfied now since it
 	  // is not dependent on any remaining quantified variables
@@ -821,7 +780,7 @@ namespace Psi {
 	if (fa.quantifier.variables.empty() && fa.term.lhs.empty()) {
 	  Exists ex2 = renamer.rename_exists(fa.term.rhs);
 	  merge_quantifier(result.quantifier, ex2.quantifier);
-	  result.term.lhs.push_back(ForAll({{}, {{}, {{}, std::move(ex2.term)}}}));
+	  result.term.lhs.push_back(ForAll({{{}, {}}, {{}, {{{}, {}}, std::move(ex2.term)}}}));
 	} else {
 	  result.term.lhs.push_back(renamer.rename_forall(fa));
 	}
