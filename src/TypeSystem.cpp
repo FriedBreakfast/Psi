@@ -21,8 +21,6 @@ namespace Psi {
         void quantifier(const Quantifier& quantifier);
 
         std::unordered_set<Variable> result;
-
-      private:
       };
 
       void OccursChecker::forall(const ForAll& type) {
@@ -40,7 +38,7 @@ namespace Psi {
       void OccursChecker::quantifier(const Quantifier& quantifier) {
         for (auto it = quantifier.constraints.begin(); it != quantifier.constraints.end(); ++it)
 	  for (auto jt = it->parameters.begin(); jt != it->parameters.end(); ++jt)
-	    atom(*jt);
+	    forall(*jt);
       }
 
       void OccursChecker::atom(const Atom& atom) {
@@ -85,14 +83,56 @@ namespace Psi {
           }
 
           ~StackEnter() {
-            for (auto it = m_it; it != m_matcher->m_quantified.end(); ++it)
-              m_matcher->m_substitutions.erase(*it);
-            m_matcher->m_quantified.erase(m_it, m_matcher->m_quantified.end());
+            try {
+              for (auto it = m_it; it != m_matcher->m_quantified.end(); ++it)
+                m_matcher->m_substitutions.erase(*it);
+              m_matcher->m_quantified.erase(m_it, m_matcher->m_quantified.end());
+            } catch (...) {
+            }
           }
 
         private:
           Matcher *m_matcher;
           std::list<Variable>::iterator m_it;
+        };
+
+        class RollbackEnter {
+        public:
+          RollbackEnter(Matcher *matcher) : m_matcher(matcher) {
+            update();
+          }
+
+          ~RollbackEnter() {
+            try {
+              reset();
+            } catch (...) {
+            }
+          }
+
+          void reset() const {
+            m_matcher->m_quantified.assign(m_quantified.begin(), m_quantified.end());
+            for (auto it = m_matcher->m_substitutions.begin(); it != m_matcher->m_substitutions.end();) {
+              auto jt = m_substitution_keys.find(it->first);
+              if (jt == m_substitution_keys.end()) {
+                it = m_matcher->m_substitutions.erase(it);
+              } else {
+                ++it;
+              }
+            }
+          }
+
+          void commit() {
+            m_quantified.assign(m_matcher->m_quantified.begin(), m_matcher->m_quantified.end());
+            m_substitutions_keys.clear();
+            for (auto it = m_matcher->m_substitutions.begin(); it != m_matcher->m_substitutions.end(); ++it)
+              m_substitutions_keys.insert(it->first);
+          }
+
+        private:
+          Matcher *m_matcher;
+          bool m_committed;
+          std::unordered_set<Variable> m_substitution_keys;
+          std::vector<Variable> m_quantified;
         };
 
         class RenameEnter {
@@ -106,8 +146,11 @@ namespace Psi {
           }
 
           ~RenameEnter() {
-            for (auto it = m_quantifier->variables.begin(); it != m_quantifier->variables.end(); ++it)
-              m_matcher->m_rename_map.erase(*it);
+            try {
+              for (auto it = m_quantifier->variables.begin(); it != m_quantifier->variables.end(); ++it)
+                m_matcher->m_rename_map.erase(*it);
+            } catch (...) {
+            }
           }
 
           Quantifier new_quantifier;
@@ -167,6 +210,9 @@ namespace Psi {
 
         StackEnter scope(this, binding.quantifier);
 
+        if (!quantifier(pattern.quantifier, binding.quantifier, exact))
+          return false;
+
         for (auto it = pattern.term.lhs.begin(), jt = binding.term.lhs.begin();
              it != pattern.term.lhs.end(); ++it, ++jt) {
           if (!forall(*jt, *it, exact))
@@ -187,6 +233,9 @@ namespace Psi {
           return false;
 
         StackEnter scope(this, binding.quantifier);
+
+        if (!quantifier(pattern.quantifier, binding.quantifier, exact))
+          return false;
 
         if (!pattern.term.visit2
           (
@@ -219,7 +268,49 @@ namespace Psi {
       }
 
       bool Matcher::quantifier(const Quantifier& pattern, const Quantifier& binding, bool exact) {
-	
+        if (exact && (pattern.constraints.size() != binding.constraints.size()))
+          return false;
+
+        RollbackEnter rb(this);
+
+        for (auto it = pattern.constraints.begin(); it != pattern.constraints.end(); ++it) {
+          bool found = false;
+          for (auto jt = binding.constraints.begin(); jt != binding.constraints.end(); ++jt) {
+            rb.reset();
+
+            if (exact) {
+              if (it->predicate != jt->predicate)
+                continue;
+
+              assert(it->parameters.size() == jt->parameters.size());
+
+              bool good = true;
+              for (auto kt = it->parameters.begin(), lt = jt->parameters.begin(); kt != it->parameters.end(); ++jt, ++kt) {
+                if (!forall(*kt, *lt, true)) {
+                  good = false;
+                  break;
+                }
+              }
+
+              if (good) {
+                found = true;
+                break;
+              }
+            } else {
+            }
+          }
+
+          if (found)
+            rb.commit();
+          else
+            return false;
+        }
+
+        return true;
+      }
+
+      bool Matcher::quantifier_search(RollbackEnter *rollback, const Quantifier& pattern) {
+        
       }
 
       bool Matcher::variable_apply(const Apply& pattern, const Variable& binding) {
@@ -530,7 +621,7 @@ namespace Psi {
 	      Constraint c;
 	      c.predicate = it->predicate;
 	      for (auto jt = it->parameters.begin(); jt != it->parameters.end(); ++jt) {
-		c.parameters.push_back(std::move(m_self->rename_atom(*jt)));
+		c.parameters.push_back(std::move(m_self->rename_forall(*jt)));
 	      }
 	      new_quantifier.constraints.insert(std::move(c));
 	    }

@@ -22,6 +22,7 @@ namespace Psi {
     struct Implies;
     struct ForAll;
     class Type;
+    class Predicate;
 
     template<typename T>
     struct ContextHash : std::unary_function<T, std::size_t> {
@@ -41,6 +42,7 @@ namespace std {
   template<> struct hash<Psi::TypeSystem::Implies> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Implies> {};
   template<> struct hash<Psi::TypeSystem::ForAll> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::ForAll> {};
   template<> struct hash<Psi::TypeSystem::Type> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Type> {};
+  template<> struct hash<Psi::TypeSystem::Predicate> : Psi::TypeSystem::ContextHash<Psi::TypeSystem::Predicate> {};
 }
 
 namespace Psi {
@@ -79,11 +81,50 @@ namespace Psi {
 
     struct VariableTag;
     struct ConstructorTag;
-    struct PredicateTag;
 
     typedef Identifier<VariableTag> Variable;
     typedef Identifier<ConstructorTag> Constructor;
-    typedef Identifier<PredicateTag> Predicate;
+
+    struct Constraint;
+    struct Variable;
+
+    struct Quantifier {
+      std::unordered_set<Constraint> constraints;
+      std::unordered_set<Variable> variables;
+    };
+
+    class Predicate {
+    public:
+      Predicate() {
+      }
+
+      Predicate new_(Quantifier quantifier) {
+        return {std::make_shared(std::move(quantifier))};
+      }
+
+      const Quantifier& quantifier() const {
+        return m_quantifier;
+      }
+
+      bool operator == (const Predicate& rhs) const {
+        return m_quantifier == rhs.m_quantifier;
+      }
+
+      bool operator != (const Predicate& rhs) const {
+        return !(*this == rhs);
+      }
+
+      friend std::size_t hash(const Predicate& p) {
+        return std::hash<void*>()(self.m_quantifier.get());
+      }
+
+    private:
+      std::shared_ptr<const Quantifier> m_quantifier;
+
+      Predicate(std::shared_ptr<const Quantifier> quantifier)
+        : m_quantifier(std::move(quantifier)) {
+      }
+    };
 
     struct ForAll;
 
@@ -96,12 +137,7 @@ namespace Psi {
 
     struct Constraint {
       Predicate predicate;
-      std::vector<Atom> parameters;
-    };
-
-    struct Quantifier {
-      std::unordered_set<Constraint> constraints;
-      std::unordered_set<Variable> variables;
+      std::vector<ForAll> parameters;
     };
 
     struct Exists {
