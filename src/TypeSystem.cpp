@@ -423,7 +423,7 @@ namespace Psi {
 	if (pattern == binding)
 	  return true;
 
-	bool pattern_q = false, binding_q = false, pattern_first;
+	bool pattern_q = false, binding_q = false, pattern_first = false;
         for (auto it = m_quantified.begin(); it != m_quantified.end(); ++it) {
           if (*it == pattern) {
             pattern_q = true;
@@ -591,7 +591,7 @@ namespace Psi {
 	}
 
         // Should never reach here since var should be in m_quantified
-        assert(false);
+        std::abort();
       }
 
       Maybe<Type> Matcher::rename_apply(const Variable& var, const Apply& type) {
@@ -663,6 +663,20 @@ namespace Psi {
           m_for_all.term.lhs.empty() &&
           m_for_all.term.rhs.quantifier.variables.empty()) {
         return m_for_all.term.rhs.term.get<Variable>();
+      }
+
+      return 0;
+    }
+
+    const Constructor* Type::as_primitive() const {
+      if (m_for_all.quantifier.variables.empty() &&
+          m_for_all.term.lhs.empty() &&
+          m_for_all.term.rhs.quantifier.variables.empty()) {
+        const Apply *ap = m_for_all.term.rhs.term.get<Apply>();
+        if (ap) {
+          if (ap->parameters.empty())
+            return &ap->constructor;
+        }
       }
 
       return 0;

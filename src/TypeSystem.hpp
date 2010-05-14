@@ -177,11 +177,11 @@ namespace Psi {
     std::size_t hash(const Implies&);
     std::size_t hash(const ForAll&);
 
-    bool operator != (const Apply& lhs, const Apply& rhs) {return !(lhs == rhs);}
-    bool operator != (const Constraint& lhs, const Constraint& rhs) {return !(lhs == rhs);}
-    bool operator != (const Exists& lhs, const Exists& rhs) {return !(lhs == rhs);}
-    bool operator != (const Implies& lhs, const Implies& rhs) {return !(lhs == rhs);}
-    bool operator != (const ForAll& lhs, const ForAll& rhs) {return !(lhs == rhs);}
+    inline bool operator != (const Apply& lhs, const Apply& rhs) {return !(lhs == rhs);}
+    inline bool operator != (const Constraint& lhs, const Constraint& rhs) {return !(lhs == rhs);}
+    inline bool operator != (const Exists& lhs, const Exists& rhs) {return !(lhs == rhs);}
+    inline bool operator != (const Implies& lhs, const Implies& rhs) {return !(lhs == rhs);}
+    inline bool operator != (const ForAll& lhs, const ForAll& rhs) {return !(lhs == rhs);}
 
     class Type {
     public:
@@ -194,6 +194,9 @@ namespace Psi {
 
       bool is_variable();
       const Variable* as_variable() const;
+
+      const Constructor* as_primitive() const;
+
       /**
        * \brief Find which of the specified variables are used in this
        * type.
@@ -302,7 +305,7 @@ namespace Psi {
       const T *m_t;
     };
 
-    BoundTypePrinter<Type> print(const Type& ty, TermNamer term_namer) {
+    inline BoundTypePrinter<Type> print(const Type& ty, TermNamer term_namer) {
       return BoundTypePrinter<Type>(TypePrinter(std::move(term_namer)), &ty);
     }
   }
