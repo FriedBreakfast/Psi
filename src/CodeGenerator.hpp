@@ -5,12 +5,23 @@
 
 namespace Psi {
   namespace CodeGenerator {
-    class Function {
+    class Type {
+    };
+
+    class ValueInterface {
+    public:
+    };
+
+    typedef std::shared_ptr<ValueInterface> Value;
+
+    class FunctionType {
     public:
       enum class ArgumentMode {
         InValue,
         InReference,
-        InOut
+	InOut,
+	Out,
+	OutReference
       };
 
       unsigned result_count() const {return m_result_count;}
@@ -20,90 +31,63 @@ namespace Psi {
       unsigned m_result_count;
     };
 
-    class Value {
-    private:
-      friend class PhiNode;
-      friend class BlockGenerator;
+    class InstructionInterface;
+    typedef std::shared_ptr<InstructionInterface> Instruction;
 
-      struct Data;
-      std::shared_ptr<Data> m_data;
-
-      Value(std::shared_ptr<Data> data) : m_data(std::move(data)) {}
-    };
-
-    class PhiNode;
-
-    class Block {
-    private:
-      friend class PhiNode;
-      friend class BlockGenerator;
-
-      struct Data;
-      std::shared_ptr<Data> m_data;
-    };
-
-    class PhiNode {
+    class FunctionCall {
     public:
-      void merge(const Block& incoming, const Value& value);
-
-      /**
-       * Get the value associated with this Phi node. This also fixes
-       * the result type of this node, although further values may be
-       * merged provided they are compatible with the output type.
-       */
-      const Value& value();
-
-    private:
-      friend class BlockGenerator;
-      PhiNode(Block block);
-
-      struct Data;
-      std::shared_ptr<Data> m_data;
+      std::shared_ptr<Instruction> apply();
     };
 
-    class BlockGenerator {
+    class Function {
     public:
-      BlockGenerator(Block block);
-      ~BlockGenerator();
-
-      /**
-       * Create a Phi node at the start of this block.
-       */
-      PhiNode phi();
-
-      /**
-       * Create a function call instruction.
-       */
-      std::vector<Value> invoke(const Function& function, const std::vector<Value>& arguments);
-
-      /**
-       * Destroy an object. The specified value may no longer be used
-       * after calling this function.
-       */
-      void destroy(Value& value);
-
-      /**
-       * Create a branch instruction. No more instructions may be
-       * inserted into this block after this has been called.
-       *
-       * \param cond Condition on which to branch. This must be of
-       * type \c bool.
-       * \param if_true Block to jump to if \c cond is true.
-       * \param if_false Block to jump to if \c cond is false.
-       */
-      void branch(const Value& cond, Block& if_true, Block& if_false);
-
-      /**
-       * Create a jump instruction. No more instructions may be
-       * inserted into the block after this has been called.
-       *
-       * \param target Block to jump to.
-       */
-      void goto_(Block& target);
+      Value value();
+      Block start_block();
+      const std::vector<Value>& parameters();
 
     private:
-      Block m_block;
     };
+
+    Maybe<FunctionCall> call(const Value& function, const std::vector<Value>& parameters);
+
+    class BlockInterface;
+    typedef std::shared_ptr<BlockInterface> Block;
+
+    class BlockInterface {
+    public:
+      Value phi(const Type& type);
+      void add_incoming(const Block& incoming, const std::unordered_map<Value, Value>& phi_values);
+      void append(const Instruction& insn);
+      void destroy(const Value& value);
+    };
+
+    /**
+     * Create a branch instruction. No more instructions may be
+     * inserted into this block after this has been called.
+     *
+     * \param cond Condition on which to branch. This must be of
+     * type \c bool.
+     * \param if_true Block to jump to if \c cond is true.
+     * \param if_false Block to jump to if \c cond is false.
+     */
+    Instruction branch_instruction(const Value& cond, const Block& if_true, const Block& if_false);
+
+    /**
+     * Create a jump instruction. No more instructions may be
+     * inserted into the block after this has been called.
+     *
+     * \param target Block to jump to.
+     */
+    Instruction goto_instruction(const Block& target);
+
+    /**
+     * Create a call instruction.
+     */
+    Instruction call_instruction(const Value& function, const std::vector<Value>& parameters);
+
+    Maybe<Instruction> call_instruction_maybe(const Value& function, const std::vector<Value>& parameters);
+
+    Instruction destroy_instruction(const Value& value);
 
     Value constant_integer(const std::string& num);
     Value constant_float(float value);
