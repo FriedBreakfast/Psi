@@ -85,6 +85,36 @@ namespace Psi {
       }
     };
 
+    template<typename ResultType, typename Arg, typename Functors, typename Enable=void>
+    struct SelectDerefVisitor {
+      static ResultType call(Arg&& arg, const Functors& functors) {
+        static_assert(!Functors::empty, "No matching functor for given variant entry type");
+        return SelectDerefVisitor<ResultType, Arg, typename Functors::RestType>::call(std::forward<Arg>(arg), functors.rest);
+      }
+    };
+
+    template<typename ResultType, typename Arg, typename Head, typename... Rest>
+    struct SelectDerefVisitor<ResultType, Arg, FunctorList<Head, Rest...>,
+			      typename EnableWrapper<decltype(std::declval<Head>()(*std::declval<Arg>()))>::type> {
+      static ResultType call(Arg&& arg, const FunctorList<Head, Rest...>& functors) {
+        return functors.head(*std::forward<Arg>(arg));
+      }
+    };
+
+    template<typename ResultType, typename... Functors>
+    struct AutoDerefVisitor {
+      typedef FunctorList<Functors...> FunctorsType;
+      FunctorsType functors;
+
+      AutoDerefVisitor(Functors&&... functors_) : functors(std::forward<Functors>(functors_)...) {
+      }
+
+      template<typename T>
+      ResultType operator() (T&& arg) {
+        return SelectDerefVisitor<ResultType, T, FunctorsType>::call(std::forward<T>(arg), functors);
+      }
+    };
+
     struct AnyConvertible {
       template<typename T> operator T ();
     };
@@ -296,6 +326,16 @@ namespace Psi {
       return visit_internal<ResultType>(std::forward<Functors>(fs)..., [] (None) -> ResultType {throw std::runtime_error("visited empty variant");});
     }
 
+    template<typename... Functors> typename VariantDetail::SelectVisitorResult<Functors...>::type visit2_deref(Functors&&... fs) {
+      typedef typename VariantDetail::SelectVisitorResult<Functors...>::type ResultType;
+      return visit_internal_deref<ResultType>(std::forward<Functors>(fs)..., [] (None) -> ResultType {throw std::runtime_error("visited empty variant");});
+    }
+
+    template<typename... Functors> typename VariantDetail::SelectVisitorResult<Functors...>::type visit2_deref(Functors&&... fs) const {
+      typedef typename VariantDetail::SelectVisitorResult<Functors...>::type ResultType;
+      return visit_internal_deref<ResultType>(std::forward<Functors>(fs)..., [] (None) -> ResultType {throw std::runtime_error("visited empty variant");});
+    }
+
     template<typename T, typename... Functors> T visit_default(T def, Functors&&... fs) {
       return visit_internal<T>(std::forward<Functors>(fs)..., VariantDetail::DefaultVisitor<T>{std::move(def)});
     }
@@ -376,6 +416,24 @@ namespace Psi {
 
     template<typename ResultType, typename... Functors> ResultType visit_internal(Functors&&... fs) const {
       VariantDetail::AutoVisitor<ResultType, Functors...> visitor(std::forward<Functors>(fs)...);
+      if (m_which != 0) {
+        return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which, 1);
+      } else {
+        return visitor(None());
+      }
+    }
+
+    template<typename ResultType, typename... Functors> ResultType visit_internal_deref(Functors&&... fs) const {
+      VariantDetail::AutoDerefVisitor<ResultType, Functors...> visitor(std::forward<Functors>(fs)...);
+      if (m_which != 0) {
+        return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which, 1);
+      } else {
+        return visitor(None());
+      }
+    }
+
+    template<typename ResultType, typename... Functors> ResultType visit_internal_deref(Functors&&... fs) const {
+      VariantDetail::AutoDerefVisitor<ResultType, Functors...> visitor(std::forward<Functors>(fs)...);
       if (m_which != 0) {
         return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which, 1);
       } else {

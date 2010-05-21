@@ -2,61 +2,94 @@
 #define HPP_PSI_CODEGENERATOR
 
 #include "TypeSystem.hpp"
+#include "Variant.hpp"
 
 namespace Psi {
   namespace CodeGenerator {
-    class Type {
+    class TemplateType;
+    class Value;
+    class Context;
+
+    class ParameterTypeTag;
+    typedef std::shared_ptr<ParameterTypeTag> ParameterType;
+
+    typedef Variant<ParameterType, ConcreteType> Type;
+
+    class ConcreteType {
+    public:
+      const std::vector<Type>& parameters();
+      const std::shared_ptr<TemplateType> type();
+
+    private:
+      struct Data {
+	std::vector<Type> m_parameters;
+	std::shared_ptr<TemplateType> m_type;
+      };
     };
 
-    class ValueInterface {
+    class TemplateType {
     public:
+      /// To get dynamic casts
+      virtual ~TemplateType();
+
+      virtual std::shared_ptr<Instruction> specialize(const Context& context,
+						      const std::vector<Type>& parameters,
+						      const std::shared_ptr<Value>& value) = 0;
+
+    private:
+      std::vector<std::shared_ptr<ParameterType> > m_parameters;
     };
 
-    typedef std::shared_ptr<ValueInterface> Value;
-
-    class FunctionType {
+    class FunctionType : TemplateType {
     public:
-      enum class ArgumentMode {
+      enum class InMode {
         InValue,
         InReference,
 	InOut,
+      };
+
+      enum class OutMode {
 	Out,
 	OutReference
       };
 
-      unsigned result_count() const {return m_result_count;}
-
     private:
-      std::vector<ArgumentMode> m_modes;
-      unsigned m_result_count;
+      std::vector<std::pair<InMode, Type> > m_in_arguments;
+      std::vector<std::pair<OutMode, Type> > m_out_arguments;
     };
 
-    class InstructionInterface;
-    typedef std::shared_ptr<InstructionInterface> Instruction;
+    class StructTemplateType : public TemplateType {
+    private:
+      bool m_initialized;
+      std::vector<Type> m_members;
+    };
 
-    class FunctionCall {
-    public:
-      std::shared_ptr<Instruction> apply();
+    class UnionTemplateType : public TemplateType {
+    private:
+      bool m_initialized;
+      std::vector<Type> m_members;
+    };
+
+    class Context {
+    private:
+      /// Value holds size, alignment and destructors for this type.
+      std::unordered_map<ParameterType, std::shared_ptr<Value> > m_parameter_types;
     };
 
     class Function {
     public:
-      Value value();
-      Block start_block();
-      const std::vector<Value>& parameters();
+      std::shared_ptr<Value> value();
+      std::shared_ptr<Block> start_block();
+      const std::vector<std::shared_ptr<Value> >& parameters();
 
     private:
     };
 
-    Maybe<FunctionCall> call(const Value& function, const std::vector<Value>& parameters);
-
-    class BlockInterface;
-    typedef std::shared_ptr<BlockInterface> Block;
-
-    class BlockInterface {
+    class Block {
     public:
-      Value phi(const Type& type);
-      void add_incoming(const Block& incoming, const std::unordered_map<Value, Value>& phi_values);
+      std::shared_ptr<Value> phi(const std::shared_ptr<Type>& type);
+      void add_incoming(const std::shared_ptr<Block>& incoming,
+			const std::unordered_map<std::shared_ptr<Value>, std::shared_ptr<Value> >& phi_values);
       void append(const Instruction& insn);
       void destroy(const Value& value);
     };
@@ -70,7 +103,7 @@ namespace Psi {
      * \param if_true Block to jump to if \c cond is true.
      * \param if_false Block to jump to if \c cond is false.
      */
-    Instruction branch_instruction(const Value& cond, const Block& if_true, const Block& if_false);
+    std::shared_ptr<Instruction> branch_instruction(const Value& cond, const Block& if_true, const Block& if_false);
 
     /**
      * Create a jump instruction. No more instructions may be
@@ -78,20 +111,20 @@ namespace Psi {
      *
      * \param target Block to jump to.
      */
-    Instruction goto_instruction(const Block& target);
+    std::shared_ptr<Instruction> goto_instruction(const Block& target);
 
     /**
      * Create a call instruction.
      */
-    Instruction call_instruction(const Value& function, const std::vector<Value>& parameters);
+    std::shared_ptr<Instruction> call_instruction(const Value& function, const std::vector<Value>& parameters);
 
-    Maybe<Instruction> call_instruction_maybe(const Value& function, const std::vector<Value>& parameters);
+    std::shared_ptr<Instruction> call_instruction_maybe(const Value& function, const std::vector<Value>& parameters);
 
-    Instruction destroy_instruction(const Value& value);
+    std::shared_ptr<Instruction> destroy_instruction(const Value& value);
 
-    Value constant_integer(const std::string& num);
-    Value constant_float(float value);
-    Value constant_double(double value);
+    std::shared_ptr<Value> constant_integer(const std::string& num);
+    std::shared_ptr<Value> constant_float(float value);
+    std::shared_ptr<Value> constant_double(double value);
   }
 }
 
