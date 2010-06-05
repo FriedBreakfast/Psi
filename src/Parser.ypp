@@ -1,0 +1,577 @@
+/* -*- mode: c++ -*- */
+
+%{
+#include <cstring>
+#include <memory>
+
+#include "Parser.hpp"
+#include "Variant.hpp"
+
+/**
+ * the semantic value type for the bison parser. this is also needed by the scanner
+ * because it will receive this as a parameter.
+ */
+#define YYSTYPE ParserValue
+
+/**
+ * the location type used by the parser and scanner.
+ */
+#define YYLTYPE llang::parser::source_location
+
+/**
+ * I previously made this zero - it must be at least one because
+ * the generated code assumes it can access the lowest element
+ * of the stack before parsing begins.
+ *
+ * This grammar has a maximum depth, so I should be able to work that
+ * out, set this value and everything will "just work". But that seems
+ * like a lot of effort.
+ */
+#define YYINITDEPTH 50
+
+/**
+ * I need to use yytype_int16 before it is defined in the generated
+ * source code, so this ensures it has the same type as the one I'm
+ * using.
+ */
+#define YYTYPE_INT16 short int
+
+/**
+ * Try to ensure that no memory is allocated on the heap by bison
+ */
+#define YYMALLOC(x)
+#define YYFREE(x)
+#define YYSTACK_USE_ALLOCA 1
+
+using namespace Psi::Parser;
+
+namespace {
+  /**
+   * A parser semantic value. Implements a named union type on top of
+   * #Variant, so we get exception safety, as well as type checking
+   * from bison (via a bit of a syntax abuse in the parser).
+   */
+  class ParserValue {
+  public:
+    // this macro only works for types without commas in them
+#define PARSER_VALUE(name, type)			     \
+    type& name() const {return *m_value.get<type>(m_value);} \
+    void name(const type& value) {m_value = value;}
+
+    PARSER_VALUE(expression, Expression)
+    PARSER_VALUE(macro_element, MacroElement)
+    PARSER_VALUE(statement_list, StatementList)
+    PARSER_VALUE(statement, Statement)
+    PARSER_VALUE(argument_declaration, ArgumentDeclaration)
+    PARSER_VALUE(argument_declaration_list, std::vector<ArgumentDeclaration>)
+    PARSER_VALUE(expression_list, std::vector<Expression>)
+    PARSER_VALUE(macro_element_list, std::vector<MacroElement>)
+    PARSER_VALUE(statement_list, std::vector<Statement>)
+    PARSER_VALUE(identifier_list, std::vector<Identifier>)
+    PARSER_VALUE(binary_operator, BinaryOperator)
+    PARSER_VALUE(unary_operator, UnaryOperator)
+    PARSER_VALUE(identifier, Identifier)
+    PARSER_VALUE(text, SourceLocation)
+
+#undef PARSER_VALUE
+
+  private:
+    typedef Variant<Expression,
+		    MacroElement,
+		    Statement,
+		    StatementList,
+		    ArgumentDeclaration,
+		    std::vector<Statement>,
+		    std::vector<ArgumentDeclaration>,
+		    std::vector<std::shared_ptr<Expression> >,
+		    std::vector<MacroElement>,
+		    std::vector<Identifier>,
+		    BinaryOperator,
+		    UnaryOperator,
+		    Identifier,
+		    SourceLocation> InternalStorageType;
+
+    InternalStorageType m_value;
+  };
+
+  struct ParserInternalArguments
+  {
+    ParserInternalArguments(int mode_token_,
+                              const source_location& text_)
+      : mode_token(mode_token_),
+        text(text_),
+        current(text.begin.base()),
+        end(text.end.base()) {
+    }
+
+    typedef Variant<StatementList,
+		    ArgumentList,
+		    ArgumentDeclarationList,
+		    FunctionArgumentsDeclaration> ResultType;
+
+    int mode_token;
+    source_location text;
+    std::vector<char>::const_iterator current, end;
+
+    result_type result;
+    std::string error_message;
+
+    /**
+     * the smallest initial number of elements a dynamically created stack (using the
+     * containers below) will be setup to hold. 
+     */
+    static const std::size_t minimum_dynamic_stack = 256;
+
+    /**
+     * the ratio used to decide the new dynamic stack size from the old. could be
+     * any number >1 in theory, but non-integers would require changing the code.
+     */
+    static const int resize_ratio = 2;
+
+
+    void overflow(YYTYPE_INT16 **yysp, std::size_t yyssize,
+		  YYSTYPE **yyvp, std::size_t yyvsize,
+		  YYLTYPE **yylp, std::size_t yylsize,
+		  std::size_t *yystacksize) {
+
+      bool copy_stacks = false;
+      std::size_t new_size;
+
+      /* apparently these don't hold. I haven't investigated further */
+      /*assert(*yystacksize * sizeof(boost::int16_t) == yyssize);
+        assert(*yystacksize * sizeof(YYSTYPE) == yyvsize);
+        assert(*yystacksize * sizeof(YYLTYPE) == yylsize);*/
+
+      if (!m_parser_state_stack.empty()) {
+        assert(&m_parser_state_stack[0] == *yysp);
+        assert(!m_parser_value_stack.empty() && (&m_parser_value_stack[0] == *yyvp));
+        assert(!m_parser_location_stack.empty() && (&m_parser_location_stack[0] == *yylp));
+
+        assert(*yystacksize == m_parser_state_stack.size());
+        assert(*yystacksize == m_parser_value_stack.size());
+        assert(*yystacksize == m_parser_location_stack.size());
+
+        new_size = m_parser_state_stack.size() * 2;
+      } else {
+        copy_stacks = true;
+        new_size = std::max(std::max(*yystacksize * 2, yyssize * 2 / sizeof(YYTYPE_INT16)), ParserInternalArguments::minimum_dynamic_stack);
+      }
+
+      m_parser_state_stack.resize(new_size);
+      m_parser_value_stack.resize(new_size);
+      m_parser_location_stack.resize(new_size);
+
+      if (copy_stacks) {
+        std::move(*yysp, *yysp + yyssize / sizeof(**yysp), m_parser_state_stack.begin());
+        std::move(*yyvp, *yyvp + yyvsize / sizeof(**yyvp), m_parser_value_stack.begin());
+        std::move(*yylp, *yylp + yylsize / sizeof(**yylp), m_parser_location_stack.begin());
+      }
+
+      *yysp = &m_parser_state_stack[0];
+      *yyvp = &m_parser_value_stack[0];
+      *yylp = &m_parser_location_stack[0];
+      *yystacksize = new_size;
+    }
+
+  private:
+    std::vector<YYTYPE_INT16> m_parser_state_stack;
+    std::vector<ParserValue> m_parser_value_stack;
+    std::vector<SourceLocation> m_parser_location_stack;
+  };
+
+  void yyerror(const YYLTYPE*,
+               ParserInternalArguments& arguments,
+               const char *s) {
+    arguments.error_message = s;
+  }
+
+  /**
+   * \brief Checks if a character is a "token" character.
+   *
+   * A token character is alphanumeric or underscore, so this is
+   * equivalent the following in the C locale:
+   *
+   * \code isalpha(c) || isdigit(c) || c == '_' \endcode
+   */
+  bool token_char(char c) {
+    return ((c >= 'A') && (c <= 'Z')) ||
+      ((c >= 'a') && (c <= 'z')) ||
+      ((c >= '0') && (c <= '9')) ||
+      (c == '_');
+  }
+
+  int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self);
+}
+
+#define yyoverflow(msg,yysp,yyssize,yyvp,yyvsize,yylp,yylsize,yystacksize) arguments.overflow(yysp,yyssize,yyvp,yyvsize,yylp,yylsize,yystacksize)
+
+#define YYLLOC_DEFAULT(current, rhs, N)					\
+  do {									\
+    if (YYID(N)) {							\
+      (current) = SourceLocation(arguments.text.text_ptr, YYRHSLOC(rhs, 1).begin, YYRHSLOC(rhs, N).end); \
+    } else {								\
+      (current) = SourceLocation(arguments.text.text_ptr, YYRHSLOC(rhs, 0).end, YYRHSLOC(rhs, 0).end); \
+    }									\
+  } while (0)
+%}
+
+%pure-parser
+%locations
+
+/* verbose errors and custom stack allocation (i.e. yyoverflow defined) will not work together in bison */
+%error-verbose
+
+%token INVALID
+%token IDENTIFIER
+%token COMPARE_EQUAL "=="
+%token COMPARE_UNEQUAL "!="
+%token COMPARE_LESS_EQUAL "<="
+%token COMPARE_GREATER_EQUAL ">="
+%token OPERATOR_ARROW "->"
+%token UNKNOWN "unknown"
+%token BLOCK
+
+%token MODE_STATEMENT_LIST
+%token MODE_ARGUMENT_LIST
+%token MODE_FUNCTION_ARGUMENT_DECLARE
+
+%type <identifier> IDENTIFIER
+%type <macro_element_list> macro_expression
+%type <macro_element> BLOCK macro_element
+%type <binary_operator> product_operator add_operator compare_operator
+%type <unary_operator> unary_operator
+%type <statement> statement
+%type <statement_list> statement_list
+%type <expression> expression or_expression and_expression xor_expression compare_expression product_expression add_expression unary_expression return_type_declare
+%type <argument_declaration_list> argument_list_declare_nonempty argument_list_declare
+%type <argument_declaration> argument_declare
+%type <expression_list> argument_list_nonempty argument_list
+
+%parse-param {ParserInternalArguments& arguments}
+%lex-param {ParserInternalArguments& arguments}
+
+%initial-action {
+#ifndef YYERROR_VERBOSE
+  if (false) {
+  yyexhaustedlab:
+    YYABORT;
+  }
+#endif
+
+  @$ = arguments.text;
+  @$.end = @$.begin;
+}
+
+%%
+
+root: MODE_STATEMENT_LIST statement_list {arguments.result = statement_list(@2, $2().begin(), $2().end());}
+| MODE_ARGUMENT_LIST argument_list {arguments.result = argument_list(@2, $2().begin(), $2().end());}
+| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare
+{arguments.result = function_arguments_declaration(@$, argument_declaration_list(@2, $2().begin(), $2().end()), $3());}
+;
+
+
+argument_list: /* blank */ {$$(empty_value);}
+| argument_list_nonempty
+;
+
+
+argument_list_nonempty:
+expression {$$(singly_linked_list<shared_ptr<expression> >().push_front_new($1()));}
+| argument_list_nonempty ',' expression {$$($1().push_front_new($3()));}
+;
+
+return_type_declare: /* blank */ {$$(shared_ptr<expression>());}
+| "->" expression {$$($2());}
+;
+
+argument_list_declare: /* blank */ {$$(empty_value);}
+| argument_list_declare_nonempty
+;
+
+
+argument_list_declare_nonempty:
+argument_declare {$$(singly_linked_list<argument_declaration>().push_front_new($1()));}
+| argument_list_declare_nonempty ',' argument_declare {$$($1().push_front_new($3()));}
+;
+
+argument_declare:
+IDENTIFIER {$$(argument_declaration(@1, $1()));}
+| IDENTIFIER ':' expression {$$(argument_declaration(@$, $1(), $3()));}
+;
+
+statement_list:
+statement {$$(singly_linked_list<statement>().push_front_new($1()));}
+| statement_list ';' statement {$$($1().push_front_new($3()));}
+;
+
+
+statement:
+/* blank */ {$$(statement(@$, shared_ptr<expression>()));}
+| expression {$$(statement(@$, $1()));}
+| IDENTIFIER ':' expression {$$(statement(@$, $3()));}
+;
+
+
+expression:
+or_expression
+| expression '=' or_expression {$$(make_shared<binary_expression>(@$, binary_expression::OP_ASSIGN, $1(), $3()));}
+;
+
+
+or_expression:
+xor_expression
+| or_expression '|' xor_expression {$$(make_shared<binary_expression>(@$, binary_expression::OP_OR, $1(), $3()));}
+;
+
+
+xor_expression:
+and_expression
+| xor_expression '^' and_expression {$$(make_shared<binary_expression>(@$, binary_expression::OP_XOR, $1(), $3()));}
+;
+
+
+and_expression:
+compare_expression
+| and_expression '&' compare_expression {$$(make_shared<binary_expression>(@$, binary_expression::OP_AND, $1(), $3()));}
+;
+
+
+compare_expression:
+add_expression
+| compare_expression compare_operator add_expression {$$(make_shared<binary_expression>(@$, $2(), $1(), $3()));}
+;
+
+
+compare_operator:
+COMPARE_EQUAL {$$(binary_expression::OP_CMP_EQ);}
+| COMPARE_UNEQUAL {$$(binary_expression::OP_CMP_NE);}
+| COMPARE_GREATER_EQUAL {$$(binary_expression::OP_CMP_GE);}
+| COMPARE_LESS_EQUAL {$$(binary_expression::OP_CMP_LE);}
+| '<' {$$(binary_expression::OP_CMP_LT);}
+| '>' {$$(binary_expression::OP_CMP_GT);}
+;
+
+
+add_expression:
+product_expression
+| add_expression add_operator product_expression {$$(make_shared<binary_expression>(@$, $2(), $1(), $3()));}
+;
+
+
+add_operator:
+'+' {$$(binary_expression::OP_ADD);}
+| '-' {$$(binary_expression::OP_SUBTRACT);}
+;
+
+
+product_expression:
+unary_expression
+| product_expression product_operator unary_expression {$$(make_shared<binary_expression>(@$, $2(), $1(), $3()));}
+;
+
+
+product_operator:
+'*' {$$(binary_expression::OP_MULTIPLY);}
+| '/' {$$(binary_expression::OP_DIVIDE);}
+| '%' {$$(binary_expression::OP_REMAINDER);}
+;
+
+
+unary_expression:
+macro_expression {$$(make_shared<macro_expression>(@$, $1().begin(), $1().end()));}
+| unary_operator unary_expression {$$(make_shared<unary_expression>(@$, $1(), $2()));}
+;
+
+
+unary_operator:
+'-' {$$(unary_expression::OP_MINUS);}
+| '!' {$$(unary_expression::OP_NOT);}
+;
+
+
+macro_expression:
+macro_element {$$(singly_linked_list<macro_element>().push_front_new($1()));}
+| macro_expression macro_element {$$($1().push_front_new($2()));}
+;
+
+macro_element:
+IDENTIFIER {$$(macro_element(@$, macro_element::MACRO_TEXT, @$));}
+| BLOCK
+| '.' {$$(macro_element(@$, macro_element::MACRO_DOT, @$));}
+;
+
+%%
+
+namespace {
+  /**
+   * \brief Scanner function.
+   *
+   * I've done this as a handwritten function rather than using Flex
+   * because bending Flex to my will seems like slightly more effort
+   * than doing this. I'd like it to be able to operate on a buffer
+   * without altering it, which this function does, and it takes less
+   * code than Flex and the myriad of options required to make a Flex
+   * scanner sensible.
+   *
+   * \note Note that this function lives here rather than above the
+   * main parser body (where it is declared) because it required the
+   * parser token definitions.
+   */
+  int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self) {
+    char c;
+
+    if (self.mode_token != 0) {
+      int result = self.mode_token;
+      self.mode_token = 0;
+      return result;
+    }
+
+  next_char:
+    llocp->begin = llocp->end;
+    assert(llocp->begin.base() == &*self.current);
+
+    if (self.current == self.end)
+      return 0;
+
+#define SCANNER_RETURN(val) do {lvalp->text(*llocp); return (val);} while(0)
+#define SCANNER_ACCEPT() (++self.current, ++llocp->end)
+
+    c = *self.current;
+
+    if (token_char(c)) {
+      do {
+        SCANNER_ACCEPT();
+      } while ((self.current != self.end) && token_char(*self.current));
+      SCANNER_RETURN(IDENTIFIER);
+    } else if (std::strchr("<>=!", c)) {
+      /* Multi-char comparison operators */
+      SCANNER_ACCEPT();
+      if ((self.current != self.end) && (*self.current == '=')) {
+        SCANNER_ACCEPT();
+        switch(c) {
+        case '>': SCANNER_RETURN(COMPARE_GREATER_EQUAL);
+        case '<': SCANNER_RETURN(COMPARE_LESS_EQUAL);
+        case '=': SCANNER_RETURN(COMPARE_EQUAL);
+        case '!': SCANNER_RETURN(COMPARE_UNEQUAL);
+        default: assert(false);
+        }
+      } else {
+        return c;
+      }
+    } else if (c == '-') {
+      /* Arrow operator "->" */
+      SCANNER_ACCEPT();
+      if ((self.current != self.end) && (*self.current == '>')) {
+        SCANNER_ACCEPT();
+        return OPERATOR_ARROW;
+      } else {
+        return '-';
+      }
+    } else if (std::strchr(".:;,+*/%^&|", c)) {
+      SCANNER_ACCEPT();
+      SCANNER_RETURN(c);
+    } else if (std::strchr("{[(", c)) {
+      int brace_depth = 0, square_bracket_depth = 0, bracket_depth = 0;
+      macro_element::macro_element_type me_type;
+
+      switch(c) {
+      case '(': me_type = macro_element::MACRO_BRACKET; break;
+      case '[': me_type = macro_element::MACRO_SQUARE_BRACKET; break;
+      case '{': me_type = macro_element::MACRO_BRACE; break;
+      default: assert(false);
+      }
+
+      while(1) {
+        c = *self.current;
+        SCANNER_ACCEPT();
+
+        if (c == '\\') {
+          if (self.current == self.end)
+            SCANNER_RETURN(INVALID);
+          SCANNER_ACCEPT();
+        } else if (c == '{') {
+          ++brace_depth;
+        } else if (c == '}') {
+          if (brace_depth == 0)
+            SCANNER_RETURN(INVALID);
+          --brace_depth;
+        } else if (brace_depth == 0) {
+          if (c == '[') {
+            ++square_bracket_depth;
+          } else if (c == ']') {
+            if (square_bracket_depth == 0)
+              SCANNER_RETURN(INVALID);
+            --square_bracket_depth;
+          } else if (square_bracket_depth == 0) {
+            if (c == '(') {
+              ++bracket_depth;
+            } else if (c == ')') {
+              if (bracket_depth == 0)
+                SCANNER_RETURN(INVALID);
+              --bracket_depth;
+            }
+          }
+        }
+
+        if ((bracket_depth == 0) && (square_bracket_depth == 0) && (brace_depth == 0)) {
+          source_location value_text(*llocp);
+          ++value_text.begin;
+          --value_text.end;
+          lvalp->macro_element_(macro_element(*llocp, me_type, value_text));
+          return BLOCK;
+        } else if (self.current == self.end) {
+          SCANNER_RETURN(INVALID);
+        }
+      }
+    } else if (std::strchr(" \t\r\v", c)) {
+      SCANNER_ACCEPT();
+      goto next_char;
+    } else if (c == '\n') {
+      SCANNER_ACCEPT();
+      goto next_char;
+    } else {
+      return c;
+    }
+
+#undef SCANNER_ADVANCE
+  }
+
+  template<typename T> T parse_helper(int mode, const source_location& text) {
+    ParserInternalArguments internal(mode, text);
+
+    int result = yyparse(internal);
+
+    if (result == 0) {
+      return *internal.result.get<T>();
+    } else {
+      throw parse_error(internal.error_message);
+    }
+  }
+}
+
+namespace llang {
+  namespace parser {
+    parse_error::parse_error(const std::string& reason) : m_reason(reason) {
+    }
+
+    parse_error::~parse_error() throw() {
+    }
+
+    const char* parse_error::what() const throw() {
+      return m_reason.c_str();
+    }
+
+    statement_list parse_statement_list(const source_location& text) {
+      return parse_helper<statement_list>(MODE_STATEMENT_LIST, text);
+    }
+
+    argument_list parse_argument_list(const source_location& text) {
+      return parse_helper<argument_list>(MODE_ARGUMENT_LIST, text);
+    }
+
+    function_arguments_declaration parse_function_argument_declaration(const source_location& text) {
+      return parse_helper<function_arguments_declaration>(MODE_FUNCTION_ARGUMENT_DECLARE, text);
+    }
+  }
+}

@@ -4,11 +4,29 @@
 #include "TypeSystem.hpp"
 #include "Variant.hpp"
 
+#include <llvm/BasicBlock.h>
+#include <llvm/Instruction.h>
+
 namespace Psi {
-  namespace CodeGenerator {
+  namespace Compiler {
+    class InstructionList {
+    public:
+      InstructionList();
+      InstructionList(InstructionList&& src);
+      ~InstructionList();
+
+      void append(InstructionList& src);
+      void append(InstructionList&& src);
+
+    private:
+      typedef llvm::iplist<llvm::Instruction> ListType;
+      ListType m_list;
+    };
+
     class TemplateType;
     class Value;
     class Context;
+    class ConcreteType;
 
     class ParameterTypeTag;
     typedef std::shared_ptr<ParameterTypeTag> ParameterType;
@@ -32,15 +50,15 @@ namespace Psi {
       /// To get dynamic casts
       virtual ~TemplateType();
 
-      virtual std::shared_ptr<Instruction> specialize(const Context& context,
-						      const std::vector<Type>& parameters,
-						      const std::shared_ptr<Value>& value) = 0;
+      virtual InstructionList specialize(const Context& context,
+					 const std::vector<Type>& parameters,
+					 const std::shared_ptr<Value>& value) = 0;
 
     private:
       std::vector<std::shared_ptr<ParameterType> > m_parameters;
     };
 
-    class FunctionType : TemplateType {
+    class FunctionType : public TemplateType {
     public:
       enum class InMode {
         InValue,
@@ -60,16 +78,15 @@ namespace Psi {
 
     class StructTemplateType : public TemplateType {
     private:
-      bool m_initialized;
       std::vector<Type> m_members;
     };
 
     class UnionTemplateType : public TemplateType {
     private:
-      bool m_initialized;
       std::vector<Type> m_members;
     };
 
+#if 0
     class Context {
     private:
       /// Value holds size, alignment and destructors for this type.
@@ -125,6 +142,7 @@ namespace Psi {
     std::shared_ptr<Value> constant_integer(const std::string& num);
     std::shared_ptr<Value> constant_float(float value);
     std::shared_ptr<Value> constant_double(double value);
+#endif
   }
 }
 

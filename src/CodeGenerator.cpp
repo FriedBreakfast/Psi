@@ -7,7 +7,26 @@
 #include <llvm/Value.h>
 
 namespace Psi {
-  namespace CodeGenerator {
+  namespace Compiler {
+    InstructionList::InstructionList() {
+    }
+
+    InstructionList::InstructionList(InstructionList&& src) {
+      append(src);
+    }
+
+    InstructionList::~InstructionList() {
+    }
+
+    void InstructionList::append(InstructionList&& src) {
+      append(src);
+    }
+
+    void InstructionList::append(InstructionList& src) {
+      m_list.splice(m_list.end(), src.m_list);
+    }
+
+#if 0
     struct Context {
       llvm::LLVMContext llvm_context;
       /// This will always be i8*
@@ -123,5 +142,6 @@ namespace Psi {
       if (!llvm::BranchInst::Create(target.m_data->block, m_block.m_data->block))
         throw std::runtime_error("Failed to create branch instruction");
     }
+#endif
   }
 }

@@ -423,7 +423,7 @@ namespace Psi {
       }
     }
 
-    template<typename ResultType, typename... Functors> ResultType visit_internal_deref(Functors&&... fs) const {
+    template<typename ResultType, typename... Functors> ResultType visit_internal_deref(Functors&&... fs) {
       VariantDetail::AutoDerefVisitor<ResultType, Functors...> visitor(std::forward<Functors>(fs)...);
       if (m_which != 0) {
         return VariantDetail::VisitImpl<ResultType, Args...>::call(visitor, &m_storage, m_which, 1);
