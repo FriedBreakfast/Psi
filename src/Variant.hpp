@@ -249,6 +249,10 @@ namespace Psi {
     None(None&&) = default;
   };
 
+  struct BadVariantCast : std::logic_error {
+    BadVariantCast() : std::logic_error("bad variant cast") {}
+  };
+
   template<typename... Args> class Variant {
   public:
     typedef Variant<Args...> this_type;
@@ -280,6 +284,10 @@ namespace Psi {
 
     bool empty() const {
       return m_which == 0;
+    }
+
+    int which() const {
+      return m_which;
     }
 
     void clear() {
@@ -350,13 +358,39 @@ namespace Psi {
     }
 
     template<typename T>
-    T* get() {
-      return contains<T>() ? static_cast<T*>(static_cast<void*>(&m_storage)) : 0;
+    T* ptr_get() {
+      return const_cast<T*>(this->template ptr_get<T>());
     }
 
     template<typename T>
-    const T* get() const {
+    const T* ptr_get() const {
       return contains<T>() ? static_cast<const T*>(static_cast<const void*>(&m_storage)) : 0;
+    }
+
+    /**
+     * Get a particular variant entry.
+     *
+     * \pre <tt>contains&lt;T&gt;</tt>
+     * \throw BadVariantCast If <tt>contains&lt;T&gt;</tt> is not true.
+     */
+    template<typename T>
+    const T& get() const {
+      if (contains<T>()) {
+        return *static_cast<const T*>(static_cast<const void*>(&m_storage));
+      } else {
+        throw BadVariantCast();
+      }
+    }
+
+    /**
+     * Get a particular variant entry.
+     *
+     * \pre <tt>contains&lt;T&gt;</tt>
+     * \throw BadVariantCast If <tt>contains&lt;T&gt;</tt> is not true.
+     */
+    template<typename T>
+    T& get() {
+      return const_cast<T&>(this->template get<T>());
     }
 
     template<typename T, typename... Args2>

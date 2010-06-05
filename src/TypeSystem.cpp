@@ -662,7 +662,7 @@ namespace Psi {
       if (m_for_all.quantifier.variables.empty() &&
           m_for_all.term.lhs.empty() &&
           m_for_all.term.rhs.quantifier.variables.empty()) {
-        return m_for_all.term.rhs.term.get<Variable>();
+        return m_for_all.term.rhs.term.ptr_get<Variable>();
       }
 
       return 0;
@@ -672,7 +672,7 @@ namespace Psi {
       if (m_for_all.quantifier.variables.empty() &&
           m_for_all.term.lhs.empty() &&
           m_for_all.term.rhs.quantifier.variables.empty()) {
-        const Apply *ap = m_for_all.term.rhs.term.get<Apply>();
+        const Apply *ap = m_for_all.term.rhs.term.ptr_get<Apply>();
         if (ap) {
           if (ap->parameters.empty())
             return &ap->constructor;

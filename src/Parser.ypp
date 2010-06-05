@@ -16,7 +16,7 @@
 /**
  * the location type used by the parser and scanner.
  */
-#define YYLTYPE llang::parser::source_location
+#define YYLTYPE Psi::Parser::PhysicalSourceLocation
 
 /**
  * I previously made this zero - it must be at least one because
@@ -43,9 +43,27 @@
 #define YYFREE(x)
 #define YYSTACK_USE_ALLOCA 1
 
+using namespace Psi;
 using namespace Psi::Parser;
 
 namespace {
+  struct CompareEntry {
+    Expression expr;
+    PhysicalSourceLocation op;
+  };
+
+  struct CompareList {
+    CompareList(CompareList&&) = default;
+
+    Expression first;
+    std::vector<CompareEntry> entries;
+  };
+
+  CompareList extend_cmp_list(CompareList& lhs, CompareEntry entry) {
+    lhs.entries.push_back(entry);
+    return std::move(lhs);
+  }
+
   /**
    * A parser semantic value. Implements a named union type on top of
    * #Variant, so we get exception safety, as well as type checking
@@ -55,41 +73,31 @@ namespace {
   public:
     // this macro only works for types without commas in them
 #define PARSER_VALUE(name, type)			     \
-    type& name() const {return *m_value.get<type>(m_value);} \
-    void name(const type& value) {m_value = value;}
+    type& name() {return m_value.get<type>();} \
+    void name(type value) {m_value = value;}
 
     PARSER_VALUE(expression, Expression)
-    PARSER_VALUE(macro_element, MacroElement)
-    PARSER_VALUE(statement_list, StatementList)
     PARSER_VALUE(statement, Statement)
     PARSER_VALUE(argument_declaration, ArgumentDeclaration)
+    PARSER_VALUE(text, PhysicalSourceLocation)
     PARSER_VALUE(argument_declaration_list, std::vector<ArgumentDeclaration>)
     PARSER_VALUE(expression_list, std::vector<Expression>)
-    PARSER_VALUE(macro_element_list, std::vector<MacroElement>)
     PARSER_VALUE(statement_list, std::vector<Statement>)
-    PARSER_VALUE(identifier_list, std::vector<Identifier>)
-    PARSER_VALUE(binary_operator, BinaryOperator)
-    PARSER_VALUE(unary_operator, UnaryOperator)
-    PARSER_VALUE(identifier, Identifier)
-    PARSER_VALUE(text, SourceLocation)
+    PARSER_VALUE(text_list, std::vector<PhysicalSourceLocation>)
+    PARSER_VALUE(compare_list, CompareList)
 
 #undef PARSER_VALUE
 
   private:
     typedef Variant<Expression,
-		    MacroElement,
 		    Statement,
-		    StatementList,
 		    ArgumentDeclaration,
+                    PhysicalSourceLocation,
+		    std::vector<Expression>,
 		    std::vector<Statement>,
 		    std::vector<ArgumentDeclaration>,
-		    std::vector<std::shared_ptr<Expression> >,
-		    std::vector<MacroElement>,
-		    std::vector<Identifier>,
-		    BinaryOperator,
-		    UnaryOperator,
-		    Identifier,
-		    SourceLocation> InternalStorageType;
+		    std::vector<PhysicalSourceLocation>,
+                    CompareList> InternalStorageType;
 
     InternalStorageType m_value;
   };
@@ -97,23 +105,22 @@ namespace {
   struct ParserInternalArguments
   {
     ParserInternalArguments(int mode_token_,
-                              const source_location& text_)
+                            const PhysicalSourceLocation& text_)
       : mode_token(mode_token_),
         text(text_),
-        current(text.begin.base()),
-        end(text.end.base()) {
+        current(text.begin),
+        end(text.end) {
     }
 
-    typedef Variant<StatementList,
-		    ArgumentList,
-		    ArgumentDeclarationList,
-		    FunctionArgumentsDeclaration> ResultType;
+    typedef Variant<std::vector<Statement>,
+                    std::vector<Expression>,
+                    std::vector<ArgumentDeclaration> > ResultType;
 
     int mode_token;
-    source_location text;
-    std::vector<char>::const_iterator current, end;
+    PhysicalSourceLocation text;
+    const char *current, *end;
 
-    result_type result;
+    ResultType result;
     std::string error_message;
 
     /**
@@ -176,7 +183,7 @@ namespace {
   private:
     std::vector<YYTYPE_INT16> m_parser_state_stack;
     std::vector<ParserValue> m_parser_value_stack;
-    std::vector<SourceLocation> m_parser_location_stack;
+    std::vector<PhysicalSourceLocation> m_parser_location_stack;
   };
 
   void yyerror(const YYLTYPE*,
@@ -201,6 +208,52 @@ namespace {
   }
 
   int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self);
+
+  template<typename T>
+  std::vector<typename std::remove_reference<T>::type> make_list(T&& value) {
+    std::vector<typename std::remove_reference<T>::type> v;
+    v.push_back(std::move(value));
+    return v;
+  }
+
+  template<typename T>
+  std::vector<T> append_list(std::vector<T>& vec, T&& value) {
+    vec.push_back(std::move(value));
+    return std::move(vec);
+  }
+
+  template<typename T>
+  std::vector<T> append_list(std::vector<T>& vec, T& value) {return append_list(vec, std::move(value));}
+
+  Expression op_to_expr(const PhysicalSourceLocation& src, const PhysicalSourceLocation& op) {
+    return {src, TokenExpression{TokenType::identifier, op}};
+  }
+
+  Expression make_binary_expr(const PhysicalSourceLocation& src, const PhysicalSourceLocation& op, Expression& lhs, Expression& rhs) {
+    return {src, MacroExpression({op_to_expr(src, op), std::move(lhs), std::move(rhs)})};
+  }
+
+  Expression make_unary_expr(const PhysicalSourceLocation& src, const PhysicalSourceLocation& op, Expression& arg) {
+    return {src, MacroExpression({op_to_expr(src, op), std::move(arg)})};
+  }
+
+  class ConstSourceCodeOrigin : public SourceCodeOrigin {
+  };
+
+  std::shared_ptr<SourceCodeText> const_text_ptr = std::make_shared<SourceCodeText>(SourceCodeText{std::make_shared<ConstSourceCodeOrigin>(), {}});
+
+  /**
+   * Convert a constant string to a #PhysicalSourceLocation.
+   */
+  PhysicalSourceLocation str_loc(const char *s) {
+    int len = std::strlen(s);
+    return {const_text_ptr, 1, 1, 1, len + 1, s, s + len};
+  }
+
+  PhysicalSourceLocation combine_loc(const PhysicalSourceLocation& lhs, const PhysicalSourceLocation& rhs) {
+    assert(lhs.text == rhs.text);
+    return {lhs.text, lhs.first_line, lhs.first_column, rhs.last_line, rhs.last_column, lhs.begin, rhs.end};
+  }
 }
 
 #define yyoverflow(msg,yysp,yyssize,yyvp,yyvsize,yylp,yylsize,yystacksize) arguments.overflow(yysp,yyssize,yyvp,yyvsize,yylp,yylsize,yystacksize)
@@ -208,9 +261,10 @@ namespace {
 #define YYLLOC_DEFAULT(current, rhs, N)					\
   do {									\
     if (YYID(N)) {							\
-      (current) = SourceLocation(arguments.text.text_ptr, YYRHSLOC(rhs, 1).begin, YYRHSLOC(rhs, N).end); \
+      (current) = combine_loc(YYRHSLOC(rhs, 1), YYRHSLOC(rhs, N));      \
     } else {								\
-      (current) = SourceLocation(arguments.text.text_ptr, YYRHSLOC(rhs, 0).end, YYRHSLOC(rhs, 0).end); \
+      const PhysicalSourceLocation& base = YYRHSLOC(rhs, 0);            \
+      (current) = PhysicalSourceLocation{arguments.text.text, base.last_line, base.last_column, base.last_line, base.last_column, base.end, base.end}; \
     }									\
   } while (0)
 %}
@@ -235,17 +289,14 @@ namespace {
 %token MODE_ARGUMENT_LIST
 %token MODE_FUNCTION_ARGUMENT_DECLARE
 
-%type <identifier> IDENTIFIER
-%type <macro_element_list> macro_expression
-%type <macro_element> BLOCK macro_element
-%type <binary_operator> product_operator add_operator compare_operator
-%type <unary_operator> unary_operator
+%type <text> IDENTIFIER product_operator add_operator compare_operator unary_operator
 %type <statement> statement
 %type <statement_list> statement_list
-%type <expression> expression or_expression and_expression xor_expression compare_expression product_expression add_expression unary_expression return_type_declare
-%type <argument_declaration_list> argument_list_declare_nonempty argument_list_declare
+%type <expression> expression or_expression and_expression xor_expression product_expression add_expression unary_expression macro_element compare_expression BLOCK
+%type <expression_list> argument_list_nonempty argument_list macro_expression
 %type <argument_declaration> argument_declare
-%type <expression_list> argument_list_nonempty argument_list
+%type <argument_declaration_list> argument_list_declare_nonempty argument_list_declare
+%type <compare_list> compare_expression_build
 
 %parse-param {ParserInternalArguments& arguments}
 %lex-param {ParserInternalArguments& arguments}
@@ -264,141 +315,132 @@ namespace {
 
 %%
 
-root: MODE_STATEMENT_LIST statement_list {arguments.result = statement_list(@2, $2().begin(), $2().end());}
-| MODE_ARGUMENT_LIST argument_list {arguments.result = argument_list(@2, $2().begin(), $2().end());}
-| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare
-{arguments.result = function_arguments_declaration(@$, argument_declaration_list(@2, $2().begin(), $2().end()), $3());}
+root: MODE_STATEMENT_LIST statement_list {arguments.result = std::move($2());}
+| MODE_ARGUMENT_LIST argument_list {arguments.result = std::move($2());}
+| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare {arguments.result = std::move($2());}
 ;
 
-
-argument_list: /* blank */ {$$(empty_value);}
+argument_list: /* blank */ {$$({});}
 | argument_list_nonempty
 ;
 
-
 argument_list_nonempty:
-expression {$$(singly_linked_list<shared_ptr<expression> >().push_front_new($1()));}
-| argument_list_nonempty ',' expression {$$($1().push_front_new($3()));}
+expression {$$(make_list($1()));}
+| argument_list_nonempty ',' expression {$$(append_list($1(), $3()));}
 ;
 
-return_type_declare: /* blank */ {$$(shared_ptr<expression>());}
-| "->" expression {$$($2());}
-;
-
-argument_list_declare: /* blank */ {$$(empty_value);}
+argument_list_declare: /* blank */ {$$({});}
 | argument_list_declare_nonempty
 ;
 
-
 argument_list_declare_nonempty:
-argument_declare {$$(singly_linked_list<argument_declaration>().push_front_new($1()));}
-| argument_list_declare_nonempty ',' argument_declare {$$($1().push_front_new($3()));}
+argument_declare {$$(make_list($1()));}
+| argument_list_declare_nonempty ',' argument_declare {$$(append_list($1(), $3()));}
 ;
 
 argument_declare:
-IDENTIFIER {$$(argument_declaration(@1, $1()));}
-| IDENTIFIER ':' expression {$$(argument_declaration(@$, $1(), $3()));}
+IDENTIFIER {$$(ArgumentDeclaration(@$, $1()));}
+| IDENTIFIER ':' expression {$$(ArgumentDeclaration(@$, $1(), $3()));}
 ;
 
 statement_list:
-statement {$$(singly_linked_list<statement>().push_front_new($1()));}
-| statement_list ';' statement {$$($1().push_front_new($3()));}
+statement {$$(make_list($1()));}
+| statement_list ';' statement {$$(append_list($1(), $3()));}
 ;
-
 
 statement:
-/* blank */ {$$(statement(@$, shared_ptr<expression>()));}
-| expression {$$(statement(@$, $1()));}
-| IDENTIFIER ':' expression {$$(statement(@$, $3()));}
+/* blank */ {$$(Statement(@$));}
+| expression {$$(Statement(@$, $1()));}
+| IDENTIFIER ':' expression {$$(Statement(@$, $3()));}
 ;
-
 
 expression:
 or_expression
-| expression '=' or_expression {$$(make_shared<binary_expression>(@$, binary_expression::OP_ASSIGN, $1(), $3()));}
+| expression '=' or_expression {$$(make_binary_expr(@$, str_loc("="), $1(), $3()))};
 ;
-
 
 or_expression:
 xor_expression
-| or_expression '|' xor_expression {$$(make_shared<binary_expression>(@$, binary_expression::OP_OR, $1(), $3()));}
+| or_expression '|' xor_expression {$$(make_binary_expr(@$, str_loc("|"), $1(), $3()));}
 ;
-
 
 xor_expression:
 and_expression
-| xor_expression '^' and_expression {$$(make_shared<binary_expression>(@$, binary_expression::OP_XOR, $1(), $3()));}
+| xor_expression '^' and_expression {$$(make_binary_expr(@$, str_loc("^"), $1(), $3()));}
 ;
-
 
 and_expression:
 compare_expression
-| and_expression '&' compare_expression {$$(make_shared<binary_expression>(@$, binary_expression::OP_AND, $1(), $3()));}
+| and_expression '&' compare_expression {$$(make_binary_expr(@$, str_loc("&"), $1(), $3()));}
 ;
-
 
 compare_expression:
-add_expression
-| compare_expression compare_operator add_expression {$$(make_shared<binary_expression>(@$, $2(), $1(), $3()));}
+compare_expression_build {
+  Expression result = $1().first;
+  Expression prev = result;
+  for (auto it = $1().entries.begin(); it != $1().entries.end(); ++it) {
+    Expression cur = it->expr;
+    auto loc = combine_loc(prev.source(), cur.source());
+    result = make_binary_expr(loc, it->op, prev, cur);
+    prev = std::move(it->expr);
+  }
+  $$(std::move(result));
+}
 ;
 
+compare_expression_build:
+add_expression {$$({$1(), {}});}
+| compare_expression_build compare_operator add_expression {$$(extend_cmp_list($1(), {$3(), $2()}));}
+;
 
 compare_operator:
-COMPARE_EQUAL {$$(binary_expression::OP_CMP_EQ);}
-| COMPARE_UNEQUAL {$$(binary_expression::OP_CMP_NE);}
-| COMPARE_GREATER_EQUAL {$$(binary_expression::OP_CMP_GE);}
-| COMPARE_LESS_EQUAL {$$(binary_expression::OP_CMP_LE);}
-| '<' {$$(binary_expression::OP_CMP_LT);}
-| '>' {$$(binary_expression::OP_CMP_GT);}
+COMPARE_EQUAL {$$(str_loc("=="));}
+| COMPARE_UNEQUAL {$$(str_loc("!="));}
+| COMPARE_GREATER_EQUAL {$$(str_loc(">="));}
+| COMPARE_LESS_EQUAL {$$(str_loc("<="));}
+| '<' {$$(str_loc("<"));}
+| '>' {$$(str_loc(">"));}
 ;
-
 
 add_expression:
 product_expression
-| add_expression add_operator product_expression {$$(make_shared<binary_expression>(@$, $2(), $1(), $3()));}
+| add_expression add_operator product_expression {$$(make_binary_expr(@$, $2(), $1(), $3()));}
 ;
-
 
 add_operator:
-'+' {$$(binary_expression::OP_ADD);}
-| '-' {$$(binary_expression::OP_SUBTRACT);}
+'+' {$$(str_loc("+"));}
+| '-' {$$(str_loc("-2"));}
 ;
-
 
 product_expression:
 unary_expression
-| product_expression product_operator unary_expression {$$(make_shared<binary_expression>(@$, $2(), $1(), $3()));}
+| product_expression product_operator unary_expression {$$(make_binary_expr(@$, $2(), $1(), $3()));}
 ;
-
 
 product_operator:
-'*' {$$(binary_expression::OP_MULTIPLY);}
-| '/' {$$(binary_expression::OP_DIVIDE);}
-| '%' {$$(binary_expression::OP_REMAINDER);}
+'*' {$$(str_loc("*"));}
+| '/' {$$(str_loc("/"));}
+| '%' {$$(str_loc("%"));}
 ;
-
 
 unary_expression:
-macro_expression {$$(make_shared<macro_expression>(@$, $1().begin(), $1().end()));}
-| unary_operator unary_expression {$$(make_shared<unary_expression>(@$, $1(), $2()));}
+macro_expression {$$({@$, MacroExpression(std::move($1()))});}
+| unary_operator unary_expression {$$(make_unary_expr(@$, $1(), $2()));}
 ;
-
 
 unary_operator:
-'-' {$$(unary_expression::OP_MINUS);}
-| '!' {$$(unary_expression::OP_NOT);}
+'-' {$$(str_loc("-1"));}
+| '!' {$$(str_loc("!"));}
 ;
 
-
 macro_expression:
-macro_element {$$(singly_linked_list<macro_element>().push_front_new($1()));}
-| macro_expression macro_element {$$($1().push_front_new($2()));}
+ macro_element {$$(make_list($1()));}
+| macro_expression macro_element {$$(append_list($1(), $2()));}
 ;
 
 macro_element:
-IDENTIFIER {$$(macro_element(@$, macro_element::MACRO_TEXT, @$));}
+IDENTIFIER {$$({@$, TokenExpression(TokenType::identifier, @$)});}
 | BLOCK
-| '.' {$$(macro_element(@$, macro_element::MACRO_DOT, @$));}
 ;
 
 %%
@@ -454,7 +496,7 @@ namespace {
         case '<': SCANNER_RETURN(COMPARE_LESS_EQUAL);
         case '=': SCANNER_RETURN(COMPARE_EQUAL);
         case '!': SCANNER_RETURN(COMPARE_UNEQUAL);
-        default: assert(false);
+        default: std::abort();
         }
       } else {
         return c;
@@ -473,13 +515,13 @@ namespace {
       SCANNER_RETURN(c);
     } else if (std::strchr("{[(", c)) {
       int brace_depth = 0, square_bracket_depth = 0, bracket_depth = 0;
-      macro_element::macro_element_type me_type;
+      TokenType me_type;
 
       switch(c) {
-      case '(': me_type = macro_element::MACRO_BRACKET; break;
-      case '[': me_type = macro_element::MACRO_SQUARE_BRACKET; break;
-      case '{': me_type = macro_element::MACRO_BRACE; break;
-      default: assert(false);
+      case '(': me_type = TokenType::bracket; break;
+      case '[': me_type = TokenType::square_bracket; break;
+      case '{': me_type = TokenType::brace; break;
+      default: std::abort();
       }
 
       while(1) {
@@ -515,10 +557,10 @@ namespace {
         }
 
         if ((bracket_depth == 0) && (square_bracket_depth == 0) && (brace_depth == 0)) {
-          source_location value_text(*llocp);
+          PhysicalSourceLocation value_text(*llocp);
           ++value_text.begin;
           --value_text.end;
-          lvalp->macro_element_(macro_element(*llocp, me_type, value_text));
+          lvalp->expression({*llocp, TokenExpression{me_type, value_text}});
           return BLOCK;
         } else if (self.current == self.end) {
           SCANNER_RETURN(INVALID);
@@ -537,41 +579,37 @@ namespace {
 #undef SCANNER_ADVANCE
   }
 
-  template<typename T> T parse_helper(int mode, const source_location& text) {
+  template<typename T> T parse_helper(int mode, const PhysicalSourceLocation& text) {
     ParserInternalArguments internal(mode, text);
 
     int result = yyparse(internal);
 
     if (result == 0) {
-      return *internal.result.get<T>();
+      return internal.result.get<T>();
     } else {
-      throw parse_error(internal.error_message);
+      throw ParseError(internal.error_message);
     }
   }
 }
 
-namespace llang {
-  namespace parser {
-    parse_error::parse_error(const std::string& reason) : m_reason(reason) {
+namespace Psi {
+  namespace Parser {
+    ParseError::ParseError(const std::string& reason) : std::runtime_error(reason) {
     }
 
-    parse_error::~parse_error() throw() {
+    ParseError::~ParseError() throw() {
     }
 
-    const char* parse_error::what() const throw() {
-      return m_reason.c_str();
+    std::vector<Statement> parse_statement_list(const PhysicalSourceLocation& text) {
+      return parse_helper<std::vector<Statement> >(MODE_STATEMENT_LIST, text);
     }
 
-    statement_list parse_statement_list(const source_location& text) {
-      return parse_helper<statement_list>(MODE_STATEMENT_LIST, text);
+    std::vector<Expression> parse_argument_list(const PhysicalSourceLocation& text) {
+      return parse_helper<std::vector<Expression> >(MODE_ARGUMENT_LIST, text);
     }
 
-    argument_list parse_argument_list(const source_location& text) {
-      return parse_helper<argument_list>(MODE_ARGUMENT_LIST, text);
-    }
-
-    function_arguments_declaration parse_function_argument_declaration(const source_location& text) {
-      return parse_helper<function_arguments_declaration>(MODE_FUNCTION_ARGUMENT_DECLARE, text);
+    std::vector<ArgumentDeclaration> parse_function_argument_declaration(const PhysicalSourceLocation& text) {
+      return parse_helper<std::vector<ArgumentDeclaration> >(MODE_FUNCTION_ARGUMENT_DECLARE, text);
     }
   }
 }
