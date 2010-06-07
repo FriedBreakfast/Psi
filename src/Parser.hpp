@@ -106,8 +106,8 @@ namespace Psi {
         }
       }
 
-      const TokenExpression& token() {return m_data.get<TokenExpression>();}
-      const MacroExpression& macro() {return m_data.get<MacroExpression>();}
+      const TokenExpression& token() const {return m_data.get<TokenExpression>();}
+      const MacroExpression& macro() const {return m_data.get<MacroExpression>();}
 
     private:
       Variant<TokenExpression, MacroExpression> m_data;

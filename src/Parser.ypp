@@ -47,23 +47,6 @@ using namespace Psi;
 using namespace Psi::Parser;
 
 namespace {
-  struct CompareEntry {
-    Expression expr;
-    PhysicalSourceLocation op;
-  };
-
-  struct CompareList {
-    CompareList(CompareList&&) = default;
-
-    Expression first;
-    std::vector<CompareEntry> entries;
-  };
-
-  CompareList extend_cmp_list(CompareList& lhs, CompareEntry entry) {
-    lhs.entries.push_back(entry);
-    return std::move(lhs);
-  }
-
   /**
    * A parser semantic value. Implements a named union type on top of
    * #Variant, so we get exception safety, as well as type checking
@@ -84,7 +67,6 @@ namespace {
     PARSER_VALUE(expression_list, std::vector<Expression>)
     PARSER_VALUE(statement_list, std::vector<Statement>)
     PARSER_VALUE(text_list, std::vector<PhysicalSourceLocation>)
-    PARSER_VALUE(compare_list, CompareList)
 
 #undef PARSER_VALUE
 
@@ -96,8 +78,7 @@ namespace {
 		    std::vector<Expression>,
 		    std::vector<Statement>,
 		    std::vector<ArgumentDeclaration>,
-		    std::vector<PhysicalSourceLocation>,
-                    CompareList> InternalStorageType;
+		    std::vector<PhysicalSourceLocation> > InternalStorageType;
 
     InternalStorageType m_value;
   };
@@ -122,12 +103,6 @@ namespace {
 
     ResultType result;
     std::string error_message;
-
-    /**
-     * the smallest initial number of elements a dynamically created stack (using the
-     * containers below) will be setup to hold. 
-     */
-    static const std::size_t minimum_dynamic_stack = 256;
 
     /**
      * the ratio used to decide the new dynamic stack size from the old. could be
@@ -161,7 +136,7 @@ namespace {
         new_size = m_parser_state_stack.size() * 2;
       } else {
         copy_stacks = true;
-        new_size = std::max(std::max(*yystacksize * 2, yyssize * 2 / sizeof(YYTYPE_INT16)), ParserInternalArguments::minimum_dynamic_stack);
+        new_size = *yystacksize * 2;
       }
 
       m_parser_state_stack.resize(new_size);
@@ -217,13 +192,20 @@ namespace {
   }
 
   template<typename T>
-  std::vector<T> append_list(std::vector<T>& vec, T&& value) {
-    vec.push_back(std::move(value));
-    return std::move(vec);
+  void append_list_helper(std::vector<T>&) {
   }
 
-  template<typename T>
-  std::vector<T> append_list(std::vector<T>& vec, T& value) {return append_list(vec, std::move(value));}
+  template<typename T, typename U, typename... W>
+  void append_list_helper(std::vector<T>& vec, U&& value, W&&... more) {
+    vec.push_back(std::move(value));
+    append_list_helper(vec, std::forward<W>(more)...);
+  }
+
+  template<typename T, typename... U>
+  std::vector<T> append_list(std::vector<T>& vec, U&&... values) {
+    append_list_helper(vec, std::forward<U>(values)...);
+    return std::move(vec);
+  }
 
   Expression op_to_expr(const PhysicalSourceLocation& src, const PhysicalSourceLocation& op) {
     return {src, TokenExpression{TokenType::identifier, op}};
@@ -293,10 +275,9 @@ namespace {
 %type <statement> statement
 %type <statement_list> statement_list
 %type <expression> expression or_expression and_expression xor_expression product_expression add_expression unary_expression macro_element compare_expression BLOCK
-%type <expression_list> argument_list_nonempty argument_list macro_expression
+%type <expression_list> argument_list_nonempty argument_list macro_expression compare_expression_build
 %type <argument_declaration> argument_declare
 %type <argument_declaration_list> argument_list_declare_nonempty argument_list_declare
-%type <compare_list> compare_expression_build
 
 %parse-param {ParserInternalArguments& arguments}
 %lex-param {ParserInternalArguments& arguments}
@@ -375,22 +356,13 @@ compare_expression
 ;
 
 compare_expression:
-compare_expression_build {
-  Expression result = $1().first;
-  Expression prev = result;
-  for (auto it = $1().entries.begin(); it != $1().entries.end(); ++it) {
-    Expression cur = it->expr;
-    auto loc = combine_loc(prev.source(), cur.source());
-    result = make_binary_expr(loc, it->op, prev, cur);
-    prev = std::move(it->expr);
-  }
-  $$(std::move(result));
-}
+add_expression
+| compare_expression_build {$1().insert($1().begin(), op_to_expr(@$, str_loc(":cmp"))); $$({@$, MacroExpression{std::move($1())}});}
 ;
 
 compare_expression_build:
-add_expression {$$({$1(), {}});}
-| compare_expression_build compare_operator add_expression {$$(extend_cmp_list($1(), {$3(), $2()}));}
+add_expression compare_operator add_expression {$$({$1(), op_to_expr(@$, $2()), $3()});}
+| compare_expression_build compare_operator add_expression {$$(append_list($1(), op_to_expr(combine_loc($1().back().source(), @3), $2()), $3()));}
 ;
 
 compare_operator:

@@ -86,6 +86,13 @@ namespace Psi {
       std::vector<Type> m_members;
     };
 
+    class Value {
+    public:
+
+    private:
+      ConcreteType m_type;
+    };
+
 #if 0
     class Context {
     private:

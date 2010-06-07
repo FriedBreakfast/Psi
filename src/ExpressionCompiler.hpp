@@ -1,8 +1,9 @@
 #ifndef HPP_PSI_EXPRESSIONCOMPILER
 #define HPP_PSI_EXPRESSIONCOMPILER
 
-#include "Variant.hpp"
 #include "CodeGenerator.hpp"
+#include "Parser.hpp"
+#include "Variant.hpp"
 
 /*
  *
@@ -23,12 +24,13 @@ namespace Psi {
     public:
       typedef Variant<NoMatchType, ConflictType, T> DataType;
 
-      LookupResult() : m_data(conflict) {}
-      LookupResult(T src) : m_data(std::move(src)) {}
-      LookupResult(NoMatchType) : m_data(no_match) {}
-      LookupResult(ConflictType) : m_data(conflict) {}
+      LookupResult() : m_data(ConflictType()) {}
+      LookupResult(NoMatchType) : m_data(NoMatchType()) {}
+      LookupResult(ConflictType) : m_data(ConflictType()) {}
+      template<typename... U>
+      LookupResult(U&&... args) : m_data(T(std::forward<U>(args)...)) {}
 
-      LookupResult(LookupResult&& src) = default;
+      LookupResult(LookupResult&&) = default;
 
       bool conflict() const {return m_data.template contains<NoMatchType>();}
       bool no_match() const {return m_data.template contains<ConflictType>();}
@@ -43,11 +45,6 @@ namespace Psi {
     class EvaluateContext;
     class SourceLocation;
 
-    class EvaluateCallback {
-    public:
-      virtual Value evaluate(const Value& value, const EvaluateContext& context, const SourceLocation& source) = 0;
-    };
-
     /**
      * This type allows for member injection into unknown types. It
      * must be used in a constraint of the form <tt>Member a b</tt>,
@@ -56,15 +53,25 @@ namespace Psi {
      */
     class MemberType : public TemplateType {
     public:
+      typedef std::function<Value(const Value&, const EvaluateContext&, const SourceLocation&)> EvaluateCallback;
+
+      /**
+       * This has a standard implementation, since #MemberType
+       * instances should not be associated with any run-time data.
+       */
+      virtual InstructionList specialize(const Context& context,
+                                         const std::vector<Type>& parameters,
+                                         const std::shared_ptr<Value>& value);
+
       /**
        * Look up a member by name.
        */
-      virtual LookupResult<std::shared_ptr<EvaluateCallback> > member_lookup(const std::string& name);
+      virtual LookupResult<EvaluateCallback> member_lookup(const std::string& name);
 
       /**
        * Evaluate a passed argument list.
        */
-      virtual LookupResult<std::shared_ptr<EvaluateCallback> > evaluate(const std::vector<int>& arguments);
+      virtual LookupResult<EvaluateCallback> evaluate(const std::vector<Parser::Expression>& arguments);
     };
   }
 }
