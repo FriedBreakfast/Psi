@@ -51,7 +51,7 @@ namespace Psi {
      * where \c a is the type having the member injected and \c b is a
      * #MemberType instance.
      */
-    class MemberType : public TemplateType {
+    class MemberType {
     public:
       typedef std::function<Value(const Value&, const EvaluateContext&, const SourceLocation&)> EvaluateCallback;
 
@@ -72,6 +72,42 @@ namespace Psi {
        * Evaluate a passed argument list.
        */
       virtual LookupResult<EvaluateCallback> evaluate(const std::vector<Parser::Expression>& arguments);
+    };
+
+    struct ConstrainResult {
+      /// Newly declared type variables
+      std::vector<ParameterType> new_variables;
+      /// Constraints which apply to this object
+      std::vector<Type> constraints;
+    };
+
+    /**
+     * When a function is defined, types like this allow constraint
+     * definitions.
+     */
+    class ConstraintType {
+    public:
+      /**
+       * Apply this constraint.
+       *
+       * \return A list of interface types associated with the given arguments.
+       */
+      virtual std::vector<Type> constrain(const std::vector<Parser::Expression>& arguments) = 0;
+    };
+
+    struct DeclareResult {
+      /// Type of the object being declared
+      Type type;
+      /// Related constraints
+      ConstrainResult constraint;
+    };
+
+    /**
+     * 
+     */
+    class DeclareType {
+    public:
+      virtual std::vector<Type> declare(const std::vector<Parser::Expression>& arguments) = 0;
     };
   }
 }

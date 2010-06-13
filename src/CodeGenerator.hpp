@@ -1,6 +1,7 @@
 #ifndef HPP_PSI_CODEGENERATOR
 #define HPP_PSI_CODEGENERATOR
 
+#include "Box.hpp"
 #include "TypeSystem.hpp"
 #include "Variant.hpp"
 
@@ -52,28 +53,45 @@ namespace Psi {
 
       virtual InstructionList specialize(const Context& context,
 					 const std::vector<Type>& parameters,
-					 const std::shared_ptr<Value>& value) = 0;
+					 const Value& value) = 0;
+
+      virtual bool cast(const Box& box) = 0;
 
     private:
-      std::vector<std::shared_ptr<ParameterType> > m_parameters;
+      std::vector<ParameterType> m_parameters;
+    };
+
+    enum class ParameterMode {
+      /// Pass by value
+      value,
+      /// Pass by reference
+      reference,
+      /// Pass by reference and allow modification
+      in_out,
+    };
+
+    enum class ResultMode {
+      /// Return by value
+      value,
+      /// Return a reference (the parent function does not own the result)
+      reference
+    };
+
+    struct FunctionParameter {
+      ParameterMode mode;
+      Type type;
+    };
+
+    struct FunctionResult {
+      ResultMode mode;
+      Type type;
     };
 
     class FunctionType : public TemplateType {
     public:
-      enum class InMode {
-        InValue,
-        InReference,
-	InOut,
-      };
-
-      enum class OutMode {
-	Out,
-	OutReference
-      };
-
     private:
-      std::vector<std::pair<InMode, Type> > m_in_arguments;
-      std::vector<std::pair<OutMode, Type> > m_out_arguments;
+      std::vector<FunctionParameter> m_arguments;
+      std::vector<FunctionResult> m_results;
     };
 
     class StructTemplateType : public TemplateType {
@@ -93,29 +111,56 @@ namespace Psi {
       ConcreteType m_type;
     };
 
-#if 0
-    class Context {
-    private:
-      /// Value holds size, alignment and destructors for this type.
-      std::unordered_map<ParameterType, std::shared_ptr<Value> > m_parameter_types;
-    };
+    class Block;
 
     class Function {
     public:
-      std::shared_ptr<Value> value();
-      std::shared_ptr<Block> start_block();
-      const std::vector<std::shared_ptr<Value> >& parameters();
+      Function(Function&&) = default;
+
+      static Function global(std::vector<ParameterType> template_parameters,
+			     std::vector<FunctionParameter> parameters,
+			     std::vector<FunctionResult> results);
+
+      Function lambda(std::vector<ParameterType> template_parameters,
+		      std::vector<FunctionParameter> parameters,
+		      std::vector<FunctionResult> results);
+
+      /// Whether this currently refers to a function.
+      explicit operator bool () const {return m_data.get();}
+      /// Block run on entering this function
+      Block entry();
+      /// Values of parameters to this function as seen inside the function
+      const std::vector<Value>& parameters() const {return m_data->parameters;}
 
     private:
+      struct Data {
+	std::vector<Value> parameters;
+      };
+
+      std::shared_ptr<Data> m_data;
     };
 
     class Block {
     public:
-      std::shared_ptr<Value> phi(const std::shared_ptr<Type>& type);
-      void add_incoming(const std::shared_ptr<Block>& incoming,
-			const std::unordered_map<std::shared_ptr<Value>, std::shared_ptr<Value> >& phi_values);
-      void append(const Instruction& insn);
-      void destroy(const Value& value);
+      Value phi(const Type& type);
+      void append(InstructionList&& insn);
+    };
+
+    class InstructionI {
+    public:
+      virtual std::unique_ptr<llvm::Instruction> to_llvm() = 0;
+
+    private:
+      //boost::intrusive::list_member_hook<> m_list_hook;
+    };
+
+    class Instruction {
+    public:
+      Instruction(const Instruction&) = delete;
+      Instruction(Instruction&&) = default;
+
+    private:
+      std::unique_ptr<InstructionI> m_ptr;
     };
 
     /**
@@ -127,7 +172,7 @@ namespace Psi {
      * \param if_true Block to jump to if \c cond is true.
      * \param if_false Block to jump to if \c cond is false.
      */
-    std::shared_ptr<Instruction> branch_instruction(const Value& cond, const Block& if_true, const Block& if_false);
+    Instruction branch_instruction(const Value& cond, const Block& if_true, const Block& if_false);
 
     /**
      * Create a jump instruction. No more instructions may be
@@ -135,21 +180,20 @@ namespace Psi {
      *
      * \param target Block to jump to.
      */
-    std::shared_ptr<Instruction> goto_instruction(const Block& target);
+    Instruction goto_instruction(const Block& target);
 
     /**
      * Create a call instruction.
      */
-    std::shared_ptr<Instruction> call_instruction(const Value& function, const std::vector<Value>& parameters);
+    Instruction call_instruction(const Value& function, const std::vector<Value>& parameters);
 
-    std::shared_ptr<Instruction> call_instruction_maybe(const Value& function, const std::vector<Value>& parameters);
+    Instruction call_instruction_maybe(const Value& function, const std::vector<Value>& parameters);
 
-    std::shared_ptr<Instruction> destroy_instruction(const Value& value);
+    Instruction destroy_instruction(const Value& value);
 
-    std::shared_ptr<Value> constant_integer(const std::string& num);
-    std::shared_ptr<Value> constant_float(float value);
-    std::shared_ptr<Value> constant_double(double value);
-#endif
+    Value constant_integer(const std::string& num);
+    Value constant_float(float value);
+    Value constant_double(double value);
   }
 }
 
