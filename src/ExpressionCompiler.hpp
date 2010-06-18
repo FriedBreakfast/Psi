@@ -3,6 +3,7 @@
 
 #include "CodeGenerator.hpp"
 #include "Parser.hpp"
+#include "PointerList.hpp"
 #include "Variant.hpp"
 
 /*
@@ -35,15 +36,36 @@ namespace Psi {
       bool conflict() const {return m_data.template contains<NoMatchType>();}
       bool no_match() const {return m_data.template contains<ConflictType>();}
 
-      const T& operator * () const {return *m_data.template get<T>();}
-      const T* operator -> () const {return m_data.template get<T>();}
+      const T& operator * () const {return m_data.template get<T>();}
+      const T* operator -> () const {return &m_data.template get<T>();}
 
     private:
       DataType m_data;
     };
 
-    class EvaluateContext;
-    class SourceLocation;
+    class LogicalSourceLocation {
+    public:
+      static LogicalSourceLocation anonymous_child(const LogicalSourceLocation& parent);
+      static LogicalSourceLocation root();
+      static LogicalSourceLocation named_child(const LogicalSourceLocation& parent, std::string name);
+    };
+
+    typedef Parser::PhysicalSourceLocation PhysicalSourceLocation;
+
+    struct SourceLocation {
+      LogicalSourceLocation logical;
+      PhysicalSourceLocation physical;
+    };
+
+    class EvaluateContext {
+    public:
+      typedef std::function<CodeValue(const SourceLocation&)> EvaluateCallback;
+
+      /**
+       * Look up a name in this context.
+       */
+      virtual LookupResult<EvaluateCallback> lookup(const std::string& name) const;
+    };
 
     /**
      * This type allows for member injection into unknown types. It
@@ -53,25 +75,17 @@ namespace Psi {
      */
     class MemberType {
     public:
-      typedef std::function<Value(const Value&, const EvaluateContext&, const SourceLocation&)> EvaluateCallback;
-
-      /**
-       * This has a standard implementation, since #MemberType
-       * instances should not be associated with any run-time data.
-       */
-      virtual InstructionList specialize(const Context& context,
-                                         const std::vector<Type>& parameters,
-                                         const std::shared_ptr<Value>& value);
+      typedef std::function<CodeValue(const EvaluateContext&, const SourceLocation&)> EvaluateCallback;
 
       /**
        * Look up a member by name.
        */
-      virtual LookupResult<EvaluateCallback> member_lookup(const std::string& name);
+      virtual LookupResult<EvaluateCallback> member_lookup(const std::string& name) const;
 
       /**
        * Evaluate a passed argument list.
        */
-      virtual LookupResult<EvaluateCallback> evaluate(const std::vector<Parser::Expression>& arguments);
+      virtual LookupResult<EvaluateCallback> evaluate(PointerList<const Parser::Expression> arguments) const;
     };
 
     struct ConstrainResult {
@@ -92,7 +106,7 @@ namespace Psi {
        *
        * \return A list of interface types associated with the given arguments.
        */
-      virtual std::vector<Type> constrain(const std::vector<Parser::Expression>& arguments) = 0;
+      virtual std::vector<Type> constrain(PointerList<const Parser::Expression> arguments) const = 0;
     };
 
     struct DeclareResult {
@@ -107,7 +121,7 @@ namespace Psi {
      */
     class DeclareType {
     public:
-      virtual std::vector<Type> declare(const std::vector<Parser::Expression>& arguments) = 0;
+      virtual std::vector<Type> declare(PointerList<const Parser::Expression> arguments) const = 0;
     };
   }
 }

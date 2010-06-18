@@ -23,38 +23,23 @@ namespace Psi {
       std::shared_ptr<SourceCodeText> text;
       int first_line, first_column, last_line, last_column;
       const char *begin, *end;
+
+      PhysicalSourceLocation() : first_line(0), first_column(0), last_line(0), last_column(0), begin(0), end(0) {}
+
+      std::string str() const {return std::string(begin, end-begin);}
     };
 
-    class ParseElement {
-    public:
-      ParseElement(const PhysicalSourceLocation& text)
-        : m_text(text) {
-      }
+    struct ParseElement {
+      ParseElement(ParseElement&&) = default;
+      ParseElement(PhysicalSourceLocation source_) : source(std::move(source_)) {}
 
-      const PhysicalSourceLocation& source() const {
-        return m_text;
-      }
-
-    private:
-      PhysicalSourceLocation m_text;
+      PhysicalSourceLocation source;
     };
 
     class Expression;
 
-    class MacroExpression {
-    public:
-      MacroExpression(std::vector<Expression> elements)
-        : m_elements(std::move(elements)) {
-      }
-
-      MacroExpression(MacroExpression&&) = default;
-
-      const std::vector<Expression>& elements() const {
-        return m_elements;
-      }
-
-    private:
-      std::vector<Expression> m_elements;
+    struct MacroExpression {
+      std::vector<Expression> elements;
     };
 
     enum class TokenType {
@@ -64,19 +49,9 @@ namespace Psi {
       bracket
     };
 
-    class TokenExpression {
-    public:
-      TokenExpression(TokenType type, PhysicalSourceLocation text)
-        : m_text(std::move(text)),
-          m_token_type(std::move(type)) {
-      }
-
-      const PhysicalSourceLocation& text() const {return m_text;}
-      TokenType token_type() const {return m_token_type;}
-
-    private:
-      PhysicalSourceLocation m_text;
-      TokenType m_token_type;
+    struct TokenExpression {
+      TokenType token_type;
+      PhysicalSourceLocation text;
     };
 
     enum class ExpressionType {
@@ -113,66 +88,32 @@ namespace Psi {
       Variant<TokenExpression, MacroExpression> m_data;
     };
 
-    class Statement : public ParseElement {
-    public:
-      Statement(PhysicalSourceLocation text,
-                Expression expression,
-                PhysicalSourceLocation identifier)
-        : ParseElement(std::move(text)),
-          m_identifier(std::move(identifier)),
-          m_expression(std::move(expression)) {
-      }
+    struct Statement : ParseElement {
+      Statement(PhysicalSourceLocation source_) : ParseElement(std::move(source_)) {}
+      Statement(PhysicalSourceLocation source_, Expression expression_) : ParseElement(std::move(source_)), expression(std::move(expression_)) {}
+      Statement(PhysicalSourceLocation source_, Expression expression_, PhysicalSourceLocation name_) : ParseElement(std::move(source_)), expression(std::move(expression_)), name(std::move(name_)) {}
+      Statement(Statement&&) = default;
 
-      Statement(PhysicalSourceLocation text,
-                Expression expression)
-        : ParseElement(std::move(text)),
-          m_expression(std::move(expression)) {
-      }
-
-      Statement(PhysicalSourceLocation text)
-        : ParseElement(std::move(text)) {
-      }
-
-      const Maybe<Expression>& expression() const {
-        return m_expression;
-      }
-
-      const Maybe<PhysicalSourceLocation>& identifier() const {
-        return m_identifier;
-      }
-
-    private:
-      Maybe<PhysicalSourceLocation> m_identifier;
-      Maybe<Expression> m_expression;
+      Maybe<Expression> expression;
+      Maybe<PhysicalSourceLocation> name;
     };
 
-    class ArgumentDeclaration : public ParseElement {
-    public:
-      ArgumentDeclaration(PhysicalSourceLocation text,
-                          PhysicalSourceLocation identifier)
-        : ParseElement(std::move(text)),
-          m_identifier(std::move(identifier)) {
-      }
+    struct ArgumentDeclaration : ParseElement {
+      ArgumentDeclaration(PhysicalSourceLocation source_, PhysicalSourceLocation name_) : ParseElement(std::move(source_)), name(std::move(name_)) {}
+      ArgumentDeclaration(PhysicalSourceLocation source_, PhysicalSourceLocation name_, Expression expression_) : ParseElement(std::move(source_)), name(std::move(name_)), expression(std::move(expression_)) {}
+      ArgumentDeclaration(ArgumentDeclaration&&) = default;
 
-      ArgumentDeclaration(PhysicalSourceLocation text,
-                          PhysicalSourceLocation identifier,
-                          Expression expression)
-        : ParseElement(std::move(text)),
-          m_identifier(std::move(identifier)),
-          m_expression(std::move(expression)) {
-      }
+      PhysicalSourceLocation name;
+      Maybe<Expression> expression;
+    };
 
-      const PhysicalSourceLocation& identifier() const {
-        return m_identifier;
-      }
+    struct Argument : ParseElement {
+      Argument(PhysicalSourceLocation source_, Expression value_, PhysicalSourceLocation name_) : ParseElement(std::move(source_)), value(std::move(value_)), name(std::move(name_)) {}
+      Argument(PhysicalSourceLocation source_, Expression value_) : ParseElement(std::move(source_)), value(std::move(value_)) {}
+      Argument(Argument&&) = default;
 
-      const Maybe<Expression>& expression() const {
-        return m_expression;
-      }
-
-    private:
-      PhysicalSourceLocation m_identifier;
-      Maybe<Expression> m_expression;
+      Expression value;
+      Maybe<PhysicalSourceLocation> name;
     };
 
     class ParseError : public std::runtime_error {
@@ -193,7 +134,7 @@ namespace Psi {
      * \return the resulting parse tree.
      * \return the resulting StatementList.
      */
-    std::vector<Expression> parse_argument_list(const PhysicalSourceLocation& text);
+    std::vector<Argument> parse_argument_list(const PhysicalSourceLocation& text);
 
     /** \brief parse a function argument declaration.
      * \details This is a list of argument declarations possibly

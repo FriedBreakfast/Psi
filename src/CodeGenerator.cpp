@@ -11,19 +11,10 @@ namespace Psi {
     InstructionList::InstructionList() {
     }
 
-    InstructionList::InstructionList(InstructionList&& src) {
-      append(src);
+    InstructionList::InstructionList(InstructionList&&) {
     }
 
     InstructionList::~InstructionList() {
-    }
-
-    void InstructionList::append(InstructionList&& src) {
-      append(src);
-    }
-
-    void InstructionList::append(InstructionList& src) {
-      m_list.splice(m_list.end(), src.m_list);
     }
 
 #if 0

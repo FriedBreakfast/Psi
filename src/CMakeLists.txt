@@ -7,6 +7,7 @@ set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I
 add_library(typetest SHARED
   CodeGenerator.cpp CodeGenerator.hpp
   ExpressionCompiler.cpp ExpressionCompiler.hpp
+  Format.hpp
   TypeSystem.cpp TypeSystem.hpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
   Maybe.hpp
