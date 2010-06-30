@@ -61,7 +61,7 @@ namespace Psi {
         if (first_lookup.conflict() || first_lookup.no_match())
           throw compile_error(format("Evaluation failed"));
 
-        auto second = (*first_lookup)(context, location);
+        auto second = (*first_lookup)(first.value, context, location);
 
         return CodeValue{std::move(second.value), CodeBlock{std::move(first.code), std::move(second.code)}};
       }
@@ -86,7 +86,7 @@ namespace Psi {
           if (first_lookup.conflict() || first_lookup.no_match())
             throw compile_error(format("%s bracket evaluation failed", bracket_macro_name(token_expr.token_type)));
 
-          auto second = (*first_lookup)(context, location);
+          auto second = (*first_lookup)(first.value, context, location);
 
           return {std::move(second.value), {std::move(first.code), std::move(second.code)}};
         }
@@ -276,17 +276,16 @@ namespace Psi {
       class FunctionMember : public MemberType {
       public:
         virtual LookupResult<EvaluateCallback> evaluate(PointerList<const Parser::Expression> arguments) const {
-          return [=] (const EvaluateContext& context, const SourceLocation& location) -> CodeValue {
+          return [=] (const Value& value, const EvaluateContext& context, const SourceLocation& location) -> CodeValue {
             auto& parameters = validate_call_arguments(arguments);
             auto result = compile_call_arguments(parameters, context, location.logical);
-            auto call_result = apply_function_call(m_value, m_description, location, result.positional, result.keywords);
+            auto call_result = apply_function_call(value, m_description, location, result.positional, result.keywords);
 
             return {std::move(call_result.value), {std::move(result.code), std::move(call_result.code)}};
           };
         }
 
       private:
-        Value m_value;
         FunctionDescription m_description;
       };
     }

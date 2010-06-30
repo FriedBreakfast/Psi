@@ -8,131 +8,62 @@
 
 namespace Psi {
   namespace Compiler {
-    InstructionList::InstructionList() {
+    Block::Block(GC::GCPtr<BlockData> data) : m_data(std::move(data)) {
     }
 
-    InstructionList::InstructionList(InstructionList&&) {
+    Function Function::global(std::vector<ParameterType> template_parameters,
+                              std::vector<FunctionParameter> parameters,
+                              std::vector<FunctionResult> results) {
     }
 
-    InstructionList::~InstructionList() {
+    Function Function::lambda(std::vector<ParameterType> template_parameters,
+                              std::vector<FunctionParameter> parameters,
+                              std::vector<FunctionResult> results) {
     }
 
-#if 0
-    struct Context {
-      llvm::LLVMContext llvm_context;
-      /// This will always be i8*
-      llvm::Type *generic_type;
-      std::unordered_map<TypeSystem::Constructor, llvm::Type*> simple_types;
-    };
+    void CodeGenerator::block_append(Block& block, Instruction& insn) {
+      if (block.m_data->terminated)
+        throw std::logic_error("Cannot add instructions to terminated block");
 
-    std::shared_ptr<Context> make_context() {
-      auto sp = std::make_shared<Context>();
-      sp->generic_type = llvm::PointerType::getUnqual(llvm::IntegerType::get(sp->llvm_context, 8));
-      return sp;
+      if (insn.m_ptr->terminator())
+        block.m_data->terminated = true;
+
+      insn.m_ptr->check_variables();
+
+      block.m_data->instructions.push_back(*insn.m_ptr.release());
     }
 
-    struct Value::Data {
-      llvm::Value *value;
-      TypeSystem::Type type;
-      bool destroyed;
-    };
+    Block CodeGenerator::block_create_child(Block& block) {
+    }
 
-    struct Block::Data {
-      /// Immediate predecessor blocks.
-      std::vector<Block> predecessors;
-      /// Block which dominates this one.
-      Block dominator;
-      /// LLVM block
-      llvm::BasicBlock *block;
-      /// Context which generated this block
-      std::shared_ptr<Context> context;
-    };
+    Value Block::phi(const Type& type) {
+    }
 
-    struct PhiNode::Data {
-      Block block;
-      llvm::PHINode *phi_node;
-      std::vector<std::pair<llvm::Value*, llvm::BasicBlock*> > entries;
-      Maybe<TypeSystem::Type> type;
-      Maybe<Value> value;
-    };
+    void BlockData::gc_visit(const std::function<bool(GC::Node*)>& visitor) {
+      parent.gc_visit(visitor);
+      dominator.gc_visit(visitor);
 
-    namespace {
-      llvm::Type* to_llvm_type(const Context& con, const TypeSystem::Type& ty) {
-        auto simple = ty.as_primitive();
-        if (simple) {
-          auto it = con.simple_types.find(*simple);
-          if (it != con.simple_types.end())
-            return it->second;
-        }
-
-        return con.generic_type;
+      for (auto it = instructions.begin(); it != instructions.end();) {
+        if (visitor(&*it))
+          ++it;
+        else
+          it = instructions.erase(it);
       }
     }
 
-    PhiNode::PhiNode(Block block) : m_data(std::make_shared<Data>(Data{std::move(block), 0, {}, {}, {}})) {
+    Block Block::create_child() {
+      BlockData *bd = new BlockData;
+      bd->terminated = false;
+      bd->parent = m_data;
+      return Block(bd);
     }
 
-    void PhiNode::merge(const Block& incoming, const Value& value) {
-      // Work out result type
-      if (m_data->type) {
-        std::abort();
-      } else {
-        m_data->type = value.m_data->type;
-      }
-
-      if (m_data->phi_node) {
-        assert(m_data->type);
-        m_data->phi_node->addIncoming(value.m_data->value, incoming.m_data->block);
-      } else {
-        m_data->entries.push_back({value.m_data->value, incoming.m_data->block});
-      }
+    bool InstructionI::terminator() {
+      return false;
     }
 
-    const Value& PhiNode::value() {
-      if (!m_data->value) {
-        if (!m_data->type)
-          throw std::logic_error("Cannot get a value for a Phi node with no entries");
-
-        llvm::Type *llvm_type = to_llvm_type(*m_data->block.m_data->context, *m_data->type);
-        m_data->phi_node = llvm::PHINode::Create(llvm_type);
-        m_data->block.m_data->block->getInstList().push_front(m_data->phi_node);
-
-        for (auto it = m_data->entries.begin(); it != m_data->entries.end(); ++it)
-          m_data->phi_node->addIncoming(it->first, it->second);
-
-        m_data->value = Value{std::make_shared<Value::Data>(Value::Data{m_data->phi_node, std::move(*m_data->type), false})};
-      }
-
-      return *m_data->value;
+    std::vector<Block> InstructionI::jump_targets() {
+      return {};
     }
-
-    BlockGenerator::BlockGenerator(Block block) : m_block(std::move(block)) {
-    }
-
-    PhiNode BlockGenerator::phi() {
-      return PhiNode(m_block);
-    }
-
-    std::vector<Value> BlockGenerator::invoke(const Function& fnuction, const std::vector<Value>& arguments) {
-    }
-
-    void BlockGenerator::destroy(Value& value) {
-      if (value.m_data->destroyed)
-        throw std::logic_error("value has already been destroyed");
-
-      value.m_data->destroyed = true;
-      std::abort();
-    }
-
-    void BlockGenerator::branch(const Value& cond, Block& if_true, Block& if_false) {
-      if (!llvm::BranchInst::Create(if_true.m_data->block, if_false.m_data->block, cond.m_data->value, m_block.m_data->block))
-        throw std::runtime_error("Failed to create branch instruction");
-    }
-
-    void BlockGenerator::goto_(Block& target) {
-      if (!llvm::BranchInst::Create(target.m_data->block, m_block.m_data->block))
-        throw std::runtime_error("Failed to create branch instruction");
-    }
-#endif
   }
 }

@@ -75,7 +75,7 @@ namespace Psi {
      */
     class MemberType {
     public:
-      typedef std::function<CodeValue(const EvaluateContext&, const SourceLocation&)> EvaluateCallback;
+      typedef std::function<CodeValue(const Value& value, const EvaluateContext&, const SourceLocation&)> EvaluateCallback;
 
       /**
        * Look up a member by name.

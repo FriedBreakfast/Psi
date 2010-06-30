@@ -4,9 +4,13 @@
 #include "Box.hpp"
 #include "TypeSystem.hpp"
 #include "Variant.hpp"
+#include "PoolGC.hpp"
+#include "IntrusivePtr.hpp"
 
 #include <llvm/BasicBlock.h>
 #include <llvm/Instruction.h>
+
+#include <boost/intrusive/list.hpp>
 
 namespace Psi {
   namespace Compiler {
@@ -15,14 +19,36 @@ namespace Psi {
     class TemplateType;
     class Value;
     class Context;
-    class ConcreteType;
     class Type;
+    class Block;
+    class Instruction;
 
-    class ParameterTypeTag;
-    typedef std::shared_ptr<ParameterTypeTag> ParameterType;
+    class Context {
+    private:
+      std::shared_ptr<GC::NewPool> m_new_pool;
+    };
 
+    // This class will perform all manipulations spanning multiple
+    // types, hence all classes in this header should have it as a \c
+    // friend.
+    class CodeGenerator {
+    public:
+      CodeGenerator() = delete;
+
+      static void block_append(Block& block, Instruction& instruction);
+      static Block block_create_child(Block& block);
+    };
+
+    /**
+     * This class allows types to carry user-defined data.
+     */
     class UserType {
     public:
+      /**
+       * Gets a pointer to the specified type, if available. If the
+       * specified type is not available, std::runtime_error is
+       * thrown.
+       */
       template<typename T>
       std::shared_ptr<T> cast() const {
         std::shared_ptr<T> result;
@@ -36,25 +62,9 @@ namespace Psi {
       virtual bool cast_impl(Box& box) const = 0;
     };
 
-    class Type;
-
-    class ConcreteType {
-    public:
-      const std::vector<Type>& parameters();
-      const TemplateType& template_();
-      const UserType& user();
-
-    private:
-      struct Data {
-	std::vector<Type> parameters;
-	std::shared_ptr<TemplateType> type;
-        std::shared_ptr<UserType> user;
-      };
-    };
-
     class TemplateType {
     public:
-      TemplateType(std::vector<ParameterType> parameters, std::shared_ptr<UserType> user)
+      TemplateType(std::vector<Type> parameters, std::shared_ptr<UserType> user)
         : m_parameters(std::move(parameters)), m_user(std::move(user)) {}
 
       virtual CodeValue specialize(const Context& context,
@@ -64,7 +74,7 @@ namespace Psi {
       const std::shared_ptr<UserType>& user() const {return m_user;}
 
     private:
-      std::vector<ParameterType> m_parameters;
+      std::vector<Type> m_parameters;
       std::shared_ptr<UserType> m_user;
     };
 
@@ -74,14 +84,9 @@ namespace Psi {
         Data(const Data&) = delete;
         Data(Data&&) = delete;
 
-        Data(std::shared_ptr<UserType>&& user_) : user(std::move(user_)) {}
-
         Data(std::shared_ptr<TemplateType>&& template2, std::vector<Type>&& parameters_)
           : template_(std::move(template2)), parameters(std::move(parameters_)) {
-          user = template_->user();
         }
-
-        std::shared_ptr<UserType> user;
 
         std::shared_ptr<TemplateType> template_;
         std::vector<Type> parameters;
@@ -92,11 +97,8 @@ namespace Psi {
     public:
       Type(std::shared_ptr<TemplateType> template_, std::vector<Type> parameters)
         : m_data(std::make_shared<Data>(std::move(template_), std::move(parameters))) {}
-      Type(std::shared_ptr<UserType> user)
-        : m_data(std::make_shared<Data>(std::move(user))) {}
 
       bool parameterized() const {return !m_data->template_;}
-      const UserType& user() const {return *m_data->user;}
 
       const TemplateType& template_() const {return *m_data->template_;}
       const std::vector<Type>& parameters() const {return m_data->parameters;}
@@ -156,42 +158,25 @@ namespace Psi {
       Type m_underlying;
     };
 
-    class Value {
+    class ValueI {
     public:
-      const Type& type() const {return m_type;}
+      virtual llvm::Value* to_llvm() = 0;
+    };
+
+    class Value {
+      friend class CodeGenerator;
+
+    public:
+      const Type& type() const {return m_data->type;}
 
     private:
-      Type m_type;
+      struct Data {
+        Type type;
+        std::unique_ptr<ValueI> value;
+      };
+
+      std::shared_ptr<Data> m_data;
     };
-
-    class Instruction;
-
-    class CodeBlock {
-    public:
-      CodeBlock();
-      CodeBlock(std::initializer_list<CodeBlock> elements);
-      CodeBlock(const CodeBlock&) = delete;
-      CodeBlock(CodeBlock&&) = default;
-
-      void append(CodeBlock&& other);
-      void append(Instruction&& insn);
-    };
-
-    /**
-     * A class which will contain a set of instructions and also a
-     * value corresponding to whatever is considered the result of
-     * those instructions.
-     */
-    struct CodeValue {
-      CodeValue(Value value_, CodeBlock&& code_) : value(std::move(value_)), code(std::move(code_)) {}
-      CodeValue(const CodeValue&) = delete;
-      CodeValue(CodeValue&&) = default;
-
-      Value value;
-      CodeBlock code;
-    };
-
-    class Block;
 
     class Function {
     public:
@@ -220,39 +205,87 @@ namespace Psi {
       std::shared_ptr<Data> m_data;
     };
 
-    class InstructionList;
-
-    class Block {
+    class InstructionI : public GC::NewPool::Base {
     public:
-      Value phi(const Type& type);
-      void append(InstructionList&& insn);
-    };
+      boost::intrusive::list_member_hook<> list_hook;
 
-    class InstructionI {
-    public:
       virtual std::unique_ptr<llvm::Instruction> to_llvm() = 0;
+      virtual void check_variables() = 0;
 
-    private:
-      //boost::intrusive::list_member_hook<> m_list_hook;
+      virtual bool terminator();
+      virtual std::vector<Block> jump_targets();
     };
 
     class Instruction {
+      friend class CodeGenerator;
+
     public:
+
       Instruction(const Instruction&) = delete;
       Instruction(Instruction&&) = default;
 
       Value value();
 
     private:
-      std::unique_ptr<InstructionI> m_ptr;
+      GC::GCPtr<InstructionI> m_ptr;
     };
 
-    class InstructionList {
+    struct BlockData : GC::NewPool::Base {
+      // Whether any more instructions can be added to this block
+      bool terminated;
+      boost::intrusive::list<InstructionI,
+                             boost::intrusive::member_hook<InstructionI, boost::intrusive::list_member_hook<>, &InstructionI::list_hook>,
+                             boost::intrusive::constant_time_size<false> > instructions;
+
+      // Parent of this block when it is created. \c parent must
+      // always be dominated by \c dominator if \c dominator is not
+      // NULL.
+      GC::GCPtr<BlockData> parent;
+      // Dominating block.
+      GC::GCPtr<BlockData> dominator;
+
+      virtual void gc_visit(const std::function<bool(GC::Node*)>& visitor);
+    };
+
+    class Block {
+      friend class CodeGenerator;
+      Block(GC::GCPtr<BlockData> data);
+
     public:
-      InstructionList();
-      InstructionList(const InstructionList&) = delete;
-      InstructionList(InstructionList&&) = default;
-      ~InstructionList();
+      Value phi(const Type& type);
+      void append(Instruction&& insn) {CodeGenerator::block_append(*this, insn);}
+      Block create_child();
+
+    private:
+      GC::GCPtr<BlockData> m_data;
+    };
+
+    /**
+     * A group of #Blocks with a single entry and exit point.
+     */
+    class CodeBlock {
+    public:
+      CodeBlock();
+      CodeBlock(std::initializer_list<CodeBlock> elements);
+      CodeBlock(const CodeBlock&) = delete;
+      CodeBlock(CodeBlock&&) = default;
+
+      void append(CodeBlock&& other);
+      void append(Instruction&& insn);
+    };
+
+    /**
+     * A class which will contain a set of instructions and also a
+     * value corresponding to whatever is considered the result of
+     * those instructions.
+     */
+    struct CodeValue {
+      CodeValue(Value value_, CodeBlock&& code_) : value(std::move(value_)), code(std::move(code_)) {}
+      CodeValue(const CodeValue&) = delete;
+      CodeValue(CodeValue&&) = default;
+
+      Value value;
+      CodeBlock code;
     };
 
     /**
