@@ -16,7 +16,7 @@ namespace Psi {
       template<typename Derived> friend class PoolBase;
 
       friend void node_add_ref(Node*);
-      friend void node_release(Node*);
+      friend bool node_release(Node*);
 
     private:
       Pool *pool;
@@ -25,15 +25,16 @@ namespace Psi {
       boost::intrusive::list_member_hook<> list_hook;
     };
 
-    void node_release_private(Node *node);
+    bool node_release_private(Node *node);
 
     inline void node_add_ref(Node *node) {
       ++node->n_refs;
     }
 
-    inline void node_release(Node *node) {
+    inline bool node_release(Node *node) {
       if (--node->n_refs == 0)
-        node_release_private(node);
+        return node_release_private(node);
+      return false;
     }
 
     class Pool {
@@ -46,7 +47,7 @@ namespace Psi {
       void collect();
 
     protected:
-      void insert(Node *n);
+      void initialize_node(Node *n);
 
       typedef boost::intrusive::list<Node,
                                      boost::intrusive::member_hook<Node, boost::intrusive::list_member_hook<>, &Node::list_hook>,
@@ -187,7 +188,6 @@ namespace Psi {
       class Base : public Node {
       public:
         friend class NewPool;
-        template<typename T> friend class GCPtr;
 
         virtual ~Base();
         virtual void gc_visit(const std::function<bool(Node*)>& visitor) = 0;
@@ -197,15 +197,16 @@ namespace Psi {
         }
 
         friend void intrusive_ptr_release(Base *p) {
-          node_release(p);
+          if (node_release(p))
+            delete p;
         }
       };
 
       template<typename T, typename... Args>
       GCPtr<T> new_(Args&&... args) {
+        static_assert((std::is_base_of<Base, T>::value), "T must derive Base");
         GCPtr<T> ptr(new T(std::forward<Args>(args)...));
-        Base *base = ptr.get();
-        insert(base);
+        initialize_node(ptr.get());
         return ptr;
       }
 
@@ -217,6 +218,169 @@ namespace Psi {
 
       void destroy(Node *node) {
         delete static_cast<Base*>(node);
+      }
+    };
+
+    /**
+     * A specialization of #NewPool which is interface-compatible with
+     * #TypePool.
+     */
+    template<typename T>
+    class TypedNewPool : public NewPool {
+    public:
+      template<typename... Args>
+      GCPtr<T> new_(Args&&... args) {
+        return NewPool::new_<T>(std::forward<Args>(args));
+      }
+    };
+
+    struct ADLVisitor {
+      template<typename T, typename F>
+      void operator () (T& object, F&& visitor) const {
+        gc_visit(object, std::forward<F>(visitor));
+      }
+    };
+
+    template<typename T, typename Visitor=ADLVisitor>
+    class TypePool : public PoolBase<TypePool<T, Visitor> > {
+    private:
+      union BlockEntry {
+        typename std::aligned_storage<sizeof(T), alignof(T)>::type used;
+        struct {
+          BlockEntry *next;
+        } empty;
+      };
+
+      struct Block : boost::intrusive::list_base_hook<> {
+        TypePool *pool;
+        std::size_t block_size;
+        std::size_t used_count;
+        BlockEntry *free;
+        BlockEntry entries[1];
+      };
+
+    public:
+      typedef T ElementType;
+      typedef Visitor VisitorType;
+
+      friend class PoolBase<TypePool>;
+
+      class Base : public Node {
+      public:
+        friend class TypePool<T>;
+
+        friend void intrusive_ptr_add_ref(Base *p) {
+          node_add_ref(p);
+        }
+
+        friend void intrusive_ptr_release(Base *p) {
+          if (node_release(p))
+            p->block->pool->destroy(p);
+        }
+
+      private:
+        Block *block;
+      };
+
+      static_assert((std::is_base_of<Base, T>::value), "T must derive Base");
+
+      static const std::size_t default_block_size = 1024;
+      static const std::size_t default_max_free = 1024;
+
+      TypePool(std::size_t block_size=default_block_size,
+               std::size_t max_free=default_max_free)
+        : m_block_size(block_size),
+          m_max_free(max_free),
+          m_total_free(0) {}
+
+      TypePool(Visitor visitor,
+               std::size_t block_size=default_block_size,
+               std::size_t max_free=default_max_free)
+        : m_block_size(block_size),
+          m_max_free(max_free),
+          m_total_free(0),
+          m_visitor(std::move(visitor)) {}
+
+      template<typename... Args>
+      GCPtr<T> new_(Args&&... args) {
+        auto storage = allocate_storage();
+        T *ptr;
+        try {
+          ptr = new (storage.second) T (std::forward<Args>(args)...);
+        } catch (...) {
+          destroy_storage(storage.first, storage.second);
+          throw;
+        }
+        initialize_node(ptr, this);
+        return GC::GCPtr<T>(ptr);
+      }
+
+    private:
+      std::size_t m_block_size;
+      std::size_t m_max_free;
+
+      std::size_t m_total_free;
+      Visitor m_visitor;
+      boost::intrusive::list<Block, boost::intrusive::constant_time_size<false> > m_blocks;
+
+      template<typename F>
+      void visit(Node *node, F&& visitor) {
+        m_visitor(static_cast<T*>(node), std::forward<F>(visitor));
+      }
+
+      void destroy(Node *node) {
+        T *t = static_cast<T*>(node);
+        Block *block = t->block;
+        t->~T();
+        BlockEntry *entry = static_cast<BlockEntry*>(t);
+        destroy_storage(block, entry);
+      }
+
+      std::pair<Block*,BlockEntry*> allocate_storage() {
+        if (m_blocks.front().free) {
+          Block *block = &m_blocks.front();
+          BlockEntry *entry = m_blocks.front().free;
+          if (!entry->free.next) {
+            // Move block to the end of the block list since it has no
+            // more free slots
+            m_blocks.splice(m_blocks.end(), m_blocks, m_blocks.begin());
+          }
+          return std::make_pair(block, entry);
+        } else {
+          // Allocate a new block
+          void *storage = new char[sizeof(Block) + sizeof(BlockEntry) * (m_block_size-1)];
+          Block *block = new (storage) Block;
+          block->pool = this;
+          block->block_size = m_block_size;
+          block->used_count = 1;
+          block->free = block->entries + 2;
+
+          for (std::size_t i = 2; i < m_block_size; ++i)
+            block->entries[i-1].free.next = block->entries + i;
+          block->entries[m_block_size-1].free.next = 0;
+
+          m_blocks.push_front(*block);
+
+          return std::make_pair(block, block->entries);
+        }
+      }
+
+      void destroy_storage(Block *block, BlockEntry *entry) {
+        ++m_total_free;
+        if ((--block->used_count == 0) && (m_max_free < m_total_free - block->block_size)) {
+          m_total_free -= block->block_size;
+          m_blocks.erase(m_blocks.iterator_to(*block));
+          delete block;
+        } else {
+          if (!block->free) {
+            // If block had no free elements previously, move it to
+            // the front of the block list so the next allocated
+            // element comes from it
+            m_blocks.splice(m_blocks.begin(), m_blocks, m_blocks.iterator_to(*block));
+          }
+          entry->free.next = block->free;
+          block->free = entry;
+        }
       }
     };
   }

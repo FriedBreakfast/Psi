@@ -34,6 +34,10 @@ namespace Psi {
     }
 
     Block CodeGenerator::block_create_child(Block& block) {
+      GC::GCPtr<BlockData> bd = block.m_data->context->new_pool.new_<BlockData>();
+      bd->terminated = false;
+      bd->parent = m_data;
+      return Block(bd);
     }
 
     Value Block::phi(const Type& type) {
@@ -49,13 +53,6 @@ namespace Psi {
         else
           it = instructions.erase(it);
       }
-    }
-
-    Block Block::create_child() {
-      BlockData *bd = new BlockData;
-      bd->terminated = false;
-      bd->parent = m_data;
-      return Block(bd);
     }
 
     bool InstructionI::terminator() {

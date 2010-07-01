@@ -14,30 +14,65 @@
 
 namespace Psi {
   namespace Compiler {
+    namespace Detail {
+      // This class will perform all manipulations spanning multiple
+      // types, hence all classes in this header should have it as a \c
+      // friend.
+      class CodeGenerator {
+      public:
+        CodeGenerator() = delete;
+
+        static void block_append(Block& block, Instruction& instruction);
+        static Block block_create_child(Block& block);
+      };
+
+      struct Context {
+#ifndef NDEBUG
+        typedef GC::TypedNewPool<Block> BlockPool;
+        typedef GC::TypedNewPool<Type> TypePool;
+#else
+        typedef GC::TypePool<Block> BlockPool;
+        typedef GC::TypePool<Type> TypePool;
+#endif
+
+        BlockPool block_pool;
+        TypePool type_pool;
+      };
+
+      struct Type : Context::TypePool::Base {
+        GC::GCPtr<TemplateType> template_;
+        std::vector<GC::GCPtr<Type> > parameters;
+
+        virtual void gc_visit(const std::function<bool(GC::Node*)>& visitor);
+      };
+
+      struct Block : Context::BlockPool::Base {
+        // Whether any more instructions can be added to this block
+        bool terminated;
+        boost::intrusive::list<InstructionI,
+                               boost::intrusive::member_hook<InstructionI, boost::intrusive::list_member_hook<>, &InstructionI::list_hook>,
+                               boost::intrusive::constant_time_size<false> > instructions;
+
+        // Compilation context pointer
+        std::shared_ptr<Context> context;
+        // Parent of this block when it is created. \c parent must
+        // always be dominated by \c dominator if \c dominator is not
+        // NULL.
+        GC::GCPtr<Block> parent;
+        // Dominating block.
+        GC::GCPtr<Block> dominator;
+
+        virtual void gc_visit(const std::function<bool(GC::Node*)>& visitor);
+      };
+    }
+
     class CodeValue;
 
     class TemplateType;
     class Value;
-    class Context;
     class Type;
     class Block;
     class Instruction;
-
-    class Context {
-    private:
-      std::shared_ptr<GC::NewPool> m_new_pool;
-    };
-
-    // This class will perform all manipulations spanning multiple
-    // types, hence all classes in this header should have it as a \c
-    // friend.
-    class CodeGenerator {
-    public:
-      CodeGenerator() = delete;
-
-      static void block_append(Block& block, Instruction& instruction);
-      static Block block_create_child(Block& block);
-    };
 
     /**
      * This class allows types to carry user-defined data.
@@ -64,7 +99,7 @@ namespace Psi {
 
     class TemplateType {
     public:
-      TemplateType(std::vector<Type> parameters, std::shared_ptr<UserType> user)
+      TemplateType(std::vector<ParameterType> parameters, std::shared_ptr<UserType> user)
         : m_parameters(std::move(parameters)), m_user(std::move(user)) {}
 
       virtual CodeValue specialize(const Context& context,
@@ -80,19 +115,7 @@ namespace Psi {
 
     class Type {
     private:
-      struct Data {
-        Data(const Data&) = delete;
-        Data(Data&&) = delete;
-
-        Data(std::shared_ptr<TemplateType>&& template2, std::vector<Type>&& parameters_)
-          : template_(std::move(template2)), parameters(std::move(parameters_)) {
-        }
-
-        std::shared_ptr<TemplateType> template_;
-        std::vector<Type> parameters;
-      };
-
-      std::shared_ptr<Data> m_data;
+      GC::GCPtr<Detail::Type> m_data;
 
     public:
       Type(std::shared_ptr<TemplateType> template_, std::vector<Type> parameters)
@@ -102,6 +125,12 @@ namespace Psi {
 
       const TemplateType& template_() const {return *m_data->template_;}
       const std::vector<Type>& parameters() const {return m_data->parameters;}
+    };
+
+    class ParameterType {
+
+    private:
+      GC::GCPtr<TypeData> m_data;
     };
 
     enum class ParameterMode {
@@ -230,31 +259,17 @@ namespace Psi {
       GC::GCPtr<InstructionI> m_ptr;
     };
 
-    struct BlockData : GC::NewPool::Base {
-      // Whether any more instructions can be added to this block
-      bool terminated;
-      boost::intrusive::list<InstructionI,
-                             boost::intrusive::member_hook<InstructionI, boost::intrusive::list_member_hook<>, &InstructionI::list_hook>,
-                             boost::intrusive::constant_time_size<false> > instructions;
-
-      // Parent of this block when it is created. \c parent must
-      // always be dominated by \c dominator if \c dominator is not
-      // NULL.
-      GC::GCPtr<BlockData> parent;
-      // Dominating block.
-      GC::GCPtr<BlockData> dominator;
-
-      virtual void gc_visit(const std::function<bool(GC::Node*)>& visitor);
-    };
-
     class Block {
       friend class CodeGenerator;
       Block(GC::GCPtr<BlockData> data);
 
     public:
+      Block(Block&&) = default;
+      Block& operator = (Block&& src) {m_data = std::move(src.m_data); return *this;}
+
       Value phi(const Type& type);
       void append(Instruction&& insn) {CodeGenerator::block_append(*this, insn);}
-      Block create_child();
+      Block create_child() {return CodeGenerator::block_create_child(*this);}
 
     private:
       GC::GCPtr<BlockData> m_data;

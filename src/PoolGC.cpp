@@ -10,7 +10,10 @@ namespace Psi {
       assert(m_nodes.empty());
     }
 
-    void Pool::insert(Node *node) {
+    void Pool::initialize_node(Node *node) {
+      node->pool = this;
+      node->n_refs = 0;
+      node->gc_refs = 0;
       m_nodes.push_back(*node);
     }
 
