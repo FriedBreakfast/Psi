@@ -7,14 +7,77 @@
 #include "PoolGC.hpp"
 #include "IntrusivePtr.hpp"
 
-#include <llvm/BasicBlock.h>
-#include <llvm/Instruction.h>
-
 #include <boost/intrusive/list.hpp>
+
+#include <llvm/Instruction.h>
 
 namespace Psi {
   namespace Compiler {
     namespace Detail {
+#ifndef NDEBUG
+      template<typename T> struct GCPoolType {typedef GC::TypedNewPool<T> type;};
+      typedef GC::NewPoolBase GCBaseType;
+#else
+      template<typename T> struct GCPoolType {typedef GC::TypePool<T> type;};
+      typedef GC::TypePoolBase GCBaseType;
+#endif
+
+      struct BlockP;
+    }
+
+    class Block;
+    class Type;
+    class Instruction;
+    class InstructionI;
+    class TemplateType;
+    class UserType;
+
+    class InstructionI {
+    public:
+
+      virtual std::unique_ptr<llvm::Instruction> to_llvm() = 0;
+      virtual void check_variables() = 0;
+
+      virtual bool terminator();
+      virtual std::vector<Block> jump_targets();
+
+      virtual Type result_type();
+
+      /**
+       * Clear any references to external values/instructions. This is
+       * used when the parent block is destroyed so that invalid
+       * references are not left dangling.
+       */
+      virtual void clear() = 0;
+
+    private:
+      friend class Detail::BlockP;
+      Detail::BlockP *block;
+      boost::intrusive::list_member_hook<> list_hook;
+    };
+
+    class TemplateTypeI {
+    public:
+#if 0
+      /**
+       * A value may require some adaptation when a type is
+       * specialized, particularly in the case of template
+       * functions. This function gives the opportunity to perform
+       * that specialization.
+       */
+      virtual CodeValue specialize(const Context& context,
+                                   const std::vector<Type>& parameters,
+                                   const Value& value) = 0;
+#endif
+
+      //const std::shared_ptr<UserType>& user() const {return m_user;}
+    };
+
+    namespace Detail {
+      struct BlockP;
+      struct TypeP;
+      struct Context;
+
       // This class will perform all manipulations spanning multiple
       // types, hence all classes in this header should have it as a \c
       // friend.
@@ -24,45 +87,45 @@ namespace Psi {
 
         static void block_append(Block& block, Instruction& instruction);
         static Block block_create_child(Block& block);
+
+	static GC::GCPtr<TypeP> type_specialize(TemplateType& template_, std::vector<Type> parameters);
       };
 
-      struct Context {
-#ifndef NDEBUG
-        typedef GC::TypedNewPool<Block> BlockPool;
-        typedef GC::TypedNewPool<Type> TypePool;
-#else
-        typedef GC::TypePool<Block> BlockPool;
-        typedef GC::TypePool<Type> TypePool;
-#endif
-
-        BlockPool block_pool;
-        TypePool type_pool;
-      };
-
-      struct Type : Context::TypePool::Base {
+      struct TypeP : GCBaseType {
         GC::GCPtr<TemplateType> template_;
-        std::vector<GC::GCPtr<Type> > parameters;
+        std::vector<GC::GCPtr<TypeP> > parameters;
 
         virtual void gc_visit(const std::function<bool(GC::Node*)>& visitor);
       };
 
-      struct Block : Context::BlockPool::Base {
+      struct BlockP : IntrusivePtr::IntrusiveBase<BlockP> {
         // Whether any more instructions can be added to this block
         bool terminated;
         boost::intrusive::list<InstructionI,
                                boost::intrusive::member_hook<InstructionI, boost::intrusive::list_member_hook<>, &InstructionI::list_hook>,
                                boost::intrusive::constant_time_size<false> > instructions;
 
-        // Compilation context pointer
-        std::shared_ptr<Context> context;
+	//@{
+	/**
+	 * These members track parent/child relationships amoung
+	 * blocks. The \c parent pointer points to the parent block
+	 * and allows checking of defined variables; the other two
+	 * exist to allow clearing the \c parent pointer when the
+	 * parent is destroyed.
+	 */
+
         // Parent of this block when it is created. \c parent must
         // always be dominated by \c dominator if \c dominator is not
         // NULL.
-        GC::GCPtr<Block> parent;
-        // Dominating block.
-        GC::GCPtr<Block> dominator;
+	BlockP *parent;
+	boost::intrusive::list_member_hook<> child_list_hook;
+	boost::intrusive::list<BlockP,
+			       boost::intrusive::member_hook<BlockP, boost::intrusive::list_member_hook<>, &BlockP::child_list_hook>,
+			       boost::intrusive::constant_time_size<false> > children;
+        //@}
 
-        virtual void gc_visit(const std::function<bool(GC::Node*)>& visitor);
+        // Dominating block.
+	Block *dominator;
       };
     }
 
@@ -97,40 +160,39 @@ namespace Psi {
       virtual bool cast_impl(Box& box) const = 0;
     };
 
+    class ParameterType {
+    private:
+      GC::GCPtr<Detail::TypeP> m_data;
+    };
+
+    class TemplateType {
+    public:
+      TemplateType();
+    };
+
     class TemplateType {
     public:
       TemplateType(std::vector<ParameterType> parameters, std::shared_ptr<UserType> user)
         : m_parameters(std::move(parameters)), m_user(std::move(user)) {}
 
-      virtual CodeValue specialize(const Context& context,
-                                   const std::vector<Type>& parameters,
-                                   const Value& value) = 0;
-
-      const std::shared_ptr<UserType>& user() const {return m_user;}
 
     private:
-      std::vector<Type> m_parameters;
+      std::vector<ParameterType> m_parameters;
       std::shared_ptr<UserType> m_user;
     };
 
     class Type {
     private:
-      GC::GCPtr<Detail::Type> m_data;
+      GC::GCPtr<Detail::TypeP> m_data;
 
     public:
-      Type(std::shared_ptr<TemplateType> template_, std::vector<Type> parameters)
-        : m_data(std::make_shared<Data>(std::move(template_), std::move(parameters))) {}
+      Type(TemplateType template_, std::vector<Type> parameters)
+	: m_data(Detail::CodeGenerator::type_specialize(std::move(template_), std::move(parameters))) {}
 
       bool parameterized() const {return !m_data->template_;}
 
       const TemplateType& template_() const {return *m_data->template_;}
       const std::vector<Type>& parameters() const {return m_data->parameters;}
-    };
-
-    class ParameterType {
-
-    private:
-      GC::GCPtr<TypeData> m_data;
     };
 
     enum class ParameterMode {
@@ -159,19 +221,19 @@ namespace Psi {
       Type type;
     };
 
-    class FunctionType : public TemplateType {
+    class FunctionType : public TemplateTypeI {
     public:
     private:
       std::vector<FunctionParameter> m_arguments;
       std::vector<FunctionResult> m_results;
     };
 
-    class StructTemplateType : public TemplateType {
+    class StructTemplateType : public TemplateTypeI {
     private:
       std::vector<Type> m_members;
     };
 
-    class UnionTemplateType : public TemplateType {
+    class UnionTemplateType : public TemplateTypeI {
     private:
       std::vector<Type> m_members;
     };
@@ -234,17 +296,6 @@ namespace Psi {
       std::shared_ptr<Data> m_data;
     };
 
-    class InstructionI : public GC::NewPool::Base {
-    public:
-      boost::intrusive::list_member_hook<> list_hook;
-
-      virtual std::unique_ptr<llvm::Instruction> to_llvm() = 0;
-      virtual void check_variables() = 0;
-
-      virtual bool terminator();
-      virtual std::vector<Block> jump_targets();
-    };
-
     class Instruction {
       friend class CodeGenerator;
 
@@ -261,7 +312,7 @@ namespace Psi {
 
     class Block {
       friend class CodeGenerator;
-      Block(GC::GCPtr<BlockData> data);
+      Block(GC::GCPtr<Detail::BlockP> data);
 
     public:
       Block(Block&&) = default;

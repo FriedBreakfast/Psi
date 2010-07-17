@@ -1,11 +1,8 @@
 #ifndef PSI_POOL_GC_HPP
 #define PSI_POOL_GC_HPP
 
-#include <atomic>
-
 #include <boost/intrusive/list.hpp>
-
-#include "IntrusivePtr.hpp"
+#include <boost/intrusive_ptr.hpp>
 
 namespace Psi {
   namespace GC {
@@ -15,27 +12,28 @@ namespace Psi {
       friend class Pool;
       template<typename Derived> friend class PoolBase;
 
-      friend void node_add_ref(Node*);
-      friend bool node_release(Node*);
+      friend void intrusive_ptr_add_ref(Node *node) {
+	++node->n_refs;
+      }
+
+      friend void intrusive_ptr_release(Node *node) {
+	if (--node->n_refs == 0)
+	  node->release_private();
+      }
+
+    public:
+      Node() : pool(0), n_refs(0), gc_refs(0) {}
+      Node(const Node&) = delete;
+      Node& operator = (const Node&) = delete;
 
     private:
       Pool *pool;
       std::size_t n_refs;
       std::size_t gc_refs;
       boost::intrusive::list_member_hook<> list_hook;
+
+      void release_private();
     };
-
-    bool node_release_private(Node *node);
-
-    inline void node_add_ref(Node *node) {
-      ++node->n_refs;
-    }
-
-    inline bool node_release(Node *node) {
-      if (--node->n_refs == 0)
-        return node_release_private(node);
-      return false;
-    }
 
     class Pool {
     public:
@@ -178,33 +176,22 @@ namespace Psi {
       }
 
     private:
-      IntrusivePtr<T> m_ptr;
+      boost::intrusive_ptr<T> m_ptr;
+    };
+
+    class NewPoolBase : public Node {
+    public:
+      virtual ~NewPoolBase();
+      virtual void gc_visit(const std::function<bool(Node*)>& visitor) = 0;
     };
 
     class NewPool : public PoolBase<NewPool> {
       friend class PoolBase<NewPool>;
 
     public:
-      class Base : public Node {
-      public:
-        friend class NewPool;
-
-        virtual ~Base();
-        virtual void gc_visit(const std::function<bool(Node*)>& visitor) = 0;
-
-        friend void intrusive_ptr_add_ref(Base *p) {
-          node_add_ref(p);
-        }
-
-        friend void intrusive_ptr_release(Base *p) {
-          if (node_release(p))
-            delete p;
-        }
-      };
-
       template<typename T, typename... Args>
       GCPtr<T> new_(Args&&... args) {
-        static_assert((std::is_base_of<Base, T>::value), "T must derive Base");
+        static_assert((std::is_base_of<NewPoolBase, T>::value), "T must derive Base");
         GCPtr<T> ptr(new T(std::forward<Args>(args)...));
         initialize_node(ptr.get());
         return ptr;
@@ -213,11 +200,11 @@ namespace Psi {
     private:
       template<typename F>
       void visit(Node *node, F&& visitor) {
-        static_cast<Base*>(node)->gc_visit(visitor);
+        static_cast<NewPoolBase*>(node)->gc_visit(visitor);
       }
 
       void destroy(Node *node) {
-        delete static_cast<Base*>(node);
+        delete static_cast<NewPoolBase*>(node);
       }
     };
 
@@ -228,9 +215,11 @@ namespace Psi {
     template<typename T>
     class TypedNewPool : public NewPool {
     public:
+      static_assert((std::is_base_of<NewPoolBase, T>::value), "T must derive NewPoolBase");
+
       template<typename... Args>
       GCPtr<T> new_(Args&&... args) {
-        return NewPool::new_<T>(std::forward<Args>(args));
+        return NewPool::new_<T>(std::forward<Args>(args)...);
       }
     };
 
@@ -241,9 +230,16 @@ namespace Psi {
       }
     };
 
+    class TypePoolBase : public Node {
+    public:
+      template<typename T, typename U> friend class TypePool;
+
+    private:
+      void *block;
+    };
+
     template<typename T, typename Visitor=ADLVisitor>
     class TypePool : public PoolBase<TypePool<T, Visitor> > {
-    private:
       union BlockEntry {
         typename std::aligned_storage<sizeof(T), alignof(T)>::type used;
         struct {
@@ -252,7 +248,6 @@ namespace Psi {
       };
 
       struct Block : boost::intrusive::list_base_hook<> {
-        TypePool *pool;
         std::size_t block_size;
         std::size_t used_count;
         BlockEntry *free;
@@ -265,24 +260,7 @@ namespace Psi {
 
       friend class PoolBase<TypePool>;
 
-      class Base : public Node {
-      public:
-        friend class TypePool<T>;
-
-        friend void intrusive_ptr_add_ref(Base *p) {
-          node_add_ref(p);
-        }
-
-        friend void intrusive_ptr_release(Base *p) {
-          if (node_release(p))
-            p->block->pool->destroy(p);
-        }
-
-      private:
-        Block *block;
-      };
-
-      static_assert((std::is_base_of<Base, T>::value), "T must derive Base");
+      static_assert((std::is_base_of<TypePoolBase, T>::value), "T must derive Base");
 
       static const std::size_t default_block_size = 1024;
       static const std::size_t default_max_free = 1024;
@@ -312,6 +290,7 @@ namespace Psi {
           throw;
         }
         initialize_node(ptr, this);
+	ptr->block = storage.first;
         return GC::GCPtr<T>(ptr);
       }
 
@@ -330,7 +309,7 @@ namespace Psi {
 
       void destroy(Node *node) {
         T *t = static_cast<T*>(node);
-        Block *block = t->block;
+        Block *block = static_cast<Block*>(t->block);
         t->~T();
         BlockEntry *entry = static_cast<BlockEntry*>(t);
         destroy_storage(block, entry);
