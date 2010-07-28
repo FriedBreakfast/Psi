@@ -48,15 +48,17 @@ and require some support for existential types.
 
 Class objects should be approximately:
 
-\verbatim
+\code
 template<typename T>
 struct Class {
   size_t length;
+  size_t align; /// Required at least for allocating return value storage
   void (*move) (Class<T> *cls, T *target, T *source);
   void (*move_construct) (Class<T> *cls, void *target, T *source);
   void (*destroy) (Class<T> *cls, T *self);
+  std::shared_ptr<typename T::DataType> data;
 };
-\endverbatim
+\endcode
 
 There should also be additional type-specified data for parameterized
 types.
@@ -75,6 +77,89 @@ allow this type of pattern matching.
 
 \section Pattern_matching Pattern matching
 
+\section Argument_passing Function argument passing
 
+Function arguments will be passed by value when they meet the
+following criteria:
+
+<ul>
+<li>The type is fully known at compile time</li>
+<li>The type has a trivial move constructor and trivial destructor</li>
+<li>The size of the object may also be considered</li>
+</ul>
+
+Otherwise it will be passed by reference.
+
+\section Basic_types Basic types
+
+Primitive types:
+
+<ul>
+<li><tt>intN</tt> (as LLVM)</li>
+<li><tt>uintN</tt> (as LLVM)</li>
+<li><tt>float</tt>, <tt>double</tt> (as LLVM)</li>
+<li><tt>char</tt> (32-bit)</li>
+<li><tt>bool</tt> (8-bit)</li>
+</ul>
+
+Could also include <tt>size_t</tt> and <tt>ptrdiff_t</tt>.
+
+Derived types:
+
+<ul>
+<li>Struct</li>
+<li>Union</li>
+<li>Array</li>
+<li>Pointer</li>
+<li>Function pointer</li>
+</ul>
+
+I think function pointers should be raw: however, this means that the
+function pointer signatures will have to include pointers to
+interfaces which are already known (since the types have been fixed),
+and I'll have to allow binding those parameters some other way. In
+practice this will mean that user-visible function pointers will not
+be primitive since they need to support bound parameters.
+
+\section Virtual_functions Virtual functions
+
+I want to be able to implement virtual functions with the same
+efficiency as C++, without the burdensome type system (virtual
+inheritance etc.).
+
+In order to implement this I need a \c reverse_member instruction,
+allowing turning a pointer to a member of a structure into a pointer
+to the structure itself.
+
+\c reverse_member cannot be supported for arrays because that would
+require that each member of the array had a different type.
+
+<ul>
+<li>Basic interface (reverse offset performed by member functions)
+\verbatim
+struct[T, Member] VTable {
+  T (*value) (Implementation@Member);
+}
+
+struct[T, Member] Interface {
+  VTable[T, Member] *vtable;
+}
+
+function[a,b] work(Interface[a,b]@b *impl) -> a {
+  return impl->vtable->value(impl);
+}
+
+struct Implementation {
+  Interface[int, Implementation.value] base;
+  int value;
+}
+
+function value_implementation(Interface[int, Implementation.value]@Implementation.value self) -> int {
+  self2 = reverse_member self;
+  return self2->value;
+}
+\endverbatim
+</li>
+</ul>
 
 */
