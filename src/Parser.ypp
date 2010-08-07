@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "Parser.hpp"
+#include "Utility.hpp"
 #include "Variant.hpp"
 
 /**
@@ -233,13 +234,42 @@ namespace {
    * Convert a constant string to a #PhysicalSourceLocation.
    */
   PhysicalSourceLocation str_loc(const char *s) {
-    int len = std::strlen(s);
-    return {const_text_ptr, 1, 1, 1, len + 1, s, s + len};
+    PhysicalSourceLocation p;
+    p.text = const_text_ptr;
+    p.first_line = p.last_line = 1;
+    p.first_column = p.last_column = 1;
+    p.begin = p.end = s;
+
+    for (; *p.end != '\0'; ++p.end, ++p.last_column) {
+      if (*p.end == '\n') {
+	p.last_line++;
+	p.last_column = 1;
+      }
+    }
+
+    return p;
   }
 
   PhysicalSourceLocation combine_loc(const PhysicalSourceLocation& lhs, const PhysicalSourceLocation& rhs) {
     assert(lhs.text == rhs.text);
-    return {lhs.text, lhs.first_line, lhs.first_column, rhs.last_line, rhs.last_column, lhs.begin, rhs.end};
+    PhysicalSourceLocation p;
+    p.text = lhs.text;
+    p.first_line = lhs.first_line;
+    p.first_column = lhs.first_column;
+    p.begin = lhs.begin;
+    p.last_line = rhs.last_line;
+    p.last_column = rhs.last_column;
+    p.end = rhs.end;
+    return p;
+  }
+
+  PhysicalSourceLocation end_loc(const PhysicalSourceLocation& base) {
+    PhysicalSourceLocation p;
+    p.text = base.text;
+    p.first_line = p.last_line = base.last_line;
+    p.first_column = p.last_column = base.last_column;
+    p.begin = p.end = base.end;
+    return p;
   }
 }
 
@@ -250,8 +280,7 @@ namespace {
     if (YYID(N)) {							\
       (current) = combine_loc(YYRHSLOC(rhs, 1), YYRHSLOC(rhs, N));      \
     } else {								\
-      const PhysicalSourceLocation& base = YYRHSLOC(rhs, 0);            \
-      (current) = PhysicalSourceLocation{arguments.text.text, base.last_line, base.last_column, base.last_line, base.last_column, base.end, base.end}; \
+      (current) = end_loc(YYRHSLOC(rhs, 0));				\
     }									\
   } while (0)
 %}
@@ -454,13 +483,15 @@ namespace {
 
   next_char:
     llocp->begin = llocp->end;
-    assert(llocp->begin.base() == &*self.current);
+    llocp->first_line = llocp->last_line;
+    llocp->first_column = llocp->last_column;
+    PSI_ASSERT(llocp->begin == self.current, "Parser internal state inconsistent");
 
     if (self.current == self.end)
       return 0;
 
 #define SCANNER_RETURN(val) do {lvalp->text(*llocp); return (val);} while(0)
-#define SCANNER_ACCEPT() (++self.current, ++llocp->end)
+#define SCANNER_ACCEPT() (++self.current, ++llocp->end, ++llocp->last_column)
 
     c = *self.current;
 
@@ -554,6 +585,8 @@ namespace {
       goto next_char;
     } else if (c == '\n') {
       SCANNER_ACCEPT();
+      llocp->last_line++;
+      llocp->last_column = 1;
       goto next_char;
     } else {
       return c;

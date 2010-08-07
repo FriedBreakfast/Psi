@@ -1,7 +1,9 @@
 #ifndef HPP_PSI_EXPRESSIONCOMPILER
 #define HPP_PSI_EXPRESSIONCOMPILER
 
-#include "CodeGenerator.hpp"
+#include <typeinfo>
+
+#include "Instruction.hpp"
 #include "Parser.hpp"
 #include "PointerList.hpp"
 #include "Variant.hpp"
@@ -15,6 +17,8 @@
 
 namespace Psi {
   namespace Compiler {
+    void compile_error(const std::string& msg) PSI_ATTRIBUTE((PSI_NORETURN));
+
     struct NoMatchType {};
     const NoMatchType no_match = {};
     struct ConflictType {};
@@ -57,6 +61,17 @@ namespace Psi {
       PhysicalSourceLocation physical;
     };
 
+    class UserType {
+    public:
+      template<typename T>
+      T* cast_to() {
+	return checked_pointer_static_cast<T>(cast_to_private(typeid(T)));
+      }
+
+    private:
+      virtual CheckedCastBase* cast_to_private(const std::type_info&) = 0;
+    };
+
     class EvaluateContext {
     public:
       typedef std::function<CodeValue(const SourceLocation&)> EvaluateCallback;
@@ -65,6 +80,8 @@ namespace Psi {
        * Look up a name in this context.
        */
       virtual LookupResult<EvaluateCallback> lookup(const std::string& name) const;
+
+      virtual UserType* user_type(Type *ty) const;
     };
 
     /**
@@ -73,9 +90,9 @@ namespace Psi {
      * where \c a is the type having the member injected and \c b is a
      * #MemberType instance.
      */
-    class MemberType {
+    class MemberType : public CheckedCastBase {
     public:
-      typedef std::function<CodeValue(const Value& value, const EvaluateContext&, const SourceLocation&)> EvaluateCallback;
+      typedef std::function<CodeValue(Value* value, const EvaluateContext&, const SourceLocation&)> EvaluateCallback;
 
       /**
        * Look up a member by name.
@@ -99,7 +116,7 @@ namespace Psi {
      * When a function is defined, types like this allow constraint
      * definitions.
      */
-    class ConstraintType {
+    class ConstraintType : public CheckedCastBase {
     public:
       /**
        * Apply this constraint.
@@ -107,21 +124,6 @@ namespace Psi {
        * \return A list of interface types associated with the given arguments.
        */
       virtual std::vector<Type> constrain(PointerList<const Parser::Expression> arguments) const = 0;
-    };
-
-    struct DeclareResult {
-      /// Type of the object being declared
-      Type type;
-      /// Related constraints
-      ConstrainResult constraint;
-    };
-
-    /**
-     * 
-     */
-    class DeclareType {
-    public:
-      virtual std::vector<Type> declare(PointerList<const Parser::Expression> arguments) const = 0;
     };
   }
 }

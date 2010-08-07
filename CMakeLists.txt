@@ -10,7 +10,9 @@ endif()
 
 execute_process(COMMAND ${LLVM_CONFIG} --cxxflags OUTPUT_VARIABLE LLVM_CXX_FLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(COMMAND ${LLVM_CONFIG} --ldflags OUTPUT_VARIABLE LLVM_LDFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
-execute_process(COMMAND ${LLVM_CONFIG} --libs core OUTPUT_VARIABLE LLVM_LIBS_CORE OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND ${LLVM_CONFIG} --libs core native OUTPUT_VARIABLE LLVM_LIBS_CORE OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+set(CMAKE_CXX_FLAGS_DEBUG "-DPSI_DEBUG")
 
 # Set up useful GCC flags
 if(CMAKE_COMPILER_IS_GNUCXX)
@@ -31,13 +33,21 @@ if(NOT BISON_FOUND)
   message(SEND_ERROR "Bison not found")
 endif()
 
+# Find GMP
+find_library(LIB_GMP gmp)
+find_library(LIB_GMPXX gmpxx)
+find_path(GMP_INCLUDE_DIRECTORIES gmp.h)
+if(NOT LIB_GMP OR NOT LIB_GMPXX OR NOT GMP_INCLUDE_DIRECTORIES)
+  message(SEND_ERROR "GMP development files not found")
+endif()
+
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
   add_custom_target(doc
     rm -rf doc/html
     COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} VERBATIM)
 endif()
 
 add_subdirectory(src)

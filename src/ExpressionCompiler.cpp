@@ -1,10 +1,15 @@
 #include "ExpressionCompiler.hpp"
-#include "Format.hpp"
+#include "Utility.hpp"
 
-#include <boost/lexical_cast.hpp>
+#include <limits>
+#include <unordered_map>
 
 namespace Psi {
   namespace Compiler {
+    void compile_error(const std::string& msg) {
+      throw std::runtime_error(msg);
+    }
+
     struct FunctionDescription {
       /// Name of the function
       std::string name;
@@ -25,6 +30,64 @@ namespace Psi {
     }
 
     namespace {
+      /**
+       * Non-localized integer formatting.
+       */
+      template<typename T>
+      std::string format_int(T n) {
+	if (n == 0)
+	  return "0";
+
+	char buffer[std::numeric_limits<T>::digits10 + 2];
+	T a = std::abs(n);
+	int p = sizeof(buffer);
+	while (a) {
+	  assert(p > 0);
+	  auto d = std::div(a, 10);
+	  buffer[--p] = static_cast<char>(d.rem + '0');
+	  a = d.quot;
+	}
+
+	assert(p > 0);
+	if (n < 0)
+	  buffer[--p] = '-';
+
+	return std::string(buffer + p, sizeof(buffer) - p);
+      }
+
+      /**
+       * Non-localized integer parsing. Positive numbers only.
+       */
+      template<typename T>
+      Maybe<T> parse_int(const char *s) {
+	const T num_max = std::numeric_limits<T>::max();
+	const T mult_max = std::numeric_limits<T>::max() / 10;
+
+	T value = 0;
+	for (;; ++s) {
+	  char c = *s;
+	  if ((c >= '0') && (c <= '9')) {
+	    if (value > mult_max)
+	      return {};
+	    value *= 10;
+	    int digit = c - '0';
+	    if (num_max - digit < value)
+	      return {};
+	    value += digit;
+	  } else if (c == '\0') {
+	    break;
+	  } else {
+	    return {};
+	  }
+	}
+
+	return value;
+      }
+
+      Maybe<int> parse_int(const std::string& s) {
+	return parse_int(s.c_str());
+      }
+
       std::string bracket_macro_name(Parser::TokenType tt) {
         switch (tt) {
         case Parser::TokenType::brace: return ":bracket";
@@ -49,21 +112,22 @@ namespace Psi {
       SourceLocation location = {source, expression.source};
 
       LogicalSourceLocation first_source = anonymize_location ? LogicalSourceLocation::anonymous_child(source) : source;
+
+      auto value_lookup_evaluate = [&] (Value *value, PointerList<const Parser::Expression> arguments) -> CodeValue {
+	auto lookup = context.user_type(value->type())->cast_to<MemberType>()->evaluate(arguments);
+	if (lookup.conflict() || lookup.no_match())
+	  compile_error("Evaluation failed");
+	return (*lookup)(value, context, location);
+      };
         
       switch (expression.which()) {
       case Parser::ExpressionType::macro: {
         const auto& macro_expr = expression.macro();
 
-        auto first = compile_expression(macro_expr.elements.at(0), context, first_source, false);
-        auto first_member_ptr = first.value.type().user().cast<MemberType>();
-        auto first_lookup = first_member_ptr->evaluate({macro_expr.elements, 1});
-
-        if (first_lookup.conflict() || first_lookup.no_match())
-          throw compile_error(format("Evaluation failed"));
-
-        auto second = (*first_lookup)(first.value, context, location);
-
-        return CodeValue{std::move(second.value), CodeBlock{std::move(first.code), std::move(second.code)}};
+	CodeValue result;
+        result.extend_replace(compile_expression(macro_expr.elements.at(0), context, first_source, false));
+	result.extend_replace(value_lookup_evaluate(result.value(), {macro_expr.elements, 1}));
+	return result;
       }
 
       case Parser::ExpressionType::token: {
@@ -77,18 +141,12 @@ namespace Psi {
 
           auto context_lookup = context.lookup(bracket_macro_name(token_expr.token_type));
           if (context_lookup.conflict() || context_lookup.no_match())
-            throw compile_error(format("Context does not support evaluating %s brackets", bracket_macro_name(token_expr.token_type)));
+            compile_error(format("Context does not support evaluating %s brackets", bracket_macro_name(token_expr.token_type)));
 
-          auto first = (*context_lookup)(location);
-          auto first_member_ptr = first.value.type().user().cast<MemberType>();
-          auto first_lookup = first_member_ptr->evaluate({expression});
-
-          if (first_lookup.conflict() || first_lookup.no_match())
-            throw compile_error(format("%s bracket evaluation failed", bracket_macro_name(token_expr.token_type)));
-
-          auto second = (*first_lookup)(first.value, context, location);
-
-          return {std::move(second.value), {std::move(first.code), std::move(second.code)}};
+	  CodeValue result;
+	  result.extend_replace((*context_lookup)(location));
+	  result.extend_replace(value_lookup_evaluate(result.value(), {expression}));
+	  return result;
         }
 
         case Parser::TokenType::identifier: {
@@ -96,7 +154,7 @@ namespace Psi {
           auto context_lookup = context.lookup(name);
 
           if (context_lookup.conflict() || context_lookup.no_match())
-            throw compile_error(format("Name not found: %s", name));
+            compile_error(format("Name not found: %s", name));
             
           return (*context_lookup)(location);
         }
@@ -139,38 +197,37 @@ namespace Psi {
 
         int positional_pos = 0;
         for (auto it = arguments.begin(); it != arguments.end(); ++it) {
-          Maybe<int> index;
           if (it->name) {
             auto arg_name = it->name->str();
-            try {
-              index = boost::lexical_cast<int>(arg_name);
-            } catch (boost::bad_lexical_cast&) {
-            }
+	    Maybe<int> index = parse_int(arg_name);
 
-            if (!index)
+	    if (!index) {
+	      // Not an integer
               result.keywords.push_back({arg_name, std::move(it->value)});
-          } else {
-            index = positional_pos++;
+	      continue;
+	    } else {
+	      positional_pos = *index;
+	    }
           }
 
-          if (index) {
-            int index_unpacked = *index;
-            result.positional.push_back({index_unpacked, std::move(it->value)});
-            positional_pos = index_unpacked + 1;
-          }
+	  result.positional.push_back({positional_pos, std::move(it->value)});
+	  positional_pos++;
         }
 
         return result;
       }
 
-      struct CompileCallArgumentsResult {
-        CompileCallArgumentsResult() {}
+      class CompileCallArgumentsResult {
+      private:
         CompileCallArgumentsResult(const CompileCallArgumentsResult&) = delete;
+
+      public:
+        CompileCallArgumentsResult() {}
         CompileCallArgumentsResult(CompileCallArgumentsResult&&) = default;
 
         CodeBlock code;
-        std::unordered_map<unsigned, Value> positional;
-        std::unordered_map<std::string, Value> keywords;
+        std::unordered_map<unsigned, Value*> positional;
+        std::unordered_map<std::string, Value*> keywords;
       };
 
       CompileCallArgumentsResult compile_call_arguments(const Parser::Expression& parameters, const EvaluateContext& context, const LogicalSourceLocation& location) {
@@ -178,14 +235,14 @@ namespace Psi {
 
         CompileCallArgumentsResult result;
 
-        auto process_argument = [&] (const std::string& name, const Parser::Expression& argument) -> Value {
+        auto process_argument = [&] (const std::string& name, const Parser::Expression& argument) -> Value* {
           auto code_value = compile_expression(argument, context, location);
-          result.code.append(std::move(code_value.code));
-          return code_value.value;
+          result.code.extend(code_value.block());
+          return code_value.value();
         };
 
         for (auto it = parse_result.positional.begin(); it != parse_result.positional.end(); ++it)
-          result.positional.insert(std::make_pair(it->first, process_argument(boost::lexical_cast<std::string>(it->first), it->second)));
+          result.positional.insert(std::make_pair(it->first, process_argument(format_int(it->first), it->second)));
 
         for (auto it = parse_result.keywords.begin(); it != parse_result.keywords.end(); ++it)
           result.keywords.insert(std::make_pair(it->first, process_argument(it->first, it->second)));
@@ -195,12 +252,12 @@ namespace Psi {
 
       struct ApplyFunctionCommonResult {
         FunctionDescription description;
-        std::unordered_map<unsigned, std::pair<Value, SourceLocation> > specified;
+        std::unordered_map<unsigned, std::pair<Value*, SourceLocation> > specified;
       };
         
       ApplyFunctionCommonResult apply_function_common(const FunctionDescription& function_description,
-                                                      const std::unordered_map<unsigned, Value>& positional_arguments,
-                                                      const std::unordered_map<std::string, Value>& keyword_arguments) {
+                                                      const std::unordered_map<unsigned, Value*>& positional_arguments,
+                                                      const std::unordered_map<std::string, Value*>& keyword_arguments) {
         ApplyFunctionCommonResult result;
 
         for (auto it = positional_arguments.begin(); it != positional_arguments.end(); ++it) {
@@ -247,47 +304,62 @@ namespace Psi {
         return result;
       }
 
-      CodeValue apply_function_call(const Value& function_value, const FunctionDescription& function_description,
+      CodeValue apply_function_call(Value *function_value, const FunctionDescription& function_description,
                                     const SourceLocation& source,
-                                    const std::unordered_map<unsigned, Value>& positional_arguments,
-                                    const std::unordered_map<std::string, Value>& keyword_arguments) {
+                                    const std::unordered_map<unsigned, Value*>& positional_arguments,
+                                    const std::unordered_map<std::string, Value*>& keyword_arguments) {
         
         auto common = apply_function_common(function_description, positional_arguments, keyword_arguments);
 
-        CodeBlock code;
-        std::vector<Value> argument_values;
+	CodeValue result;
+        std::vector<Value*> argument_values;
 
         for (unsigned i = 0; i < function_description.argument_count; i++) {
           auto specified = common.specified.find(i);
           if (specified != common.specified.end()) {            
-            argument_values.push_back(std::move(specified->second.first));
+            argument_values.push_back(specified->second.first);
           } else {
-            throw compile_error("default arguments not yet implemented");
+            compile_error("default arguments not yet implemented");
           }
         }
 
-        Instruction insn = call_instruction(function_value, argument_values);
-        Value result = insn.value();
-        code.append(std::move(insn));
+        Instruction *insn = call_instruction(function_value, argument_values);
+	result.append(insn);
+	result.set_value(insn->result());
 
-        return {std::move(result), std::move(code)};
+	return result;
       }
 
       class FunctionMember : public MemberType {
       public:
         virtual LookupResult<EvaluateCallback> evaluate(PointerList<const Parser::Expression> arguments) const {
-          return [=] (const Value& value, const EvaluateContext& context, const SourceLocation& location) -> CodeValue {
+          return [=] (Value *value, const EvaluateContext& context, const SourceLocation& location) -> CodeValue {
             auto& parameters = validate_call_arguments(arguments);
-            auto result = compile_call_arguments(parameters, context, location.logical);
-            auto call_result = apply_function_call(value, m_description, location, result.positional, result.keywords);
+	    CodeValue result;
+            auto args = compile_call_arguments(parameters, context, location.logical);
+	    result.block().extend(args.code);
+            auto call = apply_function_call(value, m_description, location, args.positional, args.keywords);
+	    result.extend_replace(call);
 
-            return {std::move(call_result.value), {std::move(result.code), std::move(call_result.code)}};
+	    return result;
           };
         }
 
       private:
         FunctionDescription m_description;
       };
+    }
+
+    LogicalSourceLocation LogicalSourceLocation::anonymous_child(const LogicalSourceLocation& parent) {
+      return {};
+    }
+
+    LogicalSourceLocation LogicalSourceLocation::root() {
+      return {};
+    }
+
+    LogicalSourceLocation LogicalSourceLocation::named_child(const LogicalSourceLocation& parent, std::string name) {
+      return {};
     }
   }
 }

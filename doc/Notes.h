@@ -18,4 +18,14 @@ pointer_offset instructions should also have their \ref type_class
 parameters removed and replaced by direct type references: it's
 impossible to be totally consistent in syntax at the assembler level.
 
+\section virtual_functions
+
+\verbatim
+require List.
+
+Definition vtable := forall (ri : list reverse_lookup), function_pointer int ((pointer interface ri)::nil Set).
+
+Definition interface := forall (ri : list reverse_lookup) (rv : list reverse_lookup), pointer (vtable ri) rv.
+\endverbatim
+
  */
