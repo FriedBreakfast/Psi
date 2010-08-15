@@ -2,10 +2,10 @@
 #define HPP_PSI_USER
 
 #include <cstddef>
-#include <cstdint>
-#include <type_traits>
+#include <tr1/cstdint>
+#include <tr1/type_traits>
 
-#include "Utility.hpp"
+#include "../Utility.hpp"
 
 /**
  * \file
@@ -17,9 +17,12 @@ namespace Psi {
   class User;
   class Used;
 
+  /**
+   * \brief Internal class for implemented #User and #Used.
+   *
+   * Do not use this class directly outside of those two classes.
+   */
   class Use {
-    Use(const Use&) = delete;
-
   public:
     enum UseMode {
       UserHeadInline = 1,
@@ -27,25 +30,11 @@ namespace Psi {
       UsedHead = 3
     };
 
-    Use() = default;
+    Use() {}
 
-    void init_user_head(bool is_inline, User *owner, std::size_t n_uses) {
-      m_target = is_inline ? UserHeadInline : UserHeadMalloc;
-      m_rest.head.owner = owner;
-      m_rest.head.n_uses = n_uses;
-    }
-
-    void init_use_node() {
-      m_target = 0;
-      m_rest.use.next = NULL;
-      m_rest.use.prev = NULL;
-    }
-
-    void init_used_head() {
-      m_target = UsedHead;
-      m_rest.use.next = this;
-      m_rest.use.prev = this;
-    }
+    void init_user_head(bool is_inline, User *owner, std::size_t n_uses);
+    void init_use_node();
+    void init_used_head();
 
     bool user_head() {return (m_target == UserHeadInline) || (m_target == UserHeadMalloc);}
     bool used_head() {return m_target == UsedHead;}
@@ -77,7 +66,8 @@ namespace Psi {
     void replace_with(Used *target);
 
   private:
-    std::intptr_t m_target;
+    std::tr1::intptr_t m_target;
+    Use(const Use&);
 
     union {
       struct {
@@ -94,50 +84,62 @@ namespace Psi {
   class Used : public CheckedCastBase {
     friend class Use;
 
-    Used(const Used&) = delete;
-
   private:
+    Used(const Used&);
     Use m_use;
 
   protected:
     Used();
+    ~Used();
 
     void replace_with(Used *target) {m_use.replace_with(target);}
   };
 
-  template<int N>
+  template<std::size_t N>
   class StaticUses {
-    friend class User;
+    friend class UserInitializer;
+
   private:
     Use uses[N+1];
   };
 
+  class UserInitializer {
+    friend class User;
+
+  public:
+    template<std::size_t N>
+    UserInitializer(StaticUses<N>& uses)
+      : m_n_uses(N), m_uses(uses.uses) {
+    }
+
+    UserInitializer(std::size_t n_uses, Use *uses)
+      : m_n_uses(n_uses), m_uses(uses) {
+    }
+
+    std::size_t n_uses() const {return m_n_uses;}
+
+  private:
+    std::size_t m_n_uses;
+    Use *m_uses;
+  };
+
   class User {
   private:
-    User(const User&) = delete;
+    User(const User&);
 
     Use *m_uses;
 
-    Use& use_n(std::size_t n) {
+    Use& use_n(std::size_t n) const {
       PSI_ASSERT(m_uses && (n < m_uses[0].n_uses()), "Use index out of range");
       return m_uses[n+1];
     }
 
   protected:
-    User() : m_uses(0) {}
-
-    template<int N>
-    void init_uses(StaticUses<N>& st) {
-      m_uses = st.uses;
-      m_uses[0].init_user_head(true, this, N);
-      for (int i = 0; i < N; ++i)
-	m_uses[i+1].init_use_node();
-    }
-
+    User(const UserInitializer& ui);
     virtual ~User();
 
-    template<typename T> T* use_get(std::size_t i) {
-      PSI_STATIC_ASSERT((std::is_base_of<Used, T>::value), "T must inherit Psi::Used");
+    template<typename T> T* use_get(std::size_t i) const {
+      PSI_STATIC_ASSERT((std::tr1::is_base_of<Used, T>::value), "T must inherit Psi::Used");
       return checked_pointer_static_cast<T>(use_n(i).target());
     }
 
@@ -148,20 +150,6 @@ namespace Psi {
     std::size_t use_slots() {
       return m_uses[0].n_uses();
     }
-  };
-
-  class UsePtr : public User {
-  private:
-    StaticUses<2> m_uses;
-    void init() {init_uses(m_uses);}
-
-  public:
-    UsePtr() {init();}
-    UsePtr(Used *u) {init(); set(u);}
-    ~UsePtr() {}
-
-    template<typename T> T* get() {return use_get<T>(1);}
-    void set(Used *u) {use_set(1, u);}
   };
 }
 

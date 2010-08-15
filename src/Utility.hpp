@@ -4,26 +4,59 @@
 #include <cstddef>
 #include <string>
 
-#include <boost/format.hpp>
-
 namespace Psi {
 #ifdef PSI_DEBUG
-#define PSI_ASSERT(cond,msg) (cond ? Psi::assert_fail(#cond, msg) : void())
+#define PSI_ASSERT(cond,msg) (cond ? void() : Psi::assert_fail(#cond, msg))
 #else
-#define PSI_ASSERT(cond,msg)
+#define PSI_ASSERT(cond,msg) void()
 #endif
 
+#if __cplusplus > 199711L
 #define PSI_STATIC_ASSERT(cond,msg) static_assert(cond,msg)
+#else
+  template<bool> struct StaticAssert;
+  template<> struct StaticAssert<true> {static const int value=0;};
+  template<int> struct StaticAssertType;
+
+#define PSI_STATIC_ASSERT(cond,msg) typedef StaticAssertType<StaticAssert<(cond)>::value> PSI_STATIC_ASSERT_ ## __LINE__
+#endif
 
 #ifdef __GNUC__
 #define PSI_ATTRIBUTE(x) __attribute__(x)
 #define PSI_NORETURN noreturn
+#define PSI_SENTINEL sentinel
 #else
 #define PSI_ATTRIBUTE(x)
 #define PSI_NORETURN
+#define PSI_SENTINEL
 #endif
 
+#if __cplusplus > 199711L
+  template<typename T> struct AlignOf {static const std::size_t value = alignof(T);};
+#elif defined(__GNUC__)
+  template<typename T> struct AlignOf {static const std::size_t value = __alignof__(T);};
+#else
+#error Cannot defined AlignOf
+#endif
+  /**
+   * \brief rvalue version of AlignOf.
+   *
+   * If you see an error like
+   * <tt>Psi::AlignOf&lt;short&gt;::value</tt>, use
+   * <tt>align_of&lt;T&gt;()</tt> instead. The reason for this is that
+   * <tt>AlignOf::value</tt> is an lvalue so when passed as a <tt>const
+   * std::size_t&</tt> to a function its address is required.
+   */
+  template<typename T> std::size_t align_of() {return AlignOf<T>::value;}
+
   void assert_fail(const char *test, const std::string& msg) PSI_ATTRIBUTE((PSI_NORETURN));
+
+  class Noncopyable {
+  public:
+    Noncopyable() {}
+  private:
+    Noncopyable(const Noncopyable&);
+  };
 
   /**
    * Base class which complements #checked_pointer_static_cast by
@@ -66,6 +99,39 @@ namespace Psi {
     return ptr;
   }
 
+  template<typename T>
+  class UniquePtr : Noncopyable {
+    typedef void (UniquePtr::*SafeBoolType)() const;
+    void safe_bool_true() const {}
+  public:
+    explicit UniquePtr(T *p=0) : m_p(p) {}
+    ~UniquePtr() {delete m_p;}
+
+    void reset(T *p=0) {
+      delete m_p;
+      m_p = p;
+    }
+
+    T* release() {
+      T *p = m_p;
+      m_p = 0;
+      return p;
+    }
+
+    T* operator -> () const {return m_p;}
+    T& operator * () const {return *m_p;}
+    T* get() const {return m_p;}
+    operator SafeBoolType () const {return m_p ? &UniquePtr::safe_bool_true : 0;}
+
+    void swap(UniquePtr& o) {std::swap(m_p, o.m_p);}
+
+  private:
+    T *m_p;
+  };
+
+  template<typename T> void swap(UniquePtr<T>& a, UniquePtr<T>& b) {a.swap(b);}
+
+#if 0
   namespace Format {
     template<typename Formatter>
     void format_insert(Formatter&) {
@@ -89,6 +155,7 @@ namespace Psi {
   std::string format(const std::string& fmt, Args&&... args) {
     return format(fmt.c_str(), std::forward<Args>(args)...);
   }
+#endif
 }
 
 #endif

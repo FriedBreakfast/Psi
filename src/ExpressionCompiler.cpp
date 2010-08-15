@@ -1,3 +1,5 @@
+#if 0
+
 #include "ExpressionCompiler.hpp"
 #include "Utility.hpp"
 
@@ -363,3 +365,5 @@ namespace Psi {
     }
   }
 }
+
+#endif

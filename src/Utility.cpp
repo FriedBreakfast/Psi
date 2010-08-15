@@ -1,5 +1,6 @@
 #include "Utility.hpp"
 
+#include <cstdlib>
 #include <iostream>
 
 namespace Psi {
@@ -9,7 +10,7 @@ namespace Psi {
 #endif
 
   void assert_fail(const char *test, const std::string& msg) {
-    std::cerr << format("Assertion failed: %s: %s", test, msg) << std::endl;
+    std::cerr << "Assertion failed: " << test << ": " << msg << std::endl;
     std::abort();
   }
 }
