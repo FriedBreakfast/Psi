@@ -7,8 +7,10 @@
 namespace Psi {
 #ifdef PSI_DEBUG
 #define PSI_ASSERT(cond,msg) (cond ? void() : Psi::assert_fail(#cond, msg))
+#define PSI_FAIL(msg) (Psi::assert_fail(NULL, msg))
 #else
 #define PSI_ASSERT(cond,msg) void()
+#define PSI_FAIL(msg) void()
 #endif
 
 #if __cplusplus > 199711L

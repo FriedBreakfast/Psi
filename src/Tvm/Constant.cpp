@@ -1,12 +1,14 @@
 #include "Constant.hpp"
 #include "../Utility.hpp"
 
+#include <llvm/Constants.h>
+#include <llvm/DerivedTypes.h>
 #include <llvm/GlobalVariable.h>
 
 namespace Psi {
   namespace Tvm {
     ConstantValue::ConstantValue(const UserInitializer& ui, Context *context, Type *type)
-      : Value(ui, context, type, true) {
+      : Value(ui, context, type, true, true) {
     }
 
     class GlobalVariable::Initializer : public InitializerBase<GlobalVariable, GlobalVariable::slot_max> {
@@ -35,15 +37,32 @@ namespace Psi {
       use_set(slot_initializer, initializer);
     }
 
-    const llvm::Value* GlobalVariable::build_llvm_value(LLVMBuilder& builder) {
+    LLVMBuilderValue GlobalVariable::build_llvm_value(LLVMBuilder& builder) {
       AppliedType *ap = checked_pointer_static_cast<AppliedType>(type());
-      const llvm::Type *ty = builder.type(ap->parameter(0));
-      const llvm::Value *v = builder.value(initializer());
-      PSI_ASSERT(llvm::isa<llvm::Constant>(v), "Global initializer is not constant");
-      return new llvm::GlobalVariable(builder.module(), ty, m_read_only,
-				      llvm::GlobalValue::ExternalLinkage,
-				      const_cast<llvm::Constant*>(llvm::cast<llvm::Constant>(v)),
-				      "");
+      LLVMBuilderType ty = builder.type(ap->parameter(0));
+      switch(ty.category()) {
+      case LLVMBuilderType::known: {
+	LLVMBuilderValue v = builder.value(initializer());
+	PSI_ASSERT(llvm::isa<llvm::Constant>(v.value()), "Global initializer is not constant");
+	return LLVMBuilderValue::known_value
+	  (new llvm::GlobalVariable(builder.module(), ty.type(), m_read_only,
+				    llvm::GlobalValue::ExternalLinkage,
+				    const_cast<llvm::Constant*>(llvm::cast<llvm::Constant>(v.value())),
+				    ""));
+      }
+
+      case LLVMBuilderType::empty: {
+	const llvm::Type *i8 = llvm::Type::getInt8Ty(builder.context());
+	llvm::Constant *v = llvm::ConstantInt::get(i8, 0);
+	return LLVMBuilderValue::known_value
+	  (new llvm::GlobalVariable(builder.module(), i8, true,
+				    llvm::GlobalValue::ExternalLinkage,
+				    v, ""));
+      }
+
+      default:
+	PSI_FAIL("Type of global variable must be known (or empty)");
+      }
     }
 
     class ConstantInteger::Initializer : public InitializerBase<ConstantInteger, ConstantInteger::slot_max> {
@@ -68,8 +87,8 @@ namespace Psi {
       : ConstantValue(ui, context, type), m_value(value) {
     }
 
-    const llvm::Value* ConstantInteger::build_llvm_value(LLVMBuilder& builder) {
-      return checked_pointer_static_cast<IntegerType>(type())->constant_to_llvm(builder.context(), m_value);
+    LLVMBuilderValue ConstantInteger::build_llvm_value(LLVMBuilder& builder) {
+      return LLVMBuilderValue::global_value(checked_pointer_static_cast<IntegerType>(type())->constant_to_llvm(builder.context(), m_value));
     }
 
     class ConstantReal::Initializer : public InitializerBase<ConstantReal, ConstantReal::slot_max> {
@@ -94,8 +113,8 @@ namespace Psi {
       : ConstantValue(ui, context, type), m_value(value) {
     }
 
-    const llvm::Value* ConstantReal::build_llvm_value(LLVMBuilder& builder) {
-      return checked_pointer_static_cast<RealType>(type())->constant_to_llvm(builder.context(), m_value);
+    LLVMBuilderValue ConstantReal::build_llvm_value(LLVMBuilder& builder) {
+      return LLVMBuilderValue::global_value(checked_pointer_static_cast<RealType>(type())->constant_to_llvm(builder.context(), m_value));
     }
   }
 }

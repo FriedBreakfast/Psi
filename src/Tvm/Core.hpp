@@ -1,12 +1,11 @@
 #ifndef HPP_PSI_TVM_CORE
 #define HPP_PSI_TVM_CORE
 
+#include <tr1/cstdint>
+
 #include "../Container.hpp"
 #include "User.hpp"
-#include "LLVMForward.hpp"
-
-#include <tr1/cstdint>
-#include <tr1/unordered_map>
+#include "LLVMBuilder.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -21,60 +20,6 @@ namespace Psi {
     class InstructionValue;
     class PointerType;
     class Context;
-
-    class LLVMBuilder : Noncopyable {
-      friend class Context;
-
-    public:
-      LLVMBuilder();
-      ~LLVMBuilder();
-
-      /**
-       * \brief Get the LLVM value of a term.
-       *
-       * For most types, the meaning of this is fairly obvious. #Type
-       * objects also have a value, which has an LLVM type of <tt>{ i32,
-       * i32 }</tt> giving the size and alignment of the type.
-       */
-      const llvm::Value* value(Term *term);
-
-      /**
-       * \brief Get the LLVM type of a term.
-       *
-       * Note that this is <em>not</em> the type of the value returned
-       * by value(); rather <tt>value(t)->getType() ==
-       * type(t->type())</tt>, so that type() returns the LLVM type of
-       * terms whose type is this term.
-       */
-      const llvm::Type* type(Term *term);
-
-      /**
-       * \brief Get the LLVM context owned by this builder.
-       */
-      llvm::LLVMContext& context() {return *m_context;}
-
-      /**
-       * \brief Get the current module being used for compilation.
-       */
-      llvm::Module& module() {return *m_module;}
-
-      /**
-       * \brief Whether we are currently compiling at global
-       * (constant) scope or not.
-       */
-      bool global() {return m_global;}
-
-      typedef llvm::IRBuilder<true, llvm::ConstantFolder, llvm::IRBuilderDefaultInserter<true> > IRBuilder;
-
-    private:
-      typedef std::tr1::unordered_map<Term*, const llvm::Value*> ValueMap;
-      typedef std::tr1::unordered_map<Term*, const llvm::Type*> TypeMap;
-      ValueMap m_value_map;
-      TypeMap m_type_map;
-      bool m_global;
-      UniquePtr<llvm::LLVMContext> m_context;
-      UniquePtr<llvm::Module> m_module;
-    };
 
     /**
      * \brief Base class of all objects managed by #Context.
@@ -129,6 +74,7 @@ namespace Psi {
       PSI_CONTEXT_TYPE(RealType,real64)
       PSI_CONTEXT_TYPE(RealType,real128)
       PSI_CONTEXT_TYPE(Type,label)
+      PSI_CONTEXT_TYPE(Type,empty)
       PSI_CONTEXT_TYPE(PointerType,pointer)
       //@}
 
@@ -227,7 +173,8 @@ namespace Psi {
       Term(const UserInitializer& ui,
 	   Context *context,
 	   TermType *type,
-	   bool constant);
+	   bool constant,
+	   bool global);
 
     public:
       /**
@@ -242,14 +189,23 @@ namespace Psi {
        */
       bool constant() const {return m_constant;}
 
+      /**
+       * Whether or not this term is a global. This is distinct from a
+       * constant because a parameterized type (with a local applied
+       * parameter) which has a known size and alignment will be
+       * constant, but not global.
+       */
+      bool global() const {return m_global;}
+
     private:
       bool m_constant;
+      bool m_global;
 
       friend class Context;
       friend class LLVMBuilder;
 
-      virtual const llvm::Value* build_llvm_value(LLVMBuilder& builder) = 0;
-      virtual const llvm::Type* build_llvm_type(LLVMBuilder& builder) = 0;
+      virtual LLVMBuilderValue build_llvm_value(LLVMBuilder& builder) = 0;
+      virtual LLVMBuilderType build_llvm_type(LLVMBuilder& builder) = 0;
     };
 
     /**
@@ -260,7 +216,7 @@ namespace Psi {
      */
     class TermType : public Term {
     protected:
-      TermType(const UserInitializer&, Context *context, bool constant);
+      TermType(const UserInitializer&, Context *context, bool constant, bool global);
 
     private:
       friend class Metatype;
@@ -301,15 +257,34 @@ namespace Psi {
       /**
        * \brief Get an LLVM value for Metatype for the given LLVM type.
        */
-      static const llvm::Value* llvm_value(llvm::LLVMContext& context, const llvm::Type* ty);
+      static LLVMBuilderValue llvm_value(const llvm::Type* ty);
+
+      /**
+       * \brief Get an LLVM value for Metatype for an empty type.
+       */
+      static LLVMBuilderValue llvm_value_empty(llvm::LLVMContext& context);
+
+      /**
+       * \brief Get an LLVM value for a specified size and alignment.
+       *
+       * The result of this call will be a global constant.
+       */
+      static LLVMBuilderValue llvm_value_global(llvm::Constant *size, llvm::Constant *align);
+
+      /**
+       * \brief Get an LLVM value for a specified size and alignment.
+       *
+       * The result of this call will be a local value.
+       */
+      static LLVMBuilderValue llvm_value_local(LLVMBuilder& builder, llvm::Value *size, llvm::Value *align);
 
     private:
       struct Initializer;
       static Metatype* create(Context *context);
       Metatype(const UserInitializer&, Context *context);
 
-      virtual const llvm::Type* build_llvm_type(LLVMBuilder&);
-      virtual const llvm::Value* build_llvm_value(LLVMBuilder&);
+      virtual LLVMBuilderType build_llvm_type(LLVMBuilder&);
+      virtual LLVMBuilderValue build_llvm_value(LLVMBuilder&);
     };
 
     /**
@@ -317,7 +292,7 @@ namespace Psi {
      */
     class Type : public TermType {
     protected:
-      Type(const UserInitializer&, Context*, bool constant);
+      Type(const UserInitializer&, Context*, bool constant, bool global);
 
     public:
       Metatype* type() const {return use_get<Metatype>(slot_type);}
@@ -330,10 +305,10 @@ namespace Psi {
      */
     class Value : public Term {
     protected:
-      Value(const UserInitializer& ui, Context *context, Type *type, bool constant);
+      Value(const UserInitializer& ui, Context *context, Type *type, bool constant, bool global);
 
     private:
-      virtual const llvm::Type* build_llvm_type(LLVMBuilder& builder);
+      virtual LLVMBuilderType build_llvm_type(LLVMBuilder& builder);
 
     public:
       Type* type() const {return use_get<Type>(slot_type);}

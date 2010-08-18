@@ -1,12 +1,12 @@
 #include "Core.hpp"
 #include "Type.hpp"
 
-#include <llvm/LLVMContext.h>
 #include <llvm/Type.h>
 #include <llvm/Constants.h>
 #include <llvm/DerivedTypes.h>
 #include <llvm/Module.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/Support/IRBuilder.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetRegistry.h>
 #include <llvm/Target/TargetSelect.h>
@@ -70,6 +70,7 @@ namespace Psi {
 
     void Context::init_types() {
       m_metatype = Metatype::create(this);
+      m_type_empty = EmptyType::create(this);
       m_type_label = LabelType::create(this);
       m_type_pointer = PointerType::create(this);
 
@@ -88,9 +89,10 @@ namespace Psi {
     }
 
     void* Context::term_jit(Term *term) {
-      const llvm::Value *value = m_builder.value(term);
-      PSI_ASSERT(llvm::isa<llvm::GlobalValue>(value), "Cannot JIT compile a value which is not global");
-      const llvm::GlobalValue *global = llvm::cast<llvm::GlobalValue>(value);
+      LLVMBuilderValue value = m_builder.value(term);
+      PSI_ASSERT((value.category() == LLVMBuilderValue::global) && llvm::isa<llvm::GlobalValue>(value.value()),
+		 "Cannot JIT compile a value which is not global");
+      const llvm::GlobalValue *global = llvm::cast<llvm::GlobalValue>(value.value());
 
       if (!m_llvm_engine) {
 	llvm::InitializeNativeTarget();
@@ -108,17 +110,19 @@ namespace Psi {
     Term::Term(const UserInitializer& ui,
 	       Context *context,
 	       TermType *type,
-	       bool constant)
-      : ContextObject(ui, context), m_constant(constant) {
+	       bool constant,
+	       bool global)
+      : ContextObject(ui, context),
+	m_constant(constant), m_global(global) {
       use_set(slot_type, type);
     }
 
-    TermType::TermType(const UserInitializer& ui, Context *context, bool constant)
-      : Term(ui, context, context->metatype(), constant) {
+    TermType::TermType(const UserInitializer& ui, Context *context, bool constant, bool global)
+      : Term(ui, context, context->metatype(), constant, global) {
     }
 
     TermType::TermType(const UserInitializer& ui, Context *context, Metatype*)
-      : Term(ui, context, NULL, true) {
+      : Term(ui, context, NULL, true, true) {
     }
 
     struct Metatype::Initializer : InitializerBase<Metatype, Metatype::slot_max> {
@@ -135,64 +139,65 @@ namespace Psi {
       : TermType(ui, context, this) {
     }
 
-    const llvm::Value* Metatype::build_llvm_value(LLVMBuilder&) {
-      return NULL;
+    LLVMBuilderValue Metatype::build_llvm_value(LLVMBuilder&) {
+      throw std::logic_error("Metatype does not have a value");
     }
 
-    const llvm::Type* Metatype::build_llvm_type(LLVMBuilder& builder) {
+    LLVMBuilderType Metatype::build_llvm_type(LLVMBuilder& builder) {
       llvm::LLVMContext& context = builder.context();
       const llvm::Type* i64 = llvm::Type::getInt64Ty(context);
-      return llvm::StructType::get(context, i64, i64, NULL);
+      return LLVMBuilderType::known_type(llvm::StructType::get(context, i64, i64, NULL));
     }
 
-    const llvm::Value* Metatype::llvm_value(llvm::LLVMContext& context, const llvm::Type* ty) {
+    LLVMBuilderValue Metatype::llvm_value(const llvm::Type* ty) {
       llvm::Constant* values[2] = {
 	llvm::ConstantExpr::getSizeOf(ty),
 	llvm::ConstantExpr::getAlignOf(ty)
       };
 
-      return llvm::ConstantStruct::get(context, values, 2, false);
+      return LLVMBuilderValue::global_value(llvm::ConstantStruct::get(ty->getContext(), values, 2, false));
     }
 
-    Type::Type(const UserInitializer& ui, Context *context, bool constant)
-      : TermType(ui, context, constant) {
+    LLVMBuilderValue Metatype::llvm_value_empty(llvm::LLVMContext& context) {
+      const llvm::Type *i64 = llvm::Type::getInt64Ty(context);
+      llvm::Constant* values[2] = {
+	llvm::ConstantInt::get(i64, 0),
+	llvm::ConstantInt::get(i64, 1)
+      };
+
+      return LLVMBuilderValue::global_value(llvm::ConstantStruct::get(context, values, 2, false));
     }
 
-    Value::Value(const UserInitializer& ui, Context *context, Type *type, bool constant)
-      : Term(ui, context, type, constant) {
+    LLVMBuilderValue Metatype::llvm_value_global(llvm::Constant *size, llvm::Constant *align) {
+      llvm::LLVMContext& context = size->getContext();
+      PSI_ASSERT(size->getType()->isIntegerTy(64) && align->getType()->isIntegerTy(64),
+		 "size and align members of Metatype must both be i64");
+      PSI_ASSERT(!llvm::cast<llvm::ConstantInt>(align)->equalsInt(0), "align cannot be zero");
+      llvm::Constant* values[2] = {size, align};
+      return LLVMBuilderValue::global_value(llvm::ConstantStruct::get(context, values, 2, false));
+    }
+
+    LLVMBuilderValue Metatype::llvm_value_local(LLVMBuilder& builder, llvm::Value *size, llvm::Value *align) {
+      LLVMBuilder::IRBuilder& irbuilder = builder.irbuilder();
+      llvm::LLVMContext& context = builder.context();
+      const llvm::Type* i64 = llvm::Type::getInt64Ty(context);
+      llvm::Type *mtype = llvm::StructType::get(context, i64, i64, NULL);
+      llvm::Value *first = irbuilder.CreateInsertValue(llvm::UndefValue::get(mtype), size, 0);
+      llvm::Value *second = irbuilder.CreateInsertValue(first, align, 1);
+      return LLVMBuilderValue::known_value(second);
+    }
+
+    Type::Type(const UserInitializer& ui, Context *context, bool constant, bool global)
+      : TermType(ui, context, constant, global) {
+    }
+
+    Value::Value(const UserInitializer& ui, Context *context, Type *type, bool constant, bool global)
+      : Term(ui, context, type, constant, global) {
       PSI_ASSERT(type, "Type of a Value cannot be null");
     }
 
-    const llvm::Type* Value::build_llvm_type(LLVMBuilder&) {
+    LLVMBuilderType Value::build_llvm_type(LLVMBuilder&) {
       throw std::logic_error("build_llvm_type should never be called on value instances");
-    }
-
-    LLVMBuilder::LLVMBuilder()
-      : m_context(new llvm::LLVMContext),
-	m_module(new llvm::Module("", *m_context)) {
-    }
-
-    LLVMBuilder::~LLVMBuilder() {
-    }
-
-    const llvm::Value* LLVMBuilder::value(Term *term) {
-      ValueMap::iterator it = m_value_map.find(term);
-      if (it != m_value_map.end())
-	return it->second;
-
-      const llvm::Value *value = term->build_llvm_value(*this);
-      m_value_map.insert(ValueMap::value_type(term, value));
-      return value;
-    }
-
-    const llvm::Type* LLVMBuilder::type(Term *term) {
-      TypeMap::iterator it = m_type_map.find(term);
-      if (it != m_type_map.end())
-	return it->second;
-
-      const llvm::Type *type = term->build_llvm_type(*this);
-      m_type_map.insert(TypeMap::value_type(term, type));
-      return type;
     }
   }
 }

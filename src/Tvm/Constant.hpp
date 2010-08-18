@@ -35,7 +35,7 @@ namespace Psi {
 
       class Initializer;
       GlobalVariable(const UserInitializer& ui, Context *context, TermType *type, bool read_only, Term *initializer);
-      virtual const llvm::Value* build_llvm_value(LLVMBuilder& builder);
+      virtual LLVMBuilderValue build_llvm_value(LLVMBuilder& builder);
     };
 
     class ConstantInteger : public ConstantValue {
@@ -47,7 +47,7 @@ namespace Psi {
     private:
       class Initializer;
       ConstantInteger(const UserInitializer& ui, Context *context, IntegerType *type, const mpz_class& value);
-      virtual const llvm::Value* build_llvm_value(LLVMBuilder&);
+      virtual LLVMBuilderValue build_llvm_value(LLVMBuilder&);
 
       mpz_class m_value;
     };
@@ -61,7 +61,7 @@ namespace Psi {
     private:
       class Initializer;
       ConstantReal(const UserInitializer& ui, Context *context, RealType *type, const mpf_class& value);
-      virtual const llvm::Value* build_llvm_value(LLVMBuilder&);
+      virtual LLVMBuilderValue build_llvm_value(LLVMBuilder&);
 
       mpf_class m_value;
     };
