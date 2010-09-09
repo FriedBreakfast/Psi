@@ -147,7 +147,7 @@ namespace Psi {
       use_n(i).set_target(target);
     }
 
-    std::size_t use_slots() {
+    std::size_t use_slots() const {
       return m_uses[0].n_uses();
     }
   };

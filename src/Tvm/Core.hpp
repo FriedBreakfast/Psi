@@ -2,114 +2,234 @@
 #define HPP_PSI_TVM_CORE
 
 #include <tr1/cstdint>
+#include <tr1/unordered_set>
 
-#include "../Container.hpp"
+#include <boost/preprocessor/repetition/repeat.hpp>
+#include <boost/preprocessor/repetition/enum_params.hpp>
+#include <boost/preprocessor/repetition/enum_trailing_params.hpp>
+
 #include "User.hpp"
+#include "../Utility.hpp"
 #include "LLVMBuilder.hpp"
 
 namespace Psi {
   namespace Tvm {
-    class Type;
-    class TemplateType;
-    class Term;
-    class IntegerType;
-    class RealType;
-    class TermType;
-    class Metatype;
-    class Instruction;
-    class InstructionValue;
-    class PointerType;
     class Context;
+    class ProtoTerm;
 
-    /**
-     * \brief Base class of all objects managed by #Context.
-     */
-    class ContextObject : public Used, public User, public IntrusiveListNode<ContextObject> {
+    class TermParameter {
     public:
-      friend class Context;
-      virtual ~ContextObject();
+      typedef IntrusivePtr<TermParameter> Ref;
 
-      /**
-       * \brief Get the context this object comes from.
-       */
-      Context *context() const {
-	return m_context;
+      static Ref create();
+      static Ref create(const Ref& parent);
+
+      static std::size_t depth(const Ref& r) {
+	return r ? r->m_depth : 0;
       }
 
-    protected:
-      ContextObject(const UserInitializer& ui, Context *context);
+      static bool global(const Ref& r) {
+	return !r;
+      }
+
+      const Ref& parent() const {
+	return m_parent;
+      }
+
+      friend void intrusive_ptr_add_ref(TermParameter *p) {
+	++p->m_n_references;
+      }
+
+      friend void intrusive_ptr_release(TermParameter *p) {
+	if (--p->m_n_references == 0)
+	  delete p;
+      }
 
     private:
-      Context *m_context;
+      TermParameter(const Ref&);
+      TermParameter(const TermParameter&);
+
+      Ref m_parent;
+      std::size_t m_depth;
+      std::size_t m_n_references;
     };
 
-    class Context : Noncopyable {
-      friend class ContextObject;
-      friend class Instruction;
+    typedef TermParameter::Ref TermParameterRef;
+
+    class Term : public Used, public User {
+      friend class Context;
+
+    public:
+      ~Term();
+
+      bool complete() const {return m_complete;}
+
+      /**
+       * \brief Get the context this Term comes from.
+       */
+      Context& context() const {return *m_context;}
+
+      const TermParameterRef& term_context() const {return m_term_context;}
+
+      /**
+       *
+       */
+      Term* type() const {return use_get<Term>(0);}
+
+      std::size_t n_parameters() const {return use_slots() - 1;}
+
+      /**
+       *
+       */
+      Term* parameter(std::size_t n) const {return use_get<Term>(n+1);}
+
+      /**
+       * Set the value of a global or recursive term.
+       */
+      void set_value(Term *value);
+
+      ProtoTerm& proto() const {return *m_proto_term;}
+
+      std::size_t hash() const {return m_hash;}
+
+    private:
+      Term(const UserInitializer& ui, Context *context,
+	   const TermParameterRef& term_context, ProtoTerm *proto_term,
+	   Term *type, std::size_t n_parameters, Term *const* parameters);
+
+      std::size_t m_hash;
+      Context *m_context;
+      TermParameterRef m_term_context;
+      bool m_complete;
+      ProtoTerm *m_proto_term;
+    };
+
+    class ProtoTerm {
+      friend class Context;
+      friend class LLVMBuilderInvoker;
+
+    public:
+      /**
+       * \brief Category of a Terms using this prototype.
+       *
+       * This gives which set of types this term is from, given that a
+       * the category of the type of a value is type, the category of
+       * the type of a type is metatype, and metatype has no type, so
+       * the ordering is:
+       *
+       * value : type : metatype
+       */
+      enum Category {
+	term_metatype,
+	term_type,
+	term_value
+      };
+
+      /**
+       * \brief How the value of terms of this prototype is generated.
+       *
+       * Values can either come from a functional calculation (which
+       * may depend on procedural values), an instruction (which
+       * modifies machine state), and a phi node (which unifies values
+       * from different computations on entering a block).
+       *
+       * Placeholder terms exist to be replaced by another term at a
+       * later time - they are by definition incomplete.
+       */
+      enum Source {
+	/// Functional term: depends entirely on its parameters, not machine state.
+	term_functional,
+	/// Instruction term: depends on its parameters plus machine state.
+	term_instruction,
+	/// Phi node: merges values from different computation paths.
+	term_phi_node,
+	/// Global term
+	term_global,
+	/// Recursive term
+	term_recursive,
+      };
+
+      virtual ~ProtoTerm();
+
+      virtual Term* type(Context& context, std::size_t n_parameters, Term *const* parameters) const = 0;
+
+      std::size_t hash() const;
+
+      bool operator == (const ProtoTerm& other) const;
+      bool operator != (const ProtoTerm& other) const;
+
+      /// \brief Category of this expression.
+      Category category() const {return m_category;}
+      /// \brief Source of this expression.
+      Source source() const {return m_source;}
+
+    protected:
+      ProtoTerm(Category category, Source source);
+
+    private:
+      /**
+       * Overridable equals() implementation. \c other will be the
+       * same type as \c this.
+       */
+      virtual bool equals_internal(const ProtoTerm& other) const = 0;
+      virtual std::size_t hash_internal() const = 0;
+      virtual ProtoTerm* clone() const = 0;
+
+      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const = 0;
+      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const = 0;
+      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const = 0;
+
+      std::size_t m_n_uses;
+      Category m_category;
+      Source m_source;
+    };
+
+    class Context {
+      friend Term::~Term();
+      friend struct ProtoPtr;
+
+      struct TermHasher {std::size_t operator () (const Term *t) const;};
+      struct TermEquals {bool operator () (const Term *lhs, const Term *rhs) const;};
+      struct ProtoTermHasher {std::size_t operator () (const ProtoTerm *t) const;};
+      struct ProtoTermEquals {bool operator () (const ProtoTerm *lhs, const ProtoTerm *rhs) const;};
+
+      typedef std::tr1::unordered_set<Term*, TermHasher, TermEquals> TermSet;
+      TermSet m_term_set;
+
+      typedef std::tr1::unordered_set<ProtoTerm*, ProtoTermHasher, ProtoTermEquals> ProtoTermSet;
+      ProtoTermSet m_proto_term_set;
+
+      ProtoTerm* new_proto(const ProtoTerm&);
+      void proto_release(ProtoTerm *proto);
+
+      UniquePtr<llvm::LLVMContext> m_llvm_context;
+      UniquePtr<llvm::Module> m_llvm_module;
+      UniquePtr<llvm::ExecutionEngine> m_llvm_engine;
 
     public:
       Context();
       ~Context();
 
-#define PSI_CONTEXT_TYPE(type,name)			\
-      type* type_##name() {return m_type_##name;}	\
-    private: type* m_type_##name; public:
+      /**
+       * \brief Create a new term.
+       */
+      Term* new_term(const ProtoTerm& expression, std::size_t n_parameters, Term *const* parameters);
+
+#define PSI_TVM_MAKE_NEW_TERM(z,n,data) Term* new_term(const ProtoTerm& expression BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,Term *p)) {Term *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return new_term(expression, n, ap);}
+      BOOST_PP_REPEAT(5,PSI_TVM_MAKE_NEW_TERM,)
+#undef PSI_TVM_MAKE_NEW_TERM
 
       /**
-       * \name Types
+       * \brief Create a new placeholder term.
        *
-       * Predefined types in this context.
+       * If \c type is null, it will default to metatype.
        */
-      //@{
-      PSI_CONTEXT_TYPE(Type,void)
-      PSI_CONTEXT_TYPE(IntegerType,int8)
-      PSI_CONTEXT_TYPE(IntegerType,int16)
-      PSI_CONTEXT_TYPE(IntegerType,int32)
-      PSI_CONTEXT_TYPE(IntegerType,int64)
-      PSI_CONTEXT_TYPE(IntegerType,uint8)
-      PSI_CONTEXT_TYPE(IntegerType,uint16)
-      PSI_CONTEXT_TYPE(IntegerType,uint32)
-      PSI_CONTEXT_TYPE(IntegerType,uint64)
-      PSI_CONTEXT_TYPE(RealType,real32)
-      PSI_CONTEXT_TYPE(RealType,real64)
-      PSI_CONTEXT_TYPE(RealType,real128)
-      PSI_CONTEXT_TYPE(Type,label)
-      PSI_CONTEXT_TYPE(Type,empty)
-      PSI_CONTEXT_TYPE(PointerType,pointer)
-      //@}
-
-#undef PSI_CONTEXT_TYPE
+      Term* new_placeholder(Term *type=0);
 
       /**
-       * \brief Return the unique Metatype object for this context.
+       * \brief Create a new global term.
        */
-      Metatype *metatype() {return m_metatype;}
-
-      /**
-       * \brief Allocate and initializer a descendent of #User.
-       *
-       * \param initializer Initializer object. This must conform to:
-       *
-       * \verbatim
-       * struct T {
-       *   typedef ?? ResultType;
-       *   std::size_t slots() const; //< Return the number of Use slots to be allocated
-       *   std::size_t size() const;  //< Memory to be allocated for base object, usually sizeof(ResultType)
-       *   ResultType* operator() (void*, const UserInitializer&, Context*) const; //< Construct the object
-       * };
-       * \endverbatim
-       */
-      template<typename T>
-      typename T::ResultType* new_user(const T& initializer) {
-	std::size_t slots = initializer.slots();
-	std::pair<void*, UserInitializer> p = allocate_user(initializer.size(), slots);
-	try {
-	  return initializer(p.first, p.second, this);
-	} catch (...) {
-	  operator delete (p.first);
-	  throw;
-	}
-      }
+      Term* new_global(Term *type);
 
       /**
        * \brief Just-in-time compile a term, and a get a pointer to
@@ -118,119 +238,8 @@ namespace Psi {
       void* term_jit(Term *term);
 
     private:
-      void init();
-      void init_types();
-
-      /**
-       * \brief Allocate memory for an object with an array of #Use
-       * objects.
-       *
-       * These should normally be descendents of #User.
-       */
-      std::pair<void*, UserInitializer> allocate_user(std::size_t obj_size,
-						      std::size_t n_uses);
-      Metatype *m_metatype;
-      IntrusiveList<ContextObject> m_gc_objects;
-
-      LLVMBuilder m_builder;
-      UniquePtr<llvm::ExecutionEngine> m_llvm_engine;
+      Context(const Context&);
     };
-
-    template<typename T, std::size_t NumSlots=-1>
-    struct InitializerBase {
-      typedef T ResultType;
-      std::size_t size() const {
-	return sizeof(T);
-      }
-
-      std::size_t slots() const {
-	return NumSlots;
-      }
-    };
-
-    template<typename T>
-    struct InitializerBase<T, -1> {
-      typedef T ResultType;
-      std::size_t size() const {
-	return sizeof(T);
-      }
-    };
-
-    /**
-     * \brief The root type of all terms in Psi.
-     *
-     * This allows for dependent types since both types and values
-     * derive from #Term and so can be used as parameters to other
-     * types.
-     */
-    class Term : public ContextObject {
-    protected:
-      enum Slots {
-	slot_type = 0,
-	slot_max
-      };
-
-      Term(const UserInitializer& ui,
-	   Context *context,
-	   TermType *type,
-	   bool constant,
-	   bool global);
-
-    public:
-      /**
-       * \brief Get the type of this term.
-       *
-       * The type of all terms derives from #Type.
-       */
-      TermType* type() const;
-
-      /**
-       * Whether or not this term is a constant.
-       */
-      bool constant() const {return m_constant;}
-
-      /**
-       * Whether or not this term is a global. This is distinct from a
-       * constant because a parameterized type (with a local applied
-       * parameter) which has a known size and alignment will be
-       * constant, but not global.
-       */
-      bool global() const {return m_global;}
-
-    private:
-      bool m_constant;
-      bool m_global;
-
-      friend class Context;
-      friend class LLVMBuilder;
-
-      virtual LLVMBuilderValue build_llvm_value(LLVMBuilder& builder) = 0;
-      virtual LLVMBuilderType build_llvm_type(LLVMBuilder& builder) = 0;
-    };
-
-    /**
-     * \brief The type of a term.
-     *
-     * This is distinct from #Type because #Type is the type of a
-     * #Value, whereas #TermType may be the type of a #Value or a #Type.
-     */
-    class TermType : public Term {
-    protected:
-      TermType(const UserInitializer&, Context *context, bool constant, bool global);
-
-    private:
-      friend class Metatype;
-
-      /**
-       * Special constructor for use by #Metatype, since all #TermType
-       * objects except #Metatype have type #Metatype.
-       */
-      TermType(const UserInitializer&, Context *context, Metatype*);
-    };
-
-    inline TermType* Term::type() const {
-      return use_get<TermType>(slot_type);
-    }
 
     /**
      * \brief Value type of #Metatype.
@@ -250,71 +259,111 @@ namespace Psi {
      * are of type #Metatype. #Metatype does not have a type (it is
      * impossible to quantify over #Metatype so this does not matter).
      */
-    class Metatype : public TermType {
+    class Metatype : public ProtoTerm {
       friend class Context;
 
     public:
+      Metatype();
+
+      static Term* create(Context& con);
+
+      virtual Term* type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
       /**
        * \brief Get an LLVM value for Metatype for the given LLVM type.
        */
-      static LLVMBuilderValue llvm_value(const llvm::Type* ty);
+      static LLVMConstantBuilder::Constant llvm_value(const llvm::Type* ty);
 
       /**
        * \brief Get an LLVM value for Metatype for an empty type.
        */
-      static LLVMBuilderValue llvm_value_empty(llvm::LLVMContext& context);
+      static LLVMConstantBuilder::Constant llvm_value_empty(llvm::LLVMContext& context);
 
       /**
        * \brief Get an LLVM value for a specified size and alignment.
        *
        * The result of this call will be a global constant.
        */
-      static LLVMBuilderValue llvm_value_global(llvm::Constant *size, llvm::Constant *align);
+      static LLVMConstantBuilder::Constant llvm_value(llvm::Constant *size, llvm::Constant *align);
 
       /**
        * \brief Get an LLVM value for a specified size and alignment.
        *
-       * The result of this call will be a local value.
+       * The result of this call will be a global constant.
        */
-      static LLVMBuilderValue llvm_value_local(LLVMBuilder& builder, llvm::Value *size, llvm::Value *align);
+      static LLVMFunctionBuilder::Result llvm_value(LLVMFunctionBuilder& builder, llvm::Value *size, llvm::Value *align);
 
     private:
-      struct Initializer;
-      static Metatype* create(Context *context);
-      Metatype(const UserInitializer&, Context *context);
-
-      virtual LLVMBuilderType build_llvm_type(LLVMBuilder&);
-      virtual LLVMBuilderValue build_llvm_value(LLVMBuilder&);
+      virtual bool equals_internal(const ProtoTerm& other) const;
+      virtual std::size_t hash_internal() const;
+      virtual ProtoTerm* clone() const;
+      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
+      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
+      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
     };
 
-    /**
-     * \brief The type of a #Value term.
-     */
-    class Type : public TermType {
-    protected:
-      Type(const UserInitializer&, Context*, bool constant, bool global);
-
+    class Parameter : public ProtoTerm {
     public:
-      Metatype* type() const {return use_get<Metatype>(slot_type);}
-    };
-
-    class AppliedType;
-
-    /**
-     * \brief The type of values in Psi.
-     */
-    class Value : public Term {
-    protected:
-      Value(const UserInitializer& ui, Context *context, Type *type, bool constant, bool global);
+      Parameter(const TermParameterRef& p);
 
     private:
-      virtual LLVMBuilderType build_llvm_type(LLVMBuilder& builder);
+      TermParameterRef m_p;
+    };
 
+    class Type : public ProtoTerm {
     public:
-      Type* type() const {return use_get<Type>(slot_type);}
+      virtual Term* type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
 
     protected:
-      AppliedType* applied_type();
+      Type(Source source);
+    };
+
+    class PrimitiveType : public Type {
+    public:
+      PrimitiveType();
+
+    private:
+      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
+    };
+
+    class Value : public ProtoTerm {
+    protected:
+      Value(Source source);
+
+    private:
+      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
+    };
+
+    class ConstantValue : public Value {
+    public:
+      ConstantValue(Source source=term_functional);
+
+    private:
+      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
+    };
+
+    class GlobalVariable : public ConstantValue {
+    protected:
+      enum Slots {
+	slot_initializer
+      };
+
+    public:
+      GlobalVariable(bool read_only);
+
+      static Term* create(bool read_only, Term *value);
+
+      virtual Term* type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
+
+      /** \brief Whether this global will be placed in read-only memory. */
+      bool read_only() const {return m_read_only;}
+
+    private:
+      bool m_read_only;
+
+      virtual bool equals_internal(const ProtoTerm& other) const;
+      virtual std::size_t hash_internal() const;
+      virtual ProtoTerm* clone() const;
+      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
     };
   }
 }

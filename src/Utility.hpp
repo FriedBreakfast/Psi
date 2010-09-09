@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <string>
 
+#include <tr1/functional>
+
 namespace Psi {
 #ifdef PSI_DEBUG
 #define PSI_ASSERT(cond,msg) (cond ? void() : Psi::assert_fail(#cond, msg))
@@ -33,13 +35,18 @@ namespace Psi {
 #define PSI_SENTINEL
 #endif
 
-#if __cplusplus > 199711L
-  template<typename T> struct AlignOf {static const std::size_t value = alignof(T);};
-#elif defined(__GNUC__)
-  template<typename T> struct AlignOf {static const std::size_t value = __alignof__(T);};
-#else
-#error Cannot defined AlignOf
-#endif
+  template<typename T>
+  struct AlignOf {
+  private:
+    struct Test {
+      char c;
+      T t;
+    };
+
+  public:
+    static const std::size_t value = sizeof(Test) - sizeof(T);
+  };
+
   /**
    * \brief rvalue version of AlignOf.
    *
@@ -83,6 +90,18 @@ namespace Psi {
   T* checked_pointer_static_cast(U *ptr) {
     PSI_ASSERT(dynamic_cast<T*>(ptr) == ptr, "Static cast failed");
     return static_cast<T*>(ptr);
+  }
+
+  /**
+   * A \c static_cast which is checked to be correct via \c
+   * dynamic_cast using <tt>assert()</tt>. \c static_cast should
+   * apparently behave correctly on NULL pointers according to the
+   * standard (5.2.9/8).
+   */
+  template<typename T, typename U>
+  T& checked_reference_static_cast(U& ref) {
+    PSI_ASSERT(dynamic_cast<T*>(&ref) == &ref, "Static cast failed");
+    return static_cast<T&>(ref);
   }
 
   /**
@@ -132,6 +151,109 @@ namespace Psi {
   };
 
   template<typename T> void swap(UniquePtr<T>& a, UniquePtr<T>& b) {a.swap(b);}
+
+  template<typename T>
+  struct ScopedReferenceCounter {
+    ScopedReferenceCounter() {}
+    template<typename U> ScopedReferenceCounter(const ScopedReferenceCounter<U>&) {}
+    void add_ref(T *ptr) const {intrusive_ptr_add_ref(ptr);}
+    void release(T *ptr) const {intrusive_ptr_release(ptr);}
+  };
+
+  template<typename T, typename R=ScopedReferenceCounter<T> >
+  class IntrusivePtr : R {
+    typedef void (IntrusivePtr::*SafeBoolType)() const;
+    void safe_bool_true() const {}
+  public:
+    typedef R ReferenceCounter;
+    typedef T Value;
+
+    ReferenceCounter& counter() {return *this;}
+    const ReferenceCounter& counter() const {return *this;}
+
+    IntrusivePtr() : m_p(0) {}
+
+    IntrusivePtr(const IntrusivePtr& o) : ReferenceCounter(o.counter()), m_p(o.m_p) {
+      if (m_p)
+	counter().add_ref(m_p);
+    }
+
+    template<typename U, typename V>
+    IntrusivePtr(const IntrusivePtr<U,V>& o) : ReferenceCounter(o.counter()), m_p(o.m_p) {
+      if (m_p)
+	counter().add_ref(m_p);
+    }
+
+    IntrusivePtr(Value *p, bool add_ref=true) : m_p(p) {
+      if (p && add_ref)
+	counter().add_ref(p);
+    }
+
+    IntrusivePtr(Value *p, const ReferenceCounter& r, bool add_ref=true) : ReferenceCounter(r), m_p(p) {
+      if (p && add_ref)
+	counter().add_ref(p);
+    }
+
+    ~IntrusivePtr() {
+      if (m_p)
+	counter().release(m_p);
+    }
+
+    void swap(IntrusivePtr& o) {
+      using std::swap;
+      swap(counter(), o.counter());
+      std::swap(m_p, o.m_p);
+    }
+
+    Value* operator -> () const {return m_p;}
+    Value& operator * () const {return *m_p;}
+
+    Value* get() const {return m_p;}
+    operator SafeBoolType () const {return m_p ? &IntrusivePtr::safe_bool_true : 0;}
+
+    void reset(Value *p=0) {IntrusivePtr(p, counter()).swap(*this);}
+    void reset(Value *p, const ReferenceCounter& r) {IntrusivePtr(p, r).swap(*this);}
+    void release() {Value *p = m_p; m_p = 0; return p;}
+
+    IntrusivePtr& operator = (const IntrusivePtr& o) {IntrusivePtr(o).swap(*this); return *this;}
+    template<typename U, typename V> IntrusivePtr& operator = (const IntrusivePtr<U,V>& o) {IntrusivePtr(o).swap(*this); return *this;}
+    bool operator == (const IntrusivePtr& o) const {return m_p == o.m_p;}
+    template<typename U, typename V> bool operator == (const IntrusivePtr<U,V>& o) const {return m_p == o.m_p;}
+    bool operator != (const IntrusivePtr& o) const {return m_p != o.m_p;}
+    template<typename U, typename V> bool operator != (const IntrusivePtr<U,V>& o) const {return m_p != o.m_p;}
+    bool operator < (const IntrusivePtr& o) const {return m_p < o.m_p;}
+    template<typename U, typename V> bool operator < (const IntrusivePtr<U,V>& o) const {return m_p < o.m_p;}
+
+  private:
+    T *m_p;
+  };
+
+  template<typename T>
+  std::size_t hash(const T& t) {
+    return std::tr1::hash<T>()(t);
+  }
+
+  class HashCombiner {
+  public:
+    HashCombiner() : m_value(0) {
+    }
+
+    HashCombiner(std::size_t init) : m_value(init) {
+    }
+
+    template<typename T>
+    HashCombiner& operator << (const T& t) {
+      m_value = m_value*137 + hash(t);
+      return *this;
+    }
+
+    operator std::size_t () const {
+      return m_value;
+    }
+
+  private:
+    std::size_t m_value;
+  };
 
 #if 0
   namespace Format {

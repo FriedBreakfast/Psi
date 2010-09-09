@@ -89,7 +89,7 @@ namespace Psi {
    * Derive from this type to use #IntrusiveList.
    */
   template<typename T>
-  class IntrusiveListNode : Noncopyable {
+  class IntrusiveListNode {
     friend class IntrusiveList<T>;
 
   public:
@@ -97,6 +97,7 @@ namespace Psi {
     ~IntrusiveListNode() {if (m_prev) IntrusiveList<T>::static_erase(this);}
 
   private:
+    IntrusiveListNode(const IntrusiveListNode&);
     IntrusiveListNode<T> *m_prev, *m_next;
   };
 

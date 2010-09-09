@@ -9,168 +9,163 @@
 namespace Psi {
   namespace Tvm {
     class Term;
+    class LLVMBuilderInvoker;
 
-    class LLVMBuilderValue {
+    class LLVMConstantBuilder {
     public:
-      enum Category {
-	/**
-	 * \brief Global constant, which is created as a full LLVM value.
-	 */
-	global,
-	/**
-	 * \brief Local value with a type which is well-known to LLVM
-	 *
-	 * This will be an LLVM value with the appropriate type (as \c
-	 * global).
-	 */
-	local_known,
-	/**
-	 * \brief Local value with a generic type
-	 *
-	 * This will be stored as <tt>i8*</tt> in LLVM, and be stack
-	 * allocated using the \c alloca instruction.
-	 */
-	local_unknown,
-	/**
-	 * \brief A value of "empty" type.
-	 *
-	 * This has no data, and hence no variable associated with it.
-	 */
-	empty
+      class Type {
+	friend class LLVMConstantBuilder;
+
+	enum Category {
+	  /**
+	   * Default constructor marker - means this result object is
+	   * not valid.
+	   */
+	  category_invalid,
+	  /**
+	   * \brief Unknown type.
+	   *
+	   * Not enough information about the type is known at compile
+	   * time to produce a full LLVM representation. Such types are
+	   * stored as <tt>i8*</tt> to \c alloca memory when loaded onto
+	   * the stack. See LLVMValueType::local_unknown.
+	   */
+	  category_unknown,
+	  /**
+	   * \brief Known type.
+	   *
+	   * Enough information is known to produce an accurate LLVM
+	   * representation. This means the type (or members of the type
+	   * if it is an aggregate) is known exactly, except for
+	   * pointers which are always <tt>i8*</tt>.
+	   */
+	  category_known,
+	  /**
+	   * \brief A type with no data.
+	   *
+	   * LLVM has no representation of such a type, so special
+	   * handling is needed.
+	   */
+	  category_empty
+	};
+
+      public:
+	Type() : m_category(category_invalid), m_type(0) {}
+	bool valid() const {return m_category != category_invalid;}
+	bool empty() const {return m_category == category_empty;}
+	bool known() const {return m_category == category_known;}
+	bool unknown() const {return m_category == category_unknown;}
+
+	llvm::Type *type() const {return m_type;}
+
+      private:
+	Type(Category category, llvm::Type *type) : m_category(category), m_type(type) {}
+	Category m_category;
+	llvm::Type *m_type;
       };
 
-      static LLVMBuilderValue empty_value() {
-	return LLVMBuilderValue(empty, NULL);
-      }
+      static Type type_known(llvm::Type *ty) {return Type(Type::category_known, ty);}
+      static Type type_unknown() {return Type(Type::category_unknown, 0);}
+      static Type type_empty() {return Type(Type::category_empty, 0);}
 
-      static LLVMBuilderValue global_value(const llvm::Value *value) {
-	PSI_ASSERT(is_global_value(value), "");
-	return LLVMBuilderValue(global, value);
-      }
+      class Constant {
+	friend class LLVMConstantBuilder;
 
-      static LLVMBuilderValue known_value(const llvm::Value *value) {
-	PSI_ASSERT(value != NULL, "");
-	return LLVMBuilderValue(local_known, value);
-      }
+	enum Category {
+	  category_invalid,
+	  category_empty,
+	  category_known
+	};
 
-      static LLVMBuilderValue unknown_value(const llvm::Value *value) {
-	PSI_ASSERT(is_unknown_value(value), "");
-	return LLVMBuilderValue(local_unknown, value);
-      }
+      public:
+	Constant() : m_category(category_invalid), m_value(0) {}
 
-      Category category() const {return m_category;}
-      const llvm::Value* value() const {return m_value;}
+	bool valid() const {return m_category != category_invalid;}
+	bool empty() const {return m_category == category_empty;}
+	bool known() const {return m_category == category_known;}
+	llvm::Constant* value() const {return m_value;}
 
-    private:
-      LLVMBuilderValue(Category c, const llvm::Value *v) : m_category(c), m_value(v) {}
-      static bool is_unknown_value(const llvm::Value *v);
-      static bool is_global_value(const llvm::Value *v);
-
-      Category m_category;
-      const llvm::Value *m_value;
-    };
-
-    class LLVMBuilderType {
-    public:
-      enum Category {
-	/**
-	 * \brief Unknown type.
-	 *
-	 * Not enough information about the type is known at compile
-	 * time to produce a full LLVM representation. Such types are
-	 * stored as <tt>i8*</tt> to \c alloca memory when loaded onto
-	 * the stack. See LLVMValueType::local_unknown.
-	 */
-	unknown,
-	/**
-	 * \brief Known type.
-	 *
-	 * Enough information is known to produce an accurate LLVM
-	 * representation. This means the type (or members of the type
-	 * if it is an aggregate) is known exactly, except for
-	 * pointers which are always <tt>i8*</tt>.
-	 */
-	known,
-	/**
-	 * \brief A type with no data.
-	 *
-	 * LLVM has no representation of such a type, so special
-	 * handling is needed.
-	 */
-	empty
+      private:
+	Constant(Category category, llvm::Constant *value) : m_category(category), m_value(value) {}
+	Category m_category;
+	llvm::Constant *m_value;
       };
 
-      LLVMBuilderType() : m_category(empty), m_type(NULL) {}
+      static Constant constant_empty() {return Constant(Constant::category_empty, 0);}
+      static Constant constant_value(llvm::Constant *value) {return Constant(Constant::category_known, value);}
 
-      static LLVMBuilderType empty_type() {return LLVMBuilderType(empty, NULL);}
-      static LLVMBuilderType unknown_type() {return LLVMBuilderType(unknown, NULL);}
-      static LLVMBuilderType known_type(const llvm::Type *ty) {return LLVMBuilderType(known, ty);}
+      LLVMConstantBuilder(llvm::LLVMContext *context, llvm::Module *module);
+      LLVMConstantBuilder(const LLVMConstantBuilder *parent);
+      ~LLVMConstantBuilder();
 
-      Category category() const {return m_category;}
-      const llvm::Type* type() const {return m_type;}
+      llvm::LLVMContext& context() {return *m_context;}
+      llvm::Module& module() {return *m_module;}
+      Constant constant(Term *term);
+      Type type(Term *term);
+
+      void set_module(llvm::Module *module);
 
     private:
-      LLVMBuilderType(Category c, const llvm::Type *ty) : m_category(c), m_type(ty) {}
+      const LLVMConstantBuilder *m_parent;
+      llvm::LLVMContext *m_context;
+      llvm::Module *m_module;
 
-      Category m_category;
-      const llvm::Type *m_type;
+      typedef std::tr1::unordered_map<Term*, Type> TypeTermMap;
+      TypeTermMap m_type_terms;
+
+      typedef std::tr1::unordered_map<Term*, Constant> ConstantTermMap;
+      ConstantTermMap m_constant_terms;
     };
 
-    class LLVMBuilder : Noncopyable {
-      friend class Context;
-
+    class LLVMFunctionBuilder {
     public:
       typedef llvm::IRBuilder<true, llvm::ConstantFolder, llvm::IRBuilderDefaultInserter<true> > IRBuilder;
 
-      LLVMBuilder();
-      ~LLVMBuilder();
+      class Result {
+	friend class LLVMFunctionBuilder;
 
-      /**
-       * \brief Get the LLVM value of a term.
-       *
-       * For most types, the meaning of this is fairly obvious. #Type
-       * objects also have a value, which has an LLVM type of <tt>{ i32,
-       * i32 }</tt> giving the size and alignment of the type.
-       */
-      LLVMBuilderValue value(Term *term);
+	enum Category {
+	  category_invalid,
+	  category_known,
+	  category_unknown,
+	  category_empty
+	};
 
-      /**
-       * \brief Get the LLVM type of a term.
-       *
-       * Note that this is <em>not</em> the type of the value returned
-       * by value(); rather <tt>value(t)->getType() ==
-       * type(t->type())</tt>, so that type() returns the LLVM type of
-       * terms whose type is this term.
-       */
-      LLVMBuilderType type(Term *term);
+      public:
+	Result() : m_category(category_invalid), m_value(0) {}
+	Result(const LLVMConstantBuilder::Constant& src);
 
-      /**
-       * \brief Get the LLVM context owned by this builder.
-       */
-      llvm::LLVMContext& context() {return *m_context;}
+	bool valid() const {return m_category != category_invalid;}
+	bool known() const {return m_category == category_known;}
+	bool unknown() const {return m_category == category_unknown;}
+	bool empty() const {return m_category == category_empty;}
+	llvm::Value *value() const {return m_value;}
 
-      /**
-       * \brief Get the current module being used for compilation.
-       */
-      llvm::Module& module() {return *m_module;}
+      private:
+	Result(Category category, llvm::Value *value) : m_category(category), m_value(value) {}
+	static Category from_const_category(const LLVMConstantBuilder::Constant& r);
 
-      /**
-       * \brief Whether we are currently compiling at global
-       * (constant) scope or not.
-       */
-      bool global() {return m_global;}
+	Category m_category;
+	llvm::Value *m_value;
+      };
 
+      static Result make_known(llvm::Value *value) {return Result(Result::category_known, value);}
+      static Result make_unknown(llvm::Value *value) {return Result(Result::category_unknown, value);}
+      static Result make_empty() {return Result(Result::category_empty, 0);}
+
+      LLVMFunctionBuilder(LLVMConstantBuilder *constant_builder, IRBuilder *irbuilder);
+      ~LLVMFunctionBuilder();
+
+      Result value(Term *term);
+      LLVMConstantBuilder::Type type(Term *term);
+      llvm::LLVMContext& context() {return m_constant_builder->context();}
       IRBuilder& irbuilder() {return *m_irbuilder;}
 
     private:
-      typedef std::tr1::unordered_map<Term*, LLVMBuilderValue> ValueMap;
-      typedef std::tr1::unordered_map<Term*, LLVMBuilderType> TypeMap;
-      ValueMap m_value_map;
-      TypeMap m_type_map;
-      bool m_global;
-      UniquePtr<llvm::LLVMContext> m_context;
-      UniquePtr<llvm::Module> m_module;
-      UniquePtr<IRBuilder> m_irbuilder;
+      LLVMConstantBuilder *m_constant_builder;
+      IRBuilder *m_irbuilder;
+      typedef std::tr1::unordered_map<Term*, Result> TermMap;
+      TermMap m_terms;
     };
   }
 }

@@ -28,4 +28,25 @@ Definition vtable := forall (ri : list reverse_lookup), function_pointer int ((p
 Definition interface := forall (ri : list reverse_lookup) (rv : list reverse_lookup), pointer (vtable ri) rv.
 \endverbatim
 
+\section terms_and_instructions Terms and instructions
+
+There are three types of term:
+
+<ul>
+<li>Functional</li>
+<li>Recursive</li>
+<li>Instruction</li>
+<li>Phi</li>
+</ul>
+
+Functional terms should support identical term unification. This can
+allow existing terms to be modified, however before this can be done a
+check must be made as to whether any previous matching terms exist.
+
+Recursive terms are required to allow construction of self-references
+in types.
+
+Instruction terms can have their parameters modified freely. Phi terms
+should only have parameters added, and may be unified later.
+
  */
