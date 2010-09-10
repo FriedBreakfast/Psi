@@ -341,12 +341,20 @@ namespace Psi {
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
     };
 
-    class GlobalVariable : public ConstantValue {
-    protected:
-      enum Slots {
-	slot_initializer
-      };
+    class Global : public ConstantValue {
+      friend class LLVMBuilderInvoker;
 
+    public:
+      Global();
+
+    private:
+      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
+
+      virtual llvm::GlobalValue* llvm_build_global(LLVMConstantBuilder&, Term*) const = 0;
+      virtual void llvm_init_global(LLVMConstantBuilder&, llvm::GlobalValue*, Term*) const = 0;
+    };
+
+    class GlobalVariable : public Global {
     public:
       GlobalVariable(bool read_only);
 
@@ -363,7 +371,9 @@ namespace Psi {
       virtual bool equals_internal(const ProtoTerm& other) const;
       virtual std::size_t hash_internal() const;
       virtual ProtoTerm* clone() const;
-      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
+
+      virtual llvm::GlobalValue* llvm_build_global(LLVMConstantBuilder&, Term*) const;
+      virtual void llvm_init_global(LLVMConstantBuilder&, llvm::GlobalValue*, Term*) const;
     };
   }
 }

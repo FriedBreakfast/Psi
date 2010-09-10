@@ -25,6 +25,7 @@ namespace llvm {
   class fltSemantics;
   class ExecutionEngine;
   class Constant;
+  class GlobalValue;
 
   class ConstantFolder;
   template<bool> class IRBuilderDefaultInserter;

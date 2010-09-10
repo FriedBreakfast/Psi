@@ -1,6 +1,7 @@
 #ifndef HPP_PSI_TVM_LLVMBUILDER
 #define HPP_PSI_TVM_LLVMBUILDER
 
+#include <deque>
 #include <tr1/unordered_map>
 
 #include "LLVMForward.hpp"
@@ -100,6 +101,7 @@ namespace Psi {
 
       llvm::LLVMContext& context() {return *m_context;}
       llvm::Module& module() {return *m_module;}
+      llvm::GlobalValue* global(Term *term);
       Constant constant(Term *term);
       Type type(Term *term);
 
@@ -115,6 +117,13 @@ namespace Psi {
 
       typedef std::tr1::unordered_map<Term*, Constant> ConstantTermMap;
       ConstantTermMap m_constant_terms;
+
+      /// Global terms which have been encountered but not yet built
+      typedef std::deque<std::pair<Term*, llvm::GlobalValue*> > GlobalTermBuildList;
+      GlobalTermBuildList m_global_build_list;
+
+      typedef std::tr1::unordered_map<Term*, llvm::GlobalValue*> GlobalTermMap;
+      GlobalTermMap m_global_terms;
     };
 
     class LLVMFunctionBuilder {

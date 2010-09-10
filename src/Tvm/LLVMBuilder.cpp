@@ -23,52 +23,98 @@ namespace Psi {
       static LLVMFunctionBuilder::Result instruction(LLVMFunctionBuilder& builder, Term *term) {
 	return term->proto().llvm_value_instruction(builder, term);
       }
+
+      static llvm::GlobalValue* build_global(LLVMConstantBuilder& builder, Term *term) {
+	Global& global = checked_reference_static_cast<Global>(term->proto());
+	return global.llvm_build_global(builder, term);
+      }
+
+      static void init_global(LLVMConstantBuilder& builder, Term *term, llvm::GlobalValue *llvm_global) {
+	Global& global = checked_reference_static_cast<Global>(term->proto());
+	global.llvm_init_global(builder, llvm_global, term);
+      }
     };
 
     namespace {
       template<typename ValueMap, typename Callback>
-      typename ValueMap::value_type::second_type
+      std::pair<typename ValueMap::value_type::second_type, bool>
       build_term(Term *term, ValueMap& values, const Callback& cb) {
 	std::pair<typename ValueMap::iterator, bool> itp =
-	  values.insert(std::make_pair(term, typename ValueMap::value_type::second_type()));
+	  values.insert(std::make_pair(term, cb.invalid()));
 	if (!itp.second) {
-	  if (itp.first->second.valid()) {
-	    return itp.first->second;
+	  if (cb.valid(itp.first->second)) {
+	    return std::make_pair(itp.first->second, false);
 	  } else {
 	    throw std::logic_error("Cyclical term found");
 	  }
 	}
 
-	typename ValueMap::value_type::second_type r = cb(term);
-	if (r.valid()) {
+	typename ValueMap::value_type::second_type r = cb.build(term);
+	if (cb.valid(r)) {
 	  itp.first->second = r;
 	} else {
 	  values.erase(itp.first);
 	  throw std::logic_error("LLVM term building failed");
 	}
 
-	return r;
+	return std::make_pair(r, true);
       }
 
       struct TypeBuilderCallback {
 	LLVMConstantBuilder *self;
 	TypeBuilderCallback(LLVMConstantBuilder *self_) : self(self_) {}
-	LLVMConstantBuilder::Type operator () (Term *term) const {
+
+	LLVMConstantBuilder::Type build(Term *term) const {
 	  return LLVMBuilderInvoker::type(*self, term);
+	}
+
+	LLVMConstantBuilder::Type invalid() const {
+	  return LLVMConstantBuilder::Type();
+	}
+
+	bool valid(const LLVMConstantBuilder::Type& t) const {
+	  return t.valid();
 	}
       };
 
       struct ConstantBuilderCallback {
 	LLVMConstantBuilder *self;
 	ConstantBuilderCallback(LLVMConstantBuilder *self_) : self(self_) {}
-	LLVMConstantBuilder::Constant operator () (Term *term) const {
+
+	LLVMConstantBuilder::Constant build(Term *term) const {
 	  return LLVMBuilderInvoker::constant(*self, term);
+	}
+
+	LLVMConstantBuilder::Constant invalid() const {
+	  return LLVMConstantBuilder::Constant();
+	}
+
+	bool valid(const LLVMConstantBuilder::Constant& t) const {
+	  return t.valid();
+	}
+      };
+
+      struct GlobalBuilderCallback {
+	LLVMConstantBuilder *self;
+	GlobalBuilderCallback(LLVMConstantBuilder *self_) : self(self_) {}
+
+	llvm::GlobalValue* build(Term *term) const {
+	  return LLVMBuilderInvoker::build_global(*self, term);
+	}
+
+	llvm::GlobalValue* invalid() const {
+	  return NULL;
+	}
+
+	bool valid(llvm::GlobalValue *p) const {
+	  return p;
 	}
       };
     }
       
     LLVMConstantBuilder::LLVMConstantBuilder(llvm::LLVMContext *context, llvm::Module *module)
       : m_parent(0), m_context(context), m_module(module) {
+      PSI_ASSERT(m_context && m_module, "builder context and module cannot be null");
     }
 
     LLVMConstantBuilder::LLVMConstantBuilder(const LLVMConstantBuilder *parent)
@@ -79,11 +125,43 @@ namespace Psi {
     }
 
     LLVMConstantBuilder::Type LLVMConstantBuilder::type(Term *term) {
-      return build_term(term, m_type_terms, TypeBuilderCallback(this));
+      return build_term(term, m_type_terms, TypeBuilderCallback(this)).first;
     }
 
     LLVMConstantBuilder::Constant LLVMConstantBuilder::constant(Term *term) {
-      return build_term(term, m_constant_terms, ConstantBuilderCallback(this));
+      if (term->proto().source() == ProtoTerm::term_global) {
+	llvm::GlobalValue *gv = global(term);
+
+	// Need to force global terms to be of type i8* since they are
+	// pointers, but the Global term builder can't do this
+	// because it needs to return a llvm::GlobalVariable
+	const llvm::Type* i8ptr = llvm::Type::getInt8PtrTy(*m_context);
+	return LLVMConstantBuilder::constant_value(llvm::ConstantExpr::getPointerCast(gv, i8ptr));
+      } else {
+	return build_term(term, m_constant_terms, ConstantBuilderCallback(this)).first;
+      }
+    }
+
+    llvm::GlobalValue* LLVMConstantBuilder::global(Term *term) {
+      if (term->proto().source() != ProtoTerm::term_global)
+	throw std::logic_error("cannot get global value for non-global variable");
+
+      std::pair<llvm::GlobalValue*, bool> gv = build_term(term, m_global_terms, GlobalBuilderCallback(this));
+
+      if (gv.second) {
+	if (m_global_build_list.empty()) {
+	  m_global_build_list.push_back(std::make_pair(term, gv.first));
+	  while (!m_global_build_list.empty()) {
+	    const std::pair<Term*, llvm::GlobalValue*>& t = m_global_build_list.front();
+	    LLVMBuilderInvoker::init_global(*this, t.first, t.second);
+	    m_global_build_list.pop_front();
+	  }
+	} else {
+	  m_global_build_list.push_back(std::make_pair(term, gv.first));
+	}
+      }
+
+      return gv.first;
     }
 
     void LLVMConstantBuilder::set_module(llvm::Module *module) {
