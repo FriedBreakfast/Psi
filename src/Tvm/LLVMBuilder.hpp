@@ -7,6 +7,8 @@
 #include "LLVMForward.hpp"
 #include "../Utility.hpp"
 
+#if 0
+
 namespace Psi {
   namespace Tvm {
     class Term;
@@ -163,6 +165,7 @@ namespace Psi {
       static Result make_empty() {return Result(Result::category_empty, 0);}
 
       LLVMFunctionBuilder(LLVMConstantBuilder *constant_builder, IRBuilder *irbuilder);
+      LLVMFunctionBuilder(LLVMConstantBuilder *constant_builder, LLVMFunctionBuilder *parent);
       ~LLVMFunctionBuilder();
 
       Result value(Term *term);
@@ -171,6 +174,7 @@ namespace Psi {
       IRBuilder& irbuilder() {return *m_irbuilder;}
 
     private:
+      LLVMFunctionBuilder *m_parent;
       LLVMConstantBuilder *m_constant_builder;
       IRBuilder *m_irbuilder;
       typedef std::tr1::unordered_map<Term*, Result> TermMap;
@@ -178,5 +182,7 @@ namespace Psi {
     };
   }
 }
+
+#endif
 
 #endif

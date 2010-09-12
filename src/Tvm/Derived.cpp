@@ -1,4 +1,5 @@
 #include "Derived.hpp"
+#include "Number.hpp"
 
 #include <stdexcept>
 
@@ -84,6 +85,15 @@ namespace Psi {
       return LLVMConstantBuilder::type_known(const_cast<llvm::PointerType*>(llvm::Type::getInt8PtrTy(builder.context())));
     }
 
+    void PointerType::validate_parameters(Context&, std::size_t n_parameters, Term *const* parameters) const {
+      if (n_parameters != 1)
+	throw std::logic_error("pointer term takes one parameter");
+
+      Term *target = parameters[0];
+      if (target->proto().category() == ProtoTerm::term_value)
+	throw std::logic_error("pointer target type is a value");
+    }
+
     Term* ArrayType::create(Context& context, Term *element_type, Term *size) {
       if (element_type->proto().category() != term_type)
 	throw std::logic_error("array element type is not a type");
@@ -151,6 +161,20 @@ namespace Psi {
       return LLVMConstantBuilder::type_known(llvm::ArrayType::get(element_llvm_type.type(), length_llvm->getZExtValue()));
     }
 
+    void ArrayType::validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const {
+      if (n_parameters != 2)
+	throw std::logic_error("array type term takes two parameters");
+
+      Term *element_type = parameters[0];
+      Term *length = parameters[1];
+
+      if (length->type() != BasicIntegerType::uint64_term(context))
+	throw std::logic_error("second argument to array type term is not a 64-bit integer");
+
+      if (element_type->proto().category() == ProtoTerm::term_value)
+	throw std::logic_error("first argument to array type term is not a type or metatype");
+    }
+
     LLVMConstantBuilder::Constant StructType::llvm_value_constant(LLVMConstantBuilder& builder, Term* term) const {
       const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
       llvm::Constant *size = llvm::ConstantInt::get(i64, 0);
@@ -206,6 +230,13 @@ namespace Psi {
 	return LLVMConstantBuilder::type_known(llvm::StructType::get(builder.context(), member_types));
       } else {
 	return LLVMConstantBuilder::type_empty();
+      }
+    }
+
+    void StructType::validate_parameters(Context&, std::size_t n_parameters, Term *const* parameters) const {
+      for (std::size_t i = 0; i < n_parameters; ++i) {
+	if (parameters[i]->proto().category() == ProtoTerm::term_value)
+	  throw std::logic_error("first argument to array type term is not a type or metatype");
       }
     }
 
@@ -266,6 +297,13 @@ namespace Psi {
 	return LLVMConstantBuilder::type_known(llvm::UnionType::get(&lm[0], lm.size()));
       else
 	return LLVMConstantBuilder::type_empty();
+    }
+
+    void UnionType::validate_parameters(Context&, std::size_t n_parameters, Term *const* parameters) const {
+      for (std::size_t i = 0; i < n_parameters; ++i) {
+	if (parameters[i]->proto().category() == ProtoTerm::term_value)
+	  throw std::logic_error("first argument to array type term is not a type or metatype");
+      }
     }
   }
 }

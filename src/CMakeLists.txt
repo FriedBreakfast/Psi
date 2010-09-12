@@ -10,7 +10,9 @@ add_library(psi SHARED
 
   Tvm/Core.cpp Tvm/Core.hpp
   Tvm/Derived.cpp Tvm/Derived.hpp
+  Tvm/Function.cpp Tvm/Function.hpp
   Tvm/LLVMBuilder.cpp Tvm/LLVMBuilder.hpp
+  Tvm/LLVMForward.hpp
   Tvm/Number.cpp Tvm/Number.hpp
   Tvm/User.cpp Tvm/User.hpp
 )

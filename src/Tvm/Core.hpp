@@ -2,7 +2,10 @@
 #define HPP_PSI_TVM_CORE
 
 #include <tr1/cstdint>
-#include <tr1/unordered_set>
+
+#include <boost/intrusive_ptr.hpp>
+#include <boost/intrusive/list.hpp>
+#include <boost/intrusive/unordered_set.hpp>
 
 #include <boost/preprocessor/repetition/repeat.hpp>
 #include <boost/preprocessor/repetition/enum_params.hpp>
@@ -15,52 +18,51 @@
 namespace Psi {
   namespace Tvm {
     class Context;
-    class ProtoTerm;
 
-    class TermParameter {
-    public:
-      typedef IntrusivePtr<TermParameter> Ref;
-
-      static Ref create();
-      static Ref create(const Ref& parent);
-
-      static std::size_t depth(const Ref& r) {
-	return r ? r->m_depth : 0;
-      }
-
-      static bool global(const Ref& r) {
-	return !r;
-      }
-
-      const Ref& parent() const {
-	return m_parent;
-      }
-
-      friend void intrusive_ptr_add_ref(TermParameter *p) {
-	++p->m_n_references;
-      }
-
-      friend void intrusive_ptr_release(TermParameter *p) {
-	if (--p->m_n_references == 0)
-	  delete p;
-      }
-
-    private:
-      TermParameter(const Ref&);
-      TermParameter(const TermParameter&);
-
-      Ref m_parent;
-      std::size_t m_depth;
-      std::size_t m_n_references;
-    };
-
-    typedef TermParameter::Ref TermParameterRef;
-
+    /**
+     * \brief Base class for all compile- and run-time values.
+     *
+     * All types which inherit from Term must be known about by
+     * Context since they perform some sort of unusual function; other
+     * types and instructions are created by subclasses
+     * FunctionalTermBackend and InstructionTermBackend and then
+     * wrapping that in either FunctionalTerm or InstructionTerm.
+     */
     class Term : public Used, public User {
       friend class Context;
 
+      friend class BlockTerm;
+      friend class DistinctTerm;
+      friend class FunctionalBaseTerm;
+      friend class FunctionParameterTerm;
+      friend class InstructionTerm;
+      friend class MetatypeTerm;
+      friend class PhiTerm;
+
     public:
-      ~Term();
+      enum Category {
+	category_metatype,
+	category_type,
+	category_value
+      };
+
+      /**
+       * \brief Identifies the Term subclass this object actually is.
+       */
+      enum TermType {
+	term_functional, ///< FunctionalTerm: \copybrief FunctionalTerm
+	term_instruction, ///< InstructionTerm: \copybrief InstructionTerm
+	term_opaque, ///< OpaqueTerm: \copybrief OpaqueTerm
+	term_opaque_resolver, ///< OpaqueResolverTerm: \copybrief OpaqueResolverTerm
+	term_block, ///< BlockTerm: \copybrief BlockTerm
+	term_global_variable, ///< GlobalVariableTerm: \copybrief GlobalVariableTerm
+	term_function, ///< FunctionTerm: \copybrief FunctionTerm
+	term_function_parameter, ///< FunctionParameterTerm: \copybrief FunctionParameterTerm
+	term_phi, ///< PhiTerm: \copybrief PhiTerm
+	term_function_type, ///< FunctionTypeTerm: \copybrief FunctionTypeTerm
+	term_function_type_parameter, ///< FunctionTypeParameterTerm: \copybrief FunctionTypeParameterTerm
+	term_metatype ///< MetatypeTerm: \copybrief MetatypeTerm
+      };
 
       bool complete() const {return m_complete;}
 
@@ -69,138 +71,390 @@ namespace Psi {
        */
       Context& context() const {return *m_context;}
 
-      const TermParameterRef& term_context() const {return m_term_context;}
-
       /**
        *
        */
       Term* type() const {return use_get<Term>(0);}
 
-      std::size_t n_parameters() const {return use_slots() - 1;}
-
-      /**
-       *
-       */
-      Term* parameter(std::size_t n) const {return use_get<Term>(n+1);}
-
-      /**
-       * Set the value of a global or recursive term.
-       */
-      void set_value(Term *value);
-
-      ProtoTerm& proto() const {return *m_proto_term;}
-
-      std::size_t hash() const {return m_hash;}
-
     private:
-      Term(const UserInitializer& ui, Context *context,
-	   const TermParameterRef& term_context, ProtoTerm *proto_term,
-	   Term *type, std::size_t n_parameters, Term *const* parameters);
+      Term(const UserInitializer& ui, Context *context, TermType term_type, bool complete, Term *type);
+      ~Term();
 
-      std::size_t m_hash;
       Context *m_context;
-      TermParameterRef m_term_context;
-      bool m_complete;
-      ProtoTerm *m_proto_term;
-    };
-
-    class ProtoTerm {
-      friend class Context;
-      friend class LLVMBuilderInvoker;
-
-    public:
-      /**
-       * \brief Category of a Terms using this prototype.
-       *
-       * This gives which set of types this term is from, given that a
-       * the category of the type of a value is type, the category of
-       * the type of a type is metatype, and metatype has no type, so
-       * the ordering is:
-       *
-       * value : type : metatype
-       */
-      enum Category {
-	term_metatype,
-	term_type,
-	term_value
-      };
-
-      /**
-       * \brief How the value of terms of this prototype is generated.
-       *
-       * Values can either come from a functional calculation (which
-       * may depend on procedural values), an instruction (which
-       * modifies machine state), and a phi node (which unifies values
-       * from different computations on entering a block).
-       *
-       * Placeholder terms exist to be replaced by another term at a
-       * later time - they are by definition incomplete.
-       */
-      enum Source {
-	/// Functional term: depends entirely on its parameters, not machine state.
-	term_functional,
-	/// Instruction term: depends on its parameters plus machine state.
-	term_instruction,
-	/// Phi node: merges values from different computation paths.
-	term_phi_node,
-	/// Global term
-	term_global,
-	/// Recursive term
-	term_recursive,
-      };
-
-      virtual ~ProtoTerm();
-
-      virtual Term* type(Context& context, std::size_t n_parameters, Term *const* parameters) const = 0;
-
-      std::size_t hash() const;
-
-      bool operator == (const ProtoTerm& other) const;
-      bool operator != (const ProtoTerm& other) const;
-
-      /// \brief Category of this expression.
-      Category category() const {return m_category;}
-      /// \brief Source of this expression.
-      Source source() const {return m_source;}
+      unsigned char m_term_type;
+      unsigned char m_complete;
+      unsigned char m_category;
 
     protected:
-      ProtoTerm(Category category, Source source);
+      std::size_t n_parameters() const {return use_slots() - 1;}
+      void set_parameter(std::size_t n, Term *t) {use_set(n+1, t);}
+      Term* get_parameter(std::size_t n) const {return use_get<Term>(n+1);}
+    };
+
+    /**
+     * \brief Unique type which is the type of type terms.
+     */
+    class MetatypeTerm : public Term {
+      friend class Context;
 
     private:
-      /**
-       * Overridable equals() implementation. \c other will be the
-       * same type as \c this.
-       */
-      virtual bool equals_internal(const ProtoTerm& other) const = 0;
-      virtual std::size_t hash_internal() const = 0;
-      virtual ProtoTerm* clone() const = 0;
+      struct Initializer;
+      MetatypeTerm(const UserInitializer&, Context*);
+    };
 
+    /**
+     * \brief Base class of functional (machine state independent) terms.
+     *
+     * Functional terms are special since two terms of the same
+     * operation and with the same parameters are equivalent; they are
+     * therefore unified into one term so equivalence can be checked
+     * via pointer equality. This is particularly required for type
+     * checking, but also applies to other terms.
+     */
+    class FunctionalBaseTerm : public Term {
+      friend class Context;
+      friend class FunctionalTerm;
+      friend class FunctionTypeTerm;
+      friend class FunctionTypeParameterTerm;
+      friend class OpaqueResolverTerm;
+
+    private:
+      FunctionalBaseTerm(const UserInitializer& ui, Context *context,
+			 TermType term_type, bool complete, Term *type,
+			 std::size_t hash);
+      static bool check_complete(Term *type, std::size_t n_parameters, Term *const* parameters);
+
+      typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
+      TermSetHook m_term_set_hook;
+      std::size_t m_hash;
+    };
+
+    /**
+     * \brief Base class for building custom FunctionalTerm instances.
+     */
+    class FunctionalTermBackend {
+    public:
+      virtual ~FunctionalTermBackend();
+      std::size_t hash_value() const;
+      virtual bool equals(const FunctionalTermBackend&) const = 0;
+      virtual Term* type(Context& context, std::size_t n_parameters, Term *const* parameters) const = 0;
+#if 0
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const = 0;
       virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const = 0;
       virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const = 0;
+#endif
 
-      std::size_t m_n_uses;
-      Category m_category;
-      Source m_source;
+    private:
+      virtual std::size_t hash_internal() const = 0;
+    };
+
+    /**
+     * \brief Class of most functional terms. Functionality is
+     * provided by a user-specified FunctionalTermBackend instance.
+     */
+    class FunctionalTerm : public FunctionalBaseTerm {
+      friend class Context;
+
+    public:
+      std::size_t n_parameters() const {return Term::n_parameters();}
+      Term* parameter(std::size_t n) const {return get_parameter(n);}
+
+    private:
+      struct Initializer;
+      FunctionalTerm(const UserInitializer& ui, Context *context, Term *type,
+		     std::size_t hash, FunctionalTermBackend *backend,
+		     std::size_t n_parameters, Term *const* parameters);
+      ~FunctionalTerm();
+      FunctionalTermBackend *m_backend;
+    };
+
+    /**
+     * \brief Base class for terms which are stored in the context's
+     * distinct term list.
+     *
+     * Subclasses of this class are opaque terms and globals, both of
+     * which are always considered unique. Instructions, blocks and
+     * phi terms are also always unique, however, they do not subclass
+     * DistinctTerm since Context does not directly hold a reference
+     * to them.
+     */
+    class DistinctTerm : public Term {
+      friend class Context;
+      friend class GlobalTerm;
+      friend class OpaqueTerm;
+
+    private:
+      DistinctTerm(const UserInitializer& ui, Context* context, TermType term_type, bool complete, Term *type);
+      ~DistinctTerm();
+
+      typedef boost::intrusive::list_member_hook<> TermListHook;
+      TermListHook m_term_list_hook;
+    };
+
+    /**
+     * \brief Base class for building custom InstructionTerm instances.
+     */
+    class InstructionTermBackend {
+    public:
+#if 0
+      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const = 0;
+      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const = 0;
+#endif
+    };
+
+    class BlockTerm;
+
+    /**
+     * \brief Instruction term. Per-instruction funtionality is
+     * created by implementing InstructionTermBackend and wrapping
+     * that in InstructionTerm.
+     */
+    class InstructionTerm : public Term {
+      friend class BlockTerm;
+
+    public:
+      std::size_t n_parameters() const {return Term::n_parameters();}
+      Term* parameter(std::size_t n) const {return get_parameter(n);}
+
+    private:
+      InstructionTerm(const UserInitializer& ui,
+		      Term *type, std::size_t n_parameters, Term *const* parameters,
+		      InstructionTermBackend *backend);
+
+      InstructionTermBackend *m_backend;
+
+      typedef boost::intrusive::list_member_hook<> InstructionListHook;
+      InstructionListHook m_instruction_list_hook;
+      BlockTerm *m_block;
+    };
+
+    /**
+     * \brief Phi node. These are used to unify values from different
+     * predecessors on entry to a block.
+     *
+     * \sa http://en.wikipedia.org/wiki/Static_single_assignment_form
+     */
+    class PhiTerm : public Term {
+      friend class BlockTerm;
+
+    public:
+      void add_incoming(BlockTerm *block, Term *value);
+
+    private:
+      PhiTerm(const UserInitializer& ui, Term *type);
+      typedef boost::intrusive::list_member_hook<> PhiListHook;
+      PhiListHook m_phi_list_hook;
+      BlockTerm *m_block;
+    };
+
+    /**
+     * \brief Block (list of instructions) inside a function. The
+     * value of this term is the label used to jump to this block.
+     */
+    class BlockTerm : public Term {
+      friend class FunctionTerm;
+
+    public:
+      void new_phi(Term *type);
+      void add_instruction();
+
+    private:
+      typedef boost::intrusive::list_member_hook<> BlockListHook;
+      BlockListHook m_block_list_hook;
+
+      typedef boost::intrusive::list<InstructionTerm,
+				     boost::intrusive::member_hook<InstructionTerm, InstructionTerm::InstructionListHook, &InstructionTerm::m_instruction_list_hook>,
+				     boost::intrusive::constant_time_size<false> > InstructionList;
+      InstructionList m_instructions;
+
+      typedef boost::intrusive::list<PhiTerm,
+				     boost::intrusive::member_hook<PhiTerm, PhiTerm::PhiListHook, &PhiTerm::m_phi_list_hook>,
+				     boost::intrusive::constant_time_size<false> > PhiList;
+      PhiList m_phi_nodes;
+    };
+
+    /**
+     * Term for types of functions. This cannot be implemented as a
+     * regular type because the types of later parameters can depend
+     * on the values of earlier parameters.
+     *
+     * This is also used for implementing template types since the
+     * template may be specialized by computing the result type of a
+     * function call (note that there is no <tt>result_of</tt> term,
+     * since the result must be the appropriate term itself).
+     */
+    class FunctionTypeTerm : public FunctionalBaseTerm {
+      friend class Context;
+    public:
+      std::size_t n_function_parameters() const {return n_parameters() - 1;}
+      Term* function_parameter(std::size_t i) const {return get_parameter(i+1);}
+      Term* function_result_type() const {return get_parameter(0);}
+
+    private:
+      struct Initializer;
+      FunctionTypeTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term *result_type, std::size_t n_parameters, Term *const* parameter_types);
+    };
+
+    class FunctionTypeParameterTerm : public FunctionalBaseTerm {
+      friend class Context;
+    public:
+      Term* source() const {return get_parameter(0);}
+
+    private:
+      struct Initializer;
+      FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, Term *type, std::size_t hash, Term *source, std::size_t index);
+
+      std::size_t m_index;
+    };
+
+    /**
+     * \brief Opaque term (as in LLVM). %Used to construct recursive
+     * types.
+     *
+     * To create a recursive type (or term), first create an
+     * OpaqueTerm using Context::new_opaque, create the type as normal
+     * and then call #resolve to finalize the type. Any term
+     * containing an opaque term is incomplete; calling #resolve will
+     * cause new terms to be generated (or equivalent existing terms
+     * to be found). Incomplete terms cannot be used as arguments to
+     * non-functional terms.
+     */
+    class OpaqueTerm : public DistinctTerm {
+      friend class Context;
+
+    public:
+      /**
+       * \brief Resolve this term to its actual value.
+       */
+      Term* resolve(Term *term);
+
+    private:
+      struct Initializer;
+      OpaqueTerm(const UserInitializer& ui, Context *context, Term *type);
+    };
+
+    /**
+     * \brief Internal type used to solve structural equivalence when
+     * resolving opaque terms.
+     */
+    class OpaqueResolverTerm : public FunctionalBaseTerm {
+      friend class Context;
+
+    private:
+      struct Initializer;
+      OpaqueResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term *type, std::size_t depth);
+
+      /**
+       * Depth of this instance of the opaque term from the root
+       * instance.
+       */
+      std::size_t m_depth;
+    };
+
+    /**
+     * \brief Base class for globals: these are GlobalVariableTerm and FunctionTerm.
+     */
+    class GlobalTerm : public DistinctTerm {
+    };
+
+    /**
+     * \brief Global variable.
+     */
+    class GlobalVariableTerm : public GlobalTerm {
+      friend class Context;
+
+    public:
+      void set_value(Term *value);
+
+    private:
+      struct Initializer;
+      /**
+       * Need to add parameters for linkage and possibly thread
+       * locality.
+       */
+      GlobalVariableTerm(const UserInitializer& ui, Context *context, Term *type, bool constant);
+
+      bool m_constant;
+    };
+
+    class FunctionTerm;
+
+    class FunctionParameterTerm : public Term {
+      friend class FunctionTerm;
+    public:
+
+    private:
+      FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm *function, std::size_t index);
+
+      typedef boost::intrusive::list_member_hook<> FunctionParameterListHook;
+      FunctionParameterListHook m_parameter_list_hook;
+
+      std::size_t m_index;
+      FunctionTerm *m_function;
+    };
+
+    /**
+     * \brief %Function.
+     */
+    class FunctionTerm : public GlobalTerm {
+    public:
+      BlockTerm *entry();
+      BlockTerm *new_block();
+
+    private:
+      typedef boost::intrusive::list<BlockTerm,
+				     boost::intrusive::member_hook<BlockTerm, BlockTerm::BlockListHook, &BlockTerm::m_block_list_hook>,
+				     boost::intrusive::constant_time_size<false> > BlockList;
+      BlockList m_blocks;
+
+      typedef boost::intrusive::list<FunctionParameterTerm,
+				     boost::intrusive::member_hook<FunctionParameterTerm, FunctionParameterTerm::FunctionParameterListHook, &FunctionParameterTerm::m_parameter_list_hook>,
+				     boost::intrusive::constant_time_size<false> > FunctionParameterList;
+      FunctionParameterList m_parameters;
+    };
+
+    template<typename B>
+    struct ValueCloner {
+      std::size_t size;
+      std::size_t align;
+      ValueCloner(std::size_t size_, std::size_t align_) : size(size_), align(align_) {}
+      virtual B* clone(void *p) const = 0;
     };
 
     class Context {
-      friend Term::~Term();
-      friend struct ProtoPtr;
+      struct FunctionalBaseTermDisposer;
+      struct DistinctTermDisposer;
 
-      struct TermHasher {std::size_t operator () (const Term *t) const;};
-      struct TermEquals {bool operator () (const Term *lhs, const Term *rhs) const;};
-      struct ProtoTermHasher {std::size_t operator () (const ProtoTerm *t) const;};
-      struct ProtoTermEquals {bool operator () (const ProtoTerm *lhs, const ProtoTerm *rhs) const;};
+      UniquePtr<MetatypeTerm> m_metatype;
 
-      typedef std::tr1::unordered_set<Term*, TermHasher, TermEquals> TermSet;
-      TermSet m_term_set;
+      template<typename T, typename B>
+      struct ValueClonerImpl : ValueCloner<B> {
+	const T* src;
+	ValueClonerImpl(const T* src_) : ValueCloner<B>(sizeof(T), align_of<T>()), src(src_) {}
+	virtual B* clone(void *p) const {return new (p) T(*src);}
+      };
 
-      typedef std::tr1::unordered_set<ProtoTerm*, ProtoTermHasher, ProtoTermEquals> ProtoTermSet;
-      ProtoTermSet m_proto_term_set;
+      //struct FunctionalBaseTermEquals {bool operator () (const FunctionalBaseTerm&, const FunctionalBaseTerm&) const;};
+      struct FunctionalBaseTermHash {std::size_t operator () (const FunctionalBaseTerm&) const;};
+      struct FunctionalTermKeyEquals;
+      struct FunctionTypeTermKeyEquals;
+      struct FunctionTypeParameterTermKeyEquals;
+      struct OpaqueResolverTermKeyEquals;
 
-      ProtoTerm* new_proto(const ProtoTerm&);
-      void proto_release(ProtoTerm *proto);
+      typedef boost::intrusive::unordered_set<FunctionalBaseTerm,
+					      boost::intrusive::member_hook<FunctionalBaseTerm, FunctionalBaseTerm::TermSetHook, &FunctionalBaseTerm::m_term_set_hook>,
+					      //boost::intrusive::equal<FunctionalBaseTermEquals>,
+					      boost::intrusive::hash<FunctionalBaseTermHash>,
+					      boost::intrusive::power_2_buckets<true> > FunctionalTermSet;
+      static const std::size_t functional_terms_n_initial_buckets = 256;
+      std::size_t m_functional_terms_n_buckets;
+      UniqueArray<FunctionalTermSet::bucket_type> m_functional_terms_buckets;
+      FunctionalTermSet m_functional_terms;
+
+      typedef boost::intrusive::list<DistinctTerm,
+				     boost::intrusive::member_hook<DistinctTerm, DistinctTerm::TermListHook, &DistinctTerm::m_term_list_hook>,
+				     boost::intrusive::constant_time_size<false> > DistinctTermList;
+      DistinctTermList m_distinct_terms;
 
       UniquePtr<llvm::LLVMContext> m_llvm_context;
       UniquePtr<llvm::Module> m_llvm_module;
@@ -210,26 +464,38 @@ namespace Psi {
       Context();
       ~Context();
 
-      /**
-       * \brief Create a new term.
-       */
-      Term* new_term(const ProtoTerm& expression, std::size_t n_parameters, Term *const* parameters);
+      MetatypeTerm* get_metatype() {return m_metatype.get();}
+
+#if 0
+      template<typename T>
+      typename T::Wrapper get_functional(const T& proto, std::size_t n_parameters, Term *const* parameters) {
+	return T::Wrapper(get_functional_internal(proto, ValueClonerImpl<T>(&proto), n_parameters, parameters));
+      }
 
 #define PSI_TVM_MAKE_NEW_TERM(z,n,data) Term* new_term(const ProtoTerm& expression BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,Term *p)) {Term *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return new_term(expression, n, ap);}
       BOOST_PP_REPEAT(5,PSI_TVM_MAKE_NEW_TERM,)
 #undef PSI_TVM_MAKE_NEW_TERM
+#endif
+
+      FunctionTypeTerm* get_function_type(Term *result, std::size_t n_parameters, Term *const* parameter_types);
+      FunctionTypeParameterTerm* get_function_type_parameter(Term *type, OpaqueTerm *func, std::size_t index);
 
       /**
        * \brief Create a new placeholder term.
-       *
-       * If \c type is null, it will default to metatype.
        */
-      Term* new_placeholder(Term *type=0);
+      OpaqueTerm* new_opaque(Term *type);
+
+      /**
+       * \brief Resolve an opaque term.
+       */
+      Term* resolve_opaque(OpaqueTerm *opaque, Term *term);
 
       /**
        * \brief Create a new global term.
        */
-      Term* new_global(Term *type);
+      GlobalVariableTerm* new_global_variable(Term *type, bool constant);
+
+      FunctionTerm* new_function(FunctionTypeTerm *type);
 
       /**
        * \brief Just-in-time compile a term, and a get a pointer to
@@ -239,6 +505,34 @@ namespace Psi {
 
     private:
       Context(const Context&);
+
+      template<typename T>
+      typename T::ResultType allocate_term(const T& initializer);
+
+      template<typename T>
+      typename T::ResultType allocate_distinct_term(const T& initializer);
+
+      /**
+       * Check whether a rehash is needed. Since this is a chaining
+       * hash table, a load factor of 1.0 is used.
+       */
+      void check_functional_terms_rehash();
+      static std::size_t term_hash(const Term *term);
+      std::pair<FunctionalBaseTerm*, std::size_t>
+      find_functional_base_internal(std::size_t hash_seed, Term::TermType term_type, std::size_t n_parameters, Term *const* parameters, Term *extra_parameter,
+				    const FunctionalTermBackend *backend, FunctionalTermSet::insert_commit_data& commit_data);
+      FunctionalTerm* get_functional_internal(const FunctionalTermBackend& proto, const ValueCloner<FunctionalTermBackend>& proto_cloner,
+					      std::size_t n_parameters, Term *const* parameters);
+      OpaqueResolverTerm* get_opaque_resolver(std::size_t depth, Term *type);
+      Term* build_resolver_term(std::size_t depth, OpaqueTerm *resolving, Term *term);
+#if 0
+      InstructionTerm* get_instruction_internal(const InstructionProtoTerm& proto,
+						const ValueCloner<void>& proto_cloner, std::size_t n_parameters,
+						Term *const* parameters);
+      template<typename T>
+      T* allocate_proto_term(const ValueCloner& proto_cloner,
+			     Term *type, std::size_t n_parameters, Term *const* parameters);
+#endif
     };
 
     /**
@@ -252,6 +546,7 @@ namespace Psi {
       std::tr1::uint64_t align;
     };
 
+#if 0
     /**
      * \brief The type of #Type terms.
      *
@@ -294,87 +589,11 @@ namespace Psi {
 
     private:
       virtual bool equals_internal(const ProtoTerm& other) const;
-      virtual std::size_t hash_internal() const;
-      virtual ProtoTerm* clone() const;
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
     };
-
-    class Parameter : public ProtoTerm {
-    public:
-      Parameter(const TermParameterRef& p);
-
-    private:
-      TermParameterRef m_p;
-    };
-
-    class Type : public ProtoTerm {
-    public:
-      virtual Term* type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
-
-    protected:
-      Type(Source source);
-    };
-
-    class PrimitiveType : public Type {
-    public:
-      PrimitiveType();
-
-    private:
-      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
-    };
-
-    class Value : public ProtoTerm {
-    protected:
-      Value(Source source);
-
-    private:
-      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
-    };
-
-    class ConstantValue : public Value {
-    public:
-      ConstantValue(Source source=term_functional);
-
-    private:
-      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
-    };
-
-    class Global : public ConstantValue {
-      friend class LLVMBuilderInvoker;
-
-    public:
-      Global();
-
-    private:
-      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
-
-      virtual llvm::GlobalValue* llvm_build_global(LLVMConstantBuilder&, Term*) const = 0;
-      virtual void llvm_init_global(LLVMConstantBuilder&, llvm::GlobalValue*, Term*) const = 0;
-    };
-
-    class GlobalVariable : public Global {
-    public:
-      GlobalVariable(bool read_only);
-
-      static Term* create(bool read_only, Term *value);
-
-      virtual Term* type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
-
-      /** \brief Whether this global will be placed in read-only memory. */
-      bool read_only() const {return m_read_only;}
-
-    private:
-      bool m_read_only;
-
-      virtual bool equals_internal(const ProtoTerm& other) const;
-      virtual std::size_t hash_internal() const;
-      virtual ProtoTerm* clone() const;
-
-      virtual llvm::GlobalValue* llvm_build_global(LLVMConstantBuilder&, Term*) const;
-      virtual void llvm_init_global(LLVMConstantBuilder&, llvm::GlobalValue*, Term*) const;
-    };
+#endif
   }
 }
 

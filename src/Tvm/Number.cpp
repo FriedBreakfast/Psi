@@ -79,6 +79,11 @@ namespace Psi {
       return LLVMConstantBuilder::type_known(const_cast<llvm::IntegerType*>(llvm::IntegerType::get(builder.context(), m_n_bits)));
     }
 
+    void BasicIntegerType::validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const {
+      if (n_parameters != 0)
+	throw std::logic_error("basic integer type term takes no parameters");
+    }
+
     Term* ConstantInteger::create(Term *type, const mpz_class& value) {
       return type->context().new_term(ConstantInteger(value), type);
     }

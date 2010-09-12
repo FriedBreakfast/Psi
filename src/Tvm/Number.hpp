@@ -39,6 +39,7 @@ namespace Psi {
       virtual ProtoTerm* clone() const;
       virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
+      virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
 
       unsigned m_n_bits;
       bool m_is_signed;

@@ -23,6 +23,7 @@ namespace Psi {
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
+      virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
     };
 
 #if 0
@@ -59,6 +60,7 @@ namespace Psi {
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
+      virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
     };
 
     class ArrayValue : public Value {
@@ -85,6 +87,7 @@ namespace Psi {
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
+      virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
     };
 
     class StructValue : public Value {
@@ -108,6 +111,7 @@ namespace Psi {
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
       virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
+      virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
     };
 
     class UnionValue : public Value {
