@@ -1,6 +1,7 @@
 #ifndef HPP_PSI_USER
 #define HPP_PSI_USER
 
+#include <iterator>
 #include <cstddef>
 #include <tr1/cstdint>
 #include <tr1/type_traits>
@@ -40,23 +41,25 @@ namespace Psi {
     bool used_head() {return m_target == UsedHead;}
     bool use_node() {return (m_target == 0) || (m_target > UsedHead);}
 
-    User *owner() {PSI_ASSERT(user_head(), "wrong Use type"); return m_rest.head.owner;}
-    std::size_t n_uses() {PSI_ASSERT(user_head(), "wrong Use type"); return m_rest.head.n_uses;}
+    User *owner() {PSI_ASSERT(user_head()); return m_rest.head.owner;}
+    std::size_t n_uses() {PSI_ASSERT(user_head()); return m_rest.head.n_uses;}
 
-    Use *locate_head() {
-      PSI_ASSERT(use_node(), "wrong Use type");
+    std::pair<User*, std::size_t> locate_owner() {
+      PSI_ASSERT(use_node());
 
       Use *u = this;
+      std::size_t index = 0;
       while (true) {
 	--u;
 	if (u->user_head())
-	  return u;
+	  return std::make_pair(u->m_rest.head.owner, index);
+	++index;
       }
     }
 
-    Use *next() {PSI_ASSERT(!user_head(), "wrong Use type"); return m_rest.use.next;}
-    Use *prev() {PSI_ASSERT(!user_head(), "wrong Use type"); return m_rest.use.prev;}
-    Used *target() {PSI_ASSERT(use_node(), "wrong Use type"); return reinterpret_cast<Used*>(m_target);}
+    Use *next() {PSI_ASSERT(!user_head()); return m_rest.use.next;}
+    Use *prev() {PSI_ASSERT(!user_head()); return m_rest.use.prev;}
+    Used *target() {PSI_ASSERT(use_node()); return reinterpret_cast<Used*>(m_target);}
 
     // "use_node" operations
     void set_target(Used *target);
@@ -81,6 +84,44 @@ namespace Psi {
     } m_rest;
   };
 
+  class UserIterator {
+    friend class Used;
+
+  public:
+    typedef std::bidirectional_iterator_tag iterator_category;
+
+    UserIterator() : m_use(0), m_user(0) {}
+
+    bool operator == (const UserIterator& o) const {return m_use == o.m_use;}
+    bool operator != (const UserIterator& o) const {return m_use != o.m_use;}
+
+    User& operator * () const {return *get();}
+    User* operator -> () const {return get();}
+
+    User* get() const {
+      if (!m_user) {
+	std::pair<User*, std::size_t> p = m_use->locate_owner();
+	m_user = p.first;
+	m_use_index = p.second;
+      }
+      return m_user;
+    }
+
+    std::size_t use_index() const {get(); return m_use_index;}
+
+    const UserIterator& operator ++ () {m_user = 0; m_use = m_use->next(); return *this;}
+    const UserIterator& operator -- () {m_user = 0; m_use = m_use->prev(); return *this;}
+    UserIterator operator ++ (int) {UserIterator tmp(*this); operator ++ (); return tmp;}
+    UserIterator operator -- (int) {UserIterator tmp(*this); operator -- (); return tmp;}
+
+  private:
+    UserIterator(Use *use) : m_use(use), m_user(0) {}
+
+    Use *m_use;
+    mutable User *m_user;
+    mutable std::size_t m_use_index;
+ };
+
   class Used : public CheckedCastBase {
     friend class Use;
 
@@ -92,6 +133,10 @@ namespace Psi {
     Used();
     ~Used();
 
+    UserIterator users_begin() {return UserIterator(m_use.next());}
+    UserIterator users_end() {return UserIterator(&m_use);}
+
+    bool is_used() {return m_use.next() != &m_use;}
     void replace_with(Used *target) {m_use.replace_with(target);}
   };
 
@@ -130,7 +175,7 @@ namespace Psi {
     Use *m_uses;
 
     Use& use_n(std::size_t n) const {
-      PSI_ASSERT(m_uses && (n < m_uses[0].n_uses()), "Use index out of range");
+      PSI_ASSERT(m_uses && (n < m_uses[0].n_uses()));
       return m_uses[n+1];
     }
 
@@ -139,7 +184,7 @@ namespace Psi {
     virtual ~User();
 
     template<typename T> T* use_get(std::size_t i) const {
-      PSI_STATIC_ASSERT((std::tr1::is_base_of<Used, T>::value), "T must inherit Psi::Used");
+      PSI_STATIC_ASSERT_MSG((std::tr1::is_base_of<Used, T>::value), "T must inherit Psi::Used");
       return checked_pointer_static_cast<T>(use_n(i).target());
     }
 

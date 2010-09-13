@@ -8,21 +8,25 @@
 
 namespace Psi {
 #ifdef PSI_DEBUG
-#define PSI_ASSERT(cond,msg) (cond ? void() : Psi::assert_fail(#cond, msg))
+#define PSI_ASSERT_MSG(cond,msg) (cond ? void() : Psi::assert_fail(#cond, msg))
+#define PSI_ASSERT(cond) (cond ? void() : Psi::assert_fail(#cond, NULL))
 #define PSI_FAIL(msg) (Psi::assert_fail(NULL, msg))
 #else
-#define PSI_ASSERT(cond,msg) void()
+#define PSI_ASSERT_MSG(cond,msg) void()
+#define PSI_ASSERT(cond) void()
 #define PSI_FAIL(msg) void()
 #endif
 
 #if __cplusplus > 199711L
-#define PSI_STATIC_ASSERT(cond,msg) static_assert(cond,msg)
+#define PSI_STATIC_ASSERT(cond) static_assert(cond)
+#define PSI_STATIC_ASSERT_MSG(cond,msg) static_assert(cond,msg)
 #else
   template<bool> struct StaticAssert;
   template<> struct StaticAssert<true> {static const int value=0;};
   template<int> struct StaticAssertType;
 
-#define PSI_STATIC_ASSERT(cond,msg) typedef StaticAssertType<StaticAssert<(cond)>::value> PSI_STATIC_ASSERT_ ## __LINE__
+#define PSI_STATIC_ASSERT(cond) typedef StaticAssertType<StaticAssert<(cond)>::value> PSI_STATIC_ASSERT_ ## __LINE__
+#define PSI_STATIC_ASSERT_MSG(cond,msg) PSI_STATIC_ASSERT(cond)
 #endif
 
 #ifdef __GNUC__
@@ -51,8 +55,8 @@ namespace Psi {
   public:
     static const std::size_t value = sizeof(Test) - sizeof(T);
 #endif
-    PSI_STATIC_ASSERT((value > 0) && ((value & (value - 1)) == 0),
-		      "type alignment is not a power of two");
+    PSI_STATIC_ASSERT_MSG((value > 0) && ((value & (value - 1)) == 0),
+			  "type alignment is not a power of two");
   };
 
   /**
@@ -66,7 +70,7 @@ namespace Psi {
    */
   template<typename T> std::size_t align_of() {return AlignOf<T>::value;}
 
-  void assert_fail(const char *test, const std::string& msg) PSI_ATTRIBUTE((PSI_NORETURN));
+  void assert_fail(const char *test, const char *msg) PSI_ATTRIBUTE((PSI_NORETURN));
 
   class Noncopyable {
   public:
@@ -96,7 +100,7 @@ namespace Psi {
    */
   template<typename T, typename U>
   T* checked_pointer_static_cast(U *ptr) {
-    PSI_ASSERT(dynamic_cast<T*>(ptr) == ptr, "Static cast failed");
+    PSI_ASSERT(dynamic_cast<T*>(ptr) == ptr);
     return static_cast<T*>(ptr);
   }
 
@@ -108,7 +112,7 @@ namespace Psi {
    */
   template<typename T, typename U>
   T& checked_reference_static_cast(U& ref) {
-    PSI_ASSERT(dynamic_cast<T*>(&ref) == &ref, "Static cast failed");
+    PSI_ASSERT(dynamic_cast<T*>(&ref) == &ref);
     return static_cast<T&>(ref);
   }
 
@@ -124,7 +128,7 @@ namespace Psi {
   T* reverse_member_lookup(U *member, U T::*member_ptr) {
     std::ptrdiff_t diff = reinterpret_cast<char*>(&(static_cast<T*>(NULL)->*member_ptr)) - static_cast<char*>(NULL);
     T *ptr = reinterpret_cast<T*>(reinterpret_cast<char*>(member) - diff);
-    PSI_ASSERT(&(ptr->*member_ptr) == member, "reverse_member_lookup pointer arithmetic is incorrect");
+    PSI_ASSERT(&(ptr->*member_ptr) == member);
     return ptr;
   }
 

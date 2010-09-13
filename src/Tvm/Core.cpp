@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <typeinfo>
 
-#include <boost/checked_delete.hpp>
+#include <boost/smart_ptr/scoped_array.hpp>
 
 #include <llvm/LLVMContext.h>
 #include <llvm/Type.h>
@@ -179,9 +179,25 @@ namespace Psi {
 	std::size_t n_parameters;
 	Term *const* parameters;
       };
+
+      struct FunctionalTermKeyWithType : FunctionalTermKey {
+	Term *type;
+      };
     }
 
     struct Context::FunctionalTermKeyEquals {
+      static void init_key(FunctionalTermKey& key, const FunctionalTermBackend *backend, std::size_t n_parameters, Term *const* parameters) {
+	key.backend = backend;
+	key.n_parameters = n_parameters;
+	key.parameters = parameters;
+
+	key.hash = 0;
+	boost::hash_combine(key.hash, backend->hash_value());
+	boost::hash_combine(key.hash, Term::term_functional);
+	for (std::size_t i = 0; i < n_parameters; ++i)
+	  boost::hash_combine(key.hash, term_hash(parameters[i]));
+      }
+
       bool operator () (const FunctionalTermKey& key, const FunctionalBaseTerm& value) const {
 	if ((key.hash != value.m_hash) || (value.m_term_type != Term::term_functional) || (key.n_parameters != value.n_parameters()))
 	  return false;
@@ -199,6 +215,23 @@ namespace Psi {
       };
     };
 
+    struct Context::FunctionalTermKeyWithTypeEquals : Context::FunctionalTermKeyEquals {
+      static void init_key(FunctionalTermKeyWithType& key, const FunctionalTermBackend *backend, Term *type, std::size_t n_parameters, Term *const* parameters) {
+	FunctionalTermKeyEquals::init_key(key, backend, n_parameters, parameters);
+	key.type = type;
+      }
+
+      bool operator () (const FunctionalTermKeyWithType& key, const FunctionalBaseTerm& value) const {
+	if (!FunctionalTermKeyEquals::operator() (key, value))
+	  return false;
+
+	if (key.type != value.type())
+	  return false;
+
+	return true;
+      };
+    };
+
     struct FunctionalTerm::Initializer {
       typedef FunctionalTerm* ResultType;
 
@@ -207,50 +240,61 @@ namespace Psi {
       std::size_t size;
       std::size_t hash;
       Term *type;
-      const ValueCloner<FunctionalTermBackend> *backend_cloner;
+      const FunctionalTermBackend *backend;
       std::size_t n_parameters;
       Term *const* parameters;
 
-      Initializer(std::size_t hash_, Term *type_, const ValueCloner<FunctionalTermBackend>* backend_cloner_, std::size_t n_parameters_, Term *const* parameters_)
-	: n_slots(n_parameters), hash(hash_), type(type_), backend_cloner(backend_cloner_), n_parameters(n_parameters_), parameters(parameters_) {
-	proto_offset = struct_offset(0, sizeof(FunctionalTerm), backend_cloner->align);
-	size = proto_offset + backend_cloner->size;
+      Initializer(std::size_t hash_, Term *type_, const FunctionalTermBackend *backend_, std::size_t n_parameters_, Term *const* parameters_)
+	: n_slots(n_parameters), hash(hash_), type(type_), backend(backend_), n_parameters(n_parameters_), parameters(parameters_) {
+	std::pair<std::size_t, std::size_t> backend_size_align = backend->size_align();
+	PSI_ASSERT_MSG((backend_size_align.second & (backend_size_align.second - 1)) == 0, "alignment is not a power of two");
+	proto_offset = struct_offset(0, sizeof(FunctionalTerm), backend_size_align.second);
+	size = proto_offset + backend_size_align.first;
       }
 
       FunctionalTerm* init(void *base, const UserInitializer& ui, Context* context) const {
-	FunctionalTermBackend *backend = backend_cloner->clone(ptr_offset(base, proto_offset));
+	FunctionalTermBackend *new_backend = backend->clone(ptr_offset(base, proto_offset));
 	try {
-	  return new (base) FunctionalTerm(ui, context, type, hash, backend, n_parameters, parameters);
+	  return new (base) FunctionalTerm(ui, context, type, hash, new_backend, n_parameters, parameters);
 	} catch(...) {
-	  backend->~FunctionalTermBackend();
+	  new_backend->~FunctionalTermBackend();
 	  throw;
 	}
       }
     };
 
-    FunctionalTerm* Context::get_functional_internal(const FunctionalTermBackend& backend, const ValueCloner<FunctionalTermBackend>& backend_cloner,
-						     std::size_t n_parameters, Term *const* parameters) {
+    FunctionalTerm* Context::get_functional_internal(const FunctionalTermBackend& backend, std::size_t n_parameters, Term *const* parameters) {
       FunctionalTermKey key;
-      key.backend = &backend;
-      key.n_parameters = n_parameters;
-      key.parameters = parameters;
-
-      key.hash = 0;
-      boost::hash_combine(key.hash, backend.hash_value());
-      boost::hash_combine(key.hash, Term::term_functional);
-      for (std::size_t i = 0; i < n_parameters; ++i)
-	boost::hash_combine(key.hash, term_hash(parameters[i]));
+      FunctionalTermKeyEquals::init_key(key, &backend, n_parameters, parameters);
 
       FunctionalTermSet::insert_commit_data commit_data;
       std::pair<FunctionalTermSet::iterator, bool> existing =
 	m_functional_terms.insert_check(key, HashKeyHash(), FunctionalTermKeyEquals(), commit_data);
       if (!existing.second) {
-	PSI_ASSERT(existing.first->m_term_type == Term::term_functional, "functional term type error");
+	PSI_ASSERT(existing.first->m_term_type == Term::term_functional);
 	return static_cast<FunctionalTerm*>(&*existing.first);
       }
 
       Term *type = backend.type(*this, n_parameters, parameters);
-      FunctionalTerm *term = allocate_term(FunctionalTerm::Initializer(key.hash, type, &backend_cloner, n_parameters, parameters));
+      FunctionalTerm *term = allocate_term(FunctionalTerm::Initializer(key.hash, type, &backend, n_parameters, parameters));
+      m_functional_terms.insert_commit(*term, commit_data);
+      check_functional_terms_rehash();
+      return term;
+    }
+
+    FunctionalTerm* Context::get_functional_internal_with_type(const FunctionalTermBackend& backend, Term *type, std::size_t n_parameters, Term *const* parameters) {
+      FunctionalTermKeyWithType key;
+      FunctionalTermKeyWithTypeEquals::init_key(key, &backend, type, n_parameters, parameters);
+
+      FunctionalTermSet::insert_commit_data commit_data;
+      std::pair<FunctionalTermSet::iterator, bool> existing =
+	m_functional_terms.insert_check(key, HashKeyHash(), FunctionalTermKeyWithTypeEquals(), commit_data);
+      if (!existing.second) {
+	PSI_ASSERT(existing.first->m_term_type == Term::term_functional);
+	return static_cast<FunctionalTerm*>(&*existing.first);
+      }
+
+      FunctionalTerm *term = allocate_term(FunctionalTerm::Initializer(key.hash, type, &backend, n_parameters, parameters));
       m_functional_terms.insert_commit(*term, commit_data);
       check_functional_terms_rehash();
       return term;
@@ -314,7 +358,7 @@ namespace Psi {
       std::pair<FunctionalTermSet::iterator, bool> existing =
 	m_functional_terms.insert_check(key, HashKeyHash(), FunctionTypeTermKeyEquals(), commit_data);
       if (!existing.second) {
-	PSI_ASSERT(existing.first->m_term_type == Term::term_function_type, "functional term type error");
+	PSI_ASSERT(existing.first->m_term_type == Term::term_function_type);
 	return static_cast<FunctionTypeTerm*>(&*existing.first);
       }
 
@@ -355,7 +399,7 @@ namespace Psi {
       }
     };
 
-    FunctionTypeParameterTerm* Context::get_function_type_parameter(Term *type, OpaqueTerm *func, std::size_t index) {
+    FunctionTypeParameterTerm* Context::get_function_type_parameter_internal(Term *type, Term *func, std::size_t index) {
       FunctionTypeParameterTermKey key;
       key.type = type;
       key.source = func;
@@ -371,7 +415,7 @@ namespace Psi {
       std::pair<FunctionalTermSet::iterator, bool> existing =
 	m_functional_terms.insert_check(key, HashKeyHash(), FunctionTypeParameterTermKeyEquals(), commit_data);
       if (!existing.second) {
-	PSI_ASSERT(existing.first->m_term_type == Term::term_function_type_parameter, "functional term type error");
+	PSI_ASSERT(existing.first->m_term_type == Term::term_function_type_parameter);
 	return static_cast<FunctionTypeParameterTerm*>(&*existing.first);
       }
 
@@ -426,7 +470,7 @@ namespace Psi {
       std::pair<FunctionalTermSet::iterator, bool> existing =
 	m_functional_terms.insert_check(key, HashKeyHash(), OpaqueResolverTermKeyEquals(), commit_data);
       if (!existing.second) {
-	PSI_ASSERT(existing.first->m_term_type == Term::term_function_type_parameter, "functional term type error");
+	PSI_ASSERT(existing.first->m_term_type == Term::term_function_type_parameter);
 	return static_cast<OpaqueResolverTerm*>(&*existing.first);
       }
 
@@ -436,30 +480,225 @@ namespace Psi {
       return term;
     }
 
-    Term* Context::build_resolver_term(std::size_t depth, OpaqueTerm *resolving, Term *term) {
-      if (term->m_complete)
+    TemporaryTerm::TemporaryTerm(Context *context, bool complete, Term *type)
+      : Term(m_uses, context, term_temporary, complete, type) {
+    }
+
+    Term* Context::build_resolver_term(std::size_t depth,
+				       std::tr1::unordered_map<Term*, std::size_t>& parent_terms,
+				       std::tr1::unordered_set<Term*>& non_rewritten_terms,
+				       Term *term, std::size_t& up_reference_depth) {
+      if (term->complete())
 	return term;
 
+      std::tr1::unordered_map<Term*, std::size_t>::iterator it = parent_terms.find(term);
+      if (it != parent_terms.end()) {
+	if (it->second < up_reference_depth)
+	  up_reference_depth = it->second;
+	PSI_ASSERT(depth > it->second);
+	return get_opaque_resolver(depth - it->second, it->first->type());
+      }
+
+      if (term->m_term_type == Term::term_opaque)
+	return term;
+
+      if (non_rewritten_terms.find(term) != non_rewritten_terms.end())
+	return term;
+
+      std::pair<std::tr1::unordered_map<Term*, std::size_t>::iterator, bool> it_pair =
+	parent_terms.insert(std::make_pair(term, depth));
+      PSI_ASSERT(it_pair.second);
+
+      Term *result;
+      std::size_t child_up_reference_depth = depth + 1;
       switch (term->m_term_type) {
-      case Term::term_functional:
+      case Term::term_functional: {
+	FunctionalTerm *cast_term = static_cast<FunctionalTerm*>(term);
+	Term *type = build_resolver_term(depth+1, parent_terms, non_rewritten_terms, cast_term->type(), child_up_reference_depth);
+	std::size_t n_parameters = cast_term->n_parameters();
+	boost::scoped_array<Term*> parameters(new Term*[n_parameters]);
+	for (std::size_t i = 0; i < n_parameters; ++i)
+	  parameters[i] = build_resolver_term(depth+1, parent_terms, non_rewritten_terms, cast_term->parameter(i), child_up_reference_depth);
+	result = get_functional_internal_with_type(*cast_term->m_backend, type, n_parameters, parameters.get());
+	break;
+      }
 
-      case Term::term_function_type:
+      case Term::term_function_type: {
+	FunctionTypeTerm *cast_term = static_cast<FunctionTypeTerm*>(term);
+	Term *result_type = build_resolver_term(depth+1, parent_terms, non_rewritten_terms, cast_term->function_result_type(), child_up_reference_depth);
+	std::size_t n_parameters = cast_term->n_function_parameters();
+	boost::scoped_array<Term*> parameter_types(new Term*[n_parameters]);
+	for (std::size_t i = 0; i < n_parameters; ++i)
+	  parameter_types[i] = build_resolver_term(depth+1, parent_terms, non_rewritten_terms, cast_term->function_parameter(i), child_up_reference_depth);
+	result = get_function_type(result_type, n_parameters, parameter_types.get());
+	break;
+      }
 
-      case Term::term_function_type_parameter:
-
-      case Term::term_opaque: {
-	if (term == resolving)
-	  return get_opaque_resolver(depth, resolving->type());
-	else
-	  return term;
+      case Term::term_function_type_parameter: {
+	FunctionTypeParameterTerm *cast_term = static_cast<FunctionTypeParameterTerm*>(term);
+	Term *type = build_resolver_term(depth+1, parent_terms, non_rewritten_terms, cast_term->type(), child_up_reference_depth);
+	Term *source = build_resolver_term(depth+1, parent_terms, non_rewritten_terms, cast_term->source(), child_up_reference_depth);
+	result = get_function_type_parameter_internal(type, source, cast_term->index());
+	break;
       }
 
       default:
-	PSI_FAIL("unexpected term type in opaque type resolution");
+	// all terms should either be amongst the handled cases or complete
+	PSI_FAIL("unknown term type");
+      }
+
+      parent_terms.erase(it_pair.first);
+
+      if (child_up_reference_depth < depth) {
+	if (child_up_reference_depth < up_reference_depth)
+	  up_reference_depth = child_up_reference_depth;
+	return result;
+      } else {
+	non_rewritten_terms.insert(term);
+	return term;
       }
     }
 
-    Term* Context::resolve_opaque(OpaqueTerm *opaque, Term *term) {
+    Term* Context::rewrite_resolver_term(Term *term, Term *term_resolved, std::vector<Term*>& parent_terms,
+					 const std::tr1::unordered_set<Term*>& non_rewritten_terms,
+					 std::tr1::unordered_map<Term*,Term*>& rewritten_terms) {
+      PSI_ASSERT(term->m_term_type == term_resolved->m_term_type);
+
+      if (term->complete() || (non_rewritten_terms.find(term) != non_rewritten_terms.end())) {
+	PSI_ASSERT(term == term_resolved);
+	return term;
+      }
+
+      if (term_resolved->m_term_type == Term::term_opaque) {
+	PSI_ASSERT(term == term_resolved);
+	return term;
+      } else if (term_resolved->m_term_type == Term::term_opaque_resolver) {
+	std::size_t depth = static_cast<OpaqueResolverTerm*>(term)->m_depth;
+	PSI_ASSERT((depth >= 1) && (depth <= parent_terms.size()));
+	return parent_terms[parent_terms.size() - depth];
+      }
+
+      Term *result;
+      TemporaryTerm temp(this, term_resolved->m_complete, term->type());
+      parent_terms.push_back(&temp);
+
+      switch (term->m_term_type) {
+      case Term::term_functional: {
+	FunctionalTerm *cast_term = static_cast<FunctionalTerm*>(term);
+	FunctionalTerm *cast_term_resolved = static_cast<FunctionalTerm*>(term_resolved);
+	PSI_ASSERT(cast_term->n_parameters() == cast_term_resolved->n_parameters());
+
+	Term *type = rewrite_resolver_term(cast_term->type(), cast_term_resolved->type(), parent_terms, non_rewritten_terms, rewritten_terms);
+	std::size_t n_parameters = cast_term->n_parameters();
+	boost::scoped_array<Term*> parameters(new Term*[n_parameters]);
+	for (std::size_t i = 0; i < n_parameters; ++i)
+	  parameters[i] = rewrite_resolver_term(cast_term->parameter(i), cast_term_resolved->parameter(i), parent_terms, non_rewritten_terms, rewritten_terms);
+	result = get_functional_internal_with_type(*cast_term->m_backend, type, n_parameters, parameters.get());
+	break;
+      }
+
+      case Term::term_function_type: {
+	FunctionTypeTerm *cast_term = static_cast<FunctionTypeTerm*>(term);
+	FunctionTypeTerm *cast_term_resolved = static_cast<FunctionTypeTerm*>(term_resolved);
+	PSI_ASSERT(cast_term->n_function_parameters() == cast_term_resolved->n_function_parameters());
+
+	Term *result_type = rewrite_resolver_term(cast_term->function_result_type(), cast_term_resolved->function_result_type(), parent_terms, non_rewritten_terms, rewritten_terms);
+	std::size_t n_parameters = cast_term->n_function_parameters();
+	boost::scoped_array<Term*> parameter_types(new Term*[n_parameters]);
+	for (std::size_t i = 0; i < n_parameters; ++i)
+	  parameter_types[i] = rewrite_resolver_term(cast_term->function_parameter(i), cast_term_resolved->function_parameter(i), parent_terms, non_rewritten_terms, rewritten_terms);
+	result = get_function_type(result_type, n_parameters, parameter_types.get());
+	break;
+      }
+
+      case Term::term_function_type_parameter: {
+	FunctionTypeParameterTerm *cast_term = static_cast<FunctionTypeParameterTerm*>(term);
+	FunctionTypeParameterTerm *cast_term_resolved = static_cast<FunctionTypeParameterTerm*>(term_resolved);
+	PSI_ASSERT(cast_term->index() == cast_term_resolved->index());
+
+	Term *type = rewrite_resolver_term(cast_term->type(), cast_term_resolved->type(), parent_terms, non_rewritten_terms, rewritten_terms);
+	Term *source = rewrite_resolver_term(cast_term->source(), cast_term_resolved->source(), parent_terms, non_rewritten_terms, rewritten_terms);
+	result = get_function_type_parameter_internal(type, source, cast_term->index());
+	break;
+      }
+
+      default:
+	// all terms should either be amongst the handled cases or complete
+	PSI_FAIL("unknown term type");
+      }
+
+      parent_terms.pop_back();
+      temp.replace_with(result);
+      PSI_ASSERT(!temp.is_used());
+      rewritten_terms[term] = result;
+      return result;
+    }
+
+    FunctionalBaseTerm* Context::resolve_opaque_internal(OpaqueTerm *opaque, FunctionalBaseTerm *term) {
+      if (opaque->type() != term->type())
+	throw std::logic_error("type mismatch between opaque term and resolving term");
+
+      if ((term->m_term_type != Term::term_functional) &&
+	  (term->m_term_type != Term::term_function_type) &&
+	  (term->m_term_type != Term::term_function_type_parameter)) {
+	throw std::logic_error("resolving term has the wrong term type (it must be a functional term)");
+      }
+
+      std::tr1::unordered_map<Term*, std::size_t> parent_terms_map;
+      std::tr1::unordered_set<Term*> non_rewritten_terms;
+      std::size_t up_reference_depth = 1;
+      parent_terms_map[opaque] = 0;
+      Term *resolved = build_resolver_term(0, parent_terms_map, non_rewritten_terms, term, up_reference_depth);
+      PSI_ASSERT(resolved->m_term_type == term->m_term_type);
+      PSI_ASSERT((parent_terms_map.erase(opaque), parent_terms_map.empty()));
+
+      FunctionalBaseTerm *cast_resolved = static_cast<FunctionalBaseTerm*>(term);
+      FunctionalBaseTerm *result;
+      std::tr1::unordered_map<Term*,Term*> rewritten_terms;
+      if (up_reference_depth == 0) {
+	// term actually contained references to itself
+	if (!cast_resolved->m_resolve) {
+	  // no equivalent term - rewrite original one
+	  std::vector<Term*> parent_terms_list;
+	  Term *rewritten = rewrite_resolver_term(term, resolved, parent_terms_list, non_rewritten_terms, rewritten_terms);
+	  PSI_ASSERT(rewritten->m_term_type == term->m_term_type);
+	  result = static_cast<FunctionalBaseTerm*>(rewritten);
+
+	  result->m_resolve_source = false;
+	  result->m_resolve = cast_resolved;
+	  cast_resolved->m_resolve_source = true;
+	  cast_resolved->m_resolve = result;
+	} else {
+	  PSI_ASSERT(cast_resolved->m_resolve_source);
+	  result = cast_resolved->m_resolve;
+	}
+      } else {
+	// term contained no references to itself
+	PSI_ASSERT(term == cast_resolved);
+      }
+
+      // Rewrite terms using this term, possibly unifying them with
+      // existing terms
+      rewritten_terms[term] = result;
+
+      // Find root terms to rewrite from
+      std::tr1::unordered_set<Term*> root_set;
+      std::tr1::unordered_map<Term*,Term*> root_map;
+
+      std::vector<Term*> frontier;
+      fronter.push_back(term);
+      while (!frontier.empty()) {
+	Term *source = frontier.back();
+	frontier.pop_back();
+
+	for (UserIterator it = source->users_begin(); it != source->users_end(); ++it) {
+	  Term *parent = checked_pointer_static_cast<Term>(it.get());
+	  root_set.insert(std::make_pair(parent, source));
+	  frontier.push_back(source_parent);
+	}
+      }
+
+      return result;
     }
 
 #if 0
@@ -500,7 +739,7 @@ namespace Psi {
       if (!m_llvm_engine) {
 	llvm::InitializeNativeTarget();
 	m_llvm_engine.reset(llvm::EngineBuilder(m_llvm_module.release()).create());
-	PSI_ASSERT(m_llvm_engine.get(), "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
+	PSI_ASSERT_MSG(m_llvm_engine.get(), "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
       } else {
 	m_llvm_engine->addModule(m_llvm_module.release());
       }
@@ -516,13 +755,13 @@ namespace Psi {
 
       if (!type) {
 	m_category = category_metatype;
-	PSI_ASSERT(complete, "metatype should always be complete");
+	PSI_ASSERT_MSG((term_type == term_metatype) && complete, "term with no type is not a valid metatype");
       } else {
-	PSI_ASSERT(context == type->m_context, "context mismatch between term and its type");
+	PSI_ASSERT_MSG(context == type->m_context, "context mismatch between term and its type");
 	if (type->m_category == category_metatype) {
 	  m_category = category_type;
 	} else {
-	  PSI_ASSERT(type->m_category == category_type, "unknown category");
+	  PSI_ASSERT_MSG(type->m_category == category_type, "term does has invalid category");
 	  m_category = category_value;
 	}
       }
@@ -549,10 +788,6 @@ namespace Psi {
 
     OpaqueTerm::OpaqueTerm(const UserInitializer& ui, Context *context, Term *type)
       : DistinctTerm(ui, context, term_opaque, false, type) {
-    }
-
-    Term* OpaqueTerm::resolve(Term *term) {
-      return context().resolve_opaque(this, term);
     }
 
 #if 0
@@ -583,9 +818,9 @@ namespace Psi {
 
     LLVMConstantBuilder::Constant Metatype::llvm_value(llvm::Constant *size, llvm::Constant *align) {
       llvm::LLVMContext& context = size->getContext();
-      PSI_ASSERT(size->getType()->isIntegerTy(64) && align->getType()->isIntegerTy(64),
-		 "size and align members of Metatype must both be i64");
-      PSI_ASSERT(!llvm::cast<llvm::ConstantInt>(align)->equalsInt(0), "align cannot be zero");
+      PSI_ASSERT_MSG(size->getType()->isIntegerTy(64) && align->getType()->isIntegerTy(64),
+		     "size and align members of Metatype must both be i64");
+      PSI_ASSERT_MSG(!llvm::cast<llvm::ConstantInt>(align)->equalsInt(0), "align cannot be zero");
       llvm::Constant* values[2] = {size, align};
       return LLVMConstantBuilder::constant_value(llvm::ConstantStruct::get(context, values, 2, false));
     }
@@ -659,7 +894,7 @@ namespace Psi {
       Term *initializer = term->parameter(1);
       LLVMConstantBuilder::Constant init_llvm = builder.constant(initializer);
       if (init_llvm.empty()) {
-	PSI_ASSERT(gv->getInitializer(), "Initializer for empty global is null");
+	PSI_ASSERT_MSG(gv->getInitializer(), "Initializer for empty global is null");
       } else {
 	gv->setInitializer(init_llvm.value());
       }
@@ -669,7 +904,8 @@ namespace Psi {
     FunctionalBaseTerm::FunctionalBaseTerm(const UserInitializer& ui, Context *context,
 					   TermType term_type, bool complete, Term *type,
 					   std::size_t hash)
-      : Term(ui, context, term_type, complete, type), m_hash(hash) {
+      : Term(ui, context, term_type, complete, type), m_hash(hash),
+	m_resolve_source(false), m_resolve(NULL) {
     }
 
     bool FunctionalBaseTerm::check_complete(Term *type, std::size_t n_parameters, Term *const* parameters) {
@@ -713,8 +949,11 @@ namespace Psi {
     }
 
     OpaqueResolverTerm::OpaqueResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term *type, std::size_t depth)
-      : FunctionalBaseTerm(ui, context, term_opaque_resolver, false, type, hash),
+      : FunctionalBaseTerm(ui, context, term_opaque_resolver, true, type, hash),
 	m_depth(depth) {
+      // opaque resolver terms are constructed complete so that once
+      // we've got back to the root term its complete state will be
+      // correct
     }
   }
 }

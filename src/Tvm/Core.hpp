@@ -1,7 +1,11 @@
 #ifndef HPP_PSI_TVM_CORE
 #define HPP_PSI_TVM_CORE
 
+#include <vector>
+
 #include <tr1/cstdint>
+#include <tr1/unordered_map>
+#include <tr1/unordered_set>
 
 #include <boost/intrusive_ptr.hpp>
 #include <boost/intrusive/list.hpp>
@@ -38,6 +42,7 @@ namespace Psi {
       friend class InstructionTerm;
       friend class MetatypeTerm;
       friend class PhiTerm;
+      friend class TemporaryTerm;
 
     public:
       enum Category {
@@ -61,7 +66,8 @@ namespace Psi {
 	term_phi, ///< PhiTerm: \copybrief PhiTerm
 	term_function_type, ///< FunctionTypeTerm: \copybrief FunctionTypeTerm
 	term_function_type_parameter, ///< FunctionTypeParameterTerm: \copybrief FunctionTypeParameterTerm
-	term_metatype ///< MetatypeTerm: \copybrief MetatypeTerm
+	term_metatype, ///< MetatypeTerm: \copybrief MetatypeTerm
+	term_temporary ///< TemporaryTerm: \copybrief TemporaryTerm
       };
 
       bool complete() const {return m_complete;}
@@ -86,9 +92,18 @@ namespace Psi {
       unsigned char m_category;
 
     protected:
-      std::size_t n_parameters() const {return use_slots() - 1;}
-      void set_parameter(std::size_t n, Term *t) {use_set(n+1, t);}
-      Term* get_parameter(std::size_t n) const {return use_get<Term>(n+1);}
+      std::size_t n_parameters() const {
+	return use_slots() - 1;
+      }
+
+      void set_parameter(std::size_t n, Term *t) {
+	PSI_ASSERT_MSG(m_context == t->m_context, "term context mismatch");
+	use_set(n+1, t);
+      }
+
+      Term* get_parameter(std::size_t n) const {
+	return use_get<Term>(n+1);
+      }
     };
 
     /**
@@ -122,11 +137,20 @@ namespace Psi {
       FunctionalBaseTerm(const UserInitializer& ui, Context *context,
 			 TermType term_type, bool complete, Term *type,
 			 std::size_t hash);
+      ~FunctionalBaseTerm();
       static bool check_complete(Term *type, std::size_t n_parameters, Term *const* parameters);
 
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
       TermSetHook m_term_set_hook;
       std::size_t m_hash;
+
+      bool m_resolve_source;
+      /**
+       * If #m_resolve_source is true, this points to the term that
+       * this term resolves to. If it is false, this pointer to the
+       * term that resolves to this one.
+       */
+      FunctionalBaseTerm *m_resolve;
     };
 
     /**
@@ -137,6 +161,8 @@ namespace Psi {
       virtual ~FunctionalTermBackend();
       std::size_t hash_value() const;
       virtual bool equals(const FunctionalTermBackend&) const = 0;
+      virtual std::pair<std::size_t, std::size_t> size_align() const = 0;
+      virtual FunctionalTermBackend* clone(void *dest) const = 0;
       virtual Term* type(Context& context, std::size_t n_parameters, Term *const* parameters) const = 0;
 #if 0
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const = 0;
@@ -299,6 +325,7 @@ namespace Psi {
       friend class Context;
     public:
       Term* source() const {return get_parameter(0);}
+      std::size_t index() const {return m_index;}
 
     private:
       struct Initializer;
@@ -326,7 +353,7 @@ namespace Psi {
       /**
        * \brief Resolve this term to its actual value.
        */
-      Term* resolve(Term *term);
+      template<typename T> T* resolve(T *term);
 
     private:
       struct Initializer;
@@ -349,6 +376,19 @@ namespace Psi {
        * instance.
        */
       std::size_t m_depth;
+    };
+
+    /**
+     * \brief Internal type used during term resolution as a
+     * placeholder when reconstructing circular types - it is always
+     * replaced.
+     */
+    class TemporaryTerm : public Term {
+      friend class Context;
+
+    private:
+      TemporaryTerm(Context *context, bool complete, Term *type);
+      StaticUses<1> m_uses;
     };
 
     /**
@@ -413,30 +453,16 @@ namespace Psi {
       FunctionParameterList m_parameters;
     };
 
-    template<typename B>
-    struct ValueCloner {
-      std::size_t size;
-      std::size_t align;
-      ValueCloner(std::size_t size_, std::size_t align_) : size(size_), align(align_) {}
-      virtual B* clone(void *p) const = 0;
-    };
-
     class Context {
       struct FunctionalBaseTermDisposer;
       struct DistinctTermDisposer;
 
       UniquePtr<MetatypeTerm> m_metatype;
 
-      template<typename T, typename B>
-      struct ValueClonerImpl : ValueCloner<B> {
-	const T* src;
-	ValueClonerImpl(const T* src_) : ValueCloner<B>(sizeof(T), align_of<T>()), src(src_) {}
-	virtual B* clone(void *p) const {return new (p) T(*src);}
-      };
-
       //struct FunctionalBaseTermEquals {bool operator () (const FunctionalBaseTerm&, const FunctionalBaseTerm&) const;};
       struct FunctionalBaseTermHash {std::size_t operator () (const FunctionalBaseTerm&) const;};
       struct FunctionalTermKeyEquals;
+      struct FunctionalTermKeyWithTypeEquals;
       struct FunctionTypeTermKeyEquals;
       struct FunctionTypeParameterTermKeyEquals;
       struct OpaqueResolverTermKeyEquals;
@@ -469,7 +495,7 @@ namespace Psi {
 #if 0
       template<typename T>
       typename T::Wrapper get_functional(const T& proto, std::size_t n_parameters, Term *const* parameters) {
-	return T::Wrapper(get_functional_internal(proto, ValueClonerImpl<T>(&proto), n_parameters, parameters));
+	return T::Wrapper(get_functional_internal(proto, n_parameters, parameters));
       }
 
 #define PSI_TVM_MAKE_NEW_TERM(z,n,data) Term* new_term(const ProtoTerm& expression BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,Term *p)) {Term *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return new_term(expression, n, ap);}
@@ -478,7 +504,10 @@ namespace Psi {
 #endif
 
       FunctionTypeTerm* get_function_type(Term *result, std::size_t n_parameters, Term *const* parameter_types);
-      FunctionTypeParameterTerm* get_function_type_parameter(Term *type, OpaqueTerm *func, std::size_t index);
+
+      FunctionTypeParameterTerm* get_function_type_parameter(Term *type, OpaqueTerm *func, std::size_t index) {
+	return get_function_type_parameter_internal(type, func, index);
+      }
 
       /**
        * \brief Create a new placeholder term.
@@ -488,7 +517,10 @@ namespace Psi {
       /**
        * \brief Resolve an opaque term.
        */
-      Term* resolve_opaque(OpaqueTerm *opaque, Term *term);
+      template<typename T>
+      T* resolve_opaque(OpaqueTerm *opaque, T *term) {
+	return static_cast<T*>(resolve_opaque_internal(opaque, term));
+      }
 
       /**
        * \brief Create a new global term.
@@ -518,22 +550,50 @@ namespace Psi {
        */
       void check_functional_terms_rehash();
       static std::size_t term_hash(const Term *term);
-      std::pair<FunctionalBaseTerm*, std::size_t>
-      find_functional_base_internal(std::size_t hash_seed, Term::TermType term_type, std::size_t n_parameters, Term *const* parameters, Term *extra_parameter,
-				    const FunctionalTermBackend *backend, FunctionalTermSet::insert_commit_data& commit_data);
-      FunctionalTerm* get_functional_internal(const FunctionalTermBackend& proto, const ValueCloner<FunctionalTermBackend>& proto_cloner,
+      FunctionalTerm* get_functional_internal(const FunctionalTermBackend& backend,
 					      std::size_t n_parameters, Term *const* parameters);
+      FunctionalTerm* get_functional_internal_with_type(const FunctionalTermBackend& backend, Term *type,
+							std::size_t n_parameters, Term *const* parameters);
+      FunctionTypeParameterTerm* get_function_type_parameter_internal(Term *type, Term *func, std::size_t index);
       OpaqueResolverTerm* get_opaque_resolver(std::size_t depth, Term *type);
-      Term* build_resolver_term(std::size_t depth, OpaqueTerm *resolving, Term *term);
+
+      /**
+       * Build a term which uniquely identifies the term we are
+       * resolving - this uses OpaqueResolverTerm instances to mark
+       * references back to the root of the resolving type, and once
+       * the complete type is built we will have identified the
+       * correct type.
+       *
+       * \param non_rewritten_terms Terms that have already been
+       * visited and do not need rewriting.
+       */
+      Term* build_resolver_term(std::size_t depth, std::tr1::unordered_map<Term*, std::size_t>& parent_terms,
+				std::tr1::unordered_set<Term*>& non_rewritten_terms, Term *term, std::size_t& up_reference_depth);
+
+      /**
+       * Rewrite the resolving term from the root down to build the
+       * final term to be returned. An upward rewrite (and further
+       * unification) is still necessary for any terms which contain
+       * the resolved opaque type outside of a cycle.
+       */
+      Term* rewrite_resolver_term(Term *term, Term *resolved,
+				  std::vector<Term*>& parent_terms,
+				  const std::tr1::unordered_set<Term*>& non_rewritten_terms,
+				  std::tr1::unordered_map<Term*,Term*>& rewritten_terms);
+
+      FunctionalBaseTerm* resolve_opaque_internal(OpaqueTerm *opaque, FunctionalBaseTerm *target);
 #if 0
-      InstructionTerm* get_instruction_internal(const InstructionProtoTerm& proto,
-						const ValueCloner<void>& proto_cloner, std::size_t n_parameters,
+      InstructionTerm* get_instruction_internal(const InstructionProtoTerm& proto, std::size_t n_parameters,
 						Term *const* parameters);
       template<typename T>
       T* allocate_proto_term(const ValueCloner& proto_cloner,
 			     Term *type, std::size_t n_parameters, Term *const* parameters);
 #endif
     };
+
+    template<typename T> T* OpaqueTerm::resolve(T* term) {
+      return context().resolve_opaque(this, term);
+    }
 
     /**
      * \brief Value type of #Metatype.
