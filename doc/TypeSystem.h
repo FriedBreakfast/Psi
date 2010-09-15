@@ -162,4 +162,35 @@ function value_implementation(Interface[int, Implementation.value]@Implementatio
 </li>
 </ul>
 
+\section llvm_type_resolution LLVM type resolution
+
+LLVMs type system mis-identifies types as structurally equivalent
+under some circumstanes. The following program:
+
+\verbatim
+int main(int, char*[]) {
+  llvm::LLVMContext context;
+  llvm::OpaqueType *ty = llvm::OpaqueType::get(context);
+
+  llvm::Type *resolve = ty;
+  for (int i = 0; i < 3; i++) {
+    resolve = llvm::PointerType::get(resolve, 0);
+    resolve = llvm::StructType::get(context, resolve, NULL);
+  }
+
+  llvm::PATypeHolder pat(ty);
+  ty->refineAbstractTypeTo(resolve);
+  resolve = pat.get();
+  resolve->dump();
+
+  return 0;
+}
+\endverbatim
+
+Will print <tt>{ \2* }</tt>, where it should actually print <tt>{ { {
+\6* }* }* }</tt>. The implication of this is that types containing
+cycles must be identified by a unique identifier because in a case
+like this there is no way to distinguish the types at different points
+in the cycle: they are exactly structurally equivalent but distinct.
+
 */
