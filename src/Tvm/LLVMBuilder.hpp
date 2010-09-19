@@ -2,17 +2,26 @@
 #define HPP_PSI_TVM_LLVMBUILDER
 
 #include <deque>
+#include <tr1/cstdint>
 #include <tr1/unordered_map>
 
 #include "LLVMForward.hpp"
 #include "../Utility.hpp"
 
-#if 0
-
 namespace Psi {
   namespace Tvm {
     class Term;
-    class LLVMBuilderInvoker;
+
+    /**
+     * \brief Value type of MetatypeTerm.
+     *
+     * This is here for easy interfacing with C++ and must be kept in
+     * sync with LLVMConstantBuilder::metatype_type.
+     */
+    struct MetatypeValue {
+      std::tr1::uint64_t size;
+      std::tr1::uint64_t align;
+    };
 
     class LLVMConstantBuilder {
     public:
@@ -109,6 +118,28 @@ namespace Psi {
 
       void set_module(llvm::Module *module);
 
+      /**
+       * \brief Get an LLVM type for Metatype.
+       */
+      Type metatype_type();
+
+      /**
+       * \brief Get an LLVM value for Metatype for the given LLVM type.
+       */
+      Constant metatype_value(const llvm::Type* ty);
+
+      /**
+       * \brief Get an LLVM value for Metatype for an empty type.
+       */
+      Constant metatype_value_empty();
+
+      /**
+       * \brief Get an LLVM value for a specified size and alignment.
+       *
+       * The result of this call will be a global constant.
+       */
+      Constant metatype_value(llvm::Constant *size, llvm::Constant *align);
+
     private:
       const LLVMConstantBuilder *m_parent;
       llvm::LLVMContext *m_context;
@@ -173,6 +204,13 @@ namespace Psi {
       llvm::LLVMContext& context() {return m_constant_builder->context();}
       IRBuilder& irbuilder() {return *m_irbuilder;}
 
+      /**
+       * \brief Get an LLVM value for a specified size and alignment.
+       *
+       * The result of this call will be a global constant.
+       */
+      LLVMFunctionBuilder::Result metatype_value(LLVMFunctionBuilder& builder, llvm::Value *size, llvm::Value *align);
+
     private:
       LLVMFunctionBuilder *m_parent;
       LLVMConstantBuilder *m_constant_builder;
@@ -182,7 +220,5 @@ namespace Psi {
     };
   }
 }
-
-#endif
 
 #endif

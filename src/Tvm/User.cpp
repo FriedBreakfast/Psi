@@ -1,4 +1,5 @@
 #include "User.hpp"
+#include "../Utility.hpp"
 
 namespace Psi {
   void Use::init_user_head(bool is_inline, User *owner, std::size_t n_uses) {
@@ -83,6 +84,10 @@ namespace Psi {
   }
 
   Used::~Used() {
+    PSI_ASSERT(!is_used());
+  }
+
+  void Used::clear_users() {
     m_use.clear_users();
   }
 
@@ -96,6 +101,6 @@ namespace Psi {
   User::~User() {
     std::size_t n = m_uses[0].n_uses();
     for (std::size_t i = 0; i < n; ++i)
-      m_uses[i+1].set_target(NULL);
+      PSI_ASSERT(!m_uses[i+1].target());
   }
 }

@@ -1,11 +1,10 @@
 #include "Core.hpp"
-//#include "Derived.hpp"
-//#include "Function.hpp"
 
 #include <stdexcept>
 #include <typeinfo>
 
 #include <boost/smart_ptr/scoped_array.hpp>
+#include <boost/type_traits/alignment_of.hpp>
 
 #include <llvm/LLVMContext.h>
 #include <llvm/Type.h>
@@ -28,44 +27,142 @@
 
 namespace Psi {
   namespace Tvm {
-    template<typename TermType>
-    struct Context::TermDisposer {
-      void operator () (TermType *p) const {
-	delete p;
-      }
-    };
-
-    template<typename TermType, std::size_t initial_buckets>
-    Context::TermHashSet<TermType, initial_buckets>::TermHashSet()
-      : m_buckets(new typename HashSetType::bucket_type[initial_buckets]),
-	m_hash_set(typename HashSetType::bucket_traits(m_buckets.get(), initial_buckets)) {
+    TermUser::TermUser(const UserInitializer& ui, TermType term_type)
+      : User(ui), m_term_type(term_type) {
     }
 
-    template<typename TermType, std::size_t initial_buckets>
-    Context::TermHashSet<TermType, initial_buckets>::~TermHashSet() {
-      m_hash_set.clear_and_dispose(TermDisposer<TermType>());
+    TermUser::~TermUser() {
     }
 
-    template<typename TermType, std::size_t initial_buckets>
-    template<typename Key, typename KeyHash, typename KeyValueEquals, typename KeyConstructor>
-    TermType* Context::TermHashSet<TermType, initial_buckets>::get(const Key& key, const KeyHash& key_hash, const KeyValueEquals& key_value_equals, const KeyConstructor& key_constructor) {
-      typename HashSetType::insert_commit_data commit_data;
-      std::pair<typename HashSetType::iterator, bool> existing =
-	m_hash_set.insert_check(key, key_hash, key_value_equals, commit_data);
-      if (!existing.second)
-	return &*existing.first;
+    TermPtrBase::TermPtrBase()
+      : TermUser(UserInitializer(1, m_uses), term_ptr) {
+    }
 
-      TermType *term = key_constructor(key);
-      m_hash_set.insert_commit(*term, commit_data);
+    TermPtrBase::TermPtrBase(const TermPtrBase& src)
+      : TermUser(UserInitializer(1, m_uses), term_ptr) {
+      reset(src.get());
+    }
 
-      if (m_hash_set.size() >= m_hash_set.bucket_count()) {
-	std::size_t n_buckets = m_hash_set.bucket_count() * 2;
-	UniqueArray<typename HashSetType::bucket_type> buckets(new typename HashSetType::bucket_type[n_buckets]);
-	m_hash_set.rehash(typename HashSetType::bucket_traits(buckets.get(), n_buckets));
-	m_buckets.swap(buckets);
+    TermPtrBase::TermPtrBase(Term *ptr)
+      : TermUser(UserInitializer(1, m_uses), term_ptr) {
+      reset(ptr);
+    }
+
+    TermPtrBase::~TermPtrBase() {
+      reset(0);
+    }
+
+    void TermPtrBase::reset(Term *term) {
+      Term *old = get();
+      if (term != old) {
+	if (old) {
+	  old->term_release();
+	}
+
+	if (term) {
+	  term->term_add_ref();
+	  use_set(0, term);
+	}
+      }
+    }
+
+    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *type)
+      : TermUser(ui, term_type), m_abstract(abstract), m_parameterized(parameterized), m_use_count_ptr(0), m_context(context) {
+
+      m_use_count.value = 0;
+
+      if (!type) {
+	m_category = category_metatype;
+	PSI_ASSERT_MSG((term_type == term_metatype) && !abstract, "term with no type is not a valid metatype");
+      } else {
+	PSI_ASSERT_MSG(context == type->m_context, "context mismatch between term and its type");
+	if (type->m_category == category_metatype) {
+	  m_category = category_type;
+	} else {
+	  PSI_ASSERT_MSG(type->m_category == category_type, "term does has invalid category");
+	  m_category = category_value;
+	}
       }
 
-      return term;
+      use_set(0, type);
+    }
+
+    bool Term::any_abstract(std::size_t n, Term *const* terms) {
+      for (std::size_t i = 0; i < n; ++i) {
+	if (terms[i]->abstract())
+	  return true;
+      }
+      return false;
+    }
+
+    bool Term::any_parameterized(std::size_t n, Term *const* terms) {
+      for (std::size_t i = 0; i < n; ++i) {
+	if (terms[i]->parameterized())
+	  return true;
+      }
+      return false;
+    }
+
+    std::size_t Term::hash_value() const {
+      switch (term_type()) {
+      case term_functional:
+      case term_function_type_internal:
+      case term_function_type_internal_parameter:
+	return boost::polymorphic_downcast<const HashTerm*>(this)->m_hash;
+
+      default:
+	PSI_ASSERT(!dynamic_cast<const HashTerm*>(this));
+	return boost::hash_value(this);
+      }
+    }
+
+    std::size_t* Term::term_use_count() {
+      if (m_use_count_ptr)
+	return m_use_count.ptr;
+      else
+	return &m_use_count.value;
+    }
+
+    void Term::term_add_ref() {
+      ++*term_use_count();
+    }
+
+    void Term::term_release() {
+      if (!--*term_use_count())
+	term_destroy(this);
+    }
+
+    void Term::term_destroy(Term *term) {
+      std::tr1::unordered_set<Term*> visited;
+      std::vector<Term*> queue;
+      visited.insert(term);
+      queue.push_back(term);
+      while(!queue.empty()) {
+	Term *current = queue.back();
+	queue.pop_back();
+	PSI_ASSERT(!*current->term_use_count());
+
+	for (UserIterator it = current->users_begin(); it != current->users_end(); ++it) {
+	  Term *parent = static_cast<Term*>(it.get());
+	  if (visited.insert(parent).second)
+	    queue.push_back(parent);
+	}
+
+	std::size_t n_uses = current->n_uses();
+	for (std::size_t i = 0; i < n_uses; ++i) {
+	  Term *child = current->use_get(i);
+	  std::size_t *child_use_count = child->term_use_count();
+	  if (!*child_use_count || !--*child_use_count) {
+	    if (visited.insert(child).second)
+	      queue.push_back(child);
+	  }
+
+	  current->use_set(i, 0);
+	}
+
+	current->clear_users();
+	delete current;
+      }
     }
 
     namespace {
@@ -79,294 +176,239 @@ namespace Psi {
 
       template<typename T>
       struct InitializerBase {
-	typedef T* ResultType;
-	static const std::size_t size = sizeof(T);
+	typedef T TermType;
+
+	std::size_t term_size() const {
+	  return sizeof(T);
+	}
       };
     }
 
     template<typename T>
-    typename T::ResultType Context::allocate_term(const T& initializer) {
-      std::size_t use_offset = struct_offset(0, initializer.size, align_of<Use>());
-      std::size_t total_size = use_offset + sizeof(Use)*(initializer.n_slots+2);
+    typename T::TermType* Context::allocate_term(const T& initializer) {
+      std::size_t n_uses = initializer.n_uses();
+
+      std::size_t use_offset = struct_offset(0, initializer.term_size(), boost::alignment_of<Use>::value);
+      std::size_t total_size = use_offset + sizeof(Use)*(n_uses+2);
 
       void *term_base = operator new (total_size);
       Use *uses = static_cast<Use*>(ptr_offset(term_base, use_offset));
       try {
-	return initializer.init(term_base, UserInitializer(initializer.n_slots+1, uses), this);
+	return initializer.initialize(term_base, UserInitializer(n_uses+1, uses), this);
       } catch(...) {
 	operator delete (term_base);
 	throw;
       }
     }
 
-    template<typename T>
-    typename T::ResultType Context::allocate_distinct_term(const T& initializer) {
-      typename T::ResultType rt = allocate_term(initializer);
-      m_distinct_terms.push_back(*rt);
-      return rt;
+    namespace {
+      template<typename T>
+      struct SetupHasher {
+	std::size_t operator () (const T& key) const {
+	  return key.hash();
+	}
+      };
+
+      template<typename T>
+      struct SetupEquals {
+	std::size_t operator () (const T& key, const HashTerm& value) const {
+	  return key.equals(&value);
+	}
+      };
     }
 
-    struct MetatypeTerm::Initializer : InitializerBase<MetatypeTerm> {
-      static const std::size_t n_slots = 0;
-      MetatypeTerm* init(void *base, const UserInitializer& ui, Context *context) const {
+    template<typename T>
+    typename T::TermType* Context::hash_term_get(T& setup) {
+      typename HashTermSetType::insert_commit_data commit_data;
+      std::pair<typename HashTermSetType::iterator, bool> existing =
+	m_hash_terms.insert_check(setup, SetupHasher<T>(), SetupEquals<T>(), commit_data);
+      if (!existing.second)
+	return boost::polymorphic_downcast<typename T::TermType*>(&*existing.first);
+
+      setup.prepare_initialize(this);
+      typename T::TermType *term = allocate_term(setup);
+      m_hash_terms.insert_commit(*term, commit_data);
+
+      if (m_hash_terms.size() >= m_hash_terms.bucket_count()) {
+	std::size_t n_buckets = m_hash_terms.bucket_count() * 2;
+	UniqueArray<typename HashTermSetType::bucket_type> buckets
+	  (new typename HashTermSetType::bucket_type[n_buckets]);
+	m_hash_terms.rehash(typename HashTermSetType::bucket_traits(buckets.get(), n_buckets));
+	m_hash_term_buckets.swap(buckets);
+      }
+
+      return term;
+    }
+
+    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *type, std::size_t hash)
+      : Term(ui, context, term_type, abstract, parameterized, type),
+	m_hash(hash) {
+    }
+
+    MetatypeTerm::MetatypeTerm(const UserInitializer& ui, Context* context)
+      : Term(ui, context, term_metatype, false, false, NULL) {
+    }
+
+    class MetatypeTerm::Initializer : public InitializerBase<MetatypeTerm> {
+    public:
+      std::size_t n_uses() const {
+	return 0;
+      }
+
+      MetatypeTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
 	return new (base) MetatypeTerm(ui, context);
       }
     };
 
-    Context::Context() {
-      m_metatype.reset(allocate_term(MetatypeTerm::Initializer()));
+    std::size_t FunctionalTermBackend::hash_value() const {
+      std::size_t value = hash_internal();
+
+      const std::type_info& ti = typeid(*this);
+#if __GXX_MERGED_TYPEINFO_NAMES
+      boost::hash_combine(value, ti.name());
+#else
+      for (const char *p = ti.name(); *p != '\0'; ++p)
+	boost::hash_combine(value, *p);
+#endif
+      return value;
     }
 
-    struct Context::DistinctTermDisposer {
-      void operator () (DistinctTerm *t) const {
-	switch(t->m_term_type) {
-	case Term::term_function: delete static_cast<FunctionTerm*>(t); break;
-	case Term::term_global_variable: delete static_cast<GlobalVariableTerm*>(t); break;
-	case Term::term_recursive: delete static_cast<RecursiveTerm*>(t); break;
-	case Term::term_function_type: delete static_cast<FunctionTypeTerm*>(t); break;
-	case Term::term_function_type_parameter: delete static_cast<FunctionTypeParameterTerm*>(t); break;
-	default: PSI_FAIL("cannot dispose of unknown type");
-	}
-      }
-    };
-
-    Context::~Context() {
-      m_distinct_terms.clear_and_dispose(DistinctTermDisposer());
+    FunctionalTerm::FunctionalTerm(const UserInitializer& ui, Context *context, Term *type,
+				   std::size_t hash, FunctionalTermBackend *backend,
+				   std::size_t n_parameters, Term *const* parameters)
+      : HashTerm(ui, context, term_functional,
+		 type->abstract() || any_abstract(n_parameters, parameters),
+		 type->parameterized() || any_parameterized(n_parameters, parameters),
+		 type, hash),
+	m_backend(backend) {
+      for (std::size_t i = 0; i < n_parameters; ++i)
+	set_base_parameter(i, parameters[i]);
     }
 
-    struct RecursiveTerm::Initializer : InitializerBase<RecursiveTerm> {
-      static const std::size_t n_slots = 1;
-      Term *type;
-      Initializer(Term *type_) : type(type_) {}
-      RecursiveTerm* init(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) RecursiveTerm(ui, context, type);
-      }
-    };
-
-    RecursiveTerm* Context::new_recursive(Term *type) {
-      return allocate_distinct_term(RecursiveTerm::Initializer(type));
+    FunctionalTerm::~FunctionalTerm() {
+      m_backend->~FunctionalTermBackend();
     }
 
-    struct GlobalVariableTerm::Initializer : InitializerBase<GlobalVariableTerm> {
-      static const std::size_t n_slots = 0;
-      Term *type;
-      bool constant;
-      Initializer(Term *type_, bool constant_) : type(type_), constant(constant_) {}
-      GlobalVariableTerm* init(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) GlobalVariableTerm(ui, context, type, constant);
-      }
-    };
+    class FunctionalTerm::Setup {
+    public:
+      typedef FunctionalTerm TermType;
 
-    GlobalVariableTerm* Context::new_global_variable(Term *type, bool constant) {
-      return allocate_distinct_term(GlobalVariableTerm::Initializer(type, constant));
-    }
+      Setup(std::size_t n_parameters, Term *const* parameters, const FunctionalTermBackend *backend)
+	: m_n_parameters(n_parameters),
+	  m_parameters(parameters),
+	  m_backend(backend) {
 
-    std::size_t Context::term_hash(const Term *t) {
-      switch (t->m_term_type) {
-      case Term::term_functional:
-	return static_cast<const FunctionalTerm*>(t)->m_hash;
-
-      case Term::term_function_type_internal:
-	return static_cast<const FunctionTypeInternalTerm*>(t)->m_hash;
-
-      case Term::term_function_type_internal_parameter:
-	return static_cast<const FunctionTypeInternalParameterTerm*>(t)->m_hash;
-
-      default:
-	return boost::hash_value(t);
-      }
-    }
-
-    namespace {
-      struct HashKey {
-	std::size_t hash;
-      };
-
-      struct HashKeyHash {
-	std::size_t operator () (const HashKey& k) const {
-	  return k.hash;
-	}
-      };
-
-      struct ParameterizedTermKey : HashKey {
-	std::size_t n_parameters;
-	Term *const* parameters;
-      };
-
-      struct FunctionalTermKey : ParameterizedTermKey {
-	const FunctionalTermBackend *backend;
-      };
-
-      struct FunctionTypeInternalTermKey : ParameterizedTermKey {
-	Term *result;
-      };
-    }
-
-    struct Context::FunctionalTermKeyEquals {
-      static void init_param_key(ParameterizedTermKey& key, std::size_t n_parameters, Term *const* parameters) {
-	key.hash = 0;
-	key.n_parameters = n_parameters;
-	key.parameters = parameters;
-
+	m_hash = 0;
+	boost::hash_combine(m_hash, backend->hash_value());
 	for (std::size_t i = 0; i < n_parameters; ++i)
-	  boost::hash_combine(key.hash, term_hash(parameters[i]));
+	  boost::hash_combine(m_hash, parameters[i]->hash_value());
       }
 
-      static void init_key(FunctionalTermKey& key, const FunctionalTermBackend *backend, std::size_t n_parameters, Term *const* parameters) {
-	init_param_key(key, n_parameters, parameters);
-	key.backend = backend;
-	boost::hash_combine(key.hash, backend->hash_value());
-      }
+      void prepare_initialize(Context *context) {
+	m_type = m_backend->type(*context, m_n_parameters, m_parameters);
 
-      bool operator () (const FunctionalTermKey& key, const FunctionalTerm& value) const {
-	if ((key.hash != value.m_hash) || (key.n_parameters != value.n_parameters()))
-	  return false;
-
-	for (std::size_t i = 0; i < key.n_parameters; ++i) {
-	  if (key.parameters[i] != value.parameter(i))
-	    return false;
-	}
-
-	if (!key.backend->equals(*value.m_backend))
-	  return false;
-
-	return true;
-      };
-    };
-
-    struct FunctionalTerm::Initializer {
-      typedef FunctionalTerm* ResultType;
-
-      std::size_t proto_offset, size, n_slots;
-      FunctionalTermKey key;
-      Term *type;
-
-      Initializer(const FunctionalTermKey& key_, Term *type_) : key(key_), type(type_) {
-	std::pair<std::size_t, std::size_t> backend_size_align = key.backend->size_align();
+	std::pair<std::size_t, std::size_t> backend_size_align = m_backend->size_align();
 	PSI_ASSERT_MSG((backend_size_align.second & (backend_size_align.second - 1)) == 0, "alignment is not a power of two");
-	proto_offset = struct_offset(0, sizeof(FunctionalTerm), backend_size_align.second);
-	size = proto_offset + backend_size_align.first;
-	n_slots = key.n_parameters;
+	m_proto_offset = struct_offset(0, sizeof(FunctionalTerm), backend_size_align.second);
+	m_size = m_proto_offset + backend_size_align.first;
       }
 
-      FunctionalTerm* init(void *base, const UserInitializer& ui, Context* context) const {
-	FunctionalTermBackend *new_backend = key.backend->clone(ptr_offset(base, proto_offset));
+      FunctionalTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
+	FunctionalTermBackend *new_backend = m_backend->clone(ptr_offset(base, m_proto_offset));
 	try {
-	  return new (base) FunctionalTerm(ui, context, type, key.hash, new_backend, key.n_parameters, key.parameters);
+	  return new (base) FunctionalTerm(ui, context, m_type, m_hash, new_backend, m_n_parameters, m_parameters);
 	} catch(...) {
 	  new_backend->~FunctionalTermBackend();
 	  throw;
 	}
       }
-    };
 
-    struct Context::FunctionalTermFactory {
-      Context *self;
-      FunctionalTermFactory(Context *self_) : self(self_) {}
-      FunctionalTerm* operator () (const FunctionalTermKey& key) const {
-	Term *type = key.backend->type(*self, key.n_parameters, key.parameters);
-	return self->allocate_term(FunctionalTerm::Initializer(key, type));
-      }
-    };
-
-    FunctionalTerm* Context::get_functional_internal(const FunctionalTermBackend& backend, std::size_t n_parameters, Term *const* parameters) {
-      FunctionalTermKey key;
-      FunctionalTermKeyEquals::init_key(key, &backend, n_parameters, parameters);
-      return m_functional_terms.get(key, HashKeyHash(), FunctionalTermKeyEquals(), FunctionalTermFactory(this));
-    }
-
-    struct Context::FunctionTypeInternalTermKeyEquals {
-      static void init_key(FunctionTypeInternalTermKey& key, Term *result, std::size_t n_parameters, Term *const* parameters) {
-	FunctionalTermKeyEquals::init_param_key(key, n_parameters, parameters);
-	key.result = result;
-	boost::hash_combine(key.hash, term_hash(result));
+      std::size_t hash() const {
+	return m_hash;
       }
 
-      bool operator () (const FunctionTypeInternalTermKey& key, const FunctionTypeInternalTerm& value) const {
-	if ((key.hash != value.m_hash) || (key.n_parameters != value.n_parameters()))
+      std::size_t term_size() const {
+	return m_size;
+      }
+
+      std::size_t n_uses() const {
+	return m_n_parameters;
+      }
+
+      bool equals(const HashTerm *term) const {
+	if ((m_hash != term->m_hash) || (term->term_type() != term_functional))
 	  return false;
 
-	for (std::size_t i = 0; i < key.n_parameters; ++i) {
-	  if (key.parameters[i] != value.function_parameter(i))
+	const FunctionalTerm *cast_term = boost::polymorphic_downcast<const FunctionalTerm*>(term);
+
+	if (m_n_parameters != cast_term->n_parameters())
+	  return false;
+
+	for (std::size_t i = 0; i < m_n_parameters; ++i) {
+	  if (m_parameters[i] != cast_term->parameter(i))
 	    return false;
 	}
 
-	if (key.result != value.function_result())
+	if ((typeid(*m_backend) != typeid(*cast_term->m_backend))
+	    || !m_backend->equals(*cast_term->m_backend))
 	  return false;
 
 	return true;
-      };
+      }
+
+    private:
+      std::size_t m_proto_offset;
+      std::size_t m_size;
+      std::size_t m_hash;
+      std::size_t m_n_parameters;
+      Term *m_type;
+      Term *const* m_parameters;
+      const FunctionalTermBackend *m_backend;
     };
 
-    struct FunctionTypeInternalTerm::Initializer : InitializerBase<FunctionTypeInternalTerm> {
-      FunctionTypeInternalTermKey key;
-      std::size_t n_slots;
-      Initializer(const FunctionTypeInternalTermKey& key_) : key(key_), n_slots(key_.n_parameters+1) {
-      }
-      FunctionTypeInternalTerm* init(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) FunctionTypeInternalTerm(ui, context, key.result, key.n_parameters, key.parameters);
-      }
-    };	
-
-    struct Context::FunctionTypeInternalTermFactory {
-      Context *self;
-      FunctionTypeInternalTermFactory(Context *self_) : self(self_) {}
-      FunctionTypeInternalTerm* operator () (const FunctionTypeInternalTermKey& key) const {
-	return self->allocate_term(FunctionTypeInternalTerm::Initializer(key));
-      }
-    };
-
-    FunctionTypeInternalTerm* Context::get_function_type_internal(Term *result, std::size_t n_parameters, Term *const* parameters) {
-      FunctionTypeInternalTermKey key;
-      FunctionTypeInternalTermKeyEquals::init_key(key, result, n_parameters, parameters);
-      return m_function_type_internal_terms.get(key, HashKeyHash(), FunctionTypeInternalTermKeyEquals(), FunctionTypeInternalTermFactory(this));
+    FunctionalTerm* Context::get_functional_internal(const FunctionalTermBackend& backend, std::size_t n_parameters, Term *const* parameters) {
+      FunctionalTerm::Setup setup(n_parameters, parameters, &backend);
+      return hash_term_get(setup);
     }
 
-    namespace {
-      struct FunctionTypeInternalParameterTermKey : HashKey {
-	std::size_t index;
-	std::size_t depth;
-      };
+    bool FunctionTypeTerm::any_parameter_abstract(std::size_t n, FunctionTypeParameterTerm *const* terms) {
+      for (std::size_t i = 0; i < n; ++i) {
+	if (terms[i]->abstract())
+	  return true;
+      }
+      return false;
     }
 
-    struct Context::FunctionTypeInternalParameterTermKeyEquals {
-      static void init_key(FunctionTypeInternalParameterTermKey& key, std::size_t index, std::size_t depth) {
-	key.hash = 0;
-	key.index = index;
-	key.depth = depth;
-	boost::hash_combine(key.hash, index);
-	boost::hash_combine(key.hash, depth);
+    FunctionTypeTerm::FunctionTypeTerm(const UserInitializer& ui, Context *context,
+				       Term *result_type, std::size_t n_parameters, FunctionTypeParameterTerm *const* parameters)
+      : Term(ui, context, term_function_type,
+	     result_type->abstract() || any_parameter_abstract(n_parameters, parameters), true,
+	     context->get_metatype().get()) {
+      set_base_parameter(0, result_type);
+      for (std::size_t i = 0; i < n_parameters; ++i) {
+	set_base_parameter(i+1, parameters[i]);
       }
-
-      bool operator () (const FunctionTypeInternalParameterTermKey& key, const FunctionTypeInternalParameterTerm& value) const {
-	return (key.hash == value.m_hash) && (key.index == value.m_index) && (key.depth == value.m_depth);
-      }
-    };
-
-    struct FunctionTypeInternalParameterTerm::Initializer : InitializerBase<FunctionTypeInternalParameterTerm> {
-      static const std::size_t n_slots = 0;
-      FunctionTypeInternalParameterTermKey key;
-      Initializer(const FunctionTypeInternalParameterTermKey& key_) : key(key_) {
-      }
-      FunctionTypeInternalParameterTerm* init(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) FunctionTypeInternalParameterTerm(ui, context, key.hash, key.depth, key.index);
-      }
-    };
-
-    struct Context::FunctionTypeInternalParameterTermFactory {
-      Context *self;
-      FunctionTypeInternalParameterTermFactory(Context *self_) : self(self_) {}
-      FunctionTypeInternalParameterTerm* operator () (const FunctionTypeInternalParameterTermKey& key) const {
-	return self->allocate_term(FunctionTypeInternalParameterTerm::Initializer(key));
-      }
-    };
-
-    FunctionTypeInternalParameterTerm* Context::get_function_type_internal_parameter(std::size_t depth, std::size_t index) {
-      FunctionTypeInternalParameterTermKey key;
-      FunctionTypeInternalParameterTermKeyEquals::init_key(key, index, depth);
-      return m_function_type_internal_parameter_terms.get(key, HashKeyHash(), FunctionTypeInternalParameterTermKeyEquals(),
-							  FunctionTypeInternalParameterTermFactory(this));
     }
+
+    class FunctionTypeTerm::Initializer : public InitializerBase<FunctionTypeTerm> {
+    public:
+      Initializer(Term *result_type, std::size_t n_parameters, FunctionTypeParameterTerm *const* parameters)
+	: m_result_type(result_type), m_n_parameters(n_parameters), m_parameters(parameters) {
+      }
+
+      std::size_t n_uses() const {
+	return m_n_parameters + 1;
+      }
+
+      FunctionTypeTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
+	return new (base) FunctionTypeTerm(ui, context, m_result_type, m_n_parameters, m_parameters);
+      }
+
+    private:
+      Term *m_result_type;
+      std::size_t m_n_parameters;
+      FunctionTypeParameterTerm *const* m_parameters;
+    };
 
     bool Context::check_function_type_complete(Term *term, std::tr1::unordered_set<FunctionTypeTerm*>& functions)
     {
@@ -377,7 +419,7 @@ namespace Psi {
 	return false;
 
       switch(term->term_type()) {
-      case Term::term_functional: {
+      case term_functional: {
 	FunctionalTerm *cast_term = static_cast<FunctionalTerm*>(term);
 	for (std::size_t i = 0; i < cast_term->n_parameters(); i++) {
 	  if (!check_function_type_complete(cast_term->parameter(i), functions))
@@ -386,20 +428,20 @@ namespace Psi {
 	return true;
       }
 
-      case Term::term_function_type: {
+      case term_function_type: {
 	FunctionTypeTerm *cast_term = static_cast<FunctionTypeTerm*>(term);
 	functions.insert(cast_term);
-	if (!check_function_type_complete(cast_term->function_result_type(), functions))
+	if (!check_function_type_complete(cast_term->result_type(), functions))
 	  return false;
-	for (std::size_t i = 0; i < cast_term->n_function_parameters(); i++) {
-	  if (!check_function_type_complete(cast_term->function_parameter(i)->type(), functions))
+	for (std::size_t i = 0; i < cast_term->n_parameters(); i++) {
+	  if (!check_function_type_complete(cast_term->parameter(i)->type(), functions))
 	    return false;
 	}
 	functions.erase(cast_term);
 	return true;
       }
 
-      case Term::term_function_type_parameter: {
+      case term_function_type_parameter: {
 	FunctionTypeParameterTerm *cast_term = static_cast<FunctionTypeParameterTerm*>(term);
 	FunctionTypeTerm *source = cast_term->source();
 	if (!source)
@@ -422,7 +464,7 @@ namespace Psi {
 	return term;
 
       switch(term->term_type()) {
-      case Term::term_functional: {
+      case term_functional: {
 	FunctionalTerm *cast_term = static_cast<FunctionalTerm*>(term);
 	Term *type = build_function_type_resolver_term(depth, cast_term->type(), functions);
 	std::size_t n_parameters = cast_term->n_parameters();
@@ -432,27 +474,27 @@ namespace Psi {
 	return get_functional_internal_with_type(*cast_term->m_backend, type, n_parameters, parameters.get());
       }
 
-      case Term::term_function_type: {
+      case term_function_type: {
 	FunctionTypeTerm *cast_term = static_cast<FunctionTypeTerm*>(term);
 	PSI_ASSERT(functions.find(cast_term) == functions.end());
 	FunctionResolveStatus& status = functions[cast_term];
 	status.depth = depth + 1;
 	status.index = 0;
 
-	std::size_t n_parameters = cast_term->n_function_parameters();
+	std::size_t n_parameters = cast_term->n_parameters();
 	boost::scoped_array<Term*> parameter_types(new Term*[n_parameters]);
 	for (std::size_t i = 0; i < n_parameters; ++i) {
-	  parameter_types[i] = build_function_type_resolver_term(depth+1, cast_term->function_parameter(i)->type(), functions);
+	  parameter_types[i] = build_function_type_resolver_term(depth+1, cast_term->parameter(i)->type(), functions);
 	  status.index++;
 	}
 
-	Term *result_type = build_function_type_resolver_term(depth+1, cast_term->function_result_type(), functions);
+	Term *result_type = build_function_type_resolver_term(depth+1, cast_term->result_type(), functions);
 	functions.erase(cast_term);
 
 	return get_function_type_internal(result_type, n_parameters, parameter_types.get());
       }
 
-      case Term::term_function_type_parameter: {
+      case term_function_type_parameter: {
 	FunctionTypeParameterTerm *cast_term = static_cast<FunctionTypeParameterTerm*>(term);
 	FunctionTypeTerm *source = cast_term->source();
 
@@ -471,37 +513,28 @@ namespace Psi {
       }
     }
 
-    struct FunctionTypeTerm::Initializer : InitializerBase<FunctionTypeTerm> {
-      std::size_t n_slots;
-      Term *result_type;
-      std::size_t n_parameters;
-      FunctionTypeParameterTerm *const* parameters;
-      Initializer(Term *result_type_, std::size_t n_parameters_, FunctionTypeParameterTerm *const* parameters_)
-	: n_slots(n_parameters+1), result_type(result_type_), n_parameters(n_parameters_), parameters(parameters_) {}
-      FunctionTypeTerm* init(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) FunctionTypeTerm(ui, context, result_type, n_parameters, parameters);
-      }
-    };
+    TermPtr<FunctionTypeTerm> Context::get_function_type(Term *result_type, std::size_t n_parameters, FunctionTypeParameterTerm *const* parameters) {
+      for (std::size_t i = 0; i < n_parameters; ++i)
+	PSI_ASSERT(!parameters[i]->source());
 
-    FunctionTypeTerm* Context::get_function_type(Term *result_type, std::size_t n_parameters, FunctionTypeParameterTerm *const* parameters) {
-      FunctionTypeTerm *term = allocate_distinct_term(FunctionTypeTerm::Initializer(result_type, n_parameters, parameters));
+      TermPtr<FunctionTypeTerm> term(allocate_term(FunctionTypeTerm::Initializer(result_type, n_parameters, parameters)));
 
       for (std::size_t i = 0; i < n_parameters; ++i) {
 	parameters[i]->m_index = i;
-	parameters[i]->m_source = term;
+	parameters[i]->set_source(term.get());
       }
 
       // it's only possible to merge complete types, since incomplete
       // types depend on higher up terms which have not yet been
       // built.
       std::tr1::unordered_set<FunctionTypeTerm*> check_functions;
-      if (!check_function_type_complete(term, check_functions))
+      if (!check_function_type_complete(term.get(), check_functions))
 	return term;
 
       term->m_parameterized = false;
 
       FunctionResolveMap functions;
-      FunctionResolveStatus& status = functions[term];
+      FunctionResolveStatus& status = functions[term.get()];
       status.depth = 0;
       status.index = 0;
 
@@ -511,31 +544,278 @@ namespace Psi {
 	status.index++;
       }
 
-      Term *internal_result_type = build_function_type_resolver_term(0, term->function_result_type(), functions);
-      PSI_ASSERT((functions.erase(term), functions.empty()));
+      Term *internal_result_type = build_function_type_resolver_term(0, term->result_type(), functions);
+      PSI_ASSERT((functions.erase(term.get()), functions.empty()));
 
       FunctionTypeInternalTerm *internal = get_function_type_internal(internal_result_type, n_parameters, internal_parameter_types.get());
-      if (internal->m_function_type) {
+      if (internal->get_function_type()) {
 	// A matching type exists
-	return internal->m_function_type;
+	return TermPtr<FunctionTypeTerm>(internal->get_function_type());
       } else {
-	internal->m_function_type = term;
+	internal->set_function_type(term.get());
 	return term;
       }
     }
 
-    struct FunctionTypeParameterTerm::Initializer : InitializerBase<FunctionTypeParameterTerm> {
-      static const std::size_t n_slots = 1;
-      Term *type;
-      Initializer(Term *type_) : type(type_) {}
-      FunctionTypeParameterTerm* init(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) FunctionTypeParameterTerm(ui, context, type);
+    FunctionTypeParameterTerm::FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, Term *type)
+      : Term(ui, context, term_function_type_parameter, type->abstract(), true, type),
+	m_index(0) {
+    }
+
+    class FunctionTypeParameterTerm::Initializer : public InitializerBase<FunctionTypeParameterTerm> {
+    public:
+      Initializer(Term *type) : m_type(type) {}
+
+      std::size_t n_uses() const {
+	return 1;
       }
+
+      FunctionTypeParameterTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
+	return new (base) FunctionTypeParameterTerm(ui, context, m_type);
+      }
+
+    private:
+      Term *m_type;
     };
 
-    FunctionTypeParameterTerm* Context::new_function_type_parameter(Term *type) {
-      return allocate_distinct_term(FunctionTypeParameterTerm::Initializer(type));
+    TermPtr<FunctionTypeParameterTerm> Context::new_function_type_parameter(Term *type) {
+      return TermPtr<FunctionTypeParameterTerm>(allocate_term(FunctionTypeParameterTerm::Initializer(type)));
     }
+
+    FunctionTypeInternalTerm::FunctionTypeInternalTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term *result_type, std::size_t n_parameters, Term *const* parameter_types)
+      : HashTerm(ui, context, term_function_type_internal,
+		 result_type->abstract() || any_abstract(n_parameters, parameter_types),
+		 true, context->get_metatype().get(), hash) {
+      set_base_parameter(1, result_type);
+      for (std::size_t i = 0; i < n_parameters; i++)
+	set_base_parameter(i+2, parameter_types[i]);
+    }
+
+    class FunctionTypeInternalTerm::Setup : public InitializerBase<FunctionTypeInternalTerm> {
+    public:
+      Setup(Term *result_type, std::size_t n_parameters, Term *const* parameter_types)
+	: m_n_parameters(n_parameters),
+	  m_parameter_types(parameter_types),
+	  m_result_type(result_type) {
+	m_hash = 0;
+	boost::hash_combine(m_hash, result_type->hash_value());
+	for (std::size_t i = 0; i < n_parameters; ++i)
+	  boost::hash_combine(m_hash, parameter_types[i]->hash_value());
+      }
+
+      void prepare_initialize(Context*) {
+      }
+
+      FunctionTypeInternalTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
+	return new (base) FunctionTypeInternalTerm(ui, context, m_hash, m_result_type, m_n_parameters, m_parameter_types);
+      }
+
+      std::size_t hash() const {
+	return m_hash;
+      }
+
+      std::size_t n_uses() const {
+	return m_n_parameters + 2;
+      }
+
+      bool equals(const HashTerm *term) const {
+	if ((m_hash != term->m_hash) || (term->term_type() != term_function_type_internal))
+	  return false;
+
+	const FunctionTypeInternalTerm *cast_term =
+	  boost::polymorphic_downcast<const FunctionTypeInternalTerm*>(term);
+
+	if (m_n_parameters != cast_term->n_parameters())
+	  return false;
+
+	for (std::size_t i = 0; i < m_n_parameters; ++i) {
+	  if (m_parameter_types[i] != cast_term->parameter_type(i))
+	    return false;
+	}
+
+	if (m_result_type != cast_term->result_type())
+	  return false;
+
+	return true;
+      }
+
+    private:
+      std::size_t m_hash;
+      std::size_t m_n_parameters;
+      Term *const* m_parameter_types;
+      Term *m_result_type;
+    };
+
+    FunctionTypeInternalTerm* Context::get_function_type_internal(Term *result, std::size_t n_parameters, Term *const* parameter_types) {
+      FunctionTypeInternalTerm::Setup setup(result, n_parameters, parameter_types);
+      return hash_term_get(setup);
+    }
+
+    class FunctionTypeInternalParameterTerm::Setup
+      : public InitializerBase<FunctionTypeInternalParameterTerm> {
+    public:
+      Setup(std::size_t depth, std::size_t index)
+	: m_depth(depth), m_index(index) {
+
+	m_hash = 0;
+	boost::hash_combine(m_hash, depth);
+	boost::hash_combine(m_hash, m_index);
+      }
+
+      void prepare_initialize(Context*) {
+      }
+
+      FunctionTypeInternalParameterTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
+	return new (base) FunctionTypeInternalParameterTerm(ui, context, m_hash, m_depth, m_index);
+      }
+
+      std::size_t hash() const {
+	return m_hash;
+      }
+
+      std::size_t n_uses() const {
+	return 0;
+      }
+
+      bool equals(const HashTerm *term) const {
+	if ((m_hash != term->m_hash) || (term->term_type() != term_function_type_internal_parameter))
+	  return false;
+
+	const FunctionTypeInternalParameterTerm *cast_term =
+	  boost::polymorphic_downcast<const FunctionTypeInternalParameterTerm*>(term);
+
+	if (m_depth != cast_term->m_depth)
+	  return false;
+
+	if (m_index != cast_term->m_index)
+	  return false;
+
+	return true;
+      }
+
+    private:
+      std::size_t m_depth;
+      std::size_t m_index;
+      std::size_t m_hash;
+    };
+
+    FunctionTypeInternalParameterTerm* Context::get_function_type_internal_parameter(std::size_t depth, std::size_t index) {
+      FunctionTypeInternalParameterTerm::Setup setup(depth, index);
+      return hash_term_get(setup);
+    }
+
+    RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term *type)
+      : Term(ui, context, term_recursive_parameter, true, false, type) {
+    }
+
+    class RecursiveParameterTerm::Initializer : public InitializerBase<RecursiveParameterTerm> {
+    public:
+      Initializer(Term *type) : m_type(type) {}
+
+      RecursiveParameterTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
+	return new (base) RecursiveParameterTerm(ui, context, m_type);
+      }
+
+      std::size_t n_uses() const {return 0;}
+
+    private:
+      Term *m_type;
+    };
+
+    RecursiveParameterTerm* Context::new_recursive_parameter(Term *type) {
+      return allocate_term(RecursiveParameterTerm::Initializer(type));
+    }
+
+    RecursiveTerm::RecursiveTerm(const UserInitializer& ui, Context *context, Term *result_type,
+				 std::size_t n_parameters, RecursiveParameterTerm *const* parameters)
+      : Term(ui, context, term_recursive, true, false, context->get_metatype().get()) {
+      set_base_parameter(0, result_type);
+      for (std::size_t i = 0; i < n_parameters; ++i) {
+	set_base_parameter(i+2, parameters[i]);
+      }
+    }
+
+    class RecursiveTerm::Initializer : public InitializerBase<RecursiveTerm> {
+    public:
+      Initializer(Term *type, std::size_t n_parameters, RecursiveParameterTerm *const* parameters)
+	: m_type(type), m_n_parameters(n_parameters), m_parameters(parameters) {
+      }
+
+      RecursiveTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
+	return new (base) RecursiveTerm(ui, context, m_type, m_n_parameters, m_parameters);
+      }
+
+      std::size_t n_uses() const {return 1;}
+
+    private:
+      Term *m_type;
+      std::size_t m_n_parameters;
+      RecursiveParameterTerm *const* m_parameters;
+    };
+
+    TermPtr<RecursiveTerm> Context::new_recursive(Term *result_type,
+						  std::size_t n_parameters,
+						  Term *const* parameter_types) {
+      boost::scoped_array<RecursiveParameterTerm*> parameters(new RecursiveParameterTerm*[n_parameters]);
+      for (std::size_t i = 0; i < n_parameters; ++i)
+	parameters[i] = new_recursive_parameter(parameter_types[i]);
+      return TermPtr<RecursiveTerm>(allocate_term(RecursiveTerm::Initializer(result_type, n_parameters, parameters.get())));
+    }
+
+    GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term *type)
+      : Term(ui, context, term_type, false, false, type) {
+      PSI_ASSERT(!type->parameterized() && !type->abstract());
+    }
+
+    GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, Term *type, bool constant)
+      : GlobalTerm(ui, context, term_global_variable, type),
+	m_constant(constant) {
+    }
+
+    class GlobalVariableTerm::Initializer : public InitializerBase<GlobalVariableTerm> {
+    public:
+      Initializer(Term *type, bool constant)
+	: m_type(type), m_constant(constant) {
+      }
+
+      GlobalVariableTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
+	return new (base) GlobalVariableTerm(ui, context, m_type, m_constant);
+      }
+
+      std::size_t n_uses() const {
+	return 1;
+      }
+
+    private:
+      Term *m_type;
+      bool m_constant;
+    };
+
+    TermPtr<GlobalVariableTerm> Context::new_global_variable(Term *type, bool constant) {
+      return TermPtr<GlobalVariableTerm>(allocate_term(GlobalVariableTerm::Initializer(type, constant)));
+    }
+
+    FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, Term *type)
+      : Term(ui, context, term_function_parameter, false, false, type) {
+      PSI_ASSERT(!type->parameterized() && !type->abstract());
+    }
+
+    class FunctionParameterTerm::Initializer : public InitializerBase<FunctionParameterTerm> {
+    public:
+      Initializer(Term *type) : m_type(type) {
+      }
+
+      std::size_t n_uses() const {
+	return 0;
+      }
+
+      FunctionParameterTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
+	return new (base) FunctionParameterTerm(ui, context, m_type);
+      }
+
+    private:
+      Term *m_type;
+    };
 
     namespace {
       template<typename T>
@@ -578,34 +858,38 @@ namespace Psi {
 
 	PSI_ASSERT(term->abstract());
 
+	insert_if_abstract(visit_queue, term->type());
+
 	switch (term->term_type()) {
-	case Term::term_functional: {
-	  FunctionalTerm *cast_term = static_cast<FunctionalTerm*>(term);
-	  insert_if_abstract(visit_queue, cast_term->type());
+	case term_functional: {
+	  FunctionalTerm *cast_term = boost::polymorphic_downcast<FunctionalTerm*>(term);
 	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
 	    insert_if_abstract(visit_queue, cast_term->parameter(i));
 	  break;
 	}
 
-	case Term::term_recursive: {
-	  RecursiveTerm *cast_term = static_cast<RecursiveTerm*>(term);
-	  if (!cast_term->value())
+	case term_recursive: {
+	  RecursiveTerm *cast_term = boost::polymorphic_downcast<RecursiveTerm*>(term);
+	  if (!cast_term->result())
 	    return true;
-	  insert_if_abstract(visit_queue, cast_term->value());
+	  insert_if_abstract(visit_queue, cast_term->result());
+	  for (std::size_t i = 0; i < cast_term->n_parameters(); i++)
+	    insert_if_abstract(visit_queue, cast_term->parameter(i)->type());
 	  break;
 	}
 
-	case Term::term_function_type: {
-	  FunctionTypeTerm *cast_term = static_cast<FunctionTypeTerm*>(term);
-	  insert_if_abstract(visit_queue, cast_term->function_result_type());
-	  for (std::size_t i = 0; i < cast_term->n_function_parameters(); ++i)
-	    insert_if_abstract(visit_queue, cast_term->function_parameter(i)->type());
+	case term_function_type: {
+	  FunctionTypeTerm *cast_term = boost::polymorphic_downcast<FunctionTypeTerm*>(term);
+	  insert_if_abstract(visit_queue, cast_term->result_type());
+	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
+	    insert_if_abstract(visit_queue, cast_term->parameter(i)->type());
 	  break;
 	}
 
-	case Term::term_function_type_parameter: {
+	case term_recursive_parameter:
+	case term_function_type_parameter: {
 	  // Don't need to check these since they're covered by the
-	  // function_type case
+	  // function_type and recursive case
 	  break;
 	}
 
@@ -635,7 +919,7 @@ namespace Psi {
 	queue.pop_back();
 
 	switch (term->term_type()) {
-	case Term::term_functional: {
+	case term_functional: {
 	  FunctionalTerm *cast_term = static_cast<FunctionalTerm*>(term);
 	  clear_and_queue_if_abstract(queue, cast_term->type());
 	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
@@ -643,24 +927,27 @@ namespace Psi {
 	  break;
 	}
 
-	case Term::term_recursive: {
+	case term_recursive: {
 	  RecursiveTerm *cast_term = static_cast<RecursiveTerm*>(term);
-	  PSI_ASSERT(cast_term->value());
-	  clear_and_queue_if_abstract(queue, cast_term->value());
+	  PSI_ASSERT(cast_term->result());
+	  clear_and_queue_if_abstract(queue, cast_term->result());
+	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
+	    clear_and_queue_if_abstract(queue, cast_term->parameter(i)->type());
 	  break;
 	}
 
-	case Term::term_function_type: {
+	case term_function_type: {
 	  FunctionTypeTerm *cast_term = static_cast<FunctionTypeTerm*>(term);
-	  clear_and_queue_if_abstract(queue, cast_term->function_result_type());
-	  for (std::size_t i = 0; i < cast_term->n_function_parameters(); ++i)
-	    clear_and_queue_if_abstract(queue, cast_term->function_parameter(i)->type());
+	  clear_and_queue_if_abstract(queue, cast_term->result_type());
+	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
+	    clear_and_queue_if_abstract(queue, cast_term->parameter(i)->type());
 	  break;
 	}
 
-	case Term::term_function_type_parameter: {
+	case term_recursive_parameter:
+	case term_function_type_parameter: {
 	  // Don't need to check these since they're covered by the
-	  // function_type case
+	  // function_type and recursive cases
 	  break;
 	}
 
@@ -677,12 +964,14 @@ namespace Psi {
       if (to->parameterized())
 	throw std::logic_error("cannot resolve recursive term to parameterized term");
 
-      if (recursive->value())
+      if (recursive->result())
 	throw std::logic_error("resolving a recursive term which has already been resolved");
 
-      recursive->set_parameter(0, to);
+      recursive->set_base_parameter(1, to);
 
       if (!search_for_abstract(recursive)) {
+	recursive->m_abstract = false;
+
 	std::vector<Term*> downward_queue;
 	clear_abstract(recursive, downward_queue);
 
@@ -692,7 +981,7 @@ namespace Psi {
 	  Term *t = upward_queue.back();
 	  upward_queue.pop_back();
 	  for (UserIterator it = t->users_begin(); it != t->users_end(); ++it) {
-	    Term *parent = checked_pointer_static_cast<Term>(it.get());
+	    Term *parent = static_cast<Term*>(it.get());
 	    if (parent->abstract() && !search_for_abstract(parent)) {
 	      clear_abstract(parent, downward_queue);
 	      upward_queue.push_back(parent);
@@ -722,8 +1011,8 @@ namespace Psi {
 #endif
 
     void* Context::term_jit(Term *term) {
-      if ((term->m_term_type != Term::term_global_variable) &&
-	  (term->m_term_type != Term::term_function))
+      if ((term->m_term_type != term_global_variable) &&
+	  (term->m_term_type != term_function))
 	throw std::logic_error("Cannot JIT compile non-global term");
 
       if (!m_llvm_context) {
@@ -750,104 +1039,6 @@ namespace Psi {
       return m_llvm_engine->getPointerToGlobal(global);
 #endif
     }
-
-    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *type)
-      : User(ui), m_context(context), m_term_type(term_type), m_abstract(abstract), m_parameterized(parameterized) {
-
-      if (!type) {
-	m_category = category_metatype;
-	PSI_ASSERT_MSG((term_type == term_metatype) && !abstract, "term with no type is not a valid metatype");
-      } else {
-	PSI_ASSERT_MSG(context == type->m_context, "context mismatch between term and its type");
-	if (type->m_category == category_metatype) {
-	  m_category = category_type;
-	} else {
-	  PSI_ASSERT_MSG(type->m_category == category_type, "term does has invalid category");
-	  m_category = category_value;
-	}
-      }
-
-      use_set(0, type);
-    }
-
-    bool Term::any_abstract(std::size_t n, Term *const* terms) {
-      for (std::size_t i = 0; i < n; ++i) {
-	if (terms[i]->abstract())
-	  return true;
-      }
-      return false;
-    }
-
-    bool Term::any_parameterized(std::size_t n, Term *const* terms) {
-      for (std::size_t i = 0; i < n; ++i) {
-	if (terms[i]->parameterized())
-	  return true;
-      }
-      return false;
-    }
-
-    std::size_t FunctionalTermBackend::hash_value() const {
-      std::size_t value = hash_internal();
-
-      const std::type_info& ti = typeid(*this);
-#if __GXX_MERGED_TYPEINFO_NAMES
-      boost::hash_combine(value, ti.name());
-#else
-      for (const char *p = ti.name(); *p != '\0'; ++p)
-	boost::hash_combine(value, *p);
-#endif
-      return value;
-    }
-
-    MetatypeTerm::MetatypeTerm(const UserInitializer& ui, Context* context)
-      : Term(ui, context, term_metatype, false, false, NULL) {
-    }
-
-#if 0
-    LLVMConstantBuilder::Type Metatype::llvm_type(LLVMConstantBuilder& builder, Term*) const {
-      llvm::LLVMContext& context = builder.context();
-      const llvm::Type* i64 = llvm::Type::getInt64Ty(context);
-      return LLVMConstantBuilder::type_known(llvm::StructType::get(context, i64, i64, NULL));
-    }
-
-    LLVMConstantBuilder::Constant Metatype::llvm_value(const llvm::Type* ty) {
-      llvm::Constant* values[2] = {
-	llvm::ConstantExpr::getSizeOf(ty),
-	llvm::ConstantExpr::getAlignOf(ty)
-      };
-
-      return LLVMConstantBuilder::constant_value(llvm::ConstantStruct::get(ty->getContext(), values, 2, false));
-    }
-
-    LLVMConstantBuilder::Constant Metatype::llvm_value_empty(llvm::LLVMContext& context) {
-      const llvm::Type *i64 = llvm::Type::getInt64Ty(context);
-      llvm::Constant* values[2] = {
-	llvm::ConstantInt::get(i64, 0),
-	llvm::ConstantInt::get(i64, 1)
-      };
-
-      return LLVMConstantBuilder::constant_value(llvm::ConstantStruct::get(context, values, 2, false));
-    }
-
-    LLVMConstantBuilder::Constant Metatype::llvm_value(llvm::Constant *size, llvm::Constant *align) {
-      llvm::LLVMContext& context = size->getContext();
-      PSI_ASSERT_MSG(size->getType()->isIntegerTy(64) && align->getType()->isIntegerTy(64),
-		     "size and align members of Metatype must both be i64");
-      PSI_ASSERT_MSG(!llvm::cast<llvm::ConstantInt>(align)->equalsInt(0), "align cannot be zero");
-      llvm::Constant* values[2] = {size, align};
-      return LLVMConstantBuilder::constant_value(llvm::ConstantStruct::get(context, values, 2, false));
-    }
-
-    LLVMFunctionBuilder::Result Metatype::llvm_value(LLVMFunctionBuilder& builder, llvm::Value *size, llvm::Value *align) {
-      LLVMFunctionBuilder::IRBuilder& irbuilder = builder.irbuilder();
-      llvm::LLVMContext& context = builder.context();
-      const llvm::Type* i64 = llvm::Type::getInt64Ty(context);
-      llvm::Type *mtype = llvm::StructType::get(context, i64, i64, NULL);
-      llvm::Value *first = irbuilder.CreateInsertValue(llvm::UndefValue::get(mtype), size, 0);
-      llvm::Value *second = irbuilder.CreateInsertValue(first, align, 1);
-      return LLVMFunctionBuilder::make_known(second);
-    }
-#endif
 
 #if 0
     GlobalVariable::GlobalVariable(bool read_only) : m_read_only(read_only) {
@@ -914,48 +1105,14 @@ namespace Psi {
     }
 #endif
 
-    DistinctTerm::DistinctTerm(const UserInitializer& ui, Context* context, TermType term_type, bool abstract, bool parameterized, Term *type) 
-      : Term(ui, context, term_type, abstract, parameterized, type) {
+    Context::Context()
+      : m_metatype(allocate_term(MetatypeTerm::Initializer())),
+	m_hash_term_buckets(new HashTermSetType::bucket_type[initial_hash_term_buckets]),
+	m_hash_terms(HashTermSetType::bucket_traits(m_hash_term_buckets.get(), initial_hash_term_buckets)) {
     }
 
-    FunctionalTerm::FunctionalTerm(const UserInitializer& ui, Context *context, Term *type,
-				   std::size_t hash, FunctionalTermBackend *backend,
-				   std::size_t n_parameters, Term *const* parameters)
-      : Term(ui, context, term_functional,
-	     type->abstract() || any_abstract(n_parameters, parameters),
-	     type->parameterized() || any_parameterized(n_parameters, parameters),
-	     type),
-	m_hash(hash),
-	m_backend(backend) {
-      for (std::size_t i = 0; i < n_parameters; ++i)
-	set_parameter(i, parameters[i]);
-    }
-
-    FunctionalTerm::~FunctionalTerm() {
-      m_backend->~FunctionalTermBackend();
-    }
-
-    bool FunctionTypeTerm::any_parameter_abstract(std::size_t n, FunctionTypeParameterTerm *const* terms) {
-      for (std::size_t i = 0; i < n; ++i) {
-	if (terms[i]->abstract())
-	  return true;
-      }
-      return false;
-    }
-
-    FunctionTypeTerm::FunctionTypeTerm(const UserInitializer& ui, Context *context,
-				       Term *result_type, std::size_t n_parameters, FunctionTypeParameterTerm *const* parameters)
-      : DistinctTerm(ui, context, term_function_type,
-		     result_type->abstract() || any_parameter_abstract(n_parameters, parameters), true,
-		     context->get_metatype()) {
-      set_parameter(0, result_type);
-      for (std::size_t i = 0; i < n_parameters; ++i) {
-	set_parameter(i+1, parameters[i]);
-      }
-    }
-
-    FunctionTypeParameterTerm::FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, Term *type)
-      : DistinctTerm(ui, context, term_function_type_parameter, type->abstract(), true, type), m_source(0), m_index(0) {
+    Context::~Context() {
+      PSI_ASSERT(m_hash_terms.empty());
     }
   }
 }

@@ -4,7 +4,6 @@
 #include <iterator>
 #include <cstddef>
 #include <tr1/cstdint>
-#include <tr1/type_traits>
 
 #include "../Utility.hpp"
 
@@ -30,8 +29,6 @@ namespace Psi {
       UserHeadMalloc = 2,
       UsedHead = 3
     };
-
-    Use() {}
 
     void init_user_head(bool is_inline, User *owner, std::size_t n_uses);
     void init_use_node();
@@ -70,7 +67,6 @@ namespace Psi {
 
   private:
     std::tr1::intptr_t m_target;
-    Use(const Use&);
 
     union {
       struct {
@@ -122,7 +118,7 @@ namespace Psi {
     mutable std::size_t m_use_index;
  };
 
-  class Used : public CheckedCastBase {
+  class Used {
     friend class Use;
 
   private:
@@ -133,6 +129,8 @@ namespace Psi {
     Used();
     ~Used();
 
+    void clear_users();
+
     UserIterator users_begin() {return UserIterator(m_use.next());}
     UserIterator users_end() {return UserIterator(&m_use);}
 
@@ -140,23 +138,10 @@ namespace Psi {
     void replace_with(Used *target) {m_use.replace_with(target);}
   };
 
-  template<std::size_t N>
-  class StaticUses {
-    friend class UserInitializer;
-
-  private:
-    Use uses[N+1];
-  };
-
   class UserInitializer {
     friend class User;
 
   public:
-    template<std::size_t N>
-    UserInitializer(StaticUses<N>& uses)
-      : m_n_uses(N), m_uses(uses.uses) {
-    }
-
     UserInitializer(std::size_t n_uses, Use *uses)
       : m_n_uses(n_uses), m_uses(uses) {
     }
@@ -181,18 +166,17 @@ namespace Psi {
 
   protected:
     User(const UserInitializer& ui);
-    virtual ~User();
+    ~User();
 
-    template<typename T> T* use_get(std::size_t i) const {
-      PSI_STATIC_ASSERT_MSG((std::tr1::is_base_of<Used, T>::value), "T must inherit Psi::Used");
-      return checked_pointer_static_cast<T>(use_n(i).target());
+    Used* use_get(std::size_t i) const {
+      return use_n(i).target();
     }
 
     void use_set(std::size_t i, Used *target) {
       use_n(i).set_target(target);
     }
 
-    std::size_t use_slots() const {
+    std::size_t n_uses() const {
       return m_uses[0].n_uses();
     }
   };
