@@ -3,46 +3,63 @@
 
 #include "Core.hpp"
 
+#include <boost/type_traits/alignment_of.hpp>
 #include <gmpxx.h>
 
 namespace Psi {
   namespace Tvm {
-    class IntegerType : public PrimitiveType {
+    class PrimitiveTypeBase : public FunctionalTermBackend {
     public:
-      static llvm::APInt mpl_to_llvm(bool is_signed, unsigned n_bits, const mpz_class& value);
-
-      virtual llvm::Constant* constant_to_llvm(llvm::LLVMContext& context, const mpz_class& value) = 0;
+      virtual TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
+      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm*) const;
+      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm*) const;
     };
 
-    class BasicIntegerType : public IntegerType {
+    template<typename T>
+    class PrimitiveType : public PrimitiveTypeBase {
     public:
-#define PSI_TVM_INT(bits)				\
-      static BasicIntegerType int##bits();		\
-      static BasicIntegerType uint##bits();		\
-      static Term* int##bits##_term(Context& context);	\
-      static Term* uint##bits##_term(Context& context);
+      typedef T ImplementingType;
+      typedef PrimitiveType<ImplementingType> ThisType;
 
-      PSI_TVM_INT(8)
-      PSI_TVM_INT(16)
-      PSI_TVM_INT(32)
-      PSI_TVM_INT(64)
+      PrimitiveType(ImplementingType impl) : m_impl(impl) {}
 
-#undef PSI_TVM_INT
+      virtual std::pair<std::size_t, std::size_t> size_align() const {
+	return std::make_pair(sizeof(ThisType), boost::alignment_of<ThisType>::value);
+     }
 
-      virtual llvm::Constant* constant_to_llvm(llvm::LLVMContext& context, const mpz_class& value);
+      virtual bool equals(const FunctionalTermBackend& other) const {
+	return m_impl == *boost::polymorphic_downcast<ThisType*>(other).m_impl;
+      }
+
+      virtual FunctionalTermBackend* clone(void *dest) const {
+	new (dest) PrimitiveType<T>(*this);
+      }
+
+      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder& builder, FunctionalTerm*) const {
+	return LLVMConstantBuilder::type_known(m_impl.llvm_type(builder.context()));
+      }
 
     private:
-      BasicIntegerType(unsigned n_bits, bool is_signed);
+      virtual std::size_t hash_internal() const {
+	return m_impl.hash_value();
+      }
 
-      virtual bool equals_internal(const ProtoTerm& other) const;
-      virtual std::size_t hash_internal() const;
-      virtual ProtoTerm* clone() const;
-      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
-      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
-      virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
+      ImplementingType m_impl;
+    };
 
-      unsigned m_n_bits;
+    class IntegerType {
+    public:
+      IntegerType(bool is_signed, unsigned n_bits);
+
+      llvm::Type* llvm_type(llvm::LLVMContext&);
+      bool operator == (const IntegerType&) const;
+      std::size_t hash_value() const;
+
+      static llvm::APInt mpl_to_llvm(bool is_signed, unsigned n_bits, const mpz_class& value);
+
+    private:
       bool m_is_signed;
+      unsigned m_n_bits;
     };
 
     class ConstantInteger : public ConstantValue {

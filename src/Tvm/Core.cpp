@@ -66,8 +66,8 @@ namespace Psi {
       }
     }
 
-    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *type)
-      : TermUser(ui, term_type), m_abstract(abstract), m_parameterized(parameterized), m_use_count_ptr(0), m_context(context) {
+    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, Term *type)
+      : TermUser(ui, term_type), m_abstract(abstract), m_parameterized(parameterized), m_global(global), m_use_count_ptr(0), m_context(context) {
 
       m_use_count.value = 0;
 
@@ -87,20 +87,26 @@ namespace Psi {
       use_set(0, type);
     }
 
-    bool Term::any_abstract(std::size_t n, Term *const* terms) {
-      for (std::size_t i = 0; i < n; ++i) {
-	if (terms[i]->abstract())
-	  return true;
-      }
-      return false;
-    }
+    namespace {
+      /*
+       * These are templates because the pointer-to-pointer parameter
+       * prevents using a parent type.
+       */
 
-    bool Term::any_parameterized(std::size_t n, Term *const* terms) {
-      for (std::size_t i = 0; i < n; ++i) {
-	if (terms[i]->parameterized())
-	  return true;
+      template<typename T>
+      bool any_abstract(std::size_t n, T *const* t) {
+	return std::find_if(t, t+n, std::mem_fun(&Term::abstract)) != (t+n);
       }
-      return false;
+
+      template<typename T>
+      bool any_parameterized(std::size_t n, T *const* t) {
+	return std::find_if(t, t+n, std::mem_fun(&Term::parameterized)) != (t+n);
+      }
+
+      template<typename T>
+      bool all_global(std::size_t n, T *const* t) {
+	return std::find_if(t, t+n, std::not1(std::mem_fun(&Term::global))) != (t+n);
+      }
     }
 
     std::size_t Term::hash_value() const {
@@ -142,10 +148,10 @@ namespace Psi {
 	queue.pop_back();
 	PSI_ASSERT(!*current->term_use_count());
 
-	for (UserIterator it = current->users_begin(); it != current->users_end(); ++it) {
-	  Term *parent = static_cast<Term*>(it.get());
-	  if (visited.insert(parent).second)
-	    queue.push_back(parent);
+	for (TermIterator<Term> it = current->term_users_begin<Term>();
+	     it != current->term_users_end<Term>(); ++it) {
+	  if (visited.insert(&*it).second)
+	    queue.push_back(&*it);
 	}
 
 	std::size_t n_uses = current->n_uses();
@@ -240,13 +246,13 @@ namespace Psi {
       return term;
     }
 
-    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *type, std::size_t hash)
-      : Term(ui, context, term_type, abstract, parameterized, type),
+    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, Term *type, std::size_t hash)
+      : Term(ui, context, term_type, abstract, parameterized, global, type),
 	m_hash(hash) {
     }
 
     MetatypeTerm::MetatypeTerm(const UserInitializer& ui, Context* context)
-      : Term(ui, context, term_metatype, false, false, NULL) {
+      : Term(ui, context, term_metatype, false, false, true, NULL) {
     }
 
     class MetatypeTerm::Initializer : public InitializerBase<MetatypeTerm> {
@@ -279,6 +285,7 @@ namespace Psi {
       : HashTerm(ui, context, term_functional,
 		 type->abstract() || any_abstract(n_parameters, parameters),
 		 type->parameterized() || any_parameterized(n_parameters, parameters),
+		 type->global() && all_global(n_parameters, parameters),
 		 type, hash),
 	m_backend(backend) {
       for (std::size_t i = 0; i < n_parameters; ++i)
@@ -371,18 +378,11 @@ namespace Psi {
       return hash_term_get(setup);
     }
 
-    bool FunctionTypeTerm::any_parameter_abstract(std::size_t n, FunctionTypeParameterTerm *const* terms) {
-      for (std::size_t i = 0; i < n; ++i) {
-	if (terms[i]->abstract())
-	  return true;
-      }
-      return false;
-    }
-
     FunctionTypeTerm::FunctionTypeTerm(const UserInitializer& ui, Context *context,
 				       Term *result_type, std::size_t n_parameters, FunctionTypeParameterTerm *const* parameters)
       : Term(ui, context, term_function_type,
-	     result_type->abstract() || any_parameter_abstract(n_parameters, parameters), true,
+	     result_type->abstract() || any_abstract(n_parameters, parameters), true,
+	     result_type->global() && all_global(n_parameters, parameters),
 	     context->get_metatype().get()) {
       set_base_parameter(0, result_type);
       for (std::size_t i = 0; i < n_parameters; ++i) {
@@ -410,6 +410,12 @@ namespace Psi {
       FunctionTypeParameterTerm *const* m_parameters;
     };
 
+    /**
+     * Check whether part of function type term is complete,
+     * i.e. whether there are still function parameters which have
+     * to be resolved by further function types (this happens in the
+     * case of nested function types).
+     */
     bool Context::check_function_type_complete(Term *term, std::tr1::unordered_set<FunctionTypeTerm*>& functions)
     {
       if (!term->parameterized())
@@ -558,7 +564,7 @@ namespace Psi {
     }
 
     FunctionTypeParameterTerm::FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, Term *type)
-      : Term(ui, context, term_function_type_parameter, type->abstract(), true, type),
+      : Term(ui, context, term_function_type_parameter, type->abstract(), true, type->global(), type),
 	m_index(0) {
     }
 
@@ -584,8 +590,9 @@ namespace Psi {
 
     FunctionTypeInternalTerm::FunctionTypeInternalTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term *result_type, std::size_t n_parameters, Term *const* parameter_types)
       : HashTerm(ui, context, term_function_type_internal,
-		 result_type->abstract() || any_abstract(n_parameters, parameter_types),
-		 true, context->get_metatype().get(), hash) {
+		 result_type->abstract() || any_abstract(n_parameters, parameter_types), true,
+		 result_type->global() && all_global(n_parameters, parameter_types),
+		 context->get_metatype().get(), hash) {
       set_base_parameter(1, result_type);
       for (std::size_t i = 0; i < n_parameters; i++)
 	set_base_parameter(i+2, parameter_types[i]);
@@ -705,7 +712,7 @@ namespace Psi {
     }
 
     RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term *type)
-      : Term(ui, context, term_recursive_parameter, true, false, type) {
+      : Term(ui, context, term_recursive_parameter, true, false, type->global(), type) {
     }
 
     class RecursiveParameterTerm::Initializer : public InitializerBase<RecursiveParameterTerm> {
@@ -727,8 +734,9 @@ namespace Psi {
     }
 
     RecursiveTerm::RecursiveTerm(const UserInitializer& ui, Context *context, Term *result_type,
-				 std::size_t n_parameters, RecursiveParameterTerm *const* parameters)
-      : Term(ui, context, term_recursive, true, false, context->get_metatype().get()) {
+				 bool global, std::size_t n_parameters, RecursiveParameterTerm *const* parameters)
+      : Term(ui, context, term_recursive, true, false, global, context->get_metatype().get()) {
+      PSI_ASSERT(!global || (result_type->global() && all_global(n_parameters, parameters)));
       set_base_parameter(0, result_type);
       for (std::size_t i = 0; i < n_parameters; ++i) {
 	set_base_parameter(i+2, parameters[i]);
@@ -737,39 +745,99 @@ namespace Psi {
 
     class RecursiveTerm::Initializer : public InitializerBase<RecursiveTerm> {
     public:
-      Initializer(Term *type, std::size_t n_parameters, RecursiveParameterTerm *const* parameters)
-	: m_type(type), m_n_parameters(n_parameters), m_parameters(parameters) {
+      Initializer(bool global, Term *type, std::size_t n_parameters, RecursiveParameterTerm *const* parameters)
+	: m_global(global), m_type(type), m_n_parameters(n_parameters), m_parameters(parameters) {
       }
 
       RecursiveTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) RecursiveTerm(ui, context, m_type, m_n_parameters, m_parameters);
+	return new (base) RecursiveTerm(ui, context, m_type, m_global, m_n_parameters, m_parameters);
       }
 
       std::size_t n_uses() const {return 1;}
 
     private:
+      bool m_global;
       Term *m_type;
       std::size_t m_n_parameters;
       RecursiveParameterTerm *const* m_parameters;
     };
 
-    TermPtr<RecursiveTerm> Context::new_recursive(Term *result_type,
+    /**
+     * \brief Create a new recursive term.
+     */
+    TermPtr<RecursiveTerm> Context::new_recursive(bool global, Term *result_type,
 						  std::size_t n_parameters,
 						  Term *const* parameter_types) {
       boost::scoped_array<RecursiveParameterTerm*> parameters(new RecursiveParameterTerm*[n_parameters]);
       for (std::size_t i = 0; i < n_parameters; ++i)
 	parameters[i] = new_recursive_parameter(parameter_types[i]);
-      return TermPtr<RecursiveTerm>(allocate_term(RecursiveTerm::Initializer(result_type, n_parameters, parameters.get())));
+      return TermPtr<RecursiveTerm>(allocate_term(RecursiveTerm::Initializer(global, result_type, n_parameters, parameters.get())));
+    }
+
+    /**
+     * \brief Resolve this term to its actual value.
+     */
+    void RecursiveTerm::resolve(Term *term) {
+      return context().resolve_recursive(this, term);
+    }
+
+    TermPtr<ApplyTerm> RecursiveTerm::apply(std::size_t n_parameters, Term *const* parameters) {
+      return TermPtr<ApplyTerm>(context().apply_recursive(this, n_parameters, parameters));
+    }
+
+    ApplyTerm::ApplyTerm(const UserInitializer& ui, Context *context, RecursiveTerm *recursive,
+			 std::size_t n_parameters, Term *const* parameters)
+      : Term(ui, context, term_apply,
+	     recursive->abstract() || any_abstract(n_parameters, parameters), false,
+	     recursive->global() && all_global(n_parameters, parameters),
+	     context->get_metatype().get()) {
+      set_base_parameter(0, recursive);
+      for (std::size_t i = 0; i < n_parameters; ++i)
+	set_base_parameter(i+1, parameters[i]);
+    }
+
+    class ApplyTerm::Initializer : public InitializerBase<ApplyTerm> {
+    public:
+      Initializer(RecursiveTerm *recursive, std::size_t n_parameters, Term *const* parameters)
+	: m_recursive(recursive), m_n_parameters(n_parameters), m_parameters(parameters) {
+      }
+
+      ApplyTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
+	return new (base) ApplyTerm(ui, context, m_recursive, m_n_parameters, m_parameters);
+      }
+
+      std::size_t n_uses() const {return m_n_parameters + 1;}
+
+    private:
+      RecursiveTerm *m_recursive;
+      std::size_t m_n_parameters;
+      Term *const* m_parameters;
+    };
+
+    TermPtr<ApplyTerm> Context::apply_recursive(RecursiveTerm *recursive,
+						std::size_t n_parameters,
+						Term *const* parameters) {
+      return TermPtr<ApplyTerm>(allocate_term(ApplyTerm::Initializer(recursive, n_parameters, parameters)));
+    }
+
+    TermPtr<> ApplyTerm::unpack() const {
     }
 
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term *type)
-      : Term(ui, context, term_type, false, false, type) {
+      : Term(ui, context, term_type, false, false, true, type) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
     }
 
     GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, Term *type, bool constant)
       : GlobalTerm(ui, context, term_global_variable, type),
 	m_constant(constant) {
+    }
+
+    void GlobalVariableTerm::set_value(Term *value) {
+      if (!value->global())
+	throw std::logic_error("value of global variable must be a global");
+
+      set_base_parameter(0, value);
     }
 
     class GlobalVariableTerm::Initializer : public InitializerBase<GlobalVariableTerm> {
@@ -791,12 +859,15 @@ namespace Psi {
       bool m_constant;
     };
 
+    /**
+     * \brief Create a new global term.
+     */
     TermPtr<GlobalVariableTerm> Context::new_global_variable(Term *type, bool constant) {
       return TermPtr<GlobalVariableTerm>(allocate_term(GlobalVariableTerm::Initializer(type, constant)));
     }
 
     FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, Term *type)
-      : Term(ui, context, term_function_parameter, false, false, type) {
+      : Term(ui, context, term_function_parameter, false, false, type->global(), type) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
     }
 
@@ -818,71 +889,59 @@ namespace Psi {
     };
 
     namespace {
-      template<typename T>
-      class VisitQueue {
-      public:
-	bool empty() const {
-	  return m_queue.empty();
+      void insert_if_abstract(std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set, Term *term) {
+	if (term->abstract()) {
+	  if (set.insert(term).second)
+	    queue.push_back(term);
 	}
-
-	void insert(const T& t) {
-	  if (m_visited.insert(t).second)
-	    m_queue.push_back(t);
-	}
-
-	T pop_value() {
-	  T x = m_queue.back();
-	  m_queue.pop_back();
-	  return x;
-	}
-
-      private:
-	std::tr1::unordered_set<T> m_visited;
-	std::vector<T> m_queue;
-      };
-
-      void insert_if_abstract(VisitQueue<Term*>& queue, Term *term) {
-	if (term->abstract())
-	  queue.insert(term);
       }
     }
 
-    bool Context::search_for_abstract(Term *term) {
+    /**
+     * \brief Deep search a term to determine whether it is really
+     * abstract.
+     */
+    bool Context::search_for_abstract(Term *term, std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set) {
       if (!term->abstract())
 	return false;
 
-      VisitQueue<Term*> visit_queue;
-      visit_queue.insert(term);
-      while(!visit_queue.empty()) {
-	Term *term = visit_queue.pop_value();
+      PSI_ASSERT(queue.empty() && set.empty());
+      queue.push_back(term);
+      set.insert(term);
+      while(!queue.empty()) {
+	Term *term = queue.back();
+	queue.pop_back();
 
 	PSI_ASSERT(term->abstract());
 
-	insert_if_abstract(visit_queue, term->type());
+	insert_if_abstract(queue, set, term->type());
 
 	switch (term->term_type()) {
 	case term_functional: {
 	  FunctionalTerm *cast_term = boost::polymorphic_downcast<FunctionalTerm*>(term);
 	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
-	    insert_if_abstract(visit_queue, cast_term->parameter(i));
+	    insert_if_abstract(queue, set, cast_term->parameter(i));
 	  break;
 	}
 
 	case term_recursive: {
 	  RecursiveTerm *cast_term = boost::polymorphic_downcast<RecursiveTerm*>(term);
-	  if (!cast_term->result())
+	  if (!cast_term->result()) {
+	    queue.clear();
+	    set.clear();
 	    return true;
-	  insert_if_abstract(visit_queue, cast_term->result());
+	  }
+	  insert_if_abstract(queue, set, cast_term->result());
 	  for (std::size_t i = 0; i < cast_term->n_parameters(); i++)
-	    insert_if_abstract(visit_queue, cast_term->parameter(i)->type());
+	    insert_if_abstract(queue, set, cast_term->parameter(i)->type());
 	  break;
 	}
 
 	case term_function_type: {
 	  FunctionTypeTerm *cast_term = boost::polymorphic_downcast<FunctionTypeTerm*>(term);
-	  insert_if_abstract(visit_queue, cast_term->result_type());
+	  insert_if_abstract(queue, set, cast_term->result_type());
 	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
-	    insert_if_abstract(visit_queue, cast_term->parameter(i)->type());
+	    insert_if_abstract(queue, set, cast_term->parameter(i)->type());
 	  break;
 	}
 
@@ -898,6 +957,8 @@ namespace Psi {
 	}
       }
 
+      queue.clear();
+      set.clear();
       return false;
     }
 
@@ -908,6 +969,15 @@ namespace Psi {
       }
     }
 
+    /**
+     * \brief Clear abstract flag in this term and all its
+     * descendents.
+     *
+     * \param queue Vector to use to queue terms to clear. This is an
+     * optimization since #resolve_recursive calls this function
+     * repeatedly and this saves reallocating queue space. It must be
+     * empty on entry to this function.
+     */
     void Context::clear_abstract(Term *term, std::vector<Term*>& queue) {
       if (!term->abstract())
 	return;
@@ -957,6 +1027,9 @@ namespace Psi {
       }
     }
 
+    /**
+     * \brief Resolve an opaque term.
+     */
     void Context::resolve_recursive(RecursiveTerm *recursive, Term *to) {
       if (recursive->type() != to->type())
 	throw std::logic_error("mismatch between recursive term type and resolving term type");
@@ -969,22 +1042,22 @@ namespace Psi {
 
       recursive->set_base_parameter(1, to);
 
-      if (!search_for_abstract(recursive)) {
+      std::vector<Term*> queue;
+      std::tr1::unordered_set<Term*> set;
+      if (!search_for_abstract(recursive, queue, set)) {
 	recursive->m_abstract = false;
 
-	std::vector<Term*> downward_queue;
-	clear_abstract(recursive, downward_queue);
+	clear_abstract(recursive, queue);
 
 	std::vector<Term*> upward_queue;
 	upward_queue.push_back(recursive);
 	while (!upward_queue.empty()) {
 	  Term *t = upward_queue.back();
 	  upward_queue.pop_back();
-	  for (UserIterator it = t->users_begin(); it != t->users_end(); ++it) {
-	    Term *parent = static_cast<Term*>(it.get());
-	    if (parent->abstract() && !search_for_abstract(parent)) {
-	      clear_abstract(parent, downward_queue);
-	      upward_queue.push_back(parent);
+	  for (TermIterator<Term> it = t->term_users_begin<Term>(); it != t->term_users_end<Term>(); ++it) {
+	    if (it->abstract() && !search_for_abstract(&*it, queue, set)) {
+	      clear_abstract(&*it, queue);
+	      upward_queue.push_back(&*it);
 	    }
 	  }
 	}
@@ -1010,6 +1083,10 @@ namespace Psi {
     }
 #endif
 
+    /**
+     * \brief Just-in-time compile a term, and a get a pointer to
+     * the result.
+     */
     void* Context::term_jit(Term *term) {
       if ((term->m_term_type != term_global_variable) &&
 	  (term->m_term_type != term_function))

@@ -13,7 +13,7 @@ add_library(psi SHARED
   #Tvm/Function.cpp Tvm/Function.hpp
   Tvm/LLVMBuilder.cpp Tvm/LLVMBuilder.hpp
   Tvm/LLVMForward.hpp
-  #Tvm/Number.cpp Tvm/Number.hpp
+  Tvm/Number.cpp Tvm/Number.hpp
   Tvm/User.cpp Tvm/User.hpp
 )
 

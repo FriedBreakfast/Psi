@@ -5,10 +5,32 @@
 
 \section nested_functions Nested functions
 
-Nested functions should be implemented at a higher level using the
-\ref insn_cast instruction and \ref instructions_lifting "lifting"
-instructions to transfer contextual type information from one function
-to another.
+Nested functions should be implemented at a higher level, where the
+data structures should also be optimized. The LLVM code generator must
+support injecting value mappings into functions so that variables
+passed by function nesting can be easily supported. This means that
+individual expressions should not know which function they are part of
+since this should not be directly checked, however they should know
+whether they are global or not.
+
+\section calling_convention Function calling convention
+
+All functions must be convertible to a generic calling convention
+dependent only on the number of parameters since they may be called
+from code which doesn't know the parameter types. Therefore:
+
+<ul>
+<li>Return type: i8*</li>
+<li>n+1 parameters of type i8*</li>
+</ul>
+
+When passing a pointer type to a function, the pointer is passed
+directly rather than by reference. When a pointer is returned from a
+function, the value of the pointer is returned, <em>and</em> the value
+of the pointer must be written to the memory area passed for the
+return data. Thus, when passing the pointer to another function the
+return value is used, and when returning the pointer, memcpy() can be
+used to transfer the data from the child to the parent return area.
 
 \section type_variables
 

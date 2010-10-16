@@ -11,6 +11,9 @@
 namespace Psi {
   namespace Tvm {
     class Term;
+    class GlobalTerm;
+    class FunctionTerm;
+    class GlobalVariableTerm;
 
     /**
      * \brief Value type of MetatypeTerm.
@@ -112,7 +115,7 @@ namespace Psi {
 
       llvm::LLVMContext& context() {return *m_context;}
       llvm::Module& module() {return *m_module;}
-      llvm::GlobalValue* global(Term *term);
+      llvm::GlobalValue* global(GlobalTerm *term);
       Constant constant(Term *term);
       Type type(Term *term);
 
@@ -157,9 +160,14 @@ namespace Psi {
 
       typedef std::tr1::unordered_map<Term*, llvm::GlobalValue*> GlobalTermMap;
       GlobalTermMap m_global_terms;
+
+      void build_function(FunctionTerm *psi_func, llvm::Function *llvm_func);
+      void build_global_variable(GlobalVariableTerm *psi_var, llvm::GlobalVariable *llvm_var);
     };
 
     class LLVMFunctionBuilder {
+      friend class LLVMConstantBuilder;
+
     public:
       typedef llvm::IRBuilder<true, llvm::ConstantFolder, llvm::IRBuilderDefaultInserter<true> > IRBuilder;
 
@@ -195,24 +203,34 @@ namespace Psi {
       static Result make_unknown(llvm::Value *value) {return Result(Result::category_unknown, value);}
       static Result make_empty() {return Result(Result::category_empty, 0);}
 
-      LLVMFunctionBuilder(LLVMConstantBuilder *constant_builder, IRBuilder *irbuilder);
-      LLVMFunctionBuilder(LLVMConstantBuilder *constant_builder, LLVMFunctionBuilder *parent);
       ~LLVMFunctionBuilder();
 
       Result value(Term *term);
       LLVMConstantBuilder::Type type(Term *term);
+      LLVMConstantBuilder& constant_builder() {return *m_constant_builder;}
       llvm::LLVMContext& context() {return m_constant_builder->context();}
       IRBuilder& irbuilder() {return *m_irbuilder;}
+
+      /**
+       * \brief Get an LLVM value for Metatype for the given LLVM type.
+       */
+      Result metatype_value(const llvm::Type* ty);
+
+      /**
+       * \brief Get an LLVM value for Metatype for an empty type.
+       */
+      Result metatype_value_empty();
 
       /**
        * \brief Get an LLVM value for a specified size and alignment.
        *
        * The result of this call will be a global constant.
        */
-      LLVMFunctionBuilder::Result metatype_value(LLVMFunctionBuilder& builder, llvm::Value *size, llvm::Value *align);
+      Result metatype_value(llvm::Value *size, llvm::Value *align);
 
     private:
-      LLVMFunctionBuilder *m_parent;
+      LLVMFunctionBuilder(LLVMConstantBuilder *constant_builder, IRBuilder *irbuilder);
+
       LLVMConstantBuilder *m_constant_builder;
       IRBuilder *m_irbuilder;
       typedef std::tr1::unordered_map<Term*, Result> TermMap;

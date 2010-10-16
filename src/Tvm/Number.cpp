@@ -8,6 +8,41 @@
 
 namespace Psi {
   namespace Tvm {
+    TermPtr<> PrimitiveTypeBase::type(Context& context, std::size_t n_parameters, Term *const* parameters) const {
+      if (n_parameters != 0)
+	throw std::logic_error("primitive type created with parameters");
+      return context.get_metatype();
+    }
+
+    LLVMFunctionBuilder::Result PrimitiveTypeBase::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm* term) const {
+      return llvm_value_constant(builder.constant_builder(), term);
+    }
+
+    LLVMConstantBuilder::Constant PrimitiveTypeBase::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm* term) const {
+      LLVMConstantBuilder::Type ty = llvm_type(builder, term);
+      return builder.metatype_value(ty.type());
+    }
+
+    IntegerType::IntegerType(bool is_signed, unsigned n_bits)
+      : m_is_signed(is_signed), m_n_bits(n_bits) {
+    }
+
+    llvm::Type* IntegerType::llvm_type(llvm::LLVMContext& context) {
+      return llvm::IntegerType::get(context, m_n_bits);
+    }
+
+    bool IntegerType::operator == (const IntegerType& o) const {
+      return (m_is_signed == o.m_is_signed) &&
+	(m_n_bits == o.m_n_bits);
+    }
+
+    std::size_t IntegerType::hash_value() const {
+      std::size_t h = 0;
+      boost::hash_combine(h, m_is_signed);
+      boost::hash_combine(h, m_n_bits);
+      return h;
+    }
+
     llvm::APInt IntegerType::mpl_to_llvm(bool is_signed, unsigned n_bits, const mpz_class& value) {
       std::size_t value_bits = mpz_sizeinbase(value.get_mpz_t(), 2);
       if (mpz_sgn(value.get_mpz_t()) < 0) {
@@ -34,49 +69,6 @@ namespace Psi {
 	else
 	  throw std::logic_error("integer literal value of out range");
       }
-    }
-
-    BasicIntegerType::BasicIntegerType(unsigned n_bits, bool is_signed)
-      : m_n_bits(n_bits), m_is_signed(is_signed) {
-    }
-
-#define PSI_TVM_INT(bits)						\
-    BasicIntegerType BasicIntegerType::int##bits() {return BasicIntegerType(bits, true);} \
-    BasicIntegerType BasicIntegerType::uint##bits() {return BasicIntegerType(bits, false);} \
-    Term* BasicIntegerType::int##bits##_term(Context& context) {return context.new_term(int##bits());} \
-    Term* BasicIntegerType::uint##bits##_term(Context& context) {return context.new_term(uint##bits());}
-
-    PSI_TVM_INT(8)
-    PSI_TVM_INT(16)
-    PSI_TVM_INT(32)
-    PSI_TVM_INT(64)
-
-#undef PSI_TVM_INT
-
-    llvm::Constant* BasicIntegerType::constant_to_llvm(llvm::LLVMContext& context, const mpz_class& value) {
-      const llvm::Type *ty = llvm::IntegerType::get(context, m_n_bits);
-      return llvm::ConstantInt::get(ty, mpl_to_llvm(m_is_signed, m_n_bits, value));
-    }
-
-    bool BasicIntegerType::equals_internal(const ProtoTerm& other) const {
-      const BasicIntegerType& o = static_cast<const BasicIntegerType&>(other);
-      return (m_n_bits == o.m_n_bits) && (m_is_signed == o.m_is_signed);
-    }
-    
-    std::size_t BasicIntegerType::hash_internal() const {
-      return HashCombiner() << m_n_bits << m_is_signed;
-    }
-
-    ProtoTerm* BasicIntegerType::clone() const {
-      return new BasicIntegerType(*this);
-    }
-
-    LLVMConstantBuilder::Constant BasicIntegerType::llvm_value_constant(LLVMConstantBuilder& builder, Term*) const {
-      return Metatype::llvm_value(llvm::IntegerType::get(builder.context(), m_n_bits));
-    }
-
-    LLVMConstantBuilder::Type BasicIntegerType::llvm_type(LLVMConstantBuilder& builder, Term*) const {
-      return LLVMConstantBuilder::type_known(const_cast<llvm::IntegerType*>(llvm::IntegerType::get(builder.context(), m_n_bits)));
     }
 
     void BasicIntegerType::validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const {

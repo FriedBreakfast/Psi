@@ -4,6 +4,7 @@
 #include <iterator>
 #include <cstddef>
 #include <tr1/cstdint>
+#include <boost/iterator/iterator_facade.hpp>
 
 #include "../Utility.hpp"
 
@@ -80,43 +81,7 @@ namespace Psi {
     } m_rest;
   };
 
-  class UserIterator {
-    friend class Used;
-
-  public:
-    typedef std::bidirectional_iterator_tag iterator_category;
-
-    UserIterator() : m_use(0), m_user(0) {}
-
-    bool operator == (const UserIterator& o) const {return m_use == o.m_use;}
-    bool operator != (const UserIterator& o) const {return m_use != o.m_use;}
-
-    User& operator * () const {return *get();}
-    User* operator -> () const {return get();}
-
-    User* get() const {
-      if (!m_user) {
-	std::pair<User*, std::size_t> p = m_use->locate_owner();
-	m_user = p.first;
-	m_use_index = p.second;
-      }
-      return m_user;
-    }
-
-    std::size_t use_index() const {get(); return m_use_index;}
-
-    const UserIterator& operator ++ () {m_user = 0; m_use = m_use->next(); return *this;}
-    const UserIterator& operator -- () {m_user = 0; m_use = m_use->prev(); return *this;}
-    UserIterator operator ++ (int) {UserIterator tmp(*this); operator ++ (); return tmp;}
-    UserIterator operator -- (int) {UserIterator tmp(*this); operator -- (); return tmp;}
-
-  private:
-    UserIterator(Use *use) : m_use(use), m_user(0) {}
-
-    Use *m_use;
-    mutable User *m_user;
-    mutable std::size_t m_use_index;
- };
+  class UserIterator;
 
   class Used {
     friend class Use;
@@ -131,8 +96,8 @@ namespace Psi {
 
     void clear_users();
 
-    UserIterator users_begin() {return UserIterator(m_use.next());}
-    UserIterator users_end() {return UserIterator(&m_use);}
+    UserIterator users_begin();
+    UserIterator users_end();
 
     bool is_used() {return m_use.next() != &m_use;}
     void replace_with(Used *target) {m_use.replace_with(target);}
@@ -180,6 +145,45 @@ namespace Psi {
       return m_uses[0].n_uses();
     }
   };
+
+  class UserIterator
+    : public boost::iterator_facade<UserIterator, User, boost::bidirectional_traversal_tag> {
+    friend class Used;
+    friend class boost::iterator_core_access;
+
+  public:
+    UserIterator() : m_use(0), m_user(0) {}
+
+    std::size_t use_index() const {dereference(); return m_use_index;}
+    bool end() const {return m_use->use_node();}
+
+  private:
+    UserIterator(Use *use) : m_use(use), m_user(0) {}
+    void increment() {m_user = 0; m_use = m_use->next();}
+    void decrement() {m_user = 0; m_use = m_use->prev();}
+    bool equal(const UserIterator& other) const {return m_use == other.m_use;}
+
+    User& dereference() const {
+      if (!m_user) {
+	std::pair<User*, std::size_t> p = m_use->locate_owner();
+	m_user = p.first;
+	m_use_index = p.second;
+      }
+      return *m_user;
+    }
+
+    Use *m_use;
+    mutable User *m_user;
+    mutable std::size_t m_use_index;
+  };
+
+  inline UserIterator Used::users_begin() {
+    return UserIterator(m_use.next());
+  }
+
+  inline UserIterator Used::users_end() {
+    return UserIterator(&m_use);
+  }
 }
 
 #endif

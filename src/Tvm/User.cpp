@@ -22,7 +22,7 @@ namespace Psi {
 
   void Use::set_target(Used *target) {
     // Require the correct Use type
-    PSI_ASSERT(use_node(), "wrong Use type");
+    PSI_ASSERT(use_node());
 
     if (m_target) {
       m_rest.use.next->m_rest.use.prev = m_rest.use.prev;
@@ -47,7 +47,7 @@ namespace Psi {
 
   void Use::clear_users() {
     // Require the correct Use type
-    PSI_ASSERT(used_head(), "wrong Use type");
+    PSI_ASSERT(used_head());
 
     for (Use *u = m_rest.use.next, *next_u = u->m_rest.use.next;
 	 u != this;
@@ -63,7 +63,7 @@ namespace Psi {
 
   void Use::replace_with(Used *target) {
     // Require the correct Use type
-    PSI_ASSERT(used_head(), "wrong Use type");
+    PSI_ASSERT(used_head());
 
     for (Use *u = m_rest.use.next; u != this; u = u->m_rest.use.next)
       u->m_target = reinterpret_cast<std::tr1::intptr_t>(target);

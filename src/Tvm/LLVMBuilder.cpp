@@ -57,12 +57,21 @@ namespace Psi {
 	    return cast_term->backend().llvm_type(*self, cast_term);
 	  }
 
+	  case term_apply: {
+	    TermPtr<> actual = boost::polymorphic_downcast<ApplyTerm*>(term)->unpack();
+	    PSI_ASSERT(actual->term_type() != term_apply);
+	    return build(actual.get());
+	  }
+
 	  default:
 	    /**
 	     * term_function_type should not occur because only
 	     * function pointers are valid variables.
 	     *
 	     * term_recursive should only occur inside term_apply.
+	     *
+	     * term_recursive_parameter should never be encountered
+	     * since it should be expanded out by ApplyTerm::apply().
 	     */
 	    PSI_FAIL("unexpected type term type");
 	  }
@@ -77,11 +86,13 @@ namespace Psi {
 	}
       };
 
-      struct ConstantBuilderCallback {
-	LLVMConstantBuilder *self;
-	ConstantBuilderCallback(LLVMConstantBuilder *self_) : self(self_) {}
+      template<typename Builder, typename Result, typename FunctionalCallback>
+      struct ValueBuilderCallback {
+	Builder *self;
+	FunctionalCallback functional_callback;
+	ValueBuilderCallback(Builder *self_) : self(self_) {}
 
-	LLVMConstantBuilder::Constant build(Term *term) const {
+	Result build(Term *term) const {
 	  switch(term->term_type()) {
 	  case term_recursive_parameter: {
 	    PSI_FAIL("not implemented");
@@ -92,7 +103,13 @@ namespace Psi {
 
 	  case term_functional: {
 	    FunctionalTerm *cast_term = boost::polymorphic_downcast<FunctionalTerm*>(term);
-	    return cast_term->backend().llvm_value_constant(*self, cast_term);
+	    return functional_callback(self, cast_term);
+	  }
+
+	  case term_apply: {
+	    TermPtr<> actual = boost::polymorphic_downcast<ApplyTerm*>(term)->unpack();
+	    PSI_ASSERT(actual->term_type() != term_apply);
+	    return build(actual.get());
 	  }
 
 	  default:
@@ -105,19 +122,38 @@ namespace Psi {
 	     * no type, hence its value does not exist.
 	     *
 	     * term_recursive needs to be nested inside term_apply.
+	     *
+	     * term_recursive_parameter should never be encountered
+	     * since it should be expanded out by ApplyTerm::apply().
 	     */
 	    PSI_FAIL("unexpected constant term type");
 	  }
 	}
 
-	LLVMConstantBuilder::Constant invalid() const {
-	  return LLVMConstantBuilder::Constant();
+	Result invalid() const {
+	  return Result();
 	}
 
-	bool valid(const LLVMConstantBuilder::Constant& t) const {
+	bool valid(const Result& t) const {
 	  return t.valid();
 	}
       };
+
+      struct ConstantFunctionalCallback {
+	LLVMConstantBuilder::Constant operator () (LLVMConstantBuilder *self, FunctionalTerm *term) const {
+	  return term->backend().llvm_value_constant(*self, term);
+	}
+      };
+
+      typedef ValueBuilderCallback<LLVMConstantBuilder, LLVMConstantBuilder::Constant, ConstantFunctionalCallback> ConstantBuilderCallback;
+
+      struct InstructionFunctionalCallback {
+	LLVMFunctionBuilder::Result operator () (LLVMFunctionBuilder *self, FunctionalTerm *term) const {
+	  return term->backend().llvm_value_instruction(*self, term);
+	}
+      };
+
+      typedef ValueBuilderCallback<LLVMFunctionBuilder, LLVMFunctionBuilder::Result, InstructionFunctionalCallback> InstructionBuilderCallback;
 
       struct GlobalBuilderCallback {
 	LLVMConstantBuilder *self;
@@ -126,11 +162,26 @@ namespace Psi {
 	llvm::GlobalValue* build(Term *term) const {
 	  switch (term->term_type()) {
 	  case term_global_variable: {
-	    PSI_FAIL("not implemented");
+	    GlobalVariableTerm *global = boost::polymorphic_downcast<GlobalVariableTerm*>(term);
+	    LLVMConstantBuilder::Type ty = self->type(term);
+	    if (ty.known()) {
+	      return new llvm::GlobalVariable(self->module(), ty.type(), global->constant(), llvm::GlobalValue::InternalLinkage, NULL, "");
+	    } else if (ty.empty()) {
+	      const llvm::Type *int8ty = llvm::Type::getInt8Ty(self->context());
+	      llvm::Constant *init = llvm::ConstantInt::get(int8ty, 0);
+	      return new llvm::GlobalVariable(self->module(), int8ty, true, llvm::GlobalValue::InternalLinkage, init, "");
+	    } else {
+	      PSI_ASSERT(ty.unknown());
+	      throw std::logic_error("global variable has unknown type");
+	    }
 	  }
 
 	  case term_function: {
-	    PSI_FAIL("not implemented");
+	    FunctionTerm *func = boost::polymorphic_downcast<FunctionTerm*>(term);
+	    const llvm::Type *i8ptr = llvm::Type::getInt8PtrTy(self->context());
+	    std::vector<const llvm::Type*> params(func->n_parameters()+1, i8ptr);
+	    llvm::FunctionType *llvm_ty = llvm::FunctionType::get(i8ptr, params, false);
+	    return llvm::Function::Create(llvm_ty, llvm::GlobalValue::InternalLinkage, "", &self->module());
 	  }
 
 	  default:
@@ -168,7 +219,7 @@ namespace Psi {
       switch (term->term_type()) {
       case term_function:
       case term_global_variable: {
-	llvm::GlobalValue *gv = global(term);
+	llvm::GlobalValue *gv = global(boost::polymorphic_downcast<GlobalTerm*>(term));
 
 	// Need to force global terms to be of type i8* since they are
 	// pointers, but the Global term builder can't do this
@@ -182,7 +233,7 @@ namespace Psi {
       }
     }
 
-    llvm::GlobalValue* LLVMConstantBuilder::global(Term *term) {
+    llvm::GlobalValue* LLVMConstantBuilder::global(GlobalTerm *term) {
       if ((term->term_type() != term_function) && (term->term_type() != term_global_variable))
 	throw std::logic_error("cannot get global value for non-global variable");
 
@@ -193,7 +244,18 @@ namespace Psi {
 	  m_global_build_list.push_back(std::make_pair(term, gv.first));
 	  while (!m_global_build_list.empty()) {
 	    const std::pair<Term*, llvm::GlobalValue*>& t = m_global_build_list.front();
-	    LLVMBuilderInvoker::init_global(*this, t.first, t.second);
+	    if (t.first->term_type() == term_function) {
+	      FunctionTerm *psi_func = boost::polymorphic_downcast<FunctionTerm*>(t.first);
+	      llvm::Function *llvm_func = llvm::cast<llvm::Function>(t.second);
+	      build_function(psi_func, llvm_func);
+	      return llvm_func;
+	    } else {
+	      PSI_ASSERT(t.first->term_type() == term_global_variable);
+	      GlobalVariableTerm *psi_var = boost::polymorphic_downcast<GlobalVariableTerm*>(t.first);
+	      llvm::GlobalVariable *llvm_var = llvm::cast<llvm::GlobalVariable>(t.second);
+	      build_global_variable(psi_var, llvm_var);
+	      return llvm_var;
+	    }
 	    m_global_build_list.pop_front();
 	  }
 	} else {
@@ -202,6 +264,55 @@ namespace Psi {
       }
 
       return gv.first;
+    }
+
+    void LLVMConstantBuilder::build_function(FunctionTerm *psi_func, llvm::Function *llvm_func) {
+      LLVMFunctionBuilder::IRBuilder irbuilder(context());
+      LLVMFunctionBuilder func_builder(this, &irbuilder);
+
+      std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
+      blocks.push_back(std::make_pair(psi_func->entry(), static_cast<llvm::BasicBlock*>(0)));
+      // can't use an iterator since it will be invalidated by adding elements
+      for (std::size_t i = 0; i < blocks.size(); ++i) {
+	BlockTerm *bl = blocks[i].first;
+	for (TermIterator<BlockTerm> it = bl->term_users_begin<BlockTerm>();
+	     it != bl->term_users_end<BlockTerm>(); ++it) {
+	  BlockTerm *child = &*it;
+	  if (child->dominator() == bl)
+	    blocks.push_back(std::make_pair(child, static_cast<llvm::BasicBlock*>(0)));
+	}
+      }
+
+      for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
+	   it != blocks.end(); ++it) {
+	llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(context(), "", llvm_func);
+	it->second = llvm_bb;
+	func_builder.m_terms.insert(std::make_pair(it->first, LLVMFunctionBuilder::make_known(llvm_bb)));
+      }
+
+      for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
+	   it != blocks.end(); ++it) {
+	irbuilder.SetInsertPoint(it->second);
+	for (BlockTerm::InstructionList::const_iterator jt = it->first->instructions().begin();
+	     jt != it->first->instructions().end(); ++jt) {
+	  InstructionTerm *insn = &const_cast<InstructionTerm&>(*jt);
+	  LLVMFunctionBuilder::Result r = insn->backend().llvm_value_instruction(func_builder, insn);
+	  func_builder.m_terms.insert(std::make_pair(insn, r));
+	}
+      }
+    }
+
+    void LLVMConstantBuilder::build_global_variable(GlobalVariableTerm *psi_var, llvm::GlobalVariable *llvm_var) {
+      Term *value = psi_var->value();
+      if (!value)
+	throw std::logic_error("global variable value not set");
+
+      Constant llvm_value = constant(value);
+      if (llvm_value.known()) {
+	llvm_var->setInitializer(llvm_value.value());
+      } else {
+	PSI_ASSERT(llvm_value.empty());
+      }
     }
 
     void LLVMConstantBuilder::set_module(llvm::Module *module) {
@@ -251,14 +362,17 @@ namespace Psi {
     }
 
     LLVMFunctionBuilder::Result LLVMFunctionBuilder::value(Term *term) {
-      if (TermParameter::global(term->term_context())) {
+      if (term->global()) {
 	return m_constant_builder->constant(term);
       } else {
 	TermMap::iterator it = m_terms.find(term);
-	if (it != m_terms.end())
+	if (it != m_terms.end()) {
 	  return it->second;
-	else
-	  throw std::logic_error("Term not yet available");
+	} else if ((term->term_type() == term_instruction) || (term->term_type() == term_phi)) {
+	  throw std::logic_error("Instruction or phi term not yet available");
+	}
+
+	return build_term(term, m_terms, InstructionBuilderCallback(this)).first;
       }
     }
 
@@ -275,14 +389,20 @@ namespace Psi {
 	return category_invalid;
     }
 
-    LLVMFunctionBuilder::Result LLVMFunctionBuilder::metatype_value(LLVMFunctionBuilder& builder, llvm::Value *size, llvm::Value *align) {
-      LLVMFunctionBuilder::IRBuilder& irbuilder = builder.irbuilder();
-      llvm::LLVMContext& context = builder.context();
-      const llvm::Type* i64 = llvm::Type::getInt64Ty(context);
-      llvm::Type *mtype = llvm::StructType::get(context, i64, i64, NULL);
-      llvm::Value *first = irbuilder.CreateInsertValue(llvm::UndefValue::get(mtype), size, 0);
-      llvm::Value *second = irbuilder.CreateInsertValue(first, align, 1);
+    LLVMFunctionBuilder::Result LLVMFunctionBuilder::metatype_value(llvm::Value *size, llvm::Value *align) {
+      const llvm::Type* i64 = llvm::Type::getInt64Ty(context());
+      llvm::Type *mtype = llvm::StructType::get(context(), i64, i64, NULL);
+      llvm::Value *first = irbuilder().CreateInsertValue(llvm::UndefValue::get(mtype), size, 0);
+      llvm::Value *second = irbuilder().CreateInsertValue(first, align, 1);
       return LLVMFunctionBuilder::make_known(second);
+    }
+
+    LLVMFunctionBuilder::Result LLVMFunctionBuilder::metatype_value(const llvm::Type* ty) {
+      return m_constant_builder->metatype_value(ty);
+    }
+
+    LLVMFunctionBuilder::Result LLVMFunctionBuilder::metatype_value_empty() {
+      return m_constant_builder->metatype_value_empty();
     }
   }
 }

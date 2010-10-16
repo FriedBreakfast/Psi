@@ -9,7 +9,7 @@
 #include <boost/cast.hpp>
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/unordered_set.hpp>
-
+#include <boost/iterator/iterator_adaptor.hpp>
 #include <boost/preprocessor/repetition/repeat.hpp>
 #include <boost/preprocessor/repetition/enum_params.hpp>
 #include <boost/preprocessor/repetition/enum_trailing_params.hpp>
@@ -33,6 +33,7 @@ namespace Psi {
       ///@{
       /// Non hashable terms
       term_instruction, ///< InstructionTerm: \copybrief InstructionTerm
+      term_apply, ///< ApplyTerm: \copybrief ApplyTerm
       term_recursive, ///< RecursiveTerm: \copybrief RecursiveTerm
       term_recursive_parameter, ///<RecursiveParameterTerm: \copybrief RecursiveParameterTerm
       term_block, ///< BlockTerm: \copybrief BlockTerm
@@ -53,10 +54,14 @@ namespace Psi {
       ///@}
     };
 
+    template<typename T> class TermIterator;
+
     class TermUser : User {
       friend class Context;
       friend class Term;
       friend class TermPtrBase;
+      template<typename> friend class TermIterator;
+
     public:
       TermType term_type() const {return static_cast<TermType>(m_term_type);}
 
@@ -68,7 +73,7 @@ namespace Psi {
       inline Term* use_get(std::size_t n) const;
       inline void use_set(std::size_t n, Term *term);
 
-      unsigned char m_term_type : 4;
+      unsigned char m_term_type;
     };
 
     class TermPtrBase : TermUser {
@@ -135,6 +140,7 @@ namespace Psi {
       friend class TermPtrBase;
 
       friend class Context;
+      template<typename> friend class TermIterator;
 
       friend class GlobalTerm;
       friend class FunctionParameterTerm;
@@ -147,6 +153,7 @@ namespace Psi {
       friend class HashTerm;
       friend class RecursiveTerm;
       friend class RecursiveParameterTerm;
+      friend class ApplyTerm;
 
       friend class FunctionalTerm;
       friend class FunctionTypeInternalTerm;
@@ -161,27 +168,28 @@ namespace Psi {
 	category_value
       };
 
+      static bool term_iterator_check(TermType t) {return t != term_ptr;}
       TermType term_type() const {return TermUser::term_type();}
 
+      /// \brief If this term is abstract: it contains references to recursive term parameters which are unresolved.
       bool abstract() const {return m_abstract;}
+      /// \brief If this term is parameterized: it contains references to function type parameters which are unresolved.
       bool parameterized() const {return m_parameterized;}
+      /// \brief If this term is global: it only contains references to constant values and global addresses.
+      bool global() const {return m_global;}
       Category category() const {return static_cast<Category>(m_category);}
 
-      /**
-       * \brief Get the context this Term comes from.
-       */
+      /** \brief Get the context this Term comes from. */
       Context& context() const {return *m_context;}
 
-      /**
-       *
-       */
+      /** \brief Get the term describing the type of this term. */
       Term* type() const {return use_get(0);}
 
-      static bool any_abstract(std::size_t n, Term *const* terms);
-      static bool any_parameterized(std::size_t n, Term *const* terms);
+      template<typename T> TermIterator<T> term_users_begin();
+      template<typename T> TermIterator<T> term_users_end();
 
     private:
-      Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *type);
+      Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, Term *type);
 
       std::size_t hash_value() const;
       std::size_t *term_use_count();
@@ -192,6 +200,7 @@ namespace Psi {
       unsigned char m_category : 2;
       unsigned char m_abstract : 1;
       unsigned char m_parameterized : 1;
+      unsigned char m_global : 1;
       unsigned char m_use_count_ptr : 1;
       Context *m_context;
       union TermUseCount {
@@ -222,6 +231,33 @@ namespace Psi {
       User::use_set(n, term);
     }
 
+    template<typename T>
+    class TermIterator
+      : public boost::iterator_facade<TermIterator<T>, T, boost::bidirectional_traversal_tag> {
+      friend class Term;
+      friend class boost::iterator_core_access;
+
+    public:
+      TermIterator() {}
+
+    private:
+      UserIterator m_base;
+      TermIterator(const UserIterator& base) : m_base(base) {}
+      bool equal(const TermIterator& other) const {return m_base == other.m_base;}
+      T& dereference() const {return static_cast<T&>(*m_base);}
+      bool check_stop() const {return !m_base.end() && T::term_iterator_check(static_cast<TermUser&>(*m_base).term_type());}
+      void increment() {do {++m_base;} while (check_stop());}
+      void decrement() {do {--m_base;} while (check_stop());}
+    };
+
+    template<typename T> TermIterator<T> Term::term_users_begin() {
+      return TermIterator<T>(users_begin());
+    }
+
+    template<typename T> TermIterator<T> Term::term_users_end() {
+      return TermIterator<T>(users_end());
+    }
+
     class HashTerm : public Term {
       friend class Context;
       friend class Term;
@@ -230,7 +266,7 @@ namespace Psi {
       friend class FunctionTypeInternalParameterTerm;
 
     private:
-      HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *type, std::size_t hash);
+      HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, Term *type, std::size_t hash);
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
       TermSetHook m_term_set_hook;
       std::size_t m_hash;
@@ -259,7 +295,7 @@ namespace Psi {
       virtual bool equals(const FunctionalTermBackend&) const = 0;
       virtual std::pair<std::size_t, std::size_t> size_align() const = 0;
       virtual FunctionalTermBackend* clone(void *dest) const = 0;
-      virtual Term* type(Context& context, std::size_t n_parameters, Term *const* parameters) const = 0;
+      virtual TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const = 0;
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm*) const = 0;
       virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm*) const = 0;
       virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, FunctionalTerm*) const = 0;
@@ -295,15 +331,15 @@ namespace Psi {
       FunctionalTermBackend *m_backend;
     };
 
+    class InstructionTerm;
+
     /**
      * \brief Base class for building custom InstructionTerm instances.
      */
     class InstructionTermBackend {
     public:
-#if 0
-      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const = 0;
-      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const = 0;
-#endif
+      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, const InstructionTerm*) const = 0;
+      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, const InstructionTerm*) const = 0;
     };
 
     class BlockTerm;
@@ -317,6 +353,7 @@ namespace Psi {
       friend class BlockTerm;
 
     public:
+      InstructionTermBackend& backend() const {return *m_backend;}
       std::size_t n_parameters() const {return Term::n_base_parameters();}
       Term* parameter(std::size_t n) const {return get_base_parameter(n);}
 
@@ -359,21 +396,28 @@ namespace Psi {
       friend class FunctionTerm;
 
     public:
+      typedef boost::intrusive::list<InstructionTerm,
+				     boost::intrusive::member_hook<InstructionTerm, InstructionTerm::InstructionListHook, &InstructionTerm::m_instruction_list_hook>,
+				     boost::intrusive::constant_time_size<false> > InstructionList;
+      typedef boost::intrusive::list<PhiTerm,
+				     boost::intrusive::member_hook<PhiTerm, PhiTerm::PhiListHook, &PhiTerm::m_phi_list_hook>,
+				     boost::intrusive::constant_time_size<false> > PhiList;
+
       void new_phi(Term *type);
       void add_instruction();
+
+      const InstructionList& instructions() const {return m_instructions;}
+      const PhiList& phi_nodes() const {return m_phi_nodes;}
+
+      /** \brief Get a pointer to the (currently) dominating block. */
+      BlockTerm* dominator() const {return boost::polymorphic_downcast<BlockTerm*>(get_base_parameter(0));}
+      /** \brief Get the earliest block dominating this one which is required by variables used by instructions in this block. */
+      BlockTerm* min_dominator() const {return boost::polymorphic_downcast<BlockTerm*>(get_base_parameter(1));}
 
     private:
       typedef boost::intrusive::list_member_hook<> BlockListHook;
       BlockListHook m_block_list_hook;
-
-      typedef boost::intrusive::list<InstructionTerm,
-				     boost::intrusive::member_hook<InstructionTerm, InstructionTerm::InstructionListHook, &InstructionTerm::m_instruction_list_hook>,
-				     boost::intrusive::constant_time_size<false> > InstructionList;
       InstructionList m_instructions;
-
-      typedef boost::intrusive::list<PhiTerm,
-				     boost::intrusive::member_hook<PhiTerm, PhiTerm::PhiListHook, &PhiTerm::m_phi_list_hook>,
-				     boost::intrusive::constant_time_size<false> > PhiList;
       PhiList m_phi_nodes;
     };
 
@@ -413,7 +457,6 @@ namespace Psi {
       class Initializer;
       FunctionTypeTerm(const UserInitializer& ui, Context *context, Term *result_type,
 		       std::size_t n_parameters, FunctionTypeParameterTerm *const* parameters);
-      static bool any_parameter_abstract(std::size_t n, FunctionTypeParameterTerm *const* terms);
     };
 
     inline FunctionTypeTerm* FunctionTypeParameterTerm::source() const {
@@ -463,6 +506,8 @@ namespace Psi {
       RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term *type);
     };
 
+    class ApplyTerm;
+
     /**
      * \brief Recursive term: usually used to create recursive types.
      *
@@ -474,22 +519,34 @@ namespace Psi {
       friend class Context;
 
     public:
-      /**
-       * \brief Resolve this term to its actual value.
-       */
       void resolve(Term *term);
-
-      void apply(std::size_t n_parameters, Term *const* values);
+      TermPtr<ApplyTerm> apply(std::size_t n_parameters, Term *const* values);
 
       std::size_t n_parameters() const {return n_base_parameters() - 2;}
-      RecursiveParameterTerm* parameter(std::size_t i) const {return static_cast<RecursiveParameterTerm*>(get_base_parameter(i+2));}
+      RecursiveParameterTerm* parameter(std::size_t i) const {return boost::polymorphic_downcast<RecursiveParameterTerm*>(get_base_parameter(i+2));}
       Term* result_type() const {return get_base_parameter(0);}
       Term* result() const {return get_base_parameter(1);}
 
     private:
       class Initializer;
-      RecursiveTerm(const UserInitializer& ui, Context *context, Term *result_type,
+      RecursiveTerm(const UserInitializer& ui, Context *context, Term *result_type, bool global,
 		    std::size_t n_parameters, RecursiveParameterTerm *const* parameters);
+    };
+
+    class ApplyTerm : public Term {
+      friend class Context;
+
+    public:
+      std::size_t n_parameters() const {return n_base_parameters() - 1;}
+      TermPtr<> unpack() const;
+
+      RecursiveTerm *recursive() const {return boost::polymorphic_downcast<RecursiveTerm*>(get_base_parameter(0));}
+      Term *parameter(std::size_t i) const {return get_base_parameter(i+1);}
+
+    private:
+      class Initializer;
+      ApplyTerm(const UserInitializer& ui, Context *context, RecursiveTerm *recursive,
+		std::size_t n_parameters, Term *const* parameters);
     };
 
     /**
@@ -511,6 +568,9 @@ namespace Psi {
 
     public:
       void set_value(Term *value);
+      Term* value() const {return get_base_parameter(0);}
+
+      bool constant() const {return m_constant;}
 
     private:
       class Initializer;
@@ -545,18 +605,21 @@ namespace Psi {
      */
     class FunctionTerm : public GlobalTerm {
     public:
-      BlockTerm *entry();
-      BlockTerm *new_block();
-
-    private:
       typedef boost::intrusive::list<BlockTerm,
 				     boost::intrusive::member_hook<BlockTerm, BlockTerm::BlockListHook, &BlockTerm::m_block_list_hook>,
 				     boost::intrusive::constant_time_size<false> > BlockList;
-      BlockList m_blocks;
-
       typedef boost::intrusive::list<FunctionParameterTerm,
 				     boost::intrusive::member_hook<FunctionParameterTerm, FunctionParameterTerm::FunctionParameterListHook, &FunctionParameterTerm::m_parameter_list_hook>,
 				     boost::intrusive::constant_time_size<false> > FunctionParameterList;
+
+      std::size_t n_parameters() const;
+      BlockTerm *entry();
+      BlockTerm *new_block();
+
+      const BlockList& blocks() const {return m_blocks;}
+
+    private:
+      BlockList m_blocks;
       FunctionParameterList m_parameters;
     };
 
@@ -609,29 +672,21 @@ namespace Psi {
 
       TermPtr<FunctionTypeParameterTerm> new_function_type_parameter(Term* type);
 
-      /**
-       * \brief Create a new recursive term.
-       */
-      TermPtr<RecursiveTerm> new_recursive(Term* result_type,
+      TermPtr<ApplyTerm> apply_recursive(RecursiveTerm *recursive,
+					 std::size_t n_parameters,
+					 Term *const* parameters);
+
+      TermPtr<RecursiveTerm> new_recursive(bool global,
+					   Term* result_type,
 					   std::size_t n_parameters,
 					   Term *const* parameter_types);
 
-      /**
-       * \brief Resolve an opaque term.
-       */
       void resolve_recursive(RecursiveTerm* recursive, Term* to);
 
-      /**
-       * \brief Create a new global term.
-       */
       TermPtr<GlobalVariableTerm> new_global_variable(Term* type, bool constant);
 
       TermPtr<FunctionTerm> new_function(FunctionTypeTerm* type);
 
-      /**
-       * \brief Just-in-time compile a term, and a get a pointer to
-       * the result.
-       */
       void* term_jit(Term *term);
 
     private:
@@ -653,12 +708,6 @@ namespace Psi {
       FunctionTypeInternalTerm* get_function_type_internal(Term *result, std::size_t n_parameters, Term *const* parameter_types);
       FunctionTypeInternalParameterTerm* get_function_type_internal_parameter(std::size_t depth, std::size_t index);
 
-      /**
-       * Check whether part of function type term is complete,
-       * i.e. whether there are still function parameters which have
-       * to be resolved by further function types (this happens in the
-       * case of nested function types).
-       */
       bool check_function_type_complete(Term *term, std::tr1::unordered_set<FunctionTypeTerm*>& functions);
 
       struct FunctionResolveStatus {
@@ -670,18 +719,10 @@ namespace Psi {
       typedef std::tr1::unordered_map<FunctionTypeTerm*, FunctionResolveStatus> FunctionResolveMap;
       Term* build_function_type_resolver_term(std::size_t depth, Term *term, FunctionResolveMap& functions);
 
-      /**
-       * \brief Deep search a term to determine whether it is really
-       * abstract.
-       */
-      bool search_for_abstract(Term *term);
+      bool search_for_abstract(Term *term, std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set);
 
       static void clear_and_queue_if_abstract(std::vector<Term*>& queue, Term *t);
 
-      /**
-       * \brief Clear the abstract flag in this term and all its
-       * descendents.
-       */
       void clear_abstract(Term *term, std::vector<Term*>& queue);
 
 #if 0

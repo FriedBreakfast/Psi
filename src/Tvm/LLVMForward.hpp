@@ -26,6 +26,8 @@ namespace llvm {
   class ExecutionEngine;
   class Constant;
   class GlobalValue;
+  class GlobalVariable;
+  class Function;
 
   class ConstantFolder;
   template<bool> class IRBuilderDefaultInserter;
