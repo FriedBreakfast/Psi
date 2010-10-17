@@ -14,6 +14,7 @@ add_library(psi SHARED
   Tvm/LLVMBuilder.cpp Tvm/LLVMBuilder.hpp
   Tvm/LLVMForward.hpp
   Tvm/Number.cpp Tvm/Number.hpp
+  Tvm/TermHelper.hpp
   Tvm/User.cpp Tvm/User.hpp
 )
 

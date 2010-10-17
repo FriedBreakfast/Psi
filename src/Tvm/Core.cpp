@@ -34,25 +34,25 @@ namespace Psi {
     TermUser::~TermUser() {
     }
 
-    TermPtrBase::TermPtrBase()
+    PersistentTermPtrBackend::PersistentTermPtrBackend()
       : TermUser(UserInitializer(1, m_uses), term_ptr) {
     }
 
-    TermPtrBase::TermPtrBase(const TermPtrBase& src)
+    PersistentTermPtrBackend::PersistentTermPtrBackend(const PersistentTermPtrBackend& src)
       : TermUser(UserInitializer(1, m_uses), term_ptr) {
       reset(src.get());
     }
 
-    TermPtrBase::TermPtrBase(Term *ptr)
+    PersistentTermPtrBackend::PersistentTermPtrBackend(Term *ptr)
       : TermUser(UserInitializer(1, m_uses), term_ptr) {
       reset(ptr);
     }
 
-    TermPtrBase::~TermPtrBase() {
+    PersistentTermPtrBackend::~PersistentTermPtrBackend() {
       reset(0);
     }
 
-    void TermPtrBase::reset(Term *term) {
+    void PersistentTermPtrBackend::reset(Term *term) {
       Term *old = get();
       if (term != old) {
 	if (old) {
@@ -66,12 +66,18 @@ namespace Psi {
       }
     }
 
-    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, Term *type)
-      : TermUser(ui, term_type), m_abstract(abstract), m_parameterized(parameterized), m_global(global), m_use_count_ptr(0), m_context(context) {
+    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, TermRef<> type)
+      : TermUser(ui, term_type),
+        m_abstract(abstract),
+        m_parameterized(parameterized),
+        m_global(global),
+        m_use_count_ptr(0),
+        m_context(context),
+        m_external_use_count(0) {
 
       m_use_count.value = 0;
 
-      if (!type) {
+      if (!type.get()) {
 	m_category = category_metatype;
 	PSI_ASSERT_MSG((term_type == term_metatype) && !abstract, "term with no type is not a valid metatype");
       } else {
@@ -84,7 +90,10 @@ namespace Psi {
 	}
       }
 
-      use_set(0, type);
+      use_set(0, type.get());
+    }
+
+    Term::~Term() {
     }
 
     namespace {
@@ -114,7 +123,7 @@ namespace Psi {
       case term_functional:
       case term_function_type_internal:
       case term_function_type_internal_parameter:
-	return boost::polymorphic_downcast<const HashTerm*>(this)->m_hash;
+	return checked_cast<const HashTerm*>(this)->m_hash;
 
       default:
 	PSI_ASSERT(!dynamic_cast<const HashTerm*>(this));
@@ -190,6 +199,10 @@ namespace Psi {
       };
     }
 
+    std::size_t Context::HashTermHasher::operator() (const HashTerm& h) const {
+      return h.m_hash;
+    }
+
     template<typename T>
     typename T::TermType* Context::allocate_term(const T& initializer) {
       std::size_t n_uses = initializer.n_uses();
@@ -218,7 +231,7 @@ namespace Psi {
       template<typename T>
       struct SetupEquals {
 	std::size_t operator () (const T& key, const HashTerm& value) const {
-	  return key.equals(&value);
+	  return key.equals(value);
 	}
       };
     }
@@ -229,7 +242,7 @@ namespace Psi {
       std::pair<typename HashTermSetType::iterator, bool> existing =
 	m_hash_terms.insert_check(setup, SetupHasher<T>(), SetupEquals<T>(), commit_data);
       if (!existing.second)
-	return boost::polymorphic_downcast<typename T::TermType*>(&*existing.first);
+	return checked_cast<typename T::TermType*>(&*existing.first);
 
       setup.prepare_initialize(this);
       typename T::TermType *term = allocate_term(setup);
@@ -246,7 +259,7 @@ namespace Psi {
       return term;
     }
 
-    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, Term *type, std::size_t hash)
+    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, TermRef<> type, std::size_t hash)
       : Term(ui, context, term_type, abstract, parameterized, global, type),
 	m_hash(hash) {
     }
@@ -266,6 +279,9 @@ namespace Psi {
       }
     };
 
+    FunctionalTermBackend::~FunctionalTermBackend() {
+    }
+
     std::size_t FunctionalTermBackend::hash_value() const {
       std::size_t value = hash_internal();
 
@@ -279,7 +295,7 @@ namespace Psi {
       return value;
     }
 
-    FunctionalTerm::FunctionalTerm(const UserInitializer& ui, Context *context, Term *type,
+    FunctionalTerm::FunctionalTerm(const UserInitializer& ui, Context *context, TermRef<> type,
 				   std::size_t hash, FunctionalTermBackend *backend,
 				   std::size_t n_parameters, Term *const* parameters)
       : HashTerm(ui, context, term_functional,
@@ -323,7 +339,7 @@ namespace Psi {
       FunctionalTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
 	FunctionalTermBackend *new_backend = m_backend->clone(ptr_offset(base, m_proto_offset));
 	try {
-	  return new (base) FunctionalTerm(ui, context, m_type, m_hash, new_backend, m_n_parameters, m_parameters);
+	  return new (base) FunctionalTerm(ui, context, m_type.get(), m_hash, new_backend, m_n_parameters, m_parameters);
 	} catch(...) {
 	  new_backend->~FunctionalTermBackend();
 	  throw;
@@ -342,22 +358,22 @@ namespace Psi {
 	return m_n_parameters;
       }
 
-      bool equals(const HashTerm *term) const {
-	if ((m_hash != term->m_hash) || (term->term_type() != term_functional))
+      bool equals(const HashTerm& term) const {
+	if ((m_hash != term.m_hash) || (term.term_type() != term_functional))
 	  return false;
 
-	const FunctionalTerm *cast_term = boost::polymorphic_downcast<const FunctionalTerm*>(term);
+	const FunctionalTerm& cast_term = checked_cast<const FunctionalTerm&>(term);
 
-	if (m_n_parameters != cast_term->n_parameters())
+	if (m_n_parameters != cast_term.n_parameters())
 	  return false;
 
 	for (std::size_t i = 0; i < m_n_parameters; ++i) {
-	  if (m_parameters[i] != cast_term->parameter(i))
+	  if (m_parameters[i] != cast_term.parameter(i).get())
 	    return false;
 	}
 
-	if ((typeid(*m_backend) != typeid(*cast_term->m_backend))
-	    || !m_backend->equals(*cast_term->m_backend))
+	if ((typeid(*m_backend) != typeid(*cast_term.m_backend))
+	    || !m_backend->equals(*cast_term.m_backend))
 	  return false;
 
 	return true;
@@ -368,12 +384,17 @@ namespace Psi {
       std::size_t m_size;
       std::size_t m_hash;
       std::size_t m_n_parameters;
-      Term *m_type;
+      TermPtr<> m_type;
       Term *const* m_parameters;
       const FunctionalTermBackend *m_backend;
     };
 
-    FunctionalTerm* Context::get_functional_internal(const FunctionalTermBackend& backend, std::size_t n_parameters, Term *const* parameters) {
+    TermPtr<FunctionalTerm> Context::get_functional_internal(const FunctionalTermBackend& backend, std::size_t n_parameters, Term *const* parameters) {
+      FunctionalTerm::Setup setup(n_parameters, parameters, &backend);
+      return hash_term_get(setup);
+    }
+
+    TermPtr<FunctionalTerm> Context::get_functional_internal_with_type(const FunctionalTermBackend& backend, TermRef<> type, std::size_t n_parameters, Term *const* parameters) {
       FunctionalTerm::Setup setup(n_parameters, parameters, &backend);
       return hash_term_get(setup);
     }
@@ -416,7 +437,7 @@ namespace Psi {
      * to be resolved by further function types (this happens in the
      * case of nested function types).
      */
-    bool Context::check_function_type_complete(Term *term, std::tr1::unordered_set<FunctionTypeTerm*>& functions)
+    bool Context::check_function_type_complete(TermRef<> term, std::tr1::unordered_set<FunctionTypeTerm*>& functions)
     {
       if (!term->parameterized())
 	return true;
@@ -426,7 +447,7 @@ namespace Psi {
 
       switch(term->term_type()) {
       case term_functional: {
-	FunctionalTerm *cast_term = static_cast<FunctionalTerm*>(term);
+	FunctionalTerm *cast_term = checked_cast<FunctionalTerm*>(term.get());
 	for (std::size_t i = 0; i < cast_term->n_parameters(); i++) {
 	  if (!check_function_type_complete(cast_term->parameter(i), functions))
 	    return false;
@@ -435,7 +456,7 @@ namespace Psi {
       }
 
       case term_function_type: {
-	FunctionTypeTerm *cast_term = static_cast<FunctionTypeTerm*>(term);
+	FunctionTypeTerm *cast_term = checked_cast<FunctionTypeTerm*>(term.get());
 	functions.insert(cast_term);
 	if (!check_function_type_complete(cast_term->result_type(), functions))
 	  return false;
@@ -448,12 +469,12 @@ namespace Psi {
       }
 
       case term_function_type_parameter: {
-	FunctionTypeParameterTerm *cast_term = static_cast<FunctionTypeParameterTerm*>(term);
-	FunctionTypeTerm *source = cast_term->source();
+	FunctionTypeParameterTerm *cast_term = checked_cast<FunctionTypeParameterTerm*>(term.get());
+	TermPtr<FunctionTypeTerm> source = cast_term->source();
 	if (!source)
 	  return false;
 
-	if (functions.find(source) != functions.end())
+	if (functions.find(source.get()) != functions.end())
 	  throw std::logic_error("type of function parameter appeared outside of function type definition");
 
 	return true;
@@ -465,52 +486,59 @@ namespace Psi {
       }
     }
 
-    Term* Context::build_function_type_resolver_term(std::size_t depth, Term *term, FunctionResolveMap& functions) {
+    TermPtr<> Context::build_function_type_resolver_term(std::size_t depth, TermRef<> term, FunctionResolveMap& functions) {
       if (!term->parameterized())
-	return term;
+	return TermPtr<>(term.get());
 
       switch(term->term_type()) {
       case term_functional: {
-	FunctionalTerm *cast_term = static_cast<FunctionalTerm*>(term);
-	Term *type = build_function_type_resolver_term(depth, cast_term->type(), functions);
+	FunctionalTerm *cast_term = checked_cast<FunctionalTerm*>(term.get());
+        TermPtr<> type = build_function_type_resolver_term(depth, cast_term->type(), functions);
 	std::size_t n_parameters = cast_term->n_parameters();
-	boost::scoped_array<Term*> parameters(new Term*[n_parameters]);
-	for (std::size_t i = 0; i < cast_term->n_parameters(); i++)
+        boost::scoped_array<TermPtr<> > parameters(new TermPtr<>[n_parameters]);
+	boost::scoped_array<Term*> parameters_ptr(new Term*[n_parameters]);
+	for (std::size_t i = 0; i < cast_term->n_parameters(); i++) {
 	  parameters[i] = build_function_type_resolver_term(depth, term, functions);
-	return get_functional_internal_with_type(*cast_term->m_backend, type, n_parameters, parameters.get());
+          parameters_ptr[i] = parameters[i].get();
+        }
+	return get_functional_internal_with_type(*cast_term->m_backend, type, n_parameters, parameters_ptr.get());
       }
 
       case term_function_type: {
-	FunctionTypeTerm *cast_term = static_cast<FunctionTypeTerm*>(term);
+	FunctionTypeTerm *cast_term = checked_cast<FunctionTypeTerm*>(term.get());
 	PSI_ASSERT(functions.find(cast_term) == functions.end());
 	FunctionResolveStatus& status = functions[cast_term];
 	status.depth = depth + 1;
 	status.index = 0;
 
 	std::size_t n_parameters = cast_term->n_parameters();
-	boost::scoped_array<Term*> parameter_types(new Term*[n_parameters]);
+	boost::scoped_array<TermPtr<> > parameter_types(new TermPtr<>[n_parameters]);
+	boost::scoped_array<Term*> parameter_types_ptr(new Term*[n_parameters]);
 	for (std::size_t i = 0; i < n_parameters; ++i) {
 	  parameter_types[i] = build_function_type_resolver_term(depth+1, cast_term->parameter(i)->type(), functions);
+          parameter_types_ptr[i] = parameter_types[i].get();
 	  status.index++;
 	}
 
-	Term *result_type = build_function_type_resolver_term(depth+1, cast_term->result_type(), functions);
+	TermPtr<> result_type = build_function_type_resolver_term(depth+1, cast_term->result_type(), functions);
 	functions.erase(cast_term);
 
-	return get_function_type_internal(result_type, n_parameters, parameter_types.get());
+	return get_function_type_internal(result_type, n_parameters, parameter_types_ptr.get());
       }
 
       case term_function_type_parameter: {
-	FunctionTypeParameterTerm *cast_term = static_cast<FunctionTypeParameterTerm*>(term);
-	FunctionTypeTerm *source = cast_term->source();
+	FunctionTypeParameterTerm *cast_term = checked_cast<FunctionTypeParameterTerm*>(term.get());
+	TermPtr<FunctionTypeTerm> source = cast_term->source();
 
-	FunctionResolveMap::iterator it = functions.find(source);
+	FunctionResolveMap::iterator it = functions.find(source.get());
 	PSI_ASSERT(it != functions.end());
 
 	if (cast_term->index() >= it->second.index)
 	  throw std::logic_error("function type parameter definition refers to value of later parameter");
 
-	return get_function_type_internal_parameter(depth - it->second.depth, cast_term->index());
+        TermPtr<> type = build_function_type_resolver_term(depth, cast_term->type(), functions);
+
+	return get_function_type_internal_parameter(type, depth - it->second.depth, cast_term->index());
       }
 
       default:
@@ -519,11 +547,11 @@ namespace Psi {
       }
     }
 
-    TermPtr<FunctionTypeTerm> Context::get_function_type(Term *result_type, std::size_t n_parameters, FunctionTypeParameterTerm *const* parameters) {
+    TermPtr<FunctionTypeTerm> Context::get_function_type(TermRef<> result_type, std::size_t n_parameters, FunctionTypeParameterTerm *const* parameters) {
       for (std::size_t i = 0; i < n_parameters; ++i)
 	PSI_ASSERT(!parameters[i]->source());
 
-      TermPtr<FunctionTypeTerm> term(allocate_term(FunctionTypeTerm::Initializer(result_type, n_parameters, parameters)));
+      TermPtr<FunctionTypeTerm> term(allocate_term(FunctionTypeTerm::Initializer(result_type.get(), n_parameters, parameters)));
 
       for (std::size_t i = 0; i < n_parameters; ++i) {
 	parameters[i]->m_index = i;
@@ -544,16 +572,18 @@ namespace Psi {
       status.depth = 0;
       status.index = 0;
 
-      boost::scoped_array<Term*> internal_parameter_types(new Term*[n_parameters]);
+      boost::scoped_array<TermPtr<> > internal_parameter_types(new TermPtr<>[n_parameters]);
+      boost::scoped_array<Term*> internal_parameter_types_ptr(new Term*[n_parameters]);
       for (std::size_t i = 0; i < n_parameters; ++i) {
 	internal_parameter_types[i] = build_function_type_resolver_term(0, parameters[i]->type(), functions);
+        internal_parameter_types_ptr[i] = internal_parameter_types[i].get();
 	status.index++;
       }
 
-      Term *internal_result_type = build_function_type_resolver_term(0, term->result_type(), functions);
+      TermPtr<> internal_result_type = build_function_type_resolver_term(0, term->result_type(), functions);
       PSI_ASSERT((functions.erase(term.get()), functions.empty()));
 
-      FunctionTypeInternalTerm *internal = get_function_type_internal(internal_result_type, n_parameters, internal_parameter_types.get());
+      TermPtr<FunctionTypeInternalTerm> internal = get_function_type_internal(internal_result_type, n_parameters, internal_parameter_types_ptr.get());
       if (internal->get_function_type()) {
 	// A matching type exists
 	return TermPtr<FunctionTypeTerm>(internal->get_function_type());
@@ -563,14 +593,14 @@ namespace Psi {
       }
     }
 
-    FunctionTypeParameterTerm::FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, Term *type)
+    FunctionTypeParameterTerm::FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, TermRef<> type)
       : Term(ui, context, term_function_type_parameter, type->abstract(), true, type->global(), type),
 	m_index(0) {
     }
 
     class FunctionTypeParameterTerm::Initializer : public InitializerBase<FunctionTypeParameterTerm> {
     public:
-      Initializer(Term *type) : m_type(type) {}
+      Initializer(TermRef<> type) : m_type(type) {}
 
       std::size_t n_uses() const {
 	return 1;
@@ -581,14 +611,14 @@ namespace Psi {
       }
 
     private:
-      Term *m_type;
+      TermRef<> m_type;
     };
 
-    TermPtr<FunctionTypeParameterTerm> Context::new_function_type_parameter(Term *type) {
-      return TermPtr<FunctionTypeParameterTerm>(allocate_term(FunctionTypeParameterTerm::Initializer(type)));
+    TermPtr<FunctionTypeParameterTerm> Context::new_function_type_parameter(TermRef<> type) {
+      return TermPtr<FunctionTypeParameterTerm>(allocate_term(FunctionTypeParameterTerm::Initializer(type.get())));
     }
 
-    FunctionTypeInternalTerm::FunctionTypeInternalTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term *result_type, std::size_t n_parameters, Term *const* parameter_types)
+    FunctionTypeInternalTerm::FunctionTypeInternalTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> result_type, std::size_t n_parameters, Term *const* parameter_types)
       : HashTerm(ui, context, term_function_type_internal,
 		 result_type->abstract() || any_abstract(n_parameters, parameter_types), true,
 		 result_type->global() && all_global(n_parameters, parameter_types),
@@ -600,7 +630,7 @@ namespace Psi {
 
     class FunctionTypeInternalTerm::Setup : public InitializerBase<FunctionTypeInternalTerm> {
     public:
-      Setup(Term *result_type, std::size_t n_parameters, Term *const* parameter_types)
+      Setup(TermRef<> result_type, std::size_t n_parameters, Term *const* parameter_types)
 	: m_n_parameters(n_parameters),
 	  m_parameter_types(parameter_types),
 	  m_result_type(result_type) {
@@ -625,22 +655,22 @@ namespace Psi {
 	return m_n_parameters + 2;
       }
 
-      bool equals(const HashTerm *term) const {
-	if ((m_hash != term->m_hash) || (term->term_type() != term_function_type_internal))
+      bool equals(const HashTerm& term) const {
+	if ((m_hash != term.m_hash) || (term.term_type() != term_function_type_internal))
 	  return false;
 
-	const FunctionTypeInternalTerm *cast_term =
-	  boost::polymorphic_downcast<const FunctionTypeInternalTerm*>(term);
+	const FunctionTypeInternalTerm& cast_term =
+	  checked_cast<const FunctionTypeInternalTerm&>(term);
 
-	if (m_n_parameters != cast_term->n_parameters())
+	if (m_n_parameters != cast_term.n_parameters())
 	  return false;
 
 	for (std::size_t i = 0; i < m_n_parameters; ++i) {
-	  if (m_parameter_types[i] != cast_term->parameter_type(i))
+	  if (m_parameter_types[i] != cast_term.parameter_type(i).get())
 	    return false;
 	}
 
-	if (m_result_type != cast_term->result_type())
+	if (m_result_type.get() != cast_term.result_type().get())
 	  return false;
 
 	return true;
@@ -650,21 +680,28 @@ namespace Psi {
       std::size_t m_hash;
       std::size_t m_n_parameters;
       Term *const* m_parameter_types;
-      Term *m_result_type;
+      TermRef<> m_result_type;
     };
 
-    FunctionTypeInternalTerm* Context::get_function_type_internal(Term *result, std::size_t n_parameters, Term *const* parameter_types) {
+    TermPtr<FunctionTypeInternalTerm> Context::get_function_type_internal(TermRef<> result, std::size_t n_parameters, Term *const* parameter_types) {
       FunctionTypeInternalTerm::Setup setup(result, n_parameters, parameter_types);
       return hash_term_get(setup);
+    }
+
+    FunctionTypeInternalParameterTerm::FunctionTypeInternalParameterTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> type, std::size_t depth, std::size_t index)
+      : HashTerm(ui, context, term_function_type_internal_parameter,
+		 type->abstract(), true, type->global(), type, hash),
+        m_depth(depth),
+        m_index(index) {
     }
 
     class FunctionTypeInternalParameterTerm::Setup
       : public InitializerBase<FunctionTypeInternalParameterTerm> {
     public:
-      Setup(std::size_t depth, std::size_t index)
-	: m_depth(depth), m_index(index) {
-
+      Setup(TermRef<> type, std::size_t depth, std::size_t index)
+	: m_type(type), m_depth(depth), m_index(index) {
 	m_hash = 0;
+        boost::hash_combine(m_hash, type->hash_value());
 	boost::hash_combine(m_hash, depth);
 	boost::hash_combine(m_hash, m_index);
       }
@@ -673,7 +710,7 @@ namespace Psi {
       }
 
       FunctionTypeInternalParameterTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
-	return new (base) FunctionTypeInternalParameterTerm(ui, context, m_hash, m_depth, m_index);
+	return new (base) FunctionTypeInternalParameterTerm(ui, context, m_hash, m_type, m_depth, m_index);
       }
 
       std::size_t hash() const {
@@ -684,40 +721,43 @@ namespace Psi {
 	return 0;
       }
 
-      bool equals(const HashTerm *term) const {
-	if ((m_hash != term->m_hash) || (term->term_type() != term_function_type_internal_parameter))
+      bool equals(const HashTerm& term) const {
+	if ((m_hash != term.m_hash) ||
+            (term.term_type() != term_function_type_internal_parameter) ||
+            (m_type.get() != term.type().get()))
 	  return false;
 
-	const FunctionTypeInternalParameterTerm *cast_term =
-	  boost::polymorphic_downcast<const FunctionTypeInternalParameterTerm*>(term);
+	const FunctionTypeInternalParameterTerm& cast_term =
+	  checked_cast<const FunctionTypeInternalParameterTerm&>(term);
 
-	if (m_depth != cast_term->m_depth)
+	if (m_depth != cast_term.m_depth)
 	  return false;
 
-	if (m_index != cast_term->m_index)
+	if (m_index != cast_term.m_index)
 	  return false;
 
 	return true;
       }
 
     private:
+      TermRef<> m_type;
       std::size_t m_depth;
       std::size_t m_index;
       std::size_t m_hash;
     };
 
-    FunctionTypeInternalParameterTerm* Context::get_function_type_internal_parameter(std::size_t depth, std::size_t index) {
-      FunctionTypeInternalParameterTerm::Setup setup(depth, index);
+    TermPtr<FunctionTypeInternalParameterTerm> Context::get_function_type_internal_parameter(TermRef<> type, std::size_t depth, std::size_t index) {
+      FunctionTypeInternalParameterTerm::Setup setup(type, depth, index);
       return hash_term_get(setup);
     }
 
-    RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term *type)
+    RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, TermRef<> type)
       : Term(ui, context, term_recursive_parameter, true, false, type->global(), type) {
     }
 
     class RecursiveParameterTerm::Initializer : public InitializerBase<RecursiveParameterTerm> {
     public:
-      Initializer(Term *type) : m_type(type) {}
+      Initializer(TermRef<> type) : m_type(type) {}
 
       RecursiveParameterTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
 	return new (base) RecursiveParameterTerm(ui, context, m_type);
@@ -726,14 +766,14 @@ namespace Psi {
       std::size_t n_uses() const {return 0;}
 
     private:
-      Term *m_type;
+      TermRef<> m_type;
     };
 
-    RecursiveParameterTerm* Context::new_recursive_parameter(Term *type) {
+    TermPtr<RecursiveParameterTerm> Context::new_recursive_parameter(TermRef<> type) {
       return allocate_term(RecursiveParameterTerm::Initializer(type));
     }
 
-    RecursiveTerm::RecursiveTerm(const UserInitializer& ui, Context *context, Term *result_type,
+    RecursiveTerm::RecursiveTerm(const UserInitializer& ui, Context *context, TermRef<> result_type,
 				 bool global, std::size_t n_parameters, RecursiveParameterTerm *const* parameters)
       : Term(ui, context, term_recursive, true, false, global, context->get_metatype().get()) {
       PSI_ASSERT(!global || (result_type->global() && all_global(n_parameters, parameters)));
@@ -745,7 +785,7 @@ namespace Psi {
 
     class RecursiveTerm::Initializer : public InitializerBase<RecursiveTerm> {
     public:
-      Initializer(bool global, Term *type, std::size_t n_parameters, RecursiveParameterTerm *const* parameters)
+      Initializer(bool global, TermRef<> type, std::size_t n_parameters, RecursiveParameterTerm *const* parameters)
 	: m_global(global), m_type(type), m_n_parameters(n_parameters), m_parameters(parameters) {
       }
 
@@ -757,7 +797,7 @@ namespace Psi {
 
     private:
       bool m_global;
-      Term *m_type;
+      TermRef<> m_type;
       std::size_t m_n_parameters;
       RecursiveParameterTerm *const* m_parameters;
     };
@@ -765,19 +805,22 @@ namespace Psi {
     /**
      * \brief Create a new recursive term.
      */
-    TermPtr<RecursiveTerm> Context::new_recursive(bool global, Term *result_type,
+    TermPtr<RecursiveTerm> Context::new_recursive(bool global, TermRef<> result_type,
 						  std::size_t n_parameters,
 						  Term *const* parameter_types) {
-      boost::scoped_array<RecursiveParameterTerm*> parameters(new RecursiveParameterTerm*[n_parameters]);
-      for (std::size_t i = 0; i < n_parameters; ++i)
+      boost::scoped_array<TermPtr<RecursiveParameterTerm> > parameters(new TermPtr<RecursiveParameterTerm>[n_parameters]);
+      boost::scoped_array<RecursiveParameterTerm*> parameters_ptr(new RecursiveParameterTerm*[n_parameters]);
+      for (std::size_t i = 0; i < n_parameters; ++i) {
 	parameters[i] = new_recursive_parameter(parameter_types[i]);
-      return TermPtr<RecursiveTerm>(allocate_term(RecursiveTerm::Initializer(global, result_type, n_parameters, parameters.get())));
+        parameters_ptr[i] = parameters[i].get();
+      }
+      return TermPtr<RecursiveTerm>(allocate_term(RecursiveTerm::Initializer(global, result_type.get(), n_parameters, parameters_ptr.get())));
     }
 
     /**
      * \brief Resolve this term to its actual value.
      */
-    void RecursiveTerm::resolve(Term *term) {
+    void RecursiveTerm::resolve(TermRef<> term) {
       return context().resolve_recursive(this, term);
     }
 
@@ -814,35 +857,36 @@ namespace Psi {
       Term *const* m_parameters;
     };
 
-    TermPtr<ApplyTerm> Context::apply_recursive(RecursiveTerm *recursive,
+    TermPtr<ApplyTerm> Context::apply_recursive(TermRef<RecursiveTerm> recursive,
 						std::size_t n_parameters,
 						Term *const* parameters) {
-      return TermPtr<ApplyTerm>(allocate_term(ApplyTerm::Initializer(recursive, n_parameters, parameters)));
+      return TermPtr<ApplyTerm>(allocate_term(ApplyTerm::Initializer(recursive.get(), n_parameters, parameters)));
     }
 
     TermPtr<> ApplyTerm::unpack() const {
+      PSI_FAIL("not implemented");
     }
 
-    GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term *type)
+    GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, TermRef<> type)
       : Term(ui, context, term_type, false, false, true, type) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
     }
 
-    GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, Term *type, bool constant)
+    GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, TermRef<> type, bool constant)
       : GlobalTerm(ui, context, term_global_variable, type),
 	m_constant(constant) {
     }
 
-    void GlobalVariableTerm::set_value(Term *value) {
+    void GlobalVariableTerm::set_value(TermRef<> value) {
       if (!value->global())
 	throw std::logic_error("value of global variable must be a global");
 
-      set_base_parameter(0, value);
+      set_base_parameter(0, value.get());
     }
 
     class GlobalVariableTerm::Initializer : public InitializerBase<GlobalVariableTerm> {
     public:
-      Initializer(Term *type, bool constant)
+      Initializer(TermRef<> type, bool constant)
 	: m_type(type), m_constant(constant) {
       }
 
@@ -855,25 +899,34 @@ namespace Psi {
       }
 
     private:
-      Term *m_type;
+      TermRef<> m_type;
       bool m_constant;
     };
 
     /**
      * \brief Create a new global term.
      */
-    TermPtr<GlobalVariableTerm> Context::new_global_variable(Term *type, bool constant) {
-      return TermPtr<GlobalVariableTerm>(allocate_term(GlobalVariableTerm::Initializer(type, constant)));
+    TermPtr<GlobalVariableTerm> Context::new_global_variable(TermRef<> type, bool constant) {
+      return TermPtr<GlobalVariableTerm>(allocate_term(GlobalVariableTerm::Initializer(type.get(), constant)));
     }
 
-    FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, Term *type)
+    /**
+     * \brief Create a new global term, initialized with the specified value.
+     */
+    TermPtr<GlobalVariableTerm> Context::new_global_variable_set(TermRef<> value, bool constant) {
+      TermPtr<GlobalVariableTerm> t = new_global_variable(value->type(), constant);
+      t->set_value(value);
+      return t;
+    }
+
+    FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, TermRef<> type)
       : Term(ui, context, term_function_parameter, false, false, type->global(), type) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
     }
 
     class FunctionParameterTerm::Initializer : public InitializerBase<FunctionParameterTerm> {
     public:
-      Initializer(Term *type) : m_type(type) {
+      Initializer(TermRef<> type) : m_type(type) {
       }
 
       std::size_t n_uses() const {
@@ -885,14 +938,14 @@ namespace Psi {
       }
 
     private:
-      Term *m_type;
+      TermRef<> m_type;
     };
 
     namespace {
-      void insert_if_abstract(std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set, Term *term) {
+      void insert_if_abstract(std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set, TermRef<> term) {
 	if (term->abstract()) {
-	  if (set.insert(term).second)
-	    queue.push_back(term);
+	  if (set.insert(term.get()).second)
+	    queue.push_back(term.get());
 	}
       }
     }
@@ -918,14 +971,14 @@ namespace Psi {
 
 	switch (term->term_type()) {
 	case term_functional: {
-	  FunctionalTerm *cast_term = boost::polymorphic_downcast<FunctionalTerm*>(term);
+	  FunctionalTerm *cast_term = checked_cast<FunctionalTerm*>(term);
 	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
 	    insert_if_abstract(queue, set, cast_term->parameter(i));
 	  break;
 	}
 
 	case term_recursive: {
-	  RecursiveTerm *cast_term = boost::polymorphic_downcast<RecursiveTerm*>(term);
+	  RecursiveTerm *cast_term = checked_cast<RecursiveTerm*>(term);
 	  if (!cast_term->result()) {
 	    queue.clear();
 	    set.clear();
@@ -938,7 +991,7 @@ namespace Psi {
 	}
 
 	case term_function_type: {
-	  FunctionTypeTerm *cast_term = boost::polymorphic_downcast<FunctionTypeTerm*>(term);
+	  FunctionTypeTerm *cast_term = checked_cast<FunctionTypeTerm*>(term);
 	  insert_if_abstract(queue, set, cast_term->result_type());
 	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
 	    insert_if_abstract(queue, set, cast_term->parameter(i)->type());
@@ -962,10 +1015,10 @@ namespace Psi {
       return false;
     }
 
-    void Context::clear_and_queue_if_abstract(std::vector<Term*>& queue, Term *t) {
+    void Context::clear_and_queue_if_abstract(std::vector<Term*>& queue, TermRef<> t) {
       if (t->abstract()) {
 	t->m_abstract = false;
-	queue.push_back(t);
+	queue.push_back(t.get());
       }
     }
 
@@ -1030,7 +1083,7 @@ namespace Psi {
     /**
      * \brief Resolve an opaque term.
      */
-    void Context::resolve_recursive(RecursiveTerm *recursive, Term *to) {
+    void Context::resolve_recursive(TermRef<RecursiveTerm> recursive, TermRef<> to) {
       if (recursive->type() != to->type())
 	throw std::logic_error("mismatch between recursive term type and resolving term type");
 
@@ -1040,17 +1093,17 @@ namespace Psi {
       if (recursive->result())
 	throw std::logic_error("resolving a recursive term which has already been resolved");
 
-      recursive->set_base_parameter(1, to);
+      recursive->set_base_parameter(1, to.get());
 
       std::vector<Term*> queue;
       std::tr1::unordered_set<Term*> set;
-      if (!search_for_abstract(recursive, queue, set)) {
+      if (!search_for_abstract(recursive.get(), queue, set)) {
 	recursive->m_abstract = false;
 
-	clear_abstract(recursive, queue);
+	clear_abstract(recursive.get(), queue);
 
 	std::vector<Term*> upward_queue;
-	upward_queue.push_back(recursive);
+	upward_queue.push_back(recursive.get());
 	while (!upward_queue.empty()) {
 	  Term *t = upward_queue.back();
 	  upward_queue.pop_back();
@@ -1087,7 +1140,7 @@ namespace Psi {
      * \brief Just-in-time compile a term, and a get a pointer to
      * the result.
      */
-    void* Context::term_jit(Term *term) {
+    void* Context::term_jit(TermRef<GlobalTerm> term) {
       if ((term->m_term_type != term_global_variable) &&
 	  (term->m_term_type != term_function))
 	throw std::logic_error("Cannot JIT compile non-global term");
@@ -1153,7 +1206,7 @@ namespace Psi {
     }
 
     llvm::GlobalValue* GlobalVariable::llvm_build_global(LLVMConstantBuilder& builder, Term* term) const {
-      Term *type = term->parameter(0);
+      TermPtr<> type = term->parameter(0);
       LLVMConstantBuilder::Type llvm_type = builder.type(type);
       if (llvm_type.known()) {
 	return new llvm::GlobalVariable(builder.module(), llvm_type.type(), m_read_only,

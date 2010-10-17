@@ -8,27 +8,17 @@
 
 namespace Psi {
   namespace Tvm {
-    TermPtr<> PrimitiveTypeBase::type(Context& context, std::size_t n_parameters, Term *const* parameters) const {
-      if (n_parameters != 0)
-	throw std::logic_error("primitive type created with parameters");
-      return context.get_metatype();
-    }
-
-    LLVMFunctionBuilder::Result PrimitiveTypeBase::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm* term) const {
-      return llvm_value_constant(builder.constant_builder(), term);
-    }
-
-    LLVMConstantBuilder::Constant PrimitiveTypeBase::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm* term) const {
-      LLVMConstantBuilder::Type ty = llvm_type(builder, term);
-      return builder.metatype_value(ty.type());
-    }
-
     IntegerType::IntegerType(bool is_signed, unsigned n_bits)
       : m_is_signed(is_signed), m_n_bits(n_bits) {
     }
 
-    llvm::Type* IntegerType::llvm_type(llvm::LLVMContext& context) {
-      return llvm::IntegerType::get(context, m_n_bits);
+    LLVMConstantBuilder::Type IntegerType::llvm_type(LLVMConstantBuilder& builder) const {
+      const llvm::Type *ty = llvm::IntegerType::get(builder.context(), m_n_bits);
+      return LLVMConstantBuilder::type_known(const_cast<llvm::Type*>(ty));
+    }
+
+    LLVMConstantBuilder::Type IntegerType::llvm_type(LLVMConstantBuilder& builder, Term&) const {
+      return llvm_type(builder);
     }
 
     bool IntegerType::operator == (const IntegerType& o) const {
@@ -36,11 +26,15 @@ namespace Psi {
 	(m_n_bits == o.m_n_bits);
     }
 
-    std::size_t IntegerType::hash_value() const {
+    std::size_t hash_value(const IntegerType& self) {
       std::size_t h = 0;
-      boost::hash_combine(h, m_is_signed);
-      boost::hash_combine(h, m_n_bits);
+      boost::hash_combine(h, self.m_is_signed);
+      boost::hash_combine(h, self.m_n_bits);
       return h;
+    }
+
+    llvm::APInt IntegerType::mpl_to_llvm(const mpz_class& value) const {
+      return mpl_to_llvm(m_is_signed, m_n_bits, value);
     }
 
     llvm::APInt IntegerType::mpl_to_llvm(bool is_signed, unsigned n_bits, const mpz_class& value) {
@@ -71,45 +65,79 @@ namespace Psi {
       }
     }
 
-    void BasicIntegerType::validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const {
-      if (n_parameters != 0)
-	throw std::logic_error("basic integer type term takes no parameters");
+    ConstantInteger::ConstantInteger(const IntegerType& type, const mpz_class& value)
+      : m_type(type), m_value(value) {
     }
 
-    Term* ConstantInteger::create(Term *type, const mpz_class& value) {
-      return type->context().new_term(ConstantInteger(value), type);
+    bool ConstantInteger::operator == (const ConstantInteger& o) const {
+      return (m_type == o.m_type) && (m_value == o.m_value);
     }
 
-    ConstantInteger::ConstantInteger(const mpz_class& value)
-      : m_value(value) {
+    std::size_t hash_value(const ConstantInteger& self) {
+      std::size_t h = 0;
+      boost::hash_combine(h, self.m_type);
+      boost::hash_combine(h, self.m_value.get_ui());
+      return h;
     }
 
-    Term* ConstantInteger::type(Context&, std::size_t n_parameters, Term *const* parameters) const {
-      if (n_parameters != 1)
-	throw std::logic_error("ConstantReal expects one parameter");
-
-      if (!dynamic_cast<IntegerType*>(&parameters[0]->proto()))
-	throw std::logic_error("ConstantReal parameter must be of type RealType");
-
-      return parameters[0];
+    TermPtr<> ConstantInteger::type(Context& context, std::size_t n_parameters, Term *const* parameters) const {
+      check_primitive_parameters(n_parameters, parameters);
+      return context.get_functional_v(m_type);
     }
 
-    bool ConstantInteger::equals_internal(const ProtoTerm& other) const {
-      const ConstantInteger& o = static_cast<const ConstantInteger&>(other);
-      return m_value == o.m_value;
+    LLVMConstantBuilder::Constant ConstantInteger::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm&) const {
+      LLVMConstantBuilder::Type ty = m_type.llvm_type(builder);
+      PSI_ASSERT(ty.valid());
+      llvm::APInt llvm_value = m_type.mpl_to_llvm(m_value);
+      return LLVMConstantBuilder::constant_value(llvm::ConstantInt::get(ty.type(), llvm_value));
     }
 
-    std::size_t ConstantInteger::hash_internal() const {
-      return m_value.get_ui();
+    RealType::RealType(Width width) : m_width(width) {
     }
 
-    ProtoTerm* ConstantInteger::clone() const {
-      return new ConstantInteger(*this);
+    LLVMConstantBuilder::Type RealType::llvm_type(LLVMConstantBuilder& builder) const {
+      const llvm::Type *ty;
+      switch (m_width) {
+      case real_float: ty = llvm::Type::getFloatTy(builder.context()); break;
+      case real_double: ty = llvm::Type::getDoubleTy(builder.context()); break;
+
+      default:
+        PSI_FAIL("unknown real width");
+      }
+
+      return LLVMConstantBuilder::type_known(const_cast<llvm::Type*>(ty));
     }
 
-    LLVMConstantBuilder::Constant ConstantInteger::llvm_value_constant(LLVMConstantBuilder& builder, Term* term) const {
-      IntegerType& type_proto = checked_reference_static_cast<IntegerType>(term->type()->proto());
-      return LLVMConstantBuilder::constant_value(type_proto.constant_to_llvm(builder.context(), m_value));
+    LLVMConstantBuilder::Type RealType::llvm_type(LLVMConstantBuilder& builder, Term&) const {
+      return llvm_type(builder);
+    }
+
+    bool RealType::operator == (const RealType& o) const {
+      return m_width == o.m_width;
+    }
+
+    std::size_t hash_value(const RealType& self) {
+      std::size_t h = 0;
+      boost::hash_combine(h, self.m_width);
+      return h;
+    }
+
+    const llvm::fltSemantics& RealType::llvm_semantics() const {
+      switch(m_width) {
+      case real_float: return llvm::APFloat::IEEEsingle;
+      case real_double: return llvm::APFloat::IEEEdouble;
+
+      default:
+        PSI_FAIL("unknown real width");
+      }
+    }
+
+    llvm::APFloat RealType::mpl_to_llvm(const mpf_class& value) const {
+      return mpl_to_llvm(llvm_semantics(), value);
+    }
+
+    llvm::APFloat RealType::special_to_llvm(SpecialReal which, bool negative) const {
+      return special_to_llvm(llvm_semantics(), which, negative);
     }
 
     llvm::APFloat RealType::mpl_to_llvm(const llvm::fltSemantics& semantics, const mpf_class& value) {
@@ -127,53 +155,70 @@ namespace Psi {
 
     llvm::APFloat RealType::special_to_llvm(const llvm::fltSemantics& semantics, SpecialReal v, bool negative) {
       switch (v) {
-      case SpecialReal::zero: return llvm::APFloat::getZero(semantics, negative);
-      case SpecialReal::nan: return llvm::APFloat::getNaN(semantics, negative);
-      case SpecialReal::qnan: return llvm::APFloat::getQNaN(semantics, negative);
-      case SpecialReal::snan: return llvm::APFloat::getSNaN(semantics, negative);
-      case SpecialReal::largest: return llvm::APFloat::getLargest(semantics, negative);
-      case SpecialReal::smallest: return llvm::APFloat::getSmallest(semantics, negative);
-      case SpecialReal::smallest_normalized: return llvm::APFloat::getSmallestNormalized(semantics, negative);
+      case special_real_zero: return llvm::APFloat::getZero(semantics, negative);
+      case special_real_nan: return llvm::APFloat::getNaN(semantics, negative);
+      case special_real_qnan: return llvm::APFloat::getQNaN(semantics, negative);
+      case special_real_snan: return llvm::APFloat::getSNaN(semantics, negative);
+      case special_real_largest: return llvm::APFloat::getLargest(semantics, negative);
+      case special_real_smallest: return llvm::APFloat::getSmallest(semantics, negative);
+      case special_real_smallest_normalized: return llvm::APFloat::getSmallestNormalized(semantics, negative);
 
       default:
-	throw std::logic_error("unknown special floating point value");
+	PSI_FAIL("unknown special floating point value");
       }
     }
 
-    ConstantReal::ConstantReal(const mpf_class& value)
-      : m_value(value) {
+    ConstantReal::ConstantReal(const RealType& type, const mpf_class& value)
+      : m_type(type), m_value(value) {
     }
 
-    Term* ConstantReal::create(Term *type, const mpf_class& value) {
-      return type->context().new_term(ConstantReal(value), type);
+    bool ConstantReal::operator == (const ConstantReal& o) const {
+      return (m_type == o.m_type) && (m_value == o.m_value);
     }
 
-    Term* ConstantReal::type(Context&, std::size_t n_parameters, Term *const* parameters) const {
-      if (n_parameters != 1)
-	throw std::logic_error("ConstantReal expects one parameter");
-
-      if (!dynamic_cast<RealType*>(&parameters[0]->proto()))
-	throw std::logic_error("ConstantReal parameter must be of type RealType");
-
-      return parameters[0];
+    std::size_t hash_value(const ConstantReal& self) {
+      std::size_t h = 0;
+      boost::hash_combine(h, self.m_type);
+      boost::hash_combine(h, self.m_value.get_d());
+      return h;
     }
 
-    bool ConstantReal::equals_internal(const ProtoTerm& other) const {
-      const ConstantReal& o = static_cast<const ConstantReal&>(other);
-      return m_value == o.m_value;
+    TermPtr<> ConstantReal::type(Context& context, std::size_t n_parameters, Term *const* parameters) const {
+      check_primitive_parameters(n_parameters, parameters);
+      return context.get_functional_v(m_type);
     }
 
-    std::size_t ConstantReal::hash_internal() const {
-      return m_value.get_ui();
+    LLVMConstantBuilder::Constant ConstantReal::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm&) const {
+      llvm::APFloat llvm_value = m_type.mpl_to_llvm(m_value);
+      return LLVMConstantBuilder::constant_value(llvm::ConstantFP::get(builder.context(), llvm_value));
     }
 
-    ProtoTerm* ConstantReal::clone() const {
-      return new ConstantReal(*this);
+    SpecialRealValue::SpecialRealValue(const RealType& type, SpecialReal value, bool negative)
+      : m_type(type), m_value(value), m_negative(negative) {
     }
 
-    LLVMConstantBuilder::Constant ConstantReal::llvm_value_constant(LLVMConstantBuilder& builder, Term* term) const {
-      RealType& type_proto = checked_reference_static_cast<RealType>(term->type()->proto());
-      return LLVMConstantBuilder::constant_value(type_proto.constant_to_llvm(builder.context(), m_value));
+    bool SpecialRealValue::operator == (const SpecialRealValue& o) const {
+      return (m_type == o.m_type) &&
+        (m_value == o.m_value) &&
+        (m_negative == o.m_negative);
+    }
+
+    std::size_t hash_value(const SpecialRealValue& self) {
+      std::size_t h = 0;
+      boost::hash_combine(h, self.m_type);
+      boost::hash_combine(h, self.m_value);
+      boost::hash_combine(h, self.m_negative);
+      return h;
+    }
+
+    TermPtr<> SpecialRealValue::type(Context& context, std::size_t n_parameters, Term *const* parameters) const {
+      check_primitive_parameters(n_parameters, parameters);
+      return context.get_functional_v(m_type);
+    }
+
+    LLVMConstantBuilder::Constant SpecialRealValue::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm&) const {
+      llvm::APFloat llvm_value = m_type.special_to_llvm(m_value, m_negative);
+      return LLVMConstantBuilder::constant_value(llvm::ConstantFP::get(builder.context(), llvm_value));
     }
   }
 }

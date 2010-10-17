@@ -14,6 +14,7 @@ namespace Psi {
     class GlobalTerm;
     class FunctionTerm;
     class GlobalVariableTerm;
+    template<typename> class TermRef;
 
     /**
      * \brief Value type of MetatypeTerm.
@@ -115,9 +116,9 @@ namespace Psi {
 
       llvm::LLVMContext& context() {return *m_context;}
       llvm::Module& module() {return *m_module;}
-      llvm::GlobalValue* global(GlobalTerm *term);
-      Constant constant(Term *term);
-      Type type(Term *term);
+      llvm::GlobalValue* global(TermRef<GlobalTerm> term);
+      Constant constant(TermRef<Term> term);
+      Type type(TermRef<Term> term);
 
       void set_module(llvm::Module *module);
 
@@ -205,8 +206,8 @@ namespace Psi {
 
       ~LLVMFunctionBuilder();
 
-      Result value(Term *term);
-      LLVMConstantBuilder::Type type(Term *term);
+      Result value(TermRef<Term> term);
+      LLVMConstantBuilder::Type type(TermRef<Term> term);
       LLVMConstantBuilder& constant_builder() {return *m_constant_builder;}
       llvm::LLVMContext& context() {return m_constant_builder->context();}
       IRBuilder& irbuilder() {return *m_irbuilder;}

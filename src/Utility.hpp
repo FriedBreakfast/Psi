@@ -107,6 +107,47 @@ namespace Psi {
     UniqueArray(const UniqueArray&);
     T *m_p;
   };
+
+  template<typename T, typename U>
+  struct checked_cast_impl;
+
+  template<typename T, typename U>
+  struct checked_cast_impl<T&,U&> {
+    static T& cast(U& src) {
+      PSI_ASSERT(&src == dynamic_cast<T*>(&src));
+      return static_cast<T&>(src);
+    }
+  };
+
+  template<typename T, typename U>
+  struct checked_cast_impl<T*,U*> {
+    static T* cast(U* src) {
+      PSI_ASSERT(src == dynamic_cast<T*>(src));
+      return static_cast<T*>(src);
+    }
+  };
+
+  /**
+   * \brief Checked cast function.
+   *
+   * This follows the design of boost::polymorphic downcast with two exceptions:
+   *
+   * <ul>
+   * <li>It supports casts involving references</li>
+   * <li>It uses PSI_ASSERT() rather than assert() to check for
+   * validity so leaves defining assert() up to the user rather than
+   * possibly violating the ODR.</li>
+   * </ul>
+   */
+  template<typename T, typename U>
+  T checked_cast(U& src) {
+    return checked_cast_impl<T,U&>::cast(src);
+  }
+
+  template<typename T, typename U>
+  T checked_cast(U* src) {
+    return checked_cast_impl<T,U*>::cast(src);
+  }
 }
 
 #endif
