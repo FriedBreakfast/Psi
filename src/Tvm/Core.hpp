@@ -24,7 +24,6 @@ namespace Psi {
   namespace Tvm {
     class Context;
     class Term;
-    class PersistentTermPtrBackend;
 
     /**
      * \brief Identifies the Term subclass this object actually is.
@@ -57,6 +56,7 @@ namespace Psi {
     };
 
     template<typename T> class TermIterator;
+    class PersistentTermPtrBackend;
 
     class TermUser : User {
       friend class Context;
@@ -77,32 +77,6 @@ namespace Psi {
 
       unsigned char m_term_type;
     };
-
-    class PersistentTermPtrBackend : TermUser {
-    public:
-      PersistentTermPtrBackend();
-      PersistentTermPtrBackend(const PersistentTermPtrBackend&);
-      explicit PersistentTermPtrBackend(Term *ptr);
-      ~PersistentTermPtrBackend();
-
-      const PersistentTermPtrBackend& operator = (const PersistentTermPtrBackend& o) {reset(o.get()); return *this;}
-
-      bool operator == (const PersistentTermPtrBackend& o) const {return get() == o.get();}
-      bool operator != (const PersistentTermPtrBackend& o) const {return get() != o.get();}
-
-      Term* get() const {return use_get(0);}
-      void reset(Term *term=0);
-
-    private:
-      Use m_uses[2];
-    };
-
-    template<typename> class TermPtr;
-    template<typename> class FunctionalTermPtr;
-    template<typename> class InstructionTermPtr;
-    template<typename> class PersistentTermPtr;
-    template<typename> class PersistentFunctionalTermPtr;
-    template<typename> class PersistentInstructionTermPtr;
 
     template<typename TermTypeP, typename Base>
     class TermPtrCommon {
@@ -129,6 +103,25 @@ namespace Psi {
       Base m_base;
     };
 
+    class PersistentTermPtrBackend : TermUser {
+    public:
+      PersistentTermPtrBackend();
+      PersistentTermPtrBackend(const PersistentTermPtrBackend&);
+      explicit PersistentTermPtrBackend(Term *ptr);
+      ~PersistentTermPtrBackend();
+
+      const PersistentTermPtrBackend& operator = (const PersistentTermPtrBackend& o) {reset(o.get()); return *this;}
+
+      bool operator == (const PersistentTermPtrBackend& o) const {return get() == o.get();}
+      bool operator != (const PersistentTermPtrBackend& o) const {return get() != o.get();}
+
+      Term* get() const {return use_get(0);}
+      void reset(Term *term=0);
+
+    private:
+      Use m_uses[2];
+    };
+
     template<typename T=Term>
     class PersistentTermPtr : public TermPtrCommon<T, PersistentTermPtrBackend> {
       typedef TermPtrCommon<T, PersistentTermPtrBackend> BaseType;
@@ -151,10 +144,13 @@ namespace Psi {
 
     class TermPtrBackend {
     public:
-      TermPtrBackend(Term *ptr);
-      ~TermPtrBackend();
-
+      TermPtrBackend() : m_ptr(0) {}
+      TermPtrBackend(Term *ptr) : m_ptr(0) {reset(ptr);}
+      TermPtrBackend(const TermPtrBackend& src) : m_ptr(0) {reset(src.m_ptr);}
+      ~TermPtrBackend() {reset();}
+      const TermPtrBackend& operator = (const TermPtrBackend& src) {reset(src.m_ptr); return *this;}
       Term *get() const {return m_ptr;}
+      void reset(Term *ptr=0);
 
     private:
       Term *m_ptr;
@@ -168,7 +164,7 @@ namespace Psi {
       friend class FunctionTerm;
 
     public:
-      TermPtr();
+      TermPtr() {}
       template<typename U, typename V>
       TermPtr(const TermPtrCommon<U,V>& ptr) : BaseType(check_cast_type(ptr.get())) {}
 
@@ -259,6 +255,7 @@ namespace Psi {
      */
     class Term : TermUser, Used {
       friend class TermUser;
+      friend class TermPtrBackend;
       friend class PersistentTermPtrBackend;
 
       friend class Context;
@@ -317,6 +314,7 @@ namespace Psi {
       std::size_t *term_use_count();
       void term_add_ref();
       void term_release();
+      void term_release_check();
       static void term_destroy(Term *term);
 
       unsigned char m_category : 2;
@@ -336,10 +334,7 @@ namespace Psi {
 	return n_uses() - 1;
       }
 
-      void set_base_parameter(std::size_t n, TermRef<> t) {
-	PSI_ASSERT_MSG(m_context == t->m_context, "term context mismatch");
-	use_set(n+1, t.get());
-      }
+      void set_base_parameter(std::size_t n, TermRef<> t);
 
       template<typename T>
       T* get_base_parameter_ptr(std::size_t n) const {
@@ -366,6 +361,22 @@ namespace Psi {
 
     inline void TermUser::use_set(std::size_t n, Term *term) {
       User::use_set(n, term);
+    }
+
+    /**
+     * \brief Change the term pointed to by this object.
+     */
+    inline void TermPtrBackend::reset(Term *ptr) {
+      if (m_ptr == ptr)
+        return;
+
+      Term *old_ptr = m_ptr;
+      if (ptr)
+        ++ptr->m_external_use_count;
+      m_ptr = ptr;
+
+      if (old_ptr && !--old_ptr->m_external_use_count)
+        old_ptr->term_release_check();
     }
 
     template<typename T>
@@ -406,6 +417,7 @@ namespace Psi {
 
     private:
       HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, TermRef<> type, std::size_t hash);
+      virtual ~HashTerm();
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
       TermSetHook m_term_set_hook;
       std::size_t m_hash;
@@ -819,6 +831,8 @@ namespace Psi {
     };
 
     class Context {
+      friend class HashTerm;
+
       TermPtr<MetatypeTerm> m_metatype;
 
       struct HashTermHasher {std::size_t operator () (const HashTerm&) const;};
@@ -831,13 +845,6 @@ namespace Psi {
       static const std::size_t initial_hash_term_buckets = 64;
       UniqueArray<HashTermSetType::bucket_type> m_hash_term_buckets;
       HashTermSetType m_hash_terms;
-
-      struct FunctionalTermKeyEquals;
-      struct FunctionTypeInternalTermKeyEquals;
-      struct FunctionTypeInternalParameterTermKeyEquals;
-      struct FunctionalTermFactory;
-      struct FunctionTypeInternalTermFactory;
-      struct FunctionTypeInternalParameterTermFactory;
 
       UniquePtr<llvm::LLVMContext> m_llvm_context;
       UniquePtr<llvm::Module> m_llvm_module;

@@ -17,7 +17,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-DPSI_DEBUG=1")
 # Set up useful GCC flags
 if(CMAKE_COMPILER_IS_GNUCXX)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g3")
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3")
   # I need exception handling; not sure whether this will cause problems later though
   string(REGEX REPLACE "-fno-exceptions" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
   # This should show up as a link time error if there is a problem

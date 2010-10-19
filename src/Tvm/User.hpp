@@ -155,7 +155,7 @@ namespace Psi {
     UserIterator() : m_use(0), m_user(0) {}
 
     std::size_t use_index() const {dereference(); return m_use_index;}
-    bool end() const {return m_use->use_node();}
+    bool end() const {return m_use->used_head();}
 
   private:
     UserIterator(Use *use) : m_use(use), m_user(0) {}

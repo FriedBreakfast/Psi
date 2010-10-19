@@ -88,12 +88,29 @@ namespace Psi {
 	  PSI_ASSERT_MSG(type->m_category == category_type, "term does has invalid category");
 	  m_category = category_value;
 	}
+        type->term_add_ref();
       }
 
       use_set(0, type.get());
     }
 
     Term::~Term() {
+    }
+
+    void Term::set_base_parameter(std::size_t n, TermRef<> t) {
+      if (m_context != t->m_context)
+        throw std::logic_error("term context mismatch");
+
+      Term *old = use_get(n+1);
+      if (t.get() == old)
+        return;
+
+      use_set(n+1, t.get());
+
+      if (t.get())
+        t->term_add_ref();
+      if (old)
+        t->term_release();
     }
 
     namespace {
@@ -114,7 +131,7 @@ namespace Psi {
 
       template<typename T>
       bool all_global(std::size_t n, T *const* t) {
-	return std::find_if(t, t+n, std::not1(std::mem_fun(&Term::global))) != (t+n);
+	return std::find_if(t, t+n, std::not1(std::mem_fun(&Term::global))) == (t+n);
       }
     }
 
@@ -138,13 +155,34 @@ namespace Psi {
 	return &m_use_count.value;
     }
 
+    /**
+     * Called by PersistentTermPtrBackend to add a persistent
+     * reference to this term.
+     */
     void Term::term_add_ref() {
       ++*term_use_count();
     }
 
+    /**
+     * Called when a persistent reference is released by
+     * PersistentTermPtrBackend.
+     */
     void Term::term_release() {
-      if (!--*term_use_count())
-	term_destroy(this);
+      if (!--*term_use_count()) {
+        if (m_external_use_count == 0)
+          term_destroy(this);
+      }
+    }
+
+    /**
+     * Called by TermPtrBackend when the external use count has hit
+     * zero. Checks whether any other references exist, and if not,
+     * destroys the term.
+     */
+    void Term::term_release_check() {
+      PSI_ASSERT(!m_external_use_count);
+      if (*term_use_count() == 0)
+        term_destroy(this);
     }
 
     void Term::term_destroy(Term *term) {
@@ -159,33 +197,38 @@ namespace Psi {
 
 	for (TermIterator<Term> it = current->term_users_begin<Term>();
 	     it != current->term_users_end<Term>(); ++it) {
+          // any terms refering to this one should be part of the same
+          // cyclic structure
+          PSI_ASSERT(current->term_use_count() == it->term_use_count());
 	  if (visited.insert(&*it).second)
 	    queue.push_back(&*it);
 	}
 
 	std::size_t n_uses = current->n_uses();
 	for (std::size_t i = 0; i < n_uses; ++i) {
-	  Term *child = current->use_get(i);
-	  std::size_t *child_use_count = child->term_use_count();
-	  if (!*child_use_count || !--*child_use_count) {
-	    if (visited.insert(child).second)
-	      queue.push_back(child);
-	  }
+          if (Term *child = current->use_get(i)) {
+            std::size_t *child_use_count = child->term_use_count();
+            if ((!*child_use_count || !--*child_use_count) && !child->m_external_use_count) {
+              if (visited.insert(child).second)
+                queue.push_back(child);
+            }
 
-	  current->use_set(i, 0);
+            current->use_set(i, 0);
+          }
 	}
 
 	current->clear_users();
+
 	delete current;
       }
     }
 
     namespace {
-      inline std::size_t struct_offset(std::size_t base, std::size_t size, std::size_t align) {
-	return (base + size + align - 1) & ~align;
+      std::size_t struct_offset(std::size_t base, std::size_t size, std::size_t align) {
+	return (base + size + align - 1) & ~(align - 1);
       }
 
-      inline void* ptr_offset(void *p, std::size_t offset) {
+      void* ptr_offset(void *p, std::size_t offset) {
 	return static_cast<void*>(static_cast<char*>(p) + offset);
       }
 
@@ -262,6 +305,11 @@ namespace Psi {
     HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, TermRef<> type, std::size_t hash)
       : Term(ui, context, term_type, abstract, parameterized, global, type),
 	m_hash(hash) {
+    }
+
+    HashTerm::~HashTerm() {
+      Context::HashTermSetType& hs = context().m_hash_terms;
+      hs.erase(hs.iterator_to(*this));
     }
 
     MetatypeTerm::MetatypeTerm(const UserInitializer& ui, Context* context)
@@ -864,7 +912,7 @@ namespace Psi {
     }
 
     TermPtr<> ApplyTerm::unpack() const {
-      PSI_FAIL("not implemented");
+      throw std::logic_error("not implemented");
     }
 
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, TermRef<> type)
@@ -1150,9 +1198,6 @@ namespace Psi {
 	m_llvm_module.reset(new llvm::Module("", *m_llvm_context));
       }
 
-#if 1
-      PSI_FAIL("reimplement JIT compiling");
-#else
       LLVMConstantBuilder builder(m_llvm_context.get(), m_llvm_module.get());
       llvm::GlobalValue *global = builder.global(term);
 
@@ -1167,73 +1212,7 @@ namespace Psi {
       m_llvm_module.reset(new llvm::Module("", *m_llvm_context));
 
       return m_llvm_engine->getPointerToGlobal(global);
-#endif
     }
-
-#if 0
-    GlobalVariable::GlobalVariable(bool read_only) : m_read_only(read_only) {
-    }
-
-    Term* GlobalVariable::create(bool read_only, Term *value) {
-      return value->context().new_term(GlobalVariable(read_only), value->type(), value);
-    }
-
-    Term* GlobalVariable::type(Context&, std::size_t n_parameters, Term *const* parameters) const {
-      if (n_parameters != 2)
-	throw std::logic_error("Global variable takes two parameters: the variable type and the variable value");
-
-      if (parameters[0]->proto().category() == term_value)
-	throw std::logic_error("type parameter to global variable is a value");
-
-      if (parameters[1]) {
-	if (parameters[0] != parameters[1]->type())
-	  throw std::logic_error("type of second parameter to global is not first parameter");
-      }
-
-      return PointerType::create(parameters[0]);
-    }
-
-    bool GlobalVariable::equals_internal(const ProtoTerm& other) const {
-      return m_read_only == static_cast<const GlobalVariable&>(other).m_read_only;
-    }
-
-    std::size_t GlobalVariable::hash_internal() const {
-      return HashCombiner() << m_read_only;
-    }
-
-    ProtoTerm* GlobalVariable::clone() const {
-      return new GlobalVariable(*this);
-    }
-
-    llvm::GlobalValue* GlobalVariable::llvm_build_global(LLVMConstantBuilder& builder, Term* term) const {
-      TermPtr<> type = term->parameter(0);
-      LLVMConstantBuilder::Type llvm_type = builder.type(type);
-      if (llvm_type.known()) {
-	return new llvm::GlobalVariable(builder.module(), llvm_type.type(), m_read_only,
-					llvm::GlobalValue::ExternalLinkage,
-					NULL, "");
-      } else if (llvm_type.empty()) {
-	const llvm::Type *i8 = llvm::Type::getInt8Ty(builder.context());
-	llvm::Constant *v = llvm::ConstantInt::get(i8, 0);
-	return new llvm::GlobalVariable(builder.module(), i8, true,
-					llvm::GlobalValue::ExternalLinkage,
-					v, "");
-      } else {
-	throw std::logic_error("Type of a global variable must be known (or empty)");
-      }
-    }
-
-    void GlobalVariable::llvm_init_global(LLVMConstantBuilder& builder, llvm::GlobalValue *llvm_global, Term* term) const {
-      llvm::GlobalVariable *gv = llvm::cast<llvm::GlobalVariable>(llvm_global);
-      Term *initializer = term->parameter(1);
-      LLVMConstantBuilder::Constant init_llvm = builder.constant(initializer);
-      if (init_llvm.empty()) {
-	PSI_ASSERT_MSG(gv->getInitializer(), "Initializer for empty global is null");
-      } else {
-	gv->setInitializer(init_llvm.value());
-      }
-    }
-#endif
 
     Context::Context()
       : m_metatype(allocate_term(MetatypeTerm::Initializer())),
