@@ -9,6 +9,52 @@
 
 namespace Psi {
   namespace Tvm {
+    LLVMType BlockType::llvm_type(LLVMValueBuilder& builder, Term&) const {
+      return LLVMType::known(const_cast<llvm::Type*>(llvm::Type::getLabelTy(builder.context())));
+    }
+
+    bool BlockType::operator == (const BlockType&) const {
+      return true;
+    }
+
+    std::size_t hash_value(const BlockType&) {
+      return 0;
+    }
+
+    TermPtr<> PointerType::type(Context& context, std::size_t n_parameters, Term *const*) const {
+      if (n_parameters != 1)
+	throw std::logic_error("pointer type takes one parameter");
+      return context.get_metatype();
+    }
+
+    LLVMValue PointerType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
+      return llvm_value_constant(builder, term);
+    }
+
+    LLVMValue PointerType::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
+      return builder.metatype_value_from_type(llvm::Type::getInt8PtrTy(builder.context()));
+    }
+
+    LLVMType PointerType::llvm_type(LLVMValueBuilder& builder, Term&) const {
+      return LLVMType::known(const_cast<llvm::PointerType*>(llvm::Type::getInt8PtrTy(builder.context())));
+    }
+
+    bool PointerType::operator == (const PointerType&) const {
+      return true;
+    }
+
+    std::size_t hash_value(const PointerType&) {
+      return 0;
+    }
+
+    /**
+     * \brief Get the type pointed to.
+     */
+    TermPtr<> PointerType::target_type(FunctionalTerm& term) const {
+      return term.parameter(0);
+    }
+
+#if 0
     namespace {
       std::pair<llvm::Constant*, llvm::Constant*> constant_size_align(llvm::Constant *value) {
 	unsigned zero = 0, one = 1;
@@ -77,12 +123,12 @@ namespace Psi {
       return Metatype::llvm_value(llvm::Type::getInt8PtrTy(builder.context()));
     }
 
-    LLVMConstantBuilder::Constant PointerType::llvm_value_constant(LLVMConstantBuilder& builder, Term*) const {
+    LLVMValueBuilder::Constant PointerType::llvm_value_constant(LLVMValueBuilder& builder, Term*) const {
       return Metatype::llvm_value(llvm::Type::getInt8PtrTy(builder.context()));
     }
 
-    LLVMConstantBuilder::Type PointerType::llvm_type(LLVMConstantBuilder& builder, Term*) const {
-      return LLVMConstantBuilder::type_known(const_cast<llvm::PointerType*>(llvm::Type::getInt8PtrTy(builder.context())));
+    LLVMValueBuilder::Type PointerType::llvm_type(LLVMValueBuilder& builder, Term*) const {
+      return LLVMValueBuilder::type_known(const_cast<llvm::PointerType*>(llvm::Type::getInt8PtrTy(builder.context())));
     }
 
     void PointerType::validate_parameters(Context&, std::size_t n_parameters, Term *const* parameters) const {
@@ -124,12 +170,12 @@ namespace Psi {
       }
     }
 
-    LLVMConstantBuilder::Constant ArrayType::llvm_value_constant(LLVMConstantBuilder& builder, Term* term) const {
+    LLVMValueBuilder::Constant ArrayType::llvm_value_constant(LLVMValueBuilder& builder, Term* term) const {
       Term *element_type = term->parameter(0);
       Term *length = term->parameter(1);
       
-      LLVMConstantBuilder::Constant element_size_align = builder.constant(element_type);
-      LLVMConstantBuilder::Constant length_value = builder.constant(length);
+      LLVMValueBuilder::Constant element_size_align = builder.constant(element_type);
+      LLVMValueBuilder::Constant length_value = builder.constant(length);
 
       if (!length_value.known())
 	throw std::logic_error("constant array length value is not a known constant");
@@ -144,21 +190,21 @@ namespace Psi {
       }
     }
 
-    LLVMConstantBuilder::Type ArrayType::llvm_type(LLVMConstantBuilder& builder, Term* term) const {
+    LLVMValueBuilder::Type ArrayType::llvm_type(LLVMValueBuilder& builder, Term* term) const {
       Term *element_type = term->parameter(0);
       Term *length = term->parameter(1);
 
-      LLVMConstantBuilder::Type element_llvm_type = builder.type(element_type);
-      LLVMConstantBuilder::Constant length_value = builder.constant(length);
+      LLVMValueBuilder::Type element_llvm_type = builder.type(element_type);
+      LLVMValueBuilder::Constant length_value = builder.constant(length);
 
       if (!length_value.known() || !element_llvm_type.known())
-	return LLVMConstantBuilder::type_unknown();
+	return LLVMValueBuilder::type_unknown();
 
       llvm::ConstantInt *length_llvm = llvm::cast<llvm::ConstantInt>(length_value.value());
       if (!length_llvm)
-	return LLVMConstantBuilder::type_unknown();
+	return LLVMValueBuilder::type_unknown();
 
-      return LLVMConstantBuilder::type_known(llvm::ArrayType::get(element_llvm_type.type(), length_llvm->getZExtValue()));
+      return LLVMValueBuilder::type_known(llvm::ArrayType::get(element_llvm_type.type(), length_llvm->getZExtValue()));
     }
 
     void ArrayType::validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const {
@@ -175,7 +221,7 @@ namespace Psi {
 	throw std::logic_error("first argument to array type term is not a type or metatype");
     }
 
-    LLVMConstantBuilder::Constant StructType::llvm_value_constant(LLVMConstantBuilder& builder, Term* term) const {
+    LLVMValueBuilder::Constant StructType::llvm_value_constant(LLVMValueBuilder& builder, Term* term) const {
       const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
       llvm::Constant *size = llvm::ConstantInt::get(i64, 0);
       llvm::Constant *align = llvm::ConstantInt::get(i64, 1);
@@ -214,22 +260,22 @@ namespace Psi {
       return Metatype::llvm_value(builder, size, align);
     }
 
-    LLVMConstantBuilder::Type StructType::llvm_type(LLVMConstantBuilder& builder, Term *term) const {
+    LLVMValueBuilder::Type StructType::llvm_type(LLVMValueBuilder& builder, Term *term) const {
       std::vector<const llvm::Type*> member_types;
       for (std::size_t i = 0; i < term->n_parameters(); ++i) {
 	Term *param = term->parameter(i);
-	LLVMConstantBuilder::Type param_result = builder.type(param);
+	LLVMValueBuilder::Type param_result = builder.type(param);
 	if (param_result.known()) {
 	  member_types.push_back(param_result.type());
 	} else if (!param_result.empty()) {
-	  return LLVMConstantBuilder::type_unknown();
+	  return LLVMValueBuilder::type_unknown();
 	}
       }
 
       if (!member_types.empty()) {
-	return LLVMConstantBuilder::type_known(llvm::StructType::get(builder.context(), member_types));
+	return LLVMValueBuilder::type_known(llvm::StructType::get(builder.context(), member_types));
       } else {
-	return LLVMConstantBuilder::type_empty();
+	return LLVMValueBuilder::type_empty();
       }
     }
 
@@ -261,14 +307,14 @@ namespace Psi {
       return Metatype::llvm_value(builder, size, align);
     }
 
-    LLVMConstantBuilder::Constant UnionType::llvm_value_constant(LLVMConstantBuilder& builder, Term* term) const {
+    LLVMValueBuilder::Constant UnionType::llvm_value_constant(LLVMValueBuilder& builder, Term* term) const {
       const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
       llvm::Constant *size = llvm::ConstantInt::get(i64, 0);
       llvm::Constant *align = llvm::ConstantInt::get(i64, 1);
 
       for (std::size_t i = 0; i < term->n_parameters(); ++i) {
 	Term *param = term->parameter(i);
-	LLVMConstantBuilder::Constant param_result = builder.constant(param);
+	LLVMValueBuilder::Constant param_result = builder.constant(param);
 	PSI_ASSERT(param_result.known(), "Value of metatype is not known");
 	std::pair<llvm::Constant*, llvm::Constant*> size_align = constant_size_align(param_result.value());	
 	size = constant_max(size, size_align.first);
@@ -281,22 +327,22 @@ namespace Psi {
       return Metatype::llvm_value(size, align);
     }
 
-    LLVMConstantBuilder::Type UnionType::llvm_type(LLVMConstantBuilder& builder, Term* term) const {
+    LLVMValueBuilder::Type UnionType::llvm_type(LLVMValueBuilder& builder, Term* term) const {
       std::vector<const llvm::Type*> lm;
       for (std::size_t i = 0; i < term->n_parameters(); ++i) {
 	Term *param = term->parameter(i);
-	LLVMConstantBuilder::Type param_result = builder.type(param);
+	LLVMValueBuilder::Type param_result = builder.type(param);
 	if (param_result.known()) {
 	  lm.push_back(param_result.type());
 	} else if (!param_result.empty()) {
-	  return LLVMConstantBuilder::type_unknown();
+	  return LLVMValueBuilder::type_unknown();
 	}
       }
 
       if (!lm.empty())
-	return LLVMConstantBuilder::type_known(llvm::UnionType::get(&lm[0], lm.size()));
+	return LLVMValueBuilder::type_known(llvm::UnionType::get(&lm[0], lm.size()));
       else
-	return LLVMConstantBuilder::type_empty();
+	return LLVMValueBuilder::type_empty();
     }
 
     void UnionType::validate_parameters(Context&, std::size_t n_parameters, Term *const* parameters) const {
@@ -305,5 +351,6 @@ namespace Psi {
 	  throw std::logic_error("first argument to array type term is not a type or metatype");
       }
     }
+#endif
   }
 }

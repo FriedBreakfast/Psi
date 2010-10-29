@@ -5,10 +5,21 @@
 
 namespace Psi {
   void assert_fail(const char *test, const char *msg) {
+    std::cerr << "Assertion failed: ";
     if (test && msg)
-      std::cerr << "Assertion failed: " << test << ": " << msg << std::endl;
+      std::cerr << test << ": " << msg;
     else
-      std::cerr << "Assertion failed: " << (msg ? msg : test) << std::endl;
+      std::cerr << (msg ? msg : test);
+    std::cerr << std::endl;
     std::abort();
+  }
+
+  void warning_fail(const char *test, const char *msg) {
+    std::cerr << "Warning: ";
+    if (test && msg)
+      std::cerr << test << ": " << msg;
+    else
+      std::cerr << (msg ? msg : test);
+    std::cerr << std::endl;
   }
 }

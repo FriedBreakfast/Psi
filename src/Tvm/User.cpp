@@ -84,7 +84,7 @@ namespace Psi {
   }
 
   Used::~Used() {
-    PSI_ASSERT(!is_used());
+    PSI_WARNING(!is_used());
   }
 
   void Used::clear_users() {
@@ -101,6 +101,6 @@ namespace Psi {
   User::~User() {
     std::size_t n = m_uses[0].n_uses();
     for (std::size_t i = 0; i < n; ++i)
-      PSI_ASSERT(!m_uses[i+1].target());
+      PSI_WARNING(!m_uses[i+1].target());
   }
 }

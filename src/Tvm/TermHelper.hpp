@@ -8,6 +8,7 @@
  */
 
 #include "Core.hpp"
+#include "LLVMBuilder.hpp"
 
 #include <stdexcept>
 
@@ -22,13 +23,13 @@ namespace Psi {
         return context.get_metatype();
       }
 
-      LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
-        return llvm_value_constant(builder.constant_builder(), term);
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
+        return llvm_value_constant(builder, term);
       }
 
-      LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
-        LLVMConstantBuilder::Type ty = static_cast<const Derived*>(this)->llvm_type(builder, term);
-        return builder.metatype_value(ty.type());
+      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+        LLVMType ty = static_cast<const Derived*>(this)->llvm_type(builder, term);
+        return builder.metatype_value_from_type(ty.type());
       }
     };
 
@@ -40,12 +41,12 @@ namespace Psi {
           throw std::logic_error("primitive value created with parameters");
       }
 
-      LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const {
+      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const {
         throw std::logic_error("the type of a term cannot be a primitive value");
       }
 
-      LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
-        return static_cast<const Derived*>(this)->llvm_value_constant(builder.constant_builder(), term);
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
+        return static_cast<const Derived*>(this)->llvm_value_constant(builder, term);
       }
     };
   }

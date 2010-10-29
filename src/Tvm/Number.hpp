@@ -12,8 +12,8 @@ namespace Psi {
     public:
       IntegerType(bool is_signed, unsigned n_bits);
 
-      LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term&) const;
-      LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&) const;
+      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
+      LLVMType llvm_type(LLVMValueBuilder&) const;
       bool operator == (const IntegerType&) const;
       friend std::size_t hash_value(const IntegerType&);
 
@@ -32,7 +32,7 @@ namespace Psi {
       bool operator == (const ConstantInteger&) const;
       friend std::size_t hash_value(const ConstantInteger&);
       TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
-      LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
     private:
       IntegerType m_type;
@@ -58,8 +58,8 @@ namespace Psi {
 
       RealType(Width width);
 
-      LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term&) const;
-      LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&) const;
+      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
+      LLVMType llvm_type(LLVMValueBuilder&) const;
       bool operator == (const RealType&) const;
       friend std::size_t hash_value(const RealType&);
 
@@ -88,7 +88,7 @@ namespace Psi {
       bool operator == (const ConstantReal&) const;
       friend std::size_t hash_value(const ConstantReal&);
       TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
-      LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
     private:
       RealType m_type;
@@ -105,7 +105,7 @@ namespace Psi {
       bool operator == (const SpecialRealValue&) const;
       friend std::size_t hash_value(const SpecialRealValue&);
       TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
-      LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
     private:
       RealType m_type;

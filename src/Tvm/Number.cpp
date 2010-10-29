@@ -12,12 +12,12 @@ namespace Psi {
       : m_is_signed(is_signed), m_n_bits(n_bits) {
     }
 
-    LLVMConstantBuilder::Type IntegerType::llvm_type(LLVMConstantBuilder& builder) const {
+    LLVMType IntegerType::llvm_type(LLVMValueBuilder& builder) const {
       const llvm::Type *ty = llvm::IntegerType::get(builder.context(), m_n_bits);
-      return LLVMConstantBuilder::type_known(const_cast<llvm::Type*>(ty));
+      return LLVMType::known(const_cast<llvm::Type*>(ty));
     }
 
-    LLVMConstantBuilder::Type IntegerType::llvm_type(LLVMConstantBuilder& builder, Term&) const {
+    LLVMType IntegerType::llvm_type(LLVMValueBuilder& builder, Term&) const {
       return llvm_type(builder);
     }
 
@@ -85,17 +85,17 @@ namespace Psi {
       return context.get_functional_v(m_type);
     }
 
-    LLVMConstantBuilder::Constant ConstantInteger::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm&) const {
-      LLVMConstantBuilder::Type ty = m_type.llvm_type(builder);
-      PSI_ASSERT(ty.valid());
+    LLVMValue ConstantInteger::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
+      LLVMType ty = m_type.llvm_type(builder);
+      PSI_ASSERT(ty.is_valid());
       llvm::APInt llvm_value = m_type.mpl_to_llvm(m_value);
-      return LLVMConstantBuilder::constant_value(llvm::ConstantInt::get(ty.type(), llvm_value));
+      return LLVMValue::known(llvm::ConstantInt::get(ty.type(), llvm_value));
     }
 
     RealType::RealType(Width width) : m_width(width) {
     }
 
-    LLVMConstantBuilder::Type RealType::llvm_type(LLVMConstantBuilder& builder) const {
+    LLVMType RealType::llvm_type(LLVMValueBuilder& builder) const {
       const llvm::Type *ty;
       switch (m_width) {
       case real_float: ty = llvm::Type::getFloatTy(builder.context()); break;
@@ -105,10 +105,10 @@ namespace Psi {
         PSI_FAIL("unknown real width");
       }
 
-      return LLVMConstantBuilder::type_known(const_cast<llvm::Type*>(ty));
+      return LLVMType::known(const_cast<llvm::Type*>(ty));
     }
 
-    LLVMConstantBuilder::Type RealType::llvm_type(LLVMConstantBuilder& builder, Term&) const {
+    LLVMType RealType::llvm_type(LLVMValueBuilder& builder, Term&) const {
       return llvm_type(builder);
     }
 
@@ -188,9 +188,9 @@ namespace Psi {
       return context.get_functional_v(m_type);
     }
 
-    LLVMConstantBuilder::Constant ConstantReal::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm&) const {
+    LLVMValue ConstantReal::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
       llvm::APFloat llvm_value = m_type.mpl_to_llvm(m_value);
-      return LLVMConstantBuilder::constant_value(llvm::ConstantFP::get(builder.context(), llvm_value));
+      return LLVMValue::known(llvm::ConstantFP::get(builder.context(), llvm_value));
     }
 
     SpecialRealValue::SpecialRealValue(const RealType& type, SpecialReal value, bool negative)
@@ -216,9 +216,9 @@ namespace Psi {
       return context.get_functional_v(m_type);
     }
 
-    LLVMConstantBuilder::Constant SpecialRealValue::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm&) const {
+    LLVMValue SpecialRealValue::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
       llvm::APFloat llvm_value = m_type.special_to_llvm(m_value, m_negative);
-      return LLVMConstantBuilder::constant_value(llvm::ConstantFP::get(builder.context(), llvm_value));
+      return LLVMValue::known(llvm::ConstantFP::get(builder.context(), llvm_value));
     }
   }
 }

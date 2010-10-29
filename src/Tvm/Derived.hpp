@@ -2,28 +2,27 @@
 #define HPP_PSI_TVM_DERIVED
 
 #include "Core.hpp"
+#include "TermHelper.hpp"
 
 namespace Psi {
   namespace Tvm {
-    class DerivedType : public Type {
-    protected:
-      DerivedType();
-
-    private:
-      virtual bool equals_internal(const ProtoTerm& other) const;
-      virtual std::size_t hash_internal() const;
+    class BlockType : public PrimitiveType<BlockType> {
+    public:
+      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
+      bool operator == (const BlockType&) const;
+      friend std::size_t hash_value(const BlockType&);
     };
 
-    class PointerType : public DerivedType {
+    class PointerType {
     public:
-      static Term* create(Term *target);
+      TermPtr<> type(Context& context, std::size_t n_parameters, Term *const*) const;
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
+      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
+      bool operator == (const PointerType&) const;
+      friend std::size_t hash_value(const PointerType&);
 
-    private:
-      virtual ProtoTerm* clone() const;
-      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
-      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
-      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
-      virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
+      TermPtr<> target_type(FunctionalTerm& term) const;
     };
 
 #if 0
@@ -49,7 +48,6 @@ namespace Psi {
       std::vector<LLVMBuilderValue> build_llvm_member_values(LLVMBuilder& builder, AppliedType *applied);
       std::vector<LLVMBuilderType> build_llvm_member_types(LLVMBuilder& builder, AppliedType *applied);
     };
-#endif
 
     class ArrayType : public DerivedType {
     public:
@@ -58,8 +56,8 @@ namespace Psi {
     private:
       virtual ProtoTerm* clone() const;
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
-      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
-      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
+      virtual LLVMValueBuilder::Constant llvm_value_constant(LLVMValueBuilder&, Term*) const;
+      virtual LLVMValueBuilder::Type llvm_type(LLVMValueBuilder&, Term*) const;
       virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
     };
 
@@ -75,7 +73,7 @@ namespace Psi {
       virtual std::size_t hash_internal() const = 0;
       virtual ProtoTerm* clone() const = 0;
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
-      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
+      virtual LLVMValueBuilder::Constant llvm_value_constant(LLVMValueBuilder&, Term*) const;
     };
 
     class StructType : public DerivedType {
@@ -85,8 +83,8 @@ namespace Psi {
     private:
       virtual ProtoTerm* clone() const;
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
-      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
-      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
+      virtual LLVMValueBuilder::Constant llvm_value_constant(LLVMValueBuilder&, Term*) const;
+      virtual LLVMValueBuilder::Type llvm_type(LLVMValueBuilder&, Term*) const;
       virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
     };
 
@@ -99,7 +97,7 @@ namespace Psi {
       virtual bool equals_internal(const ProtoTerm& other) const = 0;
       virtual std::size_t hash_internal() const = 0;
       virtual ProtoTerm* clone() const = 0;
-      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
+      virtual LLVMValueBuilder::Constant llvm_value_constant(LLVMValueBuilder&, Term*) const;
     };
 
     class UnionType : public DerivedType {
@@ -109,8 +107,8 @@ namespace Psi {
     private:
       virtual ProtoTerm* clone() const;
       virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
-      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
-      virtual LLVMConstantBuilder::Type llvm_type(LLVMConstantBuilder&, Term*) const;
+      virtual LLVMValueBuilder::Constant llvm_value_constant(LLVMValueBuilder&, Term*) const;
+      virtual LLVMValueBuilder::Type llvm_type(LLVMValueBuilder&, Term*) const;
       virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
     };
 
@@ -127,8 +125,9 @@ namespace Psi {
       virtual bool equals_internal(const ProtoTerm& other) const = 0;
       virtual std::size_t hash_internal() const = 0;
       virtual ProtoTerm* clone() const = 0;
-      virtual LLVMConstantBuilder::Constant llvm_value_constant(LLVMConstantBuilder&, Term*) const;
+      virtual LLVMValueBuilder::Constant llvm_value_constant(LLVMValueBuilder&, Term*) const;
     };
+#endif
   }
 }
 
