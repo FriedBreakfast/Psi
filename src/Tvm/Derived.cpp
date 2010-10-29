@@ -1,5 +1,7 @@
 #include "Derived.hpp"
-#include "Number.hpp"
+#include "Functional.hpp"
+#include "Primitive.hpp"
+#include "LLVMBuilder.hpp"
 
 #include <stdexcept>
 
@@ -9,18 +11,6 @@
 
 namespace Psi {
   namespace Tvm {
-    LLVMType BlockType::llvm_type(LLVMValueBuilder& builder, Term&) const {
-      return LLVMType::known(const_cast<llvm::Type*>(llvm::Type::getLabelTy(builder.context())));
-    }
-
-    bool BlockType::operator == (const BlockType&) const {
-      return true;
-    }
-
-    std::size_t hash_value(const BlockType&) {
-      return 0;
-    }
-
     TermPtr<> PointerType::type(Context& context, std::size_t n_parameters, Term *const*) const {
       if (n_parameters != 1)
 	throw std::logic_error("pointer type takes one parameter");
@@ -32,7 +22,7 @@ namespace Psi {
     }
 
     LLVMValue PointerType::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
-      return builder.metatype_value_from_type(llvm::Type::getInt8PtrTy(builder.context()));
+      return Metatype::llvm_from_type(builder, llvm::Type::getInt8PtrTy(builder.context()));
     }
 
     LLVMType PointerType::llvm_type(LLVMValueBuilder& builder, Term&) const {
@@ -45,6 +35,10 @@ namespace Psi {
 
     std::size_t hash_value(const PointerType&) {
       return 0;
+    }
+
+    FunctionalTermPtr<PointerType> Context::get_pointer_type(TermRef<Term> type) {
+      return get_functional_v(PointerType(), type);
     }
 
     /**

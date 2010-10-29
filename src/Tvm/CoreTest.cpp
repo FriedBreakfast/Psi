@@ -1,6 +1,8 @@
 #include <boost/test/unit_test.hpp>
 
 #include "Core.hpp"
+#include "Function.hpp"
+#include "Functional.hpp"
 #include "Type.hpp"
 #include "Number.hpp"
 

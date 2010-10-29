@@ -2,17 +2,9 @@
 #define HPP_PSI_TVM_DERIVED
 
 #include "Core.hpp"
-#include "TermHelper.hpp"
 
 namespace Psi {
   namespace Tvm {
-    class BlockType : public PrimitiveType<BlockType> {
-    public:
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
-      bool operator == (const BlockType&) const;
-      friend std::size_t hash_value(const BlockType&);
-    };
-
     class PointerType {
     public:
       TermPtr<> type(Context& context, std::size_t n_parameters, Term *const*) const;

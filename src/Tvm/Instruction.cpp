@@ -1,3 +1,4 @@
+#include "Function.hpp"
 #include "Instruction.hpp"
 #include "LLVMBuilder.hpp"
 

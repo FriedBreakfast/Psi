@@ -1,6 +1,8 @@
 #include "LLVMBuilder.hpp"
 #include "Core.hpp"
 #include "Derived.hpp"
+#include "Function.hpp"
+#include "Functional.hpp"
 
 #include <stdexcept>
 
@@ -46,9 +48,6 @@ namespace Psi {
 	    throw std::logic_error("not implemented");
 	  }
 
-	  case term_metatype:
-	    return self->metatype_type();
-
 	  case term_functional: {
 	    FunctionalTerm& cast_term = checked_cast<FunctionalTerm&>(term);
 	    return cast_term.backend()->llvm_type(*self, cast_term);
@@ -87,7 +86,7 @@ namespace Psi {
 	    /**
 	     * Only terms which can be the type of a term should
 	     * appear here. This restricts us to term_functional,
-	     * term_apply, term_metatype and term_function_type.
+	     * term_apply and term_function_type.
 	     *
 	     * term_recursive should only occur inside term_apply.
 	     *
@@ -135,9 +134,6 @@ namespace Psi {
 	     * term_function_type_parameter should never be passed
 	     * here because function types are defined simply by their
 	     * parameters.
-	     *
-	     * term_metatype does not occur here because metatype has
-	     * no type, hence its value does not exist.
 	     *
 	     * term_recursive needs to be nested inside term_apply.
 	     *
@@ -419,55 +415,6 @@ namespace Psi {
       m_module = module;
     }
 
-    /**
-     * \brief Get the LLVM type for Metatype values.
-     */
-    LLVMType LLVMValueBuilder::metatype_type() {
-      const llvm::Type* i64 = llvm::Type::getInt64Ty(context());
-      return LLVMType::known(llvm::StructType::get(context(), i64, i64, NULL));
-    }
-
-    /**
-     * \brief Get an LLVM value for Metatype for the given LLVM type.
-     */
-    LLVMValue LLVMValueBuilder::metatype_value_from_type(const llvm::Type* ty) {
-      llvm::Constant* values[2] = {
-	llvm::ConstantExpr::getSizeOf(ty),
-	llvm::ConstantExpr::getAlignOf(ty)
-      };
-
-      return LLVMValue::known(llvm::ConstantStruct::get(ty->getContext(), values, 2, false));
-    }
-
-    /**
-     * \brief Get an LLVM value for Metatype for an empty type.
-     */
-    LLVMValue LLVMValueBuilder::metatype_value_empty() {
-      return metatype_value(0, 1);
-    }
-
-    /**
-     * \brief Get an LLVM value for a specified size and alignment.
-     *
-     * The result of this call will be a global constant.
-     */
-    LLVMValue LLVMValueBuilder::metatype_value_from_constant(llvm::Constant *size, llvm::Constant *align) {
-      if (!size->getType()->isIntegerTy(64) || !align->getType()->isIntegerTy(64))
-	throw std::logic_error("size or align in metatype is not a 64-bit integer");
-
-      if (llvm::cast<llvm::ConstantInt>(align)->getValue().exactLogBase2() < 0)
-	throw std::logic_error("alignment is not a power of two");
-
-      llvm::Constant* values[2] = {size, align};
-      return LLVMValue::known(llvm::ConstantStruct::get(context(), values, 2, false));
-    }
-
-    LLVMValue LLVMValueBuilder::metatype_value(std::size_t size, std::size_t align) {
-      const llvm::Type *i64 = llvm::Type::getInt64Ty(context());
-      return metatype_value_from_constant(llvm::ConstantInt::get(i64, size),
-					  llvm::ConstantInt::get(i64, align));
-    }
-
     LLVMConstantBuilder::LLVMConstantBuilder(llvm::LLVMContext *context, llvm::Module *module)
       : LLVMValueBuilder(context, module) {
     }
@@ -483,19 +430,6 @@ namespace Psi {
     }
 
     LLVMFunctionBuilder::~LLVMFunctionBuilder() {
-    }
-
-    /**
-     * \brief Get an LLVM value for a specified size and alignment.
-     *
-     * The result of this call will be a global constant.
-     */
-    LLVMValue LLVMFunctionBuilder::metatype_value_runtime(llvm::Value *size, llvm::Value *align) {
-      const llvm::Type* i64 = llvm::Type::getInt64Ty(context());
-      llvm::Type *mtype = llvm::StructType::get(context(), i64, i64, NULL);
-      llvm::Value *first = irbuilder().CreateInsertValue(llvm::UndefValue::get(mtype), size, 0);
-      llvm::Value *second = irbuilder().CreateInsertValue(first, align, 1);
-      return LLVMValue::known(second);
     }
 
     llvm::Function* llvm_intrinsic_memcpy(llvm::Module& m) {

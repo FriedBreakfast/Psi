@@ -1,4 +1,5 @@
 #include "Number.hpp"
+#include "Functional.hpp"
 #include "../Utility.hpp"
 
 #include <sstream>

@@ -2,7 +2,7 @@
 #define HPP_PSI_TVM_NUMBER
 
 #include "Core.hpp"
-#include "TermHelper.hpp"
+#include "Primitive.hpp"
 
 #include <gmpxx.h>
 

@@ -10,12 +10,16 @@ add_library(psi SHARED
 
   Tvm/Core.cpp Tvm/Core.hpp
   Tvm/Derived.cpp Tvm/Derived.hpp
+  Tvm/Function.cpp Tvm/Function.hpp
+  Tvm/Functional.cpp Tvm/Functional.hpp
   Tvm/Instruction.cpp Tvm/Instruction.hpp
   Tvm/LLVMBuilder.cpp Tvm/LLVMBuilder.hpp
   Tvm/LLVMValue.hpp
   Tvm/Number.cpp Tvm/Number.hpp
-  Tvm/TermHelper.hpp
+  Tvm/Primitive.cpp Tvm/Primitive.hpp
+  Tvm/Recursive.cpp
   Tvm/User.cpp Tvm/User.hpp
+  Tvm/Utility.hpp
 )
 
 #install(TARGETS psi
