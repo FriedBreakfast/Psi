@@ -1,7 +1,9 @@
 #include "Core.hpp"
 #include "Function.hpp"
 #include "Functional.hpp"
+#include "Recursive.hpp"
 #include "Utility.hpp"
+#include "Derived.hpp"
 #include "LLVMBuilder.hpp"
 
 #include <stdexcept>
@@ -111,8 +113,7 @@ namespace Psi {
     std::size_t Term::hash_value() const {
       switch (term_type()) {
       case term_functional:
-      case term_function_type_internal:
-      case term_function_type_internal_parameter:
+      case term_function_type_resolver:
 	return checked_cast<const HashTerm*>(this)->m_hash;
 
       default:
@@ -183,6 +184,15 @@ namespace Psi {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
     }
 
+    /**
+     * \brief Get the value type of a global, i.e. the type pointed to
+     * by the global's value.
+     */
+    TermPtr<> GlobalTerm::value_type() const {
+      TermPtr<FunctionalTerm> ft = checked_term_cast<FunctionalTerm>(type());
+      return checked_cast_functional<PointerType>(ft).backend().target_type(*ft);
+    }
+
     GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, TermRef<> type, bool constant)
       : GlobalTerm(ui, context, term_global_variable, type),
 	m_constant(constant) {
@@ -218,7 +228,7 @@ namespace Psi {
      * \brief Create a new global term.
      */
     TermPtr<GlobalVariableTerm> Context::new_global_variable(TermRef<> type, bool constant) {
-      return TermPtr<GlobalVariableTerm>(allocate_term(this, GlobalVariableTerm::Initializer(type.get(), constant)));
+      return allocate_term(this, GlobalVariableTerm::Initializer(type.get(), constant));
     }
 
     /**
@@ -462,6 +472,48 @@ namespace Psi {
 
     Context::~Context() {
       PSI_WARNING(m_hash_terms.empty());
+    }
+
+    namespace {
+      std::size_t hash_type_info(const std::type_info& ti) {
+#if __GXX_MERGED_TYPEINFO_NAMES
+	return boost::hash_value(ti.name());
+#else
+	std::size_t h = 0;
+	for (const char *p = ti.name(); *p != '\0'; ++p)
+	  boost::hash_combine(h, *p);
+	return h;
+#endif
+      }
+    }
+
+    TermBackend::~TermBackend() {
+    }
+
+    std::size_t HashTermBackend::hash_value() const {
+      std::size_t h = 0;
+      boost::hash_combine(h, hash_internal());
+      boost::hash_combine(h, hash_type_info(typeid(*this)));
+      return h;
+    }
+
+    /**
+     * Return whether a term is unique, i.e. it is not functional so
+     * a copy would be automatically distinct from the original.
+     */
+    bool term_unique(TermRef<> term) {
+      switch (term->term_type()) {
+      case term_instruction:
+      case term_block:
+      case term_global_variable:
+      case term_function:
+      case term_function_parameter:
+      case term_phi:
+	return true;
+
+      default:
+	return false;
+      }
     }
   }
 }

@@ -7,7 +7,7 @@ namespace Psi {
   namespace Tvm {
     class PointerType {
     public:
-      TermPtr<> type(Context& context, std::size_t n_parameters, Term *const*) const;
+      TermPtr<> type(Context&, TermRefArray<>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;

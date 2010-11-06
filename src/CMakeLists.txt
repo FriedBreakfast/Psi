@@ -17,7 +17,7 @@ add_library(psi SHARED
   Tvm/LLVMValue.hpp
   Tvm/Number.cpp Tvm/Number.hpp
   Tvm/Primitive.cpp Tvm/Primitive.hpp
-  Tvm/Recursive.cpp
+  Tvm/Recursive.cpp Tvm/Recursive.hpp
   Tvm/User.cpp Tvm/User.hpp
   Tvm/Utility.hpp
 )

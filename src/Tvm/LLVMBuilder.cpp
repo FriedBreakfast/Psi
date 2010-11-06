@@ -3,6 +3,7 @@
 #include "Derived.hpp"
 #include "Function.hpp"
 #include "Functional.hpp"
+#include "Recursive.hpp"
 
 #include <stdexcept>
 
@@ -82,11 +83,15 @@ namespace Psi {
 	    }
 	  }
 
+	  case term_function_parameter:
+	    return LLVMType::unknown();
+
 	  default:
 	    /**
 	     * Only terms which can be the type of a term should
 	     * appear here. This restricts us to term_functional,
-	     * term_apply and term_function_type.
+	     * term_apply, term_function_type and
+	     * term_function_parameter.
 	     *
 	     * term_recursive should only occur inside term_apply.
 	     *
@@ -318,7 +323,6 @@ namespace Psi {
       llvm::BasicBlock *entry_block = llvm::BasicBlock::Create(context(), "", llvm_func);
       LLVMFunctionBuilder::IRBuilder irbuilder(entry_block);
 
-      FunctionTerm::FunctionParameterList::const_iterator it = psi_func->parameters().begin();
       llvm::Function::ArgumentListType& argument_list = llvm_func->getArgumentList();
       llvm::Function::ArgumentListType::const_iterator llvm_it = argument_list.begin();
 
@@ -328,28 +332,27 @@ namespace Psi {
 	++llvm_it;
       }
 
-      for (; it != psi_func->parameters().end(); ++it, ++llvm_it) {
-	PSI_ASSERT(llvm_it != argument_list.end());
-	FunctionParameterTerm *param = &const_cast<FunctionParameterTerm&>(*it);
+      for (std::size_t n = 0; llvm_it != argument_list.end(); ++n, ++llvm_it) {
+	TermPtr<FunctionParameterTerm> param = psi_func->parameter(n);
 	llvm::Argument *llvm_param = const_cast<llvm::Argument*>(&*llvm_it);
 	TermRef<> param_type = param->type();
 	PSI_ASSERT(param_type.get());
-	LLVMType param_type_llvm = type(param);
+	LLVMType param_type_llvm = type(param_type);
 
 	if (psi_func->calling_convention() == cconv_tvm) {
 	  if (param_type_llvm.is_known() && !param_type_llvm.type()->isPointerTy()) {
 	    const llvm::PointerType *ptr_ty = param_type_llvm.type()->getPointerTo();
 	    llvm::Value *cast_param = irbuilder.CreateBitCast(llvm_param, ptr_ty);
 	    llvm::Value *load = irbuilder.CreateLoad(cast_param);
-	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(load)));
+	    func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::known(load)));
 	  } else if (param_type_llvm.is_empty()) {
-	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::empty()));
+	    func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::empty()));
 	  } else {
-	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::unknown(llvm_param, llvm_param)));
+	    func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::unknown(llvm_param, llvm_param)));
 	  }
 	} else {
 	  PSI_ASSERT(param_type_llvm.is_known());
-	  func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(llvm_param)));
+	  func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::known(llvm_param)));
 	}
       }
 

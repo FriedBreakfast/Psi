@@ -17,8 +17,8 @@ namespace Psi {
     template<typename Derived>
     class PrimitiveType {
     public:
-      TermPtr<> type(Context& context, std::size_t n_parameters, Term *const*) const {
-        if (n_parameters != 0)
+      TermPtr<> type(Context& context, TermRefArray<> parameters) const {
+        if (parameters.size() != 0)
           throw std::logic_error("primitive type created with parameters");
         return context.get_metatype();
       }
@@ -33,8 +33,8 @@ namespace Psi {
     template<typename Derived>
     class PrimitiveValue {
     public:
-      void check_primitive_parameters(std::size_t n, Term*const*) const {
-        if (n)
+      void check_primitive_parameters(TermRefArray<> parameters) const {
+        if (parameters.size() != 0)
           throw std::logic_error("primitive value created with parameters");
       }
 
@@ -60,7 +60,7 @@ namespace Psi {
 
     class Metatype {
     public:
-      TermPtr<> type(Context& context, std::size_t n_parameters, Term *const*) const;
+      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
@@ -79,8 +79,16 @@ namespace Psi {
     template<typename Derived>
     LLVMValue PrimitiveType<Derived>::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
       LLVMType ty = static_cast<const Derived*>(this)->llvm_type(builder, term);
+      PSI_ASSERT(ty.is_known());
       return Metatype::llvm_from_type(builder, ty.type());
     }
+
+    class EmptyType : public PrimitiveType<EmptyType> {
+    public:
+      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
+      bool operator == (const EmptyType&) const;
+      friend std::size_t hash_value(const EmptyType&);
+    };
 
     class BlockType : public PrimitiveType<BlockType> {
     public:

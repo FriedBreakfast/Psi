@@ -11,8 +11,8 @@
 
 namespace Psi {
   namespace Tvm {
-    TermPtr<> PointerType::type(Context& context, std::size_t n_parameters, Term *const*) const {
-      if (n_parameters != 1)
+    TermPtr<> PointerType::type(Context& context, TermRefArray<> parameters) const {
+      if (parameters.size() != 1)
 	throw std::logic_error("pointer type takes one parameter");
       return context.get_metatype();
     }

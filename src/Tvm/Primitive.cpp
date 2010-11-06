@@ -8,8 +8,8 @@
 
 namespace Psi {
   namespace Tvm {
-    TermPtr<> Metatype::type(Context& context, std::size_t n_parameters, Term *const*) const {
-      if (n_parameters != 0)
+    TermPtr<> Metatype::type(Context&, TermRefArray<> parameters) const {
+      if (parameters.size() != 0)
 	throw std::logic_error("metatype created with parameters");
       return TermPtr<>();
     }
@@ -18,7 +18,7 @@ namespace Psi {
       return llvm_value_constant(builder, term);
     }
 
-    LLVMValue Metatype::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+    LLVMValue Metatype::llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const {
       throw std::logic_error("metatype does not have a value");
     }
 
@@ -99,6 +99,31 @@ namespace Psi {
 
     FunctionalTermPtr<Metatype> Context::get_metatype() {
       return get_functional_v(Metatype());
+    }
+
+    LLVMType EmptyType::llvm_type(LLVMValueBuilder&, Term&) const {
+      return LLVMType::empty();
+    }
+
+    bool EmptyType::operator == (const EmptyType&) const {
+      return true;
+    }
+
+    /**
+     * This overrides the PrimitiveType default for EmptyType, which
+     * is unusual since there is no corresponding LLVM type.
+     */
+    template<>
+    LLVMValue PrimitiveType<EmptyType>::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
+      return Metatype::llvm_empty(builder);
+    }
+
+    std::size_t hash_value(const EmptyType&) {
+      return 0;
+    }
+
+    FunctionalTermPtr<EmptyType> Context::get_empty_type() {
+      return get_functional_v(EmptyType());
     }
 
     LLVMType BlockType::llvm_type(LLVMValueBuilder& builder, Term&) const {

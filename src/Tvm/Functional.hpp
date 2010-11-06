@@ -8,20 +8,13 @@ namespace Psi {
     /**
      * \brief Base class for building custom FunctionalTerm instances.
      */
-    class FunctionalTermBackend {
+    class FunctionalTermBackend : public HashTermBackend {
     public:
-      virtual ~FunctionalTermBackend();
-      std::size_t hash_value() const;
-      virtual bool equals(const FunctionalTermBackend&) const = 0;
-      virtual std::pair<std::size_t, std::size_t> size_align() const = 0;
       virtual FunctionalTermBackend* clone(void *dest) const = 0;
-      virtual TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const = 0;
+      virtual TermPtr<> type(Context& context, TermRefArray<> parameters) const = 0;
       virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const = 0;
       virtual LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const = 0;
       virtual LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const = 0;
-
-    private:
-      virtual std::size_t hash_internal() const = 0;
     };
 
     /**
@@ -45,7 +38,7 @@ namespace Psi {
       class Setup;
       FunctionalTerm(const UserInitializer& ui, Context *context, TermRef<> type,
 		     std::size_t hash, FunctionalTermBackend *backend,
-		     std::size_t n_parameters, Term *const* parameters);
+		     TermRefArray<> parameters);
       ~FunctionalTerm();
 
       FunctionalTermBackend *m_backend;
@@ -82,8 +75,8 @@ namespace Psi {
         return new (dest) ThisType(*this);
       }
 
-      virtual TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const {
-        return m_impl.type(context, n_parameters, parameters);
+      virtual TermPtr<> type(Context& context, TermRefArray<> parameters) const {
+        return m_impl.type(context, parameters);
       }
 
       virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -123,8 +116,8 @@ namespace Psi {
     }
 
     template<typename T>
-    FunctionalTermPtr<T> Context::get_functional(const T& proto, std::size_t n_parameters, Term *const* parameters) {
-      return FunctionalTermPtr<T>(get_functional_internal(FunctionalTermBackendImpl<T>(proto), n_parameters, parameters).get());
+    FunctionalTermPtr<T> Context::get_functional(const T& proto, TermRefArray<> parameters) {
+      return FunctionalTermPtr<T>(get_functional_bare(FunctionalTermBackendImpl<T>(proto), parameters).get());
     }
   }
 }

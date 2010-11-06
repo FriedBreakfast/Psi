@@ -31,7 +31,7 @@ namespace Psi {
 
       bool operator == (const ConstantInteger&) const;
       friend std::size_t hash_value(const ConstantInteger&);
-      TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
+      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
     private:
@@ -87,7 +87,7 @@ namespace Psi {
 
       bool operator == (const ConstantReal&) const;
       friend std::size_t hash_value(const ConstantReal&);
-      TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
+      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
     private:
@@ -104,7 +104,7 @@ namespace Psi {
 
       bool operator == (const SpecialRealValue&) const;
       friend std::size_t hash_value(const SpecialRealValue&);
-      TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
+      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
     private:

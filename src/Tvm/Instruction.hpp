@@ -7,10 +7,8 @@ namespace Psi {
   namespace Tvm {
     class ReturnInsn {
     public:
-      TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const;
+      TermPtr<> type(Context& context, const FunctionTerm& function, TermRefArray<> parameters) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, InstructionTerm&) const;
-      bool operator == (const ReturnInsn&) const;
-      friend std::size_t hash_value(const ReturnInsn&);
     };
   }
 }

@@ -1,6 +1,11 @@
 #ifndef HPP_PSI_TVM_FUNCTION
 #define HPP_PSI_TVM_FUNCTION
 
+#include <boost/preprocessor/facilities/intercept.hpp>
+#include <boost/preprocessor/repetition/repeat.hpp>
+#include <boost/preprocessor/repetition/enum_binary_params.hpp>
+#include <boost/preprocessor/repetition/enum_trailing_params.hpp>
+
 #include "Core.hpp"
 
 namespace Psi {
@@ -8,17 +13,11 @@ namespace Psi {
     /**
      * \brief Base class for building custom InstructionTerm instances.
      */
-    class InstructionTermBackend {
+    class InstructionTermBackend : public TermBackend {
     public:
-      virtual ~InstructionTermBackend();
-      std::size_t hash_value() const;
-      virtual bool equals(const InstructionTermBackend&) const = 0;
-      virtual std::pair<std::size_t, std::size_t> size_align() const = 0;
       virtual InstructionTermBackend* clone(void *dest) const = 0;
-      virtual TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const = 0;
+      virtual TermPtr<> type(Context& context, const FunctionTerm& function, TermRefArray<> parameters) const = 0;
       virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, InstructionTerm&) const = 0;
-    private:
-      virtual std::size_t hash_internal() const = 0;
     };
 
     class BlockTerm;
@@ -32,13 +31,16 @@ namespace Psi {
       friend class BlockTerm;
 
     public:
+      virtual ~InstructionTerm();
+
       const InstructionTermBackend* backend() const {return m_backend;}
       std::size_t n_parameters() const {return Term::n_base_parameters();}
       TermPtr<> parameter(std::size_t n) const {return get_base_parameter(n);}
 
     private:
-      InstructionTerm(const UserInitializer& ui,
-		      TermRef<> type, std::size_t n_parameters, Term *const* parameters,
+      class Initializer;
+      InstructionTerm(const UserInitializer& ui, Context *context,
+		      TermRef<> type, TermRefArray<> parameters,
 		      InstructionTermBackend *backend);
 
       InstructionTermBackend *m_backend;
@@ -85,15 +87,21 @@ namespace Psi {
       void new_phi(TermRef<> type);
 
       template<typename T>
-      TermPtr<> new_instruction(const T& proto, std::size_t n_parameters, Term *const* parameters);
+      TermPtr<> new_instruction(const T& proto, TermRefArray<> parameters);
 
       const InstructionList& instructions() const {return m_instructions;}
       const PhiList& phi_nodes() const {return m_phi_nodes;}
 
+      /** \brief Get the function which contains this block. */
+      TermPtr<FunctionTerm> function() const {return get_base_parameter<FunctionTerm>(0);}
       /** \brief Get a pointer to the (currently) dominating block. */
-      TermPtr<BlockTerm> dominator() const {return get_base_parameter<BlockTerm>(0);}
+      TermPtr<BlockTerm> dominator() const {return get_base_parameter<BlockTerm>(1);}
       /** \brief Get the earliest block dominating this one which is required by variables used by instructions in this block. */
-      TermPtr<BlockTerm> min_dominator() const {return get_base_parameter<BlockTerm>(1);}
+      TermPtr<BlockTerm> min_dominator() const {return get_base_parameter<BlockTerm>(2);}
+
+#define PSI_TVM_VA(z,n,data) template<typename T> TermPtr<> new_instruction_v(const T& proto BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return new_instruction(proto, TermRefArray<>(n,ap));}
+      BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
+#undef PSI_TVM_VA
 
     private:
       typedef boost::intrusive::list_member_hook<> BlockListHook;
@@ -102,7 +110,8 @@ namespace Psi {
       BlockListHook m_block_list_hook;
       InstructionList m_instructions;
       PhiList m_phi_nodes;
-      TermPtr<> new_instruction_internal(const InstructionTermBackend& backend, std::size_t n_parameters, Term *const* parameters);
+
+      TermPtr<> new_instruction_internal(const InstructionTermBackend& backend, TermRefArray<> parameters);
     };
 
     class FunctionTerm;
@@ -113,7 +122,7 @@ namespace Psi {
 
     private:
       class Initializer;
-      FunctionParameterTerm(const UserInitializer& ui, Context *context, TermRef<> type);
+      FunctionParameterTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTerm> function, TermRef<> type);
 
       typedef boost::intrusive::list_member_hook<> FunctionParameterListHook;
       FunctionParameterListHook m_parameter_list_hook;
@@ -136,12 +145,14 @@ namespace Psi {
 				     boost::intrusive::constant_time_size<false> > FunctionParameterList;
 
       std::size_t n_parameters() const {return m_parameters.size();}
+      TermPtr<FunctionParameterTerm> parameter(std::size_t n) const;
       TermPtr<BlockTerm> entry() {return TermPtr<BlockTerm>(&m_blocks.front());}
       TermPtr<BlockTerm> new_block();
+      TermPtr<> result_type() const;
+      TermPtr<FunctionTypeTerm> function_type() const;
       CallingConvention calling_convention() const {return m_calling_convention;}
 
       const BlockList& blocks() const {return m_blocks;}
-      const FunctionParameterList& parameters() const {return m_parameters;}
 
     private:
       class Initializer;
@@ -183,11 +194,13 @@ namespace Psi {
       TermPtr<FunctionTypeParameterTerm> parameter(std::size_t i) const {return get_base_parameter<FunctionTypeParameterTerm>(i+1);}
       TermPtr<> result_type() const {return get_base_parameter(0);}
       CallingConvention calling_convention() const {return m_calling_convention;}
+      TermPtr<> parameter_type_after(TermRefArray<> previous) const;
+      TermPtr<> result_type_after(TermRefArray<> parameters) const;
 
     private:
       class Initializer;
       FunctionTypeTerm(const UserInitializer& ui, Context *context, Term *result_type,
-		       std::size_t n_parameters, FunctionTypeParameterTerm *const* parameters,
+		       TermRefArray<FunctionTypeParameterTerm> parameters,
 		       CallingConvention m_calling_convention);
 
       CallingConvention m_calling_convention;
@@ -204,7 +217,7 @@ namespace Psi {
     /**
      * \brief Internal type used to build function types.
      */
-    class FunctionTypeInternalTerm : public HashTerm {
+    class FunctionTypeResolverTerm : public HashTerm {
       friend class Context;
     public:
       TermPtr<> parameter_type(std::size_t n) const {return get_base_parameter(n+2);}
@@ -214,8 +227,8 @@ namespace Psi {
 
     private:
       class Setup;
-      FunctionTypeInternalTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> result_type,
-			       std::size_t n_parameters, Term *const* parameter_types, CallingConvention calling_convention);
+      FunctionTypeResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> result_type,
+                               TermRefArray<> parameter_types, CallingConvention calling_convention);
       FunctionTypeTerm* get_function_type() const {return checked_cast<FunctionTypeTerm*>(get_base_parameter_ptr(0));}
       void set_function_type(FunctionTypeTerm *term) {set_base_parameter(0, term);}
 
@@ -225,13 +238,19 @@ namespace Psi {
     /**
      * \brief Internal type used to build function types.
      */
-    class FunctionTypeInternalParameterTerm : public HashTerm {
-      friend class Context;
+    class FunctionTypeResolverParameter {
     public:
+      FunctionTypeResolverParameter(std::size_t depth, std::size_t index);
+
+      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+
+      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
+      bool operator == (const FunctionTypeResolverParameter&) const;
+      friend std::size_t hash_value(const FunctionTypeResolverParameter&);
 
     private:
-      class Setup;
-      FunctionTypeInternalParameterTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> type, std::size_t depth, std::size_t index);
       std::size_t m_depth;
       std::size_t m_index;
     };
@@ -242,16 +261,14 @@ namespace Psi {
       typedef T ImplType;
       typedef InstructionTermBackendImpl<T> ThisType;
 
-      virtual TermPtr<> type(Context& context, std::size_t n_parameters, Term *const* parameters) const {
-	return m_impl.type(context, n_parameters, parameters);
+      InstructionTermBackendImpl(const T& impl) : m_impl(impl) {}
+
+      virtual TermPtr<> type(Context& context, const FunctionTerm& function, TermRefArray<> parameters) const {
+	return m_impl.type(context, function, parameters);
       }
 
       virtual std::pair<std::size_t, std::size_t> size_align() const {
         return std::make_pair(sizeof(ThisType), boost::alignment_of<ThisType>::value);
-      }
-
-      virtual bool equals(const InstructionTermBackend& other) const {
-	return m_impl == checked_cast<const ThisType&>(other).m_impl;
       }
 
       virtual InstructionTermBackend* clone(void *dest) const {
@@ -263,17 +280,12 @@ namespace Psi {
       }
 
     private:
-      virtual std::size_t hash_internal() const {
-        boost::hash<ImplType> hasher;
-        return hasher(m_impl);
-      }
-
       ImplType m_impl;
     };
 
     template<typename T>
-    TermPtr<> BlockTerm::new_instruction(const T& proto, std::size_t n_parameters, Term *const* parameters) {
-      return new_instruction_internal(InstructionTermBackendImpl<T>(proto), n_parameters, parameters);
+    TermPtr<> BlockTerm::new_instruction(const T& proto, TermRefArray<> parameters) {
+      return new_instruction_internal(InstructionTermBackendImpl<T>(proto), parameters);
     }
   }
 }

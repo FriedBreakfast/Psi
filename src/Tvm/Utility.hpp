@@ -16,18 +16,18 @@ namespace Psi {
     }
 
     template<typename T>
-    bool any_abstract(std::size_t n, T *const* t) {
-      return std::find_if(t, t+n, term_abstract) != (t+n);
+    bool any_abstract(TermRefArray<T> t) {
+      return std::find_if(t.get(), t.get()+t.size(), term_abstract) != (t.get()+t.size());
     }
 
     template<typename T>
-    bool any_parameterized(std::size_t n, T *const* t) {
-      return std::find_if(t, t+n, term_parameterized) != (t+n);
+    bool any_parameterized(TermRefArray<T> t) {
+      return std::find_if(t.get(), t.get()+t.size(), term_parameterized) != (t.get()+t.size());
     }
 
     template<typename T>
-    bool all_global(std::size_t n, T *const* t) {
-      return std::find_if(t, t+n, std::not1(std::ptr_fun(term_global))) == (t+n);
+    bool all_global(TermRefArray<T> t) {
+      return std::find_if(t.get(), t.get()+t.size(), std::not1(std::ptr_fun(term_global))) == (t.get()+t.size());
     }
 
     /**
@@ -64,7 +64,7 @@ namespace Psi {
      * \brief Allocate a term.
      */
     template<typename T>
-    typename T::TermType* allocate_term(Context *context, const T& initializer) {
+    TermPtr<typename T::TermType> allocate_term(Context *context, const T& initializer) {
       std::size_t n_uses = initializer.n_uses();
 
       std::size_t use_offset = struct_offset(0, initializer.term_size(), boost::alignment_of<Use>::value);
@@ -73,7 +73,7 @@ namespace Psi {
       void *term_base = operator new (total_size);
       Use *uses = static_cast<Use*>(ptr_offset(term_base, use_offset));
       try {
-	return initializer.initialize(term_base, UserInitializer(n_uses+1, uses), context);
+	return TermPtr<typename T::TermType>(initializer.initialize(term_base, UserInitializer(n_uses+1, uses), context));
       } catch(...) {
 	operator delete (term_base);
 	throw;
@@ -95,15 +95,15 @@ namespace Psi {
     };
 
     template<typename T>
-    typename T::TermType* Context::hash_term_get(T& setup) {
+    TermPtr<typename T::TermType> Context::hash_term_get(T& setup) {
       typename HashTermSetType::insert_commit_data commit_data;
       std::pair<typename HashTermSetType::iterator, bool> existing =
 	m_hash_terms.insert_check(setup, SetupHasher<T>(), SetupEquals<T>(), commit_data);
       if (!existing.second)
-	return checked_cast<typename T::TermType*>(&*existing.first);
+	return TermPtr<typename T::TermType>(checked_cast<typename T::TermType*>(&*existing.first));
 
       setup.prepare_initialize(this);
-      typename T::TermType *term = allocate_term(this, setup);
+      TermPtr<typename T::TermType> term = allocate_term(this, setup);
       m_hash_terms.insert_commit(*term, commit_data);
 
       if (m_hash_terms.size() >= m_hash_terms.bucket_count()) {

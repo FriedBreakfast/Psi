@@ -81,8 +81,8 @@ namespace Psi {
       return h;
     }
 
-    TermPtr<> ConstantInteger::type(Context& context, std::size_t n_parameters, Term *const* parameters) const {
-      check_primitive_parameters(n_parameters, parameters);
+    TermPtr<> ConstantInteger::type(Context& context, TermRefArray<> parameters) const {
+      check_primitive_parameters(parameters);
       return context.get_functional_v(m_type);
     }
 
@@ -184,8 +184,8 @@ namespace Psi {
       return h;
     }
 
-    TermPtr<> ConstantReal::type(Context& context, std::size_t n_parameters, Term *const* parameters) const {
-      check_primitive_parameters(n_parameters, parameters);
+    TermPtr<> ConstantReal::type(Context& context, TermRefArray<> parameters) const {
+      check_primitive_parameters(parameters);
       return context.get_functional_v(m_type);
     }
 
@@ -212,8 +212,8 @@ namespace Psi {
       return h;
     }
 
-    TermPtr<> SpecialRealValue::type(Context& context, std::size_t n_parameters, Term *const* parameters) const {
-      check_primitive_parameters(n_parameters, parameters);
+    TermPtr<> SpecialRealValue::type(Context& context, TermRefArray<> parameters) const {
+      check_primitive_parameters(parameters);
       return context.get_functional_v(m_type);
     }
 
