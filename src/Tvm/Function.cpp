@@ -1,5 +1,6 @@
 #include "Function.hpp"
 #include "Functional.hpp"
+#include "Primitive.hpp"
 #include "Utility.hpp"
 #include "Rewrite.hpp"
 
@@ -522,7 +523,7 @@ namespace Psi {
       }
 
       std::size_t n_uses() const {
-	return 1;
+	return 3;
       }
 
     private:
@@ -624,6 +625,18 @@ namespace Psi {
      */
     TermPtr<> FunctionTerm::result_type() const {
       return get_base_parameter(0);
+    }
+
+    /**
+     * Create a new block in this function.
+     */
+    TermPtr<BlockTerm> FunctionTerm::new_block() {
+      TermPtr<BlockTerm> bl = allocate_term(&context(), BlockTerm::Initializer(this));
+      bl->term_add_ref();
+      m_blocks.push_back(*bl);
+      bl->set_dominator(entry());
+      bl->set_min_dominator(entry());
+      return bl;
     }
   }
 }

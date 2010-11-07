@@ -9,6 +9,46 @@
 
 namespace Psi {
   namespace Tvm {
+    LLVMType BooleanType::llvm_type(LLVMValueBuilder& builder, Term&) const {
+      const llvm::Type *ty = llvm::IntegerType::get(builder.context(), 1);
+      return LLVMType::known(const_cast<llvm::Type*>(ty));
+    }
+
+    bool BooleanType::operator == (const BooleanType&) const {
+      return true;
+    }
+
+    std::size_t hash_value(const BooleanType&) {
+      return 0;
+    }
+
+    FunctionalTermPtr<BooleanType> Context::get_boolean_type() {
+      return get_functional_v(BooleanType());
+    }
+
+    ConstantBoolean::ConstantBoolean(bool value)
+      : m_value(value) {
+    }
+
+    bool ConstantBoolean::operator == (const ConstantBoolean& o) const {
+      return m_value == o.m_value;
+    }
+
+    std::size_t hash_value(const ConstantBoolean& self) {
+      return self.m_value;
+    }
+
+    TermPtr<> ConstantBoolean::type(Context& context, TermRefArray<> parameters) const {
+      check_primitive_parameters(parameters);
+      return context.get_functional_v(BooleanType());
+    }
+
+    LLVMValue ConstantBoolean::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
+      return LLVMValue::known(m_value
+			      ? llvm::ConstantInt::getTrue(builder.context())
+			      : llvm::ConstantInt::getFalse(builder.context()));
+    }
+
     IntegerType::IntegerType(bool is_signed, unsigned n_bits)
       : m_is_signed(is_signed), m_n_bits(n_bits) {
     }

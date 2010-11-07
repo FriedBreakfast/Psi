@@ -44,6 +44,13 @@ namespace Psi {
       FunctionalTermBackend *m_backend;
     };
 
+    template<>
+    struct TermIteratorCheck<FunctionalTerm> {
+      static bool check (TermType t) {
+	return t == term_functional;
+      }
+    };
+
     /**
      * \brief Implementation of FunctionalTermBackend.
      *

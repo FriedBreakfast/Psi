@@ -8,6 +8,40 @@
 
 namespace Psi {
   namespace Tvm {
+    class BooleanType : public PrimitiveType<BooleanType> {
+    public:
+      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
+      bool operator == (const BooleanType&) const;
+      friend std::size_t hash_value(const BooleanType&);
+
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const BooleanType*) {}
+      };
+    };
+
+    class ConstantBoolean : public PrimitiveValue<ConstantBoolean> {
+    public:
+      ConstantBoolean(bool value);
+
+      bool operator == (const ConstantBoolean&) const;
+      friend std::size_t hash_value(const ConstantBoolean&);
+      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const ConstantBoolean *self) : m_self(self) {}
+	/// \brief Get the constant value of this term
+	bool value() const {return m_self->m_value;}
+      private:
+	const ConstantBoolean *m_self;
+      };
+
+    private:
+      bool m_value;
+    };
+
     class IntegerType : public PrimitiveType<IntegerType> {
     public:
       IntegerType(bool is_signed, unsigned n_bits);
@@ -19,6 +53,17 @@ namespace Psi {
 
       llvm::APInt mpl_to_llvm(const mpz_class& value) const;
       static llvm::APInt mpl_to_llvm(bool is_signed, unsigned n_bits, const mpz_class& value);
+
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const IntegerType* self) : m_self(self) {}
+	/// \brief Whether this type is signed
+	bool is_signed() const {return m_self->m_is_signed;}
+	/// \brief Number of bits in this type
+	unsigned n_bits() const {return m_self->m_n_bits;}
+      private:
+	const IntegerType *m_self;
+      };
 
     private:
       bool m_is_signed;
@@ -33,6 +78,17 @@ namespace Psi {
       friend std::size_t hash_value(const ConstantInteger&);
       TermPtr<> type(Context& context, TermRefArray<> parameters) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const ConstantInteger *self) : m_self(self) {}
+	/// \brief Get information about the type of this constant
+	IntegerType::Access type() const {return IntegerType::Access(0, &m_self->m_type);}
+	/// \brief Get the value of this constant
+	const mpz_class& value() const {return m_self->m_value;}
+      private:
+	const ConstantInteger *m_self;
+      };
 
     private:
       IntegerType m_type;
@@ -77,6 +133,15 @@ namespace Psi {
        */
       static llvm::APFloat special_to_llvm(const llvm::fltSemantics& semantics, SpecialReal which, bool negative);
 
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const RealType *self) : m_self(self) {}
+	/// \brief Get the width of this type
+	Width width() const {return m_self->m_width;}
+      private:
+	const RealType *m_self;
+      };
+
     private:
       Width m_width;
     };
@@ -89,6 +154,17 @@ namespace Psi {
       friend std::size_t hash_value(const ConstantReal&);
       TermPtr<> type(Context& context, TermRefArray<> parameters) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const ConstantReal* self) : m_self(self) {}
+	/// \brief Get the type of this constant
+	RealType::Access type() const {return RealType::Access(0, &m_self->m_type);}
+	/// \brief Get the value of this constant
+	const mpf_class& value() const {return m_self->m_value;}
+      private:
+	const ConstantReal *m_self;
+      };
 
     private:
       RealType m_type;
@@ -106,6 +182,19 @@ namespace Psi {
       friend std::size_t hash_value(const SpecialRealValue&);
       TermPtr<> type(Context& context, TermRefArray<> parameters) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const SpecialRealValue* self) : m_self(self) {}
+	/// \brief Get the type of this constant
+	RealType::Access type() const {return RealType::Access(0, &m_self->m_type);}
+	/// \brief Get the value (category of special value) of this constant
+	SpecialReal value() const {return m_self->m_value;}
+	/// \brief Whether this constant is negative
+	bool negative() const {return m_self->m_negative;}
+      private:
+	const SpecialRealValue *m_self;
+      };
 
     private:
       RealType m_type;

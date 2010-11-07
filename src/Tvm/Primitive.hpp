@@ -8,6 +8,7 @@
  */
 
 #include "Core.hpp"
+#include "Functional.hpp"
 #include "LLVMBuilder.hpp"
 
 #include <stdexcept>
@@ -74,6 +75,11 @@ namespace Psi {
       static LLVMValue llvm_from_type(LLVMValueBuilder&, const llvm::Type* ty);
       static LLVMValue llvm_from_constant(LLVMValueBuilder&, llvm::Constant *size, llvm::Constant *align);
       static LLVMValue llvm_runtime(LLVMFunctionBuilder&, llvm::Value *size, llvm::Value *align);
+
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const BlockType*) {}
+      };
     };
 
     template<typename Derived>
@@ -88,6 +94,11 @@ namespace Psi {
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       bool operator == (const EmptyType&) const;
       friend std::size_t hash_value(const EmptyType&);
+
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const EmptyType*) {}
+      };
     };
 
     class BlockType : public PrimitiveType<BlockType> {
@@ -95,6 +106,11 @@ namespace Psi {
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       bool operator == (const BlockType&) const;
       friend std::size_t hash_value(const BlockType&);
+
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const BlockType*) {}
+      };
     };
   }
 }

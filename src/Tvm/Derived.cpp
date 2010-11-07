@@ -41,13 +41,6 @@ namespace Psi {
       return get_functional_v(PointerType(), type);
     }
 
-    /**
-     * \brief Get the type pointed to.
-     */
-    TermPtr<> PointerType::target_type(FunctionalTerm& term) const {
-      return term.parameter(0);
-    }
-
 #if 0
     namespace {
       std::pair<llvm::Constant*, llvm::Constant*> constant_size_align(llvm::Constant *value) {

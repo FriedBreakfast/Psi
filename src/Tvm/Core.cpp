@@ -190,7 +190,7 @@ namespace Psi {
      */
     TermPtr<> GlobalTerm::value_type() const {
       TermPtr<FunctionalTerm> ft = checked_term_cast<FunctionalTerm>(type());
-      return checked_cast_functional<PointerType>(ft).backend().target_type(*ft);
+      return checked_cast_functional<PointerType>(ft).backend().target_type();
     }
 
     GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, TermRef<> type, bool constant)

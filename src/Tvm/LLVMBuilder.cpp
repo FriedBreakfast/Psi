@@ -111,11 +111,11 @@ namespace Psi {
 	}
       };
 
-      template<typename FunctionalCallback>
+      template<typename ValueBuilderType, typename FunctionalCallback>
       struct ValueBuilderCallback {
-	LLVMValueBuilder *self;
+	ValueBuilderType *self;
 	FunctionalCallback functional_callback;
-	ValueBuilderCallback(LLVMValueBuilder *self_) : self(self_) {}
+	ValueBuilderCallback(ValueBuilderType *self_) : self(self_) {}
 
 	LLVMValue build(Term& term) const {
 	  switch(term.term_type()) {
@@ -147,7 +147,7 @@ namespace Psi {
 	     *
 	     * term_function_type should only exist inside a pointer.
 	     */
-	    throw std::logic_error("unexpected constant term type");
+	    throw std::logic_error("unexpected term type");
 	  }
 	}
 
@@ -166,7 +166,7 @@ namespace Psi {
 	}
       };
 
-      typedef ValueBuilderCallback<ConstantFunctionalCallback> ConstantBuilderCallback;
+      typedef ValueBuilderCallback<LLVMConstantBuilder, ConstantFunctionalCallback> ConstantBuilderCallback;
 
       struct InstructionFunctionalCallback {
 	LLVMValue operator () (LLVMFunctionBuilder& self, FunctionalTerm& term) const {
@@ -174,7 +174,7 @@ namespace Psi {
 	}
       };
 
-      typedef ValueBuilderCallback<InstructionFunctionalCallback> InstructionBuilderCallback;
+      typedef ValueBuilderCallback<LLVMFunctionBuilder, InstructionFunctionalCallback> InstructionBuilderCallback;
 
       struct GlobalBuilderCallback {
 	LLVMValueBuilder *self;
@@ -185,7 +185,7 @@ namespace Psi {
 	  case term_global_variable: {
 	    GlobalVariableTerm& global = checked_cast<GlobalVariableTerm&>(term);
 	    FunctionalTermPtr<PointerType> type = checked_cast_functional<PointerType>(global.type());
-	    LLVMType llvm_type = self->type(type.backend().target_type(*type));
+	    LLVMType llvm_type = self->type(type.backend().target_type());
 	    if (llvm_type.is_known()) {
 	      return new llvm::GlobalVariable(self->module(), llvm_type.type(), global.constant(), llvm::GlobalValue::InternalLinkage, NULL, "");
 	    } else if (llvm_type.is_empty()) {
@@ -201,7 +201,7 @@ namespace Psi {
 	  case term_function: {
 	    FunctionTerm& func = checked_cast<FunctionTerm&>(term);
 	    FunctionalTermPtr<PointerType> type = checked_cast_functional<PointerType>(func.type());
-	    TermPtr<FunctionTypeTerm> func_type = checked_term_cast<FunctionTypeTerm>(type.backend().target_type(*type));
+	    TermPtr<FunctionTypeTerm> func_type = checked_term_cast<FunctionTypeTerm>(type.backend().target_type());
 	    LLVMType llvm_ty = self->type(func_type);
 	    PSI_ASSERT(llvm_ty.is_known() && llvm_ty.type()->isFunctionTy());
 	    return llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_ty.type()),
@@ -277,7 +277,7 @@ namespace Psi {
 	}
 
 	default:
-	  return build_term(term, m_value_terms, ConstantBuilderCallback(this)).first;
+	  return value_impl(term);
 	}
       }
     }
@@ -425,6 +425,10 @@ namespace Psi {
     LLVMConstantBuilder::~LLVMConstantBuilder() {
     }
 
+    LLVMValue LLVMConstantBuilder::value_impl(TermRef<> term) {
+      return build_term(term, m_value_terms, ConstantBuilderCallback(this)).first;
+    }
+
     LLVMFunctionBuilder::LLVMFunctionBuilder(LLVMValueBuilder *parent, llvm::Function *function, IRBuilder *irbuilder, CallingConvention calling_convention) 
       : LLVMValueBuilder(parent),
 	m_function(function),
@@ -433,6 +437,10 @@ namespace Psi {
     }
 
     LLVMFunctionBuilder::~LLVMFunctionBuilder() {
+    }
+
+    LLVMValue LLVMFunctionBuilder::value_impl(TermRef<> term) {
+      return build_term(term, m_value_terms, InstructionBuilderCallback(this)).first;
     }
 
     llvm::Function* llvm_intrinsic_memcpy(llvm::Module& m) {

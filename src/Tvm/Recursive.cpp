@@ -2,6 +2,7 @@
 #include "Recursive.hpp"
 #include "Functional.hpp"
 #include "Utility.hpp"
+#include "Primitive.hpp"
 
 #include <stdexcept>
 

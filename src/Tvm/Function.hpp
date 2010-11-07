@@ -50,6 +50,13 @@ namespace Psi {
       BlockTerm *m_block;
     };
 
+    template<>
+    struct TermIteratorCheck<InstructionTerm> {
+      static bool check (TermType t) {
+	return t == term_instruction;
+      }
+    };
+
     /**
      * \brief Phi node. These are used to unify values from different
      * predecessors on entry to a block.
@@ -67,6 +74,13 @@ namespace Psi {
       typedef boost::intrusive::list_member_hook<> PhiListHook;
       PhiListHook m_phi_list_hook;
       BlockTerm *m_block;
+    };
+
+    template<>
+    struct TermIteratorCheck<PhiTerm> {
+      static bool check (TermType t) {
+	return t == term_phi;
+      }
     };
 
     /**
@@ -112,6 +126,15 @@ namespace Psi {
       PhiList m_phi_nodes;
 
       TermPtr<> new_instruction_internal(const InstructionTermBackend& backend, TermRefArray<> parameters);
+      void set_dominator(TermRef<BlockTerm> value) {set_base_parameter(1, value);}
+      void set_min_dominator(TermRef<BlockTerm> value) {set_base_parameter(2, value);}
+    };
+
+    template<>
+    struct TermIteratorCheck<BlockTerm> {
+      static bool check (TermType t) {
+	return t == term_block;
+      }
     };
 
     class FunctionTerm;
@@ -129,6 +152,13 @@ namespace Psi {
 
       std::size_t m_index;
       FunctionTerm *m_function;
+    };
+
+    template<>
+    struct TermIteratorCheck<FunctionParameterTerm> {
+      static bool check (TermType t) {
+	return t == term_function_parameter;
+      }
     };
 
     /**
@@ -162,6 +192,13 @@ namespace Psi {
       CallingConvention m_calling_convention;
     };
 
+    template<>
+    struct TermIteratorCheck<FunctionTerm> {
+      static bool check (TermType t) {
+	return t == term_function;
+      }
+    };
+
     class FunctionTypeTerm;
 
     class FunctionTypeParameterTerm : public Term {
@@ -175,6 +212,13 @@ namespace Psi {
       FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, TermRef<> type);
       void set_source(FunctionTypeTerm *term);
       std::size_t m_index;
+    };
+
+    template<>
+    struct TermIteratorCheck<FunctionTypeParameterTerm> {
+      static bool check (TermType t) {
+	return t == term_function_type_parameter;
+      }
     };
 
     /**
@@ -206,6 +250,13 @@ namespace Psi {
       CallingConvention m_calling_convention;
     };
 
+    template<>
+    struct TermIteratorCheck<FunctionTypeTerm> {
+      static bool check (TermType t) {
+	return t == term_function_type;
+      }
+    };
+
     inline TermPtr<FunctionTypeTerm> FunctionTypeParameterTerm::source() const {
       return get_base_parameter<FunctionTypeTerm>(0);
     }
@@ -235,6 +286,13 @@ namespace Psi {
       CallingConvention m_calling_convention;
     };
 
+    template<>
+    struct TermIteratorCheck<FunctionTypeResolverTerm> {
+      static bool check (TermType t) {
+	return t == term_function_type_resolver;
+      }
+    };
+
     /**
      * \brief Internal type used to build function types.
      */
@@ -249,6 +307,15 @@ namespace Psi {
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       bool operator == (const FunctionTypeResolverParameter&) const;
       friend std::size_t hash_value(const FunctionTypeResolverParameter&);
+
+      class Access {
+      public:
+	Access(const FunctionalTerm*, const FunctionTypeResolverParameter *self) : m_self(self) {}
+	std::size_t depth() const {return m_self->m_depth;}
+	std::size_t index() const {return m_self->m_index;}
+      private:
+	const FunctionTypeResolverParameter *m_self;
+      };
 
     private:
       std::size_t m_depth;

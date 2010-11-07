@@ -17,8 +17,8 @@ namespace Psi {
       llvm::LLVMContext& context() {return *m_context;}
       llvm::Module& module() {return *m_module;}
       llvm::GlobalValue* global(TermRef<GlobalTerm> term);
-      LLVMValue value(TermRef<Term> term);
-      LLVMType type(TermRef<Term> term);
+      LLVMValue value(TermRef<> term);
+      LLVMType type(TermRef<> term);
 
       void set_module(llvm::Module *module);
 
@@ -26,7 +26,8 @@ namespace Psi {
       LLVMValueBuilder(llvm::LLVMContext *context, llvm::Module *module);
       LLVMValueBuilder(LLVMValueBuilder *parent);
 
-    private:
+      virtual LLVMValue value_impl(TermRef<> term) = 0;
+
       LLVMValueBuilder *m_parent;
       llvm::LLVMContext *m_context;
       llvm::Module *m_module;
@@ -53,6 +54,9 @@ namespace Psi {
     public:
       LLVMConstantBuilder(llvm::LLVMContext *context, llvm::Module *module);
       ~LLVMConstantBuilder();
+
+    private:
+      virtual LLVMValue value_impl(TermRef<> term);
     };
 
     class LLVMFunctionBuilder : public LLVMValueBuilder {
@@ -69,6 +73,7 @@ namespace Psi {
 
     private:
       LLVMFunctionBuilder(LLVMValueBuilder *constant_builder, llvm::Function *function, IRBuilder *irbuilder, CallingConvention calling_convention);
+      virtual LLVMValue value_impl(TermRef<> term);
 
       llvm::Function *m_function;
       IRBuilder *m_irbuilder;

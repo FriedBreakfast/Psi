@@ -2,6 +2,7 @@
 #define HPP_PSI_TVM_DERIVED
 
 #include "Core.hpp"
+#include "Functional.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -14,7 +15,14 @@ namespace Psi {
       bool operator == (const PointerType&) const;
       friend std::size_t hash_value(const PointerType&);
 
-      TermPtr<> target_type(FunctionalTerm& term) const;
+      class Access {
+      public:
+	Access(const FunctionalTerm *term, const PointerType*) : m_term(term) {}
+	/// \brief Get the type being pointed to.
+	TermPtr<> target_type() const {return m_term->parameter(0);}
+      private:
+	const FunctionalTerm *m_term;
+      };
     };
 
 #if 0

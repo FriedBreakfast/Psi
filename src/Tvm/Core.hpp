@@ -27,6 +27,7 @@ namespace Psi {
 
     class Context;
     class Term;
+    template<typename T> struct TermIteratorCheck;
 
     class ApplyTerm;
     class RecursiveTerm;
@@ -50,6 +51,7 @@ namespace Psi {
     class EmptyType;
     class BlockType;
     class PointerType;
+    class BooleanType;
 
     /**
      * \brief Identifies the Term subclass this object actually is.
@@ -301,7 +303,12 @@ namespace Psi {
 
     public:
       typedef U BackendType;
-      const BackendType& backend() const {return checked_cast<const W*>(this->get()->backend())->impl();}
+      typedef typename BackendType::Access AccessType;
+      AccessType backend() const {
+	const T* ptr = this->get();
+	const W* backend_impl = checked_cast<const W*>(ptr->backend());
+	return AccessType(ptr, &backend_impl->impl());
+      }
     protected:
       BackendTermPtr() {}
       BackendTermPtr(T* src) : BaseType(src) {}
@@ -388,7 +395,6 @@ namespace Psi {
     public:
       virtual ~Term();
 
-      static bool term_iterator_check(TermType t) {return t != term_ptr;}
       TermType term_type() const {return TermUser::term_type();}
 
       /// \brief If this term is abstract: it contains references to recursive term parameters which are unresolved.
@@ -474,6 +480,13 @@ namespace Psi {
       User::use_set(n, term);
     }
 
+    template<>
+    struct TermIteratorCheck<Term> {
+      static bool check (TermType t) {
+	return t != term_ptr;
+      }
+    };
+
     /**
      * \brief Change the term pointed to by this object.
      */
@@ -507,13 +520,17 @@ namespace Psi {
       TermIterator(const UserIterator& base) : m_base(base) {}
       bool equal(const TermIterator& other) const {return m_base == other.m_base;}
       T& dereference() const {return *get_ptr();}
-      bool check_stop() const {return !m_base.end() && T::term_iterator_check(static_cast<TermUser&>(*m_base).term_type());}
-      void increment() {do {++m_base;} while (check_stop());}
-      void decrement() {do {--m_base;} while (check_stop());}
+      bool check_stop() const {return m_base.end() || TermIteratorCheck<T>::check(static_cast<TermUser&>(*m_base).term_type());}
+      void search_forward() {while (!check_stop()) ++m_base;}
+      void search_backward() {while (!check_stop()) --m_base;}
+      void increment() {++m_base; search_forward();}
+      void decrement() {--m_base; search_backward();}
     };
 
     template<typename T> TermIterator<T> Term::term_users_begin() {
-      return TermIterator<T>(users_begin());
+      TermIterator<T> result(users_begin());
+      result.search_forward();
+      return result;
     }
 
     template<typename T> TermIterator<T> Term::term_users_end() {
@@ -556,6 +573,13 @@ namespace Psi {
       GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, TermRef<> type);
     };
 
+    template<>
+    struct TermIteratorCheck<GlobalTerm> {
+      static bool check (TermType t) {
+	return (t == term_global_variable) || (t == term_function);
+      }
+    };
+
     /**
      * \brief Global variable.
      */
@@ -577,6 +601,13 @@ namespace Psi {
       GlobalVariableTerm(const UserInitializer& ui, Context *context, TermRef<> type, bool constant);
 
       bool m_constant;
+    };
+
+    template<>
+    struct TermIteratorCheck<GlobalVariableTerm> {
+      static bool check (TermType t) {
+	return t == term_global_variable;
+      }
     };
 
     class TermBackend {
@@ -652,6 +683,7 @@ namespace Psi {
       FunctionalTermPtr<EmptyType> get_empty_type();
       FunctionalTermPtr<BlockType> get_block_type();
       FunctionalTermPtr<PointerType> get_pointer_type(TermRef<Term> type);
+      FunctionalTermPtr<BooleanType> get_boolean_type();
 
 #define PSI_TVM_VARARG_MAX 5
 

@@ -30,6 +30,13 @@ namespace Psi {
 		    TermRefArray<RecursiveParameterTerm> parameters);
     };
 
+    template<>
+    struct TermIteratorCheck<RecursiveTerm> {
+      static bool check (TermType t) {
+	return t == term_recursive;
+      }
+    };
+
     class ApplyTerm : public Term {
       friend class Context;
 
@@ -44,6 +51,13 @@ namespace Psi {
       class Initializer;
       ApplyTerm(const UserInitializer& ui, Context *context, RecursiveTerm *recursive,
 		TermRefArray<> parameters);
+    };
+
+    template<>
+    struct TermIteratorCheck<ApplyTerm> {
+      static bool check (TermType t) {
+	return t == term_apply;
+      }
     };
   }
 }
