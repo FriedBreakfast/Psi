@@ -180,7 +180,6 @@ namespace Psi {
       TermPtr<BlockTerm> new_block();
       TermPtr<> result_type() const;
       TermPtr<FunctionTypeTerm> function_type() const;
-      CallingConvention calling_convention() const {return m_calling_convention;}
 
       const BlockList& blocks() const {return m_blocks;}
 
@@ -189,7 +188,6 @@ namespace Psi {
       FunctionTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTypeTerm> type);
       BlockList m_blocks;
       FunctionParameterList m_parameters;
-      CallingConvention m_calling_convention;
     };
 
     template<>
@@ -245,7 +243,7 @@ namespace Psi {
       class Initializer;
       FunctionTypeTerm(const UserInitializer& ui, Context *context, Term *result_type,
 		       TermRefArray<FunctionTypeParameterTerm> parameters,
-		       CallingConvention m_calling_convention);
+		       CallingConvention calling_convention);
 
       CallingConvention m_calling_convention;
     };

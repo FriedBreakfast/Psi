@@ -282,7 +282,8 @@ namespace Psi {
 
       template<typename U, typename V>
       void set(std::size_t n, const TermPtrCommon<U,V>& ptr) {
-	TermPtrBackend::reset_ptr(this->m_ptr[n], ptr.get());
+	T *ptr2 = ptr.get();
+	TermPtrBackend::reset_ptr(this->m_ptr[n], ptr2);
       }
     };
 

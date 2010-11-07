@@ -48,17 +48,6 @@ namespace Psi {
       }
     };
 
-    /**
-     * \brief Value type of MetatypeTerm.
-     *
-     * This is here for easy interfacing with C++ and must be kept in
-     * sync with LLVMConstantBuilder::metatype_type.
-     */
-    struct MetatypeValue {
-      std::tr1::uint64_t size;
-      std::tr1::uint64_t align;
-    };
-
     class Metatype {
     public:
       TermPtr<> type(Context& context, TermRefArray<> parameters) const;

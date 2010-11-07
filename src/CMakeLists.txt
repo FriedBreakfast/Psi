@@ -13,6 +13,7 @@ add_library(psi SHARED
   Tvm/Derived.cpp Tvm/Derived.hpp
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
+  Tvm/JitTypes.hpp
   Tvm/LLVMBuilder.cpp Tvm/LLVMBuilder.hpp
   Tvm/LLVMValue.hpp
   Tvm/Number.cpp Tvm/Number.hpp
@@ -50,6 +51,7 @@ target_link_libraries(psi ${LLVM_LIBS} ${LIB_GMP} ${LIB_GMPXX})
 add_executable(test TestMain.cpp
   Tvm/CoreTest.cpp
   Tvm/ControlFlowTest.cpp
+  Tvm/FunctionTest.cpp
 #  MaybeTest.cpp
 #  TypeSystemTest.cpp
 #  VariantTest.cpp

@@ -70,8 +70,7 @@ namespace Psi {
 	      std::size_t n_parameters = actual.n_parameters();
 	      std::vector<const llvm::Type*> params;
 	      for (std::size_t i = 0; i < n_parameters; ++i) {
-		TermPtr<FunctionTypeParameterTerm> param = actual.parameter(i);
-		LLVMType param_type = self->type(actual.parameter(i));
+		LLVMType param_type = self->type(actual.parameter(i)->type());
 		if (!param_type.is_known())
 		  throw std::logic_error("Only tvm calling convention supports dependent parameters");
 		params.push_back(param_type.type());
@@ -326,7 +325,8 @@ namespace Psi {
       llvm::Function::ArgumentListType& argument_list = llvm_func->getArgumentList();
       llvm::Function::ArgumentListType::const_iterator llvm_it = argument_list.begin();
 
-      if (psi_func->calling_convention() == cconv_tvm) {
+      CallingConvention calling_convention = psi_func->function_type()->calling_convention();
+      if (calling_convention == cconv_tvm) {
 	// Skip the first LLVM parameter snce it is the return
 	// address.
 	++llvm_it;
@@ -339,12 +339,16 @@ namespace Psi {
 	PSI_ASSERT(param_type.get());
 	LLVMType param_type_llvm = type(param_type);
 
-	if (psi_func->calling_convention() == cconv_tvm) {
-	  if (param_type_llvm.is_known() && !param_type_llvm.type()->isPointerTy()) {
-	    const llvm::PointerType *ptr_ty = param_type_llvm.type()->getPointerTo();
-	    llvm::Value *cast_param = irbuilder.CreateBitCast(llvm_param, ptr_ty);
-	    llvm::Value *load = irbuilder.CreateLoad(cast_param);
-	    func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::known(load)));
+	if (calling_convention == cconv_tvm) {
+	  if (param_type_llvm.is_known()) {
+	    if (!param_type_llvm.type()->isPointerTy()) {
+	      const llvm::PointerType *ptr_ty = param_type_llvm.type()->getPointerTo();
+	      llvm::Value *cast_param = irbuilder.CreateBitCast(llvm_param, ptr_ty);
+	      llvm::Value *load = irbuilder.CreateLoad(cast_param);
+	      func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::known(load)));
+	    } else {
+	      func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::known(llvm_param)));
+	    }
 	  } else if (param_type_llvm.is_empty()) {
 	    func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::empty()));
 	  } else {
@@ -367,7 +371,7 @@ namespace Psi {
 
     void LLVMValueBuilder::build_function(FunctionTerm *psi_func, llvm::Function *llvm_func) {
       LLVMFunctionBuilder::IRBuilder irbuilder(context());
-      LLVMFunctionBuilder func_builder(this, llvm_func, &irbuilder, psi_func->calling_convention());
+      LLVMFunctionBuilder func_builder(this, llvm_func, &irbuilder, psi_func->function_type()->calling_convention());
 
       // Set up parameters
       llvm::BasicBlock *entry_block = build_function_entry(psi_func, llvm_func, func_builder);
@@ -381,7 +385,8 @@ namespace Psi {
 	BlockTerm *bl = blocks[i].first;
 	for (TermIterator<BlockTerm> it = bl->term_users_begin<BlockTerm>();
 	     it != bl->term_users_end<BlockTerm>(); ++it) {
-	  if (bl == it->dominator().get()) {
+	  if ((bl == it->dominator().get()) &&
+	      (func_builder.m_value_terms.find(it.get_ptr()) == func_builder.m_value_terms.end())) {
 	    llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(context(), "", llvm_func);
 	    blocks.push_back(std::make_pair(it.get_ptr(), llvm_bb));
 	    func_builder.m_value_terms.insert(std::make_pair(it.get_ptr(), LLVMValue::known(llvm_bb)));
@@ -393,11 +398,11 @@ namespace Psi {
       for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
 	   it != blocks.end(); ++it) {
 	irbuilder.SetInsertPoint(it->second);
-	for (BlockTerm::InstructionList::const_iterator jt = it->first->instructions().begin();
-	     jt != it->first->instructions().end(); ++jt) {
-	  InstructionTerm *insn = &const_cast<InstructionTerm&>(*jt);
-	  LLVMValue r = insn->backend()->llvm_value_instruction(func_builder, *insn);
-	  func_builder.m_value_terms.insert(std::make_pair(insn, r));
+	const BlockTerm::InstructionList& insn_list = it->first->instructions();
+	for (BlockTerm::InstructionList::const_iterator jt = insn_list.begin(); jt != insn_list.end(); ++jt) {
+	  InstructionTerm& insn = const_cast<InstructionTerm&>(*jt);
+	  LLVMValue r = insn.backend()->llvm_value_instruction(func_builder, insn);
+	  func_builder.m_value_terms.insert(std::make_pair(&insn, r));
 	}
       }
     }

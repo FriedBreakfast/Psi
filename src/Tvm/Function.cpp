@@ -556,13 +556,12 @@ namespace Psi {
     };
 
     FunctionTerm::FunctionTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTypeTerm> type)
-      : GlobalTerm(ui, context, term_function, type),
-	m_calling_convention(type->calling_convention()) {
+      : GlobalTerm(ui, context, term_function, type) {
       TermPtrArray<> parameters(type->n_parameters());
       for (std::size_t i = 0; i < parameters.size(); ++i) {
 	TermPtr<> param_type = type->parameter_type_after(TermRefArray<>(i, parameters.get()));
-	parameters.set(i, param_type);
-	TermPtr<FunctionParameterTerm> param = allocate_term(context, FunctionParameterTerm::Initializer(this, parameters[i]));
+	TermPtr<FunctionParameterTerm> param = allocate_term(context, FunctionParameterTerm::Initializer(this, param_type));
+	parameters.set(i, param);
 	param->term_add_ref();
 	m_parameters.push_back(*param);
       }
