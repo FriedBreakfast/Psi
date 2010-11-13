@@ -81,6 +81,8 @@ namespace Psi {
     };
 
     llvm::Function* llvm_intrinsic_memcpy(llvm::Module& m);
+    llvm::Function* llvm_intrinsic_stacksave(llvm::Module& m);
+    llvm::Function* llvm_intrinsic_stackrestore(llvm::Module& m);
   }
 }
 

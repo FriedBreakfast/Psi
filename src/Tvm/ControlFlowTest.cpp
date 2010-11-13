@@ -145,6 +145,58 @@ namespace Psi {
       BOOST_CHECK_EQUAL(result, c2);
     }
 
+    BOOST_AUTO_TEST_CASE(RecursiveCall) {
+      Context con;
+
+      const Jit::Int32 c = 275894789;
+
+      IntegerType i32(true, 32);
+      TermPtr<> i32_t = con.get_functional_v(i32);
+      TermPtr<> value = con.get_functional_v(ConstantInteger(i32, c));
+
+      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t);
+      TermPtr<FunctionTerm> outer = con.new_function(func_type);
+      TermPtr<FunctionTerm> inner = con.new_function(func_type);
+
+      TermPtr<> call_value = outer->entry()->new_instruction_v(FunctionCall(), inner);
+      outer->entry()->new_instruction_v(Return(), call_value);
+      inner->entry()->new_instruction_v(Return(), value);
+
+      typedef void* (*callback_type) (void*);
+      callback_type callback = reinterpret_cast<callback_type>(con.term_jit(outer));
+
+      Jit::Int32 result;
+      void *result_ptr = callback(&result);
+      BOOST_CHECK_EQUAL(result_ptr, &result);
+      BOOST_CHECK_EQUAL(result, c);
+    }
+
+    BOOST_AUTO_TEST_CASE(RecursiveCallParameter) {
+      Context con;
+
+      const Jit::Int32 c = 758723;
+
+      IntegerType i32(true, 32);
+      TermPtr<> i32_t = con.get_functional_v(i32);
+      TermPtr<> value = con.get_functional_v(ConstantInteger(i32, c));
+
+      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t, i32_t);
+      TermPtr<FunctionTerm> outer = con.new_function(func_type);
+      TermPtr<FunctionTerm> inner = con.new_function(func_type);
+
+      TermPtr<> call_value = outer->entry()->new_instruction_v(FunctionCall(), inner, outer->parameter(0));
+      outer->entry()->new_instruction_v(Return(), call_value);
+      inner->entry()->new_instruction_v(Return(), inner->parameter(0));
+
+      typedef void* (*callback_type) (void*,const void*);
+      callback_type callback = reinterpret_cast<callback_type>(con.term_jit(outer));
+
+      Jit::Int32 result;
+      void *result_ptr = callback(&result, &c);
+      BOOST_CHECK_EQUAL(result_ptr, &result);
+      BOOST_CHECK_EQUAL(result, c);
+    }
+
     BOOST_AUTO_TEST_SUITE_END()
   }
 }

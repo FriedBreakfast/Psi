@@ -296,13 +296,11 @@ namespace Psi {
 	      FunctionTerm *psi_func = checked_cast<FunctionTerm*>(t.first);
 	      llvm::Function *llvm_func = llvm::cast<llvm::Function>(t.second);
 	      build_function(psi_func, llvm_func);
-	      return llvm_func;
 	    } else {
 	      PSI_ASSERT(t.first->term_type() == term_global_variable);
 	      GlobalVariableTerm *psi_var = checked_cast<GlobalVariableTerm*>(t.first);
 	      llvm::GlobalVariable *llvm_var = llvm::cast<llvm::GlobalVariable>(t.second);
 	      build_global_variable(psi_var, llvm_var);
-	      return llvm_var;
 	    }
 	    m_global_build_list.pop_front();
 	  }
@@ -461,6 +459,35 @@ namespace Psi {
       args.push_back(llvm::Type::getInt64Ty(c));
       args.push_back(llvm::Type::getInt32Ty(c));
       args.push_back(llvm::Type::getInt1Ty(c));
+      llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(c), args, false);
+      f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+
+      return f;
+    }
+
+    llvm::Function* llvm_intrinsic_stacksave(llvm::Module& m) {
+      const char *name = "llvm.stacksave";
+      llvm::Function *f = m.getFunction(name);
+      if (f)
+	return f;
+
+      llvm::LLVMContext& c = m.getContext();
+      std::vector<const llvm::Type*> args;
+      llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(c), args, false);
+      f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+
+      return f;
+    }
+
+    llvm::Function* llvm_intrinsic_stackrestore(llvm::Module& m) {
+      const char *name = "llvm.stackrestore";
+      llvm::Function *f = m.getFunction(name);
+      if (f)
+	return f;
+
+      llvm::LLVMContext& c = m.getContext();
+      std::vector<const llvm::Type*> args;
+      args.push_back(llvm::Type::getInt8PtrTy(c));
       llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(c), args, false);
       f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
 

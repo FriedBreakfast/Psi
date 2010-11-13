@@ -321,9 +321,13 @@ namespace Psi {
       typedef BackendTermPtr<FunctionalTerm, T, FunctionalTermBackendImpl<T> > BaseType;
       template<typename U, typename V, typename W> friend
       FunctionalTermPtr<U> checked_cast_functional(const TermPtrCommon<V,W>& src);
+      template<typename U, typename V, typename W> friend
+      FunctionalTermPtr<U> dynamic_cast_functional(const TermPtrCommon<V,W>& src);
+
+    public:
+      FunctionalTermPtr() {}
 
     private:
-      FunctionalTermPtr() {}
       FunctionalTermPtr(FunctionalTerm* src) : BaseType(src) {}
     };
 
@@ -332,8 +336,10 @@ namespace Psi {
       friend class Context;
       typedef BackendTermPtr<InstructionTerm, T,  InstructionTermBackendImpl<T> > BaseType;
 
-    private:
+    public:
       InstructionTermPtr() {}
+
+    private:
       InstructionTermPtr(InstructionTerm* src) : BaseType(src) {}
     };
 

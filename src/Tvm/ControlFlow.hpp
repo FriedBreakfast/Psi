@@ -48,6 +48,21 @@ namespace Psi {
 	const InstructionTerm *m_term;
       };
     };
+
+    class FunctionCall {
+    public:
+      TermPtr<> type(Context&, const FunctionTerm&, TermRefArray<>) const;
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, InstructionTerm&) const;
+
+      class Access {
+      public:
+	Access(const InstructionTerm *term, const FunctionCall*) : m_term(term) {}
+	TermPtr<> target() const {return m_term->parameter(0);}
+	TermPtr<> parameter(std::size_t n) const {return m_term->parameter(n+1);}
+      private:
+	const InstructionTerm *m_term;
+      };
+    };
   }
 }
 

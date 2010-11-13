@@ -122,6 +122,20 @@ namespace Psi {
       return FunctionalTermPtr<T>(t);
     }
 
+    /**
+     * \brief Perform a dynamic cast to a FunctionalTermPtr. This
+     * checks both the term type and the backend type.
+     */
+    template<typename T, typename U, typename V>
+    FunctionalTermPtr<T> dynamic_cast_functional(const TermPtrCommon<U,V>& src) {
+      FunctionalTerm *t = dynamic_cast<FunctionalTerm*>(src.get());
+      if (!t)
+	return FunctionalTermPtr<T>();
+      if (!dynamic_cast<const FunctionalTermBackendImpl<T>*>(t->backend()))
+	return FunctionalTermPtr<T>();
+      return FunctionalTermPtr<T>(t);
+    }
+
     template<typename T>
     FunctionalTermPtr<T> Context::get_functional(const T& proto, TermRefArray<> parameters) {
       return FunctionalTermPtr<T>(get_functional_bare(FunctionalTermBackendImpl<T>(proto), parameters).get());

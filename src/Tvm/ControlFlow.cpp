@@ -3,6 +3,7 @@
 #include "ControlFlow.hpp"
 #include "Primitive.hpp"
 #include "Number.hpp"
+#include "Derived.hpp"
 #include "LLVMBuilder.hpp"
 
 #include <llvm/Function.h>
@@ -125,6 +126,128 @@ namespace Psi {
       llvm::BasicBlock *target_llvm = llvm::cast<llvm::BasicBlock>(target.value());
 
       return LLVMValue::known(builder.irbuilder().CreateBr(target_llvm));
+    }
+
+    TermPtr<> FunctionCall::type(Context&, const FunctionTerm&, TermRefArray<> parameters) const {
+      if (parameters.size() < 1)
+	throw std::logic_error("function call instruction must have at least one parameter: the function being called");
+
+      Term *target = parameters[0];
+      FunctionalTermPtr<PointerType> target_ptr_type = dynamic_cast_functional<PointerType>(target->type());
+      if (!target_ptr_type)
+	throw std::logic_error("function call target is not a pointer type");
+
+      TermPtr<FunctionTypeTerm> target_function_type = dynamic_term_cast<FunctionTypeTerm>(target_ptr_type.backend().target_type());
+      if (!target_function_type)
+	throw std::logic_error("function call target is not a function pointer");
+
+      std::size_t n_parameters = target_function_type->n_parameters();
+      if (parameters.size() != n_parameters + 1)
+	throw std::logic_error("wrong number of arguments to function");
+
+      for (std::size_t i = 0; i < n_parameters; ++i) {
+	TermPtr<> expected_type = target_function_type->parameter_type_after(TermRefArray<>(i, parameters.get()+1));
+	if (parameters[i+1]->type() != expected_type)
+	  throw std::logic_error("function argument has the wrong type");
+      }
+
+      return target_function_type->result_type_after(TermRefArray<>(n_parameters, parameters.get()+1));
+    }
+
+    LLVMValue FunctionCall::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
+      LLVMFunctionBuilder::IRBuilder& irbuilder = builder.irbuilder();
+      Access self(&term, this);
+
+      TermPtr<FunctionTypeTerm> function_type =
+	checked_term_cast<FunctionTypeTerm>
+	(checked_cast_functional<PointerType>(self.target()->type()).backend().target_type());
+
+      LLVMValue target = builder.value(self.target());
+      LLVMType result_type = builder.type(term.type());
+
+      std::size_t n_parameters = function_type->n_parameters();
+      CallingConvention calling_convention = function_type->calling_convention();
+
+      llvm::Value *stack_backup = NULL;
+      llvm::Value *result_area;
+
+      std::vector<llvm::Value*> parameters;
+      if (calling_convention == cconv_tvm) {
+	// allocate an area of memory to receive the result value
+	if (result_type.is_known()) {
+	  // stack pointer is saved here but not for unknown types
+	  // because memory for unknown types must survive their
+	  // scope.
+	  stack_backup = irbuilder.CreateCall(llvm_intrinsic_stacksave(builder.module()));
+	  result_area = irbuilder.CreateAlloca(result_type.type());
+	  llvm::Value *cast_result_area = irbuilder.CreateBitCast(result_area, llvm::Type::getInt8PtrTy(builder.context()));
+	  parameters.push_back(cast_result_area);
+	} else if (result_type.is_empty()) {
+	  result_area = llvm::Constant::getNullValue(llvm::Type::getInt8Ty(builder.context()));
+	  parameters.push_back(result_area);
+	} else {
+	  PSI_ASSERT(result_type.is_unknown());
+	  LLVMValue result_type_value = builder.value(term.type());
+	  if (!result_type_value.is_known())
+	    throw std::logic_error("Cannot handle a return value whose size and alignment is not known");
+
+	  llvm::Value *size = irbuilder.CreateExtractValue(result_type_value.value(), 0);
+	  
+	  result_area = irbuilder.CreateAlloca(llvm::Type::getInt8Ty(builder.context()), size);
+	  parameters.push_back(result_area);
+	}
+      }
+
+      for (std::size_t i = 0; i < n_parameters; ++i) {
+	LLVMValue param = builder.value(self.parameter(i));
+
+	if (calling_convention == cconv_tvm) {
+	  if (param.is_quantified()) {
+	    throw std::logic_error("Cannot pass quantified value as function parameter (not implemented)");
+	  } else if (param.is_known()) {
+	    if (param.value()->getType()->isPointerTy()) {
+	      PSI_ASSERT(param.value()->getType() == llvm::Type::getInt8PtrTy(builder.context()));
+	      parameters[i] = param.value();
+	    } else {
+	      if (!stack_backup)
+		stack_backup = irbuilder.CreateCall(llvm_intrinsic_stacksave(builder.module()));
+
+	      llvm::Value *ptr = irbuilder.CreateAlloca(param.value()->getType());
+	      irbuilder.CreateStore(param.value(), ptr);
+	      llvm::Value *cast_ptr = irbuilder.CreateBitCast(ptr, llvm::Type::getInt8PtrTy(builder.context()));
+	      parameters.push_back(cast_ptr);
+	    }
+	  } else {
+	    PSI_ASSERT(param.is_unknown());
+	    parameters.push_back(param.ptr_value());
+	  }
+	} else {
+	  if (!param.is_known())
+	    throw std::logic_error("Function parameter types must be known for non-TVM calling conventions");
+	  parameters.push_back(param.value());
+	}
+      }
+
+      LLVMType llvm_function_type = builder.type(function_type);
+      PSI_ASSERT(llvm_function_type.is_known());
+
+      llvm::Value *llvm_target = irbuilder.CreateBitCast(target.value(), llvm_function_type.type()->getPointerTo());
+      llvm::Value *result = irbuilder.CreateCall(llvm_target, parameters.begin(), parameters.end());
+
+      if (result_type.is_known() && !result_type.type()->isPointerTy())
+	result = irbuilder.CreateLoad(result_area);
+
+      if (stack_backup)
+	irbuilder.CreateCall(llvm_intrinsic_stackrestore(builder.module()), stack_backup);
+
+      if (result_type.is_known()) {
+	return LLVMValue::known(result);
+      } else if (result_type.is_empty()) {
+	return LLVMValue::empty();
+      } else {
+	PSI_ASSERT(result_type.is_unknown());
+	return LLVMValue::unknown(result_area, result);
+      }
     }
   }
 }
