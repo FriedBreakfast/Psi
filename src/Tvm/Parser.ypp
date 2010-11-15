@@ -1,0 +1,682 @@
+/* -*- mode: c++ -*- */
+
+%{
+#include <cstring>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <stdexcept>
+
+#include <boost/shared_ptr.hpp>
+#include <boost/make_shared.hpp>
+
+#include "Parser.hpp"
+#include "Core.hpp"
+#include "../Utility.hpp"
+
+#define YYSTYPE Value
+#define YYLTYPE Psi::Tvm::Parser::Location
+
+/**
+ * I previously made this zero - it must be at least one because
+ * the generated code assumes it can access the lowest element
+ * of the stack before parsing begins.
+ *
+ * This grammar has a maximum depth, so I should be able to work that
+ * out, set this value and everything will "just work". But that seems
+ * like a lot of effort.
+ */
+#define YYINITDEPTH 50
+
+/**
+ * I need to use yytype_int16 before it is defined in the generated
+ * source code, so this ensures it has the same type as the one I'm
+ * using.
+ */
+#define YYTYPE_INT16 short int
+
+/**
+ * Try to ensure that no memory is allocated on the heap by bison
+ */
+#define YYMALLOC(x)
+#define YYFREE(x)
+#define YYSTACK_USE_ALLOCA 1
+
+using namespace Psi;
+using namespace Psi::Tvm;
+using namespace Psi::Tvm::Parser;
+
+namespace {
+  /**
+   * Create a new empty list.
+   */
+  template<typename T>
+  boost::shared_ptr<UniqueList<T> > list_empty() {
+    return boost::make_shared<UniqueList<T> >();
+  }
+
+  /**
+   * Create a one-element list containing the given type.
+   */
+  template<typename T, typename U>
+  boost::shared_ptr<UniqueList<T> >
+  list_one(U *t) {
+    boost::shared_ptr<UniqueList<T> > l = list_empty<T>();
+    l->push_back(*t);
+    return l;
+  }  
+
+  /**
+   * Append two lists and return the result.
+   */
+  template<typename T>
+  boost::shared_ptr<UniqueList<T> >
+  list_append(boost::shared_ptr<UniqueList<T> >& source,
+	      boost::shared_ptr<UniqueList<T> >& append) {
+    PSI_ASSERT(append->size() == 1);
+    source->splice(source->end(), *append);
+    boost::shared_ptr<UniqueList<T> > result;
+    result.swap(source);
+    append.reset();
+    PSI_ASSERT(!source);
+    return result;
+  }
+
+  /**
+   * Ensure a list has one element, remove the element from the list
+   * and return it.
+   */
+  template<typename T>
+  T* list_to_ptr(boost::shared_ptr<UniqueList<T> >& ptr) {
+    T *result = &ptr->front();
+    ptr->pop_front();
+    PSI_ASSERT(ptr->empty());
+    ptr.reset();
+    return result;
+  }
+
+  template<typename T>
+  T& list_check_one(const boost::shared_ptr<UniqueList<T> >& ptr) {
+    PSI_ASSERT(ptr->size() == 1);
+    return ptr.front();
+  }
+
+  struct Value {
+    boost::shared_ptr<UniqueList<Token> > tokens;
+    boost::shared_ptr<UniqueList<Expression> > expressions;
+    boost::shared_ptr<UniqueList<Block> > blocks;
+    boost::shared_ptr<UniqueList<NamedExpression> > named_expressions;
+    boost::shared_ptr<UniqueList<GlobalElement> > globals;
+    boost::shared_ptr<UniqueList<NamedGlobalElement> > named_globals;
+    boost::shared_ptr<UniqueList<PhiNode> > phi_nodes;
+  };
+
+  class ParserInternalArguments {
+  public:
+    ParserInternalArguments(const char *start_, const char *end_)
+      : current(start_), end(end_), m_stack_size(0) {
+    }
+
+    const char *current, *end;
+    UniqueList<NamedGlobalElement> result;
+    std::string error_message;
+
+    void overflow(YYTYPE_INT16 **yysp, std::size_t yyssize,
+		  YYSTYPE **yyvp, std::size_t yyvsize,
+		  YYLTYPE **yylp, std::size_t yylsize,
+		  std::size_t *yystacksize) {
+
+      std::size_t new_size;
+
+      if (m_stack_size) {
+        assert(&m_parser_state_stack[0] == *yysp);
+        assert(&m_parser_value_stack[0] == *yyvp);
+        assert(&m_parser_location_stack[0] == *yylp);
+        assert(*yystacksize == m_stack_size);
+
+        new_size = m_stack_size * 2;
+      } else {
+        new_size = *yystacksize * 2;
+      }
+
+      UniqueArray<YYTYPE_INT16> new_state_stack(new YYTYPE_INT16[new_size]);
+      UniqueArray<YYSTYPE> new_value_stack(new YYSTYPE[new_size]);
+      UniqueArray<YYLTYPE> new_location_stack(new YYLTYPE[new_size]);
+
+      std::copy(*yysp, *yysp + yyssize / sizeof(**yysp), new_state_stack.get());
+      std::copy(*yyvp, *yyvp + yyvsize / sizeof(**yyvp), new_value_stack.get());
+      std::copy(*yylp, *yylp + yylsize / sizeof(**yylp), new_location_stack.get());
+
+      m_parser_state_stack.swap(new_state_stack);
+      m_parser_value_stack.swap(new_value_stack);
+      m_parser_location_stack.swap(new_location_stack);
+      m_stack_size = new_size;
+
+      *yysp = m_parser_state_stack.get();
+      *yyvp = m_parser_value_stack.get();
+      *yylp = m_parser_location_stack.get();
+      *yystacksize = new_size;
+    }
+
+  private:
+    std::size_t m_stack_size;
+    UniqueArray<YYTYPE_INT16> m_parser_state_stack;
+    UniqueArray<YYSTYPE> m_parser_value_stack;
+    UniqueArray<YYLTYPE> m_parser_location_stack;
+  };
+
+  void yyerror(const YYLTYPE* loc,
+               ParserInternalArguments& arguments,
+               const char *s) {
+    std::stringstream os;
+    if (loc->first_line == loc->last_line) {
+      os << loc->first_line << ':' << loc->first_column << '-' << loc->last_column;
+    } else {
+      os << loc->first_line << ':' << loc->first_column << '-' << loc->last_line << ':' << loc->last_column;
+    }
+    os << " : " << s;
+    arguments.error_message = os.str();
+  }
+
+  /**
+   * \brief Checks if a character is a "token" character.
+   *
+   * A token character is alphanumeric or underscore, so this is
+   * equivalent the following in the C locale:
+   *
+   * \code isalpha(c) || isdigit(c) || c == '_' \endcode
+   */
+  bool token_char(char c) {
+    return ((c >= 'A') && (c <= 'Z')) ||
+      ((c >= 'a') && (c <= 'z')) ||
+      ((c >= '0') && (c <= '9')) ||
+      (c == '_');
+  }
+
+  int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self);
+}
+
+#define yyoverflow(msg,yysp,yyssize,yyvp,yyvsize,yylp,yylsize,yystacksize) arguments.overflow(yysp,yyssize,yyvp,yyvsize,yylp,yylsize,yystacksize)
+%}
+
+%pure-parser
+%locations
+
+/* verbose errors and custom stack allocation (i.e. yyoverflow defined) will not work together in bison */
+%error-verbose
+
+%token INVALID
+%token ID
+%token OP
+%token VAL
+%token FUNCTION "function"
+%token GLOBAL "global"
+%token CONST "const"
+%token PHI "phi"
+%token BLOCK "block"
+%token EXTERN "extern"
+
+%parse-param {ParserInternalArguments& arguments}
+%lex-param {ParserInternalArguments& arguments}
+
+%initial-action {
+#ifndef YYERROR_VERBOSE
+  if (false) {
+  yyexhaustedlab:
+    YYABORT;
+  }
+#endif
+
+  @$.first_line = 1;
+  @$.first_column = 1;
+  @$.last_line = 1;
+  @$.last_column = 1;
+}
+
+%type<tokens> ID OP VAL value_list value_list_nonempty
+%type<expressions> expression root_expression id_expression bracket_expression term_list term_list_nonempty global_variable_def function_type
+%type<blocks> block_list block_list_nonempty block
+%type<named_expressions> statement_list statement parameter_list parameter_list_nonempty parameter
+%type<globals> root global function constant global_variable
+%type<named_globals> global_list global_list_nonempty global_def
+%type<phi_nodes> phi_node phi_node_list
+
+%%
+
+root:
+global_list {arguments.result.swap(*$1);}
+;
+
+global_list: {$$ = list_empty<NamedGlobalElement>();}
+| global_list_nonempty
+;
+
+global_list_nonempty:
+global_def
+| global_list_nonempty global_def {$$ = list_append($1, $2);}
+;
+
+global_def: ID '=' linkage global ';' {
+  UniquePtr<Token> name(list_to_ptr($1));
+  UniquePtr<GlobalElement> value(list_to_ptr($4));
+  $$ = list_one<NamedGlobalElement>(new NamedGlobalElement(@$, name, value));
+};
+
+linkage:
+| EXTERN
+;
+
+global: function | constant | global_variable;
+
+global_variable:
+global_variable_def {
+  UniquePtr<Expression> type(list_to_ptr($1));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, type));
+}
+| global_variable_def expression {
+  UniquePtr<Expression> type(list_to_ptr($1));
+  UniquePtr<Expression> value(list_to_ptr($2));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, type, value));
+}
+;
+
+global_variable_def: GLOBAL expression {$$ = $2;};
+
+constant: CONST expression {
+  UniquePtr<Expression> value(list_to_ptr($2));
+  $$ = list_one<GlobalElement>(new GlobalDefine(@$, value));
+};
+
+function:
+function_type {
+  UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($1)));
+  $$ = list_one<GlobalElement>(new Function(@$, ft));
+}
+| function_type '{' statement_list block_list '}' {
+  UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($1)));
+  UniqueList<Block> blocks;
+  UniquePtr<Token> empty_name;
+  blocks.push_back(*new Block(@3, empty_name, *$3));
+  blocks.splice(blocks.end(), *$4);
+  $$ = list_one<GlobalElement>(new Function(@$, ft, blocks));
+}
+;
+
+function_type:
+FUNCTION '(' parameter_list ')' '>' expression {
+  UniquePtr<Expression> result(list_to_ptr($6));
+  $$ = list_one<Expression>(new FunctionTypeExpression(@$, *$3, result));
+};
+
+parameter_list: {$$ = list_empty<NamedExpression>();} | parameter_list_nonempty
+
+parameter_list_nonempty:
+parameter
+| parameter_list ',' parameter {$$ = list_append($1, $3);}
+;
+
+parameter: ID ':' expression {
+  UniquePtr<Token> name(list_to_ptr($1));
+  UniquePtr<Expression> type(list_to_ptr($3));
+  $$ = list_one<NamedExpression>(new NamedExpression(@$, name, type));
+}
+| expression {
+  UniquePtr<Expression> type(list_to_ptr($1));
+  $$ = list_one<NamedExpression>(new NamedExpression(@$, type));
+};
+
+block_list: {$$ = list_empty<Block>();} | block_list_nonempty
+
+block_list_nonempty:
+block
+| block_list_nonempty block {$$ = list_append($1, $2);}
+;
+
+block:
+BLOCK ID ':' statement_list {
+  UniquePtr<Token> name(list_to_ptr($2));
+  $$ = list_one<Block>(new Block(@$, name, *$4));
+};
+
+statement_list:
+statement
+| statement_list statement {$$ = list_append($1, $2);}
+;
+
+statement:
+root_expression ';' {
+  UniquePtr<Expression> value(list_to_ptr($1));
+  $$ = list_one<NamedExpression>(new NamedExpression(@$, value));
+}
+| ID '=' root_expression ';' {
+  UniquePtr<Token> name(list_to_ptr($1));
+  UniquePtr<Expression> value(list_to_ptr($3));
+  $$ = list_one<NamedExpression>(new NamedExpression(@$, name, value));
+}
+;
+
+expression:
+id_expression
+| '(' root_expression ')' {$$ = $2;}
+;
+
+root_expression:
+id_expression
+| bracket_expression
+| '(' root_expression ')' {$$ = $2;}
+;
+
+id_expression: ID {
+  UniquePtr<Token> name(list_to_ptr($1));
+  $$ = list_one<Expression>(new NameExpression(@$, name));
+};
+
+bracket_expression:
+OP value_list term_list {
+  UniquePtr<Token> op(list_to_ptr($1));
+  $$ = list_one<Expression>(new CallExpression(@$, op, *$2, *$3));
+}
+| PHI expression ':' phi_node_list {
+  UniquePtr<Expression> type(list_to_ptr($2));
+  $$ = list_one<Expression>(new PhiExpression(@$, type, *$4));
+}
+| function_type
+;
+
+value_list: {$$ = list_empty<Token>();} | value_list_nonempty;
+
+value_list_nonempty:
+VAL
+| value_list_nonempty VAL {$$ = list_append($1, $2);}
+;
+
+term_list: {$$ = list_empty<Expression>();} | term_list_nonempty;
+
+term_list_nonempty:
+expression
+| term_list_nonempty expression {$$ = list_append($1, $2);}
+;
+
+phi_node_list:
+phi_node
+| phi_node_list ',' phi_node {$$ = list_append($1, $3);}
+;
+
+phi_node:
+ID '>' expression {
+  UniquePtr<Token> label(list_to_ptr($1));
+  UniquePtr<Expression> value(list_to_ptr($3));
+  $$ = list_one<PhiNode>(new PhiNode(@$, label, value));
+}
+;
+
+%%
+
+namespace {
+  /**
+   * \brief Scanner function.
+   *
+   * I've done this as a handwritten function rather than using Flex
+   * because bending Flex to my will seems like slightly more effort
+   * than doing this. I'd like it to be able to operate on a buffer
+   * without altering it, which this function does, and it takes less
+   * code than Flex and the myriad of options required to make a Flex
+   * scanner sensible.
+   *
+   * \note Note that this function lives here rather than above the
+   * main parser body (where it is declared) because it required the
+   * parser token definitions.
+   */
+  int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self) {
+#define SCANNER_ACCEPT() (++self.current, ++llocp->last_column)
+
+    while(self.current != self.end) {
+      if (std::strchr(" \t\r\v", *self.current)) {
+	SCANNER_ACCEPT();
+      } else if (*self.current == '\n') {
+	++llocp->last_line;
+	llocp->last_column = 1;
+	SCANNER_ACCEPT();
+      } else {
+	break;
+      }
+    }
+
+    if (self.current == self.end)
+      return 0;
+
+    llocp->first_line = llocp->last_line;
+    llocp->first_column = llocp->last_column;
+
+    int token_type;
+
+    switch(*self.current) {
+    case '#':
+      token_type = VAL;
+      SCANNER_ACCEPT();
+      break;
+
+    case '%':
+      token_type = ID;
+      SCANNER_ACCEPT();
+      break;
+
+    default:
+      if (token_char(*self.current)) {
+	token_type = OP;
+	break;
+      } else {
+	char c = *self.current;
+	SCANNER_ACCEPT();
+	return c;
+      }
+    }
+
+    const char *start = self.current;
+
+    while ((self.current != self.end) && token_char(*self.current))
+      SCANNER_ACCEPT();
+
+    const char *end = self.current;
+    std::size_t n = end - start;
+
+    if (!n)
+      return INVALID;
+
+    if (token_type == OP) {
+      // Check for certain keywords
+      switch(n) {
+      case 3:
+	token_type = std::strncmp("phi", start, n) == 0 ? PHI : OP;
+	break;
+
+      case 5:
+	token_type = std::strncmp("const", start, n) == 0 ? CONST
+	  : std::strncmp("block", start, n) == 0 ? BLOCK : OP;
+	break;
+
+      case 6:
+	token_type = std::strncmp("extern", start, n) == 0 ? EXTERN
+	  : std::strncmp("global", start, n) == 0 ? GLOBAL : OP;
+	break;
+
+      case 8:
+	token_type = std::strncmp("function", start, n) == 0 ? FUNCTION : OP;
+	break;
+      }
+    }
+
+    if ((token_type == OP) || (token_type == VAL) || (token_type == ID)) {
+      std::string text(start, end);
+      lvalp->tokens = list_one<Token>(new Token(*llocp, text));
+    }
+
+    return token_type;
+
+#undef SCANNER_ADVANCE
+  }
+}
+
+namespace Psi {
+  namespace Tvm {
+    namespace Parser {
+      Element::Element(const Location& location_) : location(location_) {
+      }
+
+      Token::Token(const Location& location_, const std::string& text_)
+	: Element(location_), text(text_) {
+      }
+
+      Expression::Expression(const Location& location_, ExpressionType expression_type_)
+	: Element(location_), expression_type(expression_type_) {
+      }
+
+      Expression::~Expression() {
+      }
+
+      NameExpression::NameExpression(const Location& location_, UniquePtr<Token>& name_)
+	: Expression(location_, expression_name) {
+	name.swap(name_);
+      }
+
+      NameExpression::~NameExpression() {
+      }
+
+      PhiNode::PhiNode(const Location& location_, UniquePtr<Token>& label_, UniquePtr<Expression>& expression_)
+	: Element(location_) {
+	label.swap(label_);
+	expression.swap(expression_);
+      }
+
+      PhiNode::~PhiNode() {
+      }
+
+      PhiExpression::PhiExpression(const Location& location_, UniquePtr<Expression>& type_, UniqueList<PhiNode>& nodes_)
+	: Expression(location_, expression_phi) {
+	type.swap(type_);
+	nodes.swap(nodes_);
+      }
+
+      PhiExpression::~PhiExpression() {
+      }
+
+      CallExpression::CallExpression(const Location& location_, UniquePtr<Token>& target_,
+				     UniqueList<Token>& values_, UniqueList<Expression>& terms_)
+	: Expression(location_, expression_call) {
+	target.swap(target_);
+	values.swap(values_);
+	terms.swap(terms_);
+      }
+
+      CallExpression::~CallExpression() {
+      }
+
+      FunctionTypeExpression::FunctionTypeExpression(const Location& location_,
+						     UniqueList<NamedExpression>& parameters_,
+						     UniquePtr<Expression>& result_type_)
+	: Expression(location_, expression_function_type) {
+	parameters.swap(parameters_);
+	result_type.swap(result_type_);
+      }
+
+      FunctionTypeExpression::~FunctionTypeExpression() {
+      }
+
+      NamedExpression::NamedExpression(const Location& location_, UniquePtr<Token>& name_, UniquePtr<Expression>& expression_)
+	: Element(location_) {
+	name.swap(name_);
+	expression.swap(expression_);
+      }
+
+      NamedExpression::NamedExpression(const Location& location_, UniquePtr<Expression>& expression_)
+	: Element(location_) {
+	expression.swap(expression_);
+      }
+
+      NamedExpression::~NamedExpression() {
+      }
+
+      Block::Block(const Location& location_, UniquePtr<Token>& name_, UniqueList<NamedExpression>& statements_)
+	: Element(location_) {
+	name.swap(name_);
+	statements.swap(statements_);
+      }
+
+      Block::~Block() {
+      }
+
+      GlobalElement::GlobalElement(const Location& location_, GlobalType global_type_)
+	: Element(location_), global_type(global_type_) {
+      }
+
+      GlobalElement::~GlobalElement() {
+      }
+
+      Function::Function(const Location& location_,
+			 UniquePtr<FunctionTypeExpression>& type_)
+	: GlobalElement(location_, global_function) {
+	type.swap(type_);
+      }
+
+      Function::Function(const Location& location_,
+			 UniquePtr<FunctionTypeExpression>& type_,
+			 UniqueList<Block>& blocks_)
+	: GlobalElement(location_, global_function) {
+	type.swap(type_);
+	blocks.swap(blocks_);
+      }
+
+      Function::~Function() {
+      }
+
+      GlobalVariable::GlobalVariable(const Location& location_,
+				     UniquePtr<Expression>& type_)
+	: GlobalElement(location_, global_variable) {
+	type.swap(type_);
+      }
+
+      GlobalVariable::GlobalVariable(const Location& location_,
+				     UniquePtr<Expression>& type_,
+				     UniquePtr<Expression>& value_)
+	: GlobalElement(location_, global_variable) {
+	type.swap(type_);
+	value.swap(value_);
+      }
+
+      GlobalVariable::~GlobalVariable() {
+      }
+
+      GlobalDefine::GlobalDefine(const Location& location_,
+		     UniquePtr<Expression>& value_)
+	: GlobalElement(location_, global_define) {
+	value.swap(value_);
+      }
+
+      GlobalDefine::~GlobalDefine() {
+      }
+
+      NamedGlobalElement::NamedGlobalElement(const Location& location_, UniquePtr<Token>& name_, UniquePtr<GlobalElement>& value_)
+	: Element(location_) {
+	name.swap(name_);
+	value.swap(value_);
+      }
+
+      NamedGlobalElement::~NamedGlobalElement() {
+      }
+    }
+
+    void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin, const char *end) {
+      ParserInternalArguments ia(begin, end);
+      yyparse(ia);
+      if (!ia.error_message.empty()) {
+	throw std::logic_error(ia.error_message);
+      } else {
+	result.swap(ia.result);
+      }
+    }
+
+    void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin) {
+      parse(result, begin, begin+std::strlen(begin));
+    }
+  }
+}

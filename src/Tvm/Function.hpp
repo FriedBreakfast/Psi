@@ -101,7 +101,7 @@ namespace Psi {
       void new_phi(TermRef<> type);
 
       template<typename T>
-      TermPtr<> new_instruction(const T& proto, TermRefArray<> parameters);
+      TermPtr<InstructionTerm> new_instruction(const T& proto, TermRefArray<> parameters);
 
       const InstructionList& instructions() const {return m_instructions;}
       const PhiList& phi_nodes() const {return m_phi_nodes;}
@@ -113,7 +113,7 @@ namespace Psi {
       /** \brief Get the earliest block dominating this one which is required by variables used by instructions in this block. */
       TermPtr<BlockTerm> min_dominator() const {return get_base_parameter<BlockTerm>(2);}
 
-#define PSI_TVM_VA(z,n,data) template<typename T> TermPtr<> new_instruction_v(const T& proto BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return new_instruction(proto, TermRefArray<>(n,ap));}
+#define PSI_TVM_VA(z,n,data) template<typename T> TermPtr<InstructionTerm> new_instruction_v(const T& proto BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return new_instruction(proto, TermRefArray<>(n,ap));}
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
@@ -125,7 +125,7 @@ namespace Psi {
       InstructionList m_instructions;
       PhiList m_phi_nodes;
 
-      TermPtr<> new_instruction_internal(const InstructionTermBackend& backend, TermRefArray<> parameters);
+      TermPtr<InstructionTerm> new_instruction_internal(const InstructionTermBackend& backend, TermRefArray<> parameters);
       void set_dominator(TermRef<BlockTerm> value) {set_base_parameter(1, value);}
       void set_min_dominator(TermRef<BlockTerm> value) {set_base_parameter(2, value);}
     };
@@ -349,7 +349,7 @@ namespace Psi {
     };
 
     template<typename T>
-    TermPtr<> BlockTerm::new_instruction(const T& proto, TermRefArray<> parameters) {
+    TermPtr<InstructionTerm> BlockTerm::new_instruction(const T& proto, TermRefArray<> parameters) {
       return new_instruction_internal(InstructionTermBackendImpl<T>(proto), parameters);
     }
   }

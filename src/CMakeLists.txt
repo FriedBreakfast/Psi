@@ -1,13 +1,17 @@
 include_directories(${Boost_INCLUDE_DIRS} ${GMP_INCLUDE_DIRECTORIES})
 
 bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp)
-
 set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
+
+bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated)
+set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
 
 add_library(psi SHARED
   Container.hpp
   Utility.cpp Utility.hpp
 
+  Tvm/Assembler.cpp Tvm/Assembler.hpp
+  Tvm/AssemblerOperations.cpp
   Tvm/ControlFlow.cpp Tvm/ControlFlow.hpp
   Tvm/Core.cpp Tvm/Core.hpp
   Tvm/Derived.cpp Tvm/Derived.hpp
@@ -17,6 +21,7 @@ add_library(psi SHARED
   Tvm/LLVMBuilder.cpp Tvm/LLVMBuilder.hpp
   Tvm/LLVMValue.hpp
   Tvm/Number.cpp Tvm/Number.hpp
+  ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
   Tvm/Primitive.cpp Tvm/Primitive.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp
   Tvm/User.cpp Tvm/User.hpp
@@ -52,6 +57,7 @@ add_executable(test TestMain.cpp
   Tvm/CoreTest.cpp
   Tvm/ControlFlowTest.cpp
   Tvm/FunctionTest.cpp
+  Tvm/ParserTest.cpp
 #  MaybeTest.cpp
 #  TypeSystemTest.cpp
 #  VariantTest.cpp

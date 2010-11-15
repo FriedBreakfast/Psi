@@ -2,6 +2,7 @@
 #define HPP_PSI_CODEGENERATOR
 
 #include "Core.hpp"
+#include "Function.hpp"
 
 namespace Psi {
   namespace Tvm {

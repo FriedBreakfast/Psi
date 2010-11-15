@@ -1,5 +1,4 @@
 #include <boost/test/unit_test.hpp>
-#include <boost/format.hpp>
 
 #include "Core.hpp"
 #include "Function.hpp"

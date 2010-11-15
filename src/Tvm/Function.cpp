@@ -490,7 +490,7 @@ namespace Psi {
       std::size_t m_size;
     };
 
-    TermPtr<> BlockTerm::new_instruction_internal(const InstructionTermBackend& backend, TermRefArray<> parameters) {
+    TermPtr<InstructionTerm> BlockTerm::new_instruction_internal(const InstructionTermBackend& backend, TermRefArray<> parameters) {
       TermPtr<> type = backend.type(context(), *function(), parameters);
       std::pair<std::size_t, std::size_t> backend_size_align = backend.size_align();
       PSI_ASSERT_MSG((backend_size_align.second & (backend_size_align.second - 1)) == 0, "alignment is not a power of two");
