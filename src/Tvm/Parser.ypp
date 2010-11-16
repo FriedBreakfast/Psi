@@ -6,7 +6,9 @@
 #include <sstream>
 #include <string>
 #include <stdexcept>
+#include <tr1/unordered_map>
 
+#include <boost/assign.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
 
@@ -102,6 +104,7 @@ namespace {
   }
 
   struct Value {
+    CallingConvention calling_convention;
     boost::shared_ptr<UniqueList<Token> > tokens;
     boost::shared_ptr<UniqueList<Expression> > expressions;
     boost::shared_ptr<UniqueList<Block> > blocks;
@@ -211,10 +214,13 @@ namespace {
 %token VAL
 %token FUNCTION "function"
 %token GLOBAL "global"
-%token CONST "const"
+%token DEFINE "define"
 %token PHI "phi"
 %token BLOCK "block"
 %token EXTERN "extern"
+%token CONST "const"
+%token CC_TVM "cc_tvm"
+%token CC_C "cc_c"
 
 %parse-param {ParserInternalArguments& arguments}
 %lex-param {ParserInternalArguments& arguments}
@@ -234,12 +240,13 @@ namespace {
 }
 
 %type<tokens> ID OP VAL value_list value_list_nonempty
-%type<expressions> expression root_expression id_expression bracket_expression term_list term_list_nonempty global_variable_def function_type
+%type<expressions> expression root_expression id_expression op_expression bracket_expression term_list term_list_nonempty function_type
 %type<blocks> block_list block_list_nonempty block
 %type<named_expressions> statement_list statement parameter_list parameter_list_nonempty parameter
 %type<globals> root global function constant global_variable
 %type<named_globals> global_list global_list_nonempty global_def
 %type<phi_nodes> phi_node phi_node_list
+%type<calling_convention> calling_convention
 
 %%
 
@@ -269,20 +276,27 @@ linkage:
 global: function | constant | global_variable;
 
 global_variable:
-global_variable_def {
-  UniquePtr<Expression> type(list_to_ptr($1));
-  $$ = list_one<GlobalElement>(new GlobalVariable(@$, type));
+GLOBAL expression {
+  UniquePtr<Expression> type(list_to_ptr($2));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, false, type));
 }
-| global_variable_def expression {
-  UniquePtr<Expression> type(list_to_ptr($1));
-  UniquePtr<Expression> value(list_to_ptr($2));
-  $$ = list_one<GlobalElement>(new GlobalVariable(@$, type, value));
+| GLOBAL expression expression {
+  UniquePtr<Expression> type(list_to_ptr($2));
+  UniquePtr<Expression> value(list_to_ptr($3));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, false, type, value));
+}
+| GLOBAL CONST expression {
+  UniquePtr<Expression> type(list_to_ptr($3));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, true, type));
+}
+| GLOBAL CONST expression expression {
+  UniquePtr<Expression> type(list_to_ptr($3));
+  UniquePtr<Expression> value(list_to_ptr($4));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, true, type, value));
 }
 ;
 
-global_variable_def: GLOBAL expression {$$ = $2;};
-
-constant: CONST expression {
+constant: DEFINE expression {
   UniquePtr<Expression> value(list_to_ptr($2));
   $$ = list_one<GlobalElement>(new GlobalDefine(@$, value));
 };
@@ -303,10 +317,12 @@ function_type {
 ;
 
 function_type:
-FUNCTION '(' parameter_list ')' '>' expression {
-  UniquePtr<Expression> result(list_to_ptr($6));
-  $$ = list_one<Expression>(new FunctionTypeExpression(@$, *$3, result));
+FUNCTION calling_convention '(' parameter_list ')' '>' expression {
+  UniquePtr<Expression> result(list_to_ptr($7));
+  $$ = list_one<Expression>(new FunctionTypeExpression(@$, $2, *$4, result));
 };
+
+calling_convention: {$$=cconv_tvm} | CC_TVM {$$=cconv_tvm} | CC_C {$$=cconv_c};
 
 parameter_list: {$$ = list_empty<NamedExpression>();} | parameter_list_nonempty
 
@@ -357,6 +373,7 @@ root_expression ';' {
 
 expression:
 id_expression
+| op_expression
 | '(' root_expression ')' {$$ = $2;}
 ;
 
@@ -369,6 +386,13 @@ id_expression
 id_expression: ID {
   UniquePtr<Token> name(list_to_ptr($1));
   $$ = list_one<Expression>(new NameExpression(@$, name));
+};
+
+op_expression: OP {
+  UniquePtr<Token> op(list_to_ptr($1));
+  UniqueList<Token> values;
+  UniqueList<Expression> terms;
+  $$ = list_one<Expression>(new CallExpression(@$, op, values, terms));
 };
 
 bracket_expression:
@@ -413,6 +437,18 @@ ID '>' expression {
 %%
 
 namespace {
+  const std::tr1::unordered_map<std::string, int> keywords =
+    boost::assign::map_list_of<std::string, int>
+    ("block", BLOCK)
+    ("const", CONST)
+    ("define", DEFINE)
+    ("extern", EXTERN)
+    ("global", GLOBAL)
+    ("function", FUNCTION)
+    ("phi", PHI)
+    ("cc_tvm", CC_TVM)
+    ("cc_c", CC_C);
+
   /**
    * \brief Scanner function.
    *
@@ -478,39 +514,19 @@ namespace {
       SCANNER_ACCEPT();
 
     const char *end = self.current;
-    std::size_t n = end - start;
 
-    if (!n)
+    if (start == end)
       return INVALID;
 
+    std::string text(start, end);
+
     if (token_type == OP) {
-      // Check for certain keywords
-      switch(n) {
-      case 3:
-	token_type = std::strncmp("phi", start, n) == 0 ? PHI : OP;
-	break;
-
-      case 5:
-	token_type = std::strncmp("const", start, n) == 0 ? CONST
-	  : std::strncmp("block", start, n) == 0 ? BLOCK : OP;
-	break;
-
-      case 6:
-	token_type = std::strncmp("extern", start, n) == 0 ? EXTERN
-	  : std::strncmp("global", start, n) == 0 ? GLOBAL : OP;
-	break;
-
-      case 8:
-	token_type = std::strncmp("function", start, n) == 0 ? FUNCTION : OP;
-	break;
-      }
+      std::tr1::unordered_map<std::string, int>::const_iterator it = keywords.find(text);
+      if (it != keywords.end())
+        return it->second;
     }
 
-    if ((token_type == OP) || (token_type == VAL) || (token_type == ID)) {
-      std::string text(start, end);
-      lvalp->tokens = list_one<Token>(new Token(*llocp, text));
-    }
-
+    lvalp->tokens = list_one<Token>(new Token(*llocp, text));
     return token_type;
 
 #undef SCANNER_ADVANCE
@@ -572,9 +588,11 @@ namespace Psi {
       }
 
       FunctionTypeExpression::FunctionTypeExpression(const Location& location_,
+                                                     CallingConvention calling_convention_,
 						     UniqueList<NamedExpression>& parameters_,
 						     UniquePtr<Expression>& result_type_)
-	: Expression(location_, expression_function_type) {
+	: Expression(location_, expression_function_type),
+          calling_convention(calling_convention_) {
 	parameters.swap(parameters_);
 	result_type.swap(result_type_);
       }
@@ -630,15 +648,19 @@ namespace Psi {
       }
 
       GlobalVariable::GlobalVariable(const Location& location_,
+                                     bool constant_,
 				     UniquePtr<Expression>& type_)
-	: GlobalElement(location_, global_variable) {
+	: GlobalElement(location_, global_variable),
+          constant(constant_) {
 	type.swap(type_);
       }
 
       GlobalVariable::GlobalVariable(const Location& location_,
+                                     bool constant_,
 				     UniquePtr<Expression>& type_,
 				     UniquePtr<Expression>& value_)
-	: GlobalElement(location_, global_variable) {
+	: GlobalElement(location_, global_variable),
+          constant(constant_) {
 	type.swap(type_);
 	value.swap(value_);
       }

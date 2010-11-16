@@ -8,6 +8,14 @@
 
 namespace Psi {
   namespace Tvm {
+    bool StatelessOperand::operator == (const StatelessOperand&) const {
+      return true;
+    }
+
+    std::size_t hash_value(const StatelessOperand&) {
+      return 0;
+    }
+
     TermPtr<> Metatype::type(Context&, TermRefArray<> parameters) const {
       if (parameters.size() != 0)
 	throw std::logic_error("metatype created with parameters");

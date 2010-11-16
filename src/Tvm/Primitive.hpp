@@ -15,6 +15,18 @@
 
 namespace Psi {
   namespace Tvm {
+    template<typename T>
+    class TrivialAccess {
+    public:
+      TrivialAccess(const FunctionalTerm*, const T*) {}
+    };
+
+    class StatelessOperand {
+    public:
+      bool operator == (const StatelessOperand&) const;
+      friend std::size_t hash_value(const StatelessOperand&);
+    };
+
     template<typename Derived>
     class PrimitiveType {
     public:
@@ -65,10 +77,7 @@ namespace Psi {
       static LLVMValue llvm_from_constant(LLVMValueBuilder&, llvm::Constant *size, llvm::Constant *align);
       static LLVMValue llvm_runtime(LLVMFunctionBuilder&, llvm::Value *size, llvm::Value *align);
 
-      class Access {
-      public:
-	Access(const FunctionalTerm*, const BlockType*) {}
-      };
+      typedef TrivialAccess<Metatype> Access;
     };
 
     template<typename Derived>
@@ -84,10 +93,7 @@ namespace Psi {
       bool operator == (const EmptyType&) const;
       friend std::size_t hash_value(const EmptyType&);
 
-      class Access {
-      public:
-	Access(const FunctionalTerm*, const EmptyType*) {}
-      };
+      typedef TrivialAccess<EmptyType> Access;
     };
 
     class BlockType : public PrimitiveType<BlockType> {
@@ -96,10 +102,7 @@ namespace Psi {
       bool operator == (const BlockType&) const;
       friend std::size_t hash_value(const BlockType&);
 
-      class Access {
-      public:
-	Access(const FunctionalTerm*, const BlockType*) {}
-      };
+      typedef TrivialAccess<BlockType> Access;
     };
   }
 }

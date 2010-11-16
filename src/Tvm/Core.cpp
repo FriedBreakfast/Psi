@@ -17,6 +17,7 @@
 #include <llvm/Module.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/Support/IRBuilder.h>
+#include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetRegistry.h>
 #include <llvm/Target/TargetSelect.h>
@@ -439,7 +440,7 @@ namespace Psi {
      * \brief Just-in-time compile a term, and a get a pointer to
      * the result.
      */
-    void* Context::term_jit(TermRef<GlobalTerm> term) {
+    void* Context::term_jit_internal(TermRef<GlobalTerm> term, llvm::raw_ostream *debug) {
       if ((term->m_term_type != term_global_variable) &&
 	  (term->m_term_type != term_function))
 	throw std::logic_error("Cannot JIT compile non-global term");
@@ -450,6 +451,7 @@ namespace Psi {
       }
 
       LLVMConstantBuilder builder(m_llvm_context.get(), m_llvm_module.get());
+      builder.set_debug(debug);
       llvm::GlobalValue *global = builder.global(term);
 
       if (!m_llvm_engine) {
@@ -463,6 +465,19 @@ namespace Psi {
       m_llvm_module.reset(new llvm::Module("", *m_llvm_context));
 
       return m_llvm_engine->getPointerToGlobal(global);
+    }
+
+    void* Context::term_jit(TermRef<GlobalTerm> term) {
+      return term_jit_internal(term, NULL);
+    }
+
+    /**
+     * \brief Just-in-time compile a term, and a get a pointer to
+     * the result.
+     */
+    void* Context::term_jit(TermRef<GlobalTerm> term, std::ostream& debug) {
+      llvm::raw_os_ostream llvm_debug(debug);
+      return term_jit_internal(term, &llvm_debug);
     }
 
     Context::Context()

@@ -98,10 +98,12 @@ namespace Psi {
 
       struct FunctionTypeExpression : Expression {
 	FunctionTypeExpression(const Location& location_,
+                               CallingConvention calling_convention_,
 			       UniqueList<NamedExpression>& parameters_,
 			       UniquePtr<Expression>& result_type_);
 	virtual ~FunctionTypeExpression();
 
+        CallingConvention calling_convention;
 	UniqueList<NamedExpression> parameters;
 	UniquePtr<Expression> result_type;
       };
@@ -141,12 +143,15 @@ namespace Psi {
 
       struct GlobalVariable : GlobalElement {
 	GlobalVariable(const Location& location_,
+                       bool constant_,
 		       UniquePtr<Expression>& type_);
 	GlobalVariable(const Location& location_,
+                       bool constant_,
 		       UniquePtr<Expression>& type_,
 		       UniquePtr<Expression>& value_);
 	virtual ~GlobalVariable();
 
+        bool constant;
 	UniquePtr<Expression> type;
 	UniquePtr<Expression> value;
       };

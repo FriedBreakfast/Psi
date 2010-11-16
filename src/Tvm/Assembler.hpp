@@ -1,7 +1,8 @@
 #ifndef HPP_PSI_TVM_ASSEMBLER
 #define HPP_PSI_TVM_ASSEMBLER
 
-#include <map>
+#include <boost/function.hpp>
+#include <tr1/unordered_map>
 
 #include "Core.hpp"
 #include "Parser.hpp"
@@ -21,7 +22,8 @@ namespace Psi {
       private:
 	Context *m_context;
 	const AssemblerContext *m_parent;
-	std::map<std::string, TermPtr<> > terms;
+        typedef std::tr1::unordered_map<std::string, TermPtr<> > TermMap;
+	TermMap m_terms;
       };
 
       TermPtr<> build_expression(AssemblerContext& context, const Parser::Expression& expression);
@@ -29,23 +31,18 @@ namespace Psi {
       TermPtr<FunctionTerm> build_function(AssemblerContext& context, const Parser::Function& function);
       TermPtr<> build_call_expression(AssemblerContext& context, const Parser::Expression& expression);
 
-      struct FunctionalTermAssembler {
-	const char *name;
-	TermPtr<FunctionalTerm> (*callback) (const char *name, AssemblerContext& context, const Parser::CallExpression& expression);
-      };
+      typedef boost::function<TermPtr<FunctionalTerm>(const std::string&,AssemblerContext&,const Parser::CallExpression&)> FunctionalTermCallback;
+      typedef boost::function<TermPtr<InstructionTerm>(const std::string&,BlockTerm&,AssemblerContext&,const Parser::CallExpression&)> InstructionTermCallback;
 
-      struct InstructionTermAssembler {
-	const char *name;
-	TermPtr<InstructionTerm> (*callback) (const char *name, BlockTerm& block, AssemblerContext& context, const Parser::CallExpression& expression);
-      };
-
-      extern FunctionalTermAssembler functional_ops[];
-      extern InstructionTermAssembler instruction_ops[];
+      extern const std::tr1::unordered_map<std::string, FunctionalTermCallback> functional_ops;
+      extern const std::tr1::unordered_map<std::string, InstructionTermCallback> instruction_ops;
     }
 
-    std::map<std::string, TermPtr<GlobalTerm> > build(Context& context, const boost::intrusive::list<Parser::NamedGlobalElement>& globals);
-    std::map<std::string, TermPtr<GlobalTerm> > parse_and_build(Context& context, const char *begin, const char *end);
-    std::map<std::string, TermPtr<GlobalTerm> > parse_and_build(Context& context, const char *begin);
+    typedef std::tr1::unordered_map<std::string, TermPtr<GlobalTerm> > AssemblerResult;
+
+    AssemblerResult build(Context& context, const boost::intrusive::list<Parser::NamedGlobalElement>& globals);
+    AssemblerResult parse_and_build(Context& context, const char *begin, const char *end);
+    AssemblerResult parse_and_build(Context& context, const char *begin);
   }
 }
 

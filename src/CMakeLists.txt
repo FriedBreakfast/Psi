@@ -10,6 +10,7 @@ add_library(psi SHARED
   Container.hpp
   Utility.cpp Utility.hpp
 
+  Tvm/Arithmetic.cpp Tvm/Arithmetic.hpp
   Tvm/Assembler.cpp Tvm/Assembler.hpp
   Tvm/AssemblerOperations.cpp
   Tvm/ControlFlow.cpp Tvm/ControlFlow.hpp
@@ -54,6 +55,7 @@ target_link_libraries(psi ${LLVM_LIBS} ${LIB_GMP} ${LIB_GMPXX})
 #add_executable(type-test TypeTest.cpp)
 
 add_executable(test TestMain.cpp
+  Tvm/AssemblerTest.cpp
   Tvm/CoreTest.cpp
   Tvm/ControlFlowTest.cpp
   Tvm/FunctionTest.cpp

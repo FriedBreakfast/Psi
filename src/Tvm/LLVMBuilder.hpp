@@ -21,6 +21,7 @@ namespace Psi {
       LLVMType type(TermRef<> term);
 
       void set_module(llvm::Module *module);
+      void set_debug(llvm::raw_ostream *stream);
 
     protected:
       LLVMValueBuilder(llvm::LLVMContext *context, llvm::Module *module);
@@ -31,6 +32,7 @@ namespace Psi {
       LLVMValueBuilder *m_parent;
       llvm::LLVMContext *m_context;
       llvm::Module *m_module;
+      llvm::raw_ostream *m_debug_stream;
 
       typedef std::tr1::unordered_map<Term*, LLVMType> TypeTermMap;
       TypeTermMap m_type_terms;

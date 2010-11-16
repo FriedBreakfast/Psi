@@ -223,15 +223,22 @@ namespace Psi {
     }
       
     LLVMValueBuilder::LLVMValueBuilder(llvm::LLVMContext *context, llvm::Module *module)
-      : m_parent(0), m_context(context), m_module(module) {
+      : m_parent(0), m_context(context), m_module(module), m_debug_stream(0) {
       PSI_ASSERT(m_context && m_module);
     }
 
     LLVMValueBuilder::LLVMValueBuilder(LLVMValueBuilder *parent)
-      : m_parent(parent), m_context(parent->m_context), m_module(parent->m_module) {
+      : m_parent(parent), m_context(parent->m_context), m_module(parent->m_module), m_debug_stream(0) {
     }
 
     LLVMValueBuilder::~LLVMValueBuilder() {
+    }
+
+    /**
+     * Set a debugging stream.
+     */
+    void LLVMValueBuilder::set_debug(llvm::raw_ostream *stream) {
+      m_debug_stream = stream;
     }
 
     /**
@@ -403,6 +410,9 @@ namespace Psi {
 	  func_builder.m_value_terms.insert(std::make_pair(&insn, r));
 	}
       }
+
+      if (m_debug_stream)
+        llvm_func->print(*m_debug_stream);
     }
 
     void LLVMValueBuilder::build_global_variable(GlobalVariableTerm *psi_var, llvm::GlobalVariable *llvm_var) {

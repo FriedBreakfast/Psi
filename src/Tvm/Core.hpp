@@ -684,6 +684,7 @@ namespace Psi {
 
       TermPtr<FunctionTerm> new_function(TermRef<FunctionTypeTerm> type);
 
+      void* term_jit(TermRef<GlobalTerm> term, std::ostream& debug);
       void* term_jit(TermRef<GlobalTerm> term);
 
       FunctionalTermPtr<Metatype> get_metatype();
@@ -752,6 +753,7 @@ namespace Psi {
       static void clear_and_queue_if_abstract(std::vector<Term*>& queue, TermRef<> t);
 
       void clear_abstract(Term *term, std::vector<Term*>& queue);
+      void* term_jit_internal(TermRef<GlobalTerm> term, llvm::raw_ostream *debug);
     };
 
     bool term_unique(TermRef<> term);

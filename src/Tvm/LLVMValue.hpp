@@ -13,6 +13,7 @@
 
 namespace llvm {
   class LLVMContext;
+  class Twine;
   class Module;
   class Value;
   class Type;
@@ -28,6 +29,7 @@ namespace llvm {
   class GlobalValue;
   class GlobalVariable;
   class Function;
+  class raw_ostream;
 
   class ConstantFolder;
   template<bool> class IRBuilderDefaultInserter;
