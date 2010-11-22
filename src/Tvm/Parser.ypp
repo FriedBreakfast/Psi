@@ -309,8 +309,7 @@ function_type {
 | function_type '{' statement_list block_list '}' {
   UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($1)));
   UniqueList<Block> blocks;
-  UniquePtr<Token> empty_name;
-  blocks.push_back(*new Block(@3, empty_name, *$3));
+  blocks.push_back(*new Block(@3, *$3));
   blocks.splice(blocks.end(), *$4);
   $$ = list_one<GlobalElement>(new Function(@$, ft, blocks));
 }
@@ -349,10 +348,17 @@ block
 ;
 
 block:
-BLOCK ID ':' statement_list {
+BLOCK ID '(' ID ')' ':' statement_list {
   UniquePtr<Token> name(list_to_ptr($2));
-  $$ = list_one<Block>(new Block(@$, name, *$4));
-};
+  UniquePtr<Token> dominator_name(list_to_ptr($4));
+  $$ = list_one<Block>(new Block(@$, name, dominator_name, *$7));
+}
+| BLOCK ID ':' statement_list {
+  UniquePtr<Token> name(list_to_ptr($2));
+  UniquePtr<Token> dominator_name;
+  $$ = list_one<Block>(new Block(@$, name, dominator_name, *$4));
+}
+;
 
 statement_list:
 statement
@@ -614,9 +620,18 @@ namespace Psi {
       NamedExpression::~NamedExpression() {
       }
 
-      Block::Block(const Location& location_, UniquePtr<Token>& name_, UniqueList<NamedExpression>& statements_)
+      Block::Block(const Location& location_, UniquePtr<Token>& name_,
+                   UniquePtr<Token>& dominator_name_,
+                   UniqueList<NamedExpression>& statements_)
 	: Element(location_) {
 	name.swap(name_);
+        dominator_name.swap(dominator_name_);
+	statements.swap(statements_);
+      }
+
+      Block::Block(const Location& location_,
+                   UniqueList<NamedExpression>& statements_)
+	: Element(location_) {
 	statements.swap(statements_);
       }
 

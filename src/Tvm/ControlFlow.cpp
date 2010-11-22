@@ -13,7 +13,7 @@
 
 namespace Psi {
   namespace Tvm {
-    TermPtr<> Return::type(Context& context, const FunctionTerm& function, TermRefArray<> parameters) const {
+    TermPtr<> Return::type(Context&, const FunctionTerm& function, TermRefArray<> parameters) const {
       if (parameters.size() != 1)
 	throw std::logic_error("return instruction takes one argument");
 
@@ -21,7 +21,7 @@ namespace Psi {
       if (ret_val->type() != function.result_type())
 	throw std::logic_error("return instruction argument has incorrect type");
 
-      return context.get_empty_type();
+      return TermPtr<>();
     }
 
     LLVMValue Return::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
@@ -72,6 +72,9 @@ namespace Psi {
       }
     }
 
+    void Return::jump_targets(Context&, InstructionTerm&, std::vector<TermPtr<BlockTerm> >&) const {
+    }
+
     TermPtr<> ConditionalBranch::type(Context& context, const FunctionTerm&, TermRefArray<> parameters) const {
       if (parameters.size() != 3)
 	throw std::logic_error("branch instruction takes three arguments: cond, trueTarget, falseTarget");
@@ -81,12 +84,12 @@ namespace Psi {
       if (cond->type() != context.get_boolean_type())
 	throw std::logic_error("first parameter to branch instruction must be of boolean type");
 
-      Term *true_target = parameters[1];
-      Term *false_target = parameters[2];
-      if ((true_target->type() != context.get_block_type()) || (false_target->type() != context.get_block_type()))
+      TermPtr<> true_target(parameters[1]);
+      TermPtr<> false_target(parameters[2]);
+      if (!dynamic_term_cast<BlockTerm>(true_target) || !dynamic_term_cast<BlockTerm>(false_target))
 	throw std::logic_error("second and third parameters to branch instruction must be blocks");
 
-      return context.get_empty_type();
+      return TermPtr<>();
     }
 
     LLVMValue ConditionalBranch::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
@@ -105,15 +108,21 @@ namespace Psi {
       return LLVMValue::known(builder.irbuilder().CreateCondBr(cond_llvm, true_target_llvm, false_target_llvm));
     }
 
-    TermPtr<> UnconditionalBranch::type(Context& context, const FunctionTerm&, TermRefArray<> parameters) const {
+    void ConditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<TermPtr<BlockTerm> >& targets) const {
+      Access self(&term, this);
+      targets.push_back(self.true_target());
+      targets.push_back(self.false_target());
+    }
+
+    TermPtr<> UnconditionalBranch::type(Context&, const FunctionTerm&, TermRefArray<> parameters) const {
       if (parameters.size() != 1)
 	throw std::logic_error("unconditional branch instruction takes one argument - the branch target");
 
-      Term *target = parameters[0];
-      if (target->type() != context.get_block_type())
-	throw std::logic_error("second and third parameters to branch instruction must be blocks");
+      TermPtr<> target(parameters[0]);
+      if (!dynamic_term_cast<BlockTerm>(target))
+	throw std::logic_error("second parameter to branch instruction must be blocks");
 
-      return context.get_empty_type();
+      return TermPtr<>();
     }
 
     LLVMValue UnconditionalBranch::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
@@ -126,6 +135,11 @@ namespace Psi {
       llvm::BasicBlock *target_llvm = llvm::cast<llvm::BasicBlock>(target.value());
 
       return LLVMValue::known(builder.irbuilder().CreateBr(target_llvm));
+    }
+
+    void UnconditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<TermPtr<BlockTerm> >& targets) const {
+      Access self(&term, this);
+      targets.push_back(self.target());
     }
 
     TermPtr<> FunctionCall::type(Context&, const FunctionTerm&, TermRefArray<> parameters) const {
@@ -248,6 +262,9 @@ namespace Psi {
 	PSI_ASSERT(result_type.is_unknown());
 	return LLVMValue::unknown(result_area, result);
       }
+    }
+    
+    void FunctionCall::jump_targets(Context&, InstructionTerm&, std::vector<TermPtr<BlockTerm> >&) const {
     }
   }
 }

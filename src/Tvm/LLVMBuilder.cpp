@@ -6,6 +6,7 @@
 #include "Recursive.hpp"
 
 #include <stdexcept>
+#include <boost/next_prior.hpp>
 
 #include <llvm/LLVMContext.h>
 #include <llvm/DerivedTypes.h>
@@ -379,24 +380,56 @@ namespace Psi {
       LLVMFunctionBuilder func_builder(this, llvm_func, &irbuilder, psi_func->function_type()->calling_convention());
 
       // Set up parameters
-      llvm::BasicBlock *entry_block = build_function_entry(psi_func, llvm_func, func_builder);
+      llvm::BasicBlock *llvm_entry_block = build_function_entry(psi_func, llvm_func, func_builder);
 
       // Set up basic blocks
+      BlockTerm* entry_block = psi_func->entry().get();
+      std::tr1::unordered_set<BlockTerm*> visited_blocks;
+      std::vector<BlockTerm*> block_queue;
       std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
-      blocks.push_back(std::make_pair(psi_func->entry().get(), entry_block));
-      func_builder.m_value_terms.insert(std::make_pair(psi_func->entry().get(), LLVMValue::known(entry_block)));
-      // can't use an iterator since it will be invalidated by adding elements
+      visited_blocks.insert(entry_block);
+      block_queue.push_back(entry_block);
+      blocks.push_back(std::make_pair(entry_block, llvm_entry_block));
+      func_builder.m_value_terms.insert(std::make_pair(entry_block, LLVMValue::known(llvm_entry_block)));
+
+      // find root block set
+      while (!block_queue.empty()) {
+        BlockTerm *bl = block_queue.back();
+        block_queue.pop_back();
+
+        if (!bl->terminated())
+          throw std::logic_error("cannot compile function with unterminated blocks");
+
+        std::vector<TermPtr<BlockTerm> > successors = bl->successors();
+        for (std::vector<TermPtr<BlockTerm> >::iterator it = successors.begin();
+             it != successors.end(); ++it) {
+          std::pair<std::tr1::unordered_set<BlockTerm*>::iterator, bool> p = visited_blocks.insert(it->get());
+          if (p.second) {
+            block_queue.push_back(bl);
+            if (!bl->dominator())
+              blocks.push_back(std::make_pair(bl, static_cast<llvm::BasicBlock*>(0)));
+          }
+        }
+      }
+
+      // get remaining blocks in topological order
       for (std::size_t i = 0; i < blocks.size(); ++i) {
-	BlockTerm *bl = blocks[i].first;
+        BlockTerm *bl = blocks[i].first;
 	for (TermIterator<BlockTerm> it = bl->term_users_begin<BlockTerm>();
 	     it != bl->term_users_end<BlockTerm>(); ++it) {
-	  if ((bl == it->dominator().get()) &&
-	      (func_builder.m_value_terms.find(it.get_ptr()) == func_builder.m_value_terms.end())) {
-	    llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(context(), "", llvm_func);
-	    blocks.push_back(std::make_pair(it.get_ptr(), llvm_bb));
-	    func_builder.m_value_terms.insert(std::make_pair(it.get_ptr(), LLVMValue::known(llvm_bb)));
-	  }
-	}
+          if ((bl == it->dominator().get()) &&
+              (func_builder.m_value_terms.find(it.get_ptr()) == func_builder.m_value_terms.end())) {
+            blocks.push_back(std::make_pair(it.get_ptr(), static_cast<llvm::BasicBlock*>(0)));
+          }
+        }
+      }
+
+      // create llvm blocks
+      for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = boost::next(blocks.begin());
+           it != blocks.end(); ++it) {
+        llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(context(), "", llvm_func);
+        it->second = llvm_bb;
+        func_builder.m_value_terms.insert(std::make_pair(it->first, LLVMValue::known(llvm_bb)));
       }
 
       // Build basic blocks

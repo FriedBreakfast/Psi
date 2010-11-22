@@ -64,7 +64,7 @@ namespace Psi {
      * \brief Allocate a term.
      */
     template<typename T>
-    TermPtr<typename T::TermType> allocate_term(Context *context, const T& initializer) {
+    TermPtr<typename T::TermType> Context::allocate_term(const T& initializer) {
       std::size_t n_uses = initializer.n_uses();
 
       std::size_t use_offset = struct_offset(0, initializer.term_size(), boost::alignment_of<Use>::value);
@@ -73,7 +73,9 @@ namespace Psi {
       void *term_base = operator new (total_size);
       Use *uses = static_cast<Use*>(ptr_offset(term_base, use_offset));
       try {
-	return TermPtr<typename T::TermType>(initializer.initialize(term_base, UserInitializer(n_uses+1, uses), context));
+	TermPtr<typename T::TermType> t(initializer.initialize(term_base, UserInitializer(n_uses+1, uses), this));
+        m_all_terms.push_back(*t);
+        return t;
       } catch(...) {
 	operator delete (term_base);
 	throw;
@@ -94,6 +96,9 @@ namespace Psi {
       }
     };
 
+    /**
+     * \brief Create (or get an existing) hashable term.
+     */
     template<typename T>
     TermPtr<typename T::TermType> Context::hash_term_get(T& setup) {
       typename HashTermSetType::insert_commit_data commit_data;
@@ -103,7 +108,7 @@ namespace Psi {
 	return TermPtr<typename T::TermType>(checked_cast<typename T::TermType*>(&*existing.first));
 
       setup.prepare_initialize(this);
-      TermPtr<typename T::TermType> term = allocate_term(this, setup);
+      TermPtr<typename T::TermType> term = allocate_term(setup);
       m_hash_terms.insert_commit(*term, commit_data);
 
       if (m_hash_terms.size() >= m_hash_terms.bucket_count()) {

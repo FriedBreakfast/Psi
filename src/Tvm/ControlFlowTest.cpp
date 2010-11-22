@@ -25,7 +25,9 @@ namespace Psi {
 
       TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t);
       TermPtr<FunctionTerm> func = con.new_function(func_type);
-      func->entry()->new_instruction_v(Return(), value);
+      TermPtr<BlockTerm> entry = func->new_block();
+      func->set_entry(entry);
+      entry->new_instruction_v(Return(), value);
 
       typedef void* (*callback_type) (void*);
       callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));
@@ -44,7 +46,9 @@ namespace Psi {
       TermPtr<> i32_t = con.get_functional_v(IntegerType(true, 32));
       TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t, i32_t);
       TermPtr<FunctionTerm> func = con.new_function(func_type);
-      func->entry()->new_instruction_v(Return(), func->parameter(0));
+      TermPtr<BlockTerm> entry = func->new_block();
+      func->set_entry(entry);
+      entry->new_instruction_v(Return(), func->parameter(0));
 
       typedef void* (*callback_type) (void*,const void*);
       callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));
@@ -70,7 +74,9 @@ namespace Psi {
       TermPtr<FunctionTypeParameterTerm> param2 = con.new_function_type_parameter(param1);
       TermPtr<FunctionTypeTerm> func_type = con.get_function_type_v(param1, param1, param2);
       TermPtr<FunctionTerm> func = con.new_function(func_type);
-      func->entry()->new_instruction_v(Return(), func->parameter(1));
+      TermPtr<BlockTerm> entry = func->new_block();
+      func->set_entry(entry);
+      entry->new_instruction_v(Return(), func->parameter(1));
 
       typedef void* (*callback_type) (void*,const void*,const void*);
       callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));
@@ -95,9 +101,11 @@ namespace Psi {
 
       TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t);
       TermPtr<FunctionTerm> func = con.new_function(func_type);
+      TermPtr<BlockTerm> entry = func->new_block();
+      func->set_entry(entry);
       
-      TermPtr<BlockTerm> branch_target = func->new_block();
-      func->entry()->new_instruction_v(UnconditionalBranch(), branch_target);
+      TermPtr<BlockTerm> branch_target = func->new_block(entry);
+      entry->new_instruction_v(UnconditionalBranch(), branch_target);
       branch_target->new_instruction_v(Return(), value);
 
       typedef void* (*callback_type) (void*);
@@ -121,11 +129,13 @@ namespace Psi {
 
       TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i8_t, bool_t);
       TermPtr<FunctionTerm> func = con.new_function(func_type);
+      TermPtr<BlockTerm> entry = func->new_block();
+      func->set_entry(entry);
 
-      TermPtr<BlockTerm> block1 = func->new_block();
-      TermPtr<BlockTerm> block2 = func->new_block();
+      TermPtr<BlockTerm> block1 = func->new_block(entry);
+      TermPtr<BlockTerm> block2 = func->new_block(entry);
 
-      func->entry()->new_instruction_v(ConditionalBranch(), func->parameter(0), block1, block2);
+      entry->new_instruction_v(ConditionalBranch(), func->parameter(0), block1, block2);
       block1->new_instruction_v(Return(), con.get_functional_v(ConstantInteger(i8, c1)));
       block2->new_instruction_v(Return(), con.get_functional_v(ConstantInteger(i8, c2)));
 
@@ -158,9 +168,15 @@ namespace Psi {
       TermPtr<FunctionTerm> outer = con.new_function(func_type);
       TermPtr<FunctionTerm> inner = con.new_function(func_type);
 
-      TermPtr<> call_value = outer->entry()->new_instruction_v(FunctionCall(), inner);
-      outer->entry()->new_instruction_v(Return(), call_value);
-      inner->entry()->new_instruction_v(Return(), value);
+      TermPtr<BlockTerm> outer_entry = outer->new_block();
+      TermPtr<BlockTerm> inner_entry = inner->new_block();
+
+      outer->set_entry(outer_entry);
+      inner->set_entry(inner_entry);
+
+      TermPtr<> call_value = outer_entry->new_instruction_v(FunctionCall(), inner);
+      outer_entry->new_instruction_v(Return(), call_value);
+      inner_entry->new_instruction_v(Return(), value);
 
       typedef void* (*callback_type) (void*);
       callback_type callback = reinterpret_cast<callback_type>(con.term_jit(outer));
@@ -184,9 +200,15 @@ namespace Psi {
       TermPtr<FunctionTerm> outer = con.new_function(func_type);
       TermPtr<FunctionTerm> inner = con.new_function(func_type);
 
-      TermPtr<> call_value = outer->entry()->new_instruction_v(FunctionCall(), inner, outer->parameter(0));
-      outer->entry()->new_instruction_v(Return(), call_value);
-      inner->entry()->new_instruction_v(Return(), inner->parameter(0));
+      TermPtr<BlockTerm> outer_entry = outer->new_block();
+      TermPtr<BlockTerm> inner_entry = inner->new_block();
+
+      outer->set_entry(outer_entry);
+      inner->set_entry(inner_entry);
+
+      TermPtr<> call_value = outer_entry->new_instruction_v(FunctionCall(), inner, outer->parameter(0));
+      outer_entry->new_instruction_v(Return(), call_value);
+      inner_entry->new_instruction_v(Return(), inner->parameter(0));
 
       typedef void* (*callback_type) (void*,const void*);
       callback_type callback = reinterpret_cast<callback_type>(con.term_jit(outer));

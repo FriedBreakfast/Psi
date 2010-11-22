@@ -10,7 +10,7 @@ namespace Psi {
       BOOST_AUTO_TEST_SUITE(TvmParserTest)
 
       BOOST_AUTO_TEST_CASE(GlobalConst) {
-	const char *src = "%x = const (const_int #32 #0);";
+	const char *src = "%x = define (const_int #32 #0);";
 
 	UniqueList<NamedGlobalElement> result;
 	parse(result, src);

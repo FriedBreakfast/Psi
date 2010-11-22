@@ -109,7 +109,10 @@ namespace Psi {
         AssemblerContext my_context(&context);
 
         std::vector<TermPtr<BlockTerm> > blocks;
-        blocks.push_back(function.entry());
+
+        TermPtr<BlockTerm> entry = function.new_block();
+        function.set_entry(entry);
+        blocks.push_back(entry);
 
         std::size_t n = 0;
         for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->parameters.begin();
@@ -120,7 +123,15 @@ namespace Psi {
 
         for (UniqueList<Parser::Block>::const_iterator it = boost::next(function_def.blocks.begin());
              it != function_def.blocks.end(); ++it) {
-          TermPtr<BlockTerm> bl = function.new_block();
+          TermPtr<BlockTerm> dominator;
+          if (it->dominator_name) {
+            dominator = dynamic_term_cast<BlockTerm>(my_context.get(it->dominator_name->text));
+            if (!dominator)
+              throw std::logic_error("dominator block name is not a block");
+          } else {
+            dominator = entry;
+          }
+          TermPtr<BlockTerm> bl = function.new_block(dominator);
           my_context.put(it->name->text, bl);
           blocks.push_back(bl);
         }

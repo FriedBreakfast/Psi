@@ -35,7 +35,9 @@ namespace Psi {
 
       TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(cconv_c, i32_t);
       TermPtr<FunctionTerm> func = con.new_function(func_type);
-      func->entry()->new_instruction_v(Return(), value);
+      TermPtr<BlockTerm> entry = func->new_block();
+      func->set_entry(entry);
+      entry->new_instruction_v(Return(), value);
 
       typedef Jit::Int32 (*callback_type) ();
       callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));
@@ -52,7 +54,9 @@ namespace Psi {
       TermPtr<> i32_t = con.get_functional_v(IntegerType(true, 32));
       TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(cconv_c, i32_t, i32_t);
       TermPtr<FunctionTerm> func = con.new_function(func_type);
-      func->entry()->new_instruction_v(Return(), func->parameter(0));
+      TermPtr<BlockTerm> entry = func->new_block();
+      func->set_entry(entry);
+      entry->new_instruction_v(Return(), func->parameter(0));
 
       typedef Jit::Int32 (*callback_type) (Jit::Int32);
       callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));

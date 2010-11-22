@@ -67,5 +67,6 @@ add_executable(test TestMain.cpp
 
 set_target_properties(test PROPERTIES
   COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK"
+  COMPILE_FLAGS "${LLVM_CXX_FLAGS}"
   LINK_FLAGS "${LLVM_LDFLAGS}")
 target_link_libraries(test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} "psi")

@@ -64,6 +64,27 @@ namespace Psi {
       BOOST_CHECK_EQUAL(f(34,19), 646);
     }
 
+    BOOST_AUTO_TEST_CASE(ConditionalBranch) {
+      const char *src =
+        "%i32 = define (int #32);\n"
+        "%fn = function cc_c (%a:bool,%b:%i32,%c:%i32) > %i32 {\n"
+        "  cond_br %a %if_true %if_false;\n"
+        "  %sum = add %b %c;\n"
+        "  %dif = sub %b %c;\n"
+        "block %if_true:\n"
+        "  return %sum;\n"
+        "block %if_false:\n"
+        "  return %dif;"
+        "};\n";
+
+      typedef Jit::Int32 (*FuncType) (Jit::Boolean,Jit::Int32,Jit::Int32);
+      FuncType f = reinterpret_cast<FuncType>(jit("fn", src));
+      BOOST_CHECK_EQUAL(f(true, 10, 25), 35);
+      BOOST_CHECK_EQUAL(f(false, 10, 25), -15);
+      BOOST_CHECK_EQUAL(f(true, 15, 30), 45);
+      BOOST_CHECK_EQUAL(f(false, 15, 30), -15);
+    }
+
     BOOST_AUTO_TEST_SUITE_END()
   }
 }

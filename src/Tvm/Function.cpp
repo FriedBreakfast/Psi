@@ -196,7 +196,7 @@ namespace Psi {
       for (std::size_t i = 0; i < parameters.size(); ++i)
 	PSI_ASSERT(!parameters[i]->source());
 
-      TermPtr<FunctionTypeTerm> term = allocate_term(this, FunctionTypeTerm::Initializer(result_type.get(), parameters, calling_convention));
+      TermPtr<FunctionTypeTerm> term = allocate_term(FunctionTypeTerm::Initializer(result_type.get(), parameters, calling_convention));
 
       for (std::size_t i = 0; i < parameters.size(); ++i) {
 	parameters[i]->m_index = i;
@@ -319,7 +319,7 @@ namespace Psi {
     };
 
     TermPtr<FunctionTypeParameterTerm> Context::new_function_type_parameter(TermRef<> type) {
-      return allocate_term(this, FunctionTypeParameterTerm::Initializer(type.get()));
+      return allocate_term(FunctionTypeParameterTerm::Initializer(type.get()));
     }
 
     FunctionTypeResolverTerm::FunctionTypeResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> result_type, TermRefArray<> parameter_types, CallingConvention calling_convention)
@@ -436,12 +436,16 @@ namespace Psi {
 
     InstructionTerm::InstructionTerm(const UserInitializer& ui, Context *context,
 				     TermRef<> type, TermRefArray<> parameters,
-				     InstructionTermBackend *backend)
+				     InstructionTermBackend *backend,
+                                     TermRef<BlockTerm> block)
       : Term(ui, context, term_instruction,
 	     false, false, false, type),
 	m_backend(backend) {
+
+      set_base_parameter(0, block);
+
       for (std::size_t i = 0; i < parameters.size(); ++i)
-	set_base_parameter(i, parameters[i]);
+	set_base_parameter(i+1, parameters[i]);
     }
 
     InstructionTerm::~InstructionTerm() {
@@ -455,11 +459,13 @@ namespace Psi {
       Initializer(TermRef<> type,
 		  TermRefArray<> parameters,
 		  const InstructionTermBackend *backend,
+                  TermRef<BlockTerm> block,
 		  std::size_t proto_offset,
 		  std::size_t size)
 	: m_type(type),
 	  m_parameters(parameters),
 	  m_backend(backend),
+          m_block(block),
 	  m_proto_offset(proto_offset),
 	  m_size(size) {
       }
@@ -467,7 +473,7 @@ namespace Psi {
       InstructionTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
 	InstructionTermBackend *new_backend = m_backend->clone(ptr_offset(base, m_proto_offset));
 	try {
-	  return new (base) InstructionTerm(ui, context, m_type, m_parameters, new_backend);
+	  return new (base) InstructionTerm(ui, context, m_type, m_parameters, new_backend, m_block);
 	} catch(...) {
 	  new_backend->~InstructionTermBackend();
 	  throw;
@@ -479,55 +485,186 @@ namespace Psi {
       }
 
       std::size_t n_uses() const {
-	return m_parameters.size();
+	return m_parameters.size() + 1;
       }
 
     private:
       TermRef<> m_type;
       TermRefArray<> m_parameters;
       const InstructionTermBackend *m_backend;
+      TermRef<BlockTerm> m_block;
       std::size_t m_proto_offset;
       std::size_t m_size;
     };
 
+    /**
+     * \brief Check whether this block is dominated by another.
+     *
+     * If \c block is NULL, this will return true since a NULL
+     * dominator block refers to the function entry, i.e. before the
+     * entry block is run, and therefore eveything is dominated by it.
+     */
+    bool BlockTerm::dominated_by(TermRef<BlockTerm> block) const {
+      if (!block.get())
+        return true;
+
+      for (TermPtr<const BlockTerm> b(this); b; b = b->dominator()) {
+        if (block.get() == b.get())
+          return true;
+      }
+      return false;
+    }
+
+    /**
+     * Check if a term (i.e. all variables required by it) are
+     * available in this block. If this block has not been added to a
+     * function, the \c function parameter will be assigned to the
+     * function it must be added to in order for the term to be
+     * available, otherwise \c function will be set to the function
+     * this block is part of.
+     */
+    bool BlockTerm::check_available(TermRef<> term) const {
+      if (term->global())
+        return true;
+
+      PSI_ASSERT(!term->abstract() && !term->parameterized());
+
+      switch (term->term_type()) {
+      case term_functional: {
+        FunctionalTerm* cast_term = checked_cast<FunctionalTerm*>(term.get());
+        std::size_t n = cast_term->n_parameters();
+        for (std::size_t i = 0; i < n; ++i) {
+          if (!check_available(cast_term->parameter(i)))
+            return false;
+        }
+        return true;
+      }
+
+      case term_instruction:
+        return dominated_by(checked_cast<InstructionTerm*>(term.get())->block());
+
+      case term_phi:
+        return dominated_by(checked_cast<PhiTerm*>(term.get())->block());
+
+      case term_function_parameter:
+        return checked_cast<FunctionParameterTerm*>(term.get())->function() == function();
+
+      case term_block:
+        return checked_cast<BlockTerm*>(term.get())->function() == function();
+
+      default:
+	throw std::logic_error("unexpected term type");
+      }
+    }
+
+    /**
+     * \brief Get blocks that can run immediately after this one.
+     */
+    std::vector<TermPtr<BlockTerm> > BlockTerm::successors() const {
+      std::vector<TermPtr<BlockTerm> > targets;
+      for (InstructionList::const_iterator it = m_instructions.begin();
+           it != m_instructions.end(); ++it) {
+        InstructionTerm& insn = const_cast<InstructionTerm&>(m_instructions.back());
+        insn.backend()->jump_targets(context(), insn, targets);
+      }
+      return targets;
+    }
+
+    /**
+     * \brief Get blocks that can run between this one and the end of
+     * the function (including this one).
+     */
+    std::vector<TermPtr<BlockTerm> > BlockTerm::recursive_successors() const {
+      std::tr1::unordered_set<BlockTerm*> all_blocks;
+      std::vector<TermPtr<BlockTerm> > queue;
+      all_blocks.insert(const_cast<BlockTerm*>(this));
+      queue.push_back(TermPtr<BlockTerm>(const_cast<BlockTerm*>(this)));
+
+      for (std::size_t queue_pos = 0; queue_pos != queue.size(); ++queue_pos) {
+        BlockTerm *bl = queue[queue_pos].get();
+
+        if (bl->terminated()) {
+          std::vector<TermPtr<BlockTerm> > successors = bl->successors();
+          for (std::vector<TermPtr<BlockTerm> >::iterator it = successors.begin();
+               it != successors.end(); ++it) {
+            std::pair<std::tr1::unordered_set<BlockTerm*>::iterator, bool> r = all_blocks.insert(it->get());
+            if (r.second)
+              queue.push_back(*it);
+          }
+        }
+      }
+
+      return queue;
+    }
+
     TermPtr<InstructionTerm> BlockTerm::new_instruction_internal(const InstructionTermBackend& backend, TermRefArray<> parameters) {
-      TermPtr<> type = backend.type(context(), *function(), parameters);
+      if (m_terminated)
+        throw std::logic_error("cannot add instruction to already terminated block");
+
+      // Check parameters are valid and adjust dominator blocks
+      for (std::size_t i = 0; i < parameters.size(); ++i) {
+        Term *param = parameters[i];
+        if (param->abstract() || param->parameterized())
+          throw std::logic_error("instructions cannot accept abstract parameters");
+        if (!check_available(param))
+          throw std::logic_error("parameter value is not available in this block");
+      }
+
       std::pair<std::size_t, std::size_t> backend_size_align = backend.size_align();
       PSI_ASSERT_MSG((backend_size_align.second & (backend_size_align.second - 1)) == 0, "alignment is not a power of two");
       std::size_t proto_offset = struct_offset(0, sizeof(InstructionTerm), backend_size_align.second);
       std::size_t size = proto_offset + backend_size_align.first;
 
-      TermPtr<InstructionTerm> insn = allocate_term(&context(), InstructionTerm::Initializer(type, parameters, &backend, proto_offset, size));
-      insn->term_add_ref();
+      TermPtr<> type = backend.type(context(), *function(), parameters);
+      bool terminator = false;
+      if (!type) {
+        terminator = true;
+        type = context().get_empty_type();
+      }
+
+      TermPtr<InstructionTerm> insn = context().allocate_term(InstructionTerm::Initializer(type, parameters, &backend, this, proto_offset, size));
+
+      // End-of-block: need to find where we could be jumping to
+      std::vector<TermPtr<BlockTerm> > jump_targets;
+      backend.jump_targets(context(), *insn, jump_targets);
+      for (std::vector<TermPtr<BlockTerm> >::iterator it = jump_targets.begin();
+           it != jump_targets.end(); ++it) {
+        if (!dominated_by((*it)->dominator()))
+          throw std::logic_error("instruction jump target dominator block may not have run");
+      }
+
       m_instructions.push_back(*insn);
+      if (terminator)
+        m_terminated = true;
+
       return insn;
     }
 
-    BlockTerm::BlockTerm(const UserInitializer& ui, Context *context, FunctionTerm *function)
-      : Term(ui, context, term_block, false, false, false, context->get_block_type()) {
-      set_base_parameter(0, function);
+    BlockTerm::BlockTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTerm> function, TermRef<BlockTerm> dominator)
+      : Term(ui, context, term_block, false, false, false, context->get_block_type()),
+        m_terminated(false) {
 
-      m_use_count_ptr = 1;
-      m_use_count.ptr = function->term_use_count();
-      // remove ref created by set_base_parameter
-      --*m_use_count.ptr;
+      set_base_parameter(0, function);
+      set_base_parameter(1, dominator);
     }
 
     class BlockTerm::Initializer : public InitializerBase<BlockTerm> {
     public:
-      Initializer(FunctionTerm *function) : m_function(function) {
+      Initializer(TermRef<FunctionTerm> function, TermRef<BlockTerm> dominator)
+        : m_function(function), m_dominator(dominator) {
       }
 
       BlockTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) BlockTerm(ui, context, m_function);
+	return new (base) BlockTerm(ui, context, m_function, m_dominator);
       }
 
       std::size_t n_uses() const {
-	return 3;
+	return 2;
       }
 
     private:
-      FunctionTerm *m_function;
+      TermRef<FunctionTerm> m_function;
+      TermRef<BlockTerm> m_dominator;
     };
 
     FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTerm> function, TermRef<> type)
@@ -560,17 +697,12 @@ namespace Psi {
       TermPtrArray<> parameters(type->n_parameters());
       for (std::size_t i = 0; i < parameters.size(); ++i) {
 	TermPtr<> param_type = type->parameter_type_after(TermRefArray<>(i, parameters.get()));
-	TermPtr<FunctionParameterTerm> param = allocate_term(context, FunctionParameterTerm::Initializer(this, param_type));
+	TermPtr<FunctionParameterTerm> param = context->allocate_term(FunctionParameterTerm::Initializer(this, param_type));
+        set_base_parameter(i+2, param);
 	parameters.set(i, param);
-	param->term_add_ref();
-	m_parameters.push_back(*param);
       }
 
-      set_base_parameter(0, type->result_type_after(parameters));
-
-      TermPtr<BlockTerm> bl = allocate_term(context, BlockTerm::Initializer(this));
-      bl->term_add_ref();
-      m_blocks.push_back(*bl);
+      set_base_parameter(1, type->result_type_after(parameters));
     }
 
     class FunctionTerm::Initializer : public InitializerBase<FunctionTerm> {
@@ -583,7 +715,7 @@ namespace Psi {
       }
 
       std::size_t n_uses() const {
-	return 1;
+	return m_type->n_parameters() + 2;
       }
 
     private:
@@ -594,20 +726,7 @@ namespace Psi {
      * \brief Create a new function.
      */
     TermPtr<FunctionTerm> Context::new_function(TermRef<FunctionTypeTerm> type) {
-      return TermPtr<FunctionTerm>(allocate_term(this, FunctionTerm::Initializer(type)));
-    }
-
-    /**
-     * \brief Get a function parameter.
-     */
-    TermPtr<FunctionParameterTerm> FunctionTerm::parameter(std::size_t n) const {
-      FunctionParameterList::const_iterator it = m_parameters.begin();
-      for (std::size_t i = 0; i < n; ++i) {
-	if (it == m_parameters.end())
-	  throw std::logic_error("parameter index out of range");
-	++it;
-      }
-      return TermPtr<FunctionParameterTerm>(const_cast<FunctionParameterTerm*>(&*it));
+      return TermPtr<FunctionTerm>(allocate_term(FunctionTerm::Initializer(type)));
     }
 
     /**
@@ -618,24 +737,32 @@ namespace Psi {
     }
 
     /**
-     * Get the return type of this function, as viewed from inside the
-     * function (i.e., with parameterized types replaced by parameters
-     * to this function).
+     * \brief Set the entry point for a function.
+     *
+     * If a function has no entry point, it will be treated as
+     * external. Once an entry point has been set, it cannot be
+     * changed.
      */
-    TermPtr<> FunctionTerm::result_type() const {
-      return get_base_parameter(0);
+    void FunctionTerm::set_entry(TermRef<BlockTerm> block) {
+      if (entry())
+        throw std::logic_error("Cannot change the entry point of a function once it is set");
+      
+      set_base_parameter(0, block);
     }
 
     /**
-     * Create a new block in this function.
+     * \brief Create a new block.
+     */
+    TermPtr<BlockTerm> FunctionTerm::new_block(TermRef<BlockTerm> dominator) {
+      TermPtr<BlockTerm> bl = context().allocate_term(BlockTerm::Initializer(this, dominator));
+      return bl;
+    }
+
+    /**
+     * \brief Create a new block.
      */
     TermPtr<BlockTerm> FunctionTerm::new_block() {
-      TermPtr<BlockTerm> bl = allocate_term(&context(), BlockTerm::Initializer(this));
-      bl->term_add_ref();
-      m_blocks.push_back(*bl);
-      bl->set_dominator(entry());
-      bl->set_min_dominator(entry());
-      return bl;
+      return new_block(NULL);
     }
   }
 }

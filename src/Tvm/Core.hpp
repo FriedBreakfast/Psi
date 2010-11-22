@@ -15,6 +15,7 @@
 #include <boost/preprocessor/repetition/enum_binary_params.hpp>
 #include <boost/preprocessor/repetition/enum_trailing_params.hpp>
 #include <boost/type_traits/alignment_of.hpp>
+#include <boost/type_traits/remove_const.hpp>
 
 #include "User.hpp"
 #include "LLVMValue.hpp"
@@ -141,6 +142,8 @@ namespace Psi {
     class TermPtrCommon {
       typedef void (TermPtrCommon<TermTypeP,Base>::*SafeBoolType)() const;
       void safe_bool_true() const {}
+      typedef typename boost::remove_const<TermTypeP>::type NonConstType;
+
     public:
       typedef TermTypeP TermType;
 
@@ -158,7 +161,7 @@ namespace Psi {
 
     protected:
       TermPtrCommon() {}
-      explicit TermPtrCommon(TermType* ptr) : m_base(ptr) {}
+      explicit TermPtrCommon(TermType* ptr) : m_base(const_cast<NonConstType*>(ptr)) {}
       Base m_base;
     };
 
@@ -211,7 +214,9 @@ namespace Psi {
       Term *get() const {return m_ptr;}
       void reset(Term *ptr=0) {reset_ptr(m_ptr, ptr);}
 
-      template<typename T> static void reset_ptr(T*& value, T *src);
+      template<typename T> static void reset_ptr(T*& value, T *src) {
+        value = src;
+      }
 
     private:
       Term *m_ptr;
@@ -220,6 +225,7 @@ namespace Psi {
     template<typename T=Term>
     class TermPtr : public TermPtrCommon<T, TermPtrBackend> {
       typedef TermPtrCommon<T, TermPtrBackend> BaseType;
+      typedef typename boost::remove_const<T>::type NonConstType;
 
       template<typename V, typename W> friend TermPtr<V> checked_term_cast(const TermPtr<W>& ptr);
       template<typename V, typename W> friend TermPtr<V> dynamic_term_cast(const TermPtr<W>& ptr);
@@ -232,7 +238,7 @@ namespace Psi {
 
       template<typename U, typename V>
       TermPtr<T>& operator = (const TermPtrCommon<U,V>& src) {
-        this->m_base.reset(check_cast_type(src.get()));
+        this->m_base.reset(const_cast<NonConstType*>(check_cast_type(src.get())));
 	return *this;
       }
 
@@ -425,33 +431,11 @@ namespace Psi {
 
       std::size_t hash_value() const;
 
-      std::size_t* term_use_count() {
-	if (m_use_count_ptr)
-	  return m_use_count.ptr;
-	else
-	  return &m_use_count.value;
-      }
-
-      void term_add_ref() {
-	++*term_use_count();
-      }
-
-      void term_release() {
-	if (!--*term_use_count())
-	  term_destroy(this);
-      }
-
-      static void term_destroy(Term *term);
-
       unsigned char m_abstract : 1;
       unsigned char m_parameterized : 1;
       unsigned char m_global : 1;
-      unsigned char m_use_count_ptr : 1;
       Context *m_context;
-      union TermUseCount {
-	std::size_t *ptr;
-	std::size_t value;
-      } m_use_count;
+      boost::intrusive::list_member_hook<> m_term_list_hook;
 
     protected:
       std::size_t n_base_parameters() const {
@@ -493,23 +477,6 @@ namespace Psi {
 	return t != term_ptr;
       }
     };
-
-    /**
-     * \brief Change the term pointed to by this object.
-     */
-    template<typename T>
-    inline void TermPtrBackend::reset_ptr(T*& ptr, T *value) {
-      if (ptr == value)
-        return;
-
-      Term *old_ptr = ptr;
-      if (value)
-	value->term_add_ref();
-      ptr = value;
-
-      if (old_ptr)
-        old_ptr->term_release();
-    }
 
     template<typename T>
     class TermIterator
@@ -635,7 +602,9 @@ namespace Psi {
     class Context {
       friend class HashTerm;
       friend class FunctionTerm;
+      friend class BlockTerm;
 
+      struct TermDisposer;
       struct HashTermHasher {std::size_t operator () (const HashTerm&) const;};
 
       typedef boost::intrusive::unordered_set<HashTerm,
@@ -643,13 +612,24 @@ namespace Psi {
 					      boost::intrusive::hash<HashTermHasher>,
 					      boost::intrusive::power_2_buckets<true> > HashTermSetType;
 
+      typedef boost::intrusive::list<Term,
+                                     boost::intrusive::constant_time_size<false>,
+                                     boost::intrusive::member_hook<Term, boost::intrusive::list_member_hook<>, &Term::m_term_list_hook > > TermListType;
+
       static const std::size_t initial_hash_term_buckets = 64;
       UniqueArray<HashTermSetType::bucket_type> m_hash_term_buckets;
       HashTermSetType m_hash_terms;
 
+      TermListType m_all_terms;
+
       UniquePtr<llvm::LLVMContext> m_llvm_context;
       UniquePtr<llvm::Module> m_llvm_module;
       UniquePtr<llvm::ExecutionEngine> m_llvm_engine;
+
+#if PSI_DEBUG
+      void dump_hash_terms();
+      void print_hash_terms(std::ostream& output);
+#endif
 
     public:
       Context();
@@ -735,6 +715,8 @@ namespace Psi {
     private:
       Context(const Context&);
 
+      template<typename T>
+      TermPtr<typename T::TermType> allocate_term(const T& initializer);
       template<typename T>
       TermPtr<typename T::TermType> hash_term_get(T& Setup);
 
