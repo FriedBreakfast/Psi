@@ -65,13 +65,14 @@ namespace Psi {
 	    FunctionTypeTerm& actual = checked_cast<FunctionTypeTerm&>(term);
 	    if (actual.calling_convention() == cconv_tvm) {
 	      const llvm::Type* i8ptr = llvm::Type::getInt8PtrTy(self->context());
-	      std::vector<const llvm::Type*> params(actual.n_parameters() + 1, i8ptr);
+	      std::vector<const llvm::Type*> params(actual.n_parameters() - actual.n_phantom_parameters() + 1, i8ptr);
 	      return LLVMType::known(llvm::FunctionType::get(i8ptr, params, false));
 	    } else {
-	      std::size_t n_parameters = actual.n_parameters();
+              std::size_t n_phantom = actual.n_phantom_parameters();
+	      std::size_t n_parameters = actual.n_parameters() - n_phantom;
 	      std::vector<const llvm::Type*> params;
 	      for (std::size_t i = 0; i < n_parameters; ++i) {
-		LLVMType param_type = self->type(actual.parameter(i)->type());
+		LLVMType param_type = self->type(actual.parameter(i+n_phantom)->type());
 		if (!param_type.is_known())
 		  throw std::logic_error("Only tvm calling convention supports dependent parameters");
 		params.push_back(param_type.type());
@@ -332,13 +333,21 @@ namespace Psi {
       llvm::Function::ArgumentListType::const_iterator llvm_it = argument_list.begin();
 
       CallingConvention calling_convention = psi_func->function_type()->calling_convention();
+      std::size_t n_phantom = psi_func->function_type()->n_phantom_parameters();
+
       if (calling_convention == cconv_tvm) {
 	// Skip the first LLVM parameter snce it is the return
 	// address.
 	++llvm_it;
       }
 
-      for (std::size_t n = 0; llvm_it != argument_list.end(); ++n, ++llvm_it) {
+      std::size_t n = 0;
+      for (; n < n_phantom; ++n) {
+	TermPtr<FunctionParameterTerm> param = psi_func->parameter(n);
+        func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::phantom()));
+      }
+
+      for (; llvm_it != argument_list.end(); ++n, ++llvm_it) {
 	TermPtr<FunctionParameterTerm> param = psi_func->parameter(n);
 	llvm::Argument *llvm_param = const_cast<llvm::Argument*>(&*llvm_it);
 	TermRef<> param_type = param->type();

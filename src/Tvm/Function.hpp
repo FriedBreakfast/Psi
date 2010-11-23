@@ -163,7 +163,6 @@ namespace Psi {
     private:
       class Initializer;
       FunctionParameterTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTerm> function, TermRef<> type);
-      std::size_t m_index;
     };
 
     template<>
@@ -245,6 +244,10 @@ namespace Psi {
     class FunctionTypeTerm : public Term {
       friend class Context;
     public:
+      /// \brief Return the number of phantom parameters.
+      std::size_t n_phantom_parameters() const {return m_n_phantoms;}
+      /// \brief Return the number of parameters, including both
+      /// phantom and ordinary parameters.
       std::size_t n_parameters() const {return n_base_parameters() - 1;}
       TermPtr<FunctionTypeParameterTerm> parameter(std::size_t i) const {return get_base_parameter<FunctionTypeParameterTerm>(i+1);}
       TermPtr<> result_type() const {return get_base_parameter(0);}
@@ -255,10 +258,12 @@ namespace Psi {
     private:
       class Initializer;
       FunctionTypeTerm(const UserInitializer& ui, Context *context, Term *result_type,
+                       TermRefArray<FunctionTypeParameterTerm> phantom_parameters,
 		       TermRefArray<FunctionTypeParameterTerm> parameters,
 		       CallingConvention calling_convention);
 
       CallingConvention m_calling_convention;
+      std::size_t m_n_phantoms;
     };
 
     template<>
@@ -283,6 +288,7 @@ namespace Psi {
       friend class Context;
     public:
       TermPtr<> parameter_type(std::size_t n) const {return get_base_parameter(n+2);}
+      std::size_t n_phantom_parameters() const {return m_n_phantom;}
       std::size_t n_parameters() const {return n_base_parameters()-2;}
       TermPtr<> result_type() const {return get_base_parameter(1);}
       CallingConvention calling_convention() const {return m_calling_convention;}
@@ -290,10 +296,11 @@ namespace Psi {
     private:
       class Setup;
       FunctionTypeResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> result_type,
-                               TermRefArray<> parameter_types, CallingConvention calling_convention);
+                               TermRefArray<> parameter_types, std::size_t n_phantom, CallingConvention calling_convention);
       FunctionTypeTerm* get_function_type() const {return checked_cast<FunctionTypeTerm*>(get_base_parameter_ptr(0));}
       void set_function_type(FunctionTypeTerm *term) {set_base_parameter(0, term);}
 
+      std::size_t m_n_phantom;
       CallingConvention m_calling_convention;
     };
 

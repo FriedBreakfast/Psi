@@ -85,6 +85,35 @@ namespace Psi {
       BOOST_CHECK_EQUAL(f(false, 15, 30), -15);
     }
 
+    BOOST_AUTO_TEST_CASE(FunctionPointer) {
+      const char *src =
+        "%i32 = define (int #32);\n"
+        "%i16 = define (int #16);\n"
+        "\n"
+        "%add16 = function (%a:%i16,%b:%i16) > %i16 {\n"
+        "  return (add %a %b);\n"
+        "};\n"
+        "\n"
+        "%add32 = function (%a:%i32,%b:%i32) > %i32 {\n"
+        "  return (add %a %b);\n"
+        "};\n"
+        "\n"
+        "%bincb = function (%t:type,%a:%t,%b:%t,%f:(pointer (function (%t,%t) > %t))) > %t {\n"
+        "  %r = call %f %a %b;\n"
+        "  return %r;\n"
+        "};\n"
+        "\n"
+        "%test = function cc_c () > bool {\n"
+        "  %rx = call %bincb %i32 (c_int #32 #25) (c_int #32 #17) %add32;\n"
+        "  %ry = call %bincb %i16 (c_int #16 #44) (c_int #16 #5) %add16;\n"
+        "  return true;\n"
+        "};\n";
+
+      typedef Jit::Boolean (*FuncType) ();
+      FuncType f = reinterpret_cast<FuncType>(jit("test", src));
+      BOOST_CHECK_EQUAL(f(), true);
+    }
+
     BOOST_AUTO_TEST_SUITE_END()
   }
 }

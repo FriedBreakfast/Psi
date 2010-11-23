@@ -11,40 +11,48 @@ namespace Psi {
     FunctionTypeTerm::FunctionTypeTerm(const UserInitializer& ui,
 				       Context *context,
 				       Term *result_type,
+                                       TermRefArray<FunctionTypeParameterTerm> phantom_parameters,
 				       TermRefArray<FunctionTypeParameterTerm> parameters,
 				       CallingConvention calling_convention)
       : Term(ui, context, term_function_type,
 	     result_type->abstract() || any_abstract(parameters), true,
 	     result_type->global() && all_global(parameters),
 	     context->get_metatype().get()),
-	m_calling_convention(calling_convention) {
+	m_calling_convention(calling_convention),
+        m_n_phantoms(phantom_parameters.size()) {
       set_base_parameter(0, result_type);
-      for (std::size_t i = 0; i < parameters.size(); ++i) {
-	set_base_parameter(i+1, parameters[i]);
-      }
+
+      for (std::size_t i = 0; i < phantom_parameters.size(); ++i)
+        set_base_parameter(i+1, phantom_parameters[i]);
+
+      for (std::size_t i = 0; i < parameters.size(); ++i)
+	set_base_parameter(i+m_n_phantoms+1, parameters[i]);
     }
 
     class FunctionTypeTerm::Initializer : public InitializerBase<FunctionTypeTerm> {
     public:
       Initializer(Term *result_type,
+		  TermRefArray<FunctionTypeParameterTerm> phantom_parameters,
 		  TermRefArray<FunctionTypeParameterTerm> parameters,
 		  CallingConvention calling_convention)
 	: m_result_type(result_type),
+          m_phantom_parameters(phantom_parameters),
 	  m_parameters(parameters),
 	  m_calling_convention(calling_convention) {
       }
 
       std::size_t n_uses() const {
-	return m_parameters.size() + 1;
+	return m_phantom_parameters.size() + m_parameters.size() + 1;
       }
 
       FunctionTypeTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) FunctionTypeTerm(ui, context, m_result_type,
+	return new (base) FunctionTypeTerm(ui, context, m_result_type, m_phantom_parameters,
 					   m_parameters, m_calling_convention);
       }
 
     private:
       Term *m_result_type;
+      TermRefArray<FunctionTypeParameterTerm> m_phantom_parameters;
       TermRefArray<FunctionTypeParameterTerm> m_parameters;
       CallingConvention m_calling_convention;
     };
@@ -130,8 +138,8 @@ namespace Psi {
 	FunctionTypeParameterListCallback(const FunctionTypeResolverRewriter *self, FunctionResolveStatus *status)
 	  : m_self(self), m_status(status) {}
 
-	TermPtr<> operator () (TermRef<> term, std::size_t index) const {
-	  m_status->index = index;
+	TermPtr<> operator () (TermRef<> term, TermRefArray<> previous) const {
+	  m_status->index = previous.size();
 	  FunctionTypeParameterTerm *param = checked_cast<FunctionTypeParameterTerm*>(term.get());	  
 	  return (*m_self)(param->type());
 	}
@@ -148,18 +156,20 @@ namespace Psi {
 	switch(term->term_type()) {
 	case term_function_type: {
 	  FunctionTypeTerm *cast_term = checked_cast<FunctionTypeTerm*>(term.get());
-	  PSI_ASSERT(m_functions->find(cast_term) == m_functions->end());
+	  PSI_ASSERT_MSG(m_functions->find(cast_term) == m_functions->end(), "recursive function types not supported");
 	  FunctionResolveStatus& status = (*m_functions)[cast_term];
 	  status.depth = m_depth + 1;
 	  status.index = 0;
 
 	  FunctionTypeResolverRewriter child(m_depth+1, m_functions);
-	  ParameterListRewriter parameters(TermRef<FunctionTypeTerm>(cast_term),
-					   FunctionTypeParameterListCallback(&child, &status));
-	  TermPtr<> result_type = child(term);
+	  ParameterListRewriter<> parameters(TermRef<FunctionTypeTerm>(cast_term),
+                                             FunctionTypeParameterListCallback(&child, &status));
+	  TermPtr<> result_type = child(cast_term->result_type());
 	  m_functions->erase(cast_term);
 
-	  return term->context().get_function_type_resolver(result_type, parameters, cast_term->calling_convention());
+	  return term->context().get_function_type_resolver(result_type, parameters,
+                                                            cast_term->n_phantom_parameters(),
+                                                            cast_term->calling_convention());
 	}
 
 	case term_function_type_parameter: {
@@ -189,17 +199,48 @@ namespace Psi {
 
     /**
      * Get a function type term.
+     *
+     * Phantom parameters which exist to allow functions to take
+     * parameters of general types without having to know the details
+     * of those types; similar to \c forall quantification in
+     * Haskell. This is also how callback functions are passed since a
+     * user-specified parameter to the callback will usually have an
+     * unknown type, but this must be the same type as passed to the
+     * callback.
+     *
+     * The distinction between phantom and regular parameters is not
+     * just about types, since for example in order to access an array
+     * the type of array elements must be known, and therefore must be
+     * part of \c parameters.
+     *
+     * \param calling_convention Calling convention of this function.
+     *
+     * \param result_type The result type of the function. This may
+     * depend on \c parameters and \c phantom_parameters.
+     *
+     * \param phantom_parameters Phantom parameters - these do not
+     * actually cause any data to be passed at machine level.
+     *
+     * \param parameters Ordinary function parameters.
      */
     TermPtr<FunctionTypeTerm> Context::get_function_type(CallingConvention calling_convention,
 							 TermRef<> result_type,
+                                                         TermRefArray<FunctionTypeParameterTerm> phantom_parameters,
 							 TermRefArray<FunctionTypeParameterTerm> parameters) {
+      for (std::size_t i = 0; i < phantom_parameters.size(); ++i)
+	PSI_ASSERT(!phantom_parameters[i]->source());
       for (std::size_t i = 0; i < parameters.size(); ++i)
 	PSI_ASSERT(!parameters[i]->source());
 
-      TermPtr<FunctionTypeTerm> term = allocate_term(FunctionTypeTerm::Initializer(result_type.get(), parameters, calling_convention));
+      TermPtr<FunctionTypeTerm> term = allocate_term(FunctionTypeTerm::Initializer(result_type.get(), phantom_parameters, parameters, calling_convention));
+
+      for (std::size_t i = 0; i < phantom_parameters.size(); ++i) {
+        phantom_parameters[i]->m_index = i;
+        phantom_parameters[i]->set_source(term.get());
+      }
 
       for (std::size_t i = 0; i < parameters.size(); ++i) {
-	parameters[i]->m_index = i;
+	parameters[i]->m_index = i + phantom_parameters.size();
 	parameters[i]->set_source(term.get());
       }
 
@@ -218,12 +259,13 @@ namespace Psi {
       status.index = 0;
 
       FunctionTypeResolverRewriter rewriter(0, &functions);
-      ParameterListRewriter internal_parameters(TermRef<FunctionTypeTerm>(term), FunctionTypeResolverRewriter::FunctionTypeParameterListCallback(&rewriter, &status));
-      PSI_ASSERT(parameters.size() == internal_parameters.size());
+      ParameterListRewriter<> internal_parameters(TermRef<FunctionTypeTerm>(term), FunctionTypeResolverRewriter::FunctionTypeParameterListCallback(&rewriter, &status));
+      PSI_ASSERT(parameters.size() + phantom_parameters.size() == internal_parameters.size());
       TermPtr<> internal_result_type = rewriter(term->result_type());
       PSI_ASSERT((functions.erase(term.get()), functions.empty()));
 
-      TermPtr<FunctionTypeResolverTerm> internal = get_function_type_resolver(internal_result_type, internal_parameters, calling_convention);
+      TermPtr<FunctionTypeResolverTerm> internal = get_function_type_resolver(internal_result_type, internal_parameters,
+                                                                              term->n_phantom_parameters(), calling_convention);
       if (internal->get_function_type()) {
 	// A matching type exists
 	return TermPtr<FunctionTypeTerm>(internal->get_function_type());
@@ -242,36 +284,34 @@ namespace Psi {
       TermPtrArray<FunctionTypeParameterTerm> parameters(parameter_types.size());
       for (std::size_t i = 0; i < parameter_types.size(); ++i)
 	parameters.set(i, new_function_type_parameter(parameter_types[i]));
-      return get_function_type(calling_convention, result, parameters);
+      return get_function_type(calling_convention, result, TermRefArray<FunctionTypeParameterTerm>(0,0), parameters);
     }
 
     namespace {
       class ParameterTypeRewriter {
       public:
 	ParameterTypeRewriter(const FunctionTypeTerm *function, TermRefArray<> previous)
-	  : m_function(function), m_previous(previous) {}
+	  : m_function(function), m_previous(previous), m_base(this) {}
 
 	TermPtr<> operator () (TermRef<> term) const {
-	  switch (term->term_type()) {
-	  case term_function_type_parameter: {
+          if (term->term_type() == term_function_type_parameter) {
 	    FunctionTypeParameterTerm *cast_term = checked_cast<FunctionTypeParameterTerm*>(term.get());
 	    if (cast_term->source().get() == m_function) {
 	      std::size_t n = cast_term->index();
 	      PSI_ASSERT(n < m_previous.size());
 	      return TermPtr<>(m_previous[n]);
 	    } else {
-	      return TermPtr<>(term.get());
-	    }	      
-	  }
-
-	  default:
-	    return rewrite_term_default(*this, term);
-	  }
+              return m_base(term);
+	    }
+	  } else {
+            return m_base(term);
+          }
 	}
 
       private:
 	const FunctionTypeTerm *m_function;
 	TermRefArray<> m_previous;
+        mutable TermRewriter<ParameterTypeRewriter> m_base;
       };
     }
 
@@ -322,11 +362,12 @@ namespace Psi {
       return allocate_term(FunctionTypeParameterTerm::Initializer(type.get()));
     }
 
-    FunctionTypeResolverTerm::FunctionTypeResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> result_type, TermRefArray<> parameter_types, CallingConvention calling_convention)
+    FunctionTypeResolverTerm::FunctionTypeResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> result_type, TermRefArray<> parameter_types, std::size_t n_phantom, CallingConvention calling_convention)
       : HashTerm(ui, context, term_function_type_resolver,
 		 result_type->abstract() || any_abstract(parameter_types), true,
 		 result_type->global() && all_global(parameter_types),
 		 context->get_metatype().get(), hash),
+        m_n_phantom(n_phantom),
 	m_calling_convention(calling_convention) {
       set_base_parameter(1, result_type);
       for (std::size_t i = 0; i < parameter_types.size(); i++)
@@ -336,9 +377,10 @@ namespace Psi {
     class FunctionTypeResolverTerm::Setup : public InitializerBase<FunctionTypeResolverTerm> {
     public:
       Setup(TermRef<> result_type, TermRefArray<> parameter_types,
-	    CallingConvention calling_convention)
+	    std::size_t n_phantom, CallingConvention calling_convention)
 	: m_parameter_types(parameter_types),
 	  m_result_type(result_type),
+          m_n_phantom(n_phantom),
 	  m_calling_convention(calling_convention) {
 	m_hash = 0;
 	boost::hash_combine(m_hash, result_type->hash_value());
@@ -351,7 +393,7 @@ namespace Psi {
       }
 
       FunctionTypeResolverTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
-	return new (base) FunctionTypeResolverTerm(ui, context, m_hash, m_result_type, m_parameter_types, m_calling_convention);
+	return new (base) FunctionTypeResolverTerm(ui, context, m_hash, m_result_type, m_parameter_types, m_n_phantom, m_calling_convention);
       }
 
       std::size_t hash() const {
@@ -380,6 +422,9 @@ namespace Psi {
 	if (m_result_type.get() != cast_term.result_type().get())
 	  return false;
 
+        if (m_n_phantom != cast_term.n_phantom_parameters())
+          return false;
+
 	if (m_calling_convention != cast_term.calling_convention())
 	  return false;
 
@@ -390,11 +435,13 @@ namespace Psi {
       std::size_t m_hash;
       TermRefArray<> m_parameter_types;
       TermRef<> m_result_type;
+      std::size_t m_n_phantom;
       CallingConvention m_calling_convention;
     };
 
-    TermPtr<FunctionTypeResolverTerm> Context::get_function_type_resolver(TermRef<> result, TermRefArray<> parameter_types, CallingConvention calling_convention) {
-      FunctionTypeResolverTerm::Setup setup(result, parameter_types, calling_convention);
+    TermPtr<FunctionTypeResolverTerm> Context::get_function_type_resolver(TermRef<> result, TermRefArray<> parameter_types,
+                                                                          std::size_t n_phantom, CallingConvention calling_convention) {
+      FunctionTypeResolverTerm::Setup setup(result, parameter_types, n_phantom, calling_convention);
       return hash_term_get(setup);
     }
 

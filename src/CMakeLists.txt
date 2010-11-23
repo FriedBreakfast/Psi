@@ -25,6 +25,7 @@ add_library(psi SHARED
   ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
   Tvm/Primitive.cpp Tvm/Primitive.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp
+  Tvm/Rewrite.hpp
   Tvm/User.cpp Tvm/User.hpp
   Tvm/Utility.hpp
 )

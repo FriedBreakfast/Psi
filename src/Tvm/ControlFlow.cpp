@@ -62,8 +62,8 @@ namespace Psi {
 				llvm::ConstantInt::getFalse(builder.context()));
 	  return LLVMValue::known(irbuilder.CreateRet(return_area));
 	} else {
-	  PSI_ASSERT(result.is_quantified());
-	  throw std::logic_error("Cannot return a quantified value!");
+	  PSI_ASSERT(result.is_phantom());
+	  throw std::logic_error("Cannot return a phantom value!");
 	}
       } else {
 	if (!result.is_known())
@@ -86,7 +86,7 @@ namespace Psi {
 
       TermPtr<> true_target(parameters[1]);
       TermPtr<> false_target(parameters[2]);
-      if (!dynamic_term_cast<BlockTerm>(true_target) || !dynamic_term_cast<BlockTerm>(false_target))
+      if ((true_target->term_type() != term_block) || (false_target->term_type() != term_block))
 	throw std::logic_error("second and third parameters to branch instruction must be blocks");
 
       return TermPtr<>();
@@ -119,7 +119,7 @@ namespace Psi {
 	throw std::logic_error("unconditional branch instruction takes one argument - the branch target");
 
       TermPtr<> target(parameters[0]);
-      if (!dynamic_term_cast<BlockTerm>(target))
+      if (target->term_type() != term_block)
 	throw std::logic_error("second parameter to branch instruction must be blocks");
 
       return TermPtr<>();
@@ -180,6 +180,7 @@ namespace Psi {
       LLVMType result_type = builder.type(term.type());
 
       std::size_t n_parameters = function_type->n_parameters();
+      std::size_t n_phantom = function_type->n_phantom_parameters();
       CallingConvention calling_convention = function_type->calling_convention();
 
       llvm::Value *stack_backup = NULL;
@@ -212,16 +213,17 @@ namespace Psi {
 	}
       }
 
-      for (std::size_t i = 0; i < n_parameters; ++i) {
+      for (std::size_t i = n_phantom; i < n_parameters; ++i) {
 	LLVMValue param = builder.value(self.parameter(i));
 
+        if (param.is_phantom())
+          throw std::logic_error("Cannot pass phantom value as to non-phantom parameter of function");
+
 	if (calling_convention == cconv_tvm) {
-	  if (param.is_quantified()) {
-	    throw std::logic_error("Cannot pass quantified value as function parameter (not implemented)");
-	  } else if (param.is_known()) {
+	  if (param.is_known()) {
 	    if (param.value()->getType()->isPointerTy()) {
 	      PSI_ASSERT(param.value()->getType() == llvm::Type::getInt8PtrTy(builder.context()));
-	      parameters[i] = param.value();
+	      parameters.push_back(param.value());
 	    } else {
 	      if (!stack_backup)
 		stack_backup = irbuilder.CreateCall(llvm_intrinsic_stacksave(builder.module()));
@@ -265,6 +267,64 @@ namespace Psi {
     }
     
     void FunctionCall::jump_targets(Context&, InstructionTerm&, std::vector<TermPtr<BlockTerm> >&) const {
+    }
+
+    TermPtr<> FunctionApplyPhantom::type(Context& context, TermRefArray<> parameters) const {
+      if (parameters.size() < 1)
+        throw std::logic_error("apply_phantom requires at least one parameter");
+
+      std::size_t n_applied = parameters.size() - 1;
+
+      Term *target = parameters[0];
+      FunctionalTermPtr<PointerType> target_ptr_type = dynamic_cast_functional<PointerType>(target->type());
+      if (!target_ptr_type)
+	throw std::logic_error("apply_phantom target is not a function pointer");
+
+      TermPtr<FunctionTypeTerm> function_type = dynamic_term_cast<FunctionTypeTerm>(target_ptr_type.backend().target_type());
+      if (!function_type)
+	throw std::logic_error("apply_phantom target is not a function pointer");
+
+      if (n_applied > function_type->n_phantom_parameters())
+        throw std::logic_error("Too many parameters given to apply_phantom");
+
+      TermPtrArray<> apply_parameters(function_type->n_parameters());
+      for (std::size_t i = 0; i < n_applied; ++i)
+        apply_parameters.set(i, TermPtr<>(parameters[i+1]));
+
+      TermPtrArray<FunctionTypeParameterTerm> new_parameters(function_type->n_parameters() - n_applied);
+      for (std::size_t i = 0; i < new_parameters.size(); ++i) {
+        TermPtr<> type = function_type->parameter_type_after(TermRefArray<>(n_applied + i, apply_parameters.get()));
+        TermPtr<FunctionTypeParameterTerm> param = context.new_function_type_parameter(type);
+        apply_parameters.set(i + n_applied, param);
+        new_parameters.set(i, param);
+      }
+
+      TermPtr<> result_type = function_type->result_type_after(apply_parameters);
+
+      std::size_t result_n_phantom = function_type->n_phantom_parameters() - n_applied;
+      std::size_t result_n_normal = function_type->n_parameters() - function_type->n_phantom_parameters();
+
+      TermPtr<FunctionTypeTerm> result_function_type = context.get_function_type
+        (function_type->calling_convention(),
+         result_type,
+         TermRefArray<FunctionTypeParameterTerm>(result_n_phantom, new_parameters.get()),
+         TermRefArray<FunctionTypeParameterTerm>(result_n_normal, new_parameters.get() + result_n_phantom));
+
+      return context.get_pointer_type(result_function_type);
+    }
+
+    LLVMType FunctionApplyPhantom::llvm_type(LLVMValueBuilder&, Term&) const {
+      throw std::logic_error("the type of a term cannot be an apply_phantom");
+    }
+
+    LLVMValue FunctionApplyPhantom::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
+      return builder.value(self.function());
+    }
+
+    LLVMValue FunctionApplyPhantom::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
+      return builder.value(self.function());
     }
   }
 }

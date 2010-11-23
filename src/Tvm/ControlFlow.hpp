@@ -3,6 +3,8 @@
 
 #include "Core.hpp"
 #include "Function.hpp"
+#include "Functional.hpp"
+#include "Primitive.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -66,6 +68,24 @@ namespace Psi {
 	TermPtr<> parameter(std::size_t n) const {return m_term->parameter(n+1);}
       private:
 	const InstructionTerm *m_term;
+      };
+    };
+
+    class FunctionApplyPhantom : public StatelessOperand {
+    public:
+      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+
+      class Access {
+      public:
+	Access(const FunctionalTerm *term, const FunctionApplyPhantom*) : m_term(term) {}
+        TermPtr<> function() const {return m_term->parameter(0);}
+        std::size_t n_parameters() const {return m_term->n_parameters() - 1;}
+        TermPtr<> parameter(std::size_t n) const {return m_term->parameter(n+1);}
+      private:
+	const FunctionalTerm *m_term;
       };
     };
   }

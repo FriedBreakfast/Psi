@@ -111,7 +111,7 @@ namespace Psi {
 	 * it has no value available, merely an assertion that such a
 	 * value exists somewhere.
 	 */
-	category_quantified
+	category_phantom
       };
 
     public:
@@ -121,14 +121,14 @@ namespace Psi {
       bool is_known() const {return m_category == category_known;}
       bool is_unknown() const {return m_category == category_unknown;}
       bool is_empty() const {return m_category == category_empty;}
-      bool is_quantified() const {return m_category == category_quantified;}
+      bool is_phantom() const {return m_category == category_phantom;}
       llvm::Value *value() const {return m_value;}
       llvm::Value *ptr_value() const {return m_ptr_value;}
 
       static LLVMValue known(llvm::Value *value) {return LLVMValue(category_known, value, 0);}
       static LLVMValue unknown(llvm::Value *value, llvm::Value *ptr_value) {return LLVMValue(category_unknown, value, ptr_value);}
       static LLVMValue empty() {return LLVMValue(category_empty, 0, 0);}
-      static LLVMValue quantified() {return LLVMValue(category_quantified, 0, 0);}
+      static LLVMValue phantom() {return LLVMValue(category_phantom, 0, 0);}
 
     private:
       LLVMValue(Category category, llvm::Value *value, llvm::Value *ptr_value) : m_category(category), m_value(value), m_ptr_value(ptr_value) {}

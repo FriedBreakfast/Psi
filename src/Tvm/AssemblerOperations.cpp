@@ -6,6 +6,7 @@
 #include "Assembler.hpp"
 #include "Arithmetic.hpp"
 #include "ControlFlow.hpp"
+#include "Derived.hpp"
 #include "Number.hpp"
 
 namespace Psi {
@@ -131,6 +132,8 @@ namespace Psi {
 
       const std::tr1::unordered_map<std::string, FunctionalTermCallback> functional_ops =
         boost::assign::map_list_of<std::string, FunctionalTermCallback>
+        ("type", DefaultFunctionalCallback<Metatype>())
+        ("pointer", DefaultFunctionalCallback<PointerType>())
         ("bool", DefaultFunctionalCallback<BooleanType>())
         ("int", IntTypeCallback(true))
         ("uint", IntTypeCallback(false))
@@ -145,7 +148,8 @@ namespace Psi {
         ("add", DefaultFunctionalCallback<IntegerAdd>())
         ("sub", DefaultFunctionalCallback<IntegerSubtract>())
         ("mul", DefaultFunctionalCallback<IntegerMultiply>())
-        ("div", DefaultFunctionalCallback<IntegerDivide>());
+        ("div", DefaultFunctionalCallback<IntegerDivide>())
+        ("apply_phantom", DefaultFunctionalCallback<FunctionApplyPhantom>());
 
       template<typename T>
       struct DefaultInstructionCallback {

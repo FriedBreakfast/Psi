@@ -318,7 +318,12 @@ function_type {
 function_type:
 FUNCTION calling_convention '(' parameter_list ')' '>' expression {
   UniquePtr<Expression> result(list_to_ptr($7));
-  $$ = list_one<Expression>(new FunctionTypeExpression(@$, $2, *$4, result));
+  UniqueList<NamedExpression> phantom_parameters;
+  $$ = list_one<Expression>(new FunctionTypeExpression(@$, $2, phantom_parameters, *$4, result));
+}
+| FUNCTION calling_convention '(' parameter_list '|' parameter_list ')' '>' expression {
+  UniquePtr<Expression> result(list_to_ptr($9));
+  $$ = list_one<Expression>(new FunctionTypeExpression(@$, $2, *$4, *$6, result));
 };
 
 calling_convention: {$$=cconv_tvm} | CC_TVM {$$=cconv_tvm} | CC_C {$$=cconv_c};
@@ -595,10 +600,12 @@ namespace Psi {
 
       FunctionTypeExpression::FunctionTypeExpression(const Location& location_,
                                                      CallingConvention calling_convention_,
+                                                     UniqueList<NamedExpression>& phantom_parameters_,
 						     UniqueList<NamedExpression>& parameters_,
 						     UniquePtr<Expression>& result_type_)
 	: Expression(location_, expression_function_type),
           calling_convention(calling_convention_) {
+        phantom_parameters.swap(phantom_parameters_);
 	parameters.swap(parameters_);
 	result_type.swap(result_type_);
       }

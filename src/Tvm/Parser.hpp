@@ -99,11 +99,13 @@ namespace Psi {
       struct FunctionTypeExpression : Expression {
 	FunctionTypeExpression(const Location& location_,
                                CallingConvention calling_convention_,
+                               UniqueList<NamedExpression>& phantom_parameters_,
 			       UniqueList<NamedExpression>& parameters_,
 			       UniquePtr<Expression>& result_type_);
 	virtual ~FunctionTypeExpression();
 
         CallingConvention calling_convention;
+        UniqueList<NamedExpression> phantom_parameters;
 	UniqueList<NamedExpression> parameters;
 	UniquePtr<Expression> result_type;
       };

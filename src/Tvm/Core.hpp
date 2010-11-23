@@ -268,6 +268,7 @@ namespace Psi {
     template<typename T=Term>
     class TermRefArray : public TermArrayCommon<T> {
     public:
+      TermRefArray() : TermArrayCommon<T>(0,0) {}
       TermRefArray(std::size_t n, T*const* ptr) : TermArrayCommon<T>(n, const_cast<T**>(ptr)) {}
       TermRefArray(const TermArrayCommon<T>& o) : TermArrayCommon<T>(o) {}
     };
@@ -642,6 +643,7 @@ namespace Psi {
 
       TermPtr<FunctionTypeTerm> get_function_type(CallingConvention calling_convention,
 						  TermRef<> result,
+                                                  TermRefArray<FunctionTypeParameterTerm> phantom_parameters,
 						  TermRefArray<FunctionTypeParameterTerm> parameters);
 
       TermPtr<FunctionTypeTerm> get_function_type_fixed(CallingConvention calling_convention,
@@ -682,12 +684,12 @@ namespace Psi {
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
-#define PSI_TVM_VA(z,n,data) TermPtr<FunctionTypeTerm> get_function_type_v(CallingConvention calling_convention, TermRef<> result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<FunctionTypeParameterTerm> p)) {FunctionTypeParameterTerm *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return get_function_type(calling_convention,result,TermRefArray<FunctionTypeParameterTerm>(n,ap));}
+#define PSI_TVM_VA(z,n,data) TermPtr<FunctionTypeTerm> get_function_type_v(CallingConvention calling_convention, TermRef<> result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<FunctionTypeParameterTerm> p)) {FunctionTypeParameterTerm *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return get_function_type(calling_convention,result,TermRefArray<FunctionTypeParameterTerm>(0,0),TermRefArray<FunctionTypeParameterTerm>(n,ap));}
 
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
-#define PSI_TVM_VA(z,n,data) TermPtr<FunctionTypeTerm> get_function_type_v(TermRef<> result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<FunctionTypeParameterTerm> p)) {FunctionTypeParameterTerm *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return get_function_type(cconv_tvm,result,TermRefArray<FunctionTypeParameterTerm>(n,ap));}
+#define PSI_TVM_VA(z,n,data) TermPtr<FunctionTypeTerm> get_function_type_v(TermRef<> result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<FunctionTypeParameterTerm> p)) {FunctionTypeParameterTerm *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return get_function_type(cconv_tvm,result,TermRefArray<FunctionTypeParameterTerm>(0,0),TermRefArray<FunctionTypeParameterTerm>(n,ap));}
 
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
@@ -722,14 +724,13 @@ namespace Psi {
 
       TermPtr<RecursiveParameterTerm> new_recursive_parameter(TermRef<> type);
 
-      TermPtr<FunctionTypeResolverTerm> get_function_type_resolver(TermRef<> result, TermRefArray<> parameters, CallingConvention calling_convention);
+      TermPtr<FunctionTypeResolverTerm> get_function_type_resolver(TermRef<> result, TermRefArray<> parameters, std::size_t n_phantom, CallingConvention calling_convention);
       FunctionalTermPtr<FunctionTypeResolverParameter> get_function_type_resolver_parameter(TermRef<> type, std::size_t depth, std::size_t index);
 
       typedef std::tr1::unordered_map<FunctionTypeTerm*, std::size_t> CheckCompleteMap;
       bool check_function_type_complete(TermRef<> term, CheckCompleteMap& functions);
 
       class FunctionTypeResolverRewriter;
-      class FunctionTypeRootParameterRewriter;
       bool search_for_abstract(Term *term, std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set);
 
       static void clear_and_queue_if_abstract(std::vector<Term*>& queue, TermRef<> t);

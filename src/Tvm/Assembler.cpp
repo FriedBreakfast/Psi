@@ -61,24 +61,33 @@ namespace Psi {
 	}
       }
 
+      void build_function_parameters(AssemblerContext& context,
+                                     const UniqueList<Parser::NamedExpression>& parameters,
+                                     TermPtrArray<FunctionTypeParameterTerm>& result) {
+        std::size_t n = 0;
+        for (UniqueList<Parser::NamedExpression>::const_iterator it = parameters.begin();
+             it != parameters.end(); ++it, ++n) {
+          PSI_ASSERT(n < result.size());
+	  TermPtr<> param_type = build_expression(context, *it->expression);
+	  TermPtr<FunctionTypeParameterTerm> param = context.context().new_function_type_parameter(param_type);
+          if (it->name)
+            context.put(it->name->text, param);
+	  result.set(n, param);
+        }
+      }
+
       TermPtr<FunctionTypeTerm> build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type) {
 	AssemblerContext my_context(&context);
+
+        TermPtrArray<FunctionTypeParameterTerm> phantom_parameters(function_type.phantom_parameters.size());
+        build_function_parameters(my_context, function_type.phantom_parameters, phantom_parameters);
+
 	TermPtrArray<FunctionTypeParameterTerm> parameters(function_type.parameters.size());
+        build_function_parameters(my_context, function_type.parameters, parameters);
 
-	std::size_t n = 0;
-	for (UniqueList<Parser::NamedExpression>::const_iterator it = function_type.parameters.begin();
-	     it != function_type.parameters.end(); ++it, ++n) {
-	  PSI_ASSERT(n < parameters.size());
-	  TermPtr<> param_type = build_expression(context, *it->expression);
-	  TermPtr<FunctionTypeParameterTerm> param =
-	    context.context().new_function_type_parameter(param_type);
-	  my_context.put(it->name->text, param);
-	  parameters.set(n, param);
-	}
+	TermPtr<> result_type = build_expression(my_context, *function_type.result_type);
 
-	TermPtr<> result_type = build_expression(context, *function_type.result_type);
-
-	return context.context().get_function_type(function_type.calling_convention, result_type, parameters);
+	return context.context().get_function_type(function_type.calling_convention, result_type, phantom_parameters, parameters);
       }
 
       TermPtr<> build_instruction_expression(AssemblerContext& context, BlockTerm& block, const Parser::CallExpression& expression) {
@@ -115,6 +124,12 @@ namespace Psi {
         blocks.push_back(entry);
 
         std::size_t n = 0;
+        for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->phantom_parameters.begin();
+             it != function_def.type->phantom_parameters.end(); ++it, ++n) {
+          if (it->name)
+            my_context.put(it->name->text, function.parameter(n));
+        }
+
         for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->parameters.begin();
              it != function_def.type->parameters.end(); ++it, ++n) {
           if (it->name)
@@ -125,9 +140,10 @@ namespace Psi {
              it != function_def.blocks.end(); ++it) {
           TermPtr<BlockTerm> dominator;
           if (it->dominator_name) {
-            dominator = dynamic_term_cast<BlockTerm>(my_context.get(it->dominator_name->text));
-            if (!dominator)
+            TermPtr<> dominator_base = my_context.get(it->dominator_name->text);
+            if (dominator_base->term_type() != term_block)
               throw std::logic_error("dominator block name is not a block");
+            dominator = checked_term_cast<BlockTerm>(dominator_base);
           } else {
             dominator = entry;
           }

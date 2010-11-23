@@ -52,6 +52,25 @@ namespace Psi {
     return ptr;
   }
 
+  template<typename ForwardIterator, typename Compare>
+  bool is_sorted(ForwardIterator first, ForwardIterator last, Compare cmp) {
+    if (first == last)
+      return true;
+
+    ForwardIterator next = first;
+    for (++next; next != last; first = next, ++next) {
+      if (!cmp(*first, *next))
+        return false;
+    }
+  
+    return true;
+  }
+
+  template<typename ForwardIterator, typename Compare>
+  bool is_sorted(ForwardIterator first, ForwardIterator last) {
+    return is_sorted(first, last, std::less<typename ForwardIterator::value_type>());
+  }
+
   template<typename T>
   class UniquePtr {
     typedef void (UniquePtr::*SafeBoolType)() const;
