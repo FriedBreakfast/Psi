@@ -9,9 +9,10 @@ namespace Psi {
     class ArithmeticOperation {
     public:
       static TermPtr<> integer_binary_op_type(Context& context, TermRefArray<> parameters);
-      static LLVMValue binary_op_constant(LLVMValueBuilder& builder, FunctionalTerm& term, llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*));
-      static LLVMValue binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term, llvm::Value* (LLVMFunctionBuilder::IRBuilder::*) (llvm::Value*,llvm::Value*,const llvm::Twine&));
-      static LLVMType no_type();
+      static LLVMValue binary_op_constant(LLVMValueBuilder& builder, FunctionalTerm& term,
+                                          llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*));
+      static LLVMValue binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term,
+                                             llvm::Value* (LLVMFunctionBuilder::IRBuilder::*) (llvm::Value*,llvm::Value*,const llvm::Twine&));
 
       class BinaryAccess {
       public:

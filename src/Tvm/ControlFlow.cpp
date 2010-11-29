@@ -43,7 +43,7 @@ namespace Psi {
 	} else if (result.is_empty()) {
 	  return LLVMValue::known(irbuilder.CreateRet(return_area));
 	} else if (result.is_unknown()) {
-	  llvm::Function *memcpy_fn = llvm_intrinsic_memcpy(builder.module());
+	  llvm::Function *memcpy_fn = builder.llvm_memcpy();
 	  TermPtr<> return_type = return_value->type();
 	  if (return_type->type() != term.context().get_metatype())
 	    throw std::logic_error("Type of return type is not metatype");
@@ -193,7 +193,7 @@ namespace Psi {
 	  // stack pointer is saved here but not for unknown types
 	  // because memory for unknown types must survive their
 	  // scope.
-	  stack_backup = irbuilder.CreateCall(llvm_intrinsic_stacksave(builder.module()));
+	  stack_backup = irbuilder.CreateCall(builder.llvm_stacksave());
 	  result_area = irbuilder.CreateAlloca(result_type.type());
 	  llvm::Value *cast_result_area = irbuilder.CreateBitCast(result_area, llvm::Type::getInt8PtrTy(builder.context()));
 	  parameters.push_back(cast_result_area);
@@ -226,7 +226,7 @@ namespace Psi {
 	      parameters.push_back(param.value());
 	    } else {
 	      if (!stack_backup)
-		stack_backup = irbuilder.CreateCall(llvm_intrinsic_stacksave(builder.module()));
+		stack_backup = irbuilder.CreateCall(builder.llvm_stacksave());
 
 	      llvm::Value *ptr = irbuilder.CreateAlloca(param.value()->getType());
 	      irbuilder.CreateStore(param.value(), ptr);
@@ -254,7 +254,7 @@ namespace Psi {
 	result = irbuilder.CreateLoad(result_area);
 
       if (stack_backup)
-	irbuilder.CreateCall(llvm_intrinsic_stackrestore(builder.module()), stack_backup);
+	irbuilder.CreateCall(builder.llvm_stackrestore(), stack_backup);
 
       if (result_type.is_known()) {
 	return LLVMValue::known(result);

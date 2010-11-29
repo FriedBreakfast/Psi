@@ -414,11 +414,18 @@ namespace Psi {
              it != successors.end(); ++it) {
           std::pair<std::tr1::unordered_set<BlockTerm*>::iterator, bool> p = visited_blocks.insert(it->get());
           if (p.second) {
-            block_queue.push_back(bl);
-            if (!bl->dominator())
-              blocks.push_back(std::make_pair(bl, static_cast<llvm::BasicBlock*>(0)));
+            block_queue.push_back(it->get());
+            if (!it->get()->dominator())
+              blocks.push_back(std::make_pair(it->get(), static_cast<llvm::BasicBlock*>(0)));
           }
         }
+      }
+
+      // reset visited blocks to blocks in the "blocks" variable
+      visited_blocks.clear();
+      for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
+           it != blocks.end(); ++it) {
+        visited_blocks.insert(it->first);
       }
 
       // get remaining blocks in topological order
@@ -426,9 +433,9 @@ namespace Psi {
         BlockTerm *bl = blocks[i].first;
 	for (TermIterator<BlockTerm> it = bl->term_users_begin<BlockTerm>();
 	     it != bl->term_users_end<BlockTerm>(); ++it) {
-          if ((bl == it->dominator().get()) &&
-              (func_builder.m_value_terms.find(it.get_ptr()) == func_builder.m_value_terms.end())) {
+          if ((bl == it->dominator().get()) && (visited_blocks.find(it.get_ptr()) == visited_blocks.end())) {
             blocks.push_back(std::make_pair(it.get_ptr(), static_cast<llvm::BasicBlock*>(0)));
+            visited_blocks.insert(it.get_ptr());
           }
         }
       }
@@ -438,19 +445,39 @@ namespace Psi {
            it != blocks.end(); ++it) {
         llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(context(), "", llvm_func);
         it->second = llvm_bb;
-        func_builder.m_value_terms.insert(std::make_pair(it->first, LLVMValue::known(llvm_bb)));
+        std::pair<ValueTermMap::iterator, bool> insert_result =
+          func_builder.m_value_terms.insert(std::make_pair(it->first, LLVMValue::known(llvm_bb)));
+        PSI_ASSERT(insert_result.second);
       }
+
+      std::tr1::unordered_map<BlockTerm*, llvm::Value*> stack_pointers;
 
       // Build basic blocks
       for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
 	   it != blocks.end(); ++it) {
 	irbuilder.SetInsertPoint(it->second);
+
+        // Restore stack as it was when dominating block exited, so
+        // any values alloca'd since then are removed. This is
+        // necessary to allow loops which handle unknown types without
+        // unbounded stack growth.
+        if (it->first->dominator()) {
+          PSI_ASSERT(stack_pointers.find(it->first->dominator().get()) != stack_pointers.end());
+          irbuilder.CreateCall(func_builder.llvm_stackrestore(), stack_pointers[it->first->dominator().get()]);
+        }
+
 	const BlockTerm::InstructionList& insn_list = it->first->instructions();
 	for (BlockTerm::InstructionList::const_iterator jt = insn_list.begin(); jt != insn_list.end(); ++jt) {
 	  InstructionTerm& insn = const_cast<InstructionTerm&>(*jt);
 	  LLVMValue r = insn.backend()->llvm_value_instruction(func_builder, insn);
 	  func_builder.m_value_terms.insert(std::make_pair(&insn, r));
 	}
+
+        // Save stack pointer - must do this retrospectively before
+        // the last instruction in the block
+        PSI_ASSERT(stack_pointers.find(it->first) == stack_pointers.end());
+        irbuilder.SetInsertPoint(it->second, boost::prior(it->second->end()));
+        stack_pointers[it->first] = irbuilder.CreateCall(func_builder.llvm_stacksave());
       }
 
       if (m_debug_stream)
@@ -489,12 +516,16 @@ namespace Psi {
 	m_function(function),
 	m_irbuilder(irbuilder),
 	m_calling_convention(calling_convention) {
+      m_llvm_memcpy = llvm_intrinsic_memcpy(module());
+      m_llvm_stacksave = llvm_intrinsic_stacksave(module());
+      m_llvm_stackrestore = llvm_intrinsic_stackrestore(module());
     }
 
     LLVMFunctionBuilder::~LLVMFunctionBuilder() {
     }
 
     LLVMValue LLVMFunctionBuilder::value_impl(TermRef<> term) {
+      // Set the insert point to the dominator block of the value
       return build_term(term, m_value_terms, InstructionBuilderCallback(this)).first;
     }
 

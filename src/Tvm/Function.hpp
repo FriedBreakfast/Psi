@@ -23,7 +23,16 @@ namespace Psi {
        * instruction terminates the block.
        */
       virtual TermPtr<> type(Context& context, const FunctionTerm& function, TermRefArray<> parameters) const = 0;
-      virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, InstructionTerm&) const = 0;
+
+      /**
+       * Generate code to calculate the value for this term.
+       *
+       * \param builder Builder used to get functional values and to
+       * create instructions.
+       *
+       * \param term Term (with parameters) to generate code for.
+       */
+      virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const = 0;
 
       /**
        * Get blocks which this function could jump to. This will only

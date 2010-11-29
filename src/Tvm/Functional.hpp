@@ -12,7 +12,21 @@ namespace Psi {
     public:
       virtual FunctionalTermBackend* clone(void *dest) const = 0;
       virtual TermPtr<> type(Context& context, TermRefArray<> parameters) const = 0;
-      virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const = 0;
+
+      /**
+       * Generate code to calculate the value for this term.
+       *
+       * \param builder Builder used to get functional values and to
+       * create instructions.
+       *
+       * \param term Term (with parameters) to generate code for.
+       *
+       * \param result_area Area to store the result of this
+       * instruction in. This will be NULL unless the value of this
+       * instruction has unknown type.
+       */
+      virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const = 0;
+
       virtual LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const = 0;
       virtual LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const = 0;
     };

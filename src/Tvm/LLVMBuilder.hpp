@@ -73,6 +73,10 @@ namespace Psi {
       IRBuilder& irbuilder() {return *m_irbuilder;}
       CallingConvention calling_convention() const {return m_calling_convention;}
 
+      llvm::Function* llvm_memcpy() const {return m_llvm_memcpy;}
+      llvm::Function* llvm_stacksave() const {return m_llvm_stacksave;}
+      llvm::Function* llvm_stackrestore() const {return m_llvm_stackrestore;}
+
     private:
       LLVMFunctionBuilder(LLVMValueBuilder *constant_builder, llvm::Function *function, IRBuilder *irbuilder, CallingConvention calling_convention);
       virtual LLVMValue value_impl(TermRef<> term);
@@ -80,6 +84,10 @@ namespace Psi {
       llvm::Function *m_function;
       IRBuilder *m_irbuilder;
       CallingConvention m_calling_convention;
+
+      llvm::Function *m_llvm_memcpy;
+      llvm::Function *m_llvm_stacksave;
+      llvm::Function *m_llvm_stackrestore;
     };
 
     llvm::Function* llvm_intrinsic_memcpy(llvm::Module& m);
