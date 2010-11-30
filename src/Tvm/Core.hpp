@@ -409,6 +409,12 @@ namespace Psi {
     public:
       virtual ~Term();
 
+      enum Category {
+        category_metatype,
+        category_type,
+        category_value
+      };
+
       TermType term_type() const {return TermUser::term_type();}
 
       /// \brief If this term is abstract: it contains references to recursive term parameters which are unresolved.
@@ -417,6 +423,8 @@ namespace Psi {
       bool parameterized() const {return m_parameterized;}
       /// \brief If this term is global: it only contains references to constant values and global addresses.
       bool global() const {return m_global;}
+      /// \brief Get the category of this value (whether it is a metatype, type, or value)
+      Category category() const {return static_cast<Category>(m_category);}
 
       /** \brief Get the context this Term comes from. */
       Context& context() const {return *m_context;}
@@ -432,6 +440,7 @@ namespace Psi {
 
       std::size_t hash_value() const;
 
+      unsigned char m_category : 2;
       unsigned char m_abstract : 1;
       unsigned char m_parameterized : 1;
       unsigned char m_global : 1;

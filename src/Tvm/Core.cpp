@@ -68,9 +68,19 @@ namespace Psi {
         m_global(global),
         m_context(context) {
 
-      if (type.get()) {
+      if (!type.get()) {
+        m_category = category_metatype;
+      } else {
 	if (context != type->m_context)
 	  throw std::logic_error("context mismatch between term and its type");
+
+        switch (type->m_category) {
+        case category_metatype: m_category = category_type; break;
+        case category_type: m_category = category_value; break;
+
+        default:
+          throw std::logic_error("type of a term cannot be a value, it must be metatype or a type");
+        }
       }
 
       use_set(0, type.get());
