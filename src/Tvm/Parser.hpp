@@ -3,21 +3,11 @@
 
 #include <string>
 
-#include <boost/checked_delete.hpp>
-#include <boost/intrusive/list.hpp>
-
 #include "Core.hpp"
+#include "../Utility.hpp"
 
 namespace Psi {
   namespace Tvm {
-    template<typename T>
-    class UniqueList : public boost::intrusive::list<T> {
-    public:
-      ~UniqueList() {
-	clear_and_dispose(boost::checked_deleter<T>());
-      }
-    };
-
     namespace Parser {
       struct Location {
 	int first_line;
