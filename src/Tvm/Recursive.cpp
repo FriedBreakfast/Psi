@@ -10,7 +10,7 @@
 namespace Psi {
   namespace Tvm {
     RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, TermRef<> type)
-      : Term(ui, context, term_recursive_parameter, true, false, type->global(), type) {
+      : Term(ui, context, term_recursive_parameter, true, false, term_source(type.get()), type) {
     }
 
     class RecursiveParameterTerm::Initializer : public InitializerBase<RecursiveParameterTerm> {
@@ -32,9 +32,8 @@ namespace Psi {
     }
 
     RecursiveTerm::RecursiveTerm(const UserInitializer& ui, Context *context, TermRef<> result_type,
-				 bool global, TermRefArray<RecursiveParameterTerm> parameters)
-      : Term(ui, context, term_recursive, true, false, global, context->get_metatype().get()) {
-      PSI_ASSERT(!global || (result_type->global() && all_global(parameters)));
+				 Term *source, TermRefArray<RecursiveParameterTerm> parameters)
+      : Term(ui, context, term_recursive, true, false, source, NULL) {
       set_base_parameter(0, result_type);
       for (std::size_t i = 0; i < parameters.size(); ++i) {
 	set_base_parameter(i+2, parameters[i]);
@@ -43,18 +42,18 @@ namespace Psi {
 
     class RecursiveTerm::Initializer : public InitializerBase<RecursiveTerm> {
     public:
-      Initializer(bool global, TermRef<> type, TermRefArray<RecursiveParameterTerm> parameters)
-	: m_global(global), m_type(type), m_parameters(parameters) {
+      Initializer(Term *source, TermRef<> type, TermRefArray<RecursiveParameterTerm> parameters)
+	: m_source(source), m_type(type), m_parameters(parameters) {
       }
 
       RecursiveTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) RecursiveTerm(ui, context, m_type, m_global, m_parameters);
+	return new (base) RecursiveTerm(ui, context, m_type, m_source, m_parameters);
       }
 
       std::size_t n_uses() const {return 1;}
 
     private:
-      bool m_global;
+      Term *m_source;
       TermRef<> m_type;
       TermRefArray<RecursiveParameterTerm> m_parameters;
     };
@@ -62,12 +61,26 @@ namespace Psi {
     /**
      * \brief Create a new recursive term.
      */
-    TermPtr<RecursiveTerm> Context::new_recursive(bool global, TermRef<> result_type,
+    TermPtr<RecursiveTerm> Context::new_recursive(Term *source,
+                                                  TermRef<> result_type,
 						  TermRefArray<> parameter_types) {
-      TermPtrArray<RecursiveParameterTerm> parameters(parameter_types.size());
-      for (std::size_t i = 0; i < parameters.size(); ++i)
-	parameters.set(i, new_recursive_parameter(parameter_types[i]));
-      return allocate_term(RecursiveTerm::Initializer(global, result_type.get(), parameters));
+      if (common_source(result_type->source(), source) != source)
+        goto throw_dominator;
+
+      for (std::size_t i = 0; i < parameter_types.size(); ++i) {
+        if (common_source(parameter_types[i]->source(), source) != source)
+          goto throw_dominator;
+      }
+
+      if (true) {
+        TermPtrArray<RecursiveParameterTerm> parameters(parameter_types.size());
+        for (std::size_t i = 0; i < parameters.size(); ++i)
+          parameters.set(i, new_recursive_parameter(parameter_types[i]));
+        return allocate_term(RecursiveTerm::Initializer(source, result_type.get(), parameters));
+      } else {
+      throw_dominator:
+        throw std::logic_error("block specified for recursive term is not dominated by parameter and result type blocks");
+      }
     }
 
     /**
@@ -82,36 +95,64 @@ namespace Psi {
     }
 
     ApplyTerm::ApplyTerm(const UserInitializer& ui, Context *context, RecursiveTerm *recursive,
-			 TermRefArray<> parameters)
-      : Term(ui, context, term_apply,
-	     recursive->abstract() || any_abstract(parameters), false,
-	     recursive->global() && all_global(parameters),
-	     context->get_metatype().get()) {
+			 TermRefArray<> parameters, std::size_t hash)
+      : HashTerm(ui, context, term_apply,
+                 recursive->abstract() || any_abstract(parameters), false,
+                 common_source(recursive->source(), common_source(parameters)),
+                 recursive->result_type(), hash) {
       set_base_parameter(0, recursive);
       for (std::size_t i = 0; i < parameters.size(); ++i)
 	set_base_parameter(i+1, parameters[i]);
     }
 
-    class ApplyTerm::Initializer : public InitializerBase<ApplyTerm> {
+    class ApplyTerm::Setup : public InitializerBase<ApplyTerm> {
     public:
-      Initializer(RecursiveTerm *recursive, TermRefArray<> parameters)
+      Setup(RecursiveTerm *recursive, TermRefArray<> parameters)
 	: m_recursive(recursive), m_parameters(parameters) {
+
+        m_hash = 0;
+	boost::hash_combine(m_hash, recursive->hash_value());
+	for (std::size_t i = 0; i < parameters.size(); ++i)
+	  boost::hash_combine(m_hash, parameters[i]->hash_value());
+      }
+
+      void prepare_initialize(Context*) {
       }
 
       ApplyTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) ApplyTerm(ui, context, m_recursive, m_parameters);
+	return new (base) ApplyTerm(ui, context, m_recursive, m_parameters, m_hash);
       }
 
       std::size_t n_uses() const {return m_parameters.size() + 1;}
+      std::size_t hash() const {return m_hash;}
+
+      bool equals(const HashTerm& term) const {
+	if ((m_hash != term.m_hash) || (term.term_type() != term_apply))
+	  return false;
+
+	const ApplyTerm& cast_term = checked_cast<const ApplyTerm&>(term);
+
+	if (m_parameters.size() != cast_term.n_parameters())
+	  return false;
+
+	for (std::size_t i = 0; i < m_parameters.size(); ++i) {
+	  if (m_parameters[i] != cast_term.parameter(i).get())
+	    return false;
+	}
+
+	return true;
+      }
 
     private:
       RecursiveTerm *m_recursive;
       TermRefArray<> m_parameters;
+      std::size_t m_hash;
     };
 
     TermPtr<ApplyTerm> Context::apply_recursive(TermRef<RecursiveTerm> recursive,
 						TermRefArray<> parameters) {
-      return allocate_term(ApplyTerm::Initializer(recursive.get(), parameters));
+      ApplyTerm::Setup setup(recursive.get(), parameters);
+      return hash_term_get(setup);
     }
 
     TermPtr<> ApplyTerm::unpack() const {

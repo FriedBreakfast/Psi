@@ -375,13 +375,7 @@ namespace Psi {
 	}
       }
 
-      if (entry_block->empty()) {
-	return entry_block;
-      } else {
-	llvm::BasicBlock *new_entry_block = llvm::BasicBlock::Create(context(), "", llvm_func);
-	irbuilder.CreateBr(new_entry_block);
-	return new_entry_block;
-      }
+      return entry_block;
     }
 
     void LLVMValueBuilder::build_function(FunctionTerm *psi_func, llvm::Function *llvm_func) {
@@ -390,6 +384,18 @@ namespace Psi {
 
       // Set up parameters
       llvm::BasicBlock *llvm_entry_block = build_function_entry(psi_func, llvm_func, func_builder);
+
+      if (!llvm_entry_block->empty()) {
+        irbuilder.SetInsertPoint(llvm_entry_block);
+	llvm::BasicBlock *new_entry_block = llvm::BasicBlock::Create(context(), "", llvm_func);
+        llvm::Value *sp = irbuilder.CreateCall(func_builder.llvm_stacksave());
+        irbuilder.CreateBr(new_entry_block);
+
+        irbuilder.SetInsertPoint(new_entry_block);
+        irbuilder.CreateCall(func_builder.llvm_stackrestore(), sp);
+
+        llvm_entry_block = new_entry_block;
+      }
 
       // Set up basic blocks
       BlockTerm* entry_block = psi_func->entry().get();
@@ -525,8 +531,44 @@ namespace Psi {
     }
 
     LLVMValue LLVMFunctionBuilder::value_impl(TermRef<> term) {
+      llvm::BasicBlock *old_insert_block = m_irbuilder->GetInsertBlock();
+
       // Set the insert point to the dominator block of the value
-      return build_term(term, m_value_terms, InstructionBuilderCallback(this)).first;
+      llvm::BasicBlock *new_insert_block;
+      Term *src = term->source();
+      PSI_ASSERT(src);
+      if (src->term_type() == term_block) {
+        ValueTermMap::iterator it = m_value_terms.find(term->source());
+        PSI_ASSERT((it != m_value_terms.end()) && it->second.is_known());
+        new_insert_block = llvm::cast<llvm::BasicBlock>(it->second.value());
+      } else {
+        PSI_ASSERT(src->term_type() == term_function);
+        new_insert_block = &function()->front();
+      }
+
+      if (new_insert_block != old_insert_block) {
+        if (new_insert_block->empty()) {
+          m_irbuilder->SetInsertPoint(new_insert_block);
+        } else {
+          PSI_ASSERT(new_insert_block->back().isTerminator());
+          // if the block has been completed, it should have a stack
+          // save and jump instruction at the end, and we want to insert
+          // before that.
+          llvm::BasicBlock::iterator pos = new_insert_block->end();
+          --pos; --pos;
+          m_irbuilder->SetInsertPoint(new_insert_block, pos);
+        }
+      } else {
+        old_insert_block = NULL;
+      }
+
+      LLVMValue result = build_term(term, m_value_terms, InstructionBuilderCallback(this)).first;
+
+      // restore original insert block
+      if (old_insert_block)
+        m_irbuilder->SetInsertPoint(old_insert_block);
+
+      return result;
     }
 
     llvm::Function* llvm_intrinsic_memcpy(llvm::Module& m) {

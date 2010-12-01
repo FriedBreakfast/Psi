@@ -27,7 +27,7 @@ add_library(psi SHARED
   Tvm/Recursive.cpp Tvm/Recursive.hpp
   Tvm/Rewrite.hpp
   Tvm/User.cpp Tvm/User.hpp
-  Tvm/Utility.hpp
+  Tvm/Utility.cpp Tvm/Utility.hpp
 )
 
 #install(TARGETS psi
@@ -56,6 +56,7 @@ target_link_libraries(psi ${LLVM_LIBS} ${LIB_GMP} ${LIB_GMPXX})
 #add_executable(type-test TypeTest.cpp)
 
 add_executable(test TestMain.cpp
+  Tvm/Test.cpp Tvm/Test.hpp
   Tvm/AssemblerTest.cpp
   Tvm/CoreTest.cpp
   Tvm/ControlFlowTest.cpp

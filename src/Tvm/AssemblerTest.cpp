@@ -1,15 +1,13 @@
-#include <boost/test/unit_test.hpp>
-#include <boost/checked_delete.hpp>
-
+#include "Test.hpp"
 #include "Assembler.hpp"
 #include "JitTypes.hpp"
+
+#include <boost/checked_delete.hpp>
 
 namespace Psi {
   namespace Tvm {
     namespace {
-      struct F {
-        Context context;
-
+      struct F : Test::ContextFixture {
         void* jit(const char *name, const char *src) {
           AssemblerResult r = parse_and_build(context, src);
           AssemblerResult::iterator it = r.find(name);
@@ -112,6 +110,31 @@ namespace Psi {
       typedef Jit::Boolean (*FuncType) ();
       FuncType f = reinterpret_cast<FuncType>(jit("test", src));
       BOOST_CHECK_EQUAL(f(), true);
+    }
+
+    /*
+     * Test that functional operations used in functions have their
+     * code generated in the correct location, i.e. the dominating
+     * block of their input values. If the code is generated
+     * incorrectly, one branch will not be able to see the resulting
+     * value hence LLVM should fail to compile.
+     */
+    BOOST_AUTO_TEST_CASE(FunctionalOperationDominatorGenerate) {
+      const char *src =
+        "%i32 = define (int #32);\n"
+        "%f = function cc_c (%a: bool, %b: %i32, %c: %i32) > %i32 {\n"
+        "  %t = add %b %c;\n"
+        "  cond_br %a %tc %fc;\n"
+        "block %tc:\n"
+        "  return (add %t (c_int #32 #1));\n"
+        "block %fc:\n"
+        "  return (add %t (c_int #32 #2));\n"
+        "};\n";
+
+      typedef Jit::Int32 (*FuncType) (Jit::Boolean,Jit::Int32,Jit::Int32);
+      FuncType f = reinterpret_cast<FuncType>(jit("f", src));
+      BOOST_CHECK_EQUAL(f(true, 1, 2), 4);
+      BOOST_CHECK_EQUAL(f(false, 5, 7), 14);
     }
 
     BOOST_AUTO_TEST_SUITE_END()

@@ -29,6 +29,7 @@ namespace llvm {
   class GlobalValue;
   class GlobalVariable;
   class Function;
+  class JITEventListener;
   class raw_ostream;
 
   class ConstantFolder;

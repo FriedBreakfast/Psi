@@ -26,8 +26,8 @@ namespace Psi {
 
     private:
       class Initializer;
-      RecursiveTerm(const UserInitializer& ui, Context *context, TermRef<> result_type, bool global,
-		    TermRefArray<RecursiveParameterTerm> parameters);
+      RecursiveTerm(const UserInitializer& ui, Context *context, TermRef<> result_type,
+                    Term *source, TermRefArray<RecursiveParameterTerm> parameters);
     };
 
     template<>
@@ -37,7 +37,7 @@ namespace Psi {
       }
     };
 
-    class ApplyTerm : public Term {
+    class ApplyTerm : public HashTerm {
       friend class Context;
 
     public:
@@ -48,9 +48,9 @@ namespace Psi {
       TermPtr<> parameter(std::size_t i) const {return get_base_parameter(i+1);}
 
     private:
-      class Initializer;
+      class Setup;
       ApplyTerm(const UserInitializer& ui, Context *context, RecursiveTerm *recursive,
-		TermRefArray<> parameters);
+		TermRefArray<> parameters, std::size_t hash);
     };
 
     template<>

@@ -1,6 +1,10 @@
 #ifndef HPP_PSI_TVM_UTILITY
 #define HPP_PSI_TVM_UTILITY
 
+#include <algorithm>
+
+#include "Core.hpp"
+
 namespace Psi {
   namespace Tvm {
     inline bool term_abstract(const Term *t) {
@@ -15,6 +19,10 @@ namespace Psi {
       return !t || t->global();
     }
 
+    inline Term* term_source(const Term *t) {
+      return t ? t->source() : NULL;
+    }
+
     template<typename T>
     bool any_abstract(TermRefArray<T> t) {
       return std::find_if(t.get(), t.get()+t.size(), term_abstract) != (t.get()+t.size());
@@ -24,6 +32,16 @@ namespace Psi {
     bool any_parameterized(TermRefArray<T> t) {
       return std::find_if(t.get(), t.get()+t.size(), term_parameterized) != (t.get()+t.size());
     }
+
+    template<typename T>
+    Term* common_source(TermRefArray<T> t) {
+      Term *bl = NULL;
+      for (std::size_t i = 0; i < t.size(); ++i)
+        bl = common_source(bl, term_source(t[i]));
+      return bl;
+    }
+
+    Term* common_source(Term *t1, Term *t2);
 
     template<typename T>
     bool all_global(TermRefArray<T> t) {

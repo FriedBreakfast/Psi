@@ -155,6 +155,8 @@ namespace Psi {
       TermPtr<InstructionTerm> new_instruction_internal(const InstructionTermBackend& backend, TermRefArray<> parameters);
     };
 
+    bool block_dominates(BlockTerm *a, BlockTerm *b);
+
     template<>
     struct TermIteratorCheck<BlockTerm> {
       static bool check (TermType t) {

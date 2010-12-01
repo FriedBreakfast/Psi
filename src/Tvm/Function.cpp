@@ -15,8 +15,8 @@ namespace Psi {
 				       TermRefArray<FunctionTypeParameterTerm> parameters,
 				       CallingConvention calling_convention)
       : Term(ui, context, term_function_type,
-	     result_type->abstract() || any_abstract(parameters), true,
-	     result_type->global() && all_global(parameters),
+	     result_type->abstract() || any_abstract(parameters) || any_abstract(phantom_parameters), true,
+             common_source(result_type->source(), common_source(common_source(parameters), common_source(phantom_parameters))),
 	     context->get_metatype().get()),
 	m_calling_convention(calling_convention),
         m_n_phantoms(phantom_parameters.size()) {
@@ -338,7 +338,7 @@ namespace Psi {
     }
 
     FunctionTypeParameterTerm::FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, TermRef<> type)
-      : Term(ui, context, term_function_type_parameter, type->abstract(), true, type->global(), type),
+      : Term(ui, context, term_function_type_parameter, type->abstract(), true, type->source(), type),
 	m_index(0) {
     }
 
@@ -365,7 +365,7 @@ namespace Psi {
     FunctionTypeResolverTerm::FunctionTypeResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> result_type, TermRefArray<> parameter_types, std::size_t n_phantom, CallingConvention calling_convention)
       : HashTerm(ui, context, term_function_type_resolver,
 		 result_type->abstract() || any_abstract(parameter_types), true,
-		 result_type->global() && all_global(parameter_types),
+                 common_source(result_type->source(), common_source(parameter_types)),
 		 context->get_metatype().get(), hash),
         m_n_phantom(n_phantom),
 	m_calling_convention(calling_convention) {
@@ -486,7 +486,7 @@ namespace Psi {
 				     InstructionTermBackend *backend,
                                      TermRef<BlockTerm> block)
       : Term(ui, context, term_instruction,
-	     false, false, false, type),
+	     false, false, block.get(), type),
 	m_backend(backend) {
 
       set_base_parameter(0, block);
@@ -560,6 +560,20 @@ namespace Psi {
           return true;
       }
       return false;
+    }
+
+    /**
+     * Checks whether block \c a dominates block \c b. Handles cases
+     * where \c a or \c b are NULL correctly.
+     */
+    bool block_dominates(BlockTerm *a, BlockTerm *b) {
+      if (!a)
+        return true;
+
+      if (!b)
+        return false;
+
+      return b->dominated_by(a);
     }
 
     /**
@@ -688,7 +702,7 @@ namespace Psi {
     }
 
     BlockTerm::BlockTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTerm> function, TermRef<BlockTerm> dominator)
-      : Term(ui, context, term_block, false, false, false, context->get_block_type()),
+      : Term(ui, context, term_block, false, false, function.get(), context->get_block_type()),
         m_terminated(false) {
 
       set_base_parameter(0, function);
@@ -715,7 +729,7 @@ namespace Psi {
     };
 
     FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTerm> function, TermRef<> type)
-      : Term(ui, context, term_function_parameter, false, false, false, type) {
+      : Term(ui, context, term_function_parameter, false, false, function.get(), type) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
       set_base_parameter(0, function);
     }

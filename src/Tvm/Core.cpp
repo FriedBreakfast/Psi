@@ -18,7 +18,6 @@
 #include <llvm/Module.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/Support/IRBuilder.h>
-#include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetRegistry.h>
 #include <llvm/Target/TargetSelect.h>
@@ -61,15 +60,22 @@ namespace Psi {
       use_set(0, term);
     }
 
-    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, TermRef<> type)
+    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, TermRef<> type)
       : TermUser(ui, term_type),
         m_abstract(abstract),
         m_parameterized(parameterized),
-        m_global(global),
-        m_context(context) {
+        m_context(context),
+        m_source(source) {
+
+      PSI_ASSERT(!source || (source->term_type() == term_function) || (source->term_type() == term_block));
 
       if (!type.get()) {
-        m_category = category_metatype;
+        if (term_type != term_recursive) {
+          m_category = category_metatype;
+          PSI_ASSERT(term_type == term_functional);
+        } else {
+          m_category = category_recursive;
+        }
       } else {
 	if (context != type->m_context)
 	  throw std::logic_error("context mismatch between term and its type");
@@ -79,7 +85,7 @@ namespace Psi {
         case category_type: m_category = category_value; break;
 
         default:
-          throw std::logic_error("type of a term cannot be a value, it must be metatype or a type");
+          throw std::logic_error("type of a term cannot be a value or recursive, it must be metatype or a type");
         }
       }
 
@@ -96,9 +102,12 @@ namespace Psi {
       if (t.get() && (m_context != t->m_context))
         throw std::logic_error("term context mismatch");
 
-      Term *old = use_get(n+1);
-      if (t.get() == old)
-        return;
+      PSI_ASSERT_MSG(!use_get(n+1), "parameters to existing terms cannot be changed once set");
+      PSI_ASSERT(!t.get()
+                 || ((term_type() == term_function)
+                     && ((t->term_type() == term_function_parameter)
+                         || (t->term_type() == term_block)))
+                 || (common_source(t->source(), source()) == source()));
 
       use_set(n+1, t.get());
     }
@@ -119,8 +128,8 @@ namespace Psi {
       return h.m_hash;
     }
 
-    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, TermRef<> type, std::size_t hash)
-      : Term(ui, context, term_type, abstract, parameterized, global, type),
+    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, TermRef<> type, std::size_t hash)
+      : Term(ui, context, term_type, abstract, parameterized, source, type),
 	m_hash(hash) {
     }
 
@@ -137,7 +146,7 @@ namespace Psi {
      * pointer to this type.
      */
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, TermRef<> type)
-      : Term(ui, context, term_type, false, false, true, context->get_pointer_type(type)) {
+      : Term(ui, context, term_type, false, false, NULL, context->get_pointer_type(type)) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
     }
 
@@ -197,30 +206,11 @@ namespace Psi {
       return t;
     }
 
-#if 0
-    void Context::init_llvm() {
-      llvm::InitializeNativeTarget();
-
-      std::string host = llvm::sys::getHostTriple();
-
-      std::string error_msg;
-      const llvm::Target *target = llvm::TargetRegistry::lookupTarget(host, error_msg);
-      if (!target)
-	throw std::runtime_error("Could not get LLVM JIT target: " + error_msg);
-
-      m_llvm_target_machine = target->createTargetMachine(host, "");
-      if (!m_llvm_target_machine)
-	throw std::runtime_error("Failed to create target machine");
-
-      m_llvm_target_data = m_llvm_target_machine->getTargetData();
-    }
-#endif
-
     /**
      * \brief Just-in-time compile a term, and a get a pointer to
      * the result.
      */
-    void* Context::term_jit_internal(TermRef<GlobalTerm> term, llvm::raw_ostream *debug) {
+    void* Context::term_jit(TermRef<GlobalTerm> term) {
       if ((term->m_term_type != term_global_variable) &&
 	  (term->m_term_type != term_function))
 	throw std::logic_error("Cannot JIT compile non-global term");
@@ -231,13 +221,20 @@ namespace Psi {
       }
 
       LLVMConstantBuilder builder(m_llvm_context.get(), m_llvm_module.get());
-      builder.set_debug(debug);
       llvm::GlobalValue *global = builder.global(term);
 
       if (!m_llvm_engine) {
 	llvm::InitializeNativeTarget();
 	m_llvm_engine.reset(llvm::EngineBuilder(m_llvm_module.release()).create());
 	PSI_ASSERT_MSG(m_llvm_engine.get(), "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
+
+        // insert event listeners
+        for (std::tr1::unordered_set<llvm::JITEventListener*>::iterator it = m_llvm_jit_listeners.begin();
+             it != m_llvm_jit_listeners.end(); ++it) {
+          m_llvm_engine->RegisterJITEventListener(*it);
+        }
+
+        std::tr1::unordered_set<llvm::JITEventListener*>().swap(m_llvm_jit_listeners);
       } else {
 	m_llvm_engine->addModule(m_llvm_module.release());
       }
@@ -247,17 +244,20 @@ namespace Psi {
       return m_llvm_engine->getPointerToGlobal(global);
     }
 
-    void* Context::term_jit(TermRef<GlobalTerm> term) {
-      return term_jit_internal(term, NULL);
+    void Context::register_llvm_jit_listener(llvm::JITEventListener *l) {
+      if (m_llvm_engine) {
+        m_llvm_engine->RegisterJITEventListener(l);
+      } else {
+        m_llvm_jit_listeners.insert(l);
+      }
     }
 
-    /**
-     * \brief Just-in-time compile a term, and a get a pointer to
-     * the result.
-     */
-    void* Context::term_jit(TermRef<GlobalTerm> term, std::ostream& debug) {
-      llvm::raw_os_ostream llvm_debug(debug);
-      return term_jit_internal(term, &llvm_debug);
+    void Context::unregister_llvm_jit_listener(llvm::JITEventListener *l) {
+      if (m_llvm_engine) {
+        m_llvm_engine->UnregisterJITEventListener(l);
+      } else {
+        m_llvm_jit_listeners.erase(l);
+      }
     }
 
     Context::Context()

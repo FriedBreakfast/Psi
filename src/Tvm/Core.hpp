@@ -412,7 +412,8 @@ namespace Psi {
       enum Category {
         category_metatype,
         category_type,
-        category_value
+        category_value,
+        category_recursive
       };
 
       TermType term_type() const {return TermUser::term_type();}
@@ -422,7 +423,9 @@ namespace Psi {
       /// \brief If this term is parameterized: it contains references to function type parameters which are unresolved.
       bool parameterized() const {return m_parameterized;}
       /// \brief If this term is global: it only contains references to constant values and global addresses.
-      bool global() const {return m_global;}
+      bool global() const {return !m_source;}
+      /// \brief Get the term which generates this one - this will either be a function or a block
+      Term* source() const {return m_source;}
       /// \brief Get the category of this value (whether it is a metatype, type, or value)
       Category category() const {return static_cast<Category>(m_category);}
 
@@ -436,15 +439,15 @@ namespace Psi {
       template<typename T> TermIterator<T> term_users_end();
 
     private:
-      Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, TermRef<> type);
+      Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, TermRef<> type);
 
       std::size_t hash_value() const;
 
       unsigned char m_category : 2;
       unsigned char m_abstract : 1;
       unsigned char m_parameterized : 1;
-      unsigned char m_global : 1;
       Context *m_context;
+      Term *m_source;
       boost::intrusive::list_member_hook<> m_term_list_hook;
 
     protected:
@@ -524,11 +527,12 @@ namespace Psi {
     class HashTerm : public Term {
       friend class Context;
       friend class Term;
+      friend class ApplyTerm;
       friend class FunctionalTerm;
       friend class FunctionTypeResolverTerm;
 
     private:
-      HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool global, TermRef<> type, std::size_t hash);
+      HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, TermRef<> type, std::size_t hash);
       virtual ~HashTerm();
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
       TermSetHook m_term_set_hook;
@@ -636,6 +640,8 @@ namespace Psi {
       UniquePtr<llvm::Module> m_llvm_module;
       UniquePtr<llvm::ExecutionEngine> m_llvm_engine;
 
+      std::tr1::unordered_set<llvm::JITEventListener*> m_llvm_jit_listeners;
+
 #if PSI_DEBUG
       void dump_hash_terms();
       void print_hash_terms(std::ostream& output);
@@ -664,7 +670,7 @@ namespace Psi {
       TermPtr<ApplyTerm> apply_recursive(TermRef<RecursiveTerm> recursive,
 					 TermRefArray<> parameters);
 
-      TermPtr<RecursiveTerm> new_recursive(bool global,
+      TermPtr<RecursiveTerm> new_recursive(Term *source,
 					   TermRef<> result_type,
 					   TermRefArray<> parameters);
 
@@ -675,7 +681,6 @@ namespace Psi {
 
       TermPtr<FunctionTerm> new_function(TermRef<FunctionTypeTerm> type);
 
-      void* term_jit(TermRef<GlobalTerm> term, std::ostream& debug);
       void* term_jit(TermRef<GlobalTerm> term);
 
       FunctionalTermPtr<Metatype> get_metatype();
@@ -683,6 +688,9 @@ namespace Psi {
       FunctionalTermPtr<BlockType> get_block_type();
       FunctionalTermPtr<PointerType> get_pointer_type(TermRef<Term> type);
       FunctionalTermPtr<BooleanType> get_boolean_type();
+
+      void register_llvm_jit_listener(llvm::JITEventListener *l);
+      void unregister_llvm_jit_listener(llvm::JITEventListener *l);
 
 #define PSI_TVM_VARARG_MAX 5
 
@@ -717,7 +725,7 @@ namespace Psi {
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
-#define PSI_TVM_VA(z,n,data) TermPtr<RecursiveTerm> new_recursive_v(bool global, TermRef<> result_type BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return new_recursive(global,result_type,TermRefArray<>(n,ap));}
+#define PSI_TVM_VA(z,n,data) TermPtr<RecursiveTerm> new_recursive_v(Term *source, TermRef<> result_type BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return new_recursive(source,result_type,TermRefArray<>(n,ap));}
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
@@ -745,7 +753,6 @@ namespace Psi {
       static void clear_and_queue_if_abstract(std::vector<Term*>& queue, TermRef<> t);
 
       void clear_abstract(Term *term, std::vector<Term*>& queue);
-      void* term_jit_internal(TermRef<GlobalTerm> term, llvm::raw_ostream *debug);
     };
 
     bool term_unique(TermRef<> term);

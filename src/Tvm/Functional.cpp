@@ -9,7 +9,7 @@ namespace Psi {
       : HashTerm(ui, context, term_functional,
 		 term_abstract(type.get()) || any_abstract(parameters),
 		 term_parameterized(type.get()) || any_parameterized(parameters),
-		 term_global(type.get()) && all_global(parameters),
+                 common_source(term_source(type.get()), common_source(parameters)),
 		 type, hash),
 	m_backend(backend) {
       for (std::size_t i = 0; i < parameters.size(); ++i)
