@@ -6,6 +6,9 @@
 
 #include <tr1/functional>
 
+#include <boost/checked_delete.hpp>
+#include <boost/intrusive/list.hpp>
+
 namespace Psi {
 #ifdef __GNUC__
 #define PSI_ATTRIBUTE(x) __attribute__(x)
@@ -132,6 +135,18 @@ namespace Psi {
   private:
     UniqueArray(const UniqueArray&);
     T *m_p;
+  };
+
+  /**
+   * Version of boost::intrusive::list which deletes all owned objects
+   * on destruction.
+   */
+  template<typename T>
+  class UniqueList : public boost::intrusive::list<T> {
+  public:
+    ~UniqueList() {
+      clear_and_dispose(boost::checked_deleter<T>());
+    }
   };
 
   template<typename T, typename U>

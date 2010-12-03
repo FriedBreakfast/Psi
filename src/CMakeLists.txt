@@ -10,6 +10,8 @@ add_library(psi SHARED
   Container.hpp
   Utility.cpp Utility.hpp
 
+  ${BISON_Parser_OUTPUTS} Parser.hpp
+
   Tvm/Arithmetic.cpp Tvm/Arithmetic.hpp
   Tvm/Assembler.cpp Tvm/Assembler.hpp
   Tvm/AssemblerOperations.cpp

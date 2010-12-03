@@ -9,26 +9,14 @@
 #include <tr1/unordered_map>
 
 #include <boost/assign.hpp>
-#include <boost/shared_ptr.hpp>
-#include <boost/make_shared.hpp>
 
 #include "Parser.hpp"
 #include "Core.hpp"
 #include "../Utility.hpp"
+#include "../ParserUtility.hpp"
 
 #define YYSTYPE Value
 #define YYLTYPE Psi::Tvm::Parser::Location
-
-/**
- * I previously made this zero - it must be at least one because
- * the generated code assumes it can access the lowest element
- * of the stack before parsing begins.
- *
- * This grammar has a maximum depth, so I should be able to work that
- * out, set this value and everything will "just work". But that seems
- * like a lot of effort.
- */
-#define YYINITDEPTH 50
 
 /**
  * I need to use yytype_int16 before it is defined in the generated
@@ -45,64 +33,11 @@
 #define YYSTACK_USE_ALLOCA 1
 
 using namespace Psi;
+using namespace Psi::ParserUtility;
 using namespace Psi::Tvm;
 using namespace Psi::Tvm::Parser;
 
 namespace {
-  /**
-   * Create a new empty list.
-   */
-  template<typename T>
-  boost::shared_ptr<UniqueList<T> > list_empty() {
-    return boost::make_shared<UniqueList<T> >();
-  }
-
-  /**
-   * Create a one-element list containing the given type.
-   */
-  template<typename T, typename U>
-  boost::shared_ptr<UniqueList<T> >
-  list_one(U *t) {
-    boost::shared_ptr<UniqueList<T> > l = list_empty<T>();
-    l->push_back(*t);
-    return l;
-  }  
-
-  /**
-   * Append two lists and return the result.
-   */
-  template<typename T>
-  boost::shared_ptr<UniqueList<T> >
-  list_append(boost::shared_ptr<UniqueList<T> >& source,
-	      boost::shared_ptr<UniqueList<T> >& append) {
-    PSI_ASSERT(append->size() == 1);
-    source->splice(source->end(), *append);
-    boost::shared_ptr<UniqueList<T> > result;
-    result.swap(source);
-    append.reset();
-    PSI_ASSERT(!source);
-    return result;
-  }
-
-  /**
-   * Ensure a list has one element, remove the element from the list
-   * and return it.
-   */
-  template<typename T>
-  T* list_to_ptr(boost::shared_ptr<UniqueList<T> >& ptr) {
-    T *result = &ptr->front();
-    ptr->pop_front();
-    PSI_ASSERT(ptr->empty());
-    ptr.reset();
-    return result;
-  }
-
-  template<typename T>
-  T& list_check_one(const boost::shared_ptr<UniqueList<T> >& ptr) {
-    PSI_ASSERT(ptr->size() == 1);
-    return ptr.front();
-  }
-
   struct Value {
     CallingConvention calling_convention;
     boost::shared_ptr<UniqueList<Token> > tokens;
@@ -114,58 +49,15 @@ namespace {
     boost::shared_ptr<UniqueList<PhiNode> > phi_nodes;
   };
 
-  class ParserInternalArguments {
+  class ParserInternalArguments : public BisonHelper<YYTYPE_INT16, YYSTYPE, YYLTYPE> {
   public:
     ParserInternalArguments(const char *start_, const char *end_)
-      : current(start_), end(end_), m_stack_size(0) {
+      : current(start_), end(end_) {
     }
 
     const char *current, *end;
     UniqueList<NamedGlobalElement> result;
     std::string error_message;
-
-    void overflow(YYTYPE_INT16 **yysp, std::size_t yyssize,
-		  YYSTYPE **yyvp, std::size_t yyvsize,
-		  YYLTYPE **yylp, std::size_t yylsize,
-		  std::size_t *yystacksize) {
-
-      std::size_t new_size;
-
-      if (m_stack_size) {
-        assert(&m_parser_state_stack[0] == *yysp);
-        assert(&m_parser_value_stack[0] == *yyvp);
-        assert(&m_parser_location_stack[0] == *yylp);
-        assert(*yystacksize == m_stack_size);
-
-        new_size = m_stack_size * 2;
-      } else {
-        new_size = *yystacksize * 2;
-      }
-
-      UniqueArray<YYTYPE_INT16> new_state_stack(new YYTYPE_INT16[new_size]);
-      UniqueArray<YYSTYPE> new_value_stack(new YYSTYPE[new_size]);
-      UniqueArray<YYLTYPE> new_location_stack(new YYLTYPE[new_size]);
-
-      std::copy(*yysp, *yysp + yyssize / sizeof(**yysp), new_state_stack.get());
-      std::copy(*yyvp, *yyvp + yyvsize / sizeof(**yyvp), new_value_stack.get());
-      std::copy(*yylp, *yylp + yylsize / sizeof(**yylp), new_location_stack.get());
-
-      m_parser_state_stack.swap(new_state_stack);
-      m_parser_value_stack.swap(new_value_stack);
-      m_parser_location_stack.swap(new_location_stack);
-      m_stack_size = new_size;
-
-      *yysp = m_parser_state_stack.get();
-      *yyvp = m_parser_value_stack.get();
-      *yylp = m_parser_location_stack.get();
-      *yystacksize = new_size;
-    }
-
-  private:
-    std::size_t m_stack_size;
-    UniqueArray<YYTYPE_INT16> m_parser_state_stack;
-    UniqueArray<YYSTYPE> m_parser_value_stack;
-    UniqueArray<YYLTYPE> m_parser_location_stack;
   };
 
   void yyerror(const YYLTYPE* loc,
