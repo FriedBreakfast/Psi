@@ -149,7 +149,9 @@ namespace Psi {
         ("sub", DefaultFunctionalCallback<IntegerSubtract>())
         ("mul", DefaultFunctionalCallback<IntegerMultiply>())
         ("div", DefaultFunctionalCallback<IntegerDivide>())
-        ("apply_phantom", DefaultFunctionalCallback<FunctionApplyPhantom>());
+        ("apply_phantom", DefaultFunctionalCallback<FunctionApplyPhantom>())
+        ("array", DefaultFunctionalCallback<ArrayType>())
+        ("c_array", DefaultFunctionalCallback<ArrayValue>());
 
       template<typename T>
       struct DefaultInstructionCallback {

@@ -106,6 +106,13 @@ namespace Psi {
       }
     }
 
+    /**
+     * \brief Get an integer type term.
+     */
+    FunctionalTermPtr<IntegerType> Context::get_integer_type(std::size_t n_bits, bool is_signed) {
+      return get_functional_v(IntegerType(is_signed, n_bits));
+    }
+
     ConstantInteger::ConstantInteger(const IntegerType& type, const mpz_class& value)
       : m_type(type), m_value(value) {
     }

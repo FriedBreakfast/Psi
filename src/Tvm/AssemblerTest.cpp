@@ -6,19 +6,7 @@
 
 namespace Psi {
   namespace Tvm {
-    namespace {
-      struct F : Test::ContextFixture {
-        void* jit(const char *name, const char *src) {
-          AssemblerResult r = parse_and_build(context, src);
-          AssemblerResult::iterator it = r.find(name);
-          BOOST_REQUIRE(it != r.end());
-          void *result = context.term_jit(it->second);
-          return result;
-        };
-      };
-    }
-
-    BOOST_FIXTURE_TEST_SUITE(TvmAssemblerTest, F)
+    BOOST_FIXTURE_TEST_SUITE(TvmAssemblerTest, Test::ContextFixture)
 
     BOOST_AUTO_TEST_CASE(Return) {
       const char *src =
@@ -26,7 +14,7 @@ namespace Psi {
         "  return (c_int #32 #19);"
         "};\n";
 
-      Jit::Int32 (*f)() = reinterpret_cast<Jit::Int32(*)()>(jit("main", src));
+      Jit::Int32 (*f)() = reinterpret_cast<Jit::Int32(*)()>(jit_single("main", src));
       Jit::Int32 result = f();
       BOOST_CHECK_EQUAL(result, 19);
     }
@@ -44,7 +32,7 @@ namespace Psi {
         "  return %n;\n"
         "};\n";
 
-      Jit::Int32 (*f)() = reinterpret_cast<Jit::Int32(*)()>(jit("main", src));
+      Jit::Int32 (*f)() = reinterpret_cast<Jit::Int32(*)()>(jit_single("main", src));
       Jit::Int32 result = f();
       BOOST_CHECK_EQUAL(result, 27);
     }
@@ -57,7 +45,7 @@ namespace Psi {
         "};\n";
 
       typedef Jit::Int32 (*FuncType) (Jit::Int32,Jit::Int32);
-      FuncType f = reinterpret_cast<FuncType>(jit("mul", src));
+      FuncType f = reinterpret_cast<FuncType>(jit_single("mul", src));
       BOOST_CHECK_EQUAL(f(4,5), 20);
       BOOST_CHECK_EQUAL(f(34,19), 646);
     }
@@ -76,7 +64,7 @@ namespace Psi {
         "};\n";
 
       typedef Jit::Int32 (*FuncType) (Jit::Boolean,Jit::Int32,Jit::Int32);
-      FuncType f = reinterpret_cast<FuncType>(jit("fn", src));
+      FuncType f = reinterpret_cast<FuncType>(jit_single("fn", src));
       BOOST_CHECK_EQUAL(f(true, 10, 25), 35);
       BOOST_CHECK_EQUAL(f(false, 10, 25), -15);
       BOOST_CHECK_EQUAL(f(true, 15, 30), 45);
@@ -108,7 +96,7 @@ namespace Psi {
         "};\n";
 
       typedef Jit::Boolean (*FuncType) ();
-      FuncType f = reinterpret_cast<FuncType>(jit("test", src));
+      FuncType f = reinterpret_cast<FuncType>(jit_single("test", src));
       BOOST_CHECK_EQUAL(f(), true);
     }
 
@@ -132,7 +120,7 @@ namespace Psi {
         "};\n";
 
       typedef Jit::Int32 (*FuncType) (Jit::Boolean,Jit::Int32,Jit::Int32);
-      FuncType f = reinterpret_cast<FuncType>(jit("f", src));
+      FuncType f = reinterpret_cast<FuncType>(jit_single("f", src));
       BOOST_CHECK_EQUAL(f(true, 1, 2), 4);
       BOOST_CHECK_EQUAL(f(false, 5, 7), 14);
     }

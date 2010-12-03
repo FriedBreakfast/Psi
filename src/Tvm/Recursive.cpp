@@ -64,11 +64,11 @@ namespace Psi {
     TermPtr<RecursiveTerm> Context::new_recursive(Term *source,
                                                   TermRef<> result_type,
 						  TermRefArray<> parameter_types) {
-      if (common_source(result_type->source(), source) != source)
+      if (source_dominated(result_type->source(), source))
         goto throw_dominator;
 
       for (std::size_t i = 0; i < parameter_types.size(); ++i) {
-        if (common_source(parameter_types[i]->source(), source) != source)
+        if (source_dominated(parameter_types[i]->source(), source))
           goto throw_dominator;
       }
 
@@ -310,6 +310,9 @@ namespace Psi {
 
       if (recursive->result())
 	throw std::logic_error("resolving a recursive term which has already been resolved");
+
+      if (!source_dominated(to->source(), recursive->source()))
+        throw std::logic_error("term used to resolve recursive term is not in scope");
 
       recursive->set_base_parameter(1, to.get());
 

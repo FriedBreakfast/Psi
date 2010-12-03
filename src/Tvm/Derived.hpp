@@ -11,7 +11,7 @@ namespace Psi {
       TermPtr<> type(Context&, TermRefArray<>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
+      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
       bool operator == (const PointerType&) const;
       friend std::size_t hash_value(const PointerType&);
 
@@ -25,58 +25,66 @@ namespace Psi {
       };
     };
 
-#if 0
-    class AggregateType : public ProtoTerm {
-    protected:
-      enum Slots {
-	slot_members_start=TemplateType::slot_max
+    class ArrayType {
+    public:
+      TermPtr<> type(Context&, TermRefArray<>) const;
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
+      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
+      bool operator == (const ArrayType&) const;
+      friend std::size_t hash_value(const ArrayType&);
+
+      class Access {
+      public:
+	Access(const FunctionalTerm *term, const ArrayType*) : m_term(term) {}
+	/// \brief Get the type being pointed to.
+	TermPtr<> element_type() const {return m_term->parameter(0);}
+        TermPtr<> length() const {return m_term->parameter(1);}
+      private:
+	const FunctionalTerm *m_term;
+      };
+    };
+
+    class ArrayValue {
+    public:
+      TermPtr<> type(Context&, TermRefArray<>) const;
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
+      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
+      bool operator == (const ArrayValue&) const;
+      friend std::size_t hash_value(const ArrayValue&);
+
+      class Access {
+      public:
+	Access(const FunctionalTerm *term, const ArrayValue*) : m_term(term) {}
+	/// \brief Get the type being pointed to.
+        std::size_t length() const {return m_term->n_parameters() - 1;}
+        TermPtr<> element_type() const {return m_term->parameter(0);}
+        TermPtr<> value(std::size_t n) {return m_term->parameter(n+1);}
+      private:
+	const FunctionalTerm *m_term;
+      };
+    };
+
+    class AggregateType {
+    public:
+      class Access {
+      public:
+        Access(const FunctionalTerm *term, const AggregateType*) : m_term(term) {}
+        std::size_t n_members() const {return m_term->n_parameters();}
+        TermPtr<> member(std::size_t i) const {return m_term->parameter(i);}
+
+      private:
+        const FunctionalTerm *m_term;
       };
 
-    public:
-      std::size_t n_members() {return use_slots() - slot_members_start;}
-      TermType *member(std::size_t n) {return use_get<TermType>(slot_members_start+n);}
-
-    private:
-      template<typename Derived> class Initializer;
-    protected:
-      template<typename Derived> static Derived* create(Context *context, std::size_t n_parameters,
-							std::size_t n_members, Type *const* members);
-      AggregateType(const UserInitializer& ui, Context *context,
-		    std::size_t n_parameters, std::size_t n_members, Type *const* members);
-
-      virtual bool constant_for(Term *const* parameters);
-      std::vector<LLVMBuilderValue> build_llvm_member_values(LLVMBuilder& builder, AppliedType *applied);
-      std::vector<LLVMBuilderType> build_llvm_member_types(LLVMBuilder& builder, AppliedType *applied);
+      TermPtr<> type(Context&, TermRefArray<>) const;
+      bool operator == (const AggregateType&) const;
+      friend std::size_t hash_value(const AggregateType&);
     };
 
-    class ArrayType : public DerivedType {
-    public:
-      static Term* create(Context& context, Term *element_type, Term *size);
-
-    private:
-      virtual ProtoTerm* clone() const;
-      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
-      virtual LLVMValueBuilder::Constant llvm_value_constant(LLVMValueBuilder&, Term*) const;
-      virtual LLVMValueBuilder::Type llvm_type(LLVMValueBuilder&, Term*) const;
-      virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
-    };
-
-    class ArrayValue : public Value {
-    public:
-      static Term* create(Context& context, Term *element_type, std::size_t n_elements, Term *const* elements);
-
-
-      virtual Term* type(Context *context, std::size_t n_parameters, Term *const* parameters) const;
-
-    private:
-      virtual bool equals_internal(const ProtoTerm& other) const = 0;
-      virtual std::size_t hash_internal() const = 0;
-      virtual ProtoTerm* clone() const = 0;
-      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
-      virtual LLVMValueBuilder::Constant llvm_value_constant(LLVMValueBuilder&, Term*) const;
-    };
-
-    class StructType : public DerivedType {
+#if 0
+    class StructType : public AggregateType {
     public:
       static Term* create(Context& context, std::size_t n_members, Term *const* elements);
 
@@ -100,7 +108,7 @@ namespace Psi {
       virtual LLVMValueBuilder::Constant llvm_value_constant(LLVMValueBuilder&, Term*) const;
     };
 
-    class UnionType : public DerivedType {
+    class UnionType : public AggregateType {
     public:
       static Term* create(Context& context, std::size_t n_members, Type *const* members);
 

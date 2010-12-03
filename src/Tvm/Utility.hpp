@@ -42,6 +42,7 @@ namespace Psi {
     }
 
     Term* common_source(Term *t1, Term *t2);
+    bool source_dominated(Term *dominator, Term *dominated);
 
     template<typename T>
     bool all_global(TermRefArray<T> t) {

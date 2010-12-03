@@ -107,7 +107,7 @@ namespace Psi {
                  || ((term_type() == term_function)
                      && ((t->term_type() == term_function_parameter)
                          || (t->term_type() == term_block)))
-                 || (common_source(t->source(), source()) == source()));
+                 || source_dominated(t->source(), source()));
 
       use_set(n+1, t.get());
     }

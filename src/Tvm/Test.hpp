@@ -24,6 +24,8 @@ namespace Psi {
         ContextFixture();
         ~ContextFixture();
 
+        void* jit_single(const char *name, const char *src);
+
       private:
         DebugListener m_debug_listener;
       };

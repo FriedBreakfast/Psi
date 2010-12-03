@@ -52,7 +52,14 @@ namespace Psi {
     class EmptyType;
     class BlockType;
     class PointerType;
+    class ArrayType;
+    class ArrayValue;
+    class StructType;
+    class StructValue;
+    class UnionType;
+    class UnionValue;
     class BooleanType;
+    class IntegerType;
 
     /**
      * \brief Identifies the Term subclass this object actually is.
@@ -418,6 +425,8 @@ namespace Psi {
 
       TermType term_type() const {return TermUser::term_type();}
 
+      /// \brief Whether this term can be the type of another term
+      bool is_type() const {return (m_category == category_metatype) || (m_category == category_type);}
       /// \brief If this term is abstract: it contains references to recursive term parameters which are unresolved.
       bool abstract() const {return m_abstract;}
       /// \brief If this term is parameterized: it contains references to function type parameters which are unresolved.
@@ -674,10 +683,10 @@ namespace Psi {
 					   TermRef<> result_type,
 					   TermRefArray<> parameters);
 
-      void resolve_recursive(TermRef<RecursiveTerm> recursive, TermRef<Term> to);
+      void resolve_recursive(TermRef<RecursiveTerm> recursive, TermRef<> to);
 
-      TermPtr<GlobalVariableTerm> new_global_variable(TermRef<Term> type, bool constant);
-      TermPtr<GlobalVariableTerm> new_global_variable_set(TermRef<Term> value, bool constant);
+      TermPtr<GlobalVariableTerm> new_global_variable(TermRef<> type, bool constant);
+      TermPtr<GlobalVariableTerm> new_global_variable_set(TermRef<> value, bool constant);
 
       TermPtr<FunctionTerm> new_function(TermRef<FunctionTypeTerm> type);
 
@@ -686,8 +695,12 @@ namespace Psi {
       FunctionalTermPtr<Metatype> get_metatype();
       FunctionalTermPtr<EmptyType> get_empty_type();
       FunctionalTermPtr<BlockType> get_block_type();
-      FunctionalTermPtr<PointerType> get_pointer_type(TermRef<Term> type);
+      FunctionalTermPtr<PointerType> get_pointer_type(TermRef<> type);
       FunctionalTermPtr<BooleanType> get_boolean_type();
+      FunctionalTermPtr<IntegerType> get_integer_type(std::size_t n_bits, bool is_signed=true);
+      FunctionalTermPtr<ArrayType> get_array_type(TermRef<> element_type, TermRef<> length);
+      FunctionalTermPtr<ArrayType> get_array_type(TermRef<> element_type, std::size_t length);
+      FunctionalTermPtr<ArrayValue> get_constant_array(TermRef<> element_type, TermRefArray<> elements);
 
       void register_llvm_jit_listener(llvm::JITEventListener *l);
       void unregister_llvm_jit_listener(llvm::JITEventListener *l);

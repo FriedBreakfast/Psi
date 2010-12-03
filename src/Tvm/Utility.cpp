@@ -63,6 +63,34 @@ namespace Psi {
         return t1 ? t1 : t2;
       }
     }
+
+    /**
+     * Check whether a source term is dominated by another.
+     */
+    bool source_dominated(Term *dominator, Term *dominated) {
+      if (dominator && dominated) {
+        switch (dominator->term_type()) {
+        case term_function:
+          switch (dominated->term_type()) {
+          case term_function: return dominator == dominated;
+          case term_block: return dominator == checked_cast<BlockTerm*>(dominated)->function().get();
+          default: PSI_FAIL("unexpected term type");
+          }
+
+        case term_block:
+          switch (dominated->term_type()) {
+          case term_function: return false;
+          case term_block: return checked_cast<BlockTerm*>(dominated)->dominated_by(checked_cast<BlockTerm*>(dominator));
+          default: PSI_FAIL("unexpected term type");
+          }
+
+        default:
+          PSI_FAIL("unexpected term type");
+        }
+      } else {
+        return dominated || !dominator;
+      }
+    }
   }
 }
 

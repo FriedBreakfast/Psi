@@ -62,6 +62,7 @@ add_executable(test TestMain.cpp
   Tvm/AssemblerTest.cpp
   Tvm/CoreTest.cpp
   Tvm/ControlFlowTest.cpp
+  Tvm/DerivedTest.cpp
   Tvm/FunctionTest.cpp
   Tvm/ParserTest.cpp
 #  MaybeTest.cpp

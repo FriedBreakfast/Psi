@@ -2,6 +2,7 @@
 #include "Functional.hpp"
 #include "Primitive.hpp"
 #include "LLVMBuilder.hpp"
+#include "Number.hpp"
 
 #include <stdexcept>
 
@@ -14,6 +15,8 @@ namespace Psi {
     TermPtr<> PointerType::type(Context& context, TermRefArray<> parameters) const {
       if (parameters.size() != 1)
 	throw std::logic_error("pointer type takes one parameter");
+      if (!parameters[0]->is_type())
+        throw std::logic_error("pointer argument must be a type");
       return context.get_metatype();
     }
 
@@ -25,7 +28,7 @@ namespace Psi {
       return Metatype::llvm_from_type(builder, llvm::Type::getInt8PtrTy(builder.context()));
     }
 
-    LLVMType PointerType::llvm_type(LLVMValueBuilder& builder, Term&) const {
+    LLVMType PointerType::llvm_type(LLVMValueBuilder& builder, FunctionalTerm&) const {
       return LLVMType::known(const_cast<llvm::PointerType*>(llvm::Type::getInt8PtrTy(builder.context())));
     }
 
@@ -41,7 +44,6 @@ namespace Psi {
       return get_functional_v(PointerType(), type);
     }
 
-#if 0
     namespace {
       std::pair<llvm::Constant*, llvm::Constant*> constant_size_align(llvm::Constant *value) {
 	unsigned zero = 0, one = 1;
@@ -87,127 +89,170 @@ namespace Psi {
       }
     }
 
-    DerivedType::DerivedType() : Type(term_functional) {
+    TermPtr<> ArrayType::type(Context& context, TermRefArray<> parameters) const {
+      if (parameters.size() != 2)
+	throw std::logic_error("array type term takes two parameters");
+
+      if (!parameters[0]->is_type())
+	throw std::logic_error("first argument to array type term is not a type");
+
+      if (parameters[1]->type() != context.get_integer_type(64, false))
+	throw std::logic_error("second argument to array type term is not a 64-bit integer");
+
+      return context.get_metatype();
     }
 
-    bool DerivedType::equals_internal(const ProtoTerm&) const {
+    LLVMValue ArrayType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
+
+      LLVMValue element_size_align = builder.value(self.element_type());
+      LLVMValue length_value = builder.value(self.length());
+
+      if (!element_size_align.is_known() || !length_value.is_known())
+	throw std::logic_error("array length value or element size and alignment is not a known constant");
+
+      std::pair<llvm::Value*,llvm::Value*> size_align =
+        instruction_size_align(builder.irbuilder(), element_size_align.value());
+      llvm::Value *size = builder.irbuilder().CreateMul(size_align.first, length_value.value());
+      return Metatype::llvm_runtime(builder, size, size_align.second);
+    }
+
+    LLVMValue ArrayType::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
+
+      LLVMValue element_size_align = builder.value(self.element_type());
+      LLVMValue length_value = builder.value(self.length());
+
+      if (!element_size_align.is_known() || !length_value.is_known())
+	throw std::logic_error("constant array length value or element type is not a known");
+
+      std::pair<llvm::Constant*,llvm::Constant*> size_align =
+        constant_size_align(llvm::cast<llvm::Constant>(element_size_align.value()));
+      llvm::Constant *size = llvm::ConstantExpr::getMul(size_align.first, llvm::cast<llvm::Constant>(length_value.value()));
+      return Metatype::llvm_from_constant(builder, size, size_align.second);
+    }
+
+    LLVMType ArrayType::llvm_type(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
+
+      LLVMType element_llvm_type = builder.type(self.element_type());
+      LLVMValue length_value = builder.value(self.length());
+
+      if (!length_value.is_known() || !element_llvm_type.is_known())
+	return LLVMType::unknown();
+
+      llvm::ConstantInt *length_llvm = llvm::cast<llvm::ConstantInt>(length_value.value());
+      return LLVMType::known(llvm::ArrayType::get(element_llvm_type.type(), length_llvm->getZExtValue()));
+    }
+
+    bool ArrayType::operator == (const ArrayType&) const {
       return true;
     }
 
-    std::size_t DerivedType::hash_internal() const {
+    std::size_t hash_value(const ArrayType&) {
       return 0;
     }
 
-    Term* PointerType::create(Term *target) {
-      return target->context().new_term(PointerType(), target);
+    FunctionalTermPtr<ArrayType> Context::get_array_type(TermRef<> element_type, TermRef<> length) {
+      return get_functional_v(ArrayType(), element_type, length);
     }
 
-    ProtoTerm* PointerType::clone() const {
-      return new PointerType(*this);
+    FunctionalTermPtr<ArrayType> Context::get_array_type(TermRef<> element_type, std::size_t length) {
+      TermPtr<> length_term = get_functional_v(ConstantInteger(IntegerType(false, 64), length));
+      return get_functional_v(ArrayType(), element_type, length_term);
     }
 
-    LLVMFunctionBuilder::Result PointerType::llvm_value_instruction(LLVMFunctionBuilder& builder, Term*) const {
-      return Metatype::llvm_value(llvm::Type::getInt8PtrTy(builder.context()));
-    }
+    TermPtr<> ArrayValue::type(Context& context, TermRefArray<> parameters) const {
+      if (parameters.size() < 1)
+        throw std::logic_error("array values require at least one parameter");
 
-    LLVMValueBuilder::Constant PointerType::llvm_value_constant(LLVMValueBuilder& builder, Term*) const {
-      return Metatype::llvm_value(llvm::Type::getInt8PtrTy(builder.context()));
-    }
+      if (!parameters[0]->is_type())
+        throw std::logic_error("first argument to array value is not a type");
 
-    LLVMValueBuilder::Type PointerType::llvm_type(LLVMValueBuilder& builder, Term*) const {
-      return LLVMValueBuilder::type_known(const_cast<llvm::PointerType*>(llvm::Type::getInt8PtrTy(builder.context())));
-    }
-
-    void PointerType::validate_parameters(Context&, std::size_t n_parameters, Term *const* parameters) const {
-      if (n_parameters != 1)
-	throw std::logic_error("pointer term takes one parameter");
-
-      Term *target = parameters[0];
-      if (target->proto().category() == ProtoTerm::term_value)
-	throw std::logic_error("pointer target type is a value");
-    }
-
-    Term* ArrayType::create(Context& context, Term *element_type, Term *size) {
-      if (element_type->proto().category() != term_type)
-	throw std::logic_error("array element type is not a type");
-      return context.new_term(ArrayType(), element_type, size);
-    }
-
-    ProtoTerm* ArrayType::clone() const {
-      return new ArrayType(*this);
-    }
-
-    LLVMFunctionBuilder::Result ArrayType::llvm_value_instruction(LLVMFunctionBuilder& builder, Term* term) const {
-      Term *element_type = term->parameter(0);
-      Term *length = term->parameter(1);
-      
-      LLVMFunctionBuilder::Result element_size_align = builder.value(element_type);
-      LLVMFunctionBuilder::Result length_value = builder.value(length);
-
-      if (!length_value.known())
-	throw std::logic_error("array length value is not a known constant");
-
-      if (element_size_align.empty()) {
-	return Metatype::llvm_value_empty(builder.context());
-      } else {
-	std::pair<llvm::Value*,llvm::Value*> size_align =
-	  instruction_size_align(builder.irbuilder(), element_size_align.value());
-	llvm::Value *size = builder.irbuilder().CreateMul(size_align.first, length_value.value());
-	return Metatype::llvm_value(builder, size, size_align.second);
+      for (std::size_t i = 1; i < parameters.size(); ++i) {
+        if (parameters[i]->type().get() != parameters[0])
+          throw std::logic_error("array value element is of the wrong type");
       }
+
+      return context.get_array_type(parameters[0], parameters.size() - 1);
     }
 
-    LLVMValueBuilder::Constant ArrayType::llvm_value_constant(LLVMValueBuilder& builder, Term* term) const {
-      Term *element_type = term->parameter(0);
-      Term *length = term->parameter(1);
-      
-      LLVMValueBuilder::Constant element_size_align = builder.constant(element_type);
-      LLVMValueBuilder::Constant length_value = builder.constant(length);
+    LLVMValue ArrayValue::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
 
-      if (!length_value.known())
-	throw std::logic_error("constant array length value is not a known constant");
+      LLVMType array_type = builder.type(term.type());
+      if (!array_type.is_known())
+        throw std::logic_error("array element type not known");
 
-      if (element_size_align.empty()) {
-	return Metatype::llvm_value_empty(builder.context());
-      } else {
-	std::pair<llvm::Constant*,llvm::Constant*> size_align =
-	  constant_size_align(element_size_align.value());
-	llvm::Constant *size = llvm::ConstantExpr::getMul(size_align.first, length_value.value());
-	return Metatype::llvm_value(size, size_align.second);
+      llvm::Value *array = llvm::UndefValue::get(array_type.type());
+
+      for (std::size_t i = 0; i < self.length(); ++i) {
+        LLVMValue element = builder.value(self.value(i));
+        if (!element.is_known())
+          throw std::logic_error("array element value not known");
+        array = builder.irbuilder().CreateInsertValue(array, element.value(), i);
       }
+
+      return LLVMValue::known(array);
     }
 
-    LLVMValueBuilder::Type ArrayType::llvm_type(LLVMValueBuilder& builder, Term* term) const {
-      Term *element_type = term->parameter(0);
-      Term *length = term->parameter(1);
+    LLVMValue ArrayValue::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
 
-      LLVMValueBuilder::Type element_llvm_type = builder.type(element_type);
-      LLVMValueBuilder::Constant length_value = builder.constant(length);
+      LLVMType array_type = builder.type(term.type());
+      if (!array_type.is_known())
+        throw std::logic_error("array element type not known");
 
-      if (!length_value.known() || !element_llvm_type.known())
-	return LLVMValueBuilder::type_unknown();
+      std::vector<llvm::Constant*> elements;
 
-      llvm::ConstantInt *length_llvm = llvm::cast<llvm::ConstantInt>(length_value.value());
-      if (!length_llvm)
-	return LLVMValueBuilder::type_unknown();
+      for (std::size_t i = 0; i < self.length(); ++i) {
+        LLVMValue element = builder.value(self.value(i));
+        if (!element.is_known())
+          throw std::logic_error("array element value not known");
+        elements.push_back(llvm::cast<llvm::Constant>(element.value()));
+      }
 
-      return LLVMValueBuilder::type_known(llvm::ArrayType::get(element_llvm_type.type(), length_llvm->getZExtValue()));
+      return LLVMValue::known(llvm::ConstantArray::get(llvm::cast<llvm::ArrayType>(array_type.type()), elements));
     }
 
-    void ArrayType::validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const {
-      if (n_parameters != 2)
-	throw std::logic_error("array type term takes two parameters");
-
-      Term *element_type = parameters[0];
-      Term *length = parameters[1];
-
-      if (length->type() != BasicIntegerType::uint64_term(context))
-	throw std::logic_error("second argument to array type term is not a 64-bit integer");
-
-      if (element_type->proto().category() == ProtoTerm::term_value)
-	throw std::logic_error("first argument to array type term is not a type or metatype");
+    LLVMType ArrayValue::llvm_type(LLVMValueBuilder&, FunctionalTerm&) const {
+      throw std::logic_error("array value cannot be used as a type");
     }
 
+    bool ArrayValue::operator == (const ArrayValue&) const {
+      return true;
+    }
+
+    std::size_t hash_value(const ArrayValue&) {
+      return 0;
+    }
+
+    FunctionalTermPtr<ArrayValue> Context::get_constant_array(TermRef<> element_type, TermRefArray<> elements) {
+      TermPtrArray<> parameters(elements.size() + 1);
+      parameters.set(0, TermPtr<>(element_type.get()));
+      for (std::size_t i = 0; i < elements.size(); ++i)
+        parameters.set(i+1, TermPtr<>(elements[i]));
+      return get_functional(ArrayValue(), parameters);
+    }
+
+    TermPtr<> AggregateType::type(Context& context, TermRefArray<> parameters) const {
+      for (std::size_t i = 0; i < parameters.size(); ++i) {
+        if (!parameters[i]->is_type())
+          throw std::logic_error("members of an aggregate type must be types");
+      }
+
+      return context.get_metatype();
+    }
+
+    bool AggregateType::operator == (const AggregateType&) const {
+      return true;
+    }
+
+    std::size_t hash_value(const AggregateType&) {
+      return 0;
+    }
+
+#if 0
     LLVMValueBuilder::Constant StructType::llvm_value_constant(LLVMValueBuilder& builder, Term* term) const {
       const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
       llvm::Constant *size = llvm::ConstantInt::get(i64, 0);

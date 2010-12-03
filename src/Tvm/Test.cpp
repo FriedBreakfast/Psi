@@ -1,4 +1,5 @@
 #include "Test.hpp"
+#include "Assembler.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -18,6 +19,17 @@ namespace Psi {
       }
 
       ContextFixture::~ContextFixture() {
+      }
+
+      /**
+       * JIT compile some assembler code and return the value of a single symbol.
+       */
+      void* ContextFixture::jit_single(const char *name, const char *src) {
+        AssemblerResult r = parse_and_build(context, src);
+        AssemblerResult::iterator it = r.find(name);
+        BOOST_REQUIRE(it != r.end());
+        void *result = context.term_jit(it->second);
+        return result;
       }
 
       void DebugListener::NotifyFunctionEmitted (const llvm::Function &F, void*, size_t, const EmittedFunctionDetails& details) {
