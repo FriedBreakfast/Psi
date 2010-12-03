@@ -16,10 +16,10 @@ namespace Psi {
       return 0;
     }
 
-    TermPtr<> Metatype::type(Context&, TermRefArray<> parameters) const {
+    Term* Metatype::type(Context&, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 0)
 	throw std::logic_error("metatype created with parameters");
-      return TermPtr<>();
+      return NULL;
     }
 
     LLVMValue Metatype::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {

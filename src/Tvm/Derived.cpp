@@ -12,12 +12,12 @@
 
 namespace Psi {
   namespace Tvm {
-    TermPtr<> PointerType::type(Context& context, TermRefArray<> parameters) const {
+    Term* PointerType::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 1)
 	throw std::logic_error("pointer type takes one parameter");
       if (!parameters[0]->is_type())
         throw std::logic_error("pointer argument must be a type");
-      return context.get_metatype();
+      return context.get_metatype().get();
     }
 
     LLVMValue PointerType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -40,7 +40,7 @@ namespace Psi {
       return 0;
     }
 
-    FunctionalTermPtr<PointerType> Context::get_pointer_type(TermRef<Term> type) {
+    FunctionalTermPtr<PointerType> Context::get_pointer_type(Term* type) {
       return get_functional_v(PointerType(), type);
     }
 
@@ -89,7 +89,7 @@ namespace Psi {
       }
     }
 
-    TermPtr<> ArrayType::type(Context& context, TermRefArray<> parameters) const {
+    Term* ArrayType::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 2)
 	throw std::logic_error("array type term takes two parameters");
 
@@ -99,7 +99,7 @@ namespace Psi {
       if (parameters[1]->type() != context.get_integer_type(64, false))
 	throw std::logic_error("second argument to array type term is not a 64-bit integer");
 
-      return context.get_metatype();
+      return context.get_metatype().get();
     }
 
     LLVMValue ArrayType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -153,16 +153,16 @@ namespace Psi {
       return 0;
     }
 
-    FunctionalTermPtr<ArrayType> Context::get_array_type(TermRef<> element_type, TermRef<> length) {
+    FunctionalTermPtr<ArrayType> Context::get_array_type(Term* element_type, Term* length) {
       return get_functional_v(ArrayType(), element_type, length);
     }
 
-    FunctionalTermPtr<ArrayType> Context::get_array_type(TermRef<> element_type, std::size_t length) {
-      TermPtr<> length_term = get_functional_v(ConstantInteger(IntegerType(false, 64), length));
+    FunctionalTermPtr<ArrayType> Context::get_array_type(Term* element_type, std::size_t length) {
+      Term* length_term = get_functional_v(ConstantInteger(IntegerType(false, 64), length)).get();
       return get_functional_v(ArrayType(), element_type, length_term);
     }
 
-    TermPtr<> ArrayValue::type(Context& context, TermRefArray<> parameters) const {
+    Term* ArrayValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() < 1)
         throw std::logic_error("array values require at least one parameter");
 
@@ -170,11 +170,11 @@ namespace Psi {
         throw std::logic_error("first argument to array value is not a type");
 
       for (std::size_t i = 1; i < parameters.size(); ++i) {
-        if (parameters[i]->type().get() != parameters[0])
+        if (parameters[i]->type() != parameters[0])
           throw std::logic_error("array value element is of the wrong type");
       }
 
-      return context.get_array_type(parameters[0], parameters.size() - 1);
+      return context.get_array_type(parameters[0], parameters.size() - 1).get();
     }
 
     LLVMValue ArrayValue::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -227,21 +227,21 @@ namespace Psi {
       return 0;
     }
 
-    FunctionalTermPtr<ArrayValue> Context::get_constant_array(TermRef<> element_type, TermRefArray<> elements) {
-      TermPtrArray<> parameters(elements.size() + 1);
-      parameters.set(0, TermPtr<>(element_type.get()));
+    FunctionalTermPtr<ArrayValue> Context::get_constant_array(Term* element_type, ArrayPtr<Term*const> elements) {
+      ScopedTermPtrArray<> parameters(elements.size() + 1);
+      parameters[0] = element_type;
       for (std::size_t i = 0; i < elements.size(); ++i)
-        parameters.set(i+1, TermPtr<>(elements[i]));
-      return get_functional(ArrayValue(), parameters);
+        parameters[i+1] = elements[i];
+      return get_functional(ArrayValue(), parameters.array()).get();
     }
 
-    TermPtr<> AggregateType::type(Context& context, TermRefArray<> parameters) const {
+    Term* AggregateType::type(Context& context, ArrayPtr<Term*const> parameters) const {
       for (std::size_t i = 0; i < parameters.size(); ++i) {
         if (!parameters[i]->is_type())
           throw std::logic_error("members of an aggregate type must be types");
       }
 
-      return context.get_metatype();
+      return context.get_metatype().get();
     }
 
     bool AggregateType::operator == (const AggregateType&) const {

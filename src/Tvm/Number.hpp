@@ -26,7 +26,7 @@ namespace Psi {
 
       bool operator == (const ConstantBoolean&) const;
       friend std::size_t hash_value(const ConstantBoolean&);
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
       class Access {
@@ -76,7 +76,7 @@ namespace Psi {
 
       bool operator == (const ConstantInteger&) const;
       friend std::size_t hash_value(const ConstantInteger&);
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
       class Access {
@@ -152,7 +152,7 @@ namespace Psi {
 
       bool operator == (const ConstantReal&) const;
       friend std::size_t hash_value(const ConstantReal&);
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
       class Access {
@@ -180,7 +180,7 @@ namespace Psi {
 
       bool operator == (const SpecialRealValue&) const;
       friend std::size_t hash_value(const SpecialRealValue&);
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
       class Access {

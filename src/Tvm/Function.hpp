@@ -22,7 +22,7 @@ namespace Psi {
        * arguments. If this returns NULL, it means that this
        * instruction terminates the block.
        */
-      virtual TermPtr<> type(Context& context, const FunctionTerm& function, TermRefArray<> parameters) const = 0;
+      virtual Term* type(Context& context, const FunctionTerm& function, ArrayPtr<Term*const> parameters) const = 0;
 
       /**
        * Generate code to calculate the value for this term.
@@ -39,7 +39,7 @@ namespace Psi {
        * be called if #type returns NULL indicating this instruction
        * terminates a block.
        */
-      virtual void jump_targets(Context&, InstructionTerm&, std::vector<TermPtr<BlockTerm> >& targets) const = 0;
+      virtual void jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>& targets) const = 0;
     };
 
     class BlockTerm;
@@ -56,16 +56,16 @@ namespace Psi {
       virtual ~InstructionTerm();
 
       const InstructionTermBackend* backend() const {return m_backend;}
-      TermPtr<BlockTerm> block() const {return get_base_parameter<BlockTerm>(0);}
+      BlockTerm* block() const {return checked_cast<BlockTerm*>(get_base_parameter(0));}
       std::size_t n_parameters() const {return Term::n_base_parameters()-1;}
-      TermPtr<> parameter(std::size_t n) const {return get_base_parameter(n+1);}
+      Term* parameter(std::size_t n) const {return get_base_parameter(n+1);}
 
     private:
       class Initializer;
       InstructionTerm(const UserInitializer& ui, Context *context,
-		      TermRef<> type, TermRefArray<> parameters,
+		      Term* type, ArrayPtr<Term*const> parameters,
 		      InstructionTermBackend *backend,
-                      TermRef<BlockTerm> block);
+                      BlockTerm* block);
 
       InstructionTermBackend *m_backend;
 
@@ -90,11 +90,11 @@ namespace Psi {
       friend class BlockTerm;
 
     public:
-      TermPtr<BlockTerm> block() const {return get_base_parameter<BlockTerm>(0);}
-      void add_incoming(TermRef<BlockTerm> block, TermRef<> value);
+      BlockTerm* block() const {return checked_cast<BlockTerm*>(get_base_parameter(0));}
+      void add_incoming(BlockTerm* block, Term* value);
 
     private:
-      PhiTerm(const UserInitializer& ui, TermRef<> type);
+      PhiTerm(const UserInitializer& ui, Term* type);
       typedef boost::intrusive::list_member_hook<> PhiListHook;
       PhiListHook m_phi_list_hook;
     };
@@ -121,10 +121,10 @@ namespace Psi {
 				     boost::intrusive::member_hook<PhiTerm, PhiTerm::PhiListHook, &PhiTerm::m_phi_list_hook>,
 				     boost::intrusive::constant_time_size<false> > PhiList;
 
-      void new_phi(TermRef<> type);
+      void new_phi(Term* type);
 
       template<typename T>
-      TermPtr<InstructionTerm> new_instruction(const T& proto, TermRefArray<> parameters);
+      InstructionTermPtr<T> new_instruction(const T& proto, ArrayPtr<Term*const> parameters);
 
       const InstructionList& instructions() const {return m_instructions;}
       const PhiList& phi_nodes() const {return m_phi_nodes;}
@@ -132,27 +132,27 @@ namespace Psi {
       /** \brief Whether this block has been terminated so no more instructions can be added. */
       bool terminated() const {return m_terminated;}
       /** \brief Get the function which contains this block. */
-      TermPtr<FunctionTerm> function() const {return get_base_parameter<FunctionTerm>(0);}
+      FunctionTerm* function() const {return checked_cast<FunctionTerm*>(get_base_parameter(0));}
       /** \brief Get a pointer to the (currently) dominating block. */
-      TermPtr<BlockTerm> dominator() const {return get_base_parameter<BlockTerm>(1);}
+      BlockTerm* dominator() const {return checked_cast<BlockTerm*>(get_base_parameter(1));}
 
-      bool check_available(TermRef<> term) const;
-      bool dominated_by(TermRef<BlockTerm> block) const;
-      std::vector<TermPtr<BlockTerm> > successors() const;
-      std::vector<TermPtr<BlockTerm> > recursive_successors() const;
+      bool check_available(Term* term) const;
+      bool dominated_by(BlockTerm* block) const;
+      std::vector<BlockTerm*> successors() const;
+      std::vector<BlockTerm*> recursive_successors() const;
 
-#define PSI_TVM_VA(z,n,data) template<typename T> TermPtr<InstructionTerm> new_instruction_v(const T& proto BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return new_instruction(proto, TermRefArray<>(n,ap));}
+#define PSI_TVM_VA(z,n,data) template<typename T> InstructionTermPtr<T> new_instruction_v(const T& proto BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,Term* p)) {Term *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return new_instruction(proto, ArrayPtr<Term*const>(ap,n));}
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
     private:
       class Initializer;
-      BlockTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTerm> function, TermRef<BlockTerm> dominator);
+      BlockTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, BlockTerm* dominator);
       InstructionList m_instructions;
       PhiList m_phi_nodes;
       bool m_terminated;
 
-      TermPtr<InstructionTerm> new_instruction_internal(const InstructionTermBackend& backend, TermRefArray<> parameters);
+      InstructionTerm* new_instruction_internal(const InstructionTermBackend& backend, ArrayPtr<Term*const> parameters);
     };
 
     bool block_dominates(BlockTerm *a, BlockTerm *b);
@@ -169,11 +169,11 @@ namespace Psi {
     class FunctionParameterTerm : public Term {
       friend class FunctionTerm;
     public:
-      TermPtr<FunctionTerm> function() const {return get_base_parameter<FunctionTerm>(0);}
+      FunctionTerm* function() const {return checked_cast<FunctionTerm*>(get_base_parameter(0));}
 
     private:
       class Initializer;
-      FunctionParameterTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTerm> function, TermRef<> type);
+      FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type);
     };
 
     template<>
@@ -189,28 +189,28 @@ namespace Psi {
     class FunctionTerm : public GlobalTerm {
       friend class Context;
     public:
-      TermPtr<FunctionTypeTerm> function_type() const;
+      FunctionTypeTerm* function_type() const;
 
       std::size_t n_parameters() const {return n_base_parameters() - 2;}
       /** \brief Get a function parameter. */
-      TermPtr<FunctionParameterTerm> parameter(std::size_t n) const {return get_base_parameter<FunctionParameterTerm>(n+2);}
+      FunctionParameterTerm* parameter(std::size_t n) const {return checked_cast<FunctionParameterTerm*>(get_base_parameter(n+2));}
 
       /**
        * Get the return type of this function, as viewed from inside the
        * function (i.e., with parameterized types replaced by parameters
        * to this function).
        */
-      TermPtr<> result_type() const {return get_base_parameter<Term>(1);}
+      Term* result_type() const {return get_base_parameter(1);}
 
-      TermPtr<BlockTerm> entry() {return get_base_parameter<BlockTerm>(0);}
-      void set_entry(TermRef<BlockTerm> block);
+      BlockTerm* entry() {return checked_cast<BlockTerm*>(get_base_parameter(0));}
+      void set_entry(BlockTerm* block);
 
-      TermPtr<BlockTerm> new_block();
-      TermPtr<BlockTerm> new_block(TermRef<BlockTerm> dominator);
+      BlockTerm* new_block();
+      BlockTerm* new_block(BlockTerm* dominator);
 
     private:
       class Initializer;
-      FunctionTerm(const UserInitializer& ui, Context *context, TermRef<FunctionTypeTerm> type);
+      FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type);
     };
 
     template<>
@@ -225,12 +225,12 @@ namespace Psi {
     class FunctionTypeParameterTerm : public Term {
       friend class Context;
     public:
-      TermPtr<FunctionTypeTerm> source() const;
+      FunctionTypeTerm* source() const;
       std::size_t index() const {return m_index;}
 
     private:
       class Initializer;
-      FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, TermRef<> type);
+      FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, Term* type);
       void set_source(FunctionTypeTerm *term);
       std::size_t m_index;
     };
@@ -260,17 +260,17 @@ namespace Psi {
       /// \brief Return the number of parameters, including both
       /// phantom and ordinary parameters.
       std::size_t n_parameters() const {return n_base_parameters() - 1;}
-      TermPtr<FunctionTypeParameterTerm> parameter(std::size_t i) const {return get_base_parameter<FunctionTypeParameterTerm>(i+1);}
-      TermPtr<> result_type() const {return get_base_parameter(0);}
+      FunctionTypeParameterTerm* parameter(std::size_t i) const {return checked_cast<FunctionTypeParameterTerm*>(get_base_parameter(i+1));}
+      Term* result_type() const {return get_base_parameter(0);}
       CallingConvention calling_convention() const {return m_calling_convention;}
-      TermPtr<> parameter_type_after(TermRefArray<> previous) const;
-      TermPtr<> result_type_after(TermRefArray<> parameters) const;
+      Term* parameter_type_after(ArrayPtr<Term*const> previous) const;
+      Term* result_type_after(ArrayPtr<Term*const> parameters) const;
 
     private:
       class Initializer;
       FunctionTypeTerm(const UserInitializer& ui, Context *context, Term *result_type,
-                       TermRefArray<FunctionTypeParameterTerm> phantom_parameters,
-		       TermRefArray<FunctionTypeParameterTerm> parameters,
+                       ArrayPtr<FunctionTypeParameterTerm*const> phantom_parameters,
+		       ArrayPtr<FunctionTypeParameterTerm*const> parameters,
 		       CallingConvention calling_convention);
 
       CallingConvention m_calling_convention;
@@ -284,8 +284,8 @@ namespace Psi {
       }
     };
 
-    inline TermPtr<FunctionTypeTerm> FunctionTypeParameterTerm::source() const {
-      return get_base_parameter<FunctionTypeTerm>(0);
+    inline FunctionTypeTerm* FunctionTypeParameterTerm::source() const {
+      return checked_cast<FunctionTypeTerm*>(get_base_parameter(0));
     }
  
     inline void FunctionTypeParameterTerm::set_source(FunctionTypeTerm *term) {
@@ -298,17 +298,17 @@ namespace Psi {
     class FunctionTypeResolverTerm : public HashTerm {
       friend class Context;
     public:
-      TermPtr<> parameter_type(std::size_t n) const {return get_base_parameter(n+2);}
+      Term* parameter_type(std::size_t n) const {return get_base_parameter(n+2);}
       std::size_t n_phantom_parameters() const {return m_n_phantom;}
       std::size_t n_parameters() const {return n_base_parameters()-2;}
-      TermPtr<> result_type() const {return get_base_parameter(1);}
+      Term* result_type() const {return get_base_parameter(1);}
       CallingConvention calling_convention() const {return m_calling_convention;}
 
     private:
       class Setup;
-      FunctionTypeResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, TermRef<> result_type,
-                               TermRefArray<> parameter_types, std::size_t n_phantom, CallingConvention calling_convention);
-      FunctionTypeTerm* get_function_type() const {return checked_cast<FunctionTypeTerm*>(get_base_parameter_ptr(0));}
+      FunctionTypeResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term* result_type,
+                               ArrayPtr<Term*const> parameter_types, std::size_t n_phantom, CallingConvention calling_convention);
+      FunctionTypeTerm* get_function_type() const {return checked_cast<FunctionTypeTerm*>(get_base_parameter(0));}
       void set_function_type(FunctionTypeTerm *term) {set_base_parameter(0, term);}
 
       std::size_t m_n_phantom;
@@ -329,7 +329,7 @@ namespace Psi {
     public:
       FunctionTypeResolverParameter(std::size_t depth, std::size_t index);
 
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
@@ -359,7 +359,7 @@ namespace Psi {
 
       InstructionTermBackendImpl(const T& impl) : m_impl(impl) {}
 
-      virtual TermPtr<> type(Context& context, const FunctionTerm& function, TermRefArray<> parameters) const {
+      virtual Term* type(Context& context, const FunctionTerm& function, ArrayPtr<Term*const> parameters) const {
 	return m_impl.type(context, function, parameters);
       }
 
@@ -375,7 +375,7 @@ namespace Psi {
 	return m_impl.llvm_value_instruction(builder, term);
       }
 
-      virtual void jump_targets(Context& context, InstructionTerm& term, std::vector<TermPtr<BlockTerm> >& targets) const {
+      virtual void jump_targets(Context& context, InstructionTerm& term, std::vector<BlockTerm*>& targets) const {
         return m_impl.jump_targets(context, term, targets);
       }
 
@@ -384,8 +384,8 @@ namespace Psi {
     };
 
     template<typename T>
-    TermPtr<InstructionTerm> BlockTerm::new_instruction(const T& proto, TermRefArray<> parameters) {
-      return new_instruction_internal(InstructionTermBackendImpl<T>(proto), parameters);
+    InstructionTermPtr<T> BlockTerm::new_instruction(const T& proto, ArrayPtr<Term*const> parameters) {
+      return InstructionTermPtr<T>(new_instruction_internal(InstructionTermBackendImpl<T>(proto), parameters));
     }
   }
 }

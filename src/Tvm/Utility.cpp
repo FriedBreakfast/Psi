@@ -21,7 +21,7 @@ namespace Psi {
               goto common_source_fail;
 
           case term_block:
-            if (t1 == checked_cast<BlockTerm*>(t2)->function().get())
+            if (t1 == checked_cast<BlockTerm*>(t2)->function())
               return t2;
             else
               goto common_source_fail;
@@ -33,7 +33,7 @@ namespace Psi {
         case term_block:
           switch (t2->term_type()) {
           case term_function:
-            if (t2 == checked_cast<BlockTerm*>(t1)->function().get())
+            if (t2 == checked_cast<BlockTerm*>(t1)->function())
               return t1;
             else
               goto common_source_fail;
@@ -73,7 +73,7 @@ namespace Psi {
         case term_function:
           switch (dominated->term_type()) {
           case term_function: return dominator == dominated;
-          case term_block: return dominator == checked_cast<BlockTerm*>(dominated)->function().get();
+          case term_block: return dominator == checked_cast<BlockTerm*>(dominated)->function();
           default: PSI_FAIL("unexpected term type");
           }
 

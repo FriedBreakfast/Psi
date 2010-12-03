@@ -12,7 +12,7 @@
 #include <boost/iterator/iterator_adaptor.hpp>
 #include <boost/preprocessor/facilities/intercept.hpp>
 #include <boost/preprocessor/repetition/repeat.hpp>
-#include <boost/preprocessor/repetition/enum_binary_params.hpp>
+#include <boost/preprocessor/repetition/enum_params.hpp>
 #include <boost/preprocessor/repetition/enum_trailing_params.hpp>
 #include <boost/type_traits/alignment_of.hpp>
 #include <boost/type_traits/remove_const.hpp>
@@ -122,13 +122,13 @@ namespace Psi {
       cconv_x86_fastcall
     };
 
-    template<typename T> class TermIterator;
-    class PersistentTermPtrBackend;
+    template<typename> class TermIterator;
+    class PersistentTermPtr;
 
     class TermUser : User {
       friend class Context;
       friend class Term;
-      friend class PersistentTermPtrBackend;
+      friend class PersistentTermPtr;
       template<typename> friend class TermIterator;
 
     public:
@@ -145,45 +145,14 @@ namespace Psi {
       unsigned char m_term_type;
     };
 
-    template<typename TermTypeP, typename Base>
-    class TermPtrCommon {
-      typedef void (TermPtrCommon<TermTypeP,Base>::*SafeBoolType)() const;
-      void safe_bool_true() const {}
-      typedef typename boost::remove_const<TermTypeP>::type NonConstType;
-
+    class PersistentTermPtr : TermUser {
     public:
-      typedef TermTypeP TermType;
+      PersistentTermPtr();
+      PersistentTermPtr(Term *term);
+      PersistentTermPtr(const PersistentTermPtr&);
+      ~PersistentTermPtr();
 
-      template<typename T, typename U>
-      bool operator == (const TermPtrCommon<T,U>& o) const {return o.get() == get();}
-      template<typename T, typename U>
-      bool operator != (const TermPtrCommon<T,U>& o) const {return o.get() != get();}
-      template<typename T, typename U>
-      bool operator < (const TermPtrCommon<T,U>& o) const {return o.get() < get();}
-      operator SafeBoolType () const {return get() ? &TermPtrCommon<TermTypeP,Base>::safe_bool_true : 0;}
-
-      TermType* operator -> () const {return get();}
-      TermType& operator * () const {return *get();}
-      TermType* get() const {return checked_cast<TermType*>(m_base.get());}
-
-    protected:
-      TermPtrCommon() {}
-      explicit TermPtrCommon(TermType* ptr) : m_base(const_cast<NonConstType*>(ptr)) {}
-      Base m_base;
-    };
-
-    class PersistentTermPtrBackend : TermUser {
-    public:
-      PersistentTermPtrBackend();
-      PersistentTermPtrBackend(const PersistentTermPtrBackend&);
-      explicit PersistentTermPtrBackend(Term *ptr);
-      ~PersistentTermPtrBackend();
-
-      const PersistentTermPtrBackend& operator = (const PersistentTermPtrBackend& o) {reset(o.get()); return *this;}
-
-      bool operator == (const PersistentTermPtrBackend& o) const {return get() == o.get();}
-      bool operator != (const PersistentTermPtrBackend& o) const {return get() != o.get();}
-
+      const PersistentTermPtr& operator = (const PersistentTermPtr& o);
       Term* get() const {return use_get(0);}
       void reset(Term *term=0);
 
@@ -191,152 +160,54 @@ namespace Psi {
       Use m_uses[2];
     };
 
-    template<typename T=Term>
-    class PersistentTermPtr : public TermPtrCommon<T, PersistentTermPtrBackend> {
-      typedef TermPtrCommon<T, PersistentTermPtrBackend> BaseType;
-    public:
-      PersistentTermPtr() {}
-      template<typename U, typename V>
-      PersistentTermPtr(const TermPtrCommon<U,V>& ptr) : BaseType(check_cast_type(ptr.get())) {}
-
-      template<typename U, typename V>
-      PersistentTermPtr<T>& operator = (const TermPtrCommon<U,V>& src) {
-        this->m_base.reset(check_cast_type(src.get()));
-	return *this;
-      }
-
-    private:
-      template<typename U> static T* check_cast_type(U* ptr) {
-        return ptr;
-      }
-    };
-
-    class TermPtrBackend {
-    public:
-      TermPtrBackend() : m_ptr(0) {}
-      TermPtrBackend(Term *ptr) : m_ptr(0) {reset(ptr);}
-      TermPtrBackend(const TermPtrBackend& src) : m_ptr(0) {reset(src.m_ptr);}
-      ~TermPtrBackend() {reset();}
-      const TermPtrBackend& operator = (const TermPtrBackend& src) {reset(src.m_ptr); return *this;}
-      Term *get() const {return m_ptr;}
-      void reset(Term *ptr=0) {reset_ptr(m_ptr, ptr);}
-
-      template<typename T> static void reset_ptr(T*& value, T *src) {
-        value = src;
-      }
-
-    private:
-      Term *m_ptr;
-    };
-
-    template<typename T=Term>
-    class TermPtr : public TermPtrCommon<T, TermPtrBackend> {
-      typedef TermPtrCommon<T, TermPtrBackend> BaseType;
-      typedef typename boost::remove_const<T>::type NonConstType;
-
-      template<typename V, typename W> friend TermPtr<V> checked_term_cast(const TermPtr<W>& ptr);
-      template<typename V, typename W> friend TermPtr<V> dynamic_term_cast(const TermPtr<W>& ptr);
-
-    public:
-      TermPtr() {}
-      template<typename U, typename V>
-      TermPtr(const TermPtrCommon<U,V>& ptr) : BaseType(check_cast_type(ptr.get())) {}
-      explicit TermPtr(T *p) : BaseType(p) {}
-
-      template<typename U, typename V>
-      TermPtr<T>& operator = (const TermPtrCommon<U,V>& src) {
-        this->m_base.reset(const_cast<NonConstType*>(check_cast_type(src.get())));
-	return *this;
-      }
-
-    private:
-      template<typename U> static T* check_cast_type(U* ptr) {
-        return ptr;
-      }
-    };
-
-    template<typename T=Term>
-    class TermArrayCommon {
-    public:
-      typedef T TermType;
-
-      TermType *const* get() const {return m_ptr;}
-      TermType* operator [] (std::size_t n) const {return m_ptr[n];}
-      std::size_t size() const {return m_size;}
-
-    protected:
-      TermArrayCommon(std::size_t size, TermType** ptr) : m_size(size), m_ptr(ptr) {}
-      TermArrayCommon(const TermArrayCommon& o) : m_size(o.m_size), m_ptr(o.m_ptr) {}
-
-      std::size_t m_size;
-      TermType** m_ptr;
-    };
-
-    template<typename T=Term>
-    class TermRefArray : public TermArrayCommon<T> {
-    public:
-      TermRefArray() : TermArrayCommon<T>(0,0) {}
-      TermRefArray(std::size_t n, T*const* ptr) : TermArrayCommon<T>(n, const_cast<T**>(ptr)) {}
-      TermRefArray(const TermArrayCommon<T>& o) : TermArrayCommon<T>(o) {}
-    };
-
-    template<typename T=Term>
-    class TermPtrArray : public TermArrayCommon<T> {
-    public:
-      TermPtrArray(std::size_t size)
-	: TermArrayCommon<T>(size, new T*[size]) {
-	std::fill_n(this->m_ptr, size, static_cast<T*>(0));
-      }
-
-      ~TermPtrArray() {
-	for (std::size_t n = 0; n < this->m_size; ++n)
-	  TermPtrBackend::reset_ptr(this->m_ptr[n], static_cast<T*>(0));
-	delete [] this->m_ptr;
-      }
-
-      template<typename U, typename V>
-      void set(std::size_t n, const TermPtrCommon<U,V>& ptr) {
-	T *ptr2 = ptr.get();
-	TermPtrBackend::reset_ptr(this->m_ptr[n], ptr2);
-      }
-    };
-
-    template<typename T, typename U>
-    TermPtr<T> checked_term_cast(const TermPtr<U>& ptr) {
-      return TermPtr<T>(checked_cast<T*>(ptr.get()));
-    }
-
-    template<typename T, typename U>
-    TermPtr<T> dynamic_term_cast(const TermPtr<U>& ptr) {
-      return TermPtr<T>(dynamic_cast<T*>(ptr.get()));
-    }
-
     template<typename T, typename U, typename W>
-    class BackendTermPtr : public TermPtrCommon<T, TermPtrBackend> {
-      typedef TermPtrCommon<T, TermPtrBackend> BaseType;
+    class BackendTermPtr {
       typedef BackendTermPtr<T, U, W> ThisType;
+
+      typedef void (ThisType::*SafeBoolType)() const;
+      void safe_bool_true() const {}
 
     public:
       typedef U BackendType;
       typedef typename BackendType::Access AccessType;
+
       AccessType backend() const {
-	const T* ptr = this->get();
-	const W* backend_impl = checked_cast<const W*>(ptr->backend());
-	return AccessType(ptr, &backend_impl->impl());
+	const W* backend_impl = checked_cast<const W*>(m_ptr->backend());
+	return AccessType(m_ptr, &backend_impl->impl());
       }
+
+      T* get() const {return m_ptr;}
+      T* operator -> () const {return m_ptr;}
+      T& operator * () const {return *m_ptr;}
+
+      template<typename X, typename Y, typename Z>
+      bool operator == (const BackendTermPtr<X,Y,Z>& o) const {return o.get() == get();}
+      template<typename X, typename Y, typename Z>
+      bool operator != (const BackendTermPtr<X,Y,Z>& o) const {return o.get() != get();}
+      template<typename X, typename Y, typename Z>
+      bool operator < (const BackendTermPtr<X,Y,Z>& o) const {return o.get() < get();}
+      operator SafeBoolType () const {return get() ? &ThisType::safe_bool_true : 0;}
+
     protected:
       BackendTermPtr() {}
-      BackendTermPtr(T* src) : BaseType(src) {}
+      BackendTermPtr(T* src) : m_ptr(src) {}
+
+    private:
+      T *m_ptr;
     };
+
+    template<typename A, typename B, typename C> bool operator == (const BackendTermPtr<A,B,C>& lhs, Term *rhs) {return lhs.get() == rhs;}
+    template<typename A, typename B, typename C> bool operator == (Term *lhs, const BackendTermPtr<A,B,C>& rhs) {return lhs == rhs.get();}
+    template<typename A, typename B, typename C> bool operator != (const BackendTermPtr<A,B,C>& lhs, Term *rhs) {return lhs.get() != rhs;}
+    template<typename A, typename B, typename C> bool operator != (Term *lhs, const BackendTermPtr<A,B,C>& rhs) {return lhs != rhs.get();}
 
     template<typename T>
     class FunctionalTermPtr : public BackendTermPtr<FunctionalTerm, T, FunctionalTermBackendImpl<T> > {
       friend class Context;
       typedef BackendTermPtr<FunctionalTerm, T, FunctionalTermBackendImpl<T> > BaseType;
-      template<typename U, typename V, typename W> friend
-      FunctionalTermPtr<U> checked_cast_functional(const TermPtrCommon<V,W>& src);
-      template<typename U, typename V, typename W> friend
-      FunctionalTermPtr<U> dynamic_cast_functional(const TermPtrCommon<V,W>& src);
+
+      template<typename U> friend FunctionalTermPtr<U> checked_cast_functional(FunctionalTerm* src);
+      template<typename U> friend FunctionalTermPtr<U> dynamic_cast_functional(FunctionalTerm* src);
 
     public:
       FunctionalTermPtr() {}
@@ -347,7 +218,7 @@ namespace Psi {
 
     template<typename T>
     class InstructionTermPtr : public BackendTermPtr<InstructionTerm, T, InstructionTermBackendImpl<T> > {
-      friend class Context;
+      friend class BlockTerm;
       typedef BackendTermPtr<InstructionTerm, T,  InstructionTermBackendImpl<T> > BaseType;
 
     public:
@@ -358,22 +229,30 @@ namespace Psi {
     };
 
     template<typename T=Term>
-    class TermRef {
+    class ScopedTermPtrArray {
     public:
-      TermRef(T *ptr) : m_ptr(ptr) {}
-      template<typename U>
-      TermRef(const TermRef<U>& src) : m_ptr(src.get()) {}
-      template<typename U, typename V>
-      TermRef(const TermPtrCommon<U,V>& src) : m_ptr(src.get()) {}
+      ScopedTermPtrArray(std::size_t size)
+        : m_size(size), m_ptr(new T*[size]) {
+      }
 
-      T* get() const {return m_ptr;}
-      T* operator -> () const {return m_ptr;}
-      T& operator * () const {return *m_ptr;}
+      ~ScopedTermPtrArray() {
+        delete [] m_ptr;
+      }
+
+      T*& operator[] (std::size_t n) {PSI_ASSERT(n < m_size); return m_ptr[n];}
+      std::size_t size() const {return m_size;}
+      T** get() {return m_ptr;}
+
+      ArrayPtr<T*> array() const {
+        return ArrayPtr<T*>(m_ptr, m_size);
+      }
 
     private:
-      const TermRef& operator = (const TermRef&);
+      ScopedTermPtrArray(const ScopedTermPtrArray&);
+      const ScopedTermPtrArray& operator = (const ScopedTermPtrArray&);
 
-      T *m_ptr;
+      std::size_t m_size;
+      T **m_ptr;
     };
 
     /**
@@ -387,8 +266,6 @@ namespace Psi {
      */
     class Term : TermUser, Used {
       friend class TermUser;
-      friend class TermPtrBackend;
-      friend class PersistentTermPtrBackend;
 
       /**
        * So FunctionTerm can manage FunctionParameterTerm and
@@ -442,13 +319,13 @@ namespace Psi {
       Context& context() const {return *m_context;}
 
       /** \brief Get the term describing the type of this term. */
-      TermPtr<> type() const {return TermPtr<>(use_get(0));}
+      Term* type() const {return use_get(0);}
 
       template<typename T> TermIterator<T> term_users_begin();
       template<typename T> TermIterator<T> term_users_end();
 
     private:
-      Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, TermRef<> type);
+      Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, Term* type);
 
       std::size_t hash_value() const;
 
@@ -464,24 +341,10 @@ namespace Psi {
 	return n_uses() - 1;
       }
 
-      void set_base_parameter(std::size_t n, TermRef<> t);
+      void set_base_parameter(std::size_t n, Term *t);
 
-      template<typename T>
-      T* get_base_parameter_ptr(std::size_t n) const {
-        return checked_cast<T*>(use_get(n+1));
-      }
-
-      Term* get_base_parameter_ptr(std::size_t n) const {
-        return get_base_parameter_ptr<Term>(n);
-      }
-
-      template<typename T>
-      TermPtr<T> get_base_parameter(std::size_t n) const {
-	return TermPtr<T>(get_base_parameter_ptr<T>(n));
-      }
-
-      TermPtr<Term> get_base_parameter(std::size_t n) const {
-        return get_base_parameter<Term>(n);
+      Term* get_base_parameter(std::size_t n) const {
+        return use_get(n+1);
       }
     };
 
@@ -541,7 +404,7 @@ namespace Psi {
       friend class FunctionTypeResolverTerm;
 
     private:
-      HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, TermRef<> type, std::size_t hash);
+      HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, Term* type, std::size_t hash);
       virtual ~HashTerm();
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
       TermSetHook m_term_set_hook;
@@ -553,7 +416,7 @@ namespace Psi {
 
     private:
       class Initializer;
-      RecursiveParameterTerm(const UserInitializer& ui, Context *context, TermRef<> type);
+      RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type);
     };
 
     /**
@@ -564,10 +427,10 @@ namespace Psi {
       friend class FunctionTerm;
 
     public:
-      TermPtr<> value_type() const;
+      Term* value_type() const;
 
     private:
-      GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, TermRef<> type);
+      GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type);
     };
 
     template<>
@@ -584,8 +447,8 @@ namespace Psi {
       friend class Context;
 
     public:
-      void set_value(TermRef<> value);
-      TermPtr<> value() const {return get_base_parameter(0);}
+      void set_value(Term* value);
+      Term* value() const {return get_base_parameter(0);}
 
       bool constant() const {return m_constant;}
 
@@ -595,7 +458,7 @@ namespace Psi {
        * Need to add parameters for linkage and possibly thread
        * locality.
        */
-      GlobalVariableTerm(const UserInitializer& ui, Context *context, TermRef<> type, bool constant);
+      GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type, bool constant);
 
       bool m_constant;
     };
@@ -661,46 +524,46 @@ namespace Psi {
       ~Context();
 
       template<typename T>
-      FunctionalTermPtr<T> get_functional(const T& proto, TermRefArray<> parameters);
+      FunctionalTermPtr<T> get_functional(const T& proto, ArrayPtr<Term*const> parameters);
 
-      TermPtr<FunctionalTerm> get_functional_bare(const FunctionalTermBackend& backend, TermRefArray<> parameters);
+      FunctionalTerm* get_functional_bare(const FunctionalTermBackend& backend, ArrayPtr<Term*const> parameters);
 
-      TermPtr<FunctionTypeTerm> get_function_type(CallingConvention calling_convention,
-						  TermRef<> result,
-                                                  TermRefArray<FunctionTypeParameterTerm> phantom_parameters,
-						  TermRefArray<FunctionTypeParameterTerm> parameters);
+      FunctionTypeTerm* get_function_type(CallingConvention calling_convention,
+                                          Term* result,
+                                          ArrayPtr<FunctionTypeParameterTerm*const> phantom_parameters,
+                                          ArrayPtr<FunctionTypeParameterTerm*const> parameters);
 
-      TermPtr<FunctionTypeTerm> get_function_type_fixed(CallingConvention calling_convention,
-							TermRef<> result,
-							TermRefArray<> parameter_types);
+      FunctionTypeTerm* get_function_type_fixed(CallingConvention calling_convention,
+                                                Term* result,
+                                                ArrayPtr<Term*const> parameter_types);
 
-      TermPtr<FunctionTypeParameterTerm> new_function_type_parameter(TermRef<> type);
+      FunctionTypeParameterTerm* new_function_type_parameter(Term* type);
 
-      TermPtr<ApplyTerm> apply_recursive(TermRef<RecursiveTerm> recursive,
-					 TermRefArray<> parameters);
+      ApplyTerm* apply_recursive(RecursiveTerm* recursive,
+                                 ArrayPtr<Term*const> parameters);
 
-      TermPtr<RecursiveTerm> new_recursive(Term *source,
-					   TermRef<> result_type,
-					   TermRefArray<> parameters);
+      RecursiveTerm* new_recursive(Term *source,
+                                   Term* result_type,
+                                   ArrayPtr<Term*const> parameters);
 
-      void resolve_recursive(TermRef<RecursiveTerm> recursive, TermRef<> to);
+      void resolve_recursive(RecursiveTerm* recursive, Term* to);
 
-      TermPtr<GlobalVariableTerm> new_global_variable(TermRef<> type, bool constant);
-      TermPtr<GlobalVariableTerm> new_global_variable_set(TermRef<> value, bool constant);
+      GlobalVariableTerm* new_global_variable(Term* type, bool constant);
+      GlobalVariableTerm* new_global_variable_set(Term* value, bool constant);
 
-      TermPtr<FunctionTerm> new_function(TermRef<FunctionTypeTerm> type);
+      FunctionTerm* new_function(FunctionTypeTerm* type);
 
-      void* term_jit(TermRef<GlobalTerm> term);
+      void* term_jit(GlobalTerm* term);
 
       FunctionalTermPtr<Metatype> get_metatype();
       FunctionalTermPtr<EmptyType> get_empty_type();
       FunctionalTermPtr<BlockType> get_block_type();
-      FunctionalTermPtr<PointerType> get_pointer_type(TermRef<> type);
+      FunctionalTermPtr<PointerType> get_pointer_type(Term* type);
       FunctionalTermPtr<BooleanType> get_boolean_type();
       FunctionalTermPtr<IntegerType> get_integer_type(std::size_t n_bits, bool is_signed=true);
-      FunctionalTermPtr<ArrayType> get_array_type(TermRef<> element_type, TermRef<> length);
-      FunctionalTermPtr<ArrayType> get_array_type(TermRef<> element_type, std::size_t length);
-      FunctionalTermPtr<ArrayValue> get_constant_array(TermRef<> element_type, TermRefArray<> elements);
+      FunctionalTermPtr<ArrayType> get_array_type(Term* element_type, Term* length);
+      FunctionalTermPtr<ArrayType> get_array_type(Term* element_type, std::size_t length);
+      FunctionalTermPtr<ArrayValue> get_constant_array(Term* element_type, ArrayPtr<Term*const> elements);
 
       void register_llvm_jit_listener(llvm::JITEventListener *l);
       void unregister_llvm_jit_listener(llvm::JITEventListener *l);
@@ -710,35 +573,35 @@ namespace Psi {
       //@{
       /// Vararg versions of functions above
 
-#define PSI_TVM_VA(z,n,data) template<typename T> FunctionalTermPtr<T> get_functional_v(const T& proto BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return get_functional(proto, TermRefArray<>(n, ap));}
+#define PSI_TVM_VA(z,n,data) template<typename T> FunctionalTermPtr<T> get_functional_v(const T& proto BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,Term* p)) {Term *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return get_functional(proto, ArrayPtr<Term*const>(ap, n));}
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
-#define PSI_TVM_VA(z,n,data) TermPtr<FunctionTypeTerm> get_function_type_v(CallingConvention calling_convention, TermRef<> result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<FunctionTypeParameterTerm> p)) {FunctionTypeParameterTerm *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return get_function_type(calling_convention,result,TermRefArray<FunctionTypeParameterTerm>(0,0),TermRefArray<FunctionTypeParameterTerm>(n,ap));}
-
-      BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
-#undef PSI_TVM_VA
-
-#define PSI_TVM_VA(z,n,data) TermPtr<FunctionTypeTerm> get_function_type_v(TermRef<> result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<FunctionTypeParameterTerm> p)) {FunctionTypeParameterTerm *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return get_function_type(cconv_tvm,result,TermRefArray<FunctionTypeParameterTerm>(0,0),TermRefArray<FunctionTypeParameterTerm>(n,ap));}
+#define PSI_TVM_VA(z,n,data) FunctionTypeTerm* get_function_type_v(CallingConvention calling_convention, Term* result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,FunctionTypeParameterTerm* p)) {FunctionTypeParameterTerm *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return get_function_type(calling_convention,result,ArrayPtr<FunctionTypeParameterTerm*const>(),ArrayPtr<FunctionTypeParameterTerm*const>(ap,n));}
 
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
-#define PSI_TVM_VA(z,n,data) TermPtr<FunctionTypeTerm> get_function_type_fixed_v(CallingConvention calling_convention, TermRef<> result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return get_function_type_fixed(calling_convention,result,TermRefArray<>(n,ap));}
+#define PSI_TVM_VA(z,n,data) FunctionTypeTerm* get_function_type_v(Term* result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,FunctionTypeParameterTerm* p)) {FunctionTypeParameterTerm *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return get_function_type(cconv_tvm,result,ArrayPtr<FunctionTypeParameterTerm*const>(0,0),ArrayPtr<FunctionTypeParameterTerm*const>(ap,n));}
 
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
-#define PSI_TVM_VA(z,n,data) TermPtr<FunctionTypeTerm> get_function_type_fixed_v(TermRef<> result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return get_function_type_fixed(cconv_tvm,result,TermRefArray<>(n,ap));}
+#define PSI_TVM_VA(z,n,data) FunctionTypeTerm* get_function_type_fixed_v(CallingConvention calling_convention, Term* result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,Term* p)) {Term *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return get_function_type_fixed(calling_convention,result,ArrayPtr<Term*const>(ap,n));}
 
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
-#define PSI_TVM_VA(z,n,data) TermPtr<ApplyTerm> apply_recursive_v(TermRef<RecursiveTerm> recursive BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return apply_recursive(recursive,TermRefArray<>(n,ap));}
+#define PSI_TVM_VA(z,n,data) FunctionTypeTerm* get_function_type_fixed_v(Term* result BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,Term* p)) {Term *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return get_function_type_fixed(cconv_tvm,result,ArrayPtr<Term*const>(ap,n));}
+
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
-#define PSI_TVM_VA(z,n,data) TermPtr<RecursiveTerm> new_recursive_v(Term *source, TermRef<> result_type BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,TermRef<> p)) {Term *ap[n] = {BOOST_PP_ENUM_BINARY_PARAMS_Z(z,n,p,.get() BOOST_PP_INTERCEPT)}; return new_recursive(source,result_type,TermRefArray<>(n,ap));}
+#define PSI_TVM_VA(z,n,data) ApplyTerm* apply_recursive_v(RecursiveTerm* recursive BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,Term* p)) {Term *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return apply_recursive(recursive,ArrayPtr<Term*const>(ap,n));}
+      BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
+#undef PSI_TVM_VA
+
+#define PSI_TVM_VA(z,n,data) RecursiveTerm* new_recursive_v(Term *source, Term* result_type BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,Term* p)) {Term *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return new_recursive(source,result_type,ArrayPtr<Term*const>(ap,n));}
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)
 #undef PSI_TVM_VA
 
@@ -747,28 +610,26 @@ namespace Psi {
     private:
       Context(const Context&);
 
-      template<typename T>
-      TermPtr<typename T::TermType> allocate_term(const T& initializer);
-      template<typename T>
-      TermPtr<typename T::TermType> hash_term_get(T& Setup);
+      template<typename T> typename T::TermType* allocate_term(const T& initializer);
+      template<typename T> typename T::TermType* hash_term_get(T& Setup);
 
-      TermPtr<RecursiveParameterTerm> new_recursive_parameter(TermRef<> type);
+      RecursiveParameterTerm* new_recursive_parameter(Term* type);
 
-      TermPtr<FunctionTypeResolverTerm> get_function_type_resolver(TermRef<> result, TermRefArray<> parameters, std::size_t n_phantom, CallingConvention calling_convention);
-      FunctionalTermPtr<FunctionTypeResolverParameter> get_function_type_resolver_parameter(TermRef<> type, std::size_t depth, std::size_t index);
+      FunctionTypeResolverTerm* get_function_type_resolver(Term* result, ArrayPtr<Term*const> parameters, std::size_t n_phantom, CallingConvention calling_convention);
+      FunctionalTermPtr<FunctionTypeResolverParameter> get_function_type_resolver_parameter(Term* type, std::size_t depth, std::size_t index);
 
       typedef std::tr1::unordered_map<FunctionTypeTerm*, std::size_t> CheckCompleteMap;
-      bool check_function_type_complete(TermRef<> term, CheckCompleteMap& functions);
+      bool check_function_type_complete(Term* term, CheckCompleteMap& functions);
 
       class FunctionTypeResolverRewriter;
       bool search_for_abstract(Term *term, std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set);
 
-      static void clear_and_queue_if_abstract(std::vector<Term*>& queue, TermRef<> t);
+      static void clear_and_queue_if_abstract(std::vector<Term*>& queue, Term* t);
 
       void clear_abstract(Term *term, std::vector<Term*>& queue);
     };
 
-    bool term_unique(TermRef<> term);
+    bool term_unique(Term* term);
   }
 }
 

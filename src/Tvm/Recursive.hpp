@@ -16,18 +16,18 @@ namespace Psi {
       friend class Context;
 
     public:
-      void resolve(TermRef<> term);
-      TermPtr<ApplyTerm> apply(TermRefArray<> parameters);
+      void resolve(Term* term);
+      ApplyTerm* apply(ArrayPtr<Term*const> parameters);
 
       std::size_t n_parameters() const {return n_base_parameters() - 2;}
-      TermPtr<RecursiveParameterTerm> parameter(std::size_t i) const {return get_base_parameter<RecursiveParameterTerm>(i+2);}
-      TermPtr<> result_type() const {return get_base_parameter(0);}
-      TermPtr<> result() const {return get_base_parameter(1);}
+      RecursiveParameterTerm* parameter(std::size_t i) const {return checked_cast<RecursiveParameterTerm*>(get_base_parameter(i+2));}
+      Term* result_type() const {return get_base_parameter(0);}
+      Term* result() const {return get_base_parameter(1);}
 
     private:
       class Initializer;
-      RecursiveTerm(const UserInitializer& ui, Context *context, TermRef<> result_type,
-                    Term *source, TermRefArray<RecursiveParameterTerm> parameters);
+      RecursiveTerm(const UserInitializer& ui, Context *context, Term* result_type,
+                    Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters);
     };
 
     template<>
@@ -42,15 +42,15 @@ namespace Psi {
 
     public:
       std::size_t n_parameters() const {return n_base_parameters() - 1;}
-      TermPtr<> unpack() const;
+      Term* unpack() const;
 
-      TermPtr<RecursiveTerm> recursive() const {return get_base_parameter<RecursiveTerm>(0);}
-      TermPtr<> parameter(std::size_t i) const {return get_base_parameter(i+1);}
+      RecursiveTerm* recursive() const {return checked_cast<RecursiveTerm*>(get_base_parameter(0));}
+      Term* parameter(std::size_t i) const {return get_base_parameter(i+1);}
 
     private:
       class Setup;
       ApplyTerm(const UserInitializer& ui, Context *context, RecursiveTerm *recursive,
-		TermRefArray<> parameters, std::size_t hash);
+		ArrayPtr<Term*const> parameters, std::size_t hash);
     };
 
     template<>

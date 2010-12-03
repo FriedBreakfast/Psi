@@ -13,7 +13,7 @@
 
 namespace Psi {
   namespace Tvm {
-    TermPtr<> Return::type(Context&, const FunctionTerm& function, TermRefArray<> parameters) const {
+    Term* Return::type(Context&, const FunctionTerm& function, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 1)
 	throw std::logic_error("return instruction takes one argument");
 
@@ -21,13 +21,13 @@ namespace Psi {
       if (ret_val->type() != function.result_type())
 	throw std::logic_error("return instruction argument has incorrect type");
 
-      return TermPtr<>();
+      return NULL;
     }
 
     LLVMValue Return::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
       LLVMFunctionBuilder::IRBuilder& irbuilder = builder.irbuilder();
 
-      TermPtr<> return_value = term.parameter(0);
+      Term* return_value = term.parameter(0);
       LLVMValue result = builder.value(return_value);
 
       if (builder.calling_convention() == cconv_tvm) {
@@ -44,7 +44,7 @@ namespace Psi {
 	  return LLVMValue::known(irbuilder.CreateRet(return_area));
 	} else if (result.is_unknown()) {
 	  llvm::Function *memcpy_fn = builder.llvm_memcpy();
-	  TermPtr<> return_type = return_value->type();
+	  Term* return_type = return_value->type();
 	  if (return_type->type() != term.context().get_metatype())
 	    throw std::logic_error("Type of return type is not metatype");
 
@@ -72,10 +72,10 @@ namespace Psi {
       }
     }
 
-    void Return::jump_targets(Context&, InstructionTerm&, std::vector<TermPtr<BlockTerm> >&) const {
+    void Return::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
     }
 
-    TermPtr<> ConditionalBranch::type(Context& context, const FunctionTerm&, TermRefArray<> parameters) const {
+    Term* ConditionalBranch::type(Context& context, const FunctionTerm&, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 3)
 	throw std::logic_error("branch instruction takes three arguments: cond, trueTarget, falseTarget");
 
@@ -84,12 +84,12 @@ namespace Psi {
       if (cond->type() != context.get_boolean_type())
 	throw std::logic_error("first parameter to branch instruction must be of boolean type");
 
-      TermPtr<> true_target(parameters[1]);
-      TermPtr<> false_target(parameters[2]);
+      Term* true_target(parameters[1]);
+      Term* false_target(parameters[2]);
       if ((true_target->term_type() != term_block) || (false_target->term_type() != term_block))
 	throw std::logic_error("second and third parameters to branch instruction must be blocks");
 
-      return TermPtr<>();
+      return NULL;
     }
 
     LLVMValue ConditionalBranch::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
@@ -108,21 +108,21 @@ namespace Psi {
       return LLVMValue::known(builder.irbuilder().CreateCondBr(cond_llvm, true_target_llvm, false_target_llvm));
     }
 
-    void ConditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<TermPtr<BlockTerm> >& targets) const {
+    void ConditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<BlockTerm*>& targets) const {
       Access self(&term, this);
       targets.push_back(self.true_target());
       targets.push_back(self.false_target());
     }
 
-    TermPtr<> UnconditionalBranch::type(Context&, const FunctionTerm&, TermRefArray<> parameters) const {
+    Term* UnconditionalBranch::type(Context&, const FunctionTerm&, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 1)
 	throw std::logic_error("unconditional branch instruction takes one argument - the branch target");
 
-      TermPtr<> target(parameters[0]);
+      Term* target(parameters[0]);
       if (target->term_type() != term_block)
 	throw std::logic_error("second parameter to branch instruction must be blocks");
 
-      return TermPtr<>();
+      return NULL;
     }
 
     LLVMValue UnconditionalBranch::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
@@ -137,12 +137,12 @@ namespace Psi {
       return LLVMValue::known(builder.irbuilder().CreateBr(target_llvm));
     }
 
-    void UnconditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<TermPtr<BlockTerm> >& targets) const {
+    void UnconditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<BlockTerm*>& targets) const {
       Access self(&term, this);
       targets.push_back(self.target());
     }
 
-    TermPtr<> FunctionCall::type(Context&, const FunctionTerm&, TermRefArray<> parameters) const {
+    Term* FunctionCall::type(Context&, const FunctionTerm&, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() < 1)
 	throw std::logic_error("function call instruction must have at least one parameter: the function being called");
 
@@ -151,7 +151,7 @@ namespace Psi {
       if (!target_ptr_type)
 	throw std::logic_error("function call target is not a pointer type");
 
-      TermPtr<FunctionTypeTerm> target_function_type = dynamic_term_cast<FunctionTypeTerm>(target_ptr_type.backend().target_type());
+      FunctionTypeTerm* target_function_type = dynamic_cast<FunctionTypeTerm*>(target_ptr_type.backend().target_type());
       if (!target_function_type)
 	throw std::logic_error("function call target is not a function pointer");
 
@@ -160,20 +160,20 @@ namespace Psi {
 	throw std::logic_error("wrong number of arguments to function");
 
       for (std::size_t i = 0; i < n_parameters; ++i) {
-	TermPtr<> expected_type = target_function_type->parameter_type_after(TermRefArray<>(i, parameters.get()+1));
+	Term* expected_type = target_function_type->parameter_type_after(parameters.slice(1, i+1));
 	if (parameters[i+1]->type() != expected_type)
 	  throw std::logic_error("function argument has the wrong type");
       }
 
-      return target_function_type->result_type_after(TermRefArray<>(n_parameters, parameters.get()+1));
+      return target_function_type->result_type_after(parameters.slice(1, 1+n_parameters));
     }
 
     LLVMValue FunctionCall::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
       LLVMFunctionBuilder::IRBuilder& irbuilder = builder.irbuilder();
       Access self(&term, this);
 
-      TermPtr<FunctionTypeTerm> function_type =
-	checked_term_cast<FunctionTypeTerm>
+      FunctionTypeTerm* function_type =
+	checked_cast<FunctionTypeTerm*>
 	(checked_cast_functional<PointerType>(self.target()->type()).backend().target_type());
 
       LLVMValue target = builder.value(self.target());
@@ -266,10 +266,10 @@ namespace Psi {
       }
     }
     
-    void FunctionCall::jump_targets(Context&, InstructionTerm&, std::vector<TermPtr<BlockTerm> >&) const {
+    void FunctionCall::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
     }
 
-    TermPtr<> FunctionApplyPhantom::type(Context& context, TermRefArray<> parameters) const {
+    Term* FunctionApplyPhantom::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() < 1)
         throw std::logic_error("apply_phantom requires at least one parameter");
 
@@ -280,37 +280,37 @@ namespace Psi {
       if (!target_ptr_type)
 	throw std::logic_error("apply_phantom target is not a function pointer");
 
-      TermPtr<FunctionTypeTerm> function_type = dynamic_term_cast<FunctionTypeTerm>(target_ptr_type.backend().target_type());
+      FunctionTypeTerm* function_type = dynamic_cast<FunctionTypeTerm*>(target_ptr_type.backend().target_type());
       if (!function_type)
 	throw std::logic_error("apply_phantom target is not a function pointer");
 
       if (n_applied > function_type->n_phantom_parameters())
         throw std::logic_error("Too many parameters given to apply_phantom");
 
-      TermPtrArray<> apply_parameters(function_type->n_parameters());
+      ScopedTermPtrArray<> apply_parameters(function_type->n_parameters());
       for (std::size_t i = 0; i < n_applied; ++i)
-        apply_parameters.set(i, TermPtr<>(parameters[i+1]));
+        apply_parameters[i] = parameters[i+1];
 
-      TermPtrArray<FunctionTypeParameterTerm> new_parameters(function_type->n_parameters() - n_applied);
+      ScopedTermPtrArray<FunctionTypeParameterTerm> new_parameters(function_type->n_parameters() - n_applied);
       for (std::size_t i = 0; i < new_parameters.size(); ++i) {
-        TermPtr<> type = function_type->parameter_type_after(TermRefArray<>(n_applied + i, apply_parameters.get()));
-        TermPtr<FunctionTypeParameterTerm> param = context.new_function_type_parameter(type);
-        apply_parameters.set(i + n_applied, param);
-        new_parameters.set(i, param);
+        Term* type = function_type->parameter_type_after(apply_parameters.array().slice(0, n_applied + i));
+        FunctionTypeParameterTerm* param = context.new_function_type_parameter(type);
+        apply_parameters[i + n_applied] = param;
+        new_parameters[i] = param;
       }
 
-      TermPtr<> result_type = function_type->result_type_after(apply_parameters);
+      Term* result_type = function_type->result_type_after(apply_parameters.array());
 
       std::size_t result_n_phantom = function_type->n_phantom_parameters() - n_applied;
       std::size_t result_n_normal = function_type->n_parameters() - function_type->n_phantom_parameters();
 
-      TermPtr<FunctionTypeTerm> result_function_type = context.get_function_type
+      FunctionTypeTerm* result_function_type = context.get_function_type
         (function_type->calling_convention(),
          result_type,
-         TermRefArray<FunctionTypeParameterTerm>(result_n_phantom, new_parameters.get()),
-         TermRefArray<FunctionTypeParameterTerm>(result_n_normal, new_parameters.get() + result_n_phantom));
+         new_parameters.array().slice(0, result_n_phantom),
+         new_parameters.array().slice(result_n_phantom, result_n_phantom+result_n_normal));
 
-      return context.get_pointer_type(result_function_type);
+      return context.get_pointer_type(result_function_type).get();
     }
 
     LLVMType FunctionApplyPhantom::llvm_type(LLVMValueBuilder&, Term&) const {

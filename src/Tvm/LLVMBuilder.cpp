@@ -18,9 +18,9 @@ namespace Psi {
     namespace {
       template<typename ValueMap, typename Callback>
       std::pair<typename ValueMap::value_type::second_type, bool>
-      build_term(TermRef<> term, ValueMap& values, const Callback& cb) {
+      build_term(Term *term, ValueMap& values, const Callback& cb) {
 	std::pair<typename ValueMap::iterator, bool> itp =
-	  values.insert(std::make_pair(term.get(), cb.invalid()));
+	  values.insert(std::make_pair(term, cb.invalid()));
 	if (!itp.second) {
 	  if (cb.valid(itp.first->second)) {
 	    return std::make_pair(itp.first->second, false);
@@ -56,7 +56,7 @@ namespace Psi {
 	  }
 
 	  case term_apply: {
-	    TermPtr<> actual = checked_cast<ApplyTerm&>(term).unpack();
+	    Term* actual = checked_cast<ApplyTerm&>(term).unpack();
 	    PSI_ASSERT(actual->term_type() != term_apply);
 	    return self->type(actual);
 	  }
@@ -130,7 +130,7 @@ namespace Psi {
 	  }
 
 	  case term_apply: {
-	    TermPtr<> actual = checked_cast<ApplyTerm&>(term).unpack();
+	    Term* actual = checked_cast<ApplyTerm&>(term).unpack();
 	    PSI_ASSERT(actual->term_type() != term_apply);
 	    return self->value(actual);
 	  }
@@ -202,7 +202,7 @@ namespace Psi {
 	  case term_function: {
 	    FunctionTerm& func = checked_cast<FunctionTerm&>(term);
 	    FunctionalTermPtr<PointerType> type = checked_cast_functional<PointerType>(func.type());
-	    TermPtr<FunctionTypeTerm> func_type = checked_term_cast<FunctionTypeTerm>(type.backend().target_type());
+	    FunctionTypeTerm* func_type = checked_cast<FunctionTypeTerm*>(type.backend().target_type());
 	    LLVMType llvm_ty = self->type(func_type);
 	    PSI_ASSERT(llvm_ty.is_known() && llvm_ty.type()->isFunctionTy());
 	    return llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_ty.type()),
@@ -250,7 +250,7 @@ namespace Psi {
      * term: it is the LLVM type of the LLVM value of terms whose type
      * is this term.
      */
-    LLVMType LLVMValueBuilder::type(TermRef<> term) {
+    LLVMType LLVMValueBuilder::type(Term* term) {
       if (term->global() && m_parent) {
 	return m_parent->type(term);
       } else {
@@ -258,14 +258,14 @@ namespace Psi {
       }
     }
 
-    LLVMValue LLVMValueBuilder::value(TermRef<> term) {
+    LLVMValue LLVMValueBuilder::value(Term* term) {
       if (term->global() && m_parent) {
 	return m_parent->value(term);
       } else {
 	switch (term->term_type()) {
 	case term_function:
 	case term_global_variable: {
-	  llvm::GlobalValue *gv = global(checked_cast<GlobalTerm*>(term.get()));
+	  llvm::GlobalValue *gv = global(checked_cast<GlobalTerm*>(term));
 
 	  // Need to force global terms to be of type i8* since they are
 	  // pointers, but the Global term builder can't do this
@@ -276,7 +276,7 @@ namespace Psi {
 
 	case term_instruction:
 	case term_phi: {
-	  ValueTermMap::iterator it = m_value_terms.find(term.get());
+	  ValueTermMap::iterator it = m_value_terms.find(term);
 	  if (it != m_value_terms.end()) {
 	    return it->second;
 	  } else {
@@ -290,7 +290,7 @@ namespace Psi {
       }
     }
 
-    llvm::GlobalValue* LLVMValueBuilder::global(TermRef<GlobalTerm> term) {
+    llvm::GlobalValue* LLVMValueBuilder::global(GlobalTerm* term) {
       if ((term->term_type() != term_function) && (term->term_type() != term_global_variable))
 	throw std::logic_error("cannot get global value for non-global variable");
 
@@ -298,7 +298,7 @@ namespace Psi {
 
       if (gv.second) {
 	if (m_global_build_list.empty()) {
-	  m_global_build_list.push_back(std::make_pair(term.get(), gv.first));
+	  m_global_build_list.push_back(std::make_pair(term, gv.first));
 	  while (!m_global_build_list.empty()) {
 	    const std::pair<Term*, llvm::GlobalValue*>& t = m_global_build_list.front();
 	    if (t.first->term_type() == term_function) {
@@ -314,7 +314,7 @@ namespace Psi {
 	    m_global_build_list.pop_front();
 	  }
 	} else {
-	  m_global_build_list.push_back(std::make_pair(term.get(), gv.first));
+	  m_global_build_list.push_back(std::make_pair(term, gv.first));
 	}
       }
 
@@ -343,15 +343,15 @@ namespace Psi {
 
       std::size_t n = 0;
       for (; n < n_phantom; ++n) {
-	TermPtr<FunctionParameterTerm> param = psi_func->parameter(n);
-        func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::phantom()));
+	FunctionParameterTerm* param = psi_func->parameter(n);
+        func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::phantom()));
       }
 
       for (; llvm_it != argument_list.end(); ++n, ++llvm_it) {
-	TermPtr<FunctionParameterTerm> param = psi_func->parameter(n);
+	FunctionParameterTerm* param = psi_func->parameter(n);
 	llvm::Argument *llvm_param = const_cast<llvm::Argument*>(&*llvm_it);
-	TermRef<> param_type = param->type();
-	PSI_ASSERT(param_type.get());
+	Term* param_type = param->type();
+	PSI_ASSERT(param_type);
 	LLVMType param_type_llvm = type(param_type);
 
 	if (calling_convention == cconv_tvm) {
@@ -360,18 +360,18 @@ namespace Psi {
 	      const llvm::PointerType *ptr_ty = param_type_llvm.type()->getPointerTo();
 	      llvm::Value *cast_param = irbuilder.CreateBitCast(llvm_param, ptr_ty);
 	      llvm::Value *load = irbuilder.CreateLoad(cast_param);
-	      func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::known(load)));
+	      func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(load)));
 	    } else {
-	      func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::known(llvm_param)));
+	      func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(llvm_param)));
 	    }
 	  } else if (param_type_llvm.is_empty()) {
-	    func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::empty()));
+	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::empty()));
 	  } else {
-	    func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::unknown(llvm_param, llvm_param)));
+	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::unknown(llvm_param, llvm_param)));
 	  }
 	} else {
 	  PSI_ASSERT(param_type_llvm.is_known());
-	  func_builder.m_value_terms.insert(std::make_pair(param.get(), LLVMValue::known(llvm_param)));
+	  func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(llvm_param)));
 	}
       }
 
@@ -398,7 +398,7 @@ namespace Psi {
       }
 
       // Set up basic blocks
-      BlockTerm* entry_block = psi_func->entry().get();
+      BlockTerm* entry_block = psi_func->entry();
       std::tr1::unordered_set<BlockTerm*> visited_blocks;
       std::vector<BlockTerm*> block_queue;
       std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
@@ -415,14 +415,14 @@ namespace Psi {
         if (!bl->terminated())
           throw std::logic_error("cannot compile function with unterminated blocks");
 
-        std::vector<TermPtr<BlockTerm> > successors = bl->successors();
-        for (std::vector<TermPtr<BlockTerm> >::iterator it = successors.begin();
+        std::vector<BlockTerm*> successors = bl->successors();
+        for (std::vector<BlockTerm*>::iterator it = successors.begin();
              it != successors.end(); ++it) {
-          std::pair<std::tr1::unordered_set<BlockTerm*>::iterator, bool> p = visited_blocks.insert(it->get());
+          std::pair<std::tr1::unordered_set<BlockTerm*>::iterator, bool> p = visited_blocks.insert(*it);
           if (p.second) {
-            block_queue.push_back(it->get());
-            if (!it->get()->dominator())
-              blocks.push_back(std::make_pair(it->get(), static_cast<llvm::BasicBlock*>(0)));
+            block_queue.push_back(*it);
+            if (!(*it)->dominator())
+              blocks.push_back(std::make_pair(*it, static_cast<llvm::BasicBlock*>(0)));
           }
         }
       }
@@ -439,7 +439,7 @@ namespace Psi {
         BlockTerm *bl = blocks[i].first;
 	for (TermIterator<BlockTerm> it = bl->term_users_begin<BlockTerm>();
 	     it != bl->term_users_end<BlockTerm>(); ++it) {
-          if ((bl == it->dominator().get()) && (visited_blocks.find(it.get_ptr()) == visited_blocks.end())) {
+          if ((bl == it->dominator()) && (visited_blocks.find(it.get_ptr()) == visited_blocks.end())) {
             blocks.push_back(std::make_pair(it.get_ptr(), static_cast<llvm::BasicBlock*>(0)));
             visited_blocks.insert(it.get_ptr());
           }
@@ -468,8 +468,8 @@ namespace Psi {
         // necessary to allow loops which handle unknown types without
         // unbounded stack growth.
         if (it->first->dominator()) {
-          PSI_ASSERT(stack_pointers.find(it->first->dominator().get()) != stack_pointers.end());
-          irbuilder.CreateCall(func_builder.llvm_stackrestore(), stack_pointers[it->first->dominator().get()]);
+          PSI_ASSERT(stack_pointers.find(it->first->dominator()) != stack_pointers.end());
+          irbuilder.CreateCall(func_builder.llvm_stackrestore(), stack_pointers[it->first->dominator()]);
         }
 
 	const BlockTerm::InstructionList& insn_list = it->first->instructions();
@@ -491,7 +491,7 @@ namespace Psi {
     }
 
     void LLVMValueBuilder::build_global_variable(GlobalVariableTerm *psi_var, llvm::GlobalVariable *llvm_var) {
-      TermPtr<> init_value = psi_var->value();
+      Term* init_value = psi_var->value();
       if (init_value) {
 	LLVMValue llvm_init_value = value(init_value);
 	if (llvm_init_value.is_known()) {
@@ -513,7 +513,7 @@ namespace Psi {
     LLVMConstantBuilder::~LLVMConstantBuilder() {
     }
 
-    LLVMValue LLVMConstantBuilder::value_impl(TermRef<> term) {
+    LLVMValue LLVMConstantBuilder::value_impl(Term* term) {
       return build_term(term, m_value_terms, ConstantBuilderCallback(this)).first;
     }
 
@@ -530,7 +530,7 @@ namespace Psi {
     LLVMFunctionBuilder::~LLVMFunctionBuilder() {
     }
 
-    LLVMValue LLVMFunctionBuilder::value_impl(TermRef<> term) {
+    LLVMValue LLVMFunctionBuilder::value_impl(Term* term) {
       llvm::BasicBlock *old_insert_block = m_irbuilder->GetInsertBlock();
 
       // Set the insert point to the dominator block of the value

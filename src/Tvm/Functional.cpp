@@ -3,13 +3,13 @@
 
 namespace Psi {
   namespace Tvm {
-    FunctionalTerm::FunctionalTerm(const UserInitializer& ui, Context *context, TermRef<> type,
+    FunctionalTerm::FunctionalTerm(const UserInitializer& ui, Context *context, Term* type,
 				   std::size_t hash, FunctionalTermBackend *backend,
-				   TermRefArray<> parameters)
+				   ArrayPtr<Term*const> parameters)
       : HashTerm(ui, context, term_functional,
-		 term_abstract(type.get()) || any_abstract(parameters),
-		 term_parameterized(type.get()) || any_parameterized(parameters),
-                 common_source(term_source(type.get()), common_source(parameters)),
+		 term_abstract(type) || any_abstract(parameters),
+		 term_parameterized(type) || any_parameterized(parameters),
+                 common_source(term_source(type), common_source(parameters)),
 		 type, hash),
 	m_backend(backend) {
       for (std::size_t i = 0; i < parameters.size(); ++i)
@@ -24,7 +24,7 @@ namespace Psi {
     public:
       typedef FunctionalTerm TermType;
 
-      Setup(TermRefArray<> parameters, const FunctionalTermBackend *backend)
+      Setup(ArrayPtr<Term*const> parameters, const FunctionalTermBackend *backend)
 	: m_parameters(parameters),
 	  m_backend(backend) {
 
@@ -74,7 +74,7 @@ namespace Psi {
 	  return false;
 
 	for (std::size_t i = 0; i < m_parameters.size(); ++i) {
-	  if (m_parameters[i] != cast_term.parameter(i).get())
+	  if (m_parameters[i] != cast_term.parameter(i))
 	    return false;
 	}
 
@@ -89,9 +89,9 @@ namespace Psi {
       std::size_t m_proto_offset;
       std::size_t m_size;
       std::size_t m_hash;
-      TermRefArray<> m_parameters;
+      ArrayPtr<Term*const> m_parameters;
       const FunctionalTermBackend *m_backend;
-      TermPtr<> m_type;
+      Term* m_type;
     };
 
     /**
@@ -99,7 +99,7 @@ namespace Psi {
      * FunctionalTermBackend interface and getting back a TermPtr,
      * rather than the more friendly FunctionalTermPtr.
      */
-    TermPtr<FunctionalTerm> Context::get_functional_bare(const FunctionalTermBackend& backend, TermRefArray<> parameters) {
+    FunctionalTerm* Context::get_functional_bare(const FunctionalTermBackend& backend, ArrayPtr<Term*const> parameters) {
       FunctionalTerm::Setup setup(parameters, &backend);
       return hash_term_get(setup);
     }

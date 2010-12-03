@@ -24,17 +24,17 @@ namespace Psi {
     }
 
     template<typename T>
-    bool any_abstract(TermRefArray<T> t) {
+    bool any_abstract(ArrayPtr<T*const> t) {
       return std::find_if(t.get(), t.get()+t.size(), term_abstract) != (t.get()+t.size());
     }
 
     template<typename T>
-    bool any_parameterized(TermRefArray<T> t) {
+    bool any_parameterized(ArrayPtr<T*const> t) {
       return std::find_if(t.get(), t.get()+t.size(), term_parameterized) != (t.get()+t.size());
     }
 
     template<typename T>
-    Term* common_source(TermRefArray<T> t) {
+    Term* common_source(ArrayPtr<T*const> t) {
       Term *bl = NULL;
       for (std::size_t i = 0; i < t.size(); ++i)
         bl = common_source(bl, term_source(t[i]));
@@ -43,11 +43,6 @@ namespace Psi {
 
     Term* common_source(Term *t1, Term *t2);
     bool source_dominated(Term *dominator, Term *dominated);
-
-    template<typename T>
-    bool all_global(TermRefArray<T> t) {
-      return std::find_if(t.get(), t.get()+t.size(), std::not1(std::ptr_fun(term_global))) == (t.get()+t.size());
-    }
 
     /**
      * \brief Compute the offset to the next field.
@@ -83,7 +78,7 @@ namespace Psi {
      * \brief Allocate a term.
      */
     template<typename T>
-    TermPtr<typename T::TermType> Context::allocate_term(const T& initializer) {
+    typename T::TermType* Context::allocate_term(const T& initializer) {
       std::size_t n_uses = initializer.n_uses();
 
       std::size_t use_offset = struct_offset(0, initializer.term_size(), boost::alignment_of<Use>::value);
@@ -92,7 +87,7 @@ namespace Psi {
       void *term_base = operator new (total_size);
       Use *uses = static_cast<Use*>(ptr_offset(term_base, use_offset));
       try {
-	TermPtr<typename T::TermType> t(initializer.initialize(term_base, UserInitializer(n_uses+1, uses), this));
+	typename T::TermType* t(initializer.initialize(term_base, UserInitializer(n_uses+1, uses), this));
         m_all_terms.push_back(*t);
         return t;
       } catch(...) {
@@ -119,15 +114,15 @@ namespace Psi {
      * \brief Create (or get an existing) hashable term.
      */
     template<typename T>
-    TermPtr<typename T::TermType> Context::hash_term_get(T& setup) {
+    typename T::TermType* Context::hash_term_get(T& setup) {
       typename HashTermSetType::insert_commit_data commit_data;
       std::pair<typename HashTermSetType::iterator, bool> existing =
 	m_hash_terms.insert_check(setup, SetupHasher<T>(), SetupEquals<T>(), commit_data);
       if (!existing.second)
-	return TermPtr<typename T::TermType>(checked_cast<typename T::TermType*>(&*existing.first));
+	return checked_cast<typename T::TermType*>(&*existing.first);
 
       setup.prepare_initialize(this);
-      TermPtr<typename T::TermType> term = allocate_term(setup);
+      typename T::TermType* term = allocate_term(setup);
       m_hash_terms.insert_commit(*term, commit_data);
 
       if (m_hash_terms.size() >= m_hash_terms.bucket_count()) {

@@ -74,6 +74,33 @@ namespace Psi {
     return is_sorted(first, last, std::less<typename ForwardIterator::value_type>());
   }
 
+  /**
+   * \brief Array reference which also stores a length.
+   *
+   * This allows a pointer and a length to be passed around easily,
+   * but does not perform any memory management.
+   */
+  template<typename T>
+  class ArrayPtr {
+  public:
+    ArrayPtr() : m_ptr(0), m_size(0) {}
+    ArrayPtr(T *ptr, std::size_t size) : m_ptr(ptr), m_size(size) {}
+    template<typename U> ArrayPtr(ArrayPtr<U> src) : m_ptr(src.get()), m_size(src.size()) {}
+
+    T* get() const {return m_ptr;}
+    T& operator [] (std::size_t n) const {PSI_ASSERT(n < m_size); return m_ptr[n];}
+    std::size_t size() const {return m_size;}
+
+    ArrayPtr<T> slice(std::size_t start, std::size_t end) {
+      PSI_ASSERT((start <= end) && (end <= m_size));
+      return ArrayPtr<T>(m_ptr+start, end-start);
+    }
+
+  private:
+    T *m_ptr;
+    std::size_t m_size;
+  };
+
   template<typename T>
   class UniquePtr {
     typedef void (UniquePtr::*SafeBoolType)() const;

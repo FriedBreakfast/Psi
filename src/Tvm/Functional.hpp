@@ -11,7 +11,7 @@ namespace Psi {
     class FunctionalTermBackend : public HashTermBackend {
     public:
       virtual FunctionalTermBackend* clone(void *dest) const = 0;
-      virtual TermPtr<> type(Context& context, TermRefArray<> parameters) const = 0;
+      virtual Term* type(Context& context, ArrayPtr<Term*const> parameters) const = 0;
 
       /**
        * Generate code to calculate the value for this term.
@@ -46,13 +46,13 @@ namespace Psi {
     public:
       const FunctionalTermBackend* backend() const {return m_backend;}
       std::size_t n_parameters() const {return Term::n_base_parameters();}
-      TermPtr<> parameter(std::size_t n) const {return get_base_parameter(n);}
+      Term* parameter(std::size_t n) const {return get_base_parameter(n);}
 
     private:
       class Setup;
-      FunctionalTerm(const UserInitializer& ui, Context *context, TermRef<> type,
+      FunctionalTerm(const UserInitializer& ui, Context *context, Term* type,
 		     std::size_t hash, FunctionalTermBackend *backend,
-		     TermRefArray<> parameters);
+		     ArrayPtr<Term*const> parameters);
       ~FunctionalTerm();
 
       FunctionalTermBackend *m_backend;
@@ -96,7 +96,7 @@ namespace Psi {
         return new (dest) ThisType(*this);
       }
 
-      virtual TermPtr<> type(Context& context, TermRefArray<> parameters) const {
+      virtual Term* type(Context& context, ArrayPtr<Term*const> parameters) const {
         return m_impl.type(context, parameters);
       }
 
@@ -125,34 +125,45 @@ namespace Psi {
       ImplType m_impl;
     };
 
+    template<typename T> FunctionalTermPtr<T> checked_cast_functional(FunctionalTerm* src) {
+      checked_cast<const FunctionalTermBackendImpl<T>*>(src->backend());
+      return FunctionalTermPtr<T>(src);
+    }
+
+    template<typename T, typename U> FunctionalTermPtr<T> checked_cast_functional(FunctionalTermPtr<U> src) {
+      return checked_cast_functional<T>(src.get());
+    }
+    
     /**
      * \brief Perform a checked cast to a FunctionalTermPtr. This
      * checks both the term type and the backend type.
      */
-    template<typename T, typename U, typename V>
-    FunctionalTermPtr<T> checked_cast_functional(const TermPtrCommon<U,V>& src) {
-      FunctionalTerm *t = checked_cast<FunctionalTerm*>(src.get());
-      checked_cast<const FunctionalTermBackendImpl<T>*>(t->backend());
-      return FunctionalTermPtr<T>(t);
+    template<typename T> FunctionalTermPtr<T> checked_cast_functional(Term* src) {
+      return checked_cast_functional<T>(checked_cast<FunctionalTerm*>(src));
+    }
+
+    template<typename T> FunctionalTermPtr<T> dynamic_cast_functional(FunctionalTerm* src) {
+      if (!dynamic_cast<const FunctionalTermBackendImpl<T>*>(src->backend()))
+        return FunctionalTermPtr<T>();
+      return FunctionalTermPtr<T>(src);
+    }
+
+    template<typename T, typename U> FunctionalTermPtr<T> dynamic_cast_functional(FunctionalTermPtr<U> src) {
+      return dynamic_cast_functional<T>(src.get());
     }
 
     /**
      * \brief Perform a dynamic cast to a FunctionalTermPtr. This
      * checks both the term type and the backend type.
      */
-    template<typename T, typename U, typename V>
-    FunctionalTermPtr<T> dynamic_cast_functional(const TermPtrCommon<U,V>& src) {
-      FunctionalTerm *t = dynamic_cast<FunctionalTerm*>(src.get());
-      if (!t)
-	return FunctionalTermPtr<T>();
-      if (!dynamic_cast<const FunctionalTermBackendImpl<T>*>(t->backend()))
-	return FunctionalTermPtr<T>();
-      return FunctionalTermPtr<T>(t);
+    template<typename T> FunctionalTermPtr<T> dynamic_cast_functional(Term* src) {
+      FunctionalTerm *p = dynamic_cast<FunctionalTerm*>(src);
+      return p ? dynamic_cast_functional<T>(p) : FunctionalTermPtr<T>();
     }
 
     template<typename T>
-    FunctionalTermPtr<T> Context::get_functional(const T& proto, TermRefArray<> parameters) {
-      return FunctionalTermPtr<T>(get_functional_bare(FunctionalTermBackendImpl<T>(proto), parameters).get());
+    FunctionalTermPtr<T> Context::get_functional(const T& proto, ArrayPtr<Term*const> parameters) {
+      return FunctionalTermPtr<T>(get_functional_bare(FunctionalTermBackendImpl<T>(proto), parameters));
     }
   }
 }

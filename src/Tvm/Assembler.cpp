@@ -20,7 +20,7 @@ namespace Psi {
 	return *m_context;
       }
 
-      const TermPtr<>& AssemblerContext::get(const std::string& name) const {
+      Term* AssemblerContext::get(const std::string& name) const {
 	for (const AssemblerContext *self = this; self; self = self->m_parent) {
 	  TermMap::const_iterator it = self->m_terms.find(name);
 	  if (it != self->m_terms.end())
@@ -29,13 +29,13 @@ namespace Psi {
 	throw std::logic_error("Name not defined: " + name);
       }
 
-      void AssemblerContext::put(const std::string& name, const TermPtr<>& value) {
+      void AssemblerContext::put(const std::string& name, Term* value) {
 	std::pair<TermMap::iterator, bool> result = m_terms.insert(std::make_pair(name, value));
 	if (!result.second)
 	  throw std::logic_error("Name defined twice: " + name);
       }
 
-      TermPtr<FunctionalTerm> build_functional_expression(AssemblerContext& context, const Parser::CallExpression& expression) {
+      FunctionalTerm* build_functional_expression(AssemblerContext& context, const Parser::CallExpression& expression) {
         std::tr1::unordered_map<std::string, FunctionalTermCallback>::const_iterator it =
           functional_ops.find(expression.target->text);
 
@@ -45,7 +45,7 @@ namespace Psi {
         return it->second(it->first, context, expression);
       }
 
-      TermPtr<> build_expression(AssemblerContext& context, const Parser::Expression& expression) {
+      Term* build_expression(AssemblerContext& context, const Parser::Expression& expression) {
 	switch(expression.expression_type) {
 	case Parser::expression_call:
 	  return build_functional_expression(context, checked_cast<const Parser::CallExpression&>(expression));
@@ -63,34 +63,33 @@ namespace Psi {
 
       void build_function_parameters(AssemblerContext& context,
                                      const UniqueList<Parser::NamedExpression>& parameters,
-                                     TermPtrArray<FunctionTypeParameterTerm>& result) {
+                                     ArrayPtr<FunctionTypeParameterTerm*>  result) {
         std::size_t n = 0;
         for (UniqueList<Parser::NamedExpression>::const_iterator it = parameters.begin();
              it != parameters.end(); ++it, ++n) {
-          PSI_ASSERT(n < result.size());
-	  TermPtr<> param_type = build_expression(context, *it->expression);
-	  TermPtr<FunctionTypeParameterTerm> param = context.context().new_function_type_parameter(param_type);
+	  Term* param_type = build_expression(context, *it->expression);
+	  FunctionTypeParameterTerm* param = context.context().new_function_type_parameter(param_type);
           if (it->name)
             context.put(it->name->text, param);
-	  result.set(n, param);
+	  result[n] = param;
         }
       }
 
-      TermPtr<FunctionTypeTerm> build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type) {
+      FunctionTypeTerm* build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type) {
 	AssemblerContext my_context(&context);
 
-        TermPtrArray<FunctionTypeParameterTerm> phantom_parameters(function_type.phantom_parameters.size());
-        build_function_parameters(my_context, function_type.phantom_parameters, phantom_parameters);
+        ScopedTermPtrArray<FunctionTypeParameterTerm> phantom_parameters(function_type.phantom_parameters.size());
+        build_function_parameters(my_context, function_type.phantom_parameters, phantom_parameters.array());
 
-	TermPtrArray<FunctionTypeParameterTerm> parameters(function_type.parameters.size());
-        build_function_parameters(my_context, function_type.parameters, parameters);
+        ScopedTermPtrArray<FunctionTypeParameterTerm> parameters(function_type.parameters.size());
+        build_function_parameters(my_context, function_type.parameters, parameters.array());
 
-	TermPtr<> result_type = build_expression(my_context, *function_type.result_type);
+	Term* result_type = build_expression(my_context, *function_type.result_type);
 
-	return context.context().get_function_type(function_type.calling_convention, result_type, phantom_parameters, parameters);
+	return context.context().get_function_type(function_type.calling_convention, result_type, phantom_parameters.array(), parameters.array());
       }
 
-      TermPtr<> build_instruction_expression(AssemblerContext& context, BlockTerm& block, const Parser::CallExpression& expression) {
+      Term* build_instruction_expression(AssemblerContext& context, BlockTerm& block, const Parser::CallExpression& expression) {
         std::tr1::unordered_map<std::string, InstructionTermCallback>::const_iterator it =
           instruction_ops.find(expression.target->text);
 
@@ -101,7 +100,7 @@ namespace Psi {
         }
       }
 
-      TermPtr<> build_instruction(AssemblerContext& context, BlockTerm& block, const Parser::Expression& expression) {
+      Term* build_instruction(AssemblerContext& context, BlockTerm& block, const Parser::Expression& expression) {
         switch(expression.expression_type) {
 	case Parser::expression_phi:
           throw std::logic_error("not implemented");
@@ -117,9 +116,9 @@ namespace Psi {
       void build_function(AssemblerContext& context, FunctionTerm& function, const Parser::Function& function_def) {
         AssemblerContext my_context(&context);
 
-        std::vector<TermPtr<BlockTerm> > blocks;
+        std::vector<BlockTerm*> blocks;
 
-        TermPtr<BlockTerm> entry = function.new_block();
+        BlockTerm* entry = function.new_block();
         function.set_entry(entry);
         blocks.push_back(entry);
 
@@ -138,27 +137,27 @@ namespace Psi {
 
         for (UniqueList<Parser::Block>::const_iterator it = boost::next(function_def.blocks.begin());
              it != function_def.blocks.end(); ++it) {
-          TermPtr<BlockTerm> dominator;
+          BlockTerm* dominator;
           if (it->dominator_name) {
-            TermPtr<> dominator_base = my_context.get(it->dominator_name->text);
+            Term* dominator_base = my_context.get(it->dominator_name->text);
             if (dominator_base->term_type() != term_block)
               throw std::logic_error("dominator block name is not a block");
-            dominator = checked_term_cast<BlockTerm>(dominator_base);
+            dominator = checked_cast<BlockTerm*>(dominator_base);
           } else {
             dominator = entry;
           }
-          TermPtr<BlockTerm> bl = function.new_block(dominator);
+          BlockTerm* bl = function.new_block(dominator);
           my_context.put(it->name->text, bl);
           blocks.push_back(bl);
         }
 
-        std::vector<TermPtr<BlockTerm> >::const_iterator bt = blocks.begin();
+        std::vector<BlockTerm*>::const_iterator bt = blocks.begin();
         for (UniqueList<Parser::Block>::const_iterator it = function_def.blocks.begin();
              it != function_def.blocks.end(); ++it, ++bt) {
           PSI_ASSERT(bt != blocks.end());
           for (UniqueList<Parser::NamedExpression>::const_iterator jt = it->statements.begin();
                jt != it->statements.end(); ++jt) {
-            TermPtr<> value = build_instruction(my_context, **bt, *jt->expression);
+            Term* value = build_instruction(my_context, **bt, *jt->expression);
             if (jt->name)
               my_context.put(jt->name->text, value);
           }
@@ -174,20 +173,20 @@ namespace Psi {
 	   it != globals.end(); ++it) {
 	if (it->value->global_type == Parser::global_function) {
           const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
-          TermPtr<FunctionTypeTerm> function_type = Assembler::build_function_type(asmct, *def.type);
-          TermPtr<FunctionTerm> function = context.new_function(function_type);
+          FunctionTypeTerm* function_type = Assembler::build_function_type(asmct, *def.type);
+          FunctionTerm* function = context.new_function(function_type);
 	  asmct.put(it->name->text, function);
 	  result[it->name->text] = function;
 	} else if (it->value->global_type == Parser::global_variable) {
           const Parser::GlobalVariable& var = checked_cast<const Parser::GlobalVariable&>(*it->value);
-          TermPtr<> global_type = Assembler::build_expression(asmct, *var.type);
-          TermPtr<GlobalVariableTerm> global_var = context.new_global_variable(global_type, var.constant);
+          Term* global_type = Assembler::build_expression(asmct, *var.type);
+          GlobalVariableTerm* global_var = context.new_global_variable(global_type, var.constant);
           asmct.put(it->name->text, global_var);
           result[it->name->text] = global_var;
 	} else {
           const Parser::GlobalDefine& def = checked_cast<const Parser::GlobalDefine&>(*it->value);
 	  PSI_ASSERT(it->value->global_type == Parser::global_define);
-          TermPtr<> ptr = Assembler::build_expression(asmct, *def.value);
+          Term* ptr = Assembler::build_expression(asmct, *def.value);
           asmct.put(it->name->text, ptr);
 	}
       }
@@ -197,18 +196,18 @@ namespace Psi {
         if (it->value->global_type == Parser::global_define)
           continue;
 
-	const TermPtr<GlobalTerm>& ptr = result[it->name->text];
+	GlobalTerm* ptr = result[it->name->text];
 	PSI_ASSERT(ptr);
 	if (it->value->global_type == Parser::global_function) {
           const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
-          TermPtr<FunctionTerm> function = checked_term_cast<FunctionTerm>(ptr);
+          FunctionTerm* function = checked_cast<FunctionTerm*>(ptr);
           if (!def.blocks.empty())
             Assembler::build_function(asmct, *function, def);
 	} else {
           PSI_ASSERT(it->value->global_type == Parser::global_variable);
           const Parser::GlobalVariable& var = checked_cast<const Parser::GlobalVariable&>(*it->value);
-          TermPtr<GlobalVariableTerm> global_var = checked_term_cast<GlobalVariableTerm>(ptr);
-          TermPtr<> value = Assembler::build_expression(asmct, *var.value);
+          GlobalVariableTerm* global_var = checked_cast<GlobalVariableTerm*>(ptr);
+          Term* value = Assembler::build_expression(asmct, *var.value);
           global_var->set_value(value);
 	}
       }

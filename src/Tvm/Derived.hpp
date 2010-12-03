@@ -8,7 +8,7 @@ namespace Psi {
   namespace Tvm {
     class PointerType {
     public:
-      TermPtr<> type(Context&, TermRefArray<>) const;
+      Term* type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
       LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
@@ -19,7 +19,7 @@ namespace Psi {
       public:
 	Access(const FunctionalTerm *term, const PointerType*) : m_term(term) {}
 	/// \brief Get the type being pointed to.
-	TermPtr<> target_type() const {return m_term->parameter(0);}
+	Term* target_type() const {return m_term->parameter(0);}
       private:
 	const FunctionalTerm *m_term;
       };
@@ -27,7 +27,7 @@ namespace Psi {
 
     class ArrayType {
     public:
-      TermPtr<> type(Context&, TermRefArray<>) const;
+      Term* type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
       LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
@@ -38,8 +38,8 @@ namespace Psi {
       public:
 	Access(const FunctionalTerm *term, const ArrayType*) : m_term(term) {}
 	/// \brief Get the type being pointed to.
-	TermPtr<> element_type() const {return m_term->parameter(0);}
-        TermPtr<> length() const {return m_term->parameter(1);}
+	Term* element_type() const {return m_term->parameter(0);}
+        Term* length() const {return m_term->parameter(1);}
       private:
 	const FunctionalTerm *m_term;
       };
@@ -47,7 +47,7 @@ namespace Psi {
 
     class ArrayValue {
     public:
-      TermPtr<> type(Context&, TermRefArray<>) const;
+      Term* type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
       LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
@@ -59,8 +59,8 @@ namespace Psi {
 	Access(const FunctionalTerm *term, const ArrayValue*) : m_term(term) {}
 	/// \brief Get the type being pointed to.
         std::size_t length() const {return m_term->n_parameters() - 1;}
-        TermPtr<> element_type() const {return m_term->parameter(0);}
-        TermPtr<> value(std::size_t n) {return m_term->parameter(n+1);}
+        Term* element_type() const {return m_term->parameter(0);}
+        Term* value(std::size_t n) {return m_term->parameter(n+1);}
       private:
 	const FunctionalTerm *m_term;
       };
@@ -72,13 +72,13 @@ namespace Psi {
       public:
         Access(const FunctionalTerm *term, const AggregateType*) : m_term(term) {}
         std::size_t n_members() const {return m_term->n_parameters();}
-        TermPtr<> member(std::size_t i) const {return m_term->parameter(i);}
+        Term* member(std::size_t i) const {return m_term->parameter(i);}
 
       private:
         const FunctionalTerm *m_term;
       };
 
-      TermPtr<> type(Context&, TermRefArray<>) const;
+      Term* type(Context&, ArrayPtr<Term*const>) const;
       bool operator == (const AggregateType&) const;
       friend std::size_t hash_value(const AggregateType&);
     };

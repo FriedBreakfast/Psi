@@ -38,9 +38,9 @@ namespace Psi {
       return self.m_value;
     }
 
-    TermPtr<> ConstantBoolean::type(Context& context, TermRefArray<> parameters) const {
+    Term* ConstantBoolean::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return context.get_functional_v(BooleanType());
+      return context.get_functional_v(BooleanType()).get();
     }
 
     LLVMValue ConstantBoolean::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
@@ -128,9 +128,9 @@ namespace Psi {
       return h;
     }
 
-    TermPtr<> ConstantInteger::type(Context& context, TermRefArray<> parameters) const {
+    Term* ConstantInteger::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return context.get_functional_v(m_type);
+      return context.get_functional_v(m_type).get();
     }
 
     LLVMValue ConstantInteger::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
@@ -231,9 +231,9 @@ namespace Psi {
       return h;
     }
 
-    TermPtr<> ConstantReal::type(Context& context, TermRefArray<> parameters) const {
+    Term* ConstantReal::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return context.get_functional_v(m_type);
+      return context.get_functional_v(m_type).get();
     }
 
     LLVMValue ConstantReal::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
@@ -259,9 +259,9 @@ namespace Psi {
       return h;
     }
 
-    TermPtr<> SpecialRealValue::type(Context& context, TermRefArray<> parameters) const {
+    Term* SpecialRealValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return context.get_functional_v(m_type);
+      return context.get_functional_v(m_type).get();
     }
 
     LLVMValue SpecialRealValue::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {

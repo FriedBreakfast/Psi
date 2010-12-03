@@ -8,7 +8,7 @@ namespace Psi {
   namespace Tvm {
     class ArithmeticOperation {
     public:
-      static TermPtr<> integer_binary_op_type(Context& context, TermRefArray<> parameters);
+      static Term* integer_binary_op_type(Context& context, ArrayPtr<Term*const> parameters);
       static LLVMValue binary_op_constant(LLVMValueBuilder& builder, FunctionalTerm& term,
                                           llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*));
       static LLVMValue binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term,
@@ -17,8 +17,8 @@ namespace Psi {
       class BinaryAccess {
       public:
         BinaryAccess(const FunctionalTerm* term, const void*) : m_term(term) {}
-        TermPtr<> lhs() const {return m_term->parameter(0);}
-        TermPtr<> rhs() const {return m_term->parameter(1);}
+        Term* lhs() const {return m_term->parameter(0);}
+        Term* rhs() const {return m_term->parameter(1);}
 
       private:
         const FunctionalTerm *m_term;
@@ -27,7 +27,7 @@ namespace Psi {
 
     class IntegerAdd : public StatelessOperand {
     public:
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
@@ -37,7 +37,7 @@ namespace Psi {
 
     class IntegerSubtract : public StatelessOperand {
     public:
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
@@ -47,7 +47,7 @@ namespace Psi {
 
     class IntegerMultiply : public StatelessOperand {
     public:
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
@@ -57,7 +57,7 @@ namespace Psi {
 
     class IntegerDivide : public StatelessOperand {
     public:
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;

@@ -30,11 +30,7 @@ namespace Psi {
     template<typename Derived>
     class PrimitiveType {
     public:
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const {
-        if (parameters.size() != 0)
-          throw std::logic_error("primitive type created with parameters");
-        return context.get_metatype();
-      }
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
 
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
         return llvm_value_constant(builder, term);
@@ -46,7 +42,7 @@ namespace Psi {
     template<typename Derived>
     class PrimitiveValue {
     public:
-      void check_primitive_parameters(TermRefArray<> parameters) const {
+      void check_primitive_parameters(ArrayPtr<Term*const> parameters) const {
         if (parameters.size() != 0)
           throw std::logic_error("primitive value created with parameters");
       }
@@ -62,7 +58,7 @@ namespace Psi {
 
     class Metatype {
     public:
-      TermPtr<> type(Context& context, TermRefArray<> parameters) const;
+      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
@@ -79,6 +75,13 @@ namespace Psi {
 
       typedef TrivialAccess<Metatype> Access;
     };
+
+    template<typename Derived>
+    Term* PrimitiveType<Derived>::type(Context& context, ArrayPtr<Term*const> parameters) const {
+      if (parameters.size() != 0)
+        throw std::logic_error("primitive type created with parameters");
+      return context.get_metatype().get();
+    }
 
     template<typename Derived>
     LLVMValue PrimitiveType<Derived>::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {

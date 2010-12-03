@@ -20,12 +20,12 @@ namespace Psi {
       const Jit::Int32 c = 614659930;
 
       IntegerType i32(true, 32);
-      TermPtr<> i32_t = con.get_functional_v(i32);
-      TermPtr<> value = con.get_functional_v(ConstantInteger(i32, c));
+      Term* i32_t = con.get_functional_v(i32).get();
+      Term* value = con.get_functional_v(ConstantInteger(i32, c)).get();
 
-      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t);
-      TermPtr<FunctionTerm> func = con.new_function(func_type);
-      TermPtr<BlockTerm> entry = func->new_block();
+      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t);
+      FunctionTerm* func = con.new_function(func_type);
+      BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), value);
 
@@ -43,10 +43,10 @@ namespace Psi {
 
       const Jit::Int32 c = 143096367;
 
-      TermPtr<> i32_t = con.get_functional_v(IntegerType(true, 32));
-      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t, i32_t);
-      TermPtr<FunctionTerm> func = con.new_function(func_type);
-      TermPtr<BlockTerm> entry = func->new_block();
+      Term* i32_t = con.get_functional_v(IntegerType(true, 32)).get();
+      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t, i32_t);
+      FunctionTerm* func = con.new_function(func_type);
+      BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), func->parameter(0));
 
@@ -69,12 +69,11 @@ namespace Psi {
       const Jit::Metatype data_meta = {sizeof(data), 1};
       BOOST_TEST_MESSAGE(boost::format("Fake type size: %d") % data_meta.size);
 
-      TermPtr<> metatype = con.get_metatype();
-      TermPtr<FunctionTypeParameterTerm> param1 = con.new_function_type_parameter(con.get_metatype());
-      TermPtr<FunctionTypeParameterTerm> param2 = con.new_function_type_parameter(param1);
-      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_v(param1, param1, param2);
-      TermPtr<FunctionTerm> func = con.new_function(func_type);
-      TermPtr<BlockTerm> entry = func->new_block();
+      FunctionTypeParameterTerm* param1 = con.new_function_type_parameter(con.get_metatype().get());
+      FunctionTypeParameterTerm* param2 = con.new_function_type_parameter(param1);
+      FunctionTypeTerm* func_type = con.get_function_type_v(param1, param1, param2);
+      FunctionTerm* func = con.new_function(func_type);
+      BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), func->parameter(1));
 
@@ -96,15 +95,15 @@ namespace Psi {
       const Jit::Int32 c = 85278453;
 
       IntegerType i32(true, 32);
-      TermPtr<> i32_t = con.get_functional_v(i32);
-      TermPtr<> value = con.get_functional_v(ConstantInteger(i32, c));
+      Term* i32_t = con.get_functional_v(i32).get();
+      Term* value = con.get_functional_v(ConstantInteger(i32, c)).get();
 
-      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t);
-      TermPtr<FunctionTerm> func = con.new_function(func_type);
-      TermPtr<BlockTerm> entry = func->new_block();
+      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t);
+      FunctionTerm* func = con.new_function(func_type);
+      BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       
-      TermPtr<BlockTerm> branch_target = func->new_block(entry);
+      BlockTerm* branch_target = func->new_block(entry);
       entry->new_instruction_v(UnconditionalBranch(), branch_target);
       branch_target->new_instruction_v(Return(), value);
 
@@ -124,20 +123,20 @@ namespace Psi {
       const Jit::Int8 c2 = -47;
 
       IntegerType i8(true, 8);
-      TermPtr<> i8_t = con.get_functional_v(i8);
-      TermPtr<> bool_t = con.get_functional_v(BooleanType());
+      Term* i8_t = con.get_functional_v(i8).get();
+      Term* bool_t = con.get_functional_v(BooleanType()).get();
 
-      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i8_t, bool_t);
-      TermPtr<FunctionTerm> func = con.new_function(func_type);
-      TermPtr<BlockTerm> entry = func->new_block();
+      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i8_t, bool_t);
+      FunctionTerm* func = con.new_function(func_type);
+      BlockTerm* entry = func->new_block();
       func->set_entry(entry);
 
-      TermPtr<BlockTerm> block1 = func->new_block(entry);
-      TermPtr<BlockTerm> block2 = func->new_block(entry);
+      BlockTerm* block1 = func->new_block(entry);
+      BlockTerm* block2 = func->new_block(entry);
 
       entry->new_instruction_v(ConditionalBranch(), func->parameter(0), block1, block2);
-      block1->new_instruction_v(Return(), con.get_functional_v(ConstantInteger(i8, c1)));
-      block2->new_instruction_v(Return(), con.get_functional_v(ConstantInteger(i8, c2)));
+      block1->new_instruction_v(Return(), con.get_functional_v(ConstantInteger(i8, c1)).get());
+      block2->new_instruction_v(Return(), con.get_functional_v(ConstantInteger(i8, c2)).get());
 
       typedef void* (*callback_type) (void*,const void*);
       callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));
@@ -161,20 +160,20 @@ namespace Psi {
       const Jit::Int32 c = 275894789;
 
       IntegerType i32(true, 32);
-      TermPtr<> i32_t = con.get_functional_v(i32);
-      TermPtr<> value = con.get_functional_v(ConstantInteger(i32, c));
+      Term* i32_t = con.get_functional_v(i32).get();
+      Term* value = con.get_functional_v(ConstantInteger(i32, c)).get();
 
-      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t);
-      TermPtr<FunctionTerm> outer = con.new_function(func_type);
-      TermPtr<FunctionTerm> inner = con.new_function(func_type);
+      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t);
+      FunctionTerm* outer = con.new_function(func_type);
+      FunctionTerm* inner = con.new_function(func_type);
 
-      TermPtr<BlockTerm> outer_entry = outer->new_block();
-      TermPtr<BlockTerm> inner_entry = inner->new_block();
+      BlockTerm* outer_entry = outer->new_block();
+      BlockTerm* inner_entry = inner->new_block();
 
       outer->set_entry(outer_entry);
       inner->set_entry(inner_entry);
 
-      TermPtr<> call_value = outer_entry->new_instruction_v(FunctionCall(), inner);
+      Term* call_value = outer_entry->new_instruction_v(FunctionCall(), inner).get();
       outer_entry->new_instruction_v(Return(), call_value);
       inner_entry->new_instruction_v(Return(), value);
 
@@ -193,20 +192,19 @@ namespace Psi {
       const Jit::Int32 c = 758723;
 
       IntegerType i32(true, 32);
-      TermPtr<> i32_t = con.get_functional_v(i32);
-      TermPtr<> value = con.get_functional_v(ConstantInteger(i32, c));
+      Term* i32_t = con.get_functional_v(i32).get();
 
-      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t, i32_t);
-      TermPtr<FunctionTerm> outer = con.new_function(func_type);
-      TermPtr<FunctionTerm> inner = con.new_function(func_type);
+      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t, i32_t);
+      FunctionTerm* outer = con.new_function(func_type);
+      FunctionTerm* inner = con.new_function(func_type);
 
-      TermPtr<BlockTerm> outer_entry = outer->new_block();
-      TermPtr<BlockTerm> inner_entry = inner->new_block();
+      BlockTerm* outer_entry = outer->new_block();
+      BlockTerm* inner_entry = inner->new_block();
 
       outer->set_entry(outer_entry);
       inner->set_entry(inner_entry);
 
-      TermPtr<> call_value = outer_entry->new_instruction_v(FunctionCall(), inner, outer->parameter(0));
+      Term* call_value = outer_entry->new_instruction_v(FunctionCall(), inner, outer->parameter(0)).get();
       outer_entry->new_instruction_v(Return(), call_value);
       inner_entry->new_instruction_v(Return(), inner->parameter(0));
 

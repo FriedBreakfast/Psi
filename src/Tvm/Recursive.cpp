@@ -9,13 +9,13 @@
 
 namespace Psi {
   namespace Tvm {
-    RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, TermRef<> type)
-      : Term(ui, context, term_recursive_parameter, true, false, term_source(type.get()), type) {
+    RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type)
+      : Term(ui, context, term_recursive_parameter, true, false, term_source(type), type) {
     }
 
     class RecursiveParameterTerm::Initializer : public InitializerBase<RecursiveParameterTerm> {
     public:
-      Initializer(TermRef<> type) : m_type(type) {}
+      Initializer(Term* type) : m_type(type) {}
 
       RecursiveParameterTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
 	return new (base) RecursiveParameterTerm(ui, context, m_type);
@@ -24,15 +24,15 @@ namespace Psi {
       std::size_t n_uses() const {return 0;}
 
     private:
-      TermRef<> m_type;
+      Term* m_type;
     };
 
-    TermPtr<RecursiveParameterTerm> Context::new_recursive_parameter(TermRef<> type) {
+    RecursiveParameterTerm* Context::new_recursive_parameter(Term* type) {
       return allocate_term(RecursiveParameterTerm::Initializer(type));
     }
 
-    RecursiveTerm::RecursiveTerm(const UserInitializer& ui, Context *context, TermRef<> result_type,
-				 Term *source, TermRefArray<RecursiveParameterTerm> parameters)
+    RecursiveTerm::RecursiveTerm(const UserInitializer& ui, Context *context, Term* result_type,
+				 Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters)
       : Term(ui, context, term_recursive, true, false, source, NULL) {
       set_base_parameter(0, result_type);
       for (std::size_t i = 0; i < parameters.size(); ++i) {
@@ -42,7 +42,7 @@ namespace Psi {
 
     class RecursiveTerm::Initializer : public InitializerBase<RecursiveTerm> {
     public:
-      Initializer(Term *source, TermRef<> type, TermRefArray<RecursiveParameterTerm> parameters)
+      Initializer(Term *source, Term* type, ArrayPtr<RecursiveParameterTerm*const> parameters)
 	: m_source(source), m_type(type), m_parameters(parameters) {
       }
 
@@ -54,16 +54,16 @@ namespace Psi {
 
     private:
       Term *m_source;
-      TermRef<> m_type;
-      TermRefArray<RecursiveParameterTerm> m_parameters;
+      Term* m_type;
+      ArrayPtr<RecursiveParameterTerm*const> m_parameters;
     };
 
     /**
      * \brief Create a new recursive term.
      */
-    TermPtr<RecursiveTerm> Context::new_recursive(Term *source,
-                                                  TermRef<> result_type,
-						  TermRefArray<> parameter_types) {
+    RecursiveTerm* Context::new_recursive(Term *source,
+                                          Term* result_type,
+                                          ArrayPtr<Term*const> parameter_types) {
       if (source_dominated(result_type->source(), source))
         goto throw_dominator;
 
@@ -73,10 +73,10 @@ namespace Psi {
       }
 
       if (true) {
-        TermPtrArray<RecursiveParameterTerm> parameters(parameter_types.size());
+        ScopedTermPtrArray<RecursiveParameterTerm> parameters(parameter_types.size());
         for (std::size_t i = 0; i < parameters.size(); ++i)
-          parameters.set(i, new_recursive_parameter(parameter_types[i]));
-        return allocate_term(RecursiveTerm::Initializer(source, result_type.get(), parameters));
+          parameters[i] = new_recursive_parameter(parameter_types[i]);
+        return allocate_term(RecursiveTerm::Initializer(source, result_type, parameters.array()));
       } else {
       throw_dominator:
         throw std::logic_error("block specified for recursive term is not dominated by parameter and result type blocks");
@@ -86,16 +86,16 @@ namespace Psi {
     /**
      * \brief Resolve this term to its actual value.
      */
-    void RecursiveTerm::resolve(TermRef<> term) {
+    void RecursiveTerm::resolve(Term* term) {
       return context().resolve_recursive(this, term);
     }
 
-    TermPtr<ApplyTerm> RecursiveTerm::apply(TermRefArray<> parameters) {
-      return TermPtr<ApplyTerm>(context().apply_recursive(this, parameters));
+    ApplyTerm* RecursiveTerm::apply(ArrayPtr<Term*const> parameters) {
+      return context().apply_recursive(this, parameters);
     }
 
     ApplyTerm::ApplyTerm(const UserInitializer& ui, Context *context, RecursiveTerm *recursive,
-			 TermRefArray<> parameters, std::size_t hash)
+			 ArrayPtr<Term*const> parameters, std::size_t hash)
       : HashTerm(ui, context, term_apply,
                  recursive->abstract() || any_abstract(parameters), false,
                  common_source(recursive->source(), common_source(parameters)),
@@ -107,7 +107,7 @@ namespace Psi {
 
     class ApplyTerm::Setup : public InitializerBase<ApplyTerm> {
     public:
-      Setup(RecursiveTerm *recursive, TermRefArray<> parameters)
+      Setup(RecursiveTerm *recursive, ArrayPtr<Term*const> parameters)
 	: m_recursive(recursive), m_parameters(parameters) {
 
         m_hash = 0;
@@ -136,7 +136,7 @@ namespace Psi {
 	  return false;
 
 	for (std::size_t i = 0; i < m_parameters.size(); ++i) {
-	  if (m_parameters[i] != cast_term.parameter(i).get())
+	  if (m_parameters[i] != cast_term.parameter(i))
 	    return false;
 	}
 
@@ -145,25 +145,25 @@ namespace Psi {
 
     private:
       RecursiveTerm *m_recursive;
-      TermRefArray<> m_parameters;
+      ArrayPtr<Term*const> m_parameters;
       std::size_t m_hash;
     };
 
-    TermPtr<ApplyTerm> Context::apply_recursive(TermRef<RecursiveTerm> recursive,
-						TermRefArray<> parameters) {
-      ApplyTerm::Setup setup(recursive.get(), parameters);
+    ApplyTerm* Context::apply_recursive(RecursiveTerm* recursive,
+                                        ArrayPtr<Term*const> parameters) {
+      ApplyTerm::Setup setup(recursive, parameters);
       return hash_term_get(setup);
     }
 
-    TermPtr<> ApplyTerm::unpack() const {
+    Term* ApplyTerm::unpack() const {
       throw std::logic_error("not implemented");
     }
 
     namespace {
-      void insert_if_abstract(std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set, TermRef<> term) {
+      void insert_if_abstract(std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set, Term* term) {
 	if (term->abstract()) {
-	  if (set.insert(term.get()).second)
-	    queue.push_back(term.get());
+	  if (set.insert(term).second)
+	    queue.push_back(term);
 	}
       }
     }
@@ -233,10 +233,10 @@ namespace Psi {
       return false;
     }
 
-    void Context::clear_and_queue_if_abstract(std::vector<Term*>& queue, TermRef<> t) {
+    void Context::clear_and_queue_if_abstract(std::vector<Term*>& queue, Term* t) {
       if (t->abstract()) {
 	t->m_abstract = false;
-	queue.push_back(t.get());
+	queue.push_back(t);
       }
     }
 
@@ -301,7 +301,7 @@ namespace Psi {
     /**
      * \brief Resolve an opaque term.
      */
-    void Context::resolve_recursive(TermRef<RecursiveTerm> recursive, TermRef<> to) {
+    void Context::resolve_recursive(RecursiveTerm* recursive, Term* to) {
       if (recursive->type() != to->type())
 	throw std::logic_error("mismatch between recursive term type and resolving term type");
 
@@ -314,17 +314,17 @@ namespace Psi {
       if (!source_dominated(to->source(), recursive->source()))
         throw std::logic_error("term used to resolve recursive term is not in scope");
 
-      recursive->set_base_parameter(1, to.get());
+      recursive->set_base_parameter(1, to);
 
       std::vector<Term*> queue;
       std::tr1::unordered_set<Term*> set;
-      if (!search_for_abstract(recursive.get(), queue, set)) {
+      if (!search_for_abstract(recursive, queue, set)) {
 	recursive->m_abstract = false;
 
-	clear_abstract(recursive.get(), queue);
+	clear_abstract(recursive, queue);
 
 	std::vector<Term*> upward_queue;
-	upward_queue.push_back(recursive.get());
+	upward_queue.push_back(recursive);
 	while (!upward_queue.empty()) {
 	  Term *t = upward_queue.back();
 	  upward_queue.pop_back();

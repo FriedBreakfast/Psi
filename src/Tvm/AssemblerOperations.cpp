@@ -22,23 +22,21 @@ namespace Psi {
           throw std::logic_error(str(boost::format("%s: %d term parameters expected") % name % expected));
       }
 
-      void default_parameter_setup(TermPtrArray<>& parameters, const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
+      void default_parameter_setup(ArrayPtr<Term*> parameters, const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
         check_n_values(name, 0, expression);
 
 	PSI_ASSERT(parameters.size() == expression.terms.size());
 	std::size_t n = 0;
-	for (UniqueList<Parser::Expression>::const_iterator it = expression.terms.begin(); it != expression.terms.end(); ++n, ++it) {
-	  PSI_ASSERT(n < parameters.size());
-	  parameters.set(n, build_expression(context, *it));
-	}
+	for (UniqueList<Parser::Expression>::const_iterator it = expression.terms.begin(); it != expression.terms.end(); ++n, ++it)
+	  parameters[n] = build_expression(context, *it);
       }
 
       template<typename T>
       struct DefaultFunctionalCallback {
-        TermPtr<FunctionalTerm> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
-          TermPtrArray<> parameters(expression.terms.size());
-          default_parameter_setup(parameters, name, context, expression);
-          return context.context().get_functional(T(), parameters);
+        FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
+          ScopedTermPtrArray<> parameters(expression.terms.size());
+          default_parameter_setup(parameters.array(), name, context, expression);
+          return context.context().get_functional(T(), parameters.array()).get();
         }
       };
 
@@ -61,11 +59,11 @@ namespace Psi {
 
         IntTypeCallback(bool is_signed_) : is_signed(is_signed_) {}
 
-        TermPtr<FunctionalTerm> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
+        FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_values(name, 1, expression);
           check_n_terms(name, 0, expression);
           unsigned n_bits = token_lexical_cast<unsigned>(name, 0, expression);
-          return context.context().get_functional_v(IntegerType(is_signed, n_bits));
+          return context.context().get_functional_v(IntegerType(is_signed, n_bits)).get();
         }
       };
 
@@ -74,10 +72,10 @@ namespace Psi {
 
         RealTypeCallback(RealType::Width width_) : width(width_) {}
 
-        TermPtr<FunctionalTerm> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
+        FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_values(name, 0, expression);
           check_n_terms(name, 0, expression);
-          return context.context().get_functional_v(RealType(width));
+          return context.context().get_functional_v(RealType(width)).get();
         }
       };
 
@@ -86,10 +84,10 @@ namespace Psi {
 
         BoolValueCallback(bool value_) : value(value_) {}
 
-        TermPtr<FunctionalTerm> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
+        FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_values(name, 0, expression);
           check_n_terms(name, 0, expression);
-          return context.context().get_functional_v(ConstantBoolean(value));
+          return context.context().get_functional_v(ConstantBoolean(value)).get();
         }
       };
 
@@ -98,7 +96,7 @@ namespace Psi {
 
         IntValueCallback(bool is_signed_) : is_signed(is_signed_) {}
 
-        TermPtr<FunctionalTerm> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
+        FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
           check_n_values(name, 2, expression);
           check_n_terms(name, 0, expression);
           unsigned n_bits = token_lexical_cast<unsigned>(name, 0, expression);
@@ -108,7 +106,7 @@ namespace Psi {
           } catch (std::invalid_argument&) {
             throw std::logic_error(str(boost::format("%s: parameter 2 should be an integer") % name));
           }
-          return context.context().get_functional_v(ConstantInteger(IntegerType(is_signed, n_bits), value));
+          return context.context().get_functional_v(ConstantInteger(IntegerType(is_signed, n_bits), value)).get();
         }
       };
 
@@ -117,7 +115,7 @@ namespace Psi {
 
         RealValueCallback(RealType::Width width_) : width(width_) {}
 
-        TermPtr<FunctionalTerm> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression)  const {
+        FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression)  const {
           check_n_values(name, 1, expression);
           check_n_terms(name, 0, expression);
           mpf_class value;
@@ -126,7 +124,7 @@ namespace Psi {
           } catch (std::invalid_argument&) {
             throw std::logic_error(str(boost::format("%s: parameter 1 should be a number") % name));
           }
-          return context.context().get_functional_v(ConstantReal(RealType(width), value));
+          return context.context().get_functional_v(ConstantReal(RealType(width), value)).get();
         }
       };
 
@@ -155,10 +153,10 @@ namespace Psi {
 
       template<typename T>
       struct DefaultInstructionCallback {
-        TermPtr<InstructionTerm> operator () (const std::string& name, BlockTerm& block, AssemblerContext& context, const Parser::CallExpression& expression) const {
-          TermPtrArray<> parameters(expression.terms.size());
-          default_parameter_setup(parameters, name, context, expression);
-          return block.new_instruction(T(), parameters);
+        InstructionTerm* operator () (const std::string& name, BlockTerm& block, AssemblerContext& context, const Parser::CallExpression& expression) const {
+          ScopedTermPtrArray<> parameters(expression.terms.size());
+          default_parameter_setup(parameters.array(), name, context, expression);
+          return block.new_instruction(T(), parameters.array()).get();
         }
       };
 

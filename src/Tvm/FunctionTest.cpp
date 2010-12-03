@@ -17,8 +17,8 @@ namespace Psi {
       Context con;
 
       IntegerType i32(true, 32);
-      TermPtr<> i32_t = con.get_functional_v(i32);
-      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(i32_t);
+      Term *i32_t = con.get_functional_v(i32).get();
+      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t);
 
       BOOST_CHECK_EQUAL(func_type->calling_convention(), cconv_tvm);
       BOOST_CHECK_EQUAL(func_type->result_type(), i32_t); 
@@ -30,12 +30,12 @@ namespace Psi {
       const Jit::Int32 c = 45878594;
 
       IntegerType i32(true, 32);
-      TermPtr<> i32_t = con.get_functional_v(i32);
-      TermPtr<> value = con.get_functional_v(ConstantInteger(i32, c));
+      Term* i32_t = con.get_functional_v(i32).get();
+      Term* value = con.get_functional_v(ConstantInteger(i32, c)).get();
 
-      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(cconv_c, i32_t);
-      TermPtr<FunctionTerm> func = con.new_function(func_type);
-      TermPtr<BlockTerm> entry = func->new_block();
+      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(cconv_c, i32_t);
+      FunctionTerm* func = con.new_function(func_type);
+      BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), value);
 
@@ -51,10 +51,10 @@ namespace Psi {
 
       const Jit::Int32 c = 258900654;
 
-      TermPtr<> i32_t = con.get_functional_v(IntegerType(true, 32));
-      TermPtr<FunctionTypeTerm> func_type = con.get_function_type_fixed_v(cconv_c, i32_t, i32_t);
-      TermPtr<FunctionTerm> func = con.new_function(func_type);
-      TermPtr<BlockTerm> entry = func->new_block();
+      Term* i32_t = con.get_functional_v(IntegerType(true, 32)).get();
+      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(cconv_c, i32_t, i32_t);
+      FunctionTerm* func = con.new_function(func_type);
+      BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), func->parameter(0));
 

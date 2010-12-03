@@ -38,29 +38,34 @@ namespace Psi {
     TermUser::~TermUser() {
     }
 
-    PersistentTermPtrBackend::PersistentTermPtrBackend()
+    PersistentTermPtr::PersistentTermPtr()
       : TermUser(UserInitializer(1, m_uses), term_ptr) {
     }
 
-    PersistentTermPtrBackend::PersistentTermPtrBackend(const PersistentTermPtrBackend& src)
+    PersistentTermPtr::PersistentTermPtr(const PersistentTermPtr& src)
       : TermUser(UserInitializer(1, m_uses), term_ptr) {
       reset(src.get());
     }
 
-    PersistentTermPtrBackend::PersistentTermPtrBackend(Term *ptr)
+    PersistentTermPtr::PersistentTermPtr(Term *ptr)
       : TermUser(UserInitializer(1, m_uses), term_ptr) {
       reset(ptr);
     }
 
-    PersistentTermPtrBackend::~PersistentTermPtrBackend() {
+    PersistentTermPtr::~PersistentTermPtr() {
       reset(0);
     }
 
-    void PersistentTermPtrBackend::reset(Term *term) {
+    void PersistentTermPtr::reset(Term *term) {
       use_set(0, term);
     }
 
-    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, TermRef<> type)
+    const PersistentTermPtr& PersistentTermPtr::operator = (const PersistentTermPtr& o) {
+      reset(o.get());
+      return *this;
+    }
+
+    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, Term* type)
       : TermUser(ui, term_type),
         m_abstract(abstract),
         m_parameterized(parameterized),
@@ -69,7 +74,7 @@ namespace Psi {
 
       PSI_ASSERT(!source || (source->term_type() == term_function) || (source->term_type() == term_block));
 
-      if (!type.get()) {
+      if (!type) {
         if (term_type != term_recursive) {
           m_category = category_metatype;
           PSI_ASSERT(term_type == term_functional);
@@ -89,7 +94,7 @@ namespace Psi {
         }
       }
 
-      use_set(0, type.get());
+      use_set(0, type);
     }
 
     Term::~Term() {
@@ -98,18 +103,18 @@ namespace Psi {
 	use_set(i, 0);
     }
 
-    void Term::set_base_parameter(std::size_t n, TermRef<> t) {
-      if (t.get() && (m_context != t->m_context))
+    void Term::set_base_parameter(std::size_t n, Term *t) {
+      if (t && (m_context != t->m_context))
         throw std::logic_error("term context mismatch");
 
       PSI_ASSERT_MSG(!use_get(n+1), "parameters to existing terms cannot be changed once set");
-      PSI_ASSERT(!t.get()
+      PSI_ASSERT(!t
                  || ((term_type() == term_function)
                      && ((t->term_type() == term_function_parameter)
                          || (t->term_type() == term_block)))
                  || source_dominated(t->source(), source()));
 
-      use_set(n+1, t.get());
+      use_set(n+1, t);
     }
 
     std::size_t Term::hash_value() const {
@@ -128,7 +133,7 @@ namespace Psi {
       return h.m_hash;
     }
 
-    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, TermRef<> type, std::size_t hash)
+    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, Term* type, std::size_t hash)
       : Term(ui, context, term_type, abstract, parameterized, source, type),
 	m_hash(hash) {
     }
@@ -145,8 +150,8 @@ namespace Psi {
      * contents; the final type of this variable will in fact be a
      * pointer to this type.
      */
-    GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, TermRef<> type)
-      : Term(ui, context, term_type, false, false, NULL, context->get_pointer_type(type)) {
+    GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type)
+      : Term(ui, context, term_type, false, false, NULL, context->get_pointer_type(type).get()) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
     }
 
@@ -154,26 +159,26 @@ namespace Psi {
      * \brief Get the value type of a global, i.e. the type pointed to
      * by the global's value.
      */
-    TermPtr<> GlobalTerm::value_type() const {
-      TermPtr<FunctionalTerm> ft = checked_term_cast<FunctionalTerm>(type());
+    Term* GlobalTerm::value_type() const {
+      FunctionalTerm* ft = checked_cast<FunctionalTerm*>(type());
       return checked_cast_functional<PointerType>(ft).backend().target_type();
     }
 
-    GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, TermRef<> type, bool constant)
+    GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type, bool constant)
       : GlobalTerm(ui, context, term_global_variable, type),
 	m_constant(constant) {
     }
 
-    void GlobalVariableTerm::set_value(TermRef<> value) {
+    void GlobalVariableTerm::set_value(Term* value) {
       if (!value->global())
 	throw std::logic_error("value of global variable must be a global");
 
-      set_base_parameter(0, value.get());
+      set_base_parameter(0, value);
     }
 
     class GlobalVariableTerm::Initializer : public InitializerBase<GlobalVariableTerm> {
     public:
-      Initializer(TermRef<> type, bool constant)
+      Initializer(Term* type, bool constant)
 	: m_type(type), m_constant(constant) {
       }
 
@@ -186,22 +191,22 @@ namespace Psi {
       }
 
     private:
-      TermRef<> m_type;
+      Term* m_type;
       bool m_constant;
     };
 
     /**
      * \brief Create a new global term.
      */
-    TermPtr<GlobalVariableTerm> Context::new_global_variable(TermRef<> type, bool constant) {
-      return allocate_term(GlobalVariableTerm::Initializer(type.get(), constant));
+    GlobalVariableTerm* Context::new_global_variable(Term* type, bool constant) {
+      return allocate_term(GlobalVariableTerm::Initializer(type, constant));
     }
 
     /**
      * \brief Create a new global term, initialized with the specified value.
      */
-    TermPtr<GlobalVariableTerm> Context::new_global_variable_set(TermRef<> value, bool constant) {
-      TermPtr<GlobalVariableTerm> t = new_global_variable(value->type(), constant);
+    GlobalVariableTerm* Context::new_global_variable_set(Term* value, bool constant) {
+      GlobalVariableTerm* t = new_global_variable(value->type(), constant);
       t->set_value(value);
       return t;
     }
@@ -210,7 +215,7 @@ namespace Psi {
      * \brief Just-in-time compile a term, and a get a pointer to
      * the result.
      */
-    void* Context::term_jit(TermRef<GlobalTerm> term) {
+    void* Context::term_jit(GlobalTerm* term) {
       if ((term->m_term_type != term_global_variable) &&
 	  (term->m_term_type != term_function))
 	throw std::logic_error("Cannot JIT compile non-global term");
@@ -322,7 +327,7 @@ namespace Psi {
      * Return whether a term is unique, i.e. it is not functional so
      * a copy would be automatically distinct from the original.
      */
-    bool term_unique(TermRef<> term) {
+    bool term_unique(Term* term) {
       switch (term->term_type()) {
       case term_instruction:
       case term_block:
