@@ -24,6 +24,9 @@ namespace Psi {
       LLVMValue value(Term* term);
       LLVMType type(Term* term);
 
+      llvm::Value* cast_pointer_to_generic(llvm::Value *value);
+      llvm::Value* cast_pointer_from_generic(llvm::Value *value, const llvm::Type *type);
+
       void set_module(llvm::Module *module);
       void set_debug(llvm::raw_ostream *stream);
 
@@ -32,6 +35,7 @@ namespace Psi {
       LLVMValueBuilder(LLVMValueBuilder *parent);
 
       virtual LLVMValue value_impl(Term* term) = 0;
+      virtual llvm::Value* cast_pointer_impl(llvm::Value *value, const llvm::Type *type) = 0;
 
       LLVMValueBuilder *m_parent;
       llvm::LLVMContext *m_context;
@@ -65,6 +69,7 @@ namespace Psi {
 
     private:
       virtual LLVMValue value_impl(Term* term);
+      virtual llvm::Value* cast_pointer_impl(llvm::Value *value, const llvm::Type *type);
     };
 
     class LLVMFunctionBuilder : public LLVMValueBuilder {
@@ -84,6 +89,7 @@ namespace Psi {
     private:
       LLVMFunctionBuilder(LLVMValueBuilder *constant_builder, llvm::Function *function, LLVMIRBuilder *irbuilder, CallingConvention calling_convention);
       virtual LLVMValue value_impl(Term* term);
+      virtual llvm::Value* cast_pointer_impl(llvm::Value *value, const llvm::Type *type);
 
       llvm::Function *m_function;
       LLVMIRBuilder *m_irbuilder;
@@ -92,6 +98,10 @@ namespace Psi {
       llvm::Function *m_llvm_memcpy;
       llvm::Function *m_llvm_stacksave;
       llvm::Function *m_llvm_stackrestore;
+
+      void simplify_stack_save_restore();
+      llvm::CallInst* first_stack_restore(llvm::BasicBlock *block);
+      bool has_outstanding_alloca(llvm::BasicBlock *block);
     };
 
     llvm::Function* llvm_intrinsic_memcpy(llvm::Module& m);

@@ -39,7 +39,7 @@ namespace Psi {
       void DebugListener::NotifyFunctionEmitted (const llvm::Function &F, void*, size_t, const EmittedFunctionDetails& details) {
         llvm::raw_os_ostream out(std::cerr);
         F.print(out);
-        details.MF->print(out);
+        //details.MF->print(out);
       }
     }
   }

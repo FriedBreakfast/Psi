@@ -36,7 +36,7 @@ namespace Psi {
       if (builder.calling_convention() == cconv_tvm) {
 	llvm::Value *return_area = &builder.function()->getArgumentList().front();
 	if (result.is_known()) {
-	  llvm::Value *cast_return_area = irbuilder.CreateBitCast(return_area, result.value()->getType()->getPointerTo());
+	  llvm::Value *cast_return_area = builder.cast_pointer_from_generic(return_area, result.value()->getType()->getPointerTo());
 	  irbuilder.CreateStore(result.value(), cast_return_area);
 	  if (result.value()->getType()->isPointerTy()) {
 	    return LLVMValue::known(irbuilder.CreateRet(result.value()));
@@ -209,7 +209,7 @@ namespace Psi {
 	  // scope.
 	  stack_backup = irbuilder.CreateCall(builder.llvm_stacksave());
 	  result_area = irbuilder.CreateAlloca(result_type.type());
-	  llvm::Value *cast_result_area = irbuilder.CreateBitCast(result_area, llvm::Type::getInt8PtrTy(builder.context()));
+	  llvm::Value *cast_result_area = builder.cast_pointer_to_generic(result_area);
 	  parameters.push_back(cast_result_area);
 	} else if (result_type.is_empty()) {
 	  result_area = llvm::Constant::getNullValue(llvm::Type::getInt8Ty(builder.context()));
@@ -238,7 +238,7 @@ namespace Psi {
 
 	      llvm::Value *ptr = irbuilder.CreateAlloca(param.value()->getType());
 	      irbuilder.CreateStore(param.value(), ptr);
-	      llvm::Value *cast_ptr = irbuilder.CreateBitCast(ptr, llvm::Type::getInt8PtrTy(builder.context()));
+	      llvm::Value *cast_ptr = builder.cast_pointer_to_generic(ptr);
 	      parameters.push_back(cast_ptr);
 	    }
 	  } else if (param.is_unknown()) {
@@ -257,7 +257,7 @@ namespace Psi {
       LLVMType llvm_function_type = builder.type(function_type);
       PSI_ASSERT(llvm_function_type.is_known());
 
-      llvm::Value *llvm_target = irbuilder.CreateBitCast(target.value(), llvm_function_type.type()->getPointerTo());
+      llvm::Value *llvm_target = builder.cast_pointer_from_generic(target.value(), llvm_function_type.type()->getPointerTo());
       llvm::Value *result = irbuilder.CreateCall(llvm_target, parameters.begin(), parameters.end());
 
       if (result_type.is_known() && !result_type.type()->isPointerTy())
@@ -335,6 +335,53 @@ namespace Psi {
     LLVMValue FunctionApplyPhantom::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
       Access self(&term, this);
       return builder.value(self.function());
+    }
+
+    Term* Alloca::type(Context& context, const FunctionTerm&, ArrayPtr<Term*const> parameters) const {
+      if (parameters.size() != 1)
+        throw std::logic_error("alloca instruction takes one parameter");
+
+      if (!parameters[0]->is_type())
+        throw std::logic_error("parameter to alloca is not a type");
+
+      if (parameters[0]->phantom())
+        throw std::logic_error("parameter to alloca cannot be phantom");
+
+      return context.get_pointer_type(parameters[0]).get();
+    }
+
+    LLVMValue Alloca::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
+      Access self(&term, this);
+
+      LLVMType stored_type = builder.type(self.stored_type());
+      if (stored_type.is_known()) {
+        return LLVMValue::known(builder.irbuilder().CreateAlloca(stored_type.type()));
+      } else if (stored_type.is_empty()) {
+        return LLVMValue::known(llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(builder.context())));
+      }
+
+      PSI_ASSERT(stored_type.is_unknown());
+
+      // Okay, the type is unknown. However if it is an unknown-length
+      // array of values with a known type, I can still get that
+      // through to LLVM.
+      if (FunctionalTermPtr<ArrayType> as_array = dynamic_cast_functional<ArrayType>(self.stored_type())) {
+        LLVMType element_type = builder.type(as_array.backend().element_type());
+        if (element_type.is_known()) {
+          LLVMValue length = builder.value(as_array.backend().length());
+          return LLVMValue::known(builder.irbuilder().CreateAlloca(element_type.type(), length.value()));
+        } else if (element_type.is_empty()) {
+          return LLVMValue::known(llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(builder.context())));
+        }
+      }
+
+      // Okay, it's really unknown, so just allocate as i8[n]
+      LLVMValue size_align = builder.value(self.stored_type());
+      llvm::Value *size = builder.irbuilder().CreateExtractValue(size_align.value(), 0);
+      return LLVMValue::known(builder.irbuilder().CreateAlloca(llvm::Type::getInt8Ty(builder.context()), size));
+    }
+
+    void Alloca::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
     }
   }
 }

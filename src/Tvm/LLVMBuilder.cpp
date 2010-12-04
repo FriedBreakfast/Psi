@@ -408,6 +408,134 @@ namespace Psi {
       }
     }
 
+    /**
+     * Checks whether the given block has any outstanding alloca
+     * instructions, i.e. whether the stack pointer on exit is
+     * different to the stack pointer on entry, apart from the
+     * adjustment to equal the stack pointer of the dominating block.
+     *
+     * Note that this function only works on correctly structured Tvm
+     * blocks where stack save and restore points are paired (except
+     * for the one at block entry); in particular it should not be
+     * used on the prolog block.
+     */
+    bool LLVMFunctionBuilder::has_outstanding_alloca(llvm::BasicBlock *block) {
+      llvm::CallInst *target_save = NULL;
+      // Find last restore instruction in this block
+      llvm::BasicBlock::iterator it = block->end();
+      do {
+        --it;
+
+        if (!target_save) {
+          if (it->getOpcode() == llvm::Instruction::Call) {
+            llvm::CallInst *call = llvm::cast<llvm::CallInst>(&*it);
+            if (call->getCalledFunction() == llvm_stackrestore()) {
+              // we have a save instruction to look for. ignore all
+              // calls to alloca between now and then.
+              target_save = llvm::cast<llvm::CallInst>(call->getArgOperand(0));
+            }
+          } else if (it->getOpcode() == llvm::Instruction::Alloca) {
+            return true;
+          }
+        } else if (&*it == target_save) {
+          target_save = NULL;
+        }
+        
+      } while (it != block->begin());
+
+      return false;
+    }
+
+    /**
+     * Find the first stackrestore instruction in a block.
+     */
+    llvm::CallInst* LLVMFunctionBuilder::first_stack_restore(llvm::BasicBlock *block) {
+      for (llvm::BasicBlock::iterator it = block->begin(); it != block->end(); ++it) {
+        if (it->getOpcode() == llvm::Instruction::Call) {
+          llvm::CallInst *call = llvm::cast<llvm::CallInst>(&*it);
+          if (call->getCalledFunction() == llvm_stackrestore())
+            return call;
+        }
+      }
+      return NULL;
+    }
+
+    namespace {
+      struct BlockStackInfo {
+        BlockStackInfo(llvm::BasicBlock *block_,
+                       bool outstanding_alloca_,
+                       llvm::BasicBlock *stack_restore_,
+                       llvm::CallInst *stack_restore_insn_)
+          : block(block_),
+            outstanding_alloca(outstanding_alloca_),
+            stack_restore(stack_restore_),
+            stack_restore_insn(stack_restore_insn_) {}
+
+        // block which this structure refers to
+        llvm::BasicBlock *block;
+        // whether this block has an outstanding alloca, i.e., it
+        // adjusts the stack pointer.
+        bool outstanding_alloca;
+        // where this block restores the stack to on entry
+        llvm::BasicBlock *stack_restore;
+        // the instruction which restores the stack on entry
+        llvm::CallInst *stack_restore_insn;
+        // list of predecessor blocks
+        std::vector<BlockStackInfo*> predecessors;
+      };
+    }
+
+    /**
+     * Remove unnecessary stack save and restore instructions.
+     */
+    void LLVMFunctionBuilder::simplify_stack_save_restore() {
+      std::tr1::unordered_map<llvm::BasicBlock*, BlockStackInfo> block_info;
+
+      for (llvm::Function::iterator it = boost::next(m_function->begin()); it != m_function->end(); ++it) {
+        llvm::BasicBlock *block = &*it;
+        llvm::CallInst *stack_restore = first_stack_restore(block);
+        PSI_ASSERT(stack_restore);
+        llvm::BasicBlock *restore_block = llvm::cast<llvm::Instruction>(stack_restore->getArgOperand(0))->getParent();
+        block_info.insert(std::make_pair(block, BlockStackInfo(block, has_outstanding_alloca(block), restore_block, stack_restore)));
+      }
+
+      for (std::tr1::unordered_map<llvm::BasicBlock*, BlockStackInfo>::iterator it = block_info.begin();
+           it != block_info.end(); ++it) {
+        llvm::TerminatorInst *terminator = it->first->getTerminator();
+        unsigned n_successors = terminator->getNumSuccessors();
+        for (unsigned n = 0; n < n_successors; ++n) {
+          llvm::BasicBlock *successor = terminator->getSuccessor(n);
+          PSI_ASSERT(block_info.find(successor) != block_info.end());
+          BlockStackInfo& successor_info = block_info.find(successor)->second;
+          successor_info.predecessors.push_back(&it->second);
+        }
+      }
+
+      for (std::tr1::unordered_map<llvm::BasicBlock*, BlockStackInfo>::iterator it = block_info.begin();
+           it != block_info.end(); ++it) {
+        for (std::vector<BlockStackInfo*>::iterator jt = it->second.predecessors.begin();
+             jt != it->second.predecessors.end(); ++jt) {
+          if ((*jt)->outstanding_alloca || (it->second.stack_restore != (*jt)->stack_restore))
+            goto cannot_restore_stack;
+        }
+
+        // sp is the same on all incoming edges, so remove the restore instruction
+        it->second.stack_restore_insn->eraseFromParent();
+        continue;
+
+      cannot_restore_stack:
+        continue;
+      }
+
+      // finally, see whether the save instruction in the prolog block
+      // is still necessary
+      llvm::BasicBlock *prolog_block = &m_function->getEntryBlock();
+      llvm::CallInst *save_insn = llvm::cast<llvm::CallInst>(&*boost::prior(boost::prior(prolog_block->end())));
+      PSI_ASSERT(save_insn->getCalledFunction() == llvm_stacksave());
+      if (save_insn->hasNUses(0))
+        save_insn->eraseFromParent();
+    }
+
     void LLVMValueBuilder::build_function(FunctionTerm *psi_func, llvm::Function *llvm_func) {
       LLVMIRBuilder irbuilder(context());
       LLVMFunctionBuilder func_builder(this, llvm_func, &irbuilder, psi_func->function_type()->calling_convention());
@@ -534,7 +662,8 @@ namespace Psi {
         // necessary to allow loops which handle unknown types without
         // unbounded stack growth.
         PSI_ASSERT(stack_pointers.find(it->first->dominator()) != stack_pointers.end());
-        irbuilder.CreateCall(func_builder.llvm_stackrestore(), stack_pointers[it->first->dominator()]);
+        llvm::Value *dominator_stack_ptr = stack_pointers[it->first->dominator()];
+        irbuilder.CreateCall(func_builder.llvm_stackrestore(), dominator_stack_ptr);
 
         // Build instructions!
 	const BlockTerm::InstructionList& insn_list = it->first->instructions();
@@ -555,10 +684,18 @@ namespace Psi {
         build_phi_alloca(phi_storage_map, func_builder, it->first->dominated_blocks());
 
         // Save stack pointer so it can be restored in dominated
-        // blocks
+        // blocks. This only needs to be done if the alloca is used
+        // during this block outside of a save/restore, and the block
+        // does not terminate the function
         PSI_ASSERT(stack_pointers.find(it->first) == stack_pointers.end());
-        stack_pointers[it->first] = irbuilder.CreateCall(func_builder.llvm_stacksave());
+        if ((it->second->getTerminator()->getNumSuccessors() > 0) && func_builder.has_outstanding_alloca(it->second)) {
+          stack_pointers[it->first] = irbuilder.CreateCall(func_builder.llvm_stacksave());
+        } else {
+          stack_pointers[it->first] = dominator_stack_ptr;
+        }
       }
+
+      func_builder.simplify_stack_save_restore();
 
       // Set up LLVM phi node incoming edges
       for (std::tr1::unordered_map<PhiTerm*, llvm::PHINode*>::iterator it = phi_node_map.begin();
@@ -586,6 +723,50 @@ namespace Psi {
       }
     }
 
+    /**
+     * Cast a pointer to a generic pointer (i8*).
+     *
+     * \param type The type to cast to. This is the type of the
+     * returned value, so it is the pointer type not the pointed-to
+     * type.
+     */
+    llvm::Value* LLVMValueBuilder::cast_pointer_to_generic(llvm::Value *value) {
+      PSI_ASSERT(value->getType()->isPointerTy());
+
+      const llvm::Type *i8ptr = llvm::Type::getInt8PtrTy(context());
+      if (value->getType() == i8ptr)
+        return value;
+
+      if (llvm::Constant *const_value = llvm::dyn_cast<llvm::Constant>(value)) {
+        return llvm::ConstantExpr::getBitCast(const_value, i8ptr);
+      } else {
+        return cast_pointer_impl(value, i8ptr);
+      }
+    }
+
+    /**
+     * Cast a pointer from a possibly-generic pointer. The type of
+     * value must either be the same as \c target_type, or it must be
+     * <tt>i8*</tt>.
+     *
+     * \param type The type to cast to. This is the type of the
+     * returned value, so it is the pointer type not the pointed-to
+     * type.
+     */
+    llvm::Value* LLVMValueBuilder::cast_pointer_from_generic(llvm::Value *value, const llvm::Type *type) {
+      PSI_ASSERT(value->getType()->isPointerTy());
+      PSI_ASSERT(type->isPointerTy());
+      if (value->getType() == type)
+        return value;
+
+      PSI_ASSERT(value->getType() == llvm::Type::getInt8PtrTy(context()));
+      if (llvm::Constant *const_value = llvm::dyn_cast<llvm::Constant>(value)) {
+        return llvm::ConstantExpr::getBitCast(const_value, type);
+      } else {
+        return cast_pointer_impl(value, type);
+      }
+    }
+
     void LLVMValueBuilder::set_module(llvm::Module *module) {
       m_module = module;
     }
@@ -599,6 +780,10 @@ namespace Psi {
 
     LLVMValue LLVMConstantBuilder::value_impl(Term* term) {
       return build_term(term, m_value_terms, ConstantBuilderCallback(this)).first;
+    }
+
+    llvm::Value* LLVMConstantBuilder::cast_pointer_impl(llvm::Value*,const llvm::Type*) {
+      PSI_FAIL("global llvm builder given non-constant value to cast_pointer");
     }
 
     LLVMFunctionBuilder::LLVMFunctionBuilder(LLVMValueBuilder *parent, llvm::Function *function, LLVMIRBuilder *irbuilder, CallingConvention calling_convention) 
@@ -652,6 +837,10 @@ namespace Psi {
         m_irbuilder->SetInsertPoint(old_insert_block);
 
       return result;
+    }
+
+    llvm::Value* LLVMFunctionBuilder::cast_pointer_impl(llvm::Value* value, const llvm::Type* type) {
+      return irbuilder().CreateBitCast(value, type);
     }
 
     llvm::Function* llvm_intrinsic_memcpy(llvm::Module& m) {

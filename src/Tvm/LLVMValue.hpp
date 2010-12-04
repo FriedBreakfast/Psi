@@ -31,6 +31,7 @@ namespace llvm {
   class Function;
   class JITEventListener;
   class raw_ostream;
+  class CallInst;
 
   class ConstantFolder;
   template<bool> class IRBuilderDefaultInserter;

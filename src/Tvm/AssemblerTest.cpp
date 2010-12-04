@@ -6,7 +6,7 @@
 
 namespace Psi {
   namespace Tvm {
-    BOOST_FIXTURE_TEST_SUITE(TvmAssemblerTest, Test::ContextFixture)
+    BOOST_FIXTURE_TEST_SUITE(AssemblerTest, Test::ContextFixture)
 
     BOOST_AUTO_TEST_CASE(Return) {
       const char *src =

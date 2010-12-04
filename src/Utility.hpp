@@ -21,8 +21,8 @@ namespace Psi {
 #endif
 
 #ifdef PSI_DEBUG
-#define PSI_ASSERT_MSG(cond,msg) (cond ? void() : Psi::assert_fail(#cond, msg))
-#define PSI_ASSERT(cond) (cond ? void() : Psi::assert_fail(#cond, NULL))
+#define PSI_ASSERT_MSG(cond,msg) ((cond) ? void() : Psi::assert_fail(#cond, msg))
+#define PSI_ASSERT(cond) ((cond) ? void() : Psi::assert_fail(#cond, NULL))
 #define PSI_FAIL(msg) (Psi::assert_fail(NULL, msg))
   /**
    * \brief Issue a warning. This should be used in destructors where
