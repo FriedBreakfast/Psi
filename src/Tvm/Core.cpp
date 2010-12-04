@@ -65,10 +65,11 @@ namespace Psi {
       return *this;
     }
 
-    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, Term* type)
+    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool phantom, Term *source, Term* type)
       : TermUser(ui, term_type),
         m_abstract(abstract),
         m_parameterized(parameterized),
+        m_phantom(phantom),
         m_context(context),
         m_source(source) {
 
@@ -133,8 +134,8 @@ namespace Psi {
       return h.m_hash;
     }
 
-    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, Term* type, std::size_t hash)
-      : Term(ui, context, term_type, abstract, parameterized, source, type),
+    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool phantom, Term *source, Term* type, std::size_t hash)
+      : Term(ui, context, term_type, abstract, parameterized, phantom, source, type),
 	m_hash(hash) {
     }
 
@@ -151,7 +152,7 @@ namespace Psi {
      * pointer to this type.
      */
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type)
-      : Term(ui, context, term_type, false, false, NULL, context->get_pointer_type(type).get()) {
+      : Term(ui, context, term_type, false, false, false, NULL, context->get_pointer_type(type).get()) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
     }
 

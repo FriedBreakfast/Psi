@@ -21,6 +21,9 @@ namespace Psi {
       if (ret_val->type() != function.result_type())
 	throw std::logic_error("return instruction argument has incorrect type");
 
+      if (ret_val->phantom())
+        throw std::logic_error("cannot return a phantom value");
+
       return NULL;
     }
 
@@ -42,7 +45,8 @@ namespace Psi {
 	  }
 	} else if (result.is_empty()) {
 	  return LLVMValue::known(irbuilder.CreateRet(return_area));
-	} else if (result.is_unknown()) {
+	} else {
+          PSI_ASSERT(result.is_unknown());
 	  llvm::Function *memcpy_fn = builder.llvm_memcpy();
 	  Term* return_type = return_value->type();
 	  if (return_type->type() != term.context().get_metatype())
@@ -61,9 +65,6 @@ namespace Psi {
 				size, align,
 				llvm::ConstantInt::getFalse(builder.context()));
 	  return LLVMValue::known(irbuilder.CreateRet(return_area));
-	} else {
-	  PSI_ASSERT(result.is_phantom());
-	  throw std::logic_error("Cannot return a phantom value!");
 	}
       } else {
 	if (!result.is_known())
@@ -88,6 +89,11 @@ namespace Psi {
       Term* false_target(parameters[2]);
       if ((true_target->term_type() != term_block) || (false_target->term_type() != term_block))
 	throw std::logic_error("second and third parameters to branch instruction must be blocks");
+
+      PSI_ASSERT(!true_target->phantom() && !false_target->phantom());
+
+      if (cond->phantom())
+        throw std::logic_error("cannot conditionally branch on a phantom value");
 
       return NULL;
     }
@@ -121,6 +127,8 @@ namespace Psi {
       Term* target(parameters[0]);
       if (target->term_type() != term_block)
 	throw std::logic_error("second parameter to branch instruction must be blocks");
+
+      PSI_ASSERT(!target->phantom());
 
       return NULL;
     }
@@ -160,6 +168,9 @@ namespace Psi {
 	throw std::logic_error("wrong number of arguments to function");
 
       for (std::size_t i = 0; i < n_parameters; ++i) {
+        if ((i >= target_function_type->n_phantom_parameters()) && parameters[i]->phantom())
+          throw std::logic_error("cannot pass phantom value to non-phantom function parameter");
+
 	Term* expected_type = target_function_type->parameter_type_after(parameters.slice(1, i+1));
 	if (parameters[i+1]->type() != expected_type)
 	  throw std::logic_error("function argument has the wrong type");
@@ -216,9 +227,6 @@ namespace Psi {
       for (std::size_t i = n_phantom; i < n_parameters; ++i) {
 	LLVMValue param = builder.value(self.parameter(i));
 
-        if (param.is_phantom())
-          throw std::logic_error("Cannot pass phantom value as to non-phantom parameter of function");
-
 	if (calling_convention == cconv_tvm) {
 	  if (param.is_known()) {
 	    if (param.value()->getType()->isPointerTy()) {
@@ -233,10 +241,12 @@ namespace Psi {
 	      llvm::Value *cast_ptr = irbuilder.CreateBitCast(ptr, llvm::Type::getInt8PtrTy(builder.context()));
 	      parameters.push_back(cast_ptr);
 	    }
-	  } else {
-	    PSI_ASSERT(param.is_unknown());
+	  } else if (param.is_unknown()) {
 	    parameters.push_back(param.ptr_value());
-	  }
+	  } else {
+            PSI_ASSERT(param.is_empty());
+            parameters.push_back(llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(builder.context())));
+          }
 	} else {
 	  if (!param.is_known())
 	    throw std::logic_error("Function parameter types must be known for non-TVM calling conventions");
@@ -269,7 +279,7 @@ namespace Psi {
     void FunctionCall::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
     }
 
-    Term* FunctionApplyPhantom::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult FunctionApplyPhantom::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() < 1)
         throw std::logic_error("apply_phantom requires at least one parameter");
 
@@ -310,7 +320,7 @@ namespace Psi {
          new_parameters.array().slice(0, result_n_phantom),
          new_parameters.array().slice(result_n_phantom, result_n_phantom+result_n_normal));
 
-      return context.get_pointer_type(result_function_type).get();
+      return FunctionalTypeResult(context.get_pointer_type(result_function_type).get(), parameters[0]->phantom());
     }
 
     LLVMType FunctionApplyPhantom::llvm_type(LLVMValueBuilder&, Term&) const {

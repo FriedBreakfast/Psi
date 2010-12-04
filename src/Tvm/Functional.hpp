@@ -5,13 +5,19 @@
 
 namespace Psi {
   namespace Tvm {
+    struct FunctionalTypeResult {
+      FunctionalTypeResult(Term *type_, bool phantom_)  : type(type_), phantom(phantom_) {}
+      Term *type;
+      bool phantom;
+    };
+
     /**
      * \brief Base class for building custom FunctionalTerm instances.
      */
     class FunctionalTermBackend : public HashTermBackend {
     public:
       virtual FunctionalTermBackend* clone(void *dest) const = 0;
-      virtual Term* type(Context& context, ArrayPtr<Term*const> parameters) const = 0;
+      virtual FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const = 0;
 
       /**
        * Generate code to calculate the value for this term.
@@ -51,7 +57,7 @@ namespace Psi {
     private:
       class Setup;
       FunctionalTerm(const UserInitializer& ui, Context *context, Term* type,
-		     std::size_t hash, FunctionalTermBackend *backend,
+		     bool phantom, std::size_t hash, FunctionalTermBackend *backend,
 		     ArrayPtr<Term*const> parameters);
       ~FunctionalTerm();
 
@@ -96,7 +102,7 @@ namespace Psi {
         return new (dest) ThisType(*this);
       }
 
-      virtual Term* type(Context& context, ArrayPtr<Term*const> parameters) const {
+      virtual FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const {
         return m_impl.type(context, parameters);
       }
 

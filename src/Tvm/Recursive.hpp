@@ -5,6 +5,14 @@
 
 namespace Psi {
   namespace Tvm {
+    class RecursiveParameterTerm : public Term {
+      friend class Context;
+
+    private:
+      class Initializer;
+      RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type, bool phantom);
+    };
+
     /**
      * \brief Recursive term: usually used to create recursive types.
      *
@@ -27,7 +35,8 @@ namespace Psi {
     private:
       class Initializer;
       RecursiveTerm(const UserInitializer& ui, Context *context, Term* result_type,
-                    Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters);
+                    Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters,
+                    bool phantom);
     };
 
     template<>

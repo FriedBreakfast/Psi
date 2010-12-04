@@ -12,12 +12,12 @@
 
 namespace Psi {
   namespace Tvm {
-    Term* PointerType::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult PointerType::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 1)
 	throw std::logic_error("pointer type takes one parameter");
       if (!parameters[0]->is_type())
         throw std::logic_error("pointer argument must be a type");
-      return context.get_metatype().get();
+      return FunctionalTypeResult(context.get_metatype().get(), false);
     }
 
     LLVMValue PointerType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -89,7 +89,7 @@ namespace Psi {
       }
     }
 
-    Term* ArrayType::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult ArrayType::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 2)
 	throw std::logic_error("array type term takes two parameters");
 
@@ -99,7 +99,7 @@ namespace Psi {
       if (parameters[1]->type() != context.get_integer_type(64, false))
 	throw std::logic_error("second argument to array type term is not a 64-bit integer");
 
-      return context.get_metatype().get();
+      return FunctionalTypeResult(context.get_metatype().get(), parameters[0]->phantom() || parameters[1]->phantom());
     }
 
     LLVMValue ArrayType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -162,19 +162,23 @@ namespace Psi {
       return get_functional_v(ArrayType(), element_type, length_term);
     }
 
-    Term* ArrayValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult ArrayValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() < 1)
         throw std::logic_error("array values require at least one parameter");
 
       if (!parameters[0]->is_type())
         throw std::logic_error("first argument to array value is not a type");
 
+      bool phantom = false;
       for (std::size_t i = 1; i < parameters.size(); ++i) {
         if (parameters[i]->type() != parameters[0])
           throw std::logic_error("array value element is of the wrong type");
+        phantom = phantom || parameters[i]->phantom();
       }
 
-      return context.get_array_type(parameters[0], parameters.size() - 1).get();
+      PSI_ASSERT(phantom || !parameters[0]->phantom());
+
+      return FunctionalTypeResult(context.get_array_type(parameters[0], parameters.size() - 1).get(), phantom);
     }
 
     LLVMValue ArrayValue::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -235,13 +239,15 @@ namespace Psi {
       return get_functional(ArrayValue(), parameters.array()).get();
     }
 
-    Term* AggregateType::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult AggregateType::type(Context& context, ArrayPtr<Term*const> parameters) const {
+      bool phantom = false;
       for (std::size_t i = 0; i < parameters.size(); ++i) {
         if (!parameters[i]->is_type())
           throw std::logic_error("members of an aggregate type must be types");
+        phantom = phantom || parameters[i]->phantom();
       }
 
-      return context.get_metatype().get();
+      return FunctionalTypeResult(context.get_metatype().get(), phantom);
     }
 
     bool AggregateType::operator == (const AggregateType&) const {

@@ -6,7 +6,7 @@
 
 namespace Psi {
   namespace Tvm {
-    Term* ArithmeticOperation::integer_binary_op_type(Context&, ArrayPtr<Term*const> parameters) {
+    FunctionalTypeResult ArithmeticOperation::integer_binary_op_type(Context&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 2)
         throw std::logic_error("binary arithmetic operation expects two operands");
 
@@ -18,7 +18,7 @@ namespace Psi {
       if (!int_type)
         throw std::logic_error("parameters to integer binary arithmetic operation were not integers");
 
-      return int_type.get();
+      return FunctionalTypeResult(int_type.get(), parameters[0]->phantom() || parameters[1]->phantom());
     }
 
     LLVMValue ArithmeticOperation::binary_op_constant(LLVMValueBuilder& builder, FunctionalTerm& term, llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*)) {
@@ -44,7 +44,7 @@ namespace Psi {
       return LLVMValue::known((builder.irbuilder().*callback)(lhs.value(), rhs.value(), ""));
     }
 
-    Term* IntegerAdd::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult IntegerAdd::type(Context& context, ArrayPtr<Term*const> parameters) const {
       return ArithmeticOperation::integer_binary_op_type(context, parameters);
     }
 
@@ -60,7 +60,7 @@ namespace Psi {
       return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getAdd);
     }
 
-    Term* IntegerSubtract::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult IntegerSubtract::type(Context& context, ArrayPtr<Term*const> parameters) const {
       return ArithmeticOperation::integer_binary_op_type(context, parameters);
     }
 
@@ -76,7 +76,7 @@ namespace Psi {
       return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getSub);
     }
 
-    Term* IntegerMultiply::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult IntegerMultiply::type(Context& context, ArrayPtr<Term*const> parameters) const {
       return ArithmeticOperation::integer_binary_op_type(context, parameters);
     }
 
@@ -92,7 +92,7 @@ namespace Psi {
       return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getMul);
     }
 
-    Term* IntegerDivide::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult IntegerDivide::type(Context& context, ArrayPtr<Term*const> parameters) const {
       return ArithmeticOperation::integer_binary_op_type(context, parameters);
     }
 

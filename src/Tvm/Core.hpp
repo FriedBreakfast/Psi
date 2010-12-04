@@ -32,9 +32,11 @@ namespace Psi {
 
     class ApplyTerm;
     class RecursiveTerm;
+    class RecursiveParameterTerm;
 
     class FunctionalTerm;
     class FunctionalTermBackend;
+    struct FunctionalTypeResult;
     template<typename> class FunctionalTermBackendImpl;
 
     class FunctionTerm;
@@ -310,6 +312,11 @@ namespace Psi {
       bool parameterized() const {return m_parameterized;}
       /// \brief If this term is global: it only contains references to constant values and global addresses.
       bool global() const {return !m_source;}
+      /// \brief Return true if the value of this term is not known
+      //
+      // What this means is somewhat type specific, for instance a
+      // pointer type to phantom type is not considered phantom.
+      bool phantom() const {return m_phantom;}
       /// \brief Get the term which generates this one - this will either be a function or a block
       Term* source() const {return m_source;}
       /// \brief Get the category of this value (whether it is a metatype, type, or value)
@@ -325,13 +332,14 @@ namespace Psi {
       template<typename T> TermIterator<T> term_users_end();
 
     private:
-      Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, Term* type);
+      Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool phantom, Term *source, Term* type);
 
       std::size_t hash_value() const;
 
       unsigned char m_category : 2;
       unsigned char m_abstract : 1;
       unsigned char m_parameterized : 1;
+      unsigned char m_phantom : 1;
       Context *m_context;
       Term *m_source;
       boost::intrusive::list_member_hook<> m_term_list_hook;
@@ -404,19 +412,11 @@ namespace Psi {
       friend class FunctionTypeResolverTerm;
 
     private:
-      HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, Term *source, Term* type, std::size_t hash);
+      HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool phantom, Term *source, Term* type, std::size_t hash);
       virtual ~HashTerm();
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
       TermSetHook m_term_set_hook;
       std::size_t m_hash;
-    };
-
-    class RecursiveParameterTerm : public Term {
-      friend class Context;
-
-    private:
-      class Initializer;
-      RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type);
     };
 
     /**
@@ -544,7 +544,8 @@ namespace Psi {
 
       RecursiveTerm* new_recursive(Term *source,
                                    Term* result_type,
-                                   ArrayPtr<Term*const> parameters);
+                                   ArrayPtr<Term*const> parameters,
+                                   bool phantom=false);
 
       void resolve_recursive(RecursiveTerm* recursive, Term* to);
 
@@ -613,7 +614,7 @@ namespace Psi {
       template<typename T> typename T::TermType* allocate_term(const T& initializer);
       template<typename T> typename T::TermType* hash_term_get(T& Setup);
 
-      RecursiveParameterTerm* new_recursive_parameter(Term* type);
+      RecursiveParameterTerm* new_recursive_parameter(Term* type, bool phantom=false);
 
       FunctionTypeResolverTerm* get_function_type_resolver(Term* result, ArrayPtr<Term*const> parameters, std::size_t n_phantom, CallingConvention calling_convention);
       FunctionalTermPtr<FunctionTypeResolverParameter> get_function_type_resolver_parameter(Term* type, std::size_t depth, std::size_t index);

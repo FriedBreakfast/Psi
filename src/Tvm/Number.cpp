@@ -38,9 +38,9 @@ namespace Psi {
       return self.m_value;
     }
 
-    Term* ConstantBoolean::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult ConstantBoolean::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return context.get_functional_v(BooleanType()).get();
+      return FunctionalTypeResult(context.get_functional_v(BooleanType()).get(), false);
     }
 
     LLVMValue ConstantBoolean::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
@@ -128,9 +128,9 @@ namespace Psi {
       return h;
     }
 
-    Term* ConstantInteger::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult ConstantInteger::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return context.get_functional_v(m_type).get();
+      return FunctionalTypeResult(context.get_functional_v(m_type).get(), false);
     }
 
     LLVMValue ConstantInteger::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
@@ -231,9 +231,9 @@ namespace Psi {
       return h;
     }
 
-    Term* ConstantReal::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult ConstantReal::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return context.get_functional_v(m_type).get();
+      return FunctionalTypeResult(context.get_functional_v(m_type).get(), false);
     }
 
     LLVMValue ConstantReal::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
@@ -259,9 +259,9 @@ namespace Psi {
       return h;
     }
 
-    Term* SpecialRealValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult SpecialRealValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return context.get_functional_v(m_type).get();
+      return FunctionalTypeResult(context.get_functional_v(m_type).get(), false);
     }
 
     LLVMValue SpecialRealValue::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {

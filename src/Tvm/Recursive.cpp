@@ -9,31 +9,43 @@
 
 namespace Psi {
   namespace Tvm {
-    RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type)
-      : Term(ui, context, term_recursive_parameter, true, false, term_source(type), type) {
+    RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type, bool phantom)
+      : Term(ui, context, term_recursive_parameter, true, false, phantom, term_source(type), type) {
     }
 
     class RecursiveParameterTerm::Initializer : public InitializerBase<RecursiveParameterTerm> {
     public:
-      Initializer(Term* type) : m_type(type) {}
+      Initializer(Term* type, bool phantom) : m_type(type), m_phantom(phantom) {}
 
       RecursiveParameterTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
-	return new (base) RecursiveParameterTerm(ui, context, m_type);
+	return new (base) RecursiveParameterTerm(ui, context, m_type, m_phantom);
       }
 
       std::size_t n_uses() const {return 0;}
 
     private:
       Term* m_type;
+      bool m_phantom;
     };
 
-    RecursiveParameterTerm* Context::new_recursive_parameter(Term* type) {
-      return allocate_term(RecursiveParameterTerm::Initializer(type));
+    /**
+     * \brief Create a new parameter for a recursive term.
+     *
+     * \param type The term's type.
+     *
+     * \param phantom Whether this term should be created as a phantom
+     * term. This mechanism is used to inform the compiler which
+     * parameters can have phantom values in them without making the
+     * overall value a phantom (unless it is always a phantom).
+     */
+    RecursiveParameterTerm* Context::new_recursive_parameter(Term* type, bool phantom) {
+      return allocate_term(RecursiveParameterTerm::Initializer(type, phantom));
     }
 
     RecursiveTerm::RecursiveTerm(const UserInitializer& ui, Context *context, Term* result_type,
-				 Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters)
-      : Term(ui, context, term_recursive, true, false, source, NULL) {
+				 Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters,
+                                 bool phantom)
+      : Term(ui, context, term_recursive, true, false, phantom, source, NULL) {
       set_base_parameter(0, result_type);
       for (std::size_t i = 0; i < parameters.size(); ++i) {
 	set_base_parameter(i+2, parameters[i]);
@@ -42,12 +54,12 @@ namespace Psi {
 
     class RecursiveTerm::Initializer : public InitializerBase<RecursiveTerm> {
     public:
-      Initializer(Term *source, Term* type, ArrayPtr<RecursiveParameterTerm*const> parameters)
-	: m_source(source), m_type(type), m_parameters(parameters) {
+      Initializer(Term *source, Term* type, ArrayPtr<RecursiveParameterTerm*const> parameters, bool phantom)
+	: m_source(source), m_type(type), m_parameters(parameters), m_phantom(phantom) {
       }
 
       RecursiveTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) RecursiveTerm(ui, context, m_type, m_source, m_parameters);
+	return new (base) RecursiveTerm(ui, context, m_type, m_source, m_parameters, m_phantom);
       }
 
       std::size_t n_uses() const {return 1;}
@@ -56,14 +68,20 @@ namespace Psi {
       Term *m_source;
       Term* m_type;
       ArrayPtr<RecursiveParameterTerm*const> m_parameters;
+      bool m_phantom;
     };
 
     /**
      * \brief Create a new recursive term.
+     *
+     * \param phantom Whether all applications of this term are
+     * considered phantom; in this case the value assigned to this
+     * term may itself be a phantom.
      */
     RecursiveTerm* Context::new_recursive(Term *source,
                                           Term* result_type,
-                                          ArrayPtr<Term*const> parameter_types) {
+                                          ArrayPtr<Term*const> parameter_types,
+                                          bool phantom) {
       if (source_dominated(result_type->source(), source))
         goto throw_dominator;
 
@@ -76,7 +94,7 @@ namespace Psi {
         ScopedTermPtrArray<RecursiveParameterTerm> parameters(parameter_types.size());
         for (std::size_t i = 0; i < parameters.size(); ++i)
           parameters[i] = new_recursive_parameter(parameter_types[i]);
-        return allocate_term(RecursiveTerm::Initializer(source, result_type, parameters.array()));
+        return allocate_term(RecursiveTerm::Initializer(source, result_type, parameters.array(), phantom));
       } else {
       throw_dominator:
         throw std::logic_error("block specified for recursive term is not dominated by parameter and result type blocks");
@@ -94,10 +112,26 @@ namespace Psi {
       return context().apply_recursive(this, parameters);
     }
 
+    namespace {
+      bool apply_is_phantom(RecursiveTerm *recursive, ArrayPtr<Term*const> parameters) {
+        if (recursive->phantom())
+          return true;
+
+        PSI_ASSERT(recursive->n_parameters() == parameters.size());
+        for (std::size_t i = 0; i < parameters.size(); i++) {
+          if (!recursive->parameter(i)->phantom() && parameters[i]->phantom())
+            return true;
+        }
+
+        return false;
+      }
+    }
+
     ApplyTerm::ApplyTerm(const UserInitializer& ui, Context *context, RecursiveTerm *recursive,
 			 ArrayPtr<Term*const> parameters, std::size_t hash)
       : HashTerm(ui, context, term_apply,
                  recursive->abstract() || any_abstract(parameters), false,
+                 apply_is_phantom(recursive, parameters),
                  common_source(recursive->source(), common_source(parameters)),
                  recursive->result_type(), hash) {
       set_base_parameter(0, recursive);
@@ -313,6 +347,9 @@ namespace Psi {
 
       if (!source_dominated(to->source(), recursive->source()))
         throw std::logic_error("term used to resolve recursive term is not in scope");
+
+      if (to->phantom() && !recursive->phantom())
+        throw std::logic_error("non-phantom recursive term cannot be resolved to a phantom term");
 
       recursive->set_base_parameter(1, to);
 

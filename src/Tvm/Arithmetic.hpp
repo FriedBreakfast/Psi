@@ -8,7 +8,7 @@ namespace Psi {
   namespace Tvm {
     class ArithmeticOperation {
     public:
-      static Term* integer_binary_op_type(Context& context, ArrayPtr<Term*const> parameters);
+      static FunctionalTypeResult integer_binary_op_type(Context& context, ArrayPtr<Term*const> parameters);
       static LLVMValue binary_op_constant(LLVMValueBuilder& builder, FunctionalTerm& term,
                                           llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*));
       static LLVMValue binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term,
@@ -27,7 +27,7 @@ namespace Psi {
 
     class IntegerAdd : public StatelessOperand {
     public:
-      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
+      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
@@ -37,7 +37,7 @@ namespace Psi {
 
     class IntegerSubtract : public StatelessOperand {
     public:
-      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
+      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
@@ -47,7 +47,7 @@ namespace Psi {
 
     class IntegerMultiply : public StatelessOperand {
     public:
-      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
+      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
@@ -57,7 +57,7 @@ namespace Psi {
 
     class IntegerDivide : public StatelessOperand {
     public:
-      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
+      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;

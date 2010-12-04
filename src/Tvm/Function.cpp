@@ -15,7 +15,7 @@ namespace Psi {
 				       ArrayPtr<FunctionTypeParameterTerm*const> parameters,
 				       CallingConvention calling_convention)
       : Term(ui, context, term_function_type,
-	     result_type->abstract() || any_abstract(parameters) || any_abstract(phantom_parameters), true,
+	     result_type->abstract() || any_abstract(parameters) || any_abstract(phantom_parameters), true, false,
              common_source(result_type->source(), common_source(common_source(parameters), common_source(phantom_parameters))),
 	     context->get_metatype().get()),
 	m_calling_convention(calling_convention),
@@ -336,7 +336,7 @@ namespace Psi {
     }
 
     FunctionTypeParameterTerm::FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, Term* type)
-      : Term(ui, context, term_function_type_parameter, type->abstract(), true, type->source(), type),
+      : Term(ui, context, term_function_type_parameter, type->abstract(), true, false, type->source(), type),
 	m_index(0) {
     }
 
@@ -362,7 +362,7 @@ namespace Psi {
 
     FunctionTypeResolverTerm::FunctionTypeResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term* result_type, ArrayPtr<Term*const> parameter_types, std::size_t n_phantom, CallingConvention calling_convention)
       : HashTerm(ui, context, term_function_type_resolver,
-		 result_type->abstract() || any_abstract(parameter_types), true,
+		 result_type->abstract() || any_abstract(parameter_types), true, false,
                  common_source(result_type->source(), common_source(parameter_types)),
 		 context->get_metatype().get(), hash),
         m_n_phantom(n_phantom),
@@ -447,9 +447,9 @@ namespace Psi {
       : m_depth(depth), m_index(index) {
     }
 
-    Term* FunctionTypeResolverParameter::type(Context&, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult FunctionTypeResolverParameter::type(Context&, ArrayPtr<Term*const> parameters) const {
       PSI_ASSERT(parameters.size() == 1);
-      return parameters[0];
+      return FunctionalTypeResult(parameters[0], false);
     }
 
     LLVMValue FunctionTypeResolverParameter::llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const {
@@ -484,7 +484,7 @@ namespace Psi {
 				     InstructionTermBackend *backend,
                                      BlockTerm* block)
       : Term(ui, context, term_instruction,
-	     false, false, block, type),
+	     false, false, false, block, type),
 	m_backend(backend) {
 
       set_base_parameter(0, block);
@@ -700,7 +700,7 @@ namespace Psi {
     }
 
     BlockTerm::BlockTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, BlockTerm* dominator)
-      : Term(ui, context, term_block, false, false, function, context->get_block_type().get()),
+      : Term(ui, context, term_block, false, false, false, function, context->get_block_type().get()),
         m_terminated(false) {
 
       set_base_parameter(0, function);
@@ -726,16 +726,16 @@ namespace Psi {
       BlockTerm* m_dominator;
     };
 
-    FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type)
-      : Term(ui, context, term_function_parameter, false, false, function, type) {
+  FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type, bool phantom)
+    : Term(ui, context, term_function_parameter, false, false, phantom, function, type) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
       set_base_parameter(0, function);
     }
 
     class FunctionParameterTerm::Initializer : public InitializerBase<FunctionParameterTerm> {
     public:
-      Initializer(FunctionTerm* function, Term* type)
-	: m_function(function), m_type(type) {
+      Initializer(FunctionTerm* function, Term* type, bool phantom)
+	: m_function(function), m_type(type), m_phantom(phantom) {
       }
 
       std::size_t n_uses() const {
@@ -743,12 +743,13 @@ namespace Psi {
       }
 
       FunctionParameterTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
-	return new (base) FunctionParameterTerm(ui, context, m_function, m_type);
+	return new (base) FunctionParameterTerm(ui, context, m_function, m_type, m_phantom);
       }
 
     private:
       FunctionTerm* m_function;
       Term* m_type;
+      bool m_phantom;
     };
 
     FunctionTerm::FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type)
@@ -756,7 +757,7 @@ namespace Psi {
       ScopedTermPtrArray<> parameters(type->n_parameters());
       for (std::size_t i = 0; i < parameters.size(); ++i) {
 	Term* param_type = type->parameter_type_after(parameters.array().slice(0, i));
-	FunctionParameterTerm* param = context->allocate_term(FunctionParameterTerm::Initializer(this, param_type));
+	FunctionParameterTerm* param = context->allocate_term(FunctionParameterTerm::Initializer(this, param_type, i<type->n_phantom_parameters()));
         set_base_parameter(i+2, param);
 	parameters[i] = param;
       }

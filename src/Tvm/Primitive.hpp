@@ -30,7 +30,7 @@ namespace Psi {
     template<typename Derived>
     class PrimitiveType {
     public:
-      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
+      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
 
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
         return llvm_value_constant(builder, term);
@@ -58,7 +58,7 @@ namespace Psi {
 
     class Metatype {
     public:
-      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
+      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 
@@ -77,10 +77,10 @@ namespace Psi {
     };
 
     template<typename Derived>
-    Term* PrimitiveType<Derived>::type(Context& context, ArrayPtr<Term*const> parameters) const {
+    FunctionalTypeResult PrimitiveType<Derived>::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 0)
         throw std::logic_error("primitive type created with parameters");
-      return context.get_metatype().get();
+      return FunctionalTypeResult(context.get_metatype().get(), false);
     }
 
     template<typename Derived>

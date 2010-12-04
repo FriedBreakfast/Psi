@@ -274,15 +274,20 @@ namespace Psi {
 	  return LLVMValue::known(llvm::ConstantExpr::getPointerCast(gv, i8ptr));
 	}
 
+        case term_function_parameter:
 	case term_instruction:
-	case term_phi: {
+	case term_phi:
+        case term_block: {
 	  ValueTermMap::iterator it = m_value_terms.find(term);
-	  if (it != m_value_terms.end()) {
-	    return it->second;
-	  } else {
-	    throw std::logic_error("Instruction or phi term not yet available");
-	  }
+          PSI_ASSERT(it != m_value_terms.end());
+          return it->second;
 	}
+
+        case term_recursive:
+        case term_recursive_parameter:
+        case term_function_type_parameter:
+        case term_function_type_resolver:
+          PSI_FAIL("term type should not be encountered by LLVM builder");
 
 	default:
 	  return value_impl(term);
@@ -341,13 +346,7 @@ namespace Psi {
 	++llvm_it;
       }
 
-      std::size_t n = 0;
-      for (; n < n_phantom; ++n) {
-	FunctionParameterTerm* param = psi_func->parameter(n);
-        func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::phantom()));
-      }
-
-      for (; llvm_it != argument_list.end(); ++n, ++llvm_it) {
+      for (std::size_t n = n_phantom; llvm_it != argument_list.end(); ++n, ++llvm_it) {
 	FunctionParameterTerm* param = psi_func->parameter(n);
 	llvm::Argument *llvm_param = const_cast<llvm::Argument*>(&*llvm_it);
 	Term* param_type = param->type();

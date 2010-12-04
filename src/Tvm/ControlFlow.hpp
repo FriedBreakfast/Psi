@@ -73,7 +73,7 @@ namespace Psi {
 
     class FunctionApplyPhantom : public StatelessOperand {
     public:
-      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
+      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;

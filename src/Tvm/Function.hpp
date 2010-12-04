@@ -173,7 +173,7 @@ namespace Psi {
 
     private:
       class Initializer;
-      FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type);
+      FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type, bool phantom);
     };
 
     template<>
@@ -329,7 +329,7 @@ namespace Psi {
     public:
       FunctionTypeResolverParameter(std::size_t depth, std::size_t index);
 
-      Term* type(Context& context, ArrayPtr<Term*const> parameters) const;
+      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
 

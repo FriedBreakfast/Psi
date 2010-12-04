@@ -104,15 +104,7 @@ namespace Psi {
 	category_invalid,
 	category_known,
 	category_unknown,
-	category_empty,
-	/**
-	 * \brief An unknown value.
-	 *
-	 * This occurs when a variable is existentially quantified -
-	 * it has no value available, merely an assertion that such a
-	 * value exists somewhere.
-	 */
-	category_phantom
+	category_empty
       };
 
     public:
@@ -122,14 +114,12 @@ namespace Psi {
       bool is_known() const {return m_category == category_known;}
       bool is_unknown() const {return m_category == category_unknown;}
       bool is_empty() const {return m_category == category_empty;}
-      bool is_phantom() const {return m_category == category_phantom;}
       llvm::Value *value() const {return m_value;}
       llvm::Value *ptr_value() const {return m_ptr_value;}
 
       static LLVMValue known(llvm::Value *value) {return LLVMValue(category_known, value, 0);}
       static LLVMValue unknown(llvm::Value *value, llvm::Value *ptr_value) {return LLVMValue(category_unknown, value, ptr_value);}
       static LLVMValue empty() {return LLVMValue(category_empty, 0, 0);}
-      static LLVMValue phantom() {return LLVMValue(category_phantom, 0, 0);}
 
     private:
       LLVMValue(Category category, llvm::Value *value, llvm::Value *ptr_value) : m_category(category), m_value(value), m_ptr_value(ptr_value) {}

@@ -4,11 +4,12 @@
 namespace Psi {
   namespace Tvm {
     FunctionalTerm::FunctionalTerm(const UserInitializer& ui, Context *context, Term* type,
-				   std::size_t hash, FunctionalTermBackend *backend,
+				   bool phantom, std::size_t hash, FunctionalTermBackend *backend,
 				   ArrayPtr<Term*const> parameters)
       : HashTerm(ui, context, term_functional,
 		 term_abstract(type) || any_abstract(parameters),
 		 term_parameterized(type) || any_parameterized(parameters),
+                 phantom,
                  common_source(term_source(type), common_source(parameters)),
 		 type, hash),
 	m_backend(backend) {
@@ -35,7 +36,10 @@ namespace Psi {
       }
 
       void prepare_initialize(Context *context) {
-	m_type = m_backend->type(*context, m_parameters);
+        FunctionalTypeResult tr = m_backend->type(*context, m_parameters);
+        m_type = tr.type;
+        m_phantom = tr.phantom;
+
 	std::pair<std::size_t, std::size_t> backend_size_align = m_backend->size_align();
 	PSI_ASSERT_MSG((backend_size_align.second & (backend_size_align.second - 1)) == 0, "alignment is not a power of two");
 	m_proto_offset = struct_offset(0, sizeof(FunctionalTerm), backend_size_align.second);
@@ -45,7 +49,7 @@ namespace Psi {
       FunctionalTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
 	FunctionalTermBackend *new_backend = m_backend->clone(ptr_offset(base, m_proto_offset));
 	try {
-	  return new (base) FunctionalTerm(ui, context, m_type, m_hash, new_backend, m_parameters);
+	  return new (base) FunctionalTerm(ui, context, m_type, m_phantom, m_hash, new_backend, m_parameters);
 	} catch(...) {
 	  new_backend->~FunctionalTermBackend();
 	  throw;
@@ -92,6 +96,7 @@ namespace Psi {
       ArrayPtr<Term*const> m_parameters;
       const FunctionalTermBackend *m_backend;
       Term* m_type;
+      bool m_phantom;
     };
 
     /**

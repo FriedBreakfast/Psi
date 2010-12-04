@@ -8,7 +8,7 @@ namespace Psi {
   namespace Tvm {
     class PointerType {
     public:
-      Term* type(Context&, ArrayPtr<Term*const>) const;
+      FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
       LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
@@ -27,7 +27,7 @@ namespace Psi {
 
     class ArrayType {
     public:
-      Term* type(Context&, ArrayPtr<Term*const>) const;
+      FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
       LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
@@ -47,7 +47,7 @@ namespace Psi {
 
     class ArrayValue {
     public:
-      Term* type(Context&, ArrayPtr<Term*const>) const;
+      FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
       LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
       LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
@@ -78,7 +78,7 @@ namespace Psi {
         const FunctionalTerm *m_term;
       };
 
-      Term* type(Context&, ArrayPtr<Term*const>) const;
+      FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
       bool operator == (const AggregateType&) const;
       friend std::size_t hash_value(const AggregateType&);
     };
