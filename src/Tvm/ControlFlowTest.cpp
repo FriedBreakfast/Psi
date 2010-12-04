@@ -1,5 +1,4 @@
-#include <boost/test/unit_test.hpp>
-#include <boost/format.hpp>
+#include "Test.hpp"
 
 #include "Core.hpp"
 #include "Function.hpp"
@@ -10,27 +9,27 @@
 #include "Primitive.hpp"
 #include "JitTypes.hpp"
 
+#include <boost/format.hpp>
+
 namespace Psi {
   namespace Tvm {
-    BOOST_AUTO_TEST_SUITE(ControlFlowTest)
+    BOOST_FIXTURE_TEST_SUITE(ControlFlowTest, Test::ContextFixture)
 
     BOOST_AUTO_TEST_CASE(ReturnIntConst) {
-      Context con;
-
       const Jit::Int32 c = 614659930;
 
       IntegerType i32(true, 32);
-      Term* i32_t = con.get_functional_v(i32).get();
-      Term* value = con.get_functional_v(ConstantInteger(i32, c)).get();
+      Term* i32_t = context.get_functional_v(i32).get();
+      Term* value = context.get_functional_v(ConstantInteger(i32, c)).get();
 
-      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t);
-      FunctionTerm* func = con.new_function(func_type);
+      FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t);
+      FunctionTerm* func = context.new_function(func_type);
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), value);
 
       typedef void* (*callback_type) (void*);
-      callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));
+      callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       Jit::Int32 result;
       void *result_ptr = callback(&result);
@@ -39,19 +38,17 @@ namespace Psi {
     }
 
     BOOST_AUTO_TEST_CASE(ReturnIntParameter) {
-      Context con;
-
       const Jit::Int32 c = 143096367;
 
-      Term* i32_t = con.get_functional_v(IntegerType(true, 32)).get();
-      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t, i32_t);
-      FunctionTerm* func = con.new_function(func_type);
+      Term* i32_t = context.get_functional_v(IntegerType(true, 32)).get();
+      FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t, i32_t);
+      FunctionTerm* func = context.new_function(func_type);
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), func->parameter(0));
 
       typedef void* (*callback_type) (void*,const void*);
-      callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));
+      callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       Jit::Int32 result;
       void *result_ptr = callback(&result, &c);
@@ -60,8 +57,6 @@ namespace Psi {
     }
 
     BOOST_AUTO_TEST_CASE(ReturnDependent) {
-      Context con;
-
       // a decent data size is required - previously a test of less
       // than 16 bytes worked previously for no known reason even
       // though the code generation wasn't working properly.
@@ -69,16 +64,16 @@ namespace Psi {
       const Jit::Metatype data_meta = {sizeof(data), 1};
       BOOST_TEST_MESSAGE(boost::format("Fake type size: %d") % data_meta.size);
 
-      FunctionTypeParameterTerm* param1 = con.new_function_type_parameter(con.get_metatype().get());
-      FunctionTypeParameterTerm* param2 = con.new_function_type_parameter(param1);
-      FunctionTypeTerm* func_type = con.get_function_type_v(param1, param1, param2);
-      FunctionTerm* func = con.new_function(func_type);
+      FunctionTypeParameterTerm* param1 = context.new_function_type_parameter(context.get_metatype().get());
+      FunctionTypeParameterTerm* param2 = context.new_function_type_parameter(param1);
+      FunctionTypeTerm* func_type = context.get_function_type_v(param1, param1, param2);
+      FunctionTerm* func = context.new_function(func_type);
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), func->parameter(1));
 
       typedef void* (*callback_type) (void*,const void*,const void*);
-      callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));
+      callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       char result_data[sizeof(data)];
       // Set to an incorrect value
@@ -90,16 +85,14 @@ namespace Psi {
     }
 
     BOOST_AUTO_TEST_CASE(UnconditionalBranchTest) {
-      Context con;
-
       const Jit::Int32 c = 85278453;
 
       IntegerType i32(true, 32);
-      Term* i32_t = con.get_functional_v(i32).get();
-      Term* value = con.get_functional_v(ConstantInteger(i32, c)).get();
+      Term* i32_t = context.get_functional_v(i32).get();
+      Term* value = context.get_functional_v(ConstantInteger(i32, c)).get();
 
-      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t);
-      FunctionTerm* func = con.new_function(func_type);
+      FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t);
+      FunctionTerm* func = context.new_function(func_type);
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       
@@ -108,7 +101,7 @@ namespace Psi {
       branch_target->new_instruction_v(Return(), value);
 
       typedef void* (*callback_type) (void*);
-      callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));
+      callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       Jit::Int32 result;
       void *result_ptr = callback(&result);
@@ -117,17 +110,15 @@ namespace Psi {
     }
 
     BOOST_AUTO_TEST_CASE(ConditionalBranchTest) {
-      Context con;
-
       const Jit::Int8 c1 = 31;
       const Jit::Int8 c2 = -47;
 
       IntegerType i8(true, 8);
-      Term* i8_t = con.get_functional_v(i8).get();
-      Term* bool_t = con.get_functional_v(BooleanType()).get();
+      Term* i8_t = context.get_functional_v(i8).get();
+      Term* bool_t = context.get_functional_v(BooleanType()).get();
 
-      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i8_t, bool_t);
-      FunctionTerm* func = con.new_function(func_type);
+      FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i8_t, bool_t);
+      FunctionTerm* func = context.new_function(func_type);
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
 
@@ -135,11 +126,11 @@ namespace Psi {
       BlockTerm* block2 = func->new_block(entry);
 
       entry->new_instruction_v(ConditionalBranch(), func->parameter(0), block1, block2);
-      block1->new_instruction_v(Return(), con.get_functional_v(ConstantInteger(i8, c1)).get());
-      block2->new_instruction_v(Return(), con.get_functional_v(ConstantInteger(i8, c2)).get());
+      block1->new_instruction_v(Return(), context.get_functional_v(ConstantInteger(i8, c1)).get());
+      block2->new_instruction_v(Return(), context.get_functional_v(ConstantInteger(i8, c2)).get());
 
       typedef void* (*callback_type) (void*,const void*);
-      callback_type callback = reinterpret_cast<callback_type>(con.term_jit(func));
+      callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       Jit::Int8 result;
       void *result_ptr;
@@ -155,17 +146,15 @@ namespace Psi {
     }
 
     BOOST_AUTO_TEST_CASE(RecursiveCall) {
-      Context con;
-
       const Jit::Int32 c = 275894789;
 
       IntegerType i32(true, 32);
-      Term* i32_t = con.get_functional_v(i32).get();
-      Term* value = con.get_functional_v(ConstantInteger(i32, c)).get();
+      Term* i32_t = context.get_functional_v(i32).get();
+      Term* value = context.get_functional_v(ConstantInteger(i32, c)).get();
 
-      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t);
-      FunctionTerm* outer = con.new_function(func_type);
-      FunctionTerm* inner = con.new_function(func_type);
+      FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t);
+      FunctionTerm* outer = context.new_function(func_type);
+      FunctionTerm* inner = context.new_function(func_type);
 
       BlockTerm* outer_entry = outer->new_block();
       BlockTerm* inner_entry = inner->new_block();
@@ -178,7 +167,7 @@ namespace Psi {
       inner_entry->new_instruction_v(Return(), value);
 
       typedef void* (*callback_type) (void*);
-      callback_type callback = reinterpret_cast<callback_type>(con.term_jit(outer));
+      callback_type callback = reinterpret_cast<callback_type>(context.term_jit(outer));
 
       Jit::Int32 result;
       void *result_ptr = callback(&result);
@@ -187,16 +176,14 @@ namespace Psi {
     }
 
     BOOST_AUTO_TEST_CASE(RecursiveCallParameter) {
-      Context con;
-
       const Jit::Int32 c = 758723;
 
       IntegerType i32(true, 32);
-      Term* i32_t = con.get_functional_v(i32).get();
+      Term* i32_t = context.get_functional_v(i32).get();
 
-      FunctionTypeTerm* func_type = con.get_function_type_fixed_v(i32_t, i32_t);
-      FunctionTerm* outer = con.new_function(func_type);
-      FunctionTerm* inner = con.new_function(func_type);
+      FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t, i32_t);
+      FunctionTerm* outer = context.new_function(func_type);
+      FunctionTerm* inner = context.new_function(func_type);
 
       BlockTerm* outer_entry = outer->new_block();
       BlockTerm* inner_entry = inner->new_block();
@@ -209,7 +196,7 @@ namespace Psi {
       inner_entry->new_instruction_v(Return(), inner->parameter(0));
 
       typedef void* (*callback_type) (void*,const void*);
-      callback_type callback = reinterpret_cast<callback_type>(con.term_jit(outer));
+      callback_type callback = reinterpret_cast<callback_type>(context.term_jit(outer));
 
       Jit::Int32 result;
       void *result_ptr = callback(&result, &c);

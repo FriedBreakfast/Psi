@@ -100,10 +100,25 @@ namespace Psi {
         }
       }
 
-      Term* build_instruction(AssemblerContext& context, BlockTerm& block, const Parser::Expression& expression) {
+      Term* build_instruction(AssemblerContext& context, std::vector<PhiTerm*>& phi_nodes,
+                              BlockTerm& block, const Parser::Expression& expression) {
         switch(expression.expression_type) {
-	case Parser::expression_phi:
-          throw std::logic_error("not implemented");
+	case Parser::expression_phi: {
+          const Parser::PhiExpression& phi_expr = checked_cast<const Parser::PhiExpression&>(expression);
+
+          // check that all the incoming edges listed are indeed label values
+          for (UniqueList<Parser::PhiNode>::const_iterator kt = phi_expr.nodes.begin();
+               kt != phi_expr.nodes.end(); ++kt) {
+            Term *block = context.get(kt->label->text);
+            if (block->term_type() != term_block)
+              throw std::logic_error("incoming label of phi node does not name a block");
+          }
+
+          Term* type = build_expression(context, *phi_expr.type);
+          PhiTerm *phi = block.new_phi(type);
+          phi_nodes.push_back(phi);
+          return phi;
+        }
 
 	case Parser::expression_call:
           return build_instruction_expression(context, block, checked_cast<const Parser::CallExpression&>(expression));
@@ -151,17 +166,45 @@ namespace Psi {
           blocks.push_back(bl);
         }
 
+        std::vector<PhiTerm*> phi_nodes;
         std::vector<BlockTerm*>::const_iterator bt = blocks.begin();
         for (UniqueList<Parser::Block>::const_iterator it = function_def.blocks.begin();
              it != function_def.blocks.end(); ++it, ++bt) {
           PSI_ASSERT(bt != blocks.end());
           for (UniqueList<Parser::NamedExpression>::const_iterator jt = it->statements.begin();
                jt != it->statements.end(); ++jt) {
-            Term* value = build_instruction(my_context, **bt, *jt->expression);
+            Term* value = build_instruction(my_context, phi_nodes, **bt, *jt->expression);
             if (jt->name)
               my_context.put(jt->name->text, value);
           }
         }
+
+        // add values to phi terms
+        bt = blocks.begin();
+        std::vector<PhiTerm*>::iterator pt = phi_nodes.begin();
+        for (UniqueList<Parser::Block>::const_iterator it = function_def.blocks.begin();
+             it != function_def.blocks.end(); ++it, ++bt) {
+          PSI_ASSERT(bt != blocks.end());
+          for (UniqueList<Parser::NamedExpression>::const_iterator jt = it->statements.begin();
+               jt != it->statements.end(); ++jt) {
+            if (jt->expression->expression_type != Parser::expression_phi)
+              continue;
+
+            PSI_ASSERT(pt != phi_nodes.end());
+            const Parser::PhiExpression& phi_expr = checked_cast<const Parser::PhiExpression&>(*jt->expression);
+            PhiTerm *phi_term = *pt;
+            ++pt;
+
+            for (UniqueList<Parser::PhiNode>::const_iterator kt = phi_expr.nodes.begin();
+                 kt != phi_expr.nodes.end(); ++kt) {
+              BlockTerm *block = checked_cast<BlockTerm*>(my_context.get(kt->label->text));
+              Term *value = build_expression(my_context, *kt->expression);
+              phi_term->add_incoming(block, value);
+            }
+          }
+        }
+
+        PSI_ASSERT(pt == phi_nodes.end());
       }
     }
 

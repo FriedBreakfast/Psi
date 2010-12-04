@@ -12,7 +12,7 @@ namespace Psi {
       static LLVMValue binary_op_constant(LLVMValueBuilder& builder, FunctionalTerm& term,
                                           llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*));
       static LLVMValue binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term,
-                                             llvm::Value* (LLVMFunctionBuilder::IRBuilder::*) (llvm::Value*,llvm::Value*,const llvm::Twine&));
+                                             llvm::Value* (LLVMIRBuilder::*) (llvm::Value*,llvm::Value*,const llvm::Twine&));
 
       class BinaryAccess {
       public:

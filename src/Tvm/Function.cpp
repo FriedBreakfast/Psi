@@ -164,6 +164,7 @@ namespace Psi {
 	  FunctionTypeResolverRewriter child(m_depth+1, m_functions);
 	  ParameterListRewriter<> parameters(cast_term,
                                              FunctionTypeParameterListCallback(&child, &status));
+          status.index = cast_term->n_parameters();
 	  Term* result_type = child(cast_term->result_type());
 	  m_functions->erase(cast_term);
 
@@ -261,6 +262,7 @@ namespace Psi {
       FunctionTypeResolverRewriter rewriter(0, &functions);
       ParameterListRewriter<> internal_parameters(term, FunctionTypeResolverRewriter::FunctionTypeParameterListCallback(&rewriter, &status));
       PSI_ASSERT(parameters.size() + phantom_parameters.size() == internal_parameters.size());
+      status.index = internal_parameters.size();
       Term* internal_result_type = rewriter(term->result_type());
       PSI_ASSERT((functions.erase(term), functions.empty()));
 
@@ -487,10 +489,8 @@ namespace Psi {
 	     false, false, false, block, type),
 	m_backend(backend) {
 
-      set_base_parameter(0, block);
-
       for (std::size_t i = 0; i < parameters.size(); ++i)
-	set_base_parameter(i+1, parameters[i]);
+	set_base_parameter(i, parameters[i]);
     }
 
     InstructionTerm::~InstructionTerm() {
@@ -530,7 +530,7 @@ namespace Psi {
       }
 
       std::size_t n_uses() const {
-	return m_parameters.size() + 1;
+	return m_parameters.size();
       }
 
     private:
@@ -656,6 +656,23 @@ namespace Psi {
       return queue;
     }
 
+    /**
+     * \brief Get a list of blocks dominated by this one.
+     */
+    std::vector<BlockTerm*> BlockTerm::dominated_blocks() const {
+      BlockTerm *self = const_cast<BlockTerm*>(this);
+      std::vector<BlockTerm*> result;
+      for (TermIterator<BlockTerm> it = self->term_users_begin<BlockTerm>();
+           it != self->term_users_end<BlockTerm>(); ++it) {
+        if (this == it->dominator())
+          result.push_back(it.get_ptr());
+      }
+      std::sort(result.begin(), result.end());
+      std::vector<BlockTerm*>::iterator last = std::unique(result.begin(), result.end());
+      result.erase(last, result.end());
+      return result;
+    }
+
     InstructionTerm* BlockTerm::new_instruction_internal(const InstructionTermBackend& backend, ArrayPtr<Term*const> parameters) {
       if (m_terminated)
         throw std::logic_error("cannot add instruction to already terminated block");
@@ -699,6 +716,73 @@ namespace Psi {
       return insn;
     }
 
+    /**
+     * \brief Add a value for a phi term along an incoming edge.
+     *
+     * \param block The block which jumps into the block containing
+     * this phi node causing it to take on the given value.
+     *
+     * \param value Value the phi term takes on. This must not be a
+     * phantom value, since it makes no sense for phi terms to allow
+     * phantom values.
+     */
+    void PhiTerm::add_incoming(BlockTerm* block, Term* value) {
+      if (value->phantom())
+        throw std::logic_error("phi nodes cannot take on phantom values");
+
+      std::size_t free_slots = (n_base_parameters() / 2) - m_n_incoming;
+      if (!free_slots)
+        resize_base_parameters(m_n_incoming * 4);
+
+      set_base_parameter(m_n_incoming*2, block);
+      set_base_parameter(m_n_incoming*2+1, value);
+      m_n_incoming++;
+    }
+
+    PhiTerm::PhiTerm(const UserInitializer& ui, Context *context, Term* type, BlockTerm *block)
+      : Term(ui, context, term_phi, false, false, false, block, type),
+        m_n_incoming(0) {
+    }
+
+    class PhiTerm::Initializer : public InitializerBase<PhiTerm> {
+    public:
+      Initializer(Term* type, BlockTerm *block)
+	: m_type(type),
+          m_block(block) {
+      }
+
+      PhiTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
+        return new (base) PhiTerm(ui, context, m_type, m_block);
+      }
+
+      std::size_t n_uses() const {
+        return 8;
+      }
+
+    private:
+      Term* m_type;
+      BlockTerm* m_block;
+    };
+
+    /**
+     * \brief Create a new Phi node.
+     *
+     * Phi nodes allow values from non-dominating blocks to be used by
+     * selecting a value based on which block was run immediately
+     * before this one.
+     *
+     * \param type Type of this term. All values that this term can
+     * take on must be of the same type.
+     */
+    PhiTerm* BlockTerm::new_phi(Term* type) {
+      if (type->phantom())
+        throw std::logic_error("type of phi term cannot be phantom");
+
+      PhiTerm *phi = context().allocate_term(PhiTerm::Initializer(type, this));
+      m_phi_nodes.push_back(*phi);
+      return phi;
+    }
+
     BlockTerm::BlockTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, BlockTerm* dominator)
       : Term(ui, context, term_block, false, false, false, function, context->get_block_type().get()),
         m_terminated(false) {
@@ -726,8 +810,8 @@ namespace Psi {
       BlockTerm* m_dominator;
     };
 
-  FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type, bool phantom)
-    : Term(ui, context, term_function_parameter, false, false, phantom, function, type) {
+    FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type, bool phantom)
+      : Term(ui, context, term_function_parameter, false, false, phantom, function, type) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
       set_base_parameter(0, function);
     }

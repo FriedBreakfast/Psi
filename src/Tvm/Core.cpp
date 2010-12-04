@@ -38,6 +38,10 @@ namespace Psi {
     TermUser::~TermUser() {
     }
 
+    void TermUser::resize_uses(std::size_t n) {
+      User::resize_uses(n);
+    }
+
     PersistentTermPtr::PersistentTermPtr()
       : TermUser(UserInitializer(1, m_uses), term_ptr) {
     }
@@ -116,6 +120,15 @@ namespace Psi {
                  || source_dominated(t->source(), source()));
 
       use_set(n+1, t);
+    }
+
+    /**
+     * Change the number of parameters to this term. This should only
+     * be used for phi terms.
+     */
+    void Term::resize_base_parameters(std::size_t n) {
+      PSI_ASSERT(term_type() == term_phi);
+      resize_uses(n+1);
     }
 
     std::size_t Term::hash_value() const {

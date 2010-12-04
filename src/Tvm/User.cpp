@@ -79,6 +79,11 @@ namespace Psi {
     m_rest.use.prev = this;
   }
 
+  bool Use::is_malloc() {
+    PSI_ASSERT(used_head());
+    return m_target == UserHeadMalloc;
+  }
+
   Used::Used() {
     m_use.init_used_head();
   }
@@ -96,6 +101,29 @@ namespace Psi {
     m_uses[0].init_user_head(true, this, ui.m_n_uses);
     for (std::size_t i = 0; i < ui.m_n_uses; ++i)
       m_uses[i+1].init_use_node();
+  }
+
+  /**
+   * Allocate an out-of-line block of uses. This allows the number of
+   * uses to be changed.
+   */
+  void User::resize_uses(std::size_t new_n_uses) {
+    Use *new_uses = new Use[new_n_uses+1];
+    new_uses[0].init_user_head(false, this, new_n_uses);
+
+    for (std::size_t i = 0; i < new_n_uses; ++i)
+      new_uses[i+1].init_use_node();
+
+    std::size_t copy_use_count = std::min(new_n_uses, m_uses->n_uses());
+    for (std::size_t i = 0; i < copy_use_count; ++i) {
+      new_uses[i+1].set_target(m_uses[i+1].target());
+      m_uses[i+1].set_target(NULL);
+    }
+
+    if (m_uses->is_malloc())
+      delete [] m_uses;
+
+    m_uses = new_uses;
   }
 
   User::~User() {

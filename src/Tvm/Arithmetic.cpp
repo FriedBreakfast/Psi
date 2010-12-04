@@ -33,7 +33,7 @@ namespace Psi {
                                        llvm::cast<llvm::Constant>(rhs.value())));
     }
 
-    LLVMValue ArithmeticOperation::binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term, llvm::Value* (LLVMFunctionBuilder::IRBuilder::*callback) (llvm::Value*,llvm::Value*,const llvm::Twine&)) {
+    LLVMValue ArithmeticOperation::binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term, llvm::Value* (LLVMIRBuilder::*callback) (llvm::Value*,llvm::Value*,const llvm::Twine&)) {
       BinaryAccess self(&term, NULL);
       LLVMValue lhs = builder.value(self.lhs());
       LLVMValue rhs = builder.value(self.rhs());
@@ -53,7 +53,7 @@ namespace Psi {
     }
 
     LLVMValue IntegerAdd::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
-      return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMFunctionBuilder::IRBuilder::CreateAdd);
+      return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMIRBuilder::CreateAdd);
     }
 
     LLVMValue IntegerAdd::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
@@ -69,7 +69,7 @@ namespace Psi {
     }
 
     LLVMValue IntegerSubtract::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
-      return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMFunctionBuilder::IRBuilder::CreateSub);
+      return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMIRBuilder::CreateSub);
     }
 
     LLVMValue IntegerSubtract::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
@@ -85,7 +85,7 @@ namespace Psi {
     }
 
     LLVMValue IntegerMultiply::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
-      return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMFunctionBuilder::IRBuilder::CreateMul);
+      return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMIRBuilder::CreateMul);
     }
 
     LLVMValue IntegerMultiply::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
@@ -103,9 +103,9 @@ namespace Psi {
     LLVMValue IntegerDivide::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
       bool is_signed = checked_cast_functional<IntegerType>(term.type()).backend().is_signed();
       if (is_signed)
-        return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMFunctionBuilder::IRBuilder::CreateSDiv);
+        return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMIRBuilder::CreateSDiv);
       else
-        return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMFunctionBuilder::IRBuilder::CreateUDiv);
+        return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMIRBuilder::CreateUDiv);
     }
 
     LLVMValue IntegerDivide::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {

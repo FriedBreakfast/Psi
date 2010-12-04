@@ -79,7 +79,7 @@ namespace Psi {
       bool is_empty() const {return m_category == category_empty;}
       bool is_known() const {return m_category == category_known;}
       bool is_unknown() const {return m_category == category_unknown;}
-      llvm::Type *type() const {return m_type;}
+      llvm::Type *type() const {PSI_ASSERT(is_known()); return m_type;}
 
       static LLVMType known(llvm::Type *ty) {
 	return LLVMType(category_known, ty);
@@ -114,8 +114,8 @@ namespace Psi {
       bool is_known() const {return m_category == category_known;}
       bool is_unknown() const {return m_category == category_unknown;}
       bool is_empty() const {return m_category == category_empty;}
-      llvm::Value *value() const {return m_value;}
-      llvm::Value *ptr_value() const {return m_ptr_value;}
+      llvm::Value *value() const {PSI_ASSERT(is_known() || is_unknown()); return m_value;}
+      llvm::Value *ptr_value() const {PSI_ASSERT(is_unknown()); return m_ptr_value;}
 
       static LLVMValue known(llvm::Value *value) {return LLVMValue(category_known, value, 0);}
       static LLVMValue unknown(llvm::Value *value, llvm::Value *ptr_value) {return LLVMValue(category_unknown, value, ptr_value);}

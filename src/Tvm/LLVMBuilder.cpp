@@ -332,7 +332,7 @@ namespace Psi {
      */
     llvm::BasicBlock* LLVMValueBuilder::build_function_entry(FunctionTerm *psi_func, llvm::Function *llvm_func, LLVMFunctionBuilder& func_builder) {
       llvm::BasicBlock *entry_block = llvm::BasicBlock::Create(context(), "", llvm_func);
-      LLVMFunctionBuilder::IRBuilder irbuilder(entry_block);
+      LLVMIRBuilder irbuilder(entry_block);
 
       llvm::Function::ArgumentListType& argument_list = llvm_func->getArgumentList();
       llvm::Function::ArgumentListType::const_iterator llvm_it = argument_list.begin();
@@ -377,34 +377,54 @@ namespace Psi {
       return entry_block;
     }
 
+    /**
+     * Allocate space on the stack for unknown typed-phi node values
+     * in all dominated blocks. This wastes some space since it has to
+     * be done in the dominating rather than dominated block, but
+     * without closer control over the stack pointer (which isn't
+     * available in LLVM) I can't do anything else.
+     *
+     * This is also somewhat inefficient since it uses the
+     * user-specified dominator blocks to decide where to put the
+     * alloca instructions, when accurate dominator blocks could
+     * instead be used.
+     */
+    void LLVMValueBuilder::build_phi_alloca(std::tr1::unordered_map<PhiTerm*, llvm::Value*>& phi_storage_map,
+                                            LLVMFunctionBuilder& func_builder, const std::vector<BlockTerm*>& dominated) {
+      for (std::vector<BlockTerm*>::const_iterator jt = dominated.begin(); jt != dominated.end(); ++jt) {
+        const BlockTerm::PhiList& phi_list = (*jt)->phi_nodes();
+        for (BlockTerm::PhiList::const_iterator kt = phi_list.begin(); kt != phi_list.end(); ++kt) {
+          PhiTerm& phi = const_cast<PhiTerm&>(*kt);
+          LLVMType ty = type(phi.type());
+          if (ty.is_unknown()) {
+            LLVMValue ty_val = func_builder.value(phi.type());
+            PSI_ASSERT(ty_val.is_known());
+            llvm::Value *size = func_builder.irbuilder().CreateExtractValue(ty_val.value(), 0);
+            llvm::Value *storage = func_builder.irbuilder().CreateAlloca(llvm::Type::getInt8Ty(context()), size);
+            PSI_ASSERT(phi_storage_map.find(&phi) == phi_storage_map.end());
+            phi_storage_map[&phi] = storage;
+          }
+        }
+      }
+    }
+
     void LLVMValueBuilder::build_function(FunctionTerm *psi_func, llvm::Function *llvm_func) {
-      LLVMFunctionBuilder::IRBuilder irbuilder(context());
+      LLVMIRBuilder irbuilder(context());
       LLVMFunctionBuilder func_builder(this, llvm_func, &irbuilder, psi_func->function_type()->calling_convention());
+      std::tr1::unordered_map<BlockTerm*, llvm::Value*> stack_pointers;
+      std::tr1::unordered_map<PhiTerm*, llvm::Value*> phi_storage_map;
 
       // Set up parameters
-      llvm::BasicBlock *llvm_entry_block = build_function_entry(psi_func, llvm_func, func_builder);
-
-      if (!llvm_entry_block->empty()) {
-        irbuilder.SetInsertPoint(llvm_entry_block);
-	llvm::BasicBlock *new_entry_block = llvm::BasicBlock::Create(context(), "", llvm_func);
-        llvm::Value *sp = irbuilder.CreateCall(func_builder.llvm_stacksave());
-        irbuilder.CreateBr(new_entry_block);
-
-        irbuilder.SetInsertPoint(new_entry_block);
-        irbuilder.CreateCall(func_builder.llvm_stackrestore(), sp);
-
-        llvm_entry_block = new_entry_block;
-      }
+      llvm::BasicBlock *llvm_prolog_block = build_function_entry(psi_func, llvm_func, func_builder);
 
       // Set up basic blocks
       BlockTerm* entry_block = psi_func->entry();
       std::tr1::unordered_set<BlockTerm*> visited_blocks;
       std::vector<BlockTerm*> block_queue;
-      std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
+      std::vector<BlockTerm*> entry_blocks;
       visited_blocks.insert(entry_block);
       block_queue.push_back(entry_block);
-      blocks.push_back(std::make_pair(entry_block, llvm_entry_block));
-      func_builder.m_value_terms.insert(std::make_pair(entry_block, LLVMValue::known(llvm_entry_block)));
+      entry_blocks.push_back(entry_block);
 
       // find root block set
       while (!block_queue.empty()) {
@@ -421,32 +441,25 @@ namespace Psi {
           if (p.second) {
             block_queue.push_back(*it);
             if (!(*it)->dominator())
-              blocks.push_back(std::make_pair(*it, static_cast<llvm::BasicBlock*>(0)));
+              entry_blocks.push_back(*it);
           }
         }
       }
 
-      // reset visited blocks to blocks in the "blocks" variable
-      visited_blocks.clear();
-      for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
-           it != blocks.end(); ++it) {
-        visited_blocks.insert(it->first);
-      }
+      // Set up entry blocks
+      std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
+      for (std::vector<BlockTerm*>::iterator it = entry_blocks.begin(); it != entry_blocks.end(); ++it)
+        blocks.push_back(std::make_pair(*it, static_cast<llvm::BasicBlock*>(0)));
 
       // get remaining blocks in topological order
       for (std::size_t i = 0; i < blocks.size(); ++i) {
-        BlockTerm *bl = blocks[i].first;
-	for (TermIterator<BlockTerm> it = bl->term_users_begin<BlockTerm>();
-	     it != bl->term_users_end<BlockTerm>(); ++it) {
-          if ((bl == it->dominator()) && (visited_blocks.find(it.get_ptr()) == visited_blocks.end())) {
-            blocks.push_back(std::make_pair(it.get_ptr(), static_cast<llvm::BasicBlock*>(0)));
-            visited_blocks.insert(it.get_ptr());
-          }
-        }
+        std::vector<BlockTerm*> dominated = blocks[i].first->dominated_blocks();
+        for (std::vector<BlockTerm*>::iterator it = dominated.begin(); it != dominated.end(); ++it)
+          blocks.push_back(std::make_pair(*it, static_cast<llvm::BasicBlock*>(0)));
       }
 
       // create llvm blocks
-      for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = boost::next(blocks.begin());
+      for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
            it != blocks.end(); ++it) {
         llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(context(), "", llvm_func);
         it->second = llvm_bb;
@@ -455,22 +468,75 @@ namespace Psi {
         PSI_ASSERT(insert_result.second);
       }
 
-      std::tr1::unordered_map<BlockTerm*, llvm::Value*> stack_pointers;
+      // Finish prolog block
+      irbuilder.SetInsertPoint(llvm_prolog_block);
+      // set up phi nodes for entry blocks
+      build_phi_alloca(phi_storage_map, func_builder, entry_blocks);
+      // Save prolog stack and jump into entry
+      stack_pointers[NULL] = irbuilder.CreateCall(func_builder.llvm_stacksave());
+      PSI_ASSERT(blocks[0].first == entry_block);
+      irbuilder.CreateBr(blocks[0].second);
+
+      std::tr1::unordered_map<PhiTerm*, llvm::PHINode*> phi_node_map;
 
       // Build basic blocks
       for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
 	   it != blocks.end(); ++it) {
 	irbuilder.SetInsertPoint(it->second);
+        PSI_ASSERT(it->second->empty());
+
+        // Set up phi terms
+        const BlockTerm::PhiList& phi_list = it->first->phi_nodes();
+        for (BlockTerm::PhiList::const_iterator jt = phi_list.begin(); jt != phi_list.end(); ++jt) {
+          PhiTerm& phi = const_cast<PhiTerm&>(*jt);
+          LLVMType ty = type(phi.type());
+          if (ty.is_known()) {
+            llvm::PHINode *llvm_phi = irbuilder.CreatePHI(ty.type());
+            phi_node_map[&phi] = llvm_phi;
+            func_builder.m_value_terms.insert(std::make_pair(&phi, LLVMValue::known(llvm_phi)));
+          } else if (ty.is_unknown()) {
+            llvm::PHINode *llvm_phi = irbuilder.CreatePHI(llvm::Type::getInt8PtrTy(context()));
+            phi_node_map[&phi] = llvm_phi;
+            PSI_ASSERT(phi_storage_map.find(&phi) != phi_storage_map.end());
+            llvm::Value *phi_storage = phi_storage_map[&phi];
+            func_builder.m_value_terms.insert(std::make_pair(&phi, LLVMValue::unknown(phi_storage, phi_storage)));
+          } else {
+            PSI_ASSERT(ty.is_empty());
+            func_builder.m_value_terms.insert(std::make_pair(&phi, LLVMValue::empty()));
+          }
+        }
+
+        // For phi terms of unknown types, copy from existing storage
+        // which is possibly about to be deallocated to new storage.
+        for (BlockTerm::PhiList::const_iterator jt = phi_list.begin(); jt != phi_list.end(); ++jt) {
+          PhiTerm& phi = const_cast<PhiTerm&>(*jt);
+          LLVMType ty = type(phi.type());
+          if (ty.is_unknown()) {
+            LLVMValue ty_val = func_builder.value(phi.type());
+            PSI_ASSERT(ty_val.is_known());
+            llvm::Value *size = irbuilder.CreateExtractValue(ty_val.value(), 0);
+
+            PSI_ASSERT(phi_node_map.find(&phi) != phi_node_map.end());
+            llvm::PHINode *llvm_phi = phi_node_map[&phi];
+            PSI_ASSERT(phi_storage_map.find(&phi) != phi_storage_map.end());
+            // LLVM intrinsic memcpy requires that the alignment
+            // specified is a constant.
+            llvm::Value *align = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context()), 0);
+            irbuilder.CreateCall5(func_builder.llvm_memcpy(),
+                                  phi_storage_map[&phi], llvm_phi,
+                                  size, align,
+                                  llvm::ConstantInt::getFalse(context()));
+          }
+        }        
 
         // Restore stack as it was when dominating block exited, so
         // any values alloca'd since then are removed. This is
         // necessary to allow loops which handle unknown types without
         // unbounded stack growth.
-        if (it->first->dominator()) {
-          PSI_ASSERT(stack_pointers.find(it->first->dominator()) != stack_pointers.end());
-          irbuilder.CreateCall(func_builder.llvm_stackrestore(), stack_pointers[it->first->dominator()]);
-        }
+        PSI_ASSERT(stack_pointers.find(it->first->dominator()) != stack_pointers.end());
+        irbuilder.CreateCall(func_builder.llvm_stackrestore(), stack_pointers[it->first->dominator()]);
 
+        // Build instructions!
 	const BlockTerm::InstructionList& insn_list = it->first->instructions();
 	for (BlockTerm::InstructionList::const_iterator jt = insn_list.begin(); jt != insn_list.end(); ++jt) {
 	  InstructionTerm& insn = const_cast<InstructionTerm&>(*jt);
@@ -478,11 +544,30 @@ namespace Psi {
 	  func_builder.m_value_terms.insert(std::make_pair(&insn, r));
 	}
 
-        // Save stack pointer - must do this retrospectively before
-        // the last instruction in the block
-        PSI_ASSERT(stack_pointers.find(it->first) == stack_pointers.end());
+        if (!it->second->getTerminator())
+          throw std::logic_error("LLVM block was not terminated during function building");
+
+        // Build block epilog: must move the IRBuilder insert point to
+        // before the terminating instruction first.
         irbuilder.SetInsertPoint(it->second, boost::prior(it->second->end()));
+
+        // Allocate phi node storage for dominated blocks
+        build_phi_alloca(phi_storage_map, func_builder, it->first->dominated_blocks());
+
+        // Save stack pointer so it can be restored in dominated
+        // blocks
+        PSI_ASSERT(stack_pointers.find(it->first) == stack_pointers.end());
         stack_pointers[it->first] = irbuilder.CreateCall(func_builder.llvm_stacksave());
+      }
+
+      // Set up LLVM phi node incoming edges
+      for (std::tr1::unordered_map<PhiTerm*, llvm::PHINode*>::iterator it = phi_node_map.begin();
+           it != phi_node_map.end(); ++it) {
+        for (std::size_t n = 0; n < it->first->n_incoming(); ++n) {
+          LLVMValue incoming_block = func_builder.value(it->first->incoming_block(n));
+          LLVMValue incoming_value = func_builder.value(it->first->incoming_value(n));
+          it->second->addIncoming(incoming_value.value(), llvm::cast<llvm::BasicBlock>(incoming_block.value()));
+        }
       }
 
       if (m_debug_stream)
@@ -516,7 +601,7 @@ namespace Psi {
       return build_term(term, m_value_terms, ConstantBuilderCallback(this)).first;
     }
 
-    LLVMFunctionBuilder::LLVMFunctionBuilder(LLVMValueBuilder *parent, llvm::Function *function, IRBuilder *irbuilder, CallingConvention calling_convention) 
+    LLVMFunctionBuilder::LLVMFunctionBuilder(LLVMValueBuilder *parent, llvm::Function *function, LLVMIRBuilder *irbuilder, CallingConvention calling_convention) 
       : LLVMValueBuilder(parent),
 	m_function(function),
 	m_irbuilder(irbuilder),
@@ -546,17 +631,16 @@ namespace Psi {
       }
 
       if (new_insert_block != old_insert_block) {
-        if (new_insert_block->empty()) {
-          m_irbuilder->SetInsertPoint(new_insert_block);
-        } else {
-          PSI_ASSERT(new_insert_block->back().isTerminator());
-          // if the block has been completed, it should have a stack
-          // save and jump instruction at the end, and we want to insert
-          // before that.
-          llvm::BasicBlock::iterator pos = new_insert_block->end();
-          --pos; --pos;
-          m_irbuilder->SetInsertPoint(new_insert_block, pos);
-        }
+        // If inserting into another block, it should dominate this
+        // one, and therefore already have been built, and terminated.
+        PSI_ASSERT(new_insert_block->getTerminator());
+
+        // if the block has been completed, it should have a stack
+        // save and jump instruction at the end, and we want to insert
+        // before that.
+        llvm::BasicBlock::iterator pos = new_insert_block->end();
+        --pos; --pos;
+        m_irbuilder->SetInsertPoint(new_insert_block, pos);
       } else {
         old_insert_block = NULL;
       }

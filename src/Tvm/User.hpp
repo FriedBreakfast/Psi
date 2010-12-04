@@ -65,6 +65,7 @@ namespace Psi {
     // "used_head" operations
     void clear_users();
     void replace_with(Used *target);
+    bool is_malloc();
 
   private:
     std::tr1::intptr_t m_target;
@@ -144,6 +145,8 @@ namespace Psi {
     std::size_t n_uses() const {
       return m_uses[0].n_uses();
     }
+
+    void resize_uses(std::size_t new_n_uses);
   };
 
   class UserIterator

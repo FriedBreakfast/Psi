@@ -68,19 +68,19 @@ namespace Psi {
 	return llvm::ConstantExpr::getAnd(b, c);
       }
 
-      std::pair<llvm::Value*, llvm::Value*> instruction_size_align(LLVMFunctionBuilder::IRBuilder& irbuilder, llvm::Value *value) {
+      std::pair<llvm::Value*, llvm::Value*> instruction_size_align(LLVMIRBuilder& irbuilder, llvm::Value *value) {
 	llvm::Value *size = irbuilder.CreateExtractValue(value, 0);
 	llvm::Value *align = irbuilder.CreateExtractValue(value, 1);
 	return std::make_pair(size, align);
       }
 
-      llvm::Value* instruction_max(LLVMFunctionBuilder::IRBuilder& irbuilder, llvm::Value *left, llvm::Value *right) {
+      llvm::Value* instruction_max(LLVMIRBuilder& irbuilder, llvm::Value *left, llvm::Value *right) {
 	llvm::Value *cmp = irbuilder.CreateICmpULT(left, right);
 	return irbuilder.CreateSelect(cmp, left, right);
       }
 
       /* See constant_align */
-      llvm::Value* instruction_align(LLVMFunctionBuilder::IRBuilder& irbuilder, llvm::Value* size, llvm::Value* align) {
+      llvm::Value* instruction_align(LLVMIRBuilder& irbuilder, llvm::Value* size, llvm::Value* align) {
 	llvm::Constant* one = llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(size->getType()), 1);
 	llvm::Value* a = irbuilder.CreateSub(align, one);
 	llvm::Value* b = irbuilder.CreateAdd(size, a);
@@ -278,7 +278,7 @@ namespace Psi {
     }
 
     LLVMFunctionBuilder::Result StructType::llvm_value_instruction(LLVMFunctionBuilder& builder, Term *term) const {
-      LLVMFunctionBuilder::IRBuilder& irbuilder = builder.irbuilder();
+      LLVMIRBuilder& irbuilder = builder.irbuilder();
       const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
       llvm::Value *size = llvm::ConstantInt::get(i64, 0);
       llvm::Value *align = llvm::ConstantInt::get(i64, 1);
@@ -325,7 +325,7 @@ namespace Psi {
     }
 
     LLVMFunctionBuilder::Result UnionType::llvm_value_instruction(LLVMFunctionBuilder& builder, Term* term) const {
-      LLVMFunctionBuilder::IRBuilder& irbuilder = builder.irbuilder();
+      LLVMIRBuilder& irbuilder = builder.irbuilder();
       const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
       llvm::Value *size = llvm::ConstantInt::get(i64, 0);
       llvm::Value *align = llvm::ConstantInt::get(i64, 1);

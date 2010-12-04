@@ -28,7 +28,7 @@ namespace Psi {
     }
 
     LLVMValue Return::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
-      LLVMFunctionBuilder::IRBuilder& irbuilder = builder.irbuilder();
+      LLVMIRBuilder& irbuilder = builder.irbuilder();
 
       Term* return_value = term.parameter(0);
       LLVMValue result = builder.value(return_value);
@@ -47,7 +47,6 @@ namespace Psi {
 	  return LLVMValue::known(irbuilder.CreateRet(return_area));
 	} else {
           PSI_ASSERT(result.is_unknown());
-	  llvm::Function *memcpy_fn = builder.llvm_memcpy();
 	  Term* return_type = return_value->type();
 	  if (return_type->type() != term.context().get_metatype())
 	    throw std::logic_error("Type of return type is not metatype");
@@ -61,7 +60,7 @@ namespace Psi {
 	  // specified is a constant.
 	  llvm::Value *align = llvm::ConstantInt::get(llvm::Type::getInt32Ty(builder.context()), 0);
 
-	  irbuilder.CreateCall5(memcpy_fn, return_area, result.ptr_value(),
+	  irbuilder.CreateCall5(builder.llvm_memcpy(), return_area, result.ptr_value(),
 				size, align,
 				llvm::ConstantInt::getFalse(builder.context()));
 	  return LLVMValue::known(irbuilder.CreateRet(return_area));
@@ -176,11 +175,15 @@ namespace Psi {
 	  throw std::logic_error("function argument has the wrong type");
       }
 
-      return target_function_type->result_type_after(parameters.slice(1, 1+n_parameters));
+      Term* result_type = target_function_type->result_type_after(parameters.slice(1, 1+n_parameters));
+      if (result_type->phantom())
+        throw std::logic_error("cannot create function call which leads to unknown result type");
+
+      return result_type;
     }
 
     LLVMValue FunctionCall::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
-      LLVMFunctionBuilder::IRBuilder& irbuilder = builder.irbuilder();
+      LLVMIRBuilder& irbuilder = builder.irbuilder();
       Access self(&term, this);
 
       FunctionTypeTerm* function_type =
@@ -214,11 +217,8 @@ namespace Psi {
 	} else {
 	  PSI_ASSERT(result_type.is_unknown());
 	  LLVMValue result_type_value = builder.value(term.type());
-	  if (!result_type_value.is_known())
-	    throw std::logic_error("Cannot handle a return value whose size and alignment is not known");
-
+          PSI_ASSERT(result_type_value.is_known());
 	  llvm::Value *size = irbuilder.CreateExtractValue(result_type_value.value(), 0);
-	  
 	  result_area = irbuilder.CreateAlloca(llvm::Type::getInt8Ty(builder.context()), size);
 	  parameters.push_back(result_area);
 	}

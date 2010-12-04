@@ -56,9 +56,9 @@ namespace Psi {
       virtual ~InstructionTerm();
 
       const InstructionTermBackend* backend() const {return m_backend;}
-      BlockTerm* block() const {return checked_cast<BlockTerm*>(get_base_parameter(0));}
-      std::size_t n_parameters() const {return Term::n_base_parameters()-1;}
-      Term* parameter(std::size_t n) const {return get_base_parameter(n+1);}
+      BlockTerm* block() const {return checked_cast<BlockTerm*>(source());}
+      std::size_t n_parameters() const {return Term::n_base_parameters();}
+      Term* parameter(std::size_t n) const {return get_base_parameter(n);}
 
     private:
       class Initializer;
@@ -90,13 +90,22 @@ namespace Psi {
       friend class BlockTerm;
 
     public:
-      BlockTerm* block() const {return checked_cast<BlockTerm*>(get_base_parameter(0));}
+      BlockTerm* block() const {return checked_cast<BlockTerm*>(source());}
       void add_incoming(BlockTerm* block, Term* value);
 
+      /// \brief Number of incoming edges
+      std::size_t n_incoming() const {return m_n_incoming;}
+      /// \brief Get the block corresponding to a given incoming edge
+      BlockTerm *incoming_block(std::size_t n) {return checked_cast<BlockTerm*>(get_base_parameter(n*2));}
+      /// \brief Get the value of a given incoming edge
+      Term *incoming_value(std::size_t n) {return get_base_parameter(n*2+1);}
+
     private:
-      PhiTerm(const UserInitializer& ui, Term* type);
+      class Initializer;
+      PhiTerm(const UserInitializer& ui, Context *context, Term* type, BlockTerm *block);
       typedef boost::intrusive::list_member_hook<> PhiListHook;
       PhiListHook m_phi_list_hook;
+      std::size_t m_n_incoming;
     };
 
     template<>
@@ -121,7 +130,7 @@ namespace Psi {
 				     boost::intrusive::member_hook<PhiTerm, PhiTerm::PhiListHook, &PhiTerm::m_phi_list_hook>,
 				     boost::intrusive::constant_time_size<false> > PhiList;
 
-      void new_phi(Term* type);
+      PhiTerm* new_phi(Term* type);
 
       template<typename T>
       InstructionTermPtr<T> new_instruction(const T& proto, ArrayPtr<Term*const> parameters);
@@ -140,6 +149,7 @@ namespace Psi {
       bool dominated_by(BlockTerm* block) const;
       std::vector<BlockTerm*> successors() const;
       std::vector<BlockTerm*> recursive_successors() const;
+      std::vector<BlockTerm*> dominated_blocks() const;
 
 #define PSI_TVM_VA(z,n,data) template<typename T> InstructionTermPtr<T> new_instruction_v(const T& proto BOOST_PP_ENUM_TRAILING_PARAMS_Z(z,n,Term* p)) {Term *ap[n] = {BOOST_PP_ENUM_PARAMS_Z(z,n,p)}; return new_instruction(proto, ArrayPtr<Term*const>(ap,n));}
       BOOST_PP_REPEAT(PSI_TVM_VARARG_MAX,PSI_TVM_VA,)

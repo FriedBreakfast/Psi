@@ -10,6 +10,10 @@
 
 namespace Psi {
   namespace Tvm {
+    typedef llvm::IRBuilder<true, llvm::ConstantFolder, llvm::IRBuilderDefaultInserter<true> > LLVMIRBuilder;
+
+    class LLVMFunctionBuilder;
+
     class LLVMValueBuilder {
     public:
       ~LLVMValueBuilder();
@@ -50,6 +54,8 @@ namespace Psi {
       void build_global_variable(GlobalVariableTerm *psi_var, llvm::GlobalVariable *llvm_var);
       void build_function(FunctionTerm *psi_func, llvm::Function *llvm_func);
       llvm::BasicBlock* build_function_entry(FunctionTerm *psi_func, llvm::Function *llvm_func, LLVMFunctionBuilder& func_builder);
+      void build_phi_alloca(std::tr1::unordered_map<PhiTerm*, llvm::Value*>& phi_storage_map,
+                            LLVMFunctionBuilder& irbuilder, const std::vector<BlockTerm*>& dominated);
     };
 
     class LLVMConstantBuilder : public LLVMValueBuilder {
@@ -65,12 +71,10 @@ namespace Psi {
       friend class LLVMValueBuilder;
 
     public:
-      typedef llvm::IRBuilder<true, llvm::ConstantFolder, llvm::IRBuilderDefaultInserter<true> > IRBuilder;
-
       ~LLVMFunctionBuilder();
 
       llvm::Function* function() {return m_function;}
-      IRBuilder& irbuilder() {return *m_irbuilder;}
+      LLVMIRBuilder& irbuilder() {return *m_irbuilder;}
       CallingConvention calling_convention() const {return m_calling_convention;}
 
       llvm::Function* llvm_memcpy() const {return m_llvm_memcpy;}
@@ -78,11 +82,11 @@ namespace Psi {
       llvm::Function* llvm_stackrestore() const {return m_llvm_stackrestore;}
 
     private:
-      LLVMFunctionBuilder(LLVMValueBuilder *constant_builder, llvm::Function *function, IRBuilder *irbuilder, CallingConvention calling_convention);
+      LLVMFunctionBuilder(LLVMValueBuilder *constant_builder, llvm::Function *function, LLVMIRBuilder *irbuilder, CallingConvention calling_convention);
       virtual LLVMValue value_impl(Term* term);
 
       llvm::Function *m_function;
-      IRBuilder *m_irbuilder;
+      LLVMIRBuilder *m_irbuilder;
       CallingConvention m_calling_convention;
 
       llvm::Function *m_llvm_memcpy;

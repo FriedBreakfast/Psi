@@ -45,6 +45,7 @@ namespace Psi {
     class BlockTerm;
     class FunctionTypeResolverTerm;
     class FunctionTypeResolverParameter;
+    class PhiTerm;
 
     class InstructionTerm;
     class InstructionTermBackend;
@@ -143,6 +144,7 @@ namespace Psi {
       inline std::size_t n_uses() const {return User::n_uses();}
       inline Term* use_get(std::size_t n) const;
       inline void use_set(std::size_t n, Term *term);
+      void resize_uses(std::size_t n);
 
       unsigned char m_term_type;
     };
@@ -354,6 +356,8 @@ namespace Psi {
       Term* get_base_parameter(std::size_t n) const {
         return use_get(n+1);
       }
+
+      void resize_base_parameters(std::size_t n);
     };
 
     inline Term* TermUser::use_get(std::size_t n) const {
