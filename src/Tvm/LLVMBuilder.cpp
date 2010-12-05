@@ -352,7 +352,7 @@ namespace Psi {
 	if (calling_convention == cconv_tvm) {
 	  if (param_type_llvm.is_known()) {
             const llvm::PointerType *ptr_ty = param_type_llvm.type()->getPointerTo();
-            llvm::Value *cast_param = irbuilder.CreateBitCast(llvm_param, ptr_ty);
+            llvm::Value *cast_param = irbuilder.CreatePointerCast(llvm_param, ptr_ty);
             llvm::Value *load = irbuilder.CreateLoad(cast_param, func_builder.term_name(param));
             func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(load)));
 	  } else if (param_type_llvm.is_empty()) {
@@ -734,7 +734,7 @@ namespace Psi {
         return value;
 
       if (llvm::Constant *const_value = llvm::dyn_cast<llvm::Constant>(value)) {
-        return llvm::ConstantExpr::getBitCast(const_value, i8ptr);
+        return llvm::ConstantExpr::getPointerCast(const_value, i8ptr);
       } else {
         return cast_pointer_impl(value, i8ptr);
       }
@@ -757,7 +757,7 @@ namespace Psi {
 
       PSI_ASSERT(value->getType() == llvm::Type::getInt8PtrTy(context()));
       if (llvm::Constant *const_value = llvm::dyn_cast<llvm::Constant>(value)) {
-        return llvm::ConstantExpr::getBitCast(const_value, type);
+        return llvm::ConstantExpr::getPointerCast(const_value, type);
       } else {
         return cast_pointer_impl(value, type);
       }
@@ -839,7 +839,7 @@ namespace Psi {
     }
 
     llvm::Value* LLVMFunctionBuilder::cast_pointer_impl(llvm::Value* value, const llvm::Type* type) {
-      return irbuilder().CreateBitCast(value, type);
+      return irbuilder().CreatePointerCast(value, type);
     }
 
     /**

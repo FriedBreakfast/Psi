@@ -30,14 +30,64 @@ namespace Psi {
         "  return (c_array (int #32) (c_int #32 #576) (c_int #32 #34) (c_int #32 #9));\n"
         "};\n";
 
-      typedef void* (*FunctionType) (void*);
+      typedef void (*FunctionType) (void*);
       const Jit::Int32 expected[] = {576, 34, 9};
       Jit::Int32 result[3];
 
       FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
-      void *ptr = f(result);
-      BOOST_CHECK_EQUAL(ptr, result);
+      f(result);
       BOOST_CHECK_EQUAL_COLLECTIONS(expected, expected+3, result, result+3);
+    }
+
+    struct TestStructType {
+      Jit::Int32 a;
+      Jit::Int64 b;
+      Jit::Int16 c;
+      Jit::Int32 d;
+      Jit::Int8 e;
+
+      bool operator == (const TestStructType& o) const {
+        return (a==o.a) && (b==o.b) && (c==o.c) && (d==o.d) && (e==o.e);
+      }
+
+      friend std::ostream& operator << (std::ostream& os, const TestStructType& x) {
+        os << '{' << x.a << ',' << x.b << ',' << x.c << ',' << x.d << ',' << x.e << '}';
+      }
+    };
+
+    BOOST_AUTO_TEST_CASE(GlobalConstStruct) {
+      const char *src =
+        "%ar = global const (struct (int #32) (int #64) (int #16) (int #32) (int #8))\n"
+        "(c_struct\n"
+        " (c_int #32 #134)\n"
+        " (c_int #64 #654)\n"
+        " (c_int #16 #129)\n"
+        " (c_int #32 #43)\n"
+        " (c_int #8 #7));\n";
+
+      TestStructType expected = {134, 654, 129, 43, 7};
+      const TestStructType *ptr = static_cast<TestStructType*>(jit_single("ar", src));
+      BOOST_CHECK_EQUAL(expected, *ptr);
+    }
+
+    BOOST_AUTO_TEST_CASE(FunctionReturnStruct) {
+      const char *src =
+        "%at = define (struct (int #32) (int #64) (int #16) (int #32) (int #8));\n"
+        "%f = function cc_c () > %at {\n"
+        "  return (c_struct\n"
+        "   (c_int #32 #541)\n"
+        "   (c_int #64 #3590)\n"
+        "   (c_int #16 #1)\n"
+        "   (c_int #32 #155)\n"
+        "   (c_int #8 #99));\n"
+        "};\n";
+
+      typedef TestStructType (*FunctionType) ();
+      const TestStructType expected = {541, 3590, 1, 155, 99};
+
+      FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
+      TestStructType result = f();
+      BOOST_CHECK_EQUAL(expected, result);
     }
 
     BOOST_AUTO_TEST_SUITE_END()

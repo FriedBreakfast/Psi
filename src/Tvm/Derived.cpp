@@ -8,6 +8,7 @@
 
 #include <llvm/Constants.h>
 #include <llvm/DerivedTypes.h>
+#include <llvm/Module.h>
 #include <llvm/Support/IRBuilder.h>
 
 namespace Psi {
@@ -223,7 +224,7 @@ namespace Psi {
     }
 
     LLVMType ArrayValue::llvm_type(LLVMValueBuilder&, FunctionalTerm&) const {
-      throw std::logic_error("array value cannot be used as a type");
+      PSI_FAIL("array value cannot be used as a type");
     }
 
     bool ArrayValue::operator == (const ArrayValue&) const {
@@ -234,7 +235,7 @@ namespace Psi {
       return 0;
     }
 
-    FunctionalTermPtr<ArrayValue> Context::get_constant_array(Term* element_type, ArrayPtr<Term*const> elements) {
+    FunctionalTermPtr<ArrayValue> Context::get_array_value(Term* element_type, ArrayPtr<Term*const> elements) {
       ScopedTermPtrArray<> parameters(elements.size() + 1);
       parameters[0] = element_type;
       for (std::size_t i = 0; i < elements.size(); ++i)
@@ -261,72 +262,220 @@ namespace Psi {
       return 0;
     }
 
-#if 0
-    LLVMValueBuilder::Constant StructType::llvm_value_constant(LLVMValueBuilder& builder, Term* term) const {
-      const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
-      llvm::Constant *size = llvm::ConstantInt::get(i64, 0);
-      llvm::Constant *align = llvm::ConstantInt::get(i64, 1);
+    LLVMValue StructType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
 
-      for (std::size_t i = 0; i < term->n_parameters(); ++i) {
-	Term *param = term->parameter(i);
-	std::pair<llvm::Constant*, llvm::Constant*> size_align = constant_size_align(builder.constant(param).value());
-	size = llvm::ConstantExpr::getAdd(constant_align(size, size_align.second), size);
-	align = constant_max(align, size_align.second);
+      PSI_ASSERT(!term.phantom());
+
+      LLVMType type = builder.type(&term);
+      if (type.is_known()) {
+        return Metatype::llvm_from_type(builder, type.type());
+      } else if (type.is_empty()) {
+        return Metatype::llvm_empty(builder);
+      } else {
+        PSI_ASSERT(type.is_unknown());
+        PSI_ASSERT(self.n_members() > 0);
+
+        LLVMIRBuilder& irbuilder = builder.irbuilder();
+        const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
+        llvm::Value *size = llvm::ConstantInt::get(i64, 0);
+        llvm::Value *align = llvm::ConstantInt::get(i64, 1);
+
+        for (std::size_t i = 0; i < self.n_members(); ++i) {
+          LLVMType param_type = builder.type(self.member_type(i));
+          if (!param_type.is_empty()) {
+            std::pair<llvm::Value*, llvm::Value*> size_align;
+            if (param_type.is_known()) {
+              size_align.first = llvm::ConstantExpr::getSizeOf(param_type.type());
+              size_align.second = llvm::ConstantExpr::getAlignOf(param_type.type());
+            } else {
+              PSI_ASSERT(param_type.is_unknown());
+              LLVMValue param_result = builder.value(self.member_type(i));
+              PSI_ASSERT(param_result.is_known());
+              size_align = instruction_size_align(irbuilder, param_result.known_value());
+            }
+            size = irbuilder.CreateAdd(instruction_align(irbuilder, size, size_align.second), size);
+            align = instruction_max(irbuilder, align, size_align.second);
+          }
+        }
+
+        // size should always be a multiple of align
+        size = instruction_align(irbuilder, size, align);
+        LLVMValue result = Metatype::llvm_runtime(builder, size, align);
+        return result;
       }
-
-      // size should always be a multiple of align
-      size = constant_align(size, align);
-
-      return Metatype::llvm_value(size, align);
     }
 
-    LLVMFunctionBuilder::Result StructType::llvm_value_instruction(LLVMFunctionBuilder& builder, Term *term) const {
-      LLVMIRBuilder& irbuilder = builder.irbuilder();
-      const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
-      llvm::Value *size = llvm::ConstantInt::get(i64, 0);
-      llvm::Value *align = llvm::ConstantInt::get(i64, 1);
+    LLVMValue StructType::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
 
-      for (std::size_t i = 0; i < term->n_parameters(); ++i) {
-	Term *param = term->parameter(i);
-	LLVMFunctionBuilder::Result param_result = builder.value(param);
-	PSI_ASSERT(param_result.known(), "Value of metatype is not known");
-	std::pair<llvm::Value*, llvm::Value*> size_align = instruction_size_align(irbuilder, param_result.value());
-	size = irbuilder.CreateAdd(instruction_align(irbuilder, size, size_align.second), size);
-	align = instruction_max(irbuilder, align, size_align.second);
+      PSI_ASSERT(!term.phantom());
+
+      LLVMType type = builder.type(&term);
+      if (type.is_known()) {
+        return Metatype::llvm_from_type(builder, type.type());
+      } else if (type.is_empty()) {
+        return Metatype::llvm_empty(builder);
+      } else {
+        PSI_ASSERT(type.is_unknown());
+        const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
+        llvm::Constant *size = llvm::ConstantInt::get(i64, 0);
+        llvm::Constant *align = llvm::ConstantInt::get(i64, 1);
+
+        for (std::size_t i = 0; i < self.n_members(); ++i) {
+          LLVMType param_type = builder.type(self.member_type(i));
+          if (!param_type.is_empty()) {
+            std::pair<llvm::Constant*, llvm::Constant*> size_align;
+            if (param_type.is_known()) {
+              size_align.first = llvm::ConstantExpr::getSizeOf(param_type.type());
+              size_align.second = llvm::ConstantExpr::getAlignOf(param_type.type());
+            } else {
+              LLVMValue param_result = builder.value(self.member_type(i));
+              PSI_ASSERT(param_result.is_known());
+              size_align = constant_size_align(llvm::cast<llvm::Constant>(param_result.known_value()));
+            }
+            size = llvm::ConstantExpr::getAdd(constant_align(size, size_align.second), size);
+            align = constant_max(align, size_align.second);
+          }
+        }
+
+        // size should always be a multiple of align
+        size = constant_align(size, align);
+        return Metatype::llvm_from_constant(builder, size, align);
       }
-
-      // size should always be a multiple of align
-      size = instruction_align(irbuilder, size, align);
-
-      return Metatype::llvm_value(builder, size, align);
     }
 
-    LLVMValueBuilder::Type StructType::llvm_type(LLVMValueBuilder& builder, Term *term) const {
+    LLVMType StructType::llvm_type(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
+
       std::vector<const llvm::Type*> member_types;
-      for (std::size_t i = 0; i < term->n_parameters(); ++i) {
-	Term *param = term->parameter(i);
-	LLVMValueBuilder::Type param_result = builder.type(param);
-	if (param_result.known()) {
+      for (std::size_t i = 0; i < self.n_members(); ++i) {
+	LLVMType param_result = builder.type(self.member_type(i));
+	if (param_result.is_known()) {
 	  member_types.push_back(param_result.type());
-	} else if (!param_result.empty()) {
-	  return LLVMValueBuilder::type_unknown();
+	} else if (!param_result.is_empty()) {
+	  return LLVMType::unknown();
 	}
       }
 
       if (!member_types.empty()) {
-	return LLVMValueBuilder::type_known(llvm::StructType::get(builder.context(), member_types));
+	return LLVMType::known(llvm::StructType::get(builder.context(), member_types));
       } else {
-	return LLVMValueBuilder::type_empty();
+	return LLVMType::empty();
       }
     }
 
-    void StructType::validate_parameters(Context&, std::size_t n_parameters, Term *const* parameters) const {
-      for (std::size_t i = 0; i < n_parameters; ++i) {
-	if (parameters[i]->proto().category() == ProtoTerm::term_value)
-	  throw std::logic_error("first argument to array type term is not a type or metatype");
+    FunctionalTermPtr<StructType> Context::get_struct_type(ArrayPtr<Term*const> parameters) {
+      return get_functional(StructType(), parameters);
+    }
+
+    FunctionalTypeResult StructValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
+      ScopedTermPtrArray<> member_types(parameters.size());
+
+      bool phantom = false;
+      for (std::size_t i = 0; i < parameters.size(); ++i) {
+        phantom = phantom || parameters[i]->phantom();
+        member_types[i] = parameters[i]->type();
+      }
+
+      Term *type = context.get_struct_type(member_types.array());
+      PSI_ASSERT(phantom == type->phantom());
+
+      return FunctionalTypeResult(type, phantom);
+    }
+
+    LLVMValue StructValue::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
+
+      PSI_ASSERT(!term.phantom());
+
+      LLVMType ty = builder.type(term.type());
+      if (ty.is_known()) {
+        llvm::Value *result = llvm::UndefValue::get(ty.type());
+        for (std::size_t i = 0; i < self.n_members(); ++i) {
+          LLVMValue val = builder.value(self.member_value(i));
+          PSI_ASSERT(val.is_known());
+          result = builder.irbuilder().CreateInsertValue(result, val.known_value(), i);
+        }
+        return LLVMValue::known(result);
+      } else if (ty.is_empty()) {
+        return LLVMValue::empty();
+      } else {
+        PSI_ASSERT(ty.is_unknown());
+
+        llvm::Value *storage = builder.create_alloca_for(term.type());
+
+        llvm::Value *offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(builder.context()), 0);
+        for (std::size_t i = 0; i < self.n_members(); ++i) {
+          LLVMValue member_val = builder.value(self.member_value(i));
+          if (member_val.is_known()) {
+            llvm::Constant *size = llvm::ConstantExpr::getSizeOf(member_val.known_value()->getType());
+            llvm::Constant *align = llvm::ConstantExpr::getAlignOf(member_val.known_value()->getType());
+            // align pointer to boundary
+            offset = instruction_align(builder.irbuilder(), offset, align);
+            llvm::Value *member_ptr = builder.irbuilder().CreateInBoundsGEP(storage, offset);
+            llvm::Value *cast_member_ptr = builder.irbuilder().CreatePointerCast(member_ptr, member_val.known_value()->getType()->getPointerTo());
+            builder.irbuilder().CreateStore(member_val.known_value(), cast_member_ptr);
+            offset = builder.irbuilder().CreateAdd(offset, size);
+          } else if (member_val.is_unknown()) {
+            LLVMValue member_type_val = builder.value(self.member_value(i)->type());
+            PSI_ASSERT(member_type_val.is_known());
+            std::pair<llvm::Value*,llvm::Value*> size_align = instruction_size_align(builder.irbuilder(), member_type_val.known_value());
+            // align pointer to boundary
+            offset = instruction_align(builder.irbuilder(), offset, size_align.second);
+            llvm::Value *member_ptr = builder.irbuilder().CreateInBoundsGEP(storage, offset);
+            builder.irbuilder().CreateCall5(builder.llvm_memcpy(),
+                                            member_ptr, member_val.unknown_value(),
+                                            size_align.first, builder.llvm_align_zero(),
+                                            llvm::ConstantInt::getFalse(builder.context()));
+            offset = builder.irbuilder().CreateAdd(offset, size_align.first);
+          } else {
+            PSI_ASSERT(member_val.is_empty());
+          }
+        }
+
+        return LLVMValue::known(storage);
       }
     }
 
+    LLVMValue StructValue::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
+
+      PSI_ASSERT(!term.phantom());
+
+      LLVMType ty = builder.type(term.type());
+      if (ty.is_known()) {
+        llvm::Constant *result = llvm::UndefValue::get(ty.type());
+        for (unsigned i = 0; i < self.n_members(); ++i) {
+          LLVMValue val = builder.value(self.member_value(i));
+          PSI_ASSERT(val.is_known());
+          result = llvm::ConstantExpr::getInsertValue(result, llvm::cast<llvm::Constant>(val.known_value()), &i, 1);
+        }
+        return LLVMValue::known(result);
+      } else if (ty.is_empty()) {
+        return LLVMValue::empty();
+      } else {
+        throw std::logic_error("structs containing constant values of unknown type are not currently supported");
+      }
+    }
+
+    LLVMType StructValue::llvm_type(LLVMValueBuilder&, FunctionalTerm&) const {
+      PSI_FAIL("struct value should not have been used as a type");
+    }
+
+    bool StructValue::operator == (const StructValue&) const {
+      return true;
+    }
+
+    std::size_t hash_value(const StructValue&) {
+      return 0;
+    }
+
+    FunctionalTermPtr<StructValue> Context::get_struct_value(ArrayPtr<Term*const> parameters) {
+      return get_functional(StructValue(), parameters);
+    }
+
+#if 0
     LLVMFunctionBuilder::Result UnionType::llvm_value_instruction(LLVMFunctionBuilder& builder, Term* term) const {
       LLVMIRBuilder& irbuilder = builder.irbuilder();
       const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());

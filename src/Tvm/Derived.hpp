@@ -72,7 +72,7 @@ namespace Psi {
       public:
         Access(const FunctionalTerm *term, const AggregateType*) : m_term(term) {}
         std::size_t n_members() const {return m_term->n_parameters();}
-        Term* member(std::size_t i) const {return m_term->parameter(i);}
+        Term* member_type(std::size_t i) const {return m_term->parameter(i);}
 
       private:
         const FunctionalTerm *m_term;
@@ -83,19 +83,33 @@ namespace Psi {
       friend std::size_t hash_value(const AggregateType&);
     };
 
-#if 0
     class StructType : public AggregateType {
     public:
-      static Term* create(Context& context, std::size_t n_members, Term *const* elements);
-
-    private:
-      virtual ProtoTerm* clone() const;
-      virtual LLVMFunctionBuilder::Result llvm_value_instruction(LLVMFunctionBuilder&, Term*) const;
-      virtual LLVMValueBuilder::Constant llvm_value_constant(LLVMValueBuilder&, Term*) const;
-      virtual LLVMValueBuilder::Type llvm_type(LLVMValueBuilder&, Term*) const;
-      virtual void validate_parameters(Context& context, std::size_t n_parameters, Term *const* parameters) const;
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
+      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
     };
 
+    class StructValue {
+    public:
+      FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
+      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
+      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
+      bool operator == (const StructValue&) const;
+      friend std::size_t hash_value(const StructValue&);
+
+      class Access {
+      public:
+	Access(const FunctionalTerm *term, const StructValue*) : m_term(term) {}
+        std::size_t n_members() const {return m_term->n_parameters();}
+        Term* member_value(std::size_t n) const {return m_term->parameter(n);}
+      private:
+	const FunctionalTerm *m_term;
+      };
+    };
+
+#if 0
     class StructValue : public Value {
     public:
       static Term* create(Term *type, std::size_t n_elements, Term *const* elements);

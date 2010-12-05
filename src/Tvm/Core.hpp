@@ -183,6 +183,7 @@ namespace Psi {
       T* get() const {return m_ptr;}
       T* operator -> () const {return m_ptr;}
       T& operator * () const {return *m_ptr;}
+      operator Term* () {return m_ptr;}
 
       template<typename X, typename Y, typename Z>
       bool operator == (const BackendTermPtr<X,Y,Z>& o) const {return o.get() == get();}
@@ -570,7 +571,9 @@ namespace Psi {
       FunctionalTermPtr<IntegerType> get_integer_type(std::size_t n_bits, bool is_signed=true);
       FunctionalTermPtr<ArrayType> get_array_type(Term* element_type, Term* length);
       FunctionalTermPtr<ArrayType> get_array_type(Term* element_type, std::size_t length);
-      FunctionalTermPtr<ArrayValue> get_constant_array(Term* element_type, ArrayPtr<Term*const> elements);
+      FunctionalTermPtr<ArrayValue> get_array_value(Term* element_type, ArrayPtr<Term*const> elements);
+      FunctionalTermPtr<StructType> get_struct_type(ArrayPtr<Term*const> member_types);
+      FunctionalTermPtr<StructValue> get_struct_value(ArrayPtr<Term*const> member_values);
 
       void register_llvm_jit_listener(llvm::JITEventListener *l);
       void unregister_llvm_jit_listener(llvm::JITEventListener *l);
