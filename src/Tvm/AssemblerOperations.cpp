@@ -8,6 +8,7 @@
 #include "ControlFlow.hpp"
 #include "Derived.hpp"
 #include "Number.hpp"
+#include "Memory.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -165,7 +166,10 @@ namespace Psi {
 	("br", DefaultInstructionCallback<UnconditionalBranch>())
 	("call", DefaultInstructionCallback<FunctionCall>())
 	("cond_br", DefaultInstructionCallback<ConditionalBranch>())
-	("return", DefaultInstructionCallback<Return>());
+	("return", DefaultInstructionCallback<Return>())
+        ("alloca", DefaultInstructionCallback<Alloca>())
+        ("load", DefaultInstructionCallback<Load>())
+        ("store", DefaultInstructionCallback<Store>());
     }
   }
 }

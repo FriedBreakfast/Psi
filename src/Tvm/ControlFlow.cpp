@@ -35,41 +35,15 @@ namespace Psi {
 
       if (builder.calling_convention() == cconv_tvm) {
 	llvm::Value *return_area = &builder.function()->getArgumentList().front();
-	if (result.is_known()) {
-	  llvm::Value *cast_return_area = builder.cast_pointer_from_generic(return_area, result.value()->getType()->getPointerTo());
-	  irbuilder.CreateStore(result.value(), cast_return_area);
-	  if (result.value()->getType()->isPointerTy()) {
-	    return LLVMValue::known(irbuilder.CreateRet(result.value()));
-	  } else {
-	    return LLVMValue::known(irbuilder.CreateRet(return_area));
-	  }
-	} else if (result.is_empty()) {
-	  return LLVMValue::known(irbuilder.CreateRet(return_area));
-	} else {
-          PSI_ASSERT(result.is_unknown());
-	  Term* return_type = return_value->type();
-	  if (return_type->type() != term.context().get_metatype())
-	    throw std::logic_error("Type of return type is not metatype");
-
-	  LLVMValue type_value = builder.value(return_type);
-	  if (!type_value.is_known())
-	    throw std::logic_error("Cannot return a value whose size and alignment is not known");
-
-	  llvm::Value *size = irbuilder.CreateExtractValue(type_value.value(), 0);
-	  // LLVM intrinsic memcpy requires that the alignment
-	  // specified is a constant.
-	  llvm::Value *align = llvm::ConstantInt::get(llvm::Type::getInt32Ty(builder.context()), 0);
-
-	  irbuilder.CreateCall5(builder.llvm_memcpy(), return_area, result.ptr_value(),
-				size, align,
-				llvm::ConstantInt::getFalse(builder.context()));
-	  return LLVMValue::known(irbuilder.CreateRet(return_area));
-	}
+        builder.create_store(return_area, return_value);
+        irbuilder.CreateRetVoid();
       } else {
 	if (!result.is_known())
 	  throw std::logic_error("Return value from a non-dependent function must have a known LLVM value");
-	return LLVMValue::known(irbuilder.CreateRet(result.value()));
+	irbuilder.CreateRet(result.known_value());
       }
+
+      return LLVMValue::empty();
     }
 
     void Return::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
@@ -103,12 +77,11 @@ namespace Psi {
       LLVMValue true_target = builder.value(self.true_target());
       LLVMValue false_target = builder.value(self.false_target());
 
-      if (!cond.is_known() || !true_target.is_known() || !false_target.is_known())
-	throw std::logic_error("all parameters to branch instruction must have known value");
+      PSI_ASSERT(cond.is_known() && true_target.is_known() && false_target.is_known());
 
-      llvm::Value *cond_llvm = cond.value();
-      llvm::BasicBlock *true_target_llvm = llvm::cast<llvm::BasicBlock>(true_target.value());
-      llvm::BasicBlock *false_target_llvm = llvm::cast<llvm::BasicBlock>(false_target.value());
+      llvm::Value *cond_llvm = cond.known_value();
+      llvm::BasicBlock *true_target_llvm = llvm::cast<llvm::BasicBlock>(true_target.known_value());
+      llvm::BasicBlock *false_target_llvm = llvm::cast<llvm::BasicBlock>(false_target.known_value());
 
       return LLVMValue::known(builder.irbuilder().CreateCondBr(cond_llvm, true_target_llvm, false_target_llvm));
     }
@@ -136,11 +109,8 @@ namespace Psi {
       Access self(&term, this);
       LLVMValue target = builder.value(self.target());
 
-      if (!target.is_known())
-	throw std::logic_error("parameter to unconditional branch instruction must have known value");
-
-      llvm::BasicBlock *target_llvm = llvm::cast<llvm::BasicBlock>(target.value());
-
+      PSI_ASSERT(target.is_known());
+      llvm::BasicBlock *target_llvm = llvm::cast<llvm::BasicBlock>(target.known_value());
       return LLVMValue::known(builder.irbuilder().CreateBr(target_llvm));
     }
 
@@ -154,6 +124,9 @@ namespace Psi {
 	throw std::logic_error("function call instruction must have at least one parameter: the function being called");
 
       Term *target = parameters[0];
+      if (target->phantom())
+        throw std::logic_error("function call target cannot have phantom value");
+
       FunctionalTermPtr<PointerType> target_ptr_type = dynamic_cast_functional<PointerType>(target->type());
       if (!target_ptr_type)
 	throw std::logic_error("function call target is not a pointer type");
@@ -191,6 +164,7 @@ namespace Psi {
 	(checked_cast_functional<PointerType>(self.target()->type()).backend().target_type());
 
       LLVMValue target = builder.value(self.target());
+      PSI_ASSERT(target.is_known());
       LLVMType result_type = builder.type(term.type());
 
       std::size_t n_parameters = function_type->n_parameters();
@@ -208,18 +182,14 @@ namespace Psi {
 	  // because memory for unknown types must survive their
 	  // scope.
 	  stack_backup = irbuilder.CreateCall(builder.llvm_stacksave());
-	  result_area = irbuilder.CreateAlloca(result_type.type());
-	  llvm::Value *cast_result_area = builder.cast_pointer_to_generic(result_area);
-	  parameters.push_back(cast_result_area);
+          result_area = irbuilder.CreateAlloca(result_type.type());
+	  parameters.push_back(builder.cast_pointer_to_generic(result_area));
 	} else if (result_type.is_empty()) {
 	  result_area = llvm::Constant::getNullValue(llvm::Type::getInt8Ty(builder.context()));
 	  parameters.push_back(result_area);
 	} else {
 	  PSI_ASSERT(result_type.is_unknown());
-	  LLVMValue result_type_value = builder.value(term.type());
-          PSI_ASSERT(result_type_value.is_known());
-	  llvm::Value *size = irbuilder.CreateExtractValue(result_type_value.value(), 0);
-	  result_area = irbuilder.CreateAlloca(llvm::Type::getInt8Ty(builder.context()), size);
+          result_area = builder.create_alloca_for(term.type());
 	  parameters.push_back(result_area);
 	}
       }
@@ -229,20 +199,14 @@ namespace Psi {
 
 	if (calling_convention == cconv_tvm) {
 	  if (param.is_known()) {
-	    if (param.value()->getType()->isPointerTy()) {
-	      PSI_ASSERT(param.value()->getType() == llvm::Type::getInt8PtrTy(builder.context()));
-	      parameters.push_back(param.value());
-	    } else {
-	      if (!stack_backup)
-		stack_backup = irbuilder.CreateCall(builder.llvm_stacksave());
+            if (!stack_backup)
+              stack_backup = irbuilder.CreateCall(builder.llvm_stacksave());
 
-	      llvm::Value *ptr = irbuilder.CreateAlloca(param.value()->getType());
-	      irbuilder.CreateStore(param.value(), ptr);
-	      llvm::Value *cast_ptr = builder.cast_pointer_to_generic(ptr);
-	      parameters.push_back(cast_ptr);
-	    }
+            llvm::Value *ptr = irbuilder.CreateAlloca(param.known_value()->getType());
+            irbuilder.CreateStore(param.known_value(), ptr);
+            parameters.push_back(builder.cast_pointer_to_generic(ptr));
 	  } else if (param.is_unknown()) {
-	    parameters.push_back(param.ptr_value());
+	    parameters.push_back(param.unknown_value());
 	  } else {
             PSI_ASSERT(param.is_empty());
             parameters.push_back(llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(builder.context())));
@@ -250,18 +214,18 @@ namespace Psi {
 	} else {
 	  if (!param.is_known())
 	    throw std::logic_error("Function parameter types must be known for non-TVM calling conventions");
-	  parameters.push_back(param.value());
+	  parameters.push_back(builder.cast_pointer_to_generic(param.known_value()));
 	}
       }
 
       LLVMType llvm_function_type = builder.type(function_type);
       PSI_ASSERT(llvm_function_type.is_known());
 
-      llvm::Value *llvm_target = builder.cast_pointer_from_generic(target.value(), llvm_function_type.type()->getPointerTo());
+      llvm::Value *llvm_target = builder.cast_pointer_from_generic(target.known_value(), llvm_function_type.type()->getPointerTo());
       llvm::Value *result = irbuilder.CreateCall(llvm_target, parameters.begin(), parameters.end());
 
-      if (result_type.is_known() && !result_type.type()->isPointerTy())
-	result = irbuilder.CreateLoad(result_area);
+      if ((calling_convention == cconv_tvm)  && result_type.is_known())
+        result = irbuilder.CreateLoad(result_area);
 
       if (stack_backup)
 	irbuilder.CreateCall(builder.llvm_stackrestore(), stack_backup);
@@ -272,7 +236,7 @@ namespace Psi {
 	return LLVMValue::empty();
       } else {
 	PSI_ASSERT(result_type.is_unknown());
-	return LLVMValue::unknown(result_area, result);
+	return LLVMValue::unknown(result_area);
       }
     }
     
@@ -335,53 +299,6 @@ namespace Psi {
     LLVMValue FunctionApplyPhantom::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
       Access self(&term, this);
       return builder.value(self.function());
-    }
-
-    Term* Alloca::type(Context& context, const FunctionTerm&, ArrayPtr<Term*const> parameters) const {
-      if (parameters.size() != 1)
-        throw std::logic_error("alloca instruction takes one parameter");
-
-      if (!parameters[0]->is_type())
-        throw std::logic_error("parameter to alloca is not a type");
-
-      if (parameters[0]->phantom())
-        throw std::logic_error("parameter to alloca cannot be phantom");
-
-      return context.get_pointer_type(parameters[0]).get();
-    }
-
-    LLVMValue Alloca::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
-      Access self(&term, this);
-
-      LLVMType stored_type = builder.type(self.stored_type());
-      if (stored_type.is_known()) {
-        return LLVMValue::known(builder.irbuilder().CreateAlloca(stored_type.type()));
-      } else if (stored_type.is_empty()) {
-        return LLVMValue::known(llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(builder.context())));
-      }
-
-      PSI_ASSERT(stored_type.is_unknown());
-
-      // Okay, the type is unknown. However if it is an unknown-length
-      // array of values with a known type, I can still get that
-      // through to LLVM.
-      if (FunctionalTermPtr<ArrayType> as_array = dynamic_cast_functional<ArrayType>(self.stored_type())) {
-        LLVMType element_type = builder.type(as_array.backend().element_type());
-        if (element_type.is_known()) {
-          LLVMValue length = builder.value(as_array.backend().length());
-          return LLVMValue::known(builder.irbuilder().CreateAlloca(element_type.type(), length.value()));
-        } else if (element_type.is_empty()) {
-          return LLVMValue::known(llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(builder.context())));
-        }
-      }
-
-      // Okay, it's really unknown, so just allocate as i8[n]
-      LLVMValue size_align = builder.value(self.stored_type());
-      llvm::Value *size = builder.irbuilder().CreateExtractValue(size_align.value(), 0);
-      return LLVMValue::known(builder.irbuilder().CreateAlloca(llvm::Type::getInt8Ty(builder.context()), size));
-    }
-
-    void Alloca::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
     }
   }
 }

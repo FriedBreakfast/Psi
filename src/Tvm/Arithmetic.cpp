@@ -29,8 +29,8 @@ namespace Psi {
       if (!lhs.is_known() || !rhs.is_known())
         throw std::logic_error("cannot perform arithmetic on unknown operands");
 
-      return LLVMValue::known(callback(llvm::cast<llvm::Constant>(lhs.value()),
-                                       llvm::cast<llvm::Constant>(rhs.value())));
+      return LLVMValue::known(callback(llvm::cast<llvm::Constant>(lhs.known_value()),
+                                       llvm::cast<llvm::Constant>(rhs.known_value())));
     }
 
     LLVMValue ArithmeticOperation::binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term, llvm::Value* (LLVMIRBuilder::*callback) (llvm::Value*,llvm::Value*,const llvm::Twine&)) {
@@ -41,7 +41,7 @@ namespace Psi {
       if (!lhs.is_known() || !rhs.is_known())
         throw std::logic_error("cannot perform arithmetic on unknown operands");
 
-      return LLVMValue::known((builder.irbuilder().*callback)(lhs.value(), rhs.value(), ""));
+      return LLVMValue::known((builder.irbuilder().*callback)(lhs.known_value(), rhs.known_value(), ""));
     }
 
     FunctionalTypeResult IntegerAdd::type(Context& context, ArrayPtr<Term*const> parameters) const {

@@ -115,19 +115,18 @@ namespace Psi {
       bool is_known() const {return m_category == category_known;}
       bool is_unknown() const {return m_category == category_unknown;}
       bool is_empty() const {return m_category == category_empty;}
-      llvm::Value *value() const {PSI_ASSERT(is_known() || is_unknown()); return m_value;}
-      llvm::Value *ptr_value() const {PSI_ASSERT(is_unknown()); return m_ptr_value;}
+      llvm::Value *known_value() const {PSI_ASSERT(is_known()); return m_value;}
+      llvm::Value *unknown_value() const {PSI_ASSERT(is_unknown()); return m_value;}
 
-      static LLVMValue known(llvm::Value *value) {return LLVMValue(category_known, value, 0);}
-      static LLVMValue unknown(llvm::Value *value, llvm::Value *ptr_value) {return LLVMValue(category_unknown, value, ptr_value);}
-      static LLVMValue empty() {return LLVMValue(category_empty, 0, 0);}
+      static LLVMValue known(llvm::Value *value) {return LLVMValue(category_known, value);}
+      static LLVMValue unknown(llvm::Value *value) {return LLVMValue(category_unknown, value);}
+      static LLVMValue empty() {return LLVMValue(category_empty, 0);}
 
     private:
-      LLVMValue(Category category, llvm::Value *value, llvm::Value *ptr_value) : m_category(category), m_value(value), m_ptr_value(ptr_value) {}
+      LLVMValue(Category category, llvm::Value *value) : m_category(category), m_value(value) {}
 
       Category m_category;
       llvm::Value *m_value;
-      llvm::Value *m_ptr_value;
     };
   }
 }

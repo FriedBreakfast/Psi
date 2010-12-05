@@ -86,6 +86,18 @@ namespace Psi {
       llvm::Function* llvm_stacksave() const {return m_llvm_stacksave;}
       llvm::Function* llvm_stackrestore() const {return m_llvm_stackrestore;}
 
+      /// Returns an (i32 0). For use with memcpy of unknown types
+      llvm::Constant* llvm_align_zero() const {return m_llvm_align_zero;}
+      /// Returns the maximum alignment for any type supported. This
+      /// seems to have to be hardwired which is bad, but 8 should be
+      /// enough for all current platforms.
+      unsigned llvm_align_max() const {return 8;}
+
+      llvm::Value* create_alloca(llvm::Value *size);
+      llvm::Value* create_alloca_for(Term *type);
+      void create_store(llvm::Value *dest, Term *src);
+      void create_store_unknown(llvm::Value *dest, llvm::Value *src, Term *type);
+
     private:
       LLVMFunctionBuilder(LLVMValueBuilder *constant_builder, llvm::Function *function, LLVMIRBuilder *irbuilder, CallingConvention calling_convention);
       virtual LLVMValue value_impl(Term* term);
@@ -98,6 +110,8 @@ namespace Psi {
       llvm::Function *m_llvm_memcpy;
       llvm::Function *m_llvm_stacksave;
       llvm::Function *m_llvm_stackrestore;
+
+      llvm::Constant *m_llvm_align_zero;
 
       void simplify_stack_save_restore();
       llvm::CallInst* first_stack_restore(llvm::BasicBlock *block);

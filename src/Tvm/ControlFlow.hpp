@@ -88,22 +88,6 @@ namespace Psi {
 	const FunctionalTerm *m_term;
       };
     };
-
-    class Alloca {
-    public:
-      Term* type(Context&, const FunctionTerm&, ArrayPtr<Term*const>) const;
-      LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, InstructionTerm&) const;
-      void jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const;
-
-      class Access {
-      public:
-	Access(const InstructionTerm *term, const Alloca*) : m_term(term) {}
-        /// \brief Get the type which storage is allocated for
-        Term* stored_type() const {return m_term->parameter(0);}
-      private:
-	const InstructionTerm *m_term;
-      };
-    };
   }
 }
 

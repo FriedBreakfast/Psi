@@ -3,6 +3,7 @@
 #include "Derived.hpp"
 #include "Function.hpp"
 #include "Functional.hpp"
+#include "Primitive.hpp"
 #include "Recursive.hpp"
 
 #include <stdexcept>
@@ -66,7 +67,7 @@ namespace Psi {
 	    if (actual.calling_convention() == cconv_tvm) {
 	      const llvm::Type* i8ptr = llvm::Type::getInt8PtrTy(self->context());
 	      std::vector<const llvm::Type*> params(actual.n_parameters() - actual.n_phantom_parameters() + 1, i8ptr);
-	      return LLVMType::known(llvm::FunctionType::get(i8ptr, params, false));
+	      return LLVMType::known(llvm::FunctionType::get(llvm::Type::getVoidTy(self->context()), params, false));
 	    } else {
               std::size_t n_phantom = actual.n_phantom_parameters();
 	      std::size_t n_parameters = actual.n_parameters() - n_phantom;
@@ -266,12 +267,7 @@ namespace Psi {
 	case term_function:
 	case term_global_variable: {
 	  llvm::GlobalValue *gv = global(checked_cast<GlobalTerm*>(term));
-
-	  // Need to force global terms to be of type i8* since they are
-	  // pointers, but the Global term builder can't do this
-	  // because it needs to return a llvm::GlobalVariable
-	  const llvm::Type* i8ptr = llvm::Type::getInt8PtrTy(*m_context);
-	  return LLVMValue::known(llvm::ConstantExpr::getPointerCast(gv, i8ptr));
+          return LLVMValue::known(gv);
 	}
 
         case term_function_parameter:
@@ -355,18 +351,14 @@ namespace Psi {
 
 	if (calling_convention == cconv_tvm) {
 	  if (param_type_llvm.is_known()) {
-	    if (!param_type_llvm.type()->isPointerTy()) {
-	      const llvm::PointerType *ptr_ty = param_type_llvm.type()->getPointerTo();
-	      llvm::Value *cast_param = irbuilder.CreateBitCast(llvm_param, ptr_ty);
-	      llvm::Value *load = irbuilder.CreateLoad(cast_param);
-	      func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(load)));
-	    } else {
-	      func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(llvm_param)));
-	    }
+            const llvm::PointerType *ptr_ty = param_type_llvm.type()->getPointerTo();
+            llvm::Value *cast_param = irbuilder.CreateBitCast(llvm_param, ptr_ty);
+            llvm::Value *load = irbuilder.CreateLoad(cast_param);
+            func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(load)));
 	  } else if (param_type_llvm.is_empty()) {
 	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::empty()));
 	  } else {
-	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::unknown(llvm_param, llvm_param)));
+	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::unknown(llvm_param)));
 	  }
 	} else {
 	  PSI_ASSERT(param_type_llvm.is_known());
@@ -399,8 +391,9 @@ namespace Psi {
           if (ty.is_unknown()) {
             LLVMValue ty_val = func_builder.value(phi.type());
             PSI_ASSERT(ty_val.is_known());
-            llvm::Value *size = func_builder.irbuilder().CreateExtractValue(ty_val.value(), 0);
-            llvm::Value *storage = func_builder.irbuilder().CreateAlloca(llvm::Type::getInt8Ty(context()), size);
+            llvm::Value *size = func_builder.irbuilder().CreateExtractValue(ty_val.known_value(), 0);
+            llvm::AllocaInst *storage = func_builder.irbuilder().CreateAlloca(llvm::Type::getInt8Ty(context()), size);
+            storage->setAlignment(func_builder.llvm_align_max());
             PSI_ASSERT(phi_storage_map.find(&phi) == phi_storage_map.end());
             phi_storage_map[&phi] = storage;
           }
@@ -627,7 +620,7 @@ namespace Psi {
             phi_node_map[&phi] = llvm_phi;
             PSI_ASSERT(phi_storage_map.find(&phi) != phi_storage_map.end());
             llvm::Value *phi_storage = phi_storage_map[&phi];
-            func_builder.m_value_terms.insert(std::make_pair(&phi, LLVMValue::unknown(phi_storage, phi_storage)));
+            func_builder.m_value_terms.insert(std::make_pair(&phi, LLVMValue::unknown(phi_storage)));
           } else {
             PSI_ASSERT(ty.is_empty());
             func_builder.m_value_terms.insert(std::make_pair(&phi, LLVMValue::empty()));
@@ -640,20 +633,9 @@ namespace Psi {
           PhiTerm& phi = const_cast<PhiTerm&>(*jt);
           LLVMType ty = type(phi.type());
           if (ty.is_unknown()) {
-            LLVMValue ty_val = func_builder.value(phi.type());
-            PSI_ASSERT(ty_val.is_known());
-            llvm::Value *size = irbuilder.CreateExtractValue(ty_val.value(), 0);
-
             PSI_ASSERT(phi_node_map.find(&phi) != phi_node_map.end());
-            llvm::PHINode *llvm_phi = phi_node_map[&phi];
             PSI_ASSERT(phi_storage_map.find(&phi) != phi_storage_map.end());
-            // LLVM intrinsic memcpy requires that the alignment
-            // specified is a constant.
-            llvm::Value *align = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context()), 0);
-            irbuilder.CreateCall5(func_builder.llvm_memcpy(),
-                                  phi_storage_map[&phi], llvm_phi,
-                                  size, align,
-                                  llvm::ConstantInt::getFalse(context()));
+            func_builder.create_store_unknown(phi_storage_map[&phi], phi_node_map[&phi], phi.type());
           }
         }        
 
@@ -700,10 +682,22 @@ namespace Psi {
       // Set up LLVM phi node incoming edges
       for (std::tr1::unordered_map<PhiTerm*, llvm::PHINode*>::iterator it = phi_node_map.begin();
            it != phi_node_map.end(); ++it) {
+#ifdef PSI_DEBUG
+        LLVMType ty = type(it->first->type());
+#endif
         for (std::size_t n = 0; n < it->first->n_incoming(); ++n) {
           LLVMValue incoming_block = func_builder.value(it->first->incoming_block(n));
           LLVMValue incoming_value = func_builder.value(it->first->incoming_value(n));
-          it->second->addIncoming(incoming_value.value(), llvm::cast<llvm::BasicBlock>(incoming_block.value()));
+
+          llvm::Value *value =
+#ifdef PSI_DEBUG
+            ty.is_known()
+#else
+            incoming_value.is_known()
+#endif
+            ? incoming_value.known_value() : incoming_value.unknown_value();
+
+          it->second->addIncoming(value, llvm::cast<llvm::BasicBlock>(incoming_block.known_value()));
         }
       }
 
@@ -716,7 +710,7 @@ namespace Psi {
       if (init_value) {
 	LLVMValue llvm_init_value = value(init_value);
 	if (llvm_init_value.is_known()) {
-	  llvm_var->setInitializer(llvm::cast<llvm::Constant>(llvm_init_value.value()));
+	  llvm_var->setInitializer(llvm::cast<llvm::Constant>(llvm_init_value.known_value()));
 	} else if (!llvm_init_value.is_empty()) {
 	  throw std::logic_error("global value initializer is not a known or empty value");
 	}
@@ -794,6 +788,7 @@ namespace Psi {
       m_llvm_memcpy = llvm_intrinsic_memcpy(module());
       m_llvm_stacksave = llvm_intrinsic_stacksave(module());
       m_llvm_stackrestore = llvm_intrinsic_stackrestore(module());
+      m_llvm_align_zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context()), 0);
     }
 
     LLVMFunctionBuilder::~LLVMFunctionBuilder() {
@@ -809,7 +804,7 @@ namespace Psi {
       if (src->term_type() == term_block) {
         ValueTermMap::iterator it = m_value_terms.find(term->source());
         PSI_ASSERT((it != m_value_terms.end()) && it->second.is_known());
-        new_insert_block = llvm::cast<llvm::BasicBlock>(it->second.value());
+        new_insert_block = llvm::cast<llvm::BasicBlock>(it->second.known_value());
       } else {
         PSI_ASSERT(src->term_type() == term_function);
         new_insert_block = &function()->front();
@@ -841,6 +836,84 @@ namespace Psi {
 
     llvm::Value* LLVMFunctionBuilder::cast_pointer_impl(llvm::Value* value, const llvm::Type* type) {
       return irbuilder().CreateBitCast(value, type);
+    }
+
+    /**
+     * Create an alloca instruction for the specified number of bytes
+     * using the maximum system alignment.
+     */
+    llvm::Value* LLVMFunctionBuilder::create_alloca(llvm::Value *size) {
+      llvm::AllocaInst *inst = irbuilder().CreateAlloca(llvm::Type::getInt8Ty(context()), size);
+      inst->setAlignment(llvm_align_max());
+      return inst;
+    }
+
+    /**
+     * Create an alloca instruction for the specified type. This
+     * requires that the type have a known value.
+     */
+    llvm::Value* LLVMFunctionBuilder::create_alloca_for(Term *stored_type) {
+      LLVMType llvm_stored_type = type(stored_type);
+      if (llvm_stored_type.is_known()) {
+        return irbuilder().CreateAlloca(llvm_stored_type.type());
+      } else if (llvm_stored_type.is_empty()) {
+        return llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(context()));
+      }
+
+      PSI_ASSERT(llvm_stored_type.is_unknown());
+
+      // Okay, the type is unknown. However if it is an unknown-length
+      // array of values with a known type, I can still get that
+      // through to LLVM.
+      if (FunctionalTermPtr<ArrayType> as_array = dynamic_cast_functional<ArrayType>(stored_type)) {
+        LLVMType element_type = this->type(as_array.backend().element_type());
+        if (element_type.is_known()) {
+          LLVMValue length = value(as_array.backend().length());
+          PSI_ASSERT(length.is_known());
+          return irbuilder().CreateAlloca(element_type.type(), length.known_value());
+        } else if (element_type.is_empty()) {
+          return llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(context()));
+        }
+      }
+
+      // Okay, it's really unknown, so just allocate as i8[n]
+      LLVMValue size_align = value(stored_type);
+      PSI_ASSERT(size_align.is_known() && (size_align.known_value()->getType() == Metatype::llvm_type(*this).type()));
+      llvm::Value *size = irbuilder().CreateExtractValue(size_align.known_value(), 0);
+      llvm::AllocaInst *inst = irbuilder().CreateAlloca(llvm::Type::getInt8Ty(context()), size);
+      inst->setAlignment(llvm_align_max());
+      return inst;
+    }
+
+    /**
+     * Create a store instruction for the given term into
+     * memory. Handles cases where the term is known or not correctly.
+     */
+    void LLVMFunctionBuilder::create_store(llvm::Value *dest, Term *src) {
+      LLVMValue llvm_src = value(src);
+
+      if (llvm_src.is_known()) {
+        llvm::Value *cast_dest = cast_pointer_from_generic(dest, llvm_src.known_value()->getType()->getPointerTo());
+        irbuilder().CreateStore(llvm_src.known_value(), cast_dest);
+      } else if (llvm_src.is_unknown()) {
+        create_store_unknown(dest, llvm_src.unknown_value(), src->type());
+      } else {
+        PSI_ASSERT(llvm_src.is_empty());
+      }
+    }
+
+    /**
+     * Create a memcpy call which stores an unknown term into a
+     * pointer.
+     */
+    void LLVMFunctionBuilder::create_store_unknown(llvm::Value *dest, llvm::Value *src, Term *src_type) {
+      LLVMValue src_type_value = value(src_type);
+      PSI_ASSERT(src_type_value.is_known() && (src_type_value.known_value()->getType() == Metatype::llvm_type(*this).type()));
+
+      llvm::Value *size = irbuilder().CreateExtractValue(src_type_value.known_value(), 0);
+
+      irbuilder().CreateCall5(llvm_memcpy(), dest, src, size, llvm_align_zero(),
+                              llvm::ConstantInt::getFalse(context()));
     }
 
     llvm::Function* llvm_intrinsic_memcpy(llvm::Module& m) {

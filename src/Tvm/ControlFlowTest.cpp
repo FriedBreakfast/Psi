@@ -28,12 +28,11 @@ namespace Psi {
       func->set_entry(entry);
       entry->new_instruction_v(Return(), value);
 
-      typedef void* (*callback_type) (void*);
+      typedef void (*callback_type) (void*);
       callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       Jit::Int32 result;
-      void *result_ptr = callback(&result);
-      BOOST_CHECK_EQUAL(result_ptr, &result);
+      callback(&result);
       BOOST_CHECK_EQUAL(result, c);
     }
 
@@ -47,12 +46,11 @@ namespace Psi {
       func->set_entry(entry);
       entry->new_instruction_v(Return(), func->parameter(0));
 
-      typedef void* (*callback_type) (void*,const void*);
+      typedef void (*callback_type) (void*,const void*);
       callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       Jit::Int32 result;
-      void *result_ptr = callback(&result, &c);
-      BOOST_CHECK_EQUAL(result_ptr, &result);
+      callback(&result, &c);
       BOOST_CHECK_EQUAL(result, c);
     }
 
@@ -72,14 +70,13 @@ namespace Psi {
       func->set_entry(entry);
       entry->new_instruction_v(Return(), func->parameter(1));
 
-      typedef void* (*callback_type) (void*,const void*,const void*);
+      typedef void (*callback_type) (void*,const void*,const void*);
       callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       char result_data[sizeof(data)];
       // Set to an incorrect value
       std::fill_n(result_data, sizeof(result_data), 'x');
-      void *result_ptr = callback(result_data, &data_meta, data);
-      BOOST_CHECK_EQUAL(result_ptr, result_data);
+      callback(result_data, &data_meta, data);
       BOOST_CHECK_EQUAL_COLLECTIONS(result_data, result_data+sizeof(result_data),
 				    data, data+sizeof(data));
     }
@@ -100,12 +97,11 @@ namespace Psi {
       entry->new_instruction_v(UnconditionalBranch(), branch_target);
       branch_target->new_instruction_v(Return(), value);
 
-      typedef void* (*callback_type) (void*);
+      typedef void (*callback_type) (void*);
       callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       Jit::Int32 result;
-      void *result_ptr = callback(&result);
-      BOOST_CHECK_EQUAL(result_ptr, &result);
+      callback(&result);
       BOOST_CHECK_EQUAL(result, c);
     }
 
@@ -129,19 +125,17 @@ namespace Psi {
       block1->new_instruction_v(Return(), context.get_functional_v(ConstantInteger(i8, c1)).get());
       block2->new_instruction_v(Return(), context.get_functional_v(ConstantInteger(i8, c2)).get());
 
-      typedef void* (*callback_type) (void*,const void*);
+      typedef void (*callback_type) (void*,const void*);
       callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       Jit::Int8 result;
       void *result_ptr;
       Jit::Int8 param = 1;
-      result_ptr = callback(&result, &param);
-      BOOST_CHECK_EQUAL(result_ptr, &result);
+      callback(&result, &param);
       BOOST_CHECK_EQUAL(result, c1);
 
       param = 0;
       callback(&result, &param);
-      BOOST_CHECK_EQUAL(result_ptr, &result);
       BOOST_CHECK_EQUAL(result, c2);
     }
 
@@ -166,12 +160,11 @@ namespace Psi {
       outer_entry->new_instruction_v(Return(), call_value);
       inner_entry->new_instruction_v(Return(), value);
 
-      typedef void* (*callback_type) (void*);
+      typedef void (*callback_type) (void*);
       callback_type callback = reinterpret_cast<callback_type>(context.term_jit(outer));
 
       Jit::Int32 result;
-      void *result_ptr = callback(&result);
-      BOOST_CHECK_EQUAL(result_ptr, &result);
+      callback(&result);
       BOOST_CHECK_EQUAL(result, c);
     }
 
@@ -195,12 +188,11 @@ namespace Psi {
       outer_entry->new_instruction_v(Return(), call_value);
       inner_entry->new_instruction_v(Return(), inner->parameter(0));
 
-      typedef void* (*callback_type) (void*,const void*);
+      typedef void (*callback_type) (void*,const void*);
       callback_type callback = reinterpret_cast<callback_type>(context.term_jit(outer));
 
       Jit::Int32 result;
-      void *result_ptr = callback(&result, &c);
-      BOOST_CHECK_EQUAL(result_ptr, &result);
+      callback(&result, &c);
       BOOST_CHECK_EQUAL(result, c);
     }
 

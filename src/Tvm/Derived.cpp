@@ -112,8 +112,8 @@ namespace Psi {
 	throw std::logic_error("array length value or element size and alignment is not a known constant");
 
       std::pair<llvm::Value*,llvm::Value*> size_align =
-        instruction_size_align(builder.irbuilder(), element_size_align.value());
-      llvm::Value *size = builder.irbuilder().CreateMul(size_align.first, length_value.value());
+        instruction_size_align(builder.irbuilder(), element_size_align.known_value());
+      llvm::Value *size = builder.irbuilder().CreateMul(size_align.first, length_value.known_value());
       return Metatype::llvm_runtime(builder, size, size_align.second);
     }
 
@@ -127,8 +127,8 @@ namespace Psi {
 	throw std::logic_error("constant array length value or element type is not a known");
 
       std::pair<llvm::Constant*,llvm::Constant*> size_align =
-        constant_size_align(llvm::cast<llvm::Constant>(element_size_align.value()));
-      llvm::Constant *size = llvm::ConstantExpr::getMul(size_align.first, llvm::cast<llvm::Constant>(length_value.value()));
+        constant_size_align(llvm::cast<llvm::Constant>(element_size_align.known_value()));
+      llvm::Constant *size = llvm::ConstantExpr::getMul(size_align.first, llvm::cast<llvm::Constant>(length_value.known_value()));
       return Metatype::llvm_from_constant(builder, size, size_align.second);
     }
 
@@ -141,7 +141,10 @@ namespace Psi {
       if (!length_value.is_known() || !element_llvm_type.is_known())
 	return LLVMType::unknown();
 
-      llvm::ConstantInt *length_llvm = llvm::cast<llvm::ConstantInt>(length_value.value());
+      llvm::ConstantInt *length_llvm = llvm::dyn_cast<llvm::ConstantInt>(length_value.known_value());
+      if (!length_llvm)
+        return LLVMType::unknown();
+
       return LLVMType::known(llvm::ArrayType::get(element_llvm_type.type(), length_llvm->getZExtValue()));
     }
 
@@ -194,7 +197,7 @@ namespace Psi {
         LLVMValue element = builder.value(self.value(i));
         if (!element.is_known())
           throw std::logic_error("array element value not known");
-        array = builder.irbuilder().CreateInsertValue(array, element.value(), i);
+        array = builder.irbuilder().CreateInsertValue(array, element.known_value(), i);
       }
 
       return LLVMValue::known(array);
@@ -213,7 +216,7 @@ namespace Psi {
         LLVMValue element = builder.value(self.value(i));
         if (!element.is_known())
           throw std::logic_error("array element value not known");
-        elements.push_back(llvm::cast<llvm::Constant>(element.value()));
+        elements.push_back(llvm::cast<llvm::Constant>(element.known_value()));
       }
 
       return LLVMValue::known(llvm::ConstantArray::get(llvm::cast<llvm::ArrayType>(array_type.type()), elements));

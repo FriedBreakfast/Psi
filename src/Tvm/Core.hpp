@@ -193,7 +193,7 @@ namespace Psi {
       operator SafeBoolType () const {return get() ? &ThisType::safe_bool_true : 0;}
 
     protected:
-      BackendTermPtr() {}
+      BackendTermPtr() : m_ptr(0) {}
       BackendTermPtr(T* src) : m_ptr(src) {}
 
     private:

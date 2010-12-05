@@ -23,6 +23,7 @@ add_library(psi SHARED
   Tvm/JitTypes.hpp
   Tvm/LLVMBuilder.cpp Tvm/LLVMBuilder.hpp
   Tvm/LLVMValue.hpp
+  Tvm/Memory.cpp Tvm/Memory.hpp
   Tvm/Number.cpp Tvm/Number.hpp
   ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
   Tvm/Primitive.cpp Tvm/Primitive.hpp
@@ -64,6 +65,7 @@ add_executable(test TestMain.cpp
   Tvm/ControlFlowTest.cpp
   Tvm/DerivedTest.cpp
   Tvm/FunctionTest.cpp
+  Tvm/MemoryTest.cpp
   Tvm/ParserTest.cpp
 #  MaybeTest.cpp
 #  TypeSystemTest.cpp
