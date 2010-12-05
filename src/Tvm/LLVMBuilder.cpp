@@ -172,7 +172,17 @@ namespace Psi {
 
       struct InstructionFunctionalCallback {
 	LLVMValue operator () (LLVMFunctionBuilder& self, FunctionalTerm& term) const {
-	  return term.backend()->llvm_value_instruction(self, term);
+	  LLVMValue result = term.backend()->llvm_value_instruction(self, term);
+
+          llvm::Value *val =
+            result.is_known() ? result.known_value()
+            : result.is_unknown() ? result.unknown_value()
+            : NULL;
+
+          if (val && llvm::isa<llvm::Instruction>(val) && (val->getType() != llvm::Type::getVoidTy(self.context())))
+            val->setName(self.term_name(&term));
+
+          return result;
 	}
       };
 

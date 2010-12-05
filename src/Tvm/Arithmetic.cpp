@@ -41,7 +41,7 @@ namespace Psi {
       if (!lhs.is_known() || !rhs.is_known())
         throw std::logic_error("cannot perform arithmetic on unknown operands");
 
-      return LLVMValue::known((builder.irbuilder().*callback)(lhs.known_value(), rhs.known_value(), builder.term_name(&term)));
+      return LLVMValue::known((builder.irbuilder().*callback)(lhs.known_value(), rhs.known_value(), ""));
     }
 
     FunctionalTypeResult IntegerAdd::type(Context& context, ArrayPtr<Term*const> parameters) const {

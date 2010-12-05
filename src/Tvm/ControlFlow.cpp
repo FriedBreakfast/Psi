@@ -224,9 +224,6 @@ namespace Psi {
       llvm::Value *llvm_target = builder.cast_pointer_from_generic(target.known_value(), llvm_function_type.type()->getPointerTo());
       llvm::Value *result = irbuilder.CreateCall(llvm_target, parameters.begin(), parameters.end());
 
-      if (result->getType() != llvm::Type::getVoidTy(builder.context()))
-        result->setName(builder.term_name(&term));
-
       if ((calling_convention == cconv_tvm)  && result_type.is_known())
         result = irbuilder.CreateLoad(result_area);
 
