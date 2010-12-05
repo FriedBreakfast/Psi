@@ -61,6 +61,44 @@ namespace Psi {
       BOOST_CHECK_EQUAL(result, c);
     }
 
+    BOOST_AUTO_TEST_CASE(PhantomParameterTest) {
+      const char *src =
+        "%f = function cc_c (%a:type|%b:bool,%c:(pointer %a),%d:(pointer %a)) > (pointer %a) {\n"
+        " cond_br %b %tc %td;\n"
+        "block %tc:\n"
+        " return %c;\n"
+        "block %td:\n"
+        " return %d;\n"
+        "};\n";
+
+      typedef void* (*FunctionType) (Jit::Boolean,void*,void*);
+      FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
+
+      int x, y;
+      BOOST_CHECK_EQUAL(f(true, &x, &y), &x);
+      BOOST_CHECK_EQUAL(f(false, &x, &y), &y);
+    }
+
+    namespace {
+      void* return_1(void*x,void*) {return x;}
+      void* return_2(void*,void*x) {return x;}
+    }
+
+    BOOST_AUTO_TEST_CASE(PhantomCallbackTest) {
+      const char *src =
+        "%f = function cc_c(%a:type|%b:(pointer(function cc_c ((pointer %a),(pointer %a))>(pointer %a))),%c:(pointer %a),%d:(pointer %a)) > (pointer %a) {\n"
+        "  %r = call %b %c %d;\n"
+        "  return %r;\n"
+        "};\n";
+
+      typedef void* (*FunctionType) (void*(*)(void*,void*),void*,void*);
+      FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
+
+      int x, y;
+      BOOST_CHECK_EQUAL(f(return_1,&x,&y), &x);
+      BOOST_CHECK_EQUAL(f(return_2,&x,&y), &y);
+    }
+
     BOOST_AUTO_TEST_CASE(PhiTest) {
       const char *src =
         "%i32 = define (int #32);\n"

@@ -114,9 +114,7 @@ namespace Psi {
 
       PSI_ASSERT_MSG(!use_get(n+1), "parameters to existing terms cannot be changed once set");
       PSI_ASSERT(!t
-                 || ((term_type() == term_function)
-                     && ((t->term_type() == term_function_parameter)
-                         || (t->term_type() == term_block)))
+                 || (term_type() == term_function)
                  || source_dominated(t->source(), source()));
 
       use_set(n+1, t);
