@@ -10,6 +10,10 @@
 namespace Psi {
   namespace Tvm {
     namespace Assembler {
+      AssemblerError::AssemblerError(const std::string& msg)
+        : std::runtime_error(msg) {
+      }
+
       AssemblerContext::AssemblerContext(Context *context) : m_context(context), m_parent(0) {
       }
 
@@ -26,13 +30,13 @@ namespace Psi {
 	  if (it != self->m_terms.end())
 	    return it->second;
 	}
-	throw std::logic_error("Name not defined: " + name);
+	throw AssemblerError("Name not defined: " + name);
       }
 
       void AssemblerContext::put(const std::string& name, Term* value) {
 	std::pair<TermMap::iterator, bool> result = m_terms.insert(std::make_pair(name, value));
 	if (!result.second)
-	  throw std::logic_error("Name defined twice: " + name);
+	  throw AssemblerError("Name defined twice: " + name);
       }
 
       FunctionalTerm* build_functional_expression(AssemblerContext& context, const Parser::CallExpression& expression) {
@@ -40,7 +44,7 @@ namespace Psi {
           functional_ops.find(expression.target->text);
 
         if (it == functional_ops.end())
-          throw std::logic_error("unknown operation " + expression.target->text);
+          throw AssemblerError("unknown operation " + expression.target->text);
 
         return it->second(it->first, context, expression);
       }
@@ -57,7 +61,7 @@ namespace Psi {
 	  return build_function_type(context, checked_cast<const Parser::FunctionTypeExpression&>(expression));
 
 	default:
-	  throw std::logic_error("invalid expression type");
+	  PSI_FAIL("invalid expression type");
 	}
       }
 
@@ -111,7 +115,7 @@ namespace Psi {
                kt != phi_expr.nodes.end(); ++kt) {
             Term *block = context.get(kt->label->text);
             if (block->term_type() != term_block)
-              throw std::logic_error("incoming label of phi node does not name a block");
+              throw AssemblerError("incoming label of phi node does not name a block");
           }
 
           Term* type = build_expression(context, *phi_expr.type);
@@ -160,7 +164,7 @@ namespace Psi {
           if (it->dominator_name) {
             Term* dominator_base = my_context.get(it->dominator_name->text);
             if (dominator_base->term_type() != term_block)
-              throw std::logic_error("dominator block name is not a block");
+              throw AssemblerError("dominator block name is not a block");
             dominator = checked_cast<BlockTerm*>(dominator_base);
           } else {
             dominator = entry;

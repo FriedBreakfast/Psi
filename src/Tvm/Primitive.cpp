@@ -18,7 +18,7 @@ namespace Psi {
 
     FunctionalTypeResult Metatype::type(Context&, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 0)
-	throw std::logic_error("metatype created with parameters");
+	throw TvmUserError("metatype created with parameters");
       return FunctionalTypeResult(NULL, false);
     }
 
@@ -26,8 +26,8 @@ namespace Psi {
       return llvm_value_constant(builder, term);
     }
 
-    LLVMValue Metatype::llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const {
-      throw std::logic_error("metatype does not have a value");
+    LLVMValue Metatype::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
+      return llvm_from_type(builder, llvm_type(builder).type());
     }
 
     LLVMType Metatype::llvm_type(LLVMValueBuilder& builder, Term&) const {
@@ -83,10 +83,10 @@ namespace Psi {
      */
     LLVMValue Metatype::llvm_from_constant(LLVMValueBuilder& builder, llvm::Constant *size, llvm::Constant *align) {
       if (!size->getType()->isIntegerTy(64) || !align->getType()->isIntegerTy(64))
-	throw std::logic_error("size or align in metatype is not a 64-bit integer");
+	throw TvmUserError("size or align in metatype is not a 64-bit integer");
 
-      if (llvm::cast<llvm::ConstantInt>(align)->getValue().exactLogBase2() < 0)
-	throw std::logic_error("alignment is not a power of two");
+      if (llvm::isa<llvm::ConstantInt>(align) && (llvm::cast<llvm::ConstantInt>(align)->getValue().exactLogBase2() < 0))
+	throw TvmUserError("alignment is not a power of two");
 
       llvm::Constant* values[2] = {size, align};
       return LLVMValue::known(llvm::ConstantStruct::get(builder.context(), values, 2, false));

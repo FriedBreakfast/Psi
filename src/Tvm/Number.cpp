@@ -82,7 +82,7 @@ namespace Psi {
       std::size_t value_bits = mpz_sizeinbase(value.get_mpz_t(), 2);
       if (mpz_sgn(value.get_mpz_t()) < 0) {
 	if (!is_signed)
-	  throw std::logic_error("integer literal value of out range");
+	  throw TvmUserError("integer literal value of out range");
 	value_bits++;
       }
       value_bits = std::max(value_bits, std::size_t(n_bits));
@@ -97,12 +97,12 @@ namespace Psi {
 	if (ap.isSignedIntN(n_bits))
 	  return ap.sext(n_bits);
 	else
-	  throw std::logic_error("integer literal value of out range");
+	  throw TvmUserError("integer literal value of out range");
       } else {
 	if (ap.isIntN(n_bits))
 	  return ap.zext(n_bits);
 	else
-	  throw std::logic_error("integer literal value of out range");
+	  throw TvmUserError("integer literal value of out range");
       }
     }
 

@@ -2,6 +2,7 @@
 #define HPP_PSI_TVM_CORE
 
 #include <vector>
+#include <stdexcept>
 
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
@@ -63,6 +64,23 @@ namespace Psi {
     class UnionValue;
     class BooleanType;
     class IntegerType;
+
+    /**
+     * Thrown when an error is caused by the users use of the library.
+     */
+    class TvmUserError : public std::runtime_error {
+    public:
+      TvmUserError(const std::string& msg);
+    };
+
+    /**
+     * Thrown when an internal library error occurs, which should not
+     * occur.
+     */
+    class TvmInternalError : public std::logic_error {
+    public:
+      TvmInternalError(const std::string& msg);
+    };
 
     /**
      * \brief Identifies the Term subclass this object actually is.

@@ -15,9 +15,9 @@ namespace Psi {
   namespace Tvm {
     FunctionalTypeResult PointerType::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 1)
-	throw std::logic_error("pointer type takes one parameter");
+	throw TvmUserError("pointer type takes one parameter");
       if (!parameters[0]->is_type())
-        throw std::logic_error("pointer argument must be a type");
+        throw TvmUserError("pointer argument must be a type");
       return FunctionalTypeResult(context.get_metatype().get(), false);
     }
 
@@ -92,13 +92,13 @@ namespace Psi {
 
     FunctionalTypeResult ArrayType::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 2)
-	throw std::logic_error("array type term takes two parameters");
+	throw TvmUserError("array type term takes two parameters");
 
       if (!parameters[0]->is_type())
-	throw std::logic_error("first argument to array type term is not a type");
+	throw TvmUserError("first argument to array type term is not a type");
 
       if (parameters[1]->type() != context.get_integer_type(64, false))
-	throw std::logic_error("second argument to array type term is not a 64-bit integer");
+	throw TvmUserError("second argument to array type term is not a 64-bit integer");
 
       return FunctionalTypeResult(context.get_metatype().get(), parameters[0]->phantom() || parameters[1]->phantom());
     }
@@ -109,8 +109,7 @@ namespace Psi {
       LLVMValue element_size_align = builder.value(self.element_type());
       LLVMValue length_value = builder.value(self.length());
 
-      if (!element_size_align.is_known() || !length_value.is_known())
-	throw std::logic_error("array length value or element size and alignment is not a known constant");
+      PSI_ASSERT(element_size_align.is_known() && !length_value.is_known());
 
       std::pair<llvm::Value*,llvm::Value*> size_align =
         instruction_size_align(builder.irbuilder(), element_size_align.known_value());
@@ -124,8 +123,7 @@ namespace Psi {
       LLVMValue element_size_align = builder.value(self.element_type());
       LLVMValue length_value = builder.value(self.length());
 
-      if (!element_size_align.is_known() || !length_value.is_known())
-	throw std::logic_error("constant array length value or element type is not a known");
+      PSI_ASSERT(element_size_align.is_known() && length_value.is_known());
 
       std::pair<llvm::Constant*,llvm::Constant*> size_align =
         constant_size_align(llvm::cast<llvm::Constant>(element_size_align.known_value()));
@@ -168,15 +166,15 @@ namespace Psi {
 
     FunctionalTypeResult ArrayValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() < 1)
-        throw std::logic_error("array values require at least one parameter");
+        throw TvmUserError("array values require at least one parameter");
 
       if (!parameters[0]->is_type())
-        throw std::logic_error("first argument to array value is not a type");
+        throw TvmUserError("first argument to array value is not a type");
 
       bool phantom = false;
       for (std::size_t i = 1; i < parameters.size(); ++i) {
         if (parameters[i]->type() != parameters[0])
-          throw std::logic_error("array value element is of the wrong type");
+          throw TvmUserError("array value element is of the wrong type");
         phantom = phantom || parameters[i]->phantom();
       }
 
@@ -189,15 +187,13 @@ namespace Psi {
       Access self(&term, this);
 
       LLVMType array_type = builder.type(term.type());
-      if (!array_type.is_known())
-        throw std::logic_error("array element type not known");
+      PSI_ASSERT(array_type.is_known());
 
       llvm::Value *array = llvm::UndefValue::get(array_type.type());
 
       for (std::size_t i = 0; i < self.length(); ++i) {
         LLVMValue element = builder.value(self.value(i));
-        if (!element.is_known())
-          throw std::logic_error("array element value not known");
+        PSI_ASSERT(element.is_known());
         array = builder.irbuilder().CreateInsertValue(array, element.known_value(), i);
       }
 
@@ -208,15 +204,13 @@ namespace Psi {
       Access self(&term, this);
 
       LLVMType array_type = builder.type(term.type());
-      if (!array_type.is_known())
-        throw std::logic_error("array element type not known");
+      PSI_ASSERT(array_type.is_known());
 
       std::vector<llvm::Constant*> elements;
 
       for (std::size_t i = 0; i < self.length(); ++i) {
         LLVMValue element = builder.value(self.value(i));
-        if (!element.is_known())
-          throw std::logic_error("array element value not known");
+        PSI_ASSERT(element.is_known());
         elements.push_back(llvm::cast<llvm::Constant>(element.known_value()));
       }
 
@@ -247,7 +241,7 @@ namespace Psi {
       bool phantom = false;
       for (std::size_t i = 0; i < parameters.size(); ++i) {
         if (!parameters[i]->is_type())
-          throw std::logic_error("members of an aggregate type must be types");
+          throw TvmUserError("members of an aggregate type must be types");
         phantom = phantom || parameters[i]->phantom();
       }
 
@@ -455,7 +449,7 @@ namespace Psi {
       } else if (ty.is_empty()) {
         return LLVMValue::empty();
       } else {
-        throw std::logic_error("structs containing constant values of unknown type are not currently supported");
+        throw LLVMBuildError("structs containing constant values of unknown type are not currently supported");
       }
     }
 
@@ -538,7 +532,7 @@ namespace Psi {
     void UnionType::validate_parameters(Context&, std::size_t n_parameters, Term *const* parameters) const {
       for (std::size_t i = 0; i < n_parameters; ++i) {
 	if (parameters[i]->proto().category() == ProtoTerm::term_value)
-	  throw std::logic_error("first argument to array type term is not a type or metatype");
+	  throw TvmUserError("first argument to array type term is not a type or metatype");
       }
     }
 #endif

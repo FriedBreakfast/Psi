@@ -44,11 +44,11 @@ namespace Psi {
     public:
       void check_primitive_parameters(ArrayPtr<Term*const> parameters) const {
         if (parameters.size() != 0)
-          throw std::logic_error("primitive value created with parameters");
+          throw TvmUserError("primitive value created with parameters");
       }
 
       LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const {
-        throw std::logic_error("the type of a term cannot be a primitive value");
+        PSI_FAIL("the type of a term cannot be a primitive value");
       }
 
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -79,7 +79,7 @@ namespace Psi {
     template<typename Derived>
     FunctionalTypeResult PrimitiveType<Derived>::type(Context& context, ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != 0)
-        throw std::logic_error("primitive type created with parameters");
+        throw TvmUserError("primitive type created with parameters");
       return FunctionalTypeResult(context.get_metatype().get(), false);
     }
 

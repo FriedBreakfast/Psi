@@ -3,7 +3,6 @@
 #include "Core.hpp"
 #include "Function.hpp"
 #include "Functional.hpp"
-#include "Type.hpp"
 #include "Number.hpp"
 #include "Primitive.hpp"
 #include "JitTypes.hpp"

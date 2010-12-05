@@ -15,12 +15,12 @@ namespace Psi {
     namespace Assembler {
       void check_n_values(const std::string& name, std::size_t expected, const Parser::CallExpression& expression) {
         if (expression.values.size() != expected)
-          throw std::logic_error(str(boost::format("%s: %d value parameters expected") % name % expected));
+          throw TvmUserError(str(boost::format("%s: %d value parameters expected") % name % expected));
       }
 
       void check_n_terms(const std::string& name, std::size_t expected, const Parser::CallExpression& expression) {
         if (expression.terms.size() != expected)
-          throw std::logic_error(str(boost::format("%s: %d term parameters expected") % name % expected));
+          throw TvmUserError(str(boost::format("%s: %d term parameters expected") % name % expected));
       }
 
       void default_parameter_setup(ArrayPtr<Term*> parameters, const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
@@ -51,7 +51,7 @@ namespace Psi {
         try {
           return boost::lexical_cast<T>(it->text);
         } catch (boost::bad_lexical_cast&) {
-          throw std::logic_error(str(boost::format("%s: parameter %d should be a %s") % name % (index+1) % type_name<T>::s));
+          throw AssemblerError(str(boost::format("%s: parameter %d should be a %s") % name % (index+1) % type_name<T>::s));
         }
       }
 
@@ -105,7 +105,7 @@ namespace Psi {
           try {
             value.set_str(expression.values.back().text, 10);
           } catch (std::invalid_argument&) {
-            throw std::logic_error(str(boost::format("%s: parameter 2 should be an integer") % name));
+            throw AssemblerError(str(boost::format("%s: parameter 2 should be an integer") % name));
           }
           return context.context().get_functional_v(ConstantInteger(IntegerType(is_signed, n_bits), value)).get();
         }
@@ -123,7 +123,7 @@ namespace Psi {
           try {
             value.set_str(expression.values.front().text, 10);
           } catch (std::invalid_argument&) {
-            throw std::logic_error(str(boost::format("%s: parameter 1 should be a number") % name));
+            throw AssemblerError(str(boost::format("%s: parameter 1 should be a number") % name));
           }
           return context.context().get_functional_v(ConstantReal(RealType(width), value)).get();
         }

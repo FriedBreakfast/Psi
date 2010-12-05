@@ -31,6 +31,14 @@
 
 namespace Psi {
   namespace Tvm {
+    TvmUserError::TvmUserError(const std::string& msg)
+      : std::runtime_error(msg) {
+    }
+
+    TvmInternalError::TvmInternalError(const std::string& msg)
+      : std::logic_error(msg) {
+    }
+
     TermUser::TermUser(const UserInitializer& ui, TermType term_type)
       : User(ui), m_term_type(term_type) {
     }
@@ -88,14 +96,14 @@ namespace Psi {
         }
       } else {
 	if (context != type->m_context)
-	  throw std::logic_error("context mismatch between term and its type");
+	  throw TvmUserError("context mismatch between term and its type");
 
         switch (type->m_category) {
         case category_metatype: m_category = category_type; break;
         case category_type: m_category = category_value; break;
 
         default:
-          throw std::logic_error("type of a term cannot be a value or recursive, it must be metatype or a type");
+          throw TvmInternalError("type of a term cannot be a value or recursive, it must be metatype or a type");
         }
       }
 
@@ -110,7 +118,7 @@ namespace Psi {
 
     void Term::set_base_parameter(std::size_t n, Term *t) {
       if (t && (m_context != t->m_context))
-        throw std::logic_error("term context mismatch");
+        throw TvmUserError("term context mismatch");
 
       PSI_ASSERT_MSG(!use_get(n+1), "parameters to existing terms cannot be changed once set");
       PSI_ASSERT(!t
@@ -165,7 +173,7 @@ namespace Psi {
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name)
       : Term(ui, context, term_type, false, false, false, NULL, context->get_pointer_type(type).get()),
         m_name(name) {
-      PSI_ASSERT(!type->parameterized() && !type->abstract());
+      PSI_ASSERT(!type->phantom() && !type->parameterized() && !type->abstract());
     }
 
     /**
@@ -185,7 +193,10 @@ namespace Psi {
 
     void GlobalVariableTerm::set_value(Term* value) {
       if (!value->global())
-	throw std::logic_error("value of global variable must be a global");
+	throw TvmUserError("value of global variable must be a global");
+
+      if (value->phantom() || value->abstract() || value->parameterized())
+        throw TvmUserError("value of global variable cannot be phantom, abstract or parameterized");
 
       set_base_parameter(0, value);
     }
@@ -214,6 +225,9 @@ namespace Psi {
      * \brief Create a new global term.
      */
     GlobalVariableTerm* Context::new_global_variable(Term* type, bool constant, const std::string& name) {
+      if (type->phantom() || type->abstract() || type->parameterized())
+        throw TvmUserError("global variable type cannot be phantom, abstract or parameterized");
+
       return allocate_term(GlobalVariableTerm::Initializer(type, constant, name));
     }
 
@@ -233,7 +247,7 @@ namespace Psi {
     void* Context::term_jit(GlobalTerm* term) {
       if ((term->m_term_type != term_global_variable) &&
 	  (term->m_term_type != term_function))
-	throw std::logic_error("Cannot JIT compile non-global term");
+	throw TvmUserError("Cannot JIT compile non-global term");
 
       if (!m_llvm_context) {
 	m_llvm_context.reset(new llvm::LLVMContext());

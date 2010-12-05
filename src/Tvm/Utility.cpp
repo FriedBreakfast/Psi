@@ -58,7 +58,7 @@ namespace Psi {
         }
 
       common_source_fail:
-        throw std::logic_error("cannot find common term source block");
+        throw TvmUserError("cannot find common term source block");
       } else {
         return t1 ? t1 : t2;
       }

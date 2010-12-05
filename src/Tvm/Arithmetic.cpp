@@ -8,15 +8,15 @@ namespace Psi {
   namespace Tvm {
     FunctionalTypeResult ArithmeticOperation::integer_binary_op_type(Context&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 2)
-        throw std::logic_error("binary arithmetic operation expects two operands");
+        throw TvmUserError("binary arithmetic operation expects two operands");
 
       Term* type = parameters[0]->type();
       if (type != parameters[1]->type())
-        throw std::logic_error("type mismatch between operands to binary arithmetic operation");
+        throw TvmUserError("type mismatch between operands to binary arithmetic operation");
 
       FunctionalTermPtr<IntegerType> int_type = dynamic_cast_functional<IntegerType>(type);
       if (!int_type)
-        throw std::logic_error("parameters to integer binary arithmetic operation were not integers");
+        throw TvmUserError("parameters to integer binary arithmetic operation were not integers");
 
       return FunctionalTypeResult(int_type.get(), parameters[0]->phantom() || parameters[1]->phantom());
     }
@@ -26,8 +26,7 @@ namespace Psi {
       LLVMValue lhs = builder.value(self.lhs());
       LLVMValue rhs = builder.value(self.rhs());
 
-      if (!lhs.is_known() || !rhs.is_known())
-        throw std::logic_error("cannot perform arithmetic on unknown operands");
+      PSI_ASSERT(lhs.is_known() && rhs.is_known());
 
       return LLVMValue::known(callback(llvm::cast<llvm::Constant>(lhs.known_value()),
                                        llvm::cast<llvm::Constant>(rhs.known_value())));
@@ -38,8 +37,7 @@ namespace Psi {
       LLVMValue lhs = builder.value(self.lhs());
       LLVMValue rhs = builder.value(self.rhs());
 
-      if (!lhs.is_known() || !rhs.is_known())
-        throw std::logic_error("cannot perform arithmetic on unknown operands");
+      PSI_ASSERT(lhs.is_known() && rhs.is_known());
 
       return LLVMValue::known((builder.irbuilder().*callback)(lhs.known_value(), rhs.known_value(), ""));
     }
@@ -49,7 +47,7 @@ namespace Psi {
     }
 
     LLVMType IntegerAdd::llvm_type(LLVMValueBuilder&, Term&) const {
-      throw std::logic_error("arithmetic operations cannot be used as types");
+      PSI_FAIL("arithmetic operations cannot be used as types");
     }
 
     LLVMValue IntegerAdd::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -65,7 +63,7 @@ namespace Psi {
     }
 
     LLVMType IntegerSubtract::llvm_type(LLVMValueBuilder&, Term&) const {
-      throw std::logic_error("arithmetic operations cannot be used as types");
+      PSI_FAIL("arithmetic operations cannot be used as types");
     }
 
     LLVMValue IntegerSubtract::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -81,7 +79,7 @@ namespace Psi {
     }
 
     LLVMType IntegerMultiply::llvm_type(LLVMValueBuilder&, Term&) const {
-      throw std::logic_error("arithmetic operations cannot be used as types");
+      PSI_FAIL("arithmetic operations cannot be used as types");
     }
 
     LLVMValue IntegerMultiply::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -97,7 +95,7 @@ namespace Psi {
     }
 
     LLVMType IntegerDivide::llvm_type(LLVMValueBuilder&, Term&) const {
-      throw std::logic_error("arithmetic operations cannot be used as types");
+      PSI_FAIL("arithmetic operations cannot be used as types");
     }
 
     LLVMValue IntegerDivide::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {

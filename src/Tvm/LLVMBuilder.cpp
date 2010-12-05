@@ -26,7 +26,7 @@ namespace Psi {
 	  if (cb.valid(itp.first->second)) {
 	    return std::make_pair(itp.first->second, false);
 	  } else {
-	    throw std::logic_error("Cyclical term found");
+	    throw LLVMBuildError("Cyclical term found");
 	  }
 	}
 
@@ -35,7 +35,7 @@ namespace Psi {
 	  itp.first->second = r;
 	} else {
 	  values.erase(itp.first);
-	  throw std::logic_error("LLVM term building failed");
+	  throw LLVMBuildError("LLVM term building failed");
 	}
 
 	return std::make_pair(r, true);
@@ -48,7 +48,7 @@ namespace Psi {
 	LLVMType build(Term& term) const {
 	  switch(term.term_type()) {
 	  case term_recursive_parameter: {
-	    throw std::logic_error("not implemented");
+	    throw LLVMBuildError("not implemented");
 	  }
 
 	  case term_functional: {
@@ -75,12 +75,12 @@ namespace Psi {
 	      for (std::size_t i = 0; i < n_parameters; ++i) {
 		LLVMType param_type = self->type(actual.parameter(i+n_phantom)->type());
 		if (!param_type.is_known())
-		  throw std::logic_error("Only tvm calling convention supports dependent parameters");
+		  throw LLVMBuildError("Only tvm calling convention supports dependent parameters");
 		params.push_back(param_type.type());
 	      }
 	      LLVMType result_type = self->type(actual.result_type());
 	      if (!result_type.is_known())
-		throw std::logic_error("Only tvm calling convention support dependent result type");
+		throw LLVMBuildError("Only tvm calling convention support dependent result type");
 	      return LLVMType::known(llvm::FunctionType::get(result_type.type(), params, false));
 	    }
 	  }
@@ -100,7 +100,7 @@ namespace Psi {
 	     * term_recursive_parameter should never be encountered
 	     * since it should be expanded out by ApplyTerm::apply().
 	     */
-	    throw std::logic_error("unexpected type term type");
+	    PSI_FAIL("unexpected type term type");
 	  }
 	}
 
@@ -122,7 +122,7 @@ namespace Psi {
 	LLVMValue build(Term& term) const {
 	  switch(term.term_type()) {
 	  case term_recursive_parameter: {
-	    throw std::logic_error("not implemented");
+	    throw LLVMBuildError("not implemented");
 	  }
 
 	  case term_functional: {
@@ -149,7 +149,7 @@ namespace Psi {
 	     *
 	     * term_function_type should only exist inside a pointer.
 	     */
-	    throw std::logic_error("unexpected term type");
+	    PSI_FAIL("unexpected term type");
 	  }
 	}
 
@@ -206,7 +206,7 @@ namespace Psi {
 	      return new llvm::GlobalVariable(self->module(), int8ty, true, llvm::GlobalValue::InternalLinkage, init, global.name());
 	    } else {
 	      PSI_ASSERT(llvm_type.is_unknown());
-	      throw std::logic_error("global variable has unknown type");
+	      PSI_FAIL("global variable has unknown type");
 	    }
 	  }
 
@@ -234,7 +234,11 @@ namespace Psi {
 	}
       };
     }
-      
+
+    LLVMBuildError::LLVMBuildError(const std::string& msg)
+      : std::logic_error(msg) {
+    }
+
     LLVMValueBuilder::LLVMValueBuilder(llvm::LLVMContext *context, llvm::Module *module)
       : m_parent(0), m_context(context), m_module(module), m_debug_stream(0) {
       PSI_ASSERT(m_context && m_module);
@@ -302,8 +306,7 @@ namespace Psi {
     }
 
     llvm::GlobalValue* LLVMValueBuilder::global(GlobalTerm* term) {
-      if ((term->term_type() != term_function) && (term->term_type() != term_global_variable))
-	throw std::logic_error("cannot get global value for non-global variable");
+      PSI_ASSERT((term->term_type() == term_function) || (term->term_type() == term_global_variable));
 
       std::pair<llvm::GlobalValue*, bool> gv = build_term(term, m_global_terms, GlobalBuilderCallback(this));
 
@@ -565,7 +568,7 @@ namespace Psi {
         block_queue.pop_back();
 
         if (!bl->terminated())
-          throw std::logic_error("cannot compile function with unterminated blocks");
+          throw LLVMBuildError("cannot compile function with unterminated blocks");
 
         std::vector<BlockTerm*> successors = bl->successors();
         for (std::vector<BlockTerm*>::iterator it = successors.begin();
@@ -668,7 +671,7 @@ namespace Psi {
 	}
 
         if (!it->second->getTerminator())
-          throw std::logic_error("LLVM block was not terminated during function building");
+          throw LLVMBuildError("LLVM block was not terminated during function building");
 
         // Build block epilog: must move the IRBuilder insert point to
         // before the terminating instruction first.
@@ -724,7 +727,7 @@ namespace Psi {
 	if (llvm_init_value.is_known()) {
 	  llvm_var->setInitializer(llvm::cast<llvm::Constant>(llvm_init_value.known_value()));
 	} else if (!llvm_init_value.is_empty()) {
-	  throw std::logic_error("global value initializer is not a known or empty value");
+          PSI_FAIL("global value initializer is not a known or empty value");
 	}
       }
     }

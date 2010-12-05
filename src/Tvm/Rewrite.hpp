@@ -42,7 +42,7 @@ namespace Psi {
     ApplyTerm* rewrite_apply_term(const T& rewriter, ApplyTerm* term) {
       Term* recursive_base = rewriter(term->recursive());
       if (recursive_base->term_type() != term_recursive)
-	throw std::logic_error("result of rewriting recursive term was not a recursive term");
+	throw TvmInternalError("result of rewriting recursive term was not a recursive term");
       RecursiveTerm* recursive = checked_cast<RecursiveTerm*>(recursive_base);
       ParameterListRewriter<> parameters(term, ParameterListRewriterAdapter<T>(&rewriter));
       return term->context().apply_recursive(recursive, parameters.array());
@@ -72,11 +72,11 @@ namespace Psi {
 
       switch (term->term_type()) {
       case term_recursive:
-	throw std::logic_error("cannot rewrite recursive terms since "
+	throw TvmInternalError("cannot rewrite recursive terms since "
 			       "they cannot be compared for structural identity");
 
       case term_recursive_parameter:
-	throw std::logic_error("cannot rewrite recursive parameter "
+	throw TvmInternalError("cannot rewrite recursive parameter "
 			       "since these should only occur inside "
 			       "a recursive term (which cannot be rewritten)");
 
@@ -87,19 +87,19 @@ namespace Psi {
 	return rewrite_functional_term(rewriter, checked_cast<FunctionalTerm*>(term));
 
       case term_function_type:
-        throw std::logic_error("function type term rewriting must happen through TermRewriter");
+        throw TvmInternalError("function type term rewriting must happen through TermRewriter");
 
       case term_function_type_parameter:
-	throw std::logic_error("cannot rewrite a function type parameter term in a "
+	throw TvmInternalError("cannot rewrite a function type parameter term in a "
                                "default way since it must be mapped to a value "
                                "from rewriting earlier terms");
 
       case term_function_type_resolver:
-	throw std::logic_error("function type resolver terms should not be passed "
+	throw TvmInternalError("function type resolver terms should not be passed "
                                "to rewrite_term_default");
 
       default:
-	throw std::logic_error("unknown term type");
+	throw TvmInternalError("unknown term type");
       }
     }
 
@@ -159,10 +159,10 @@ namespace Psi {
 
           FunctionMapType::iterator it = m_functions.find(source);
           if (it == m_functions.end())
-            throw std::logic_error("encountered parameter to unknown function during term rewriting");
+            throw TvmInternalError("encountered parameter to unknown function during term rewriting");
 
           if (cast_term->index() >= it->second.size())
-            throw std::logic_error("function type parameter definition refers to value of later parameter");
+            throw TvmInternalError("function type parameter definition refers to value of later parameter");
 
           return it->second[cast_term->index()];
         }

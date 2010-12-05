@@ -105,10 +105,10 @@ namespace Psi {
 
 	CheckCompleteMap::iterator it = functions.find(source);
 	if (it == functions.end())
-	  throw std::logic_error("type of function parameter appeared outside of function type definition");
+	  throw TvmUserError("type of function parameter appeared outside of function type definition");
 
 	if (cast_term->index() >= it->second)
-	  throw std::logic_error("function parameter used before it is available (index out of range)");
+	  throw TvmUserError("function parameter used before it is available (index out of range)");
 
 	return true;
       }
@@ -181,7 +181,7 @@ namespace Psi {
 	  PSI_ASSERT(it != m_functions->end());
 
 	  if (cast_term->index() >= it->second.index)
-	    throw std::logic_error("function type parameter definition refers to value of later parameter");
+	    throw TvmInternalError("function type parameter definition refers to value of later parameter");
 
 	  Term* type = (*this)(cast_term->type());
 
@@ -332,7 +332,7 @@ namespace Psi {
      */
     Term* FunctionTypeTerm::result_type_after(ArrayPtr<Term*const> parameters) const {
       if (parameters.size() != n_parameters())
-	throw std::logic_error("incorrect number of parameters");
+	throw TvmUserError("incorrect number of parameters");
       ParameterTypeRewriter rewriter(this, parameters);
       return rewriter(result_type());
     }
@@ -455,15 +455,15 @@ namespace Psi {
     }
 
     LLVMValue FunctionTypeResolverParameter::llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const {
-      throw std::logic_error("resolver parameter should never interact with LLVM");
+      PSI_FAIL("resolver parameter should never interact with LLVM");
     }
 
     LLVMValue FunctionTypeResolverParameter::llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const {
-      throw std::logic_error("resolver parameter should never interact with LLVM");
+      PSI_FAIL("resolver parameter should never interact with LLVM");
     }
 
     LLVMType FunctionTypeResolverParameter::llvm_type(LLVMValueBuilder&, Term&) const {
-      throw std::logic_error("resolver parameter should never interact with LLVM");
+      PSI_FAIL("resolver parameter should never interact with LLVM");
     }
 
     bool FunctionTypeResolverParameter::operator == (const FunctionTypeResolverParameter& o) const {
@@ -612,7 +612,7 @@ namespace Psi {
         return checked_cast<BlockTerm*>(term)->function() == function();
 
       default:
-	throw std::logic_error("unexpected term type");
+	throw TvmUserError("unexpected term type");
       }
     }
 
@@ -675,15 +675,15 @@ namespace Psi {
 
     InstructionTerm* BlockTerm::new_instruction_internal(const InstructionTermBackend& backend, ArrayPtr<Term*const> parameters) {
       if (m_terminated)
-        throw std::logic_error("cannot add instruction to already terminated block");
+        throw TvmUserError("cannot add instruction to already terminated block");
 
       // Check parameters are valid and adjust dominator blocks
       for (std::size_t i = 0; i < parameters.size(); ++i) {
         Term *param = parameters[i];
         if (param->abstract() || param->parameterized())
-          throw std::logic_error("instructions cannot accept abstract parameters");
+          throw TvmUserError("instructions cannot accept abstract parameters");
         if (!check_available(param))
-          throw std::logic_error("parameter value is not available in this block");
+          throw TvmUserError("parameter value is not available in this block");
       }
 
       std::pair<std::size_t, std::size_t> backend_size_align = backend.size_align();
@@ -706,7 +706,7 @@ namespace Psi {
       for (std::vector<BlockTerm*>::iterator it = jump_targets.begin();
            it != jump_targets.end(); ++it) {
         if (!dominated_by((*it)->dominator()))
-          throw std::logic_error("instruction jump target dominator block may not have run");
+          throw TvmUserError("instruction jump target dominator block may not have run");
       }
 
       m_instructions.push_back(*insn);
@@ -728,7 +728,7 @@ namespace Psi {
      */
     void PhiTerm::add_incoming(BlockTerm* block, Term* value) {
       if (value->phantom())
-        throw std::logic_error("phi nodes cannot take on phantom values");
+        throw TvmUserError("phi nodes cannot take on phantom values");
 
       std::size_t free_slots = (n_base_parameters() / 2) - m_n_incoming;
       if (!free_slots)
@@ -776,7 +776,7 @@ namespace Psi {
      */
     PhiTerm* BlockTerm::new_phi(Term* type) {
       if (type->phantom())
-        throw std::logic_error("type of phi term cannot be phantom");
+        throw TvmUserError("type of phi term cannot be phantom");
 
       PhiTerm *phi = context().allocate_term(PhiTerm::Initializer(type, this));
       m_phi_nodes.push_back(*phi);
@@ -890,7 +890,7 @@ namespace Psi {
      */
     void FunctionTerm::set_entry(BlockTerm* block) {
       if (entry())
-        throw std::logic_error("Cannot change the entry point of a function once it is set");
+        throw TvmUserError("Cannot change the entry point of a function once it is set");
       
       set_base_parameter(0, block);
     }

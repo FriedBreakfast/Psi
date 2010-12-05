@@ -97,7 +97,7 @@ namespace Psi {
         return allocate_term(RecursiveTerm::Initializer(source, result_type, parameters.array(), phantom));
       } else {
       throw_dominator:
-        throw std::logic_error("block specified for recursive term is not dominated by parameter and result type blocks");
+        throw TvmUserError("block specified for recursive term is not dominated by parameter and result type blocks");
       }
     }
 
@@ -190,7 +190,7 @@ namespace Psi {
     }
 
     Term* ApplyTerm::unpack() const {
-      throw std::logic_error("not implemented");
+      throw TvmInternalError("not implemented");
     }
 
     namespace {
@@ -337,19 +337,19 @@ namespace Psi {
      */
     void Context::resolve_recursive(RecursiveTerm* recursive, Term* to) {
       if (recursive->type() != to->type())
-	throw std::logic_error("mismatch between recursive term type and resolving term type");
+	throw TvmUserError("mismatch between recursive term type and resolving term type");
 
       if (to->parameterized())
-	throw std::logic_error("cannot resolve recursive term to parameterized term");
+	throw TvmUserError("cannot resolve recursive term to parameterized term");
 
       if (recursive->result())
-	throw std::logic_error("resolving a recursive term which has already been resolved");
+	throw TvmUserError("resolving a recursive term which has already been resolved");
 
       if (!source_dominated(to->source(), recursive->source()))
-        throw std::logic_error("term used to resolve recursive term is not in scope");
+        throw TvmUserError("term used to resolve recursive term is not in scope");
 
       if (to->phantom() && !recursive->phantom())
-        throw std::logic_error("non-phantom recursive term cannot be resolved to a phantom term");
+        throw TvmUserError("non-phantom recursive term cannot be resolved to a phantom term");
 
       recursive->set_base_parameter(1, to);
 

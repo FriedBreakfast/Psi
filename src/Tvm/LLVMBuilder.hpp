@@ -4,6 +4,7 @@
 #include <deque>
 #include <tr1/cstdint>
 #include <tr1/unordered_map>
+#include <stdexcept>
 
 #include "Core.hpp"
 #include "../Utility.hpp"
@@ -13,6 +14,16 @@ namespace Psi {
     typedef llvm::IRBuilder<true, llvm::ConstantFolder, llvm::IRBuilderDefaultInserter<true> > LLVMIRBuilder;
 
     class LLVMFunctionBuilder;
+
+    /**
+     * Thrown when an error occurs during LLVM construction: many of
+     * these use PSI_ASSERT, but this can also be used when the error
+     * condition has not been tested well enough.
+     */
+    class LLVMBuildError : public std::logic_error {
+    public:
+      explicit LLVMBuildError(const std::string& message);
+    };
 
     class LLVMValueBuilder {
     public:
