@@ -35,7 +35,9 @@ namespace Psi {
       Access self(&term, this);
       LLVMValue target = builder.value(self.target());
       PSI_ASSERT(target.is_known());
-      builder.create_store(target.known_value(), self.value());
+      llvm::Instruction *store_inst = builder.create_store(target.known_value(), self.value());
+      if (store_inst)
+        store_inst->setName(builder.term_name(&term));
       return LLVMValue::empty();
     }
 
@@ -71,9 +73,11 @@ namespace Psi {
       LLVMType llvm_target_deref_type = builder.type(target_deref_type);
       if (llvm_target_deref_type.is_known()) {
         llvm::Value *ptr = builder.cast_pointer_from_generic(target.known_value(), llvm_target_deref_type.type()->getPointerTo());
-        return LLVMValue::known(builder.irbuilder().CreateLoad(ptr));
+        return LLVMValue::known(builder.irbuilder().CreateLoad(ptr, builder.term_name(&term)));
       } else if (llvm_target_deref_type.is_unknown()) {
         llvm::Value *stack_ptr = builder.create_alloca_for(target_deref_type);
+        if (llvm::isa<llvm::Instruction>(stack_ptr))
+          stack_ptr->setName(builder.term_name(&term));
         builder.create_store_unknown(stack_ptr, target.known_value(), target_deref_type);
         return LLVMValue::unknown(stack_ptr);
       } else {

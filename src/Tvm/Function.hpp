@@ -199,6 +199,8 @@ namespace Psi {
     class FunctionTerm : public GlobalTerm {
       friend class Context;
     public:
+      typedef std::tr1::unordered_multimap<Term*, std::string> TermNameMap;
+
       FunctionTypeTerm* function_type() const;
 
       std::size_t n_parameters() const {return n_base_parameters() - 2;}
@@ -218,9 +220,13 @@ namespace Psi {
       BlockTerm* new_block();
       BlockTerm* new_block(BlockTerm* dominator);
 
+      void add_term_name(Term *term, const std::string& name);
+      const TermNameMap& term_name_map() const {return m_name_map;}
+
     private:
       class Initializer;
-      FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type);
+      FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type, const std::string& name);
+      TermNameMap m_name_map;
     };
 
     template<>

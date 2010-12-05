@@ -164,8 +164,9 @@ namespace Psi {
      * contents; the final type of this variable will in fact be a
      * pointer to this type.
      */
-    GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type)
-      : Term(ui, context, term_type, false, false, false, NULL, context->get_pointer_type(type).get()) {
+    GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name)
+      : Term(ui, context, term_type, false, false, false, NULL, context->get_pointer_type(type).get()),
+        m_name(name) {
       PSI_ASSERT(!type->parameterized() && !type->abstract());
     }
 
@@ -178,8 +179,9 @@ namespace Psi {
       return checked_cast_functional<PointerType>(ft).backend().target_type();
     }
 
-    GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type, bool constant)
-      : GlobalTerm(ui, context, term_global_variable, type),
+    GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type,
+                                           bool constant, const std::string& name)
+      : GlobalTerm(ui, context, term_global_variable, type, name),
 	m_constant(constant) {
     }
 
@@ -192,12 +194,12 @@ namespace Psi {
 
     class GlobalVariableTerm::Initializer : public InitializerBase<GlobalVariableTerm> {
     public:
-      Initializer(Term* type, bool constant)
-	: m_type(type), m_constant(constant) {
+      Initializer(Term* type, bool constant, const std::string& name)
+	: m_type(type), m_constant(constant), m_name(name) {
       }
 
       GlobalVariableTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) GlobalVariableTerm(ui, context, m_type, m_constant);
+	return new (base) GlobalVariableTerm(ui, context, m_type, m_constant, m_name);
       }
 
       std::size_t n_uses() const {
@@ -207,20 +209,21 @@ namespace Psi {
     private:
       Term* m_type;
       bool m_constant;
+      std::string m_name;
     };
 
     /**
      * \brief Create a new global term.
      */
-    GlobalVariableTerm* Context::new_global_variable(Term* type, bool constant) {
-      return allocate_term(GlobalVariableTerm::Initializer(type, constant));
+    GlobalVariableTerm* Context::new_global_variable(Term* type, bool constant, const std::string& name) {
+      return allocate_term(GlobalVariableTerm::Initializer(type, constant, name));
     }
 
     /**
      * \brief Create a new global term, initialized with the specified value.
      */
-    GlobalVariableTerm* Context::new_global_variable_set(Term* value, bool constant) {
-      GlobalVariableTerm* t = new_global_variable(value->type(), constant);
+    GlobalVariableTerm* Context::new_global_variable_set(Term* value, bool constant, const std::string& name) {
+      GlobalVariableTerm* t = new_global_variable(value->type(), constant, name);
       t->set_value(value);
       return t;
     }

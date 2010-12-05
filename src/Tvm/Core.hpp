@@ -432,9 +432,11 @@ namespace Psi {
 
     public:
       Term* value_type() const;
+      const std::string& name() const {return m_name;}
 
     private:
-      GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type);
+      GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name);
+      std::string m_name;
     };
 
     template<>
@@ -462,7 +464,7 @@ namespace Psi {
        * Need to add parameters for linkage and possibly thread
        * locality.
        */
-      GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type, bool constant);
+      GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type, bool constant, const std::string& name);
 
       bool m_constant;
     };
@@ -553,10 +555,10 @@ namespace Psi {
 
       void resolve_recursive(RecursiveTerm* recursive, Term* to);
 
-      GlobalVariableTerm* new_global_variable(Term* type, bool constant);
-      GlobalVariableTerm* new_global_variable_set(Term* value, bool constant);
+      GlobalVariableTerm* new_global_variable(Term* type, bool constant, const std::string& name);
+      GlobalVariableTerm* new_global_variable_set(Term* value, bool constant, const std::string& name);
 
-      FunctionTerm* new_function(FunctionTypeTerm* type);
+      FunctionTerm* new_function(FunctionTypeTerm* type, const std::string& name);
 
       void* term_jit(GlobalTerm* term);
 

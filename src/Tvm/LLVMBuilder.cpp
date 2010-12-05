@@ -189,11 +189,11 @@ namespace Psi {
 	    FunctionalTermPtr<PointerType> type = checked_cast_functional<PointerType>(global.type());
 	    LLVMType llvm_type = self->type(type.backend().target_type());
 	    if (llvm_type.is_known()) {
-	      return new llvm::GlobalVariable(self->module(), llvm_type.type(), global.constant(), llvm::GlobalValue::InternalLinkage, NULL, "");
+	      return new llvm::GlobalVariable(self->module(), llvm_type.type(), global.constant(), llvm::GlobalValue::InternalLinkage, NULL, global.name());
 	    } else if (llvm_type.is_empty()) {
 	      const llvm::Type *int8ty = llvm::Type::getInt8Ty(self->context());
 	      llvm::Constant *init = llvm::ConstantInt::get(int8ty, 0);
-	      return new llvm::GlobalVariable(self->module(), int8ty, true, llvm::GlobalValue::InternalLinkage, init, "");
+	      return new llvm::GlobalVariable(self->module(), int8ty, true, llvm::GlobalValue::InternalLinkage, init, global.name());
 	    } else {
 	      PSI_ASSERT(llvm_type.is_unknown());
 	      throw std::logic_error("global variable has unknown type");
@@ -207,7 +207,7 @@ namespace Psi {
 	    LLVMType llvm_ty = self->type(func_type);
 	    PSI_ASSERT(llvm_ty.is_known() && llvm_ty.type()->isFunctionTy());
 	    return llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_ty.type()),
-					  llvm::GlobalValue::InternalLinkage, "", &self->module());
+					  llvm::GlobalValue::InternalLinkage, func.name(), &self->module());
 	  }
 
 	  default:
@@ -327,8 +327,8 @@ namespace Psi {
      * whatever format the calling convention passes them in.
      */
     llvm::BasicBlock* LLVMValueBuilder::build_function_entry(FunctionTerm *psi_func, llvm::Function *llvm_func, LLVMFunctionBuilder& func_builder) {
-      llvm::BasicBlock *entry_block = llvm::BasicBlock::Create(context(), "", llvm_func);
-      LLVMIRBuilder irbuilder(entry_block);
+      llvm::BasicBlock *prolog_block = llvm::BasicBlock::Create(context(), "", llvm_func);
+      LLVMIRBuilder irbuilder(prolog_block);
 
       llvm::Function::ArgumentListType& argument_list = llvm_func->getArgumentList();
       llvm::Function::ArgumentListType::const_iterator llvm_it = argument_list.begin();
@@ -353,20 +353,22 @@ namespace Psi {
 	  if (param_type_llvm.is_known()) {
             const llvm::PointerType *ptr_ty = param_type_llvm.type()->getPointerTo();
             llvm::Value *cast_param = irbuilder.CreateBitCast(llvm_param, ptr_ty);
-            llvm::Value *load = irbuilder.CreateLoad(cast_param);
+            llvm::Value *load = irbuilder.CreateLoad(cast_param, func_builder.term_name(param));
             func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(load)));
 	  } else if (param_type_llvm.is_empty()) {
 	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::empty()));
 	  } else {
+            llvm_param->setName(func_builder.term_name(param));
 	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::unknown(llvm_param)));
 	  }
 	} else {
 	  PSI_ASSERT(param_type_llvm.is_known());
+          llvm_param->setName(func_builder.term_name(param));
 	  func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(llvm_param)));
 	}
       }
 
-      return entry_block;
+      return prolog_block;
     }
 
     /**
@@ -484,7 +486,7 @@ namespace Psi {
     void LLVMFunctionBuilder::simplify_stack_save_restore() {
       std::tr1::unordered_map<llvm::BasicBlock*, BlockStackInfo> block_info;
 
-      for (llvm::Function::iterator it = boost::next(m_function->begin()); it != m_function->end(); ++it) {
+      for (llvm::Function::iterator it = boost::next(m_llvm_function->begin()); it != m_llvm_function->end(); ++it) {
         llvm::BasicBlock *block = &*it;
         llvm::CallInst *stack_restore = first_stack_restore(block);
         PSI_ASSERT(stack_restore);
@@ -522,7 +524,7 @@ namespace Psi {
 
       // finally, see whether the save instruction in the prolog block
       // is still necessary
-      llvm::BasicBlock *prolog_block = &m_function->getEntryBlock();
+      llvm::BasicBlock *prolog_block = &m_llvm_function->getEntryBlock();
       llvm::CallInst *save_insn = llvm::cast<llvm::CallInst>(&*boost::prior(boost::prior(prolog_block->end())));
       PSI_ASSERT(save_insn->getCalledFunction() == llvm_stacksave());
       if (save_insn->hasNUses(0))
@@ -531,7 +533,7 @@ namespace Psi {
 
     void LLVMValueBuilder::build_function(FunctionTerm *psi_func, llvm::Function *llvm_func) {
       LLVMIRBuilder irbuilder(context());
-      LLVMFunctionBuilder func_builder(this, llvm_func, &irbuilder, psi_func->function_type()->calling_convention());
+      LLVMFunctionBuilder func_builder(this, psi_func, llvm_func, &irbuilder, psi_func->function_type()->calling_convention());
       std::tr1::unordered_map<BlockTerm*, llvm::Value*> stack_pointers;
       std::tr1::unordered_map<PhiTerm*, llvm::Value*> phi_storage_map;
 
@@ -582,7 +584,7 @@ namespace Psi {
       // create llvm blocks
       for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
            it != blocks.end(); ++it) {
-        llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(context(), "", llvm_func);
+        llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(context(), func_builder.term_name(it->first), llvm_func);
         it->second = llvm_bb;
         std::pair<ValueTermMap::iterator, bool> insert_result =
           func_builder.m_value_terms.insert(std::make_pair(it->first, LLVMValue::known(llvm_bb)));
@@ -780,9 +782,11 @@ namespace Psi {
       PSI_FAIL("global llvm builder given non-constant value to cast_pointer");
     }
 
-    LLVMFunctionBuilder::LLVMFunctionBuilder(LLVMValueBuilder *parent, llvm::Function *function, LLVMIRBuilder *irbuilder, CallingConvention calling_convention) 
+    LLVMFunctionBuilder::LLVMFunctionBuilder(LLVMValueBuilder *parent, FunctionTerm *function, llvm::Function *llvm_function,
+                                             LLVMIRBuilder *irbuilder, CallingConvention calling_convention) 
       : LLVMValueBuilder(parent),
 	m_function(function),
+        m_llvm_function(llvm_function),
 	m_irbuilder(irbuilder),
 	m_calling_convention(calling_convention) {
       m_llvm_memcpy = llvm_intrinsic_memcpy(module());
@@ -842,7 +846,7 @@ namespace Psi {
      * Create an alloca instruction for the specified number of bytes
      * using the maximum system alignment.
      */
-    llvm::Value* LLVMFunctionBuilder::create_alloca(llvm::Value *size) {
+    llvm::Instruction* LLVMFunctionBuilder::create_alloca(llvm::Value *size) {
       llvm::AllocaInst *inst = irbuilder().CreateAlloca(llvm::Type::getInt8Ty(context()), size);
       inst->setAlignment(llvm_align_max());
       return inst;
@@ -888,17 +892,21 @@ namespace Psi {
     /**
      * Create a store instruction for the given term into
      * memory. Handles cases where the term is known or not correctly.
+     *
+     * \return The store instruction created. This may be NULL if the
+     * type of \c src is empty.
      */
-    void LLVMFunctionBuilder::create_store(llvm::Value *dest, Term *src) {
+    llvm::Instruction* LLVMFunctionBuilder::create_store(llvm::Value *dest, Term *src) {
       LLVMValue llvm_src = value(src);
 
       if (llvm_src.is_known()) {
         llvm::Value *cast_dest = cast_pointer_from_generic(dest, llvm_src.known_value()->getType()->getPointerTo());
-        irbuilder().CreateStore(llvm_src.known_value(), cast_dest);
+        return irbuilder().CreateStore(llvm_src.known_value(), cast_dest);
       } else if (llvm_src.is_unknown()) {
-        create_store_unknown(dest, llvm_src.unknown_value(), src->type());
+        return create_store_unknown(dest, llvm_src.unknown_value(), src->type());
       } else {
         PSI_ASSERT(llvm_src.is_empty());
+        return NULL;
       }
     }
 
@@ -906,14 +914,29 @@ namespace Psi {
      * Create a memcpy call which stores an unknown term into a
      * pointer.
      */
-    void LLVMFunctionBuilder::create_store_unknown(llvm::Value *dest, llvm::Value *src, Term *src_type) {
+    llvm::Instruction* LLVMFunctionBuilder::create_store_unknown(llvm::Value *dest, llvm::Value *src, Term *src_type) {
       LLVMValue src_type_value = value(src_type);
       PSI_ASSERT(src_type_value.is_known() && (src_type_value.known_value()->getType() == Metatype::llvm_type(*this).type()));
 
       llvm::Value *size = irbuilder().CreateExtractValue(src_type_value.known_value(), 0);
 
-      irbuilder().CreateCall5(llvm_memcpy(), dest, src, size, llvm_align_zero(),
-                              llvm::ConstantInt::getFalse(context()));
+      return irbuilder().CreateCall5(llvm_memcpy(), dest, src, size, llvm_align_zero(),
+                                     llvm::ConstantInt::getFalse(context()));
+    }
+
+    /**
+     * Get one of the names for a term, or an empty StringRef if the
+     * term has no name.
+     */
+    llvm::StringRef LLVMFunctionBuilder::term_name(Term *term) {
+      const FunctionTerm::TermNameMap& map = m_function->term_name_map();
+      FunctionTerm::TermNameMap::const_iterator it = map.find(term);
+
+      if (it != map.end()) {
+        return llvm::StringRef(it->second);
+      } else {
+        return llvm::StringRef();
+      }
     }
 
     llvm::Function* llvm_intrinsic_memcpy(llvm::Module& m) {

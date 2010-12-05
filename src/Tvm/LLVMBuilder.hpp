@@ -78,7 +78,7 @@ namespace Psi {
     public:
       ~LLVMFunctionBuilder();
 
-      llvm::Function* function() {return m_function;}
+      llvm::Function* function() {return m_llvm_function;}
       LLVMIRBuilder& irbuilder() {return *m_irbuilder;}
       CallingConvention calling_convention() const {return m_calling_convention;}
 
@@ -93,17 +93,20 @@ namespace Psi {
       /// enough for all current platforms.
       unsigned llvm_align_max() const {return 8;}
 
-      llvm::Value* create_alloca(llvm::Value *size);
+      llvm::Instruction* create_alloca(llvm::Value *size);
       llvm::Value* create_alloca_for(Term *type);
-      void create_store(llvm::Value *dest, Term *src);
-      void create_store_unknown(llvm::Value *dest, llvm::Value *src, Term *type);
+      llvm::Instruction* create_store(llvm::Value *dest, Term *src);
+      llvm::Instruction* create_store_unknown(llvm::Value *dest, llvm::Value *src, Term *type);
+
+      llvm::StringRef term_name(Term *term);
 
     private:
-      LLVMFunctionBuilder(LLVMValueBuilder *constant_builder, llvm::Function *function, LLVMIRBuilder *irbuilder, CallingConvention calling_convention);
+      LLVMFunctionBuilder(LLVMValueBuilder *constant_builder, FunctionTerm *function, llvm::Function *llvm_function, LLVMIRBuilder *irbuilder, CallingConvention calling_convention);
       virtual LLVMValue value_impl(Term* term);
       virtual llvm::Value* cast_pointer_impl(llvm::Value *value, const llvm::Type *type);
 
-      llvm::Function *m_function;
+      FunctionTerm *m_function;
+      llvm::Function *m_llvm_function;
       LLVMIRBuilder *m_irbuilder;
       CallingConvention m_calling_convention;
 

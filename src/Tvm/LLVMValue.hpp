@@ -32,6 +32,7 @@ namespace llvm {
   class JITEventListener;
   class raw_ostream;
   class CallInst;
+  class StringRef;
 
   class ConstantFolder;
   template<bool> class IRBuilderDefaultInserter;

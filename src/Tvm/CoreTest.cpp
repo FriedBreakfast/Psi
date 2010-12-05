@@ -21,14 +21,14 @@ namespace Psi {
       Context con;
 
       Term* i16_t = con.get_functional_v(IntegerType(true, 16)).get();
-      GlobalTerm* gv16 = con.new_global_variable_set(i16_t, true);
+      GlobalTerm* gv16 = con.new_global_variable_set(i16_t, true, "v1");
       const Jit::Metatype *ptr16 = static_cast<const Jit::Metatype*>(con.term_jit(gv16));
 
       BOOST_CHECK_EQUAL(ptr16->size, sizeof(Jit::Int16));
       BOOST_CHECK_EQUAL(ptr16->align, boost::alignment_of<Jit::Int16>::value);
 
       Term* i64_t = con.get_functional_v(IntegerType(true, 64)).get();
-      GlobalTerm* gv64 = con.new_global_variable_set(i64_t, true);
+      GlobalTerm* gv64 = con.new_global_variable_set(i64_t, true, "v2");
       const Jit::Metatype *ptr64 = static_cast<const Jit::Metatype*>(con.term_jit(gv64));
      
       BOOST_CHECK_EQUAL(ptr64->size, sizeof(Jit::Int64));
@@ -42,7 +42,7 @@ namespace Psi {
 
       IntegerType i32(true, 32);
       Term* value = con.get_functional_v(ConstantInteger(i32, c)).get();
-      GlobalTerm* gv = con.new_global_variable_set(value, true);
+      GlobalTerm* gv = con.new_global_variable_set(value, true, "v1");
       const Jit::Int32 *p = static_cast<const Jit::Int32*>(con.term_jit(gv));
 
       BOOST_CHECK_EQUAL(*p, c);

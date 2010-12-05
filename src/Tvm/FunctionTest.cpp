@@ -32,7 +32,7 @@ namespace Psi {
       Term* value = context.get_functional_v(ConstantInteger(i32, c)).get();
 
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(cconv_c, i32_t);
-      FunctionTerm* func = context.new_function(func_type);
+      FunctionTerm* func = context.new_function(func_type, "f");
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), value);
@@ -49,7 +49,7 @@ namespace Psi {
 
       Term* i32_t = context.get_functional_v(IntegerType(true, 32)).get();
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(cconv_c, i32_t, i32_t);
-      FunctionTerm* func = context.new_function(func_type);
+      FunctionTerm* func = context.new_function(func_type, "f");
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), func->parameter(0));

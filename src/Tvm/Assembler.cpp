@@ -140,14 +140,18 @@ namespace Psi {
         std::size_t n = 0;
         for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->phantom_parameters.begin();
              it != function_def.type->phantom_parameters.end(); ++it, ++n) {
-          if (it->name)
+          if (it->name) {
             my_context.put(it->name->text, function.parameter(n));
+            function.add_term_name(function.parameter(n), it->name->text);
+          }
         }
 
         for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->parameters.begin();
              it != function_def.type->parameters.end(); ++it, ++n) {
-          if (it->name)
+          if (it->name) {
             my_context.put(it->name->text, function.parameter(n));
+            function.add_term_name(function.parameter(n), it->name->text);
+          }
         }
 
         for (UniqueList<Parser::Block>::const_iterator it = boost::next(function_def.blocks.begin());
@@ -163,6 +167,7 @@ namespace Psi {
           }
           BlockTerm* bl = function.new_block(dominator);
           my_context.put(it->name->text, bl);
+          function.add_term_name(bl, it->name->text);
           blocks.push_back(bl);
         }
 
@@ -174,8 +179,10 @@ namespace Psi {
           for (UniqueList<Parser::NamedExpression>::const_iterator jt = it->statements.begin();
                jt != it->statements.end(); ++jt) {
             Term* value = build_instruction(my_context, phi_nodes, **bt, *jt->expression);
-            if (jt->name)
+            if (jt->name) {
               my_context.put(jt->name->text, value);
+              function.add_term_name(value, jt->name->text);
+            }
           }
         }
 
@@ -217,13 +224,13 @@ namespace Psi {
 	if (it->value->global_type == Parser::global_function) {
           const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
           FunctionTypeTerm* function_type = Assembler::build_function_type(asmct, *def.type);
-          FunctionTerm* function = context.new_function(function_type);
+          FunctionTerm* function = context.new_function(function_type, it->name->text);
 	  asmct.put(it->name->text, function);
 	  result[it->name->text] = function;
 	} else if (it->value->global_type == Parser::global_variable) {
           const Parser::GlobalVariable& var = checked_cast<const Parser::GlobalVariable&>(*it->value);
           Term* global_type = Assembler::build_expression(asmct, *var.type);
-          GlobalVariableTerm* global_var = context.new_global_variable(global_type, var.constant);
+          GlobalVariableTerm* global_var = context.new_global_variable(global_type, var.constant, it->name->text);
           asmct.put(it->name->text, global_var);
           result[it->name->text] = global_var;
 	} else {

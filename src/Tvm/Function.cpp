@@ -836,8 +836,8 @@ namespace Psi {
       bool m_phantom;
     };
 
-    FunctionTerm::FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type)
-      : GlobalTerm(ui, context, term_function, type) {
+    FunctionTerm::FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type, const std::string& name)
+      : GlobalTerm(ui, context, term_function, type, name) {
       ScopedTermPtrArray<> parameters(type->n_parameters());
       for (std::size_t i = 0; i < parameters.size(); ++i) {
 	Term* param_type = type->parameter_type_after(parameters.array().slice(0, i));
@@ -851,11 +851,11 @@ namespace Psi {
 
     class FunctionTerm::Initializer : public InitializerBase<FunctionTerm> {
     public:
-      Initializer(FunctionTypeTerm* type) : m_type(type) {
+      Initializer(FunctionTypeTerm* type, const std::string& name) : m_type(type), m_name(name) {
       }
 
       FunctionTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) FunctionTerm(ui, context, m_type);
+	return new (base) FunctionTerm(ui, context, m_type, m_name);
       }
 
       std::size_t n_uses() const {
@@ -864,13 +864,14 @@ namespace Psi {
 
     private:
       FunctionTypeTerm* m_type;
+      std::string m_name;
     };
 
     /**
      * \brief Create a new function.
      */
-    FunctionTerm* Context::new_function(FunctionTypeTerm* type) {
-      return allocate_term(FunctionTerm::Initializer(type));
+    FunctionTerm* Context::new_function(FunctionTypeTerm* type, const std::string& name) {
+      return allocate_term(FunctionTerm::Initializer(type, name));
     }
 
     /**
@@ -906,6 +907,13 @@ namespace Psi {
      */
     BlockTerm* FunctionTerm::new_block() {
       return new_block(NULL);
+    }
+
+    /**
+     * Add a name for a term within this function.
+     */
+    void FunctionTerm::add_term_name(Term *term, const std::string& name) {
+      m_name_map.insert(std::make_pair(term, name));
     }
   }
 }

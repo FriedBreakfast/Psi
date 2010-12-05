@@ -23,7 +23,7 @@ namespace Psi {
       Term* value = context.get_functional_v(ConstantInteger(i32, c)).get();
 
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t);
-      FunctionTerm* func = context.new_function(func_type);
+      FunctionTerm* func = context.new_function(func_type, "f");
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), value);
@@ -41,7 +41,7 @@ namespace Psi {
 
       Term* i32_t = context.get_functional_v(IntegerType(true, 32)).get();
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t, i32_t);
-      FunctionTerm* func = context.new_function(func_type);
+      FunctionTerm* func = context.new_function(func_type, "f");
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), func->parameter(0));
@@ -65,7 +65,7 @@ namespace Psi {
       FunctionTypeParameterTerm* param1 = context.new_function_type_parameter(context.get_metatype().get());
       FunctionTypeParameterTerm* param2 = context.new_function_type_parameter(param1);
       FunctionTypeTerm* func_type = context.get_function_type_v(param1, param1, param2);
-      FunctionTerm* func = context.new_function(func_type);
+      FunctionTerm* func = context.new_function(func_type, "f");
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       entry->new_instruction_v(Return(), func->parameter(1));
@@ -89,7 +89,7 @@ namespace Psi {
       Term* value = context.get_functional_v(ConstantInteger(i32, c)).get();
 
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t);
-      FunctionTerm* func = context.new_function(func_type);
+      FunctionTerm* func = context.new_function(func_type, "f");
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
       
@@ -114,7 +114,7 @@ namespace Psi {
       Term* bool_t = context.get_functional_v(BooleanType()).get();
 
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i8_t, bool_t);
-      FunctionTerm* func = context.new_function(func_type);
+      FunctionTerm* func = context.new_function(func_type, "f");
       BlockTerm* entry = func->new_block();
       func->set_entry(entry);
 
@@ -129,7 +129,6 @@ namespace Psi {
       callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
 
       Jit::Int8 result;
-      void *result_ptr;
       Jit::Int8 param = 1;
       callback(&result, &param);
       BOOST_CHECK_EQUAL(result, c1);
@@ -147,8 +146,8 @@ namespace Psi {
       Term* value = context.get_functional_v(ConstantInteger(i32, c)).get();
 
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t);
-      FunctionTerm* outer = context.new_function(func_type);
-      FunctionTerm* inner = context.new_function(func_type);
+      FunctionTerm* outer = context.new_function(func_type, "outer");
+      FunctionTerm* inner = context.new_function(func_type, "inner");
 
       BlockTerm* outer_entry = outer->new_block();
       BlockTerm* inner_entry = inner->new_block();
@@ -175,8 +174,8 @@ namespace Psi {
       Term* i32_t = context.get_functional_v(i32).get();
 
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t, i32_t);
-      FunctionTerm* outer = context.new_function(func_type);
-      FunctionTerm* inner = context.new_function(func_type);
+      FunctionTerm* outer = context.new_function(func_type, "outer");
+      FunctionTerm* inner = context.new_function(func_type, "inner");
 
       BlockTerm* outer_entry = outer->new_block();
       BlockTerm* inner_entry = inner->new_block();
