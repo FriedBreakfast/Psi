@@ -65,20 +65,12 @@ namespace Psi {
 	 * if it is an aggregate) is known exactly, except for
 	 * pointers which are always <tt>i8*</tt>.
 	 */
-	category_known,
-	/**
-	 * \brief A type with no data.
-	 *
-	 * LLVM has no representation of such a type, so special
-	 * handling is needed.
-	 */
-	category_empty
+	category_known
       };
 
     public:
       LLVMType() : m_category(category_invalid), m_type(0) {}
       bool is_valid() const {return m_category != category_invalid;}
-      bool is_empty() const {return m_category == category_empty;}
       bool is_known() const {return m_category == category_known;}
       bool is_unknown() const {return m_category == category_unknown;}
       llvm::Type *type() const {PSI_ASSERT(is_known()); return m_type;}
@@ -91,10 +83,6 @@ namespace Psi {
 	return LLVMType(category_unknown, 0);
       }
 
-      static LLVMType empty() {
-	return LLVMType(category_empty, 0);
-      }
-
     private:
       LLVMType(Category category, llvm::Type *type) : m_category(category), m_type(type) {}
       Category m_category;
@@ -105,8 +93,7 @@ namespace Psi {
       enum Category {
 	category_invalid,
 	category_known,
-	category_unknown,
-	category_empty
+	category_unknown
       };
 
     public:
@@ -115,13 +102,11 @@ namespace Psi {
       bool is_valid() const {return m_category != category_invalid;}
       bool is_known() const {return m_category == category_known;}
       bool is_unknown() const {return m_category == category_unknown;}
-      bool is_empty() const {return m_category == category_empty;}
       llvm::Value *known_value() const {PSI_ASSERT(is_known()); return m_value;}
       llvm::Value *unknown_value() const {PSI_ASSERT(is_unknown()); return m_value;}
 
       static LLVMValue known(llvm::Value *value) {return LLVMValue(category_known, value);}
       static LLVMValue unknown(llvm::Value *value) {return LLVMValue(category_unknown, value);}
-      static LLVMValue empty() {return LLVMValue(category_empty, 0);}
 
     private:
       LLVMValue(Category category, llvm::Value *value) : m_category(category), m_value(value) {}

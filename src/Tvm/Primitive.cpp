@@ -109,21 +109,20 @@ namespace Psi {
       return get_functional_v(Metatype());
     }
 
-    LLVMType EmptyType::llvm_type(LLVMValueBuilder&, Term&) const {
-      return LLVMType::empty();
+    LLVMType EmptyType::llvm_type(LLVMValueBuilder& builder, Term&) const {
+      return llvm_type(builder);
     }
 
     bool EmptyType::operator == (const EmptyType&) const {
       return true;
     }
 
-    /**
-     * This overrides the PrimitiveType default for EmptyType, which
-     * is unusual since there is no corresponding LLVM type.
-     */
-    template<>
-    LLVMValue PrimitiveType<EmptyType>::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
-      return Metatype::llvm_empty(builder);
+    LLVMType EmptyType::llvm_type(LLVMValueBuilder& builder) {
+      return LLVMType::known(llvm::StructType::get(builder.context()));
+    }
+
+    LLVMValue EmptyType::llvm_value(LLVMValueBuilder& builder) {
+      return LLVMValue::known(llvm::ConstantStruct::get(builder.context(), NULL, 0, false));
     }
 
     std::size_t hash_value(const EmptyType&) {

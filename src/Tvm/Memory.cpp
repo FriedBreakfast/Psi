@@ -36,7 +36,7 @@ namespace Psi {
       LLVMValue target = builder.value(self.target());
       PSI_ASSERT(target.is_known());
       builder.create_store(target.known_value(), self.value());
-      return LLVMValue::empty();
+      return EmptyType::llvm_value(builder);
     }
 
     void Store::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
@@ -72,13 +72,11 @@ namespace Psi {
       if (llvm_target_deref_type.is_known()) {
         llvm::Value *ptr = builder.cast_pointer_from_generic(target.known_value(), llvm_target_deref_type.type()->getPointerTo());
         return LLVMValue::known(builder.irbuilder().CreateLoad(ptr));
-      } else if (llvm_target_deref_type.is_unknown()) {
+      } else {
+        PSI_ASSERT(llvm_target_deref_type.is_unknown());
         llvm::Value *stack_ptr = builder.create_alloca_for(target_deref_type);
         builder.create_store_unknown(stack_ptr, target.known_value(), target_deref_type);
         return LLVMValue::unknown(stack_ptr);
-      } else {
-        PSI_ASSERT(llvm_target_deref_type.is_empty());
-        return LLVMValue::empty();
       }
     }
 

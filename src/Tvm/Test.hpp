@@ -12,9 +12,15 @@ namespace Psi {
     namespace Test {
       class DebugListener : public llvm::JITEventListener {
       public:
+        DebugListener(bool dump_llvm, bool dump_asm);
+
         virtual void NotifyFunctionEmitted (const llvm::Function &F, void *Code, std::size_t Size, const EmittedFunctionDetails &Details);
 
         //virtual void NotifyFreeingMachineCode (void *OldPtr)
+
+      private:
+        bool m_dump_llvm;
+        bool m_dump_asm;
       };
 
       class ContextFixture {
@@ -24,6 +30,7 @@ namespace Psi {
         ContextFixture();
         ~ContextFixture();
 
+        static bool test_env(const char *name);
         void* jit_single(const char *name, const char *src);
 
       private:

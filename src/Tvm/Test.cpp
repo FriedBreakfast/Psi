@@ -12,17 +12,25 @@
 namespace Psi {
   namespace Tvm {
     namespace Test {
-      ContextFixture::ContextFixture() {
-        const char *dump_llvm = std::getenv("PSI_TEST_DUMP_LLVM");
-        if (dump_llvm && (std::strcmp(dump_llvm, "1") == 0))
-          context.register_llvm_jit_listener(&m_debug_listener);
+      ContextFixture::ContextFixture()
+        : m_debug_listener(test_env("PSI_TEST_DUMP_LLVM"),
+                           test_env("PSI_TEST_DUMP_ASM")) {
 
         const char *emit_debug = std::getenv("PSI_TEST_DEBUG");
         if (emit_debug && (std::strcmp(emit_debug, "1") == 0))
             llvm::JITEmitDebugInfo = true;
+
+        context.register_llvm_jit_listener(&m_debug_listener);
       }
 
       ContextFixture::~ContextFixture() {
+      }
+
+      bool ContextFixture::test_env(const char *name) {
+        const char *value = std::getenv(name);
+        if (value && (std::strcmp(value, "1") == 0))
+          return true;
+        return false;
       }
 
       /**
@@ -36,10 +44,16 @@ namespace Psi {
         return result;
       }
 
+      DebugListener::DebugListener(bool dump_llvm, bool dump_asm)
+        : m_dump_llvm(dump_llvm), m_dump_asm(dump_asm) {
+      }
+
       void DebugListener::NotifyFunctionEmitted (const llvm::Function &F, void*, size_t, const EmittedFunctionDetails& details) {
         llvm::raw_os_ostream out(std::cerr);
-        F.print(out);
-        //details.MF->print(out);
+        if (m_dump_llvm)
+          F.print(out);
+        if (m_dump_asm)
+          details.MF->print(out);
       }
     }
   }

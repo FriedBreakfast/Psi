@@ -51,7 +51,7 @@ namespace Psi {
       }
 
       friend std::ostream& operator << (std::ostream& os, const TestStructType& x) {
-        os << '{' << x.a << ',' << x.b << ',' << x.c << ',' << x.d << ',' << x.e << '}';
+        return os << '{' << x.a << ',' << x.b << ',' << x.c << ',' << x.d << ',' << x.e << '}';
       }
     };
 
@@ -88,6 +88,30 @@ namespace Psi {
       FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
       TestStructType result = f();
       BOOST_CHECK_EQUAL(expected, result);
+    }
+
+    union TestUnionType {
+      Jit::Int64 a;
+      Jit::Int32 b[2];
+    };
+
+    BOOST_AUTO_TEST_CASE(FunctionReturnUnion) {
+      const char *src =
+        "%u = define (union (int #64) (array (int #32) (c_uint #64 #2)));\n"
+        "%f = function cc_c (%a:(int #64), %b:(int #32)) > (array %u (c_uint #64 #2)) {\n"
+        "  return (c_array (c_union %u %a) (c_union %u %b));\n"
+        "};\n";
+
+      struct TestReturnType {TestUnionType u[2];};
+      typedef TestReturnType (*FunctionType) (Jit::Int64,Jit::Int32);
+      FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
+
+      Jit::Int64 a = 5468768922;
+      Jit::Int32 b = 4989;
+      TestReturnType r = f(a, b);
+      BOOST_CHECK_EQUAL(r.u[0].a, a);
+      BOOST_CHECK_EQUAL(r.u[1].b[0], b);
+      BOOST_CHECK_EQUAL(r.u[1].b[1], b);
     }
 
     BOOST_AUTO_TEST_SUITE_END()

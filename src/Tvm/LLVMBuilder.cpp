@@ -200,10 +200,6 @@ namespace Psi {
 	    LLVMType llvm_type = self->type(type.backend().target_type());
 	    if (llvm_type.is_known()) {
 	      return new llvm::GlobalVariable(self->module(), llvm_type.type(), global.constant(), llvm::GlobalValue::InternalLinkage, NULL, global.name());
-	    } else if (llvm_type.is_empty()) {
-	      const llvm::Type *int8ty = llvm::Type::getInt8Ty(self->context());
-	      llvm::Constant *init = llvm::ConstantInt::get(int8ty, 0);
-	      return new llvm::GlobalVariable(self->module(), int8ty, true, llvm::GlobalValue::InternalLinkage, init, global.name());
 	    } else {
 	      PSI_ASSERT(llvm_type.is_unknown());
 	      PSI_FAIL("global variable has unknown type");
@@ -368,8 +364,6 @@ namespace Psi {
             llvm::Value *cast_param = irbuilder.CreatePointerCast(llvm_param, ptr_ty);
             llvm::Value *load = irbuilder.CreateLoad(cast_param, func_builder.term_name(param));
             func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::known(load)));
-	  } else if (param_type_llvm.is_empty()) {
-	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::empty()));
 	  } else {
             llvm_param->setName(func_builder.term_name(param));
 	    func_builder.m_value_terms.insert(std::make_pair(param, LLVMValue::unknown(llvm_param)));
@@ -630,15 +624,13 @@ namespace Psi {
             llvm::PHINode *llvm_phi = irbuilder.CreatePHI(ty.type());
             phi_node_map[&phi] = llvm_phi;
             func_builder.m_value_terms.insert(std::make_pair(&phi, LLVMValue::known(llvm_phi)));
-          } else if (ty.is_unknown()) {
+          } else {
+            PSI_ASSERT(ty.is_unknown());
             llvm::PHINode *llvm_phi = irbuilder.CreatePHI(llvm::Type::getInt8PtrTy(context()));
             phi_node_map[&phi] = llvm_phi;
             PSI_ASSERT(phi_storage_map.find(&phi) != phi_storage_map.end());
             llvm::Value *phi_storage = phi_storage_map[&phi];
             func_builder.m_value_terms.insert(std::make_pair(&phi, LLVMValue::unknown(phi_storage)));
-          } else {
-            PSI_ASSERT(ty.is_empty());
-            func_builder.m_value_terms.insert(std::make_pair(&phi, LLVMValue::empty()));
           }
         }
 
@@ -726,8 +718,8 @@ namespace Psi {
 	LLVMValue llvm_init_value = value(init_value);
 	if (llvm_init_value.is_known()) {
 	  llvm_var->setInitializer(llvm::cast<llvm::Constant>(llvm_init_value.known_value()));
-	} else if (!llvm_init_value.is_empty()) {
-          PSI_FAIL("global value initializer is not a known or empty value");
+	} else {
+          PSI_FAIL("global value initializer is not a known value");
 	}
       }
     }
@@ -873,8 +865,6 @@ namespace Psi {
       LLVMType llvm_stored_type = type(stored_type);
       if (llvm_stored_type.is_known()) {
         return irbuilder().CreateAlloca(llvm_stored_type.type());
-      } else if (llvm_stored_type.is_empty()) {
-        return llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(context()));
       }
 
       PSI_ASSERT(llvm_stored_type.is_unknown());
@@ -888,8 +878,6 @@ namespace Psi {
           LLVMValue length = value(as_array.backend().length());
           PSI_ASSERT(length.is_known());
           return irbuilder().CreateAlloca(element_type.type(), length.known_value());
-        } else if (element_type.is_empty()) {
-          return llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(context()));
         }
       }
 
@@ -915,11 +903,9 @@ namespace Psi {
       if (llvm_src.is_known()) {
         llvm::Value *cast_dest = cast_pointer_from_generic(dest, llvm_src.known_value()->getType()->getPointerTo());
         return irbuilder().CreateStore(llvm_src.known_value(), cast_dest);
-      } else if (llvm_src.is_unknown()) {
-        return create_store_unknown(dest, llvm_src.unknown_value(), src->type());
       } else {
-        PSI_ASSERT(llvm_src.is_empty());
-        return NULL;
+        PSI_ASSERT(llvm_src.is_unknown());
+        return create_store_unknown(dest, llvm_src.unknown_value(), src->type());
       }
     }
 

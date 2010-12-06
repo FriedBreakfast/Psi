@@ -97,6 +97,9 @@ namespace Psi {
       friend std::size_t hash_value(const EmptyType&);
 
       typedef TrivialAccess<EmptyType> Access;
+
+      static LLVMType llvm_type(LLVMValueBuilder&);
+      static LLVMValue llvm_value(LLVMValueBuilder&);
     };
 
     class BlockType : public PrimitiveType<BlockType> {

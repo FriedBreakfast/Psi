@@ -43,7 +43,7 @@ namespace Psi {
 	irbuilder.CreateRet(result.known_value());
       }
 
-      return LLVMValue::empty();
+      return EmptyType::llvm_value(builder);
     }
 
     void Return::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
@@ -82,8 +82,9 @@ namespace Psi {
       llvm::Value *cond_llvm = cond.known_value();
       llvm::BasicBlock *true_target_llvm = llvm::cast<llvm::BasicBlock>(true_target.known_value());
       llvm::BasicBlock *false_target_llvm = llvm::cast<llvm::BasicBlock>(false_target.known_value());
+      builder.irbuilder().CreateCondBr(cond_llvm, true_target_llvm, false_target_llvm);
 
-      return LLVMValue::known(builder.irbuilder().CreateCondBr(cond_llvm, true_target_llvm, false_target_llvm));
+      return EmptyType::llvm_value(builder);
     }
 
     void ConditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<BlockTerm*>& targets) const {
@@ -111,7 +112,9 @@ namespace Psi {
 
       PSI_ASSERT(target.is_known());
       llvm::BasicBlock *target_llvm = llvm::cast<llvm::BasicBlock>(target.known_value());
-      return LLVMValue::known(builder.irbuilder().CreateBr(target_llvm));
+      builder.irbuilder().CreateBr(target_llvm);
+
+      return EmptyType::llvm_value(builder);
     }
 
     void UnconditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<BlockTerm*>& targets) const {
@@ -184,9 +187,6 @@ namespace Psi {
 	  stack_backup = irbuilder.CreateCall(builder.llvm_stacksave());
           result_area = irbuilder.CreateAlloca(result_type.type());
 	  parameters.push_back(builder.cast_pointer_to_generic(result_area));
-	} else if (result_type.is_empty()) {
-	  result_area = llvm::Constant::getNullValue(llvm::Type::getInt8Ty(builder.context()));
-	  parameters.push_back(result_area);
 	} else {
 	  PSI_ASSERT(result_type.is_unknown());
           result_area = builder.create_alloca_for(term.type());
@@ -205,12 +205,10 @@ namespace Psi {
             llvm::Value *ptr = irbuilder.CreateAlloca(param.known_value()->getType());
             irbuilder.CreateStore(param.known_value(), ptr);
             parameters.push_back(builder.cast_pointer_to_generic(ptr));
-	  } else if (param.is_unknown()) {
-	    parameters.push_back(param.unknown_value());
 	  } else {
-            PSI_ASSERT(param.is_empty());
-            parameters.push_back(llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(builder.context())));
-          }
+            PSI_ASSERT(param.is_unknown());
+	    parameters.push_back(param.unknown_value());
+	  }
 	} else {
 	  if (!param.is_known())
 	    throw LLVMBuildError("Function parameter types must be known for non-TVM calling conventions");
@@ -232,8 +230,6 @@ namespace Psi {
 
       if (result_type.is_known()) {
 	return LLVMValue::known(result);
-      } else if (result_type.is_empty()) {
-	return LLVMValue::empty();
       } else {
 	PSI_ASSERT(result_type.is_unknown());
 	return LLVMValue::unknown(result_area);
