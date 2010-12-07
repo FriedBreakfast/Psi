@@ -9,8 +9,8 @@ namespace Psi {
     class ArithmeticOperation {
     public:
       static FunctionalTypeResult integer_binary_op_type(Context& context, ArrayPtr<Term*const> parameters);
-      static LLVMValue binary_op_constant(LLVMValueBuilder& builder, FunctionalTerm& term,
-                                          llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*));
+      static llvm::Constant* binary_op_constant(LLVMConstantBuilder& builder, FunctionalTerm& term,
+                                                llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*));
       static LLVMValue binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term,
                                              llvm::Value* (LLVMIRBuilder::*) (llvm::Value*,llvm::Value*,const llvm::Twine&));
 
@@ -25,42 +25,38 @@ namespace Psi {
       };
     };
 
-    class IntegerAdd : public StatelessOperand {
+    class IntegerAdd : public ValueTerm, public StatelessTerm {
     public:
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const;
 
       typedef ArithmeticOperation::BinaryAccess Access;
     };
 
-    class IntegerSubtract : public StatelessOperand {
+    class IntegerSubtract : public ValueTerm, public StatelessTerm {
     public:
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const;
 
       typedef ArithmeticOperation::BinaryAccess Access;
     };
 
-    class IntegerMultiply : public StatelessOperand {
+    class IntegerMultiply : public ValueTerm, public StatelessTerm {
     public:
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const;
 
       typedef ArithmeticOperation::BinaryAccess Access;
     };
 
-    class IntegerDivide : public StatelessOperand {
+    class IntegerDivide : public ValueTerm, public StatelessTerm {
     public:
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const;
 
       typedef ArithmeticOperation::BinaryAccess Access;
     };

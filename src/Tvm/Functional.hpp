@@ -33,8 +33,8 @@ namespace Psi {
        */
       virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const = 0;
 
-      virtual LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const = 0;
-      virtual LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const = 0;
+      virtual llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const = 0;
+      virtual const llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const = 0;
     };
 
     /**
@@ -110,11 +110,11 @@ namespace Psi {
         return m_impl.llvm_value_instruction(builder, term);
       }
 
-      virtual LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+      virtual llvm::Constant* llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
         return m_impl.llvm_value_constant(builder, term);
       }
 
-      virtual LLVMType llvm_type(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+      virtual const llvm::Type* llvm_type(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
         return m_impl.llvm_type(builder, term);
       }
 

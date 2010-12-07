@@ -346,10 +346,9 @@ namespace Psi {
       FunctionTypeResolverParameter(std::size_t depth, std::size_t index);
 
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
-
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
+      LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
+      llvm::Type* llvm_type(LLVMConstantBuilder&, Term&) const;
       bool operator == (const FunctionTypeResolverParameter&) const;
       friend std::size_t hash_value(const FunctionTypeResolverParameter&);
 

@@ -9,17 +9,8 @@
 
 namespace Psi {
   namespace Tvm {
-    LLVMType BooleanType::llvm_type(LLVMValueBuilder& builder, Term&) const {
-      const llvm::Type *ty = llvm::IntegerType::get(builder.context(), 1);
-      return LLVMType::known(const_cast<llvm::Type*>(ty));
-    }
-
-    bool BooleanType::operator == (const BooleanType&) const {
-      return true;
-    }
-
-    std::size_t hash_value(const BooleanType&) {
-      return 0;
+    const llvm::Type* BooleanType::llvm_primitive_type(llvm::LLVMContext& c) const {
+      return llvm::IntegerType::get(c, 1);
     }
 
     FunctionalTermPtr<BooleanType> Context::get_boolean_type() {
@@ -40,26 +31,19 @@ namespace Psi {
 
     FunctionalTypeResult ConstantBoolean::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return FunctionalTypeResult(context.get_functional_v(BooleanType()).get(), false);
+      return FunctionalTypeResult(context.get_boolean_type(), false);
     }
 
-    LLVMValue ConstantBoolean::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
-      return LLVMValue::known(m_value
-			      ? llvm::ConstantInt::getTrue(builder.context())
-			      : llvm::ConstantInt::getFalse(builder.context()));
+    llvm::Constant* ConstantBoolean::llvm_primitive_value(llvm::LLVMContext& c) const {
+      return m_value ? llvm::ConstantInt::getTrue(c) : llvm::ConstantInt::getFalse(c);
     }
 
     IntegerType::IntegerType(bool is_signed, unsigned n_bits)
       : m_is_signed(is_signed), m_n_bits(n_bits) {
     }
 
-    LLVMType IntegerType::llvm_type(LLVMValueBuilder& builder) const {
-      const llvm::Type *ty = llvm::IntegerType::get(builder.context(), m_n_bits);
-      return LLVMType::known(const_cast<llvm::Type*>(ty));
-    }
-
-    LLVMType IntegerType::llvm_type(LLVMValueBuilder& builder, Term&) const {
-      return llvm_type(builder);
+    const llvm::Type* IntegerType::llvm_primitive_type(llvm::LLVMContext& c) const {
+      return llvm::IntegerType::get(c, m_n_bits);
     }
 
     bool IntegerType::operator == (const IntegerType& o) const {
@@ -130,34 +114,24 @@ namespace Psi {
 
     FunctionalTypeResult ConstantInteger::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return FunctionalTypeResult(context.get_functional_v(m_type).get(), false);
+      return FunctionalTypeResult(context.get_functional_v(m_type), false);
     }
 
-    LLVMValue ConstantInteger::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
-      LLVMType ty = m_type.llvm_type(builder);
-      PSI_ASSERT(ty.is_valid());
+    llvm::Constant* ConstantInteger::llvm_primitive_value(llvm::LLVMContext& c) const {
+      const llvm::Type *ty = m_type.llvm_primitive_type(c);
       llvm::APInt llvm_value = m_type.mpl_to_llvm(m_value);
-      return LLVMValue::known(llvm::ConstantInt::get(ty.type(), llvm_value));
+      return llvm::ConstantInt::get(ty, llvm_value);
     }
 
     RealType::RealType(Width width) : m_width(width) {
     }
 
-    LLVMType RealType::llvm_type(LLVMValueBuilder& builder) const {
-      const llvm::Type *ty;
+    const llvm::Type* RealType::llvm_primitive_type(llvm::LLVMContext& c) const {
       switch (m_width) {
-      case real_float: ty = llvm::Type::getFloatTy(builder.context()); break;
-      case real_double: ty = llvm::Type::getDoubleTy(builder.context()); break;
-
-      default:
-        PSI_FAIL("unknown real width");
+      case real_float: return llvm::Type::getFloatTy(c);
+      case real_double: return llvm::Type::getDoubleTy(c);
+      default: PSI_FAIL("unknown real width");
       }
-
-      return LLVMType::known(const_cast<llvm::Type*>(ty));
-    }
-
-    LLVMType RealType::llvm_type(LLVMValueBuilder& builder, Term&) const {
-      return llvm_type(builder);
     }
 
     bool RealType::operator == (const RealType& o) const {
@@ -233,12 +207,12 @@ namespace Psi {
 
     FunctionalTypeResult ConstantReal::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return FunctionalTypeResult(context.get_functional_v(m_type).get(), false);
+      return FunctionalTypeResult(context.get_functional_v(m_type), false);
     }
 
-    LLVMValue ConstantReal::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
+    llvm::Constant* ConstantReal::llvm_primitive_value(llvm::LLVMContext& c) const {
       llvm::APFloat llvm_value = m_type.mpl_to_llvm(m_value);
-      return LLVMValue::known(llvm::ConstantFP::get(builder.context(), llvm_value));
+      return llvm::ConstantFP::get(c, llvm_value);
     }
 
     SpecialRealValue::SpecialRealValue(const RealType& type, SpecialReal value, bool negative)
@@ -261,12 +235,11 @@ namespace Psi {
 
     FunctionalTypeResult SpecialRealValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return FunctionalTypeResult(context.get_functional_v(m_type).get(), false);
+      return FunctionalTypeResult(context.get_functional_v(m_type), false);
     }
 
-    LLVMValue SpecialRealValue::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
-      llvm::APFloat llvm_value = m_type.special_to_llvm(m_value, m_negative);
-      return LLVMValue::known(llvm::ConstantFP::get(builder.context(), llvm_value));
+    llvm::Constant* SpecialRealValue::llvm_primitive_value(llvm::LLVMContext& c) const {
+      return llvm::ConstantFP::get(c, m_type.special_to_llvm(m_value, m_negative));
     }
   }
 }

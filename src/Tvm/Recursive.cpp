@@ -342,6 +342,9 @@ namespace Psi {
       if (to->parameterized())
 	throw TvmUserError("cannot resolve recursive term to parameterized term");
 
+      if (to->term_type() == term_apply)
+        throw TvmUserError("cannot resolve recursive term to apply term, since this leads to an infinite loop in the code generator");
+
       if (recursive->result())
 	throw TvmUserError("resolving a recursive term which has already been resolved");
 

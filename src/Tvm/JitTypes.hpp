@@ -29,7 +29,7 @@ namespace Psi {
        * \brief Value type of MetatypeTerm.
        *
        * This is here for easy interfacing with C++ and must be kept in
-       * sync with LLVMConstantBuilder::metatype_type.
+       * sync with LLVMGlobalBuilder::metatype_type.
        */
       struct Metatype {
 	UInt64 size;

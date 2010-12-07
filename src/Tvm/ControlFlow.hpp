@@ -71,12 +71,11 @@ namespace Psi {
       };
     };
 
-    class FunctionApplyPhantom : public StatelessOperand {
+    class FunctionApplyPhantom : public StatelessTerm, public ValueTerm {
     public:
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const;
 
       class Access {
       public:

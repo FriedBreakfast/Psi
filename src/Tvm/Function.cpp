@@ -458,11 +458,11 @@ namespace Psi {
       PSI_FAIL("resolver parameter should never interact with LLVM");
     }
 
-    LLVMValue FunctionTypeResolverParameter::llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const {
+    llvm::Constant* FunctionTypeResolverParameter::llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const {
       PSI_FAIL("resolver parameter should never interact with LLVM");
     }
 
-    LLVMType FunctionTypeResolverParameter::llvm_type(LLVMValueBuilder&, Term&) const {
+    llvm::Type* FunctionTypeResolverParameter::llvm_type(LLVMConstantBuilder&, Term&) const {
       PSI_FAIL("resolver parameter should never interact with LLVM");
     }
 

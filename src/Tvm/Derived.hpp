@@ -7,12 +7,12 @@
 
 namespace Psi {
   namespace Tvm {
-    class PointerType : public StatelessOperand {
+    class PointerType : public StatelessTerm {
     public:
       FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
-      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
+      const llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const;
 
       class Access {
       public:
@@ -22,14 +22,17 @@ namespace Psi {
       private:
 	const FunctionalTerm *m_term;
       };
+
+    private:
+      static llvm::Constant* llvm_value(llvm::LLVMContext&);
     };
 
-    class ArrayType : public StatelessOperand {
+    class ArrayType : public StatelessTerm {
     public:
       FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
-      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
+      const llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const;
 
       class Access {
       public:
@@ -42,12 +45,11 @@ namespace Psi {
       };
     };
 
-    class ArrayValue : public StatelessOperand {
+    class ArrayValue : public StatelessTerm, public ValueTerm {
     public:
       FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
-      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
 
       class Access {
       public:
@@ -61,7 +63,7 @@ namespace Psi {
       };
     };
 
-    class AggregateType : public StatelessOperand {
+    class AggregateType : public StatelessTerm {
     public:
       class Access {
       public:
@@ -79,16 +81,15 @@ namespace Psi {
     class StructType : public AggregateType {
     public:
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
-      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
+      const llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const;
     };
 
-    class StructValue : public StatelessOperand {
+    class StructValue : public StatelessTerm, public ValueTerm {
     public:
       FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
-      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
 
       class Access {
       public:
@@ -103,33 +104,25 @@ namespace Psi {
     class UnionType : public AggregateType {
     public:
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
-      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
+      const llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const;
     };
 
-    class UnionValue {
+    class UnionValue : public StatelessTerm, public ValueTerm {
     public:
-      UnionValue(unsigned which);
+      UnionValue();
       FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder&, FunctionalTerm&) const;
-      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const;
-      bool operator == (const UnionValue&);
-      friend std::size_t hash_value(const UnionValue&);
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
 
       class Access {
       public:
-	Access(const FunctionalTerm *term, const UnionValue* self) : m_term(term), m_self(self) {}
-        std::size_t which() const {return m_self->m_which;}
+	Access(const FunctionalTerm *term, const UnionValue*) : m_term(term) {}
         Term* type() const {return m_term->parameter(0);}
         Term* value() const {return m_term->parameter(1);}
       private:
 	const FunctionalTerm *m_term;
-        const UnionValue *m_self;
       };
-
-    private:
-      unsigned m_which;
     };
   }
 }

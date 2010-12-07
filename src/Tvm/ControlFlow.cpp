@@ -31,10 +31,10 @@ namespace Psi {
       LLVMIRBuilder& irbuilder = builder.irbuilder();
 
       Term* return_value = term.parameter(0);
-      LLVMValue result = builder.value(return_value);
+      LLVMValue result = builder.build_value(return_value);
 
-      if (builder.calling_convention() == cconv_tvm) {
-	llvm::Value *return_area = &builder.function()->getArgumentList().front();
+      if (builder.function()->function_type()->calling_convention() == cconv_tvm) {
+	llvm::Value *return_area = &builder.llvm_function()->getArgumentList().front();
         builder.create_store(return_area, return_value);
         irbuilder.CreateRetVoid();
       } else {
@@ -43,7 +43,7 @@ namespace Psi {
 	irbuilder.CreateRet(result.known_value());
       }
 
-      return EmptyType::llvm_value(builder);
+      return LLVMValue::known(EmptyType::llvm_empty_value(builder.llvm_context()));
     }
 
     void Return::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
@@ -73,9 +73,9 @@ namespace Psi {
 
     LLVMValue ConditionalBranch::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
       Access self(&term, this);
-      LLVMValue cond = builder.value(self.condition());
-      LLVMValue true_target = builder.value(self.true_target());
-      LLVMValue false_target = builder.value(self.false_target());
+      LLVMValue cond = builder.build_value(self.condition());
+      LLVMValue true_target = builder.build_value(self.true_target());
+      LLVMValue false_target = builder.build_value(self.false_target());
 
       PSI_ASSERT(cond.is_known() && true_target.is_known() && false_target.is_known());
 
@@ -84,7 +84,7 @@ namespace Psi {
       llvm::BasicBlock *false_target_llvm = llvm::cast<llvm::BasicBlock>(false_target.known_value());
       builder.irbuilder().CreateCondBr(cond_llvm, true_target_llvm, false_target_llvm);
 
-      return EmptyType::llvm_value(builder);
+      return LLVMValue::known(EmptyType::llvm_empty_value(builder.llvm_context()));
     }
 
     void ConditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<BlockTerm*>& targets) const {
@@ -108,13 +108,13 @@ namespace Psi {
 
     LLVMValue UnconditionalBranch::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
       Access self(&term, this);
-      LLVMValue target = builder.value(self.target());
+      LLVMValue target = builder.build_value(self.target());
 
       PSI_ASSERT(target.is_known());
       llvm::BasicBlock *target_llvm = llvm::cast<llvm::BasicBlock>(target.known_value());
       builder.irbuilder().CreateBr(target_llvm);
 
-      return EmptyType::llvm_value(builder);
+      return LLVMValue::known(EmptyType::llvm_empty_value(builder.llvm_context()));
     }
 
     void UnconditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<BlockTerm*>& targets) const {
@@ -166,9 +166,9 @@ namespace Psi {
 	checked_cast<FunctionTypeTerm*>
 	(checked_cast_functional<PointerType>(self.target()->type()).backend().target_type());
 
-      LLVMValue target = builder.value(self.target());
+      LLVMValue target = builder.build_value(self.target());
       PSI_ASSERT(target.is_known());
-      LLVMType result_type = builder.type(term.type());
+      const llvm::Type* result_type = builder.build_type(term.type());
 
       std::size_t n_parameters = function_type->n_parameters();
       std::size_t n_phantom = function_type->n_phantom_parameters();
@@ -180,27 +180,31 @@ namespace Psi {
       std::vector<llvm::Value*> parameters;
       if (calling_convention == cconv_tvm) {
 	// allocate an area of memory to receive the result value
-	if (result_type.is_known()) {
+	if (result_type) {
 	  // stack pointer is saved here but not for unknown types
 	  // because memory for unknown types must survive their
 	  // scope.
-	  stack_backup = irbuilder.CreateCall(builder.llvm_stacksave());
-          result_area = irbuilder.CreateAlloca(result_type.type());
+	  stack_backup = irbuilder.CreateCall(LLVMIntrinsics::stacksave(builder.llvm_module()));
+          result_area = irbuilder.CreateAlloca(result_type);
 	  parameters.push_back(builder.cast_pointer_to_generic(result_area));
 	} else {
-	  PSI_ASSERT(result_type.is_unknown());
           result_area = builder.create_alloca_for(term.type());
 	  parameters.push_back(result_area);
 	}
       }
 
+      const llvm::FunctionType* llvm_function_type =
+        llvm::cast<llvm::FunctionType>(builder.build_type(function_type));
+      if (!llvm_function_type)
+        throw LLVMBuildError("cannot call function of unknown type");
+
       for (std::size_t i = n_phantom; i < n_parameters; ++i) {
-	LLVMValue param = builder.value(self.parameter(i));
+	LLVMValue param = builder.build_value(self.parameter(i));
 
 	if (calling_convention == cconv_tvm) {
 	  if (param.is_known()) {
             if (!stack_backup)
-              stack_backup = irbuilder.CreateCall(builder.llvm_stacksave());
+              stack_backup = irbuilder.CreateCall(LLVMIntrinsics::stacksave(builder.llvm_module()));
 
             llvm::Value *ptr = irbuilder.CreateAlloca(param.known_value()->getType());
             irbuilder.CreateStore(param.known_value(), ptr);
@@ -212,26 +216,25 @@ namespace Psi {
 	} else {
 	  if (!param.is_known())
 	    throw LLVMBuildError("Function parameter types must be known for non-TVM calling conventions");
-	  parameters.push_back(builder.cast_pointer_to_generic(param.known_value()));
+          llvm::Value *val = param.known_value();
+          if (val->getType()->isPointerTy())
+            val = builder.cast_pointer_from_generic(val, llvm_function_type->getParamType(i));
+	  parameters.push_back(val);
 	}
       }
 
-      LLVMType llvm_function_type = builder.type(function_type);
-      PSI_ASSERT(llvm_function_type.is_known());
-
-      llvm::Value *llvm_target = builder.cast_pointer_from_generic(target.known_value(), llvm_function_type.type()->getPointerTo());
+      llvm::Value *llvm_target = builder.cast_pointer_from_generic(target.known_value(), llvm_function_type->getPointerTo());
       llvm::Value *result = irbuilder.CreateCall(llvm_target, parameters.begin(), parameters.end());
 
-      if ((calling_convention == cconv_tvm)  && result_type.is_known())
+      if ((calling_convention == cconv_tvm)  && result_type)
         result = irbuilder.CreateLoad(result_area);
 
       if (stack_backup)
-	irbuilder.CreateCall(builder.llvm_stackrestore(), stack_backup);
+	irbuilder.CreateCall(LLVMIntrinsics::stackrestore(builder.llvm_module()), stack_backup);
 
-      if (result_type.is_known()) {
+      if (result_type) {
 	return LLVMValue::known(result);
       } else {
-	PSI_ASSERT(result_type.is_unknown());
 	return LLVMValue::unknown(result_area);
       }
     }
@@ -283,18 +286,14 @@ namespace Psi {
       return FunctionalTypeResult(context.get_pointer_type(result_function_type).get(), parameters[0]->phantom());
     }
 
-    LLVMType FunctionApplyPhantom::llvm_type(LLVMValueBuilder&, Term&) const {
-      PSI_FAIL("the type of a term cannot be an apply_phantom");
-    }
-
     LLVMValue FunctionApplyPhantom::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
       Access self(&term, this);
-      return builder.value(self.function());
+      return builder.build_value(self.function());
     }
 
-    LLVMValue FunctionApplyPhantom::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+    llvm::Constant* FunctionApplyPhantom::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
       Access self(&term, this);
-      return builder.value(self.function());
+      return builder.build_constant(self.function());
     }
   }
 }

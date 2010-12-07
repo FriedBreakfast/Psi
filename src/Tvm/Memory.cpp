@@ -33,10 +33,9 @@ namespace Psi {
 
     LLVMValue Store::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
       Access self(&term, this);
-      LLVMValue target = builder.value(self.target());
-      PSI_ASSERT(target.is_known());
-      builder.create_store(target.known_value(), self.value());
-      return EmptyType::llvm_value(builder);
+      llvm::Value *target = builder.build_known_value(self.target());
+      builder.create_store(target, self.value());
+      return LLVMValue::known(EmptyType::llvm_empty_value(builder.llvm_context()));
     }
 
     void Store::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
@@ -64,18 +63,15 @@ namespace Psi {
     LLVMValue Load::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
       Access self(&term, this);
 
-      LLVMValue target = builder.value(self.target());
-      PSI_ASSERT(target.is_known());
+      llvm::Value *target = builder.build_known_value(self.target());
 
       Term *target_deref_type = checked_cast_functional<PointerType>(self.target()->type()).backend().target_type();
-      LLVMType llvm_target_deref_type = builder.type(target_deref_type);
-      if (llvm_target_deref_type.is_known()) {
-        llvm::Value *ptr = builder.cast_pointer_from_generic(target.known_value(), llvm_target_deref_type.type()->getPointerTo());
+      if (const llvm::Type *llvm_target_deref_type = builder.build_type(target_deref_type)) {
+        llvm::Value *ptr = builder.cast_pointer_from_generic(target, llvm_target_deref_type->getPointerTo());
         return LLVMValue::known(builder.irbuilder().CreateLoad(ptr));
       } else {
-        PSI_ASSERT(llvm_target_deref_type.is_unknown());
         llvm::Value *stack_ptr = builder.create_alloca_for(target_deref_type);
-        builder.create_store_unknown(stack_ptr, target.known_value(), target_deref_type);
+        builder.create_store_unknown(stack_ptr, target, target_deref_type);
         return LLVMValue::unknown(stack_ptr);
       }
     }

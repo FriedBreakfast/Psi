@@ -254,8 +254,8 @@ namespace Psi {
 	m_llvm_module.reset(new llvm::Module("", *m_llvm_context));
       }
 
-      LLVMConstantBuilder builder(m_llvm_context.get(), m_llvm_module.get());
-      llvm::GlobalValue *global = builder.global(term);
+      LLVMGlobalBuilder builder(m_llvm_context.get(), m_llvm_module.get());
+      llvm::GlobalValue *global = builder.build_global(term);
 
       if (!m_llvm_engine) {
 	llvm::InitializeNativeTarget();

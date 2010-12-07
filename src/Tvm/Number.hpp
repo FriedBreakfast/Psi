@@ -8,26 +8,20 @@
 
 namespace Psi {
   namespace Tvm {
-    class BooleanType : public PrimitiveType<BooleanType> {
+    class BooleanType : public PrimitiveType, public StatelessTerm {
     public:
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
-      bool operator == (const BooleanType&) const;
-      friend std::size_t hash_value(const BooleanType&);
-
-      class Access {
-      public:
-	Access(const FunctionalTerm*, const BooleanType*) {}
-      };
+      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const;
+      typedef TrivialAccess<BooleanType> Access;
     };
 
-    class ConstantBoolean : public PrimitiveValue<ConstantBoolean> {
+    class ConstantBoolean : public PrimitiveValue {
     public:
       ConstantBoolean(bool value);
 
       bool operator == (const ConstantBoolean&) const;
       friend std::size_t hash_value(const ConstantBoolean&);
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+      virtual llvm::Constant* llvm_primitive_value(llvm::LLVMContext&) const;
 
       class Access {
       public:
@@ -42,12 +36,11 @@ namespace Psi {
       bool m_value;
     };
 
-    class IntegerType : public PrimitiveType<IntegerType> {
+    class IntegerType : public PrimitiveType {
     public:
       IntegerType(bool is_signed, unsigned n_bits);
 
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
-      LLVMType llvm_type(LLVMValueBuilder&) const;
+      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const;
       bool operator == (const IntegerType&) const;
       friend std::size_t hash_value(const IntegerType&);
 
@@ -70,14 +63,14 @@ namespace Psi {
       unsigned m_n_bits;
     };
 
-    class ConstantInteger : public PrimitiveValue<ConstantInteger> {
+    class ConstantInteger : public PrimitiveValue {
     public:
       ConstantInteger(const IntegerType& type, const mpz_class& value);
 
       bool operator == (const ConstantInteger&) const;
       friend std::size_t hash_value(const ConstantInteger&);
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+      virtual llvm::Constant* llvm_primitive_value(llvm::LLVMContext&) const;
 
       class Access {
       public:
@@ -105,7 +98,7 @@ namespace Psi {
       special_real_smallest_normalized
     };
 
-    class RealType : public PrimitiveType<RealType> {
+    class RealType : public PrimitiveType {
     public:
       enum Width {
         real_float,
@@ -114,8 +107,7 @@ namespace Psi {
 
       RealType(Width width);
 
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
-      LLVMType llvm_type(LLVMValueBuilder&) const;
+      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const;
       bool operator == (const RealType&) const;
       friend std::size_t hash_value(const RealType&);
 
@@ -146,14 +138,14 @@ namespace Psi {
       Width m_width;
     };
 
-    class ConstantReal : public PrimitiveValue<ConstantReal> {
+    class ConstantReal : public PrimitiveValue {
     public:
       ConstantReal(const RealType& type, const mpf_class& value);
 
       bool operator == (const ConstantReal&) const;
       friend std::size_t hash_value(const ConstantReal&);
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+      virtual llvm::Constant* llvm_primitive_value(llvm::LLVMContext&) const;
 
       class Access {
       public:
@@ -174,14 +166,14 @@ namespace Psi {
     /**
      * \brief Categories of special floating point value.
      */
-    class SpecialRealValue : public PrimitiveValue<SpecialRealValue> {
+    class SpecialRealValue : public PrimitiveValue {
     public:
       SpecialRealValue(const RealType& type, SpecialReal value, bool negative=false);
 
       bool operator == (const SpecialRealValue&) const;
       friend std::size_t hash_value(const SpecialRealValue&);
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+      virtual llvm::Constant* llvm_primitive_value(llvm::LLVMContext&) const;
 
       class Access {
       public:

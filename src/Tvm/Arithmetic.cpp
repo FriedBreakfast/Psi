@@ -21,24 +21,18 @@ namespace Psi {
       return FunctionalTypeResult(int_type.get(), parameters[0]->phantom() || parameters[1]->phantom());
     }
 
-    LLVMValue ArithmeticOperation::binary_op_constant(LLVMValueBuilder& builder, FunctionalTerm& term, llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*)) {
+    llvm::Constant* ArithmeticOperation::binary_op_constant(LLVMConstantBuilder& builder, FunctionalTerm& term, llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*)) {
       BinaryAccess self(&term, NULL);
-      LLVMValue lhs = builder.value(self.lhs());
-      LLVMValue rhs = builder.value(self.rhs());
-
-      PSI_ASSERT(lhs.is_known() && rhs.is_known());
-
-      return LLVMValue::known(callback(llvm::cast<llvm::Constant>(lhs.known_value()),
-                                       llvm::cast<llvm::Constant>(rhs.known_value())));
+      llvm::Constant* lhs = builder.build_constant(self.lhs());
+      llvm::Constant* rhs = builder.build_constant(self.rhs());
+      return callback(lhs, rhs);
     }
 
     LLVMValue ArithmeticOperation::binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term, llvm::Value* (LLVMIRBuilder::*callback) (llvm::Value*,llvm::Value*,const llvm::Twine&)) {
       BinaryAccess self(&term, NULL);
-      LLVMValue lhs = builder.value(self.lhs());
-      LLVMValue rhs = builder.value(self.rhs());
-
+      LLVMValue lhs = builder.build_value(self.lhs());
+      LLVMValue rhs = builder.build_value(self.rhs());
       PSI_ASSERT(lhs.is_known() && rhs.is_known());
-
       return LLVMValue::known((builder.irbuilder().*callback)(lhs.known_value(), rhs.known_value(), ""));
     }
 
@@ -46,15 +40,11 @@ namespace Psi {
       return ArithmeticOperation::integer_binary_op_type(context, parameters);
     }
 
-    LLVMType IntegerAdd::llvm_type(LLVMValueBuilder&, Term&) const {
-      PSI_FAIL("arithmetic operations cannot be used as types");
-    }
-
     LLVMValue IntegerAdd::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
       return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMIRBuilder::CreateAdd);
     }
 
-    LLVMValue IntegerAdd::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+    llvm::Constant* IntegerAdd::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
       return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getAdd);
     }
 
@@ -62,15 +52,11 @@ namespace Psi {
       return ArithmeticOperation::integer_binary_op_type(context, parameters);
     }
 
-    LLVMType IntegerSubtract::llvm_type(LLVMValueBuilder&, Term&) const {
-      PSI_FAIL("arithmetic operations cannot be used as types");
-    }
-
     LLVMValue IntegerSubtract::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
       return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMIRBuilder::CreateSub);
     }
 
-    LLVMValue IntegerSubtract::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+    llvm::Constant* IntegerSubtract::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
       return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getSub);
     }
 
@@ -78,24 +64,16 @@ namespace Psi {
       return ArithmeticOperation::integer_binary_op_type(context, parameters);
     }
 
-    LLVMType IntegerMultiply::llvm_type(LLVMValueBuilder&, Term&) const {
-      PSI_FAIL("arithmetic operations cannot be used as types");
-    }
-
     LLVMValue IntegerMultiply::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
       return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMIRBuilder::CreateMul);
     }
 
-    LLVMValue IntegerMultiply::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+    llvm::Constant* IntegerMultiply::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
       return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getMul);
     }
 
     FunctionalTypeResult IntegerDivide::type(Context& context, ArrayPtr<Term*const> parameters) const {
       return ArithmeticOperation::integer_binary_op_type(context, parameters);
-    }
-
-    LLVMType IntegerDivide::llvm_type(LLVMValueBuilder&, Term&) const {
-      PSI_FAIL("arithmetic operations cannot be used as types");
     }
 
     LLVMValue IntegerDivide::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -106,7 +84,7 @@ namespace Psi {
         return ArithmeticOperation::binary_op_instruction(builder, term, &LLVMIRBuilder::CreateUDiv);
     }
 
-    LLVMValue IntegerDivide::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
+    llvm::Constant* IntegerDivide::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
       bool is_signed = checked_cast_functional<IntegerType>(term.type()).backend().is_signed();
       if (is_signed)
         return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getSDiv);

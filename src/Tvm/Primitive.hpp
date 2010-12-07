@@ -21,93 +21,85 @@ namespace Psi {
       TrivialAccess(const FunctionalTerm*, const T*) {}
     };
 
-    class StatelessOperand {
+    /**
+     * This can be inherited by functional terms which have no state,
+     * so that hashing and equality comparison can be implemented
+     * trivially.
+     */
+    class StatelessTerm {
     public:
-      bool operator == (const StatelessOperand&) const;
-      friend std::size_t hash_value(const StatelessOperand&);
+      bool operator == (const StatelessTerm&) const;
+      friend std::size_t hash_value(const StatelessTerm&);
     };
 
-    template<typename Derived>
-    class PrimitiveType {
+    /**
+     * Any functional term which takes no parameters can inherit from
+     * this. llvm_value_instruction will abort since it should never
+     * be called as functional terms with no parameters are
+     * automatically global.
+     */
+    class PrimitiveTerm {
     public:
-      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-
-      LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
-        return llvm_value_constant(builder, term);
-      }
-
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
-    };
-
-    template<typename Derived>
-    class PrimitiveValue {
-    public:
-      void check_primitive_parameters(ArrayPtr<Term*const> parameters) const {
-        if (parameters.size() != 0)
-          throw TvmUserError("primitive value created with parameters");
-      }
-
-      LLVMType llvm_type(LLVMValueBuilder&, FunctionalTerm&) const {
-        PSI_FAIL("the type of a term cannot be a primitive value");
-      }
-
-      LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
-        return static_cast<const Derived*>(this)->llvm_value_constant(builder, term);
-      }
-    };
-
-    class Metatype {
-    public:
-      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
+      void check_primitive_parameters(ArrayPtr<Term*const> parameters) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const;
-      LLVMValue llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const;
+    };
 
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
-      bool operator == (const Metatype&) const;
-      friend std::size_t hash_value(const Metatype&);
+    /**
+     * Types which represent types can subclass this. It implements a
+     * default \c type member, which checks that no parameters have
+     * been given to this term and returns the type of this term as
+     * Metatype.
+     */
+    class PrimitiveType : public PrimitiveTerm {
+    public:
+      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const;
+      const llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const;
+      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const = 0;
+    };
 
-      static LLVMType llvm_type(LLVMValueBuilder&);
-      static LLVMValue llvm_value(LLVMValueBuilder&, std::size_t size, std::size_t align);
-      static LLVMValue llvm_empty(LLVMValueBuilder&);
-      static LLVMValue llvm_from_type(LLVMValueBuilder&, const llvm::Type* ty);
-      static LLVMValue llvm_from_constant(LLVMValueBuilder&, llvm::Constant *size, llvm::Constant *align);
-      static LLVMValue llvm_runtime(LLVMFunctionBuilder&, llvm::Value *size, llvm::Value *align);
+    /**
+     * This type can be inherited by terms which define a value, and
+     * therefore calling llvm_type on them is invalid. llvm_type will
+     * therefore abort. Therefore, any term using this type should be
+     * of category_value.
+     */
+    class ValueTerm {
+    public:
+      llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const;
+    };
+
+    /**
+     * Types which are values and take no parameters subclass this. In
+     * addition to llvm_value_instruction aborting (inherited from
+     * PrimitiveTerm), this will also cause llvm_type to abort,
+     * since any term using this operand should be of category_value.
+     */
+    class PrimitiveValue : public ValueTerm, public PrimitiveTerm {
+    public:
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
+      virtual llvm::Constant* llvm_primitive_value(llvm::LLVMContext&) const = 0;
+    };
+
+    class Metatype : public PrimitiveTerm, public StatelessTerm {
+    public:
+      FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
+      llvm::Constant* llvm_value_constant(LLVMConstantBuilder& builder, Term&) const;
+      const llvm::Type* llvm_type(LLVMConstantBuilder&, Term&) const;
 
       typedef TrivialAccess<Metatype> Access;
     };
 
-    template<typename Derived>
-    FunctionalTypeResult PrimitiveType<Derived>::type(Context& context, ArrayPtr<Term*const> parameters) const {
-      if (parameters.size() != 0)
-        throw TvmUserError("primitive type created with parameters");
-      return FunctionalTypeResult(context.get_metatype().get(), false);
-    }
-
-    template<typename Derived>
-    LLVMValue PrimitiveType<Derived>::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm& term) const {
-      LLVMType ty = static_cast<const Derived*>(this)->llvm_type(builder, term);
-      PSI_ASSERT(ty.is_known());
-      return Metatype::llvm_from_type(builder, ty.type());
-    }
-
-    class EmptyType : public PrimitiveType<EmptyType> {
+    class EmptyType : public PrimitiveType, public StatelessTerm {
     public:
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
-      bool operator == (const EmptyType&) const;
-      friend std::size_t hash_value(const EmptyType&);
-
+      static llvm::Constant* llvm_empty_value(llvm::LLVMContext&);
+      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const;
       typedef TrivialAccess<EmptyType> Access;
-
-      static LLVMType llvm_type(LLVMValueBuilder&);
-      static LLVMValue llvm_value(LLVMValueBuilder&);
     };
 
-    class BlockType : public PrimitiveType<BlockType> {
+    class BlockType : public PrimitiveType, public StatelessTerm {
     public:
-      LLVMType llvm_type(LLVMValueBuilder&, Term&) const;
-      bool operator == (const BlockType&) const;
-      friend std::size_t hash_value(const BlockType&);
-
+      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const;
       typedef TrivialAccess<BlockType> Access;
     };
   }

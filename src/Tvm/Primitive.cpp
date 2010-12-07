@@ -8,12 +8,42 @@
 
 namespace Psi {
   namespace Tvm {
-    bool StatelessOperand::operator == (const StatelessOperand&) const {
+    bool StatelessTerm::operator == (const StatelessTerm&) const {
       return true;
     }
 
-    std::size_t hash_value(const StatelessOperand&) {
+    std::size_t hash_value(const StatelessTerm&) {
       return 0;
+    }
+
+    void PrimitiveTerm::check_primitive_parameters(ArrayPtr<Term*const> parameters) const {
+      if (parameters.size() != 0)
+        throw TvmUserError("primitive term created with parameters");
+    }
+
+    LLVMValue PrimitiveTerm::llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const {
+      PSI_FAIL("llvm_value_instruction should never be called on primitive values");
+    }
+
+    FunctionalTypeResult PrimitiveType::type(Context& context, ArrayPtr<Term*const> parameters) const {
+      check_primitive_parameters(parameters);
+      return FunctionalTypeResult(context.get_metatype().get(), false);
+    }
+
+    llvm::Constant* PrimitiveType::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
+      return LLVMMetatype::from_type(llvm_type(builder, term));
+    }
+
+    const llvm::Type* PrimitiveType::llvm_type(LLVMConstantBuilder& builder, FunctionalTerm&) const {
+      return llvm_primitive_type(builder.llvm_context());
+    }
+
+    llvm::Type* ValueTerm::llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const {
+      PSI_FAIL("the type of a term cannot a value term");
+    }
+
+    llvm::Constant* PrimitiveValue::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm&) const {
+      return llvm_primitive_value(builder.llvm_context());
     }
 
     FunctionalTypeResult Metatype::type(Context&, ArrayPtr<Term*const> parameters) const {
@@ -22,127 +52,35 @@ namespace Psi {
       return FunctionalTypeResult(NULL, false);
     }
 
-    LLVMValue Metatype::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
-      return llvm_value_constant(builder, term);
+    llvm::Constant* Metatype::llvm_value_constant(LLVMConstantBuilder& builder, Term&) const {
+      return LLVMMetatype::from_type(LLVMMetatype::type(builder.llvm_context()));
     }
 
-    LLVMValue Metatype::llvm_value_constant(LLVMValueBuilder& builder, FunctionalTerm&) const {
-      return llvm_from_type(builder, llvm_type(builder).type());
-    }
-
-    LLVMType Metatype::llvm_type(LLVMValueBuilder& builder, Term&) const {
-      return llvm_type(builder);
-    }
-
-    bool Metatype::operator == (const Metatype&) const {
-      return true;
-    }
-
-    std::size_t hash_value(const Metatype&) {
-      return 0;
-    }
-
-    /**
-     * \brief Get the LLVM type for Metatype values.
-     */
-    LLVMType Metatype::llvm_type(LLVMValueBuilder& builder) {
-      const llvm::Type* i64 = llvm::Type::getInt64Ty(builder.context());
-      return LLVMType::known(llvm::StructType::get(builder.context(), i64, i64, NULL));
-    }
-
-    LLVMValue Metatype::llvm_value(LLVMValueBuilder& builder, std::size_t size, std::size_t align) {
-      const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.context());
-      return llvm_from_constant(builder,
-				llvm::ConstantInt::get(i64, size),
-				llvm::ConstantInt::get(i64, align));
-    }
-
-    /**
-     * \brief Get an LLVM value for Metatype for an empty type.
-     */
-    LLVMValue Metatype::llvm_empty(LLVMValueBuilder& builder) {
-      return llvm_value(builder, 0, 1);
-    }
-
-    /**
-     * \brief Get an LLVM value for Metatype for the given LLVM type.
-     */
-    LLVMValue Metatype::llvm_from_type(LLVMValueBuilder& builder, const llvm::Type* ty) {
-      llvm::Constant* values[2] = {
-	llvm::ConstantExpr::getSizeOf(ty),
-	llvm::ConstantExpr::getAlignOf(ty)
-      };
-
-      return LLVMValue::known(llvm::ConstantStruct::get(builder.context(), values, 2, false));
-    }
-
-    /**
-     * \brief Get an LLVM value for a specified size and alignment.
-     *
-     * The result of this call will be a global constant.
-     */
-    LLVMValue Metatype::llvm_from_constant(LLVMValueBuilder& builder, llvm::Constant *size, llvm::Constant *align) {
-      if (!size->getType()->isIntegerTy(64) || !align->getType()->isIntegerTy(64))
-	throw TvmUserError("size or align in metatype is not a 64-bit integer");
-
-      if (llvm::isa<llvm::ConstantInt>(align) && (llvm::cast<llvm::ConstantInt>(align)->getValue().exactLogBase2() < 0))
-	throw TvmUserError("alignment is not a power of two");
-
-      llvm::Constant* values[2] = {size, align};
-      return LLVMValue::known(llvm::ConstantStruct::get(builder.context(), values, 2, false));
-    }
-
-    /**
-     * \brief Get an LLVM value for a specified size and alignment.
-     *
-     * The result of this call will be a global constant.
-     */
-    LLVMValue Metatype::llvm_runtime(LLVMFunctionBuilder& builder, llvm::Value *size, llvm::Value *align) {
-      const llvm::Type* i64 = llvm::Type::getInt64Ty(builder.context());
-      llvm::Type *mtype = llvm::StructType::get(builder.context(), i64, i64, NULL);
-      llvm::Value *first = builder.irbuilder().CreateInsertValue(llvm::UndefValue::get(mtype), size, 0);
-      llvm::Value *second = builder.irbuilder().CreateInsertValue(first, align, 1);
-      return LLVMValue::known(second);
+    const llvm::Type* Metatype::llvm_type(LLVMConstantBuilder& builder, Term&) const {
+      return LLVMMetatype::type(builder.llvm_context());
     }
 
     FunctionalTermPtr<Metatype> Context::get_metatype() {
       return get_functional_v(Metatype());
     }
 
-    LLVMType EmptyType::llvm_type(LLVMValueBuilder& builder, Term&) const {
-      return llvm_type(builder);
+    /**
+     * Get a (or rather the) value of the empty type.
+     */
+    llvm::Constant* EmptyType::llvm_empty_value(llvm::LLVMContext& c) {
+      return llvm::ConstantStruct::get(c, NULL, 0, false);
     }
 
-    bool EmptyType::operator == (const EmptyType&) const {
-      return true;
-    }
-
-    LLVMType EmptyType::llvm_type(LLVMValueBuilder& builder) {
-      return LLVMType::known(llvm::StructType::get(builder.context()));
-    }
-
-    LLVMValue EmptyType::llvm_value(LLVMValueBuilder& builder) {
-      return LLVMValue::known(llvm::ConstantStruct::get(builder.context(), NULL, 0, false));
-    }
-
-    std::size_t hash_value(const EmptyType&) {
-      return 0;
+    const llvm::Type* EmptyType::llvm_primitive_type(llvm::LLVMContext& c) const {
+      return llvm::StructType::get(c);
     }
 
     FunctionalTermPtr<EmptyType> Context::get_empty_type() {
       return get_functional_v(EmptyType());
     }
 
-    LLVMType BlockType::llvm_type(LLVMValueBuilder& builder, Term&) const {
-      return LLVMType::known(const_cast<llvm::Type*>(llvm::Type::getLabelTy(builder.context())));
-    }
-
-    bool BlockType::operator == (const BlockType&) const {
-      return true;
-    }
-
-    std::size_t hash_value(const BlockType&) {
-      return 0;
+    const llvm::Type* BlockType::llvm_primitive_type(llvm::LLVMContext& c) const {
+      return llvm::Type::getLabelTy(c);
     }
 
     FunctionalTermPtr<BlockType> Context::get_block_type() {

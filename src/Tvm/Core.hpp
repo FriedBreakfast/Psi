@@ -24,7 +24,8 @@
 
 namespace Psi {
   namespace Tvm {
-    class LLVMValueBuilder;
+    class LLVMConstantBuilder;
+    class LLVMGlobalBuilder;
     class LLVMFunctionBuilder;
 
     class Context;
