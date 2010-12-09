@@ -56,12 +56,92 @@ namespace Psi {
         }
       }
 
-      std::pair<llvm::Constant*, llvm::Constant*> constant_size_align(llvm::Constant *value) {
-	unsigned zero = 0, one = 1;
-	return std::make_pair(llvm::ConstantExpr::getExtractValue(value, &zero, 1),
-			      llvm::ConstantExpr::getExtractValue(value, &one, 1));
-      }
+      template<typename DerivedType, typename BuilderType, typename ValueType>
+      class SizeAlignBase {
+      public:
+        SizeAlignBase(BuilderType *builder, Term *type)
+          : m_builder(builder),
+            m_type(type),
+            m_built_type(false),
+            m_llvm_type(0),
+            m_llvm_size(0),
+            m_llvm_align(0) {
+        }
 
+        ValueType* size() {
+          if (!m_llvm_size) {
+            if (const llvm::Type *ty = build_type())
+              m_llvm_size = llvm::ConstantExpr::getSizeOf(ty);
+            else
+              m_llvm_size = DerivedType::to_size(*m_builder, build_value());
+          }
+
+          return m_llvm_size;
+        }
+
+        ValueType* align() {
+          if (!m_llvm_align) {
+            if (const llvm::Type *ty = build_type())
+              m_llvm_align = llvm::ConstantExpr::getSizeOf(ty);
+            else
+              m_llvm_align = DerivedType::to_align(*m_builder, build_value());
+          }
+
+          return m_llvm_align;
+        }
+
+      private:
+        BuilderType *m_builder;
+        Term *m_type;
+        bool m_built_type;
+        const llvm::Type *m_llvm_type;
+        ValueType *m_llvm_size, *m_llvm_align;
+        ValueType *m_llvm_value;
+
+        const llvm::Type* build_type() {
+          if (!m_built_type) {
+            m_llvm_type = m_builder->build_type(m_type);
+            m_built_type = true;
+          }
+
+          return m_llvm_type;
+        }
+
+        ValueType* build_value() {
+          if (!m_llvm_value)
+            m_llvm_value = DerivedType::build_value(*m_builder, m_type);
+          return m_llvm_value;
+        }
+      };
+
+      /**
+       * Compute size and alignment of a type from its term.
+       */
+      class ConstantSizeAlign : public SizeAlignBase<ConstantSizeAlign, LLVMConstantBuilder, llvm::Constant> {
+      public:
+        ConstantSizeAlign(LLVMConstantBuilder *builder, Term *type)
+          : SizeAlignBase<ConstantSizeAlign, LLVMConstantBuilder, llvm::Constant>(builder, type) {
+        }
+
+        static llvm::Constant* to_size(LLVMConstantBuilder&, llvm::Constant* val) {return LLVMMetatype::to_size_constant(val);}
+        static llvm::Constant* to_align(LLVMConstantBuilder&, llvm::Constant* val) {return LLVMMetatype::to_align_constant(val);}
+        static llvm::Constant* build_value(LLVMConstantBuilder& builder, Term *type) {return builder.build_constant(type);}
+      };
+
+      class InstructionSizeAlign : public SizeAlignBase<InstructionSizeAlign, LLVMFunctionBuilder, llvm::Value> {
+      public:
+        InstructionSizeAlign(LLVMFunctionBuilder *builder, Term *type)
+          : SizeAlignBase<InstructionSizeAlign, LLVMFunctionBuilder, llvm::Value>(builder, type) {
+        }
+
+        static llvm::Value* to_size(LLVMFunctionBuilder& builder, llvm::Value* val) {return LLVMMetatype::to_size_value(builder.irbuilder(), val);}
+        static llvm::Value* to_align(LLVMFunctionBuilder& builder, llvm::Value* val) {return LLVMMetatype::to_align_value(builder.irbuilder(), val);}
+        static llvm::Value* build_value(LLVMFunctionBuilder& builder, Term *type) {return builder.build_known_value(type);}
+      };
+
+      /**
+       * Compute the maximum of two values.
+       */
       llvm::Constant* constant_max(llvm::Constant* left, llvm::Constant* right) {
 	llvm::Constant* cmp = llvm::ConstantExpr::getCompare(llvm::CmpInst::ICMP_ULT, left, right);
 	return llvm::ConstantExpr::getSelect(cmp, left, right);
@@ -69,34 +149,14 @@ namespace Psi {
 
       /*
        * Align a size to a boundary. The formula is: <tt>(size + align
-       * - 1) & ~align</tt>. <tt>align</tt> must be a power of two.
+       * - 1) & ~(align - 1)</tt>. <tt>align</tt> must be a power of two.
        */
       llvm::Constant* constant_align(llvm::Constant* size, llvm::Constant* align) {
-	llvm::Constant* one = llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(size->getType()), 1);
-	llvm::Constant* a = llvm::ConstantExpr::getSub(align, one);
-	llvm::Constant* b = llvm::ConstantExpr::getAdd(size, a);
-	llvm::Constant* c = llvm::ConstantExpr::getNot(align);
-	return llvm::ConstantExpr::getAnd(b, c);
-      }
-
-      /**
-       * Get the size and alignment of values of type \c type. Returns
-       * boost::none if the type is empty.
-       */
-      std::pair<llvm::Constant*, llvm::Constant*> constant_type_size_align(LLVMConstantBuilder& builder, Term *type) {
-        const llvm::Type* llvm_type = builder.build_type(type);
-        if (llvm_type) {
-          return std::make_pair(llvm::ConstantExpr::getSizeOf(llvm_type),
-                                llvm::ConstantExpr::getAlignOf(llvm_type));
-        } else {
-          return constant_size_align(builder.build_constant(type));
-        }
-      }
-
-      std::pair<llvm::Value*, llvm::Value*> instruction_size_align(LLVMIRBuilder& irbuilder, llvm::Value *value) {
-	llvm::Value *size = irbuilder.CreateExtractValue(value, 0);
-	llvm::Value *align = irbuilder.CreateExtractValue(value, 1);
-	return std::make_pair(size, align);
+	llvm::Constant* one = llvm::ConstantInt::get(align->getType(), 1);
+	llvm::Constant* align_minus_one = llvm::ConstantExpr::getSub(align, one);
+	llvm::Constant* size_plus_align_minus_one = llvm::ConstantExpr::getAdd(size, align_minus_one);
+	llvm::Constant* not_align_minus_one = llvm::ConstantExpr::getNot(align_minus_one);
+	return llvm::ConstantExpr::getAnd(size_plus_align_minus_one, not_align_minus_one);
       }
 
       llvm::Value* instruction_max(LLVMIRBuilder& irbuilder, llvm::Value *left, llvm::Value *right) {
@@ -111,22 +171,6 @@ namespace Psi {
 	llvm::Value* b = irbuilder.CreateAdd(size, a);
 	llvm::Value* c = irbuilder.CreateNot(align);
 	return irbuilder.CreateAnd(b, c);
-      }
-
-      /**
-       * Get the size and alignment of values of type \c type. Returns
-       * boost::none if the type is empty.
-       */
-      std::pair<llvm::Value*, llvm::Value*> instruction_type_size_align(LLVMFunctionBuilder& builder, Term *type) {
-        const llvm::Type* llvm_type = builder.build_type(type);
-        if (llvm_type) {
-          return std::make_pair<llvm::Value*,llvm::Value*>
-            (llvm::ConstantExpr::getSizeOf(llvm_type),
-             llvm::ConstantExpr::getAlignOf(llvm_type));
-        } else {
-          llvm::Value *llvm_value = builder.build_known_value(type);
-          return instruction_size_align(builder.irbuilder(), llvm_value);
-        }
       }
     }
 
@@ -149,10 +193,10 @@ namespace Psi {
       if (llvm::Constant *type_value = type_size_align(builder, &term))
         return LLVMValue::known(type_value);
 
-      std::pair<llvm::Value*,llvm::Value*> size_align = instruction_type_size_align(builder, self.element_type());
+      InstructionSizeAlign element(&builder, self.element_type());
       llvm::Value *length = builder.build_known_value(self.length());
-      llvm::Value *array_size = builder.irbuilder().CreateMul(size_align.first, length);
-      return LLVMMetatype::from_value(builder.irbuilder(), array_size, size_align.second);
+      llvm::Value *array_size = builder.irbuilder().CreateMul(element.size(), length);
+      return LLVMMetatype::from_value(builder.irbuilder(), array_size, element.align());
     }
 
     llvm::Constant* ArrayType::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
@@ -161,10 +205,10 @@ namespace Psi {
       if (llvm::Constant* type_value = type_size_align(builder, &term))
         return type_value;
 
-      std::pair<llvm::Constant*,llvm::Constant*> size_align = constant_type_size_align(builder, self.element_type());
+      ConstantSizeAlign element(&builder, self.element_type());
       llvm::Constant *length = builder.build_constant(self.length());
-      llvm::Constant *total_size = llvm::ConstantExpr::getMul(size_align.first, length);
-      return LLVMMetatype::from_constant(total_size, size_align.second);
+      llvm::Constant *total_size = llvm::ConstantExpr::getMul(element.size(), length);
+      return LLVMMetatype::from_constant(total_size, element.align());
     }
 
     const llvm::Type* ArrayType::llvm_type(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
@@ -222,7 +266,16 @@ namespace Psi {
 
         return LLVMValue::known(array);
       } else {
-        PSI_FAIL("not implemented");
+        llvm::Value *storage = builder.create_alloca_for(term.type());
+
+        InstructionSizeAlign element(&builder, self.element_type());
+        llvm::Value *offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(builder.llvm_context()), 0);
+        for (std::size_t i = 0; i < self.length(); ++i) {
+          llvm::Value *ptr = builder.irbuilder().CreateInBoundsGEP(storage, offset);
+          builder.create_store(ptr, self.value(i));
+        }
+
+        return LLVMValue::unknown(storage);
       }
     }
 
@@ -272,9 +325,9 @@ namespace Psi {
       llvm::Value *align = llvm::ConstantInt::get(i64, 1);
 
       for (std::size_t i = 0; i < self.n_members(); ++i) {
-        std::pair<llvm::Value*, llvm::Value*> size_align = instruction_type_size_align(builder, self.member_type(i));
-        size = irbuilder.CreateAdd(instruction_align(irbuilder, size, size_align.second), size_align.first);
-        align = instruction_max(irbuilder, align, size_align.second);
+        InstructionSizeAlign member(&builder, self.member_type(i));
+        size = irbuilder.CreateAdd(instruction_align(irbuilder, size, member.align()), member.size());
+        align = instruction_max(irbuilder, align, member.align());
       }
 
       // size should always be a multiple of align
@@ -293,9 +346,9 @@ namespace Psi {
       llvm::Constant *align = llvm::ConstantInt::get(i64, 1);
 
       for (std::size_t i = 0; i < self.n_members(); ++i) {
-        std::pair<llvm::Constant*, llvm::Constant*> size_align = constant_type_size_align(builder, self.member_type(i));
-        size = llvm::ConstantExpr::getAdd(constant_align(size, size_align.second), size_align.first);
-        align = constant_max(align, size_align.second);
+        ConstantSizeAlign member(&builder, self.member_type(i));
+        size = llvm::ConstantExpr::getAdd(constant_align(size, member.align()), member.size());
+        align = constant_max(align, member.align());
       }
 
       // size should always be a multiple of align
@@ -354,30 +407,14 @@ namespace Psi {
 
         llvm::Value *offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(builder.llvm_context()), 0);
         for (std::size_t i = 0; i < self.n_members(); ++i) {
-          LLVMValue member_val = builder.build_value(self.member_value(i));
-          if (member_val.is_known()) {
-            llvm::Constant *size = llvm::ConstantExpr::getSizeOf(member_val.known_value()->getType());
-            llvm::Constant *align = llvm::ConstantExpr::getAlignOf(member_val.known_value()->getType());
-            // align pointer to boundary
-            offset = instruction_align(builder.irbuilder(), offset, align);
-            llvm::Value *member_ptr = builder.irbuilder().CreateInBoundsGEP(storage, offset);
-            llvm::Value *cast_member_ptr = builder.irbuilder().CreatePointerCast(member_ptr, member_val.known_value()->getType()->getPointerTo());
-            builder.irbuilder().CreateStore(member_val.known_value(), cast_member_ptr);
-            offset = builder.irbuilder().CreateAdd(offset, size);
-          } else {
-            PSI_ASSERT(member_val.is_unknown());
-            LLVMValue member_type_val = builder.build_value(self.member_value(i)->type());
-            PSI_ASSERT(member_type_val.is_known());
-            std::pair<llvm::Value*,llvm::Value*> size_align = instruction_size_align(builder.irbuilder(), member_type_val.known_value());
-            // align pointer to boundary
-            offset = instruction_align(builder.irbuilder(), offset, size_align.second);
-            llvm::Value *member_ptr = builder.irbuilder().CreateInBoundsGEP(storage, offset);
-            builder.create_memcpy(member_ptr, member_val.unknown_value(), size_align.first);
-            offset = builder.irbuilder().CreateAdd(offset, size_align.first);
-          }
+          InstructionSizeAlign member_type(&builder, self.member_value(i)->type());
+          offset = instruction_align(builder.irbuilder(), offset, member_type.align());
+          llvm::Value *ptr = builder.irbuilder().CreateInBoundsGEP(storage, offset);
+          builder.create_store(ptr, self.member_value(i));
+          offset = builder.irbuilder().CreateAdd(offset, member_type.size());
         }
 
-        return LLVMValue::known(storage);
+        return LLVMValue::unknown(storage);
       }
     }
 
@@ -409,9 +446,9 @@ namespace Psi {
       llvm::Value *align = llvm::ConstantInt::get(i64, 1);
 
       for (std::size_t i = 0; i < self.n_members(); ++i) {
-        std::pair<llvm::Value*, llvm::Value*> size_align = instruction_type_size_align(builder, self.member_type(i));
-        size = instruction_max(irbuilder, size, size_align.first);
-        align = instruction_max(irbuilder, align, size_align.second);
+        InstructionSizeAlign member(&builder, self.member_type(i));
+        size = instruction_max(irbuilder, size, member.size());
+        align = instruction_max(irbuilder, align, member.align());
       }
 
       // size should always be a multiple of align
@@ -430,9 +467,9 @@ namespace Psi {
       llvm::Constant *align = llvm::ConstantInt::get(i64, 1);
 
       for (std::size_t i = 0; i < self.n_members(); ++i) {
-        std::pair<llvm::Constant*, llvm::Constant*> size_align = constant_type_size_align(builder, self.member_type(i));
-        size = constant_max(size, size_align.first);
-        align = constant_max(align, size_align.second);
+        ConstantSizeAlign member(&builder, self.member_type(i));
+        size = constant_max(size, member.size());
+        align = constant_max(align, member.align());
       }
 
       // size should always be a multiple of align
@@ -453,6 +490,60 @@ namespace Psi {
       }
 
       return llvm::UnionType::get(builder.llvm_context(), member_types);
+    }
+
+    int UnionType::Access::index_of_type(Term *type) {
+      for (std::size_t i = 0; i < n_members(); ++i) {
+        if (type == member_type(i))
+          return i;
+      }
+      return -1;
+    }
+
+    bool UnionType::Access::contains_type(Term *type) {
+      return index_of_type(type) >= 0;
+    }
+
+    FunctionalTypeResult UnionValue::type(Context&, ArrayPtr<Term*const> parameters) const {
+      if (parameters.size() != 2)
+        throw TvmUserError("c_union takes two parameters");
+
+      FunctionalTermPtr<UnionType> type = dynamic_cast_functional<UnionType>(parameters[0]);
+      if (!type)
+        throw TvmUserError("first argument to c_union must be a union type");
+
+      if (!type.backend().contains_type(parameters[1]->type()))
+        throw TvmUserError("second argument to c_union must correspond to a member of the specified union type");
+
+      return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom());
+    }
+
+    LLVMValue UnionValue::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
+
+      PSI_ASSERT(!term.phantom());
+
+      if (const llvm::Type* ty = builder.build_type(term.type())) {
+        llvm::Value *undef = llvm::UndefValue::get(ty);
+        llvm::Value *val = builder.build_known_value(self.value());
+        int index = llvm::cast<llvm::UnionType>(ty)->getElementTypeIndex(val->getType());
+        llvm::Value *result = builder.irbuilder().CreateInsertValue(undef, val, index);
+        return LLVMValue::known(result);
+      } else {
+        llvm::Value *storage = builder.create_alloca_for(term.type());
+        builder.create_store(storage, self.value());
+        return LLVMValue::unknown(storage);
+      }
+    }
+
+    llvm::Constant* UnionValue::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
+      Access self(&term, this);
+
+      PSI_ASSERT(!term.phantom());
+
+      const llvm::Type *ty = builder.build_type(term.type());
+      llvm::Constant *val = builder.build_constant(self.value());
+      return llvm::ConstantUnion::get(llvm::cast<llvm::UnionType>(ty), val);
     }
   }
 }

@@ -145,6 +145,11 @@ namespace Psi {
       llvm::Constant* from_type(const llvm::Type* ty);
       llvm::Constant* from_constant(llvm::Constant *size, llvm::Constant *align);
       LLVMValue from_value(LLVMIRBuilder&, llvm::Value *size, llvm::Value *align);
+
+      llvm::Constant* to_size_constant(llvm::Constant *value);
+      llvm::Constant* to_align_constant(llvm::Constant *value);
+      llvm::Value* to_size_value(LLVMIRBuilder&, llvm::Value*);
+      llvm::Value* to_align_value(LLVMIRBuilder&, llvm::Value*);
     }
   }
 }

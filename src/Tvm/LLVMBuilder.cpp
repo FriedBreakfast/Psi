@@ -1045,6 +1045,36 @@ namespace Psi {
         llvm::Value *stage2 = irbuilder.CreateInsertValue(stage1, align, 1);
         return LLVMValue::known(stage2);
       }
+
+      /**
+       * \brief Get the size value from a Metatype constant.
+       */
+      llvm::Constant* to_size_constant(llvm::Constant *value) {
+        unsigned zero = 0;
+        return llvm::ConstantExpr::getExtractValue(value, &zero, 1);
+      }
+
+      /**
+       * \brief Get the alignment value from a Metatype constant.
+       */
+      llvm::Constant* to_align_constant(llvm::Constant *value) {
+        unsigned one = 1;
+        return llvm::ConstantExpr::getExtractValue(value, &one, 1);
+      }
+
+      /**
+       * \brief Get the size value from a Metatype value.
+       */
+      llvm::Value* to_size_value(LLVMIRBuilder& irbuilder, llvm::Value* value) {
+        return irbuilder.CreateExtractValue(value, 0);
+      }
+
+      /**
+       * \brief Get the align value from a Metatype value.
+       */
+      llvm::Value* to_align_value(LLVMIRBuilder& irbuilder, llvm::Value* value) {
+        return irbuilder.CreateExtractValue(value, 1);
+      }
     }
   }
 }

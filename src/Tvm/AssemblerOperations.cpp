@@ -152,7 +152,9 @@ namespace Psi {
         ("array", DefaultFunctionalCallback<ArrayType>())
         ("c_array", DefaultFunctionalCallback<ArrayValue>())
         ("struct", DefaultFunctionalCallback<StructType>())
-        ("c_struct", DefaultFunctionalCallback<StructValue>());
+        ("c_struct", DefaultFunctionalCallback<StructValue>())
+        ("union", DefaultFunctionalCallback<UnionType>())
+        ("c_union", DefaultFunctionalCallback<UnionValue>());
 
       template<typename T>
       struct DefaultInstructionCallback {

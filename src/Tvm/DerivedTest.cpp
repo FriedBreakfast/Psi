@@ -99,7 +99,7 @@ namespace Psi {
       const char *src =
         "%u = define (union (int #64) (array (int #32) (c_uint #64 #2)));\n"
         "%f = function cc_c (%a:(int #64), %b:(int #32)) > (array %u (c_uint #64 #2)) {\n"
-        "  return (c_array (c_union %u %a) (c_union %u %b));\n"
+        "  return (c_array %u (c_union %u %a) (c_union %u (c_array (int #32) %b %b)));\n"
         "};\n";
 
       struct TestReturnType {TestUnionType u[2];};

@@ -106,11 +106,18 @@ namespace Psi {
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
       llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
       const llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const;
+
+      class Access : public AggregateType::Access {
+      public:
+        Access(const FunctionalTerm *term, const UnionType* backend) : AggregateType::Access(term, backend) {}
+
+        int index_of_type(Term *type);
+        bool contains_type(Term *type);
+      };
     };
 
     class UnionValue : public StatelessTerm, public ValueTerm {
     public:
-      UnionValue();
       FunctionalTypeResult type(Context&, ArrayPtr<Term*const>) const;
       LLVMValue llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const;
       llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
@@ -118,7 +125,7 @@ namespace Psi {
       class Access {
       public:
 	Access(const FunctionalTerm *term, const UnionValue*) : m_term(term) {}
-        Term* type() const {return m_term->parameter(0);}
+        FunctionalTermPtr<UnionType> type() const {return checked_cast_functional<UnionType>(m_term->parameter(0));}
         Term* value() const {return m_term->parameter(1);}
       private:
 	const FunctionalTerm *m_term;
