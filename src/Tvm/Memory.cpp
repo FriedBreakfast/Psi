@@ -28,7 +28,7 @@ namespace Psi {
       if (target_ptr_type.backend().target_type() != value->type())
         throw TvmUserError("store target type is not a pointer to the type of value");
 
-      return context.get_empty_type().get();
+      return context.get_empty_type();
     }
 
     LLVMValue Store::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {
@@ -89,7 +89,7 @@ namespace Psi {
       if (parameters[0]->phantom())
         throw TvmUserError("parameter to alloca cannot be phantom");
 
-      return context.get_pointer_type(parameters[0]).get();
+      return context.get_pointer_type(parameters[0]);
     }
 
     LLVMValue Alloca::llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const {

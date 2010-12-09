@@ -18,7 +18,7 @@ namespace Psi {
 	throw TvmUserError("pointer type takes one parameter");
       if (!parameters[0]->is_type())
         throw TvmUserError("pointer argument must be a type");
-      return FunctionalTypeResult(context.get_metatype().get(), false);
+      return FunctionalTypeResult(context.get_metatype(), false);
     }
 
     LLVMValue PointerType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm&) const {
@@ -140,7 +140,7 @@ namespace Psi {
       if (parameters[1]->type() != context.get_integer_type(64, false))
 	throw TvmUserError("second argument to array type term is not a 64-bit integer");
 
-      return FunctionalTypeResult(context.get_metatype().get(), parameters[0]->phantom() || parameters[1]->phantom());
+      return FunctionalTypeResult(context.get_metatype(), parameters[0]->phantom() || parameters[1]->phantom());
     }
 
     LLVMValue ArrayType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -186,7 +186,7 @@ namespace Psi {
     }
 
     FunctionalTermPtr<ArrayType> Context::get_array_type(Term* element_type, std::size_t length) {
-      Term* length_term = get_functional_v(ConstantInteger(IntegerType(false, 64), length)).get();
+      Term* length_term = get_functional_v(ConstantInteger(IntegerType(false, 64), length));
       return get_functional_v(ArrayType(), element_type, length_term);
     }
 
@@ -206,7 +206,7 @@ namespace Psi {
 
       PSI_ASSERT(phantom || !parameters[0]->phantom());
 
-      return FunctionalTypeResult(context.get_array_type(parameters[0], parameters.size() - 1).get(), phantom);
+      return FunctionalTypeResult(context.get_array_type(parameters[0], parameters.size() - 1), phantom);
     }
 
     LLVMValue ArrayValue::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -244,7 +244,7 @@ namespace Psi {
       parameters[0] = element_type;
       for (std::size_t i = 0; i < elements.size(); ++i)
         parameters[i+1] = elements[i];
-      return get_functional(ArrayValue(), parameters.array()).get();
+      return get_functional(ArrayValue(), parameters.array());
     }
 
     FunctionalTypeResult AggregateType::type(Context& context, ArrayPtr<Term*const> parameters) const {
@@ -255,7 +255,7 @@ namespace Psi {
         phantom = phantom || parameters[i]->phantom();
       }
 
-      return FunctionalTypeResult(context.get_metatype().get(), phantom);
+      return FunctionalTypeResult(context.get_metatype(), phantom);
     }
 
     LLVMValue StructType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {

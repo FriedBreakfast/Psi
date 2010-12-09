@@ -283,7 +283,7 @@ namespace Psi {
          new_parameters.array().slice(0, result_n_phantom),
          new_parameters.array().slice(result_n_phantom, result_n_phantom+result_n_normal));
 
-      return FunctionalTypeResult(context.get_pointer_type(result_function_type).get(), parameters[0]->phantom());
+      return FunctionalTypeResult(context.get_pointer_type(result_function_type), parameters[0]->phantom());
     }
 
     LLVMValue FunctionApplyPhantom::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {

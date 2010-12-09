@@ -27,7 +27,7 @@ namespace Psi {
 
     FunctionalTypeResult PrimitiveType::type(Context& context, ArrayPtr<Term*const> parameters) const {
       check_primitive_parameters(parameters);
-      return FunctionalTypeResult(context.get_metatype().get(), false);
+      return FunctionalTypeResult(context.get_metatype(), false);
     }
 
     llvm::Constant* PrimitiveType::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {

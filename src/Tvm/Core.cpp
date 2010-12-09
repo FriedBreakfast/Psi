@@ -171,7 +171,7 @@ namespace Psi {
      * pointer to this type.
      */
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name)
-      : Term(ui, context, term_type, false, false, false, NULL, context->get_pointer_type(type).get()),
+      : Term(ui, context, term_type, false, false, false, NULL, context->get_pointer_type(type)),
         m_name(name) {
       PSI_ASSERT(!type->phantom() && !type->parameterized() && !type->abstract());
     }

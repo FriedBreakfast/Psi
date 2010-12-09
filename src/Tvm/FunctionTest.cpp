@@ -16,7 +16,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(FunctionTypeTest) {
       IntegerType i32(true, 32);
-      Term *i32_t = context.get_functional_v(i32).get();
+      Term *i32_t = context.get_functional_v(i32);
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t);
 
       BOOST_CHECK_EQUAL(func_type->calling_convention(), cconv_tvm);
@@ -27,8 +27,8 @@ namespace Psi {
       const Jit::Int32 c = 45878594;
 
       IntegerType i32(true, 32);
-      Term* i32_t = context.get_functional_v(i32).get();
-      Term* value = context.get_functional_v(ConstantInteger(i32, c)).get();
+      Term* i32_t = context.get_functional_v(i32);
+      Term* value = context.get_functional_v(ConstantInteger(i32, c));
 
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(cconv_c, i32_t);
       FunctionTerm* func = context.new_function(func_type, "f");
@@ -46,7 +46,7 @@ namespace Psi {
     BOOST_AUTO_TEST_CASE(CCall_ReturnIntParameter) {
       const Jit::Int32 c = 258900654;
 
-      Term* i32_t = context.get_functional_v(IntegerType(true, 32)).get();
+      Term* i32_t = context.get_functional_v(IntegerType(true, 32));
       FunctionTypeTerm* func_type = context.get_function_type_fixed_v(cconv_c, i32_t, i32_t);
       FunctionTerm* func = context.new_function(func_type, "f");
       BlockTerm* entry = func->new_block();

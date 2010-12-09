@@ -17,7 +17,7 @@ namespace Psi {
       : Term(ui, context, term_function_type,
 	     result_type->abstract() || any_abstract(parameters) || any_abstract(phantom_parameters), true, false,
              common_source(result_type->source(), common_source(common_source(parameters), common_source(phantom_parameters))),
-	     context->get_metatype().get()),
+	     context->get_metatype()),
 	m_calling_convention(calling_convention),
         m_n_phantoms(phantom_parameters.size()) {
       set_base_parameter(0, result_type);
@@ -185,7 +185,7 @@ namespace Psi {
 
 	  Term* type = (*this)(cast_term->type());
 
-	  return term->context().get_function_type_resolver_parameter(type, m_depth - it->second.depth, cast_term->index()).get();
+	  return term->context().get_function_type_resolver_parameter(type, m_depth - it->second.depth, cast_term->index());
 	}
 
 	default:
@@ -366,7 +366,7 @@ namespace Psi {
       : HashTerm(ui, context, term_function_type_resolver,
 		 result_type->abstract() || any_abstract(parameter_types), true, false,
                  common_source(result_type->source(), common_source(parameter_types)),
-		 context->get_metatype().get(), hash),
+		 context->get_metatype(), hash),
         m_n_phantom(n_phantom),
 	m_calling_convention(calling_convention) {
       set_base_parameter(1, result_type);
@@ -695,7 +695,7 @@ namespace Psi {
       bool terminator = false;
       if (!type) {
         terminator = true;
-        type = context().get_empty_type().get();
+        type = context().get_empty_type();
       }
 
       InstructionTerm* insn = context().allocate_term(InstructionTerm::Initializer(type, parameters, &backend, this, proto_offset, size));
@@ -784,7 +784,7 @@ namespace Psi {
     }
 
     BlockTerm::BlockTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, BlockTerm* dominator)
-      : Term(ui, context, term_block, false, false, false, function, context->get_block_type().get()),
+      : Term(ui, context, term_block, false, false, false, function, context->get_block_type()),
         m_terminated(false) {
 
       set_base_parameter(0, function);

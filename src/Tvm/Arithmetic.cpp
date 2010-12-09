@@ -18,7 +18,7 @@ namespace Psi {
       if (!int_type)
         throw TvmUserError("parameters to integer binary arithmetic operation were not integers");
 
-      return FunctionalTypeResult(int_type.get(), parameters[0]->phantom() || parameters[1]->phantom());
+      return FunctionalTypeResult(int_type, parameters[0]->phantom() || parameters[1]->phantom());
     }
 
     llvm::Constant* ArithmeticOperation::binary_op_constant(LLVMConstantBuilder& builder, FunctionalTerm& term, llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*)) {

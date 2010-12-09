@@ -37,7 +37,7 @@ namespace Psi {
         FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           ScopedTermPtrArray<> parameters(expression.terms.size());
           default_parameter_setup(parameters.array(), name, context, expression);
-          return context.context().get_functional(T(), parameters.array()).get();
+          return context.context().get_functional(T(), parameters.array());
         }
       };
 
@@ -64,7 +64,7 @@ namespace Psi {
           check_n_values(name, 1, expression);
           check_n_terms(name, 0, expression);
           unsigned n_bits = token_lexical_cast<unsigned>(name, 0, expression);
-          return context.context().get_functional_v(IntegerType(is_signed, n_bits)).get();
+          return context.context().get_functional_v(IntegerType(is_signed, n_bits));
         }
       };
 
@@ -76,7 +76,7 @@ namespace Psi {
         FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_values(name, 0, expression);
           check_n_terms(name, 0, expression);
-          return context.context().get_functional_v(RealType(width)).get();
+          return context.context().get_functional_v(RealType(width));
         }
       };
 
@@ -88,7 +88,7 @@ namespace Psi {
         FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_values(name, 0, expression);
           check_n_terms(name, 0, expression);
-          return context.context().get_functional_v(ConstantBoolean(value)).get();
+          return context.context().get_functional_v(ConstantBoolean(value));
         }
       };
 
@@ -107,7 +107,7 @@ namespace Psi {
           } catch (std::invalid_argument&) {
             throw AssemblerError(str(boost::format("%s: parameter 2 should be an integer") % name));
           }
-          return context.context().get_functional_v(ConstantInteger(IntegerType(is_signed, n_bits), value)).get();
+          return context.context().get_functional_v(ConstantInteger(IntegerType(is_signed, n_bits), value));
         }
       };
 
@@ -125,7 +125,7 @@ namespace Psi {
           } catch (std::invalid_argument&) {
             throw AssemblerError(str(boost::format("%s: parameter 1 should be a number") % name));
           }
-          return context.context().get_functional_v(ConstantReal(RealType(width), value)).get();
+          return context.context().get_functional_v(ConstantReal(RealType(width), value));
         }
       };
 
@@ -159,7 +159,7 @@ namespace Psi {
         InstructionTerm* operator () (const std::string& name, BlockTerm& block, AssemblerContext& context, const Parser::CallExpression& expression) const {
           ScopedTermPtrArray<> parameters(expression.terms.size());
           default_parameter_setup(parameters.array(), name, context, expression);
-          return block.new_instruction(T(), parameters.array()).get();
+          return block.new_instruction(T(), parameters.array());
         }
       };
 

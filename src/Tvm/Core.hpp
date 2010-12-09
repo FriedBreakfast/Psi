@@ -187,9 +187,6 @@ namespace Psi {
     class BackendTermPtr {
       typedef BackendTermPtr<T, U, W> ThisType;
 
-      typedef void (ThisType::*SafeBoolType)() const;
-      void safe_bool_true() const {}
-
     public:
       typedef U BackendType;
       typedef typename BackendType::Access AccessType;
@@ -202,7 +199,7 @@ namespace Psi {
       T* get() const {return m_ptr;}
       T* operator -> () const {return m_ptr;}
       T& operator * () const {return *m_ptr;}
-      operator Term* () {return m_ptr;}
+      operator T* () const {return m_ptr;}
 
       template<typename X, typename Y, typename Z>
       bool operator == (const BackendTermPtr<X,Y,Z>& o) const {return o.get() == get();}
@@ -210,7 +207,6 @@ namespace Psi {
       bool operator != (const BackendTermPtr<X,Y,Z>& o) const {return o.get() != get();}
       template<typename X, typename Y, typename Z>
       bool operator < (const BackendTermPtr<X,Y,Z>& o) const {return o.get() < get();}
-      operator SafeBoolType () const {return get() ? &ThisType::safe_bool_true : 0;}
 
     protected:
       BackendTermPtr() : m_ptr(0) {}
