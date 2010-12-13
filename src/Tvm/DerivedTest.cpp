@@ -39,6 +39,23 @@ namespace Psi {
       BOOST_CHECK_EQUAL_COLLECTIONS(expected, expected+3, result, result+3);
     }
 
+    BOOST_AUTO_TEST_CASE(FunctionReturnByteArray) {
+      const char *src =
+        "%i8 = define (int #8);\n"
+        "%f = function cc_c (%a:%i8,%b:%i8,%c:%i8,%d:%i8,%e:%i8,%f:%i8,%g:%i8,%h:%i8) > (array %i8 (c_uint #64 #8)) {\n"
+        "  return (c_array %i8 %a %b %c %d %e %f %g %h);\n"
+        "};\n";
+
+      const Jit::Int8 x[] = {23, 34, 9, -19, 53, 95, -103, 2};
+      struct ResultType {Jit::Int8 r[8];};
+      typedef ResultType (*FunctionType) (Jit::Int8,Jit::Int8,Jit::Int8,Jit::Int8,
+                                          Jit::Int8,Jit::Int8,Jit::Int8,Jit::Int8);
+
+      FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
+      ResultType r = f(x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7]);
+      BOOST_CHECK_EQUAL_COLLECTIONS(x,x+8,r.r,r.r+8);
+    }
+
     struct TestStructType {
       Jit::Int32 a;
       Jit::Int64 b;
@@ -94,6 +111,20 @@ namespace Psi {
       Jit::Int64 a;
       Jit::Int32 b[2];
     };
+
+    BOOST_AUTO_TEST_CASE(GlobalConstUnion) {
+      const char *src =
+        "%u = define (union (int #64) (array (int #32) (c_uint #64 #2)));\n"
+        "%ar = global const (array %u (c_uint #64 #2))\n"
+        " (c_array %u\n"
+        "  (c_union %u (c_int #64 #43256))\n"
+        "  (c_union %u (c_array (int #32) (c_int #32 #14361) (c_int #32 #15))));\n";
+
+      const TestUnionType *ptr = static_cast<TestUnionType*>(jit_single("ar", src));
+      BOOST_CHECK_EQUAL(ptr[0].a, 43256);
+      BOOST_CHECK_EQUAL(ptr[1].b[0], 14361);
+      BOOST_CHECK_EQUAL(ptr[1].b[1], 15);
+    }
 
     BOOST_AUTO_TEST_CASE(FunctionReturnUnion) {
       const char *src =
