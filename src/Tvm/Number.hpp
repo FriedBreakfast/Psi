@@ -3,6 +3,7 @@
 
 #include "Core.hpp"
 #include "Primitive.hpp"
+#include "BigInteger.hpp"
 
 #include <gmpxx.h>
 
@@ -10,7 +11,7 @@ namespace Psi {
   namespace Tvm {
     class BooleanType : public PrimitiveType, public StatelessTerm {
     public:
-      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const;
+      virtual const llvm::Type* llvm_primitive_type(LLVMConstantBuilder&) const;
       typedef TrivialAccess<BooleanType> Access;
     };
 
@@ -21,7 +22,7 @@ namespace Psi {
       bool operator == (const ConstantBoolean&) const;
       friend std::size_t hash_value(const ConstantBoolean&);
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      virtual llvm::Constant* llvm_primitive_value(llvm::LLVMContext&) const;
+      virtual llvm::Constant* llvm_primitive_value(LLVMConstantBuilder&) const;
 
       class Access {
       public:
@@ -37,15 +38,14 @@ namespace Psi {
     };
 
     class IntegerType : public PrimitiveType {
+      friend class ConstantInteger;
+
     public:
       IntegerType(bool is_signed, unsigned n_bits);
 
-      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const;
+      virtual const llvm::Type* llvm_primitive_type(LLVMConstantBuilder&) const;
       bool operator == (const IntegerType&) const;
       friend std::size_t hash_value(const IntegerType&);
-
-      llvm::APInt mpl_to_llvm(const mpz_class& value) const;
-      static llvm::APInt mpl_to_llvm(bool is_signed, unsigned n_bits, const mpz_class& value);
 
       class Access {
       public:
@@ -65,12 +65,12 @@ namespace Psi {
 
     class ConstantInteger : public PrimitiveValue {
     public:
-      ConstantInteger(const IntegerType& type, const mpz_class& value);
+      ConstantInteger(const IntegerType& type, const BigInteger& value);
 
       bool operator == (const ConstantInteger&) const;
       friend std::size_t hash_value(const ConstantInteger&);
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      virtual llvm::Constant* llvm_primitive_value(llvm::LLVMContext&) const;
+      virtual llvm::Constant* llvm_primitive_value(LLVMConstantBuilder&) const;
 
       class Access {
       public:
@@ -78,14 +78,14 @@ namespace Psi {
 	/// \brief Get information about the type of this constant
 	IntegerType::Access type() const {return IntegerType::Access(0, &m_self->m_type);}
 	/// \brief Get the value of this constant
-	const mpz_class& value() const {return m_self->m_value;}
+	const BigInteger& value() const {return m_self->m_value;}
       private:
 	const ConstantInteger *m_self;
       };
 
     private:
       IntegerType m_type;
-      mpz_class m_value;
+      BigInteger m_value;
     };
 
     enum SpecialReal {
@@ -107,7 +107,7 @@ namespace Psi {
 
       RealType(Width width);
 
-      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const;
+      virtual const llvm::Type* llvm_primitive_type(LLVMConstantBuilder&) const;
       bool operator == (const RealType&) const;
       friend std::size_t hash_value(const RealType&);
 
@@ -145,7 +145,7 @@ namespace Psi {
       bool operator == (const ConstantReal&) const;
       friend std::size_t hash_value(const ConstantReal&);
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      virtual llvm::Constant* llvm_primitive_value(llvm::LLVMContext&) const;
+      virtual llvm::Constant* llvm_primitive_value(LLVMConstantBuilder&) const;
 
       class Access {
       public:
@@ -173,7 +173,7 @@ namespace Psi {
       bool operator == (const SpecialRealValue&) const;
       friend std::size_t hash_value(const SpecialRealValue&);
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
-      virtual llvm::Constant* llvm_primitive_value(llvm::LLVMContext&) const;
+      virtual llvm::Constant* llvm_primitive_value(LLVMConstantBuilder&) const;
 
       class Access {
       public:

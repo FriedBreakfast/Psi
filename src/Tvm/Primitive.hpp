@@ -55,7 +55,7 @@ namespace Psi {
       FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const;
       llvm::Constant* llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const;
       const llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const;
-      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const = 0;
+      virtual const llvm::Type* llvm_primitive_type(LLVMConstantBuilder&) const = 0;
     };
 
     /**
@@ -78,7 +78,7 @@ namespace Psi {
     class PrimitiveValue : public ValueTerm, public PrimitiveTerm {
     public:
       llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const;
-      virtual llvm::Constant* llvm_primitive_value(llvm::LLVMContext&) const = 0;
+      virtual llvm::Constant* llvm_primitive_value(LLVMConstantBuilder&) const = 0;
     };
 
     class Metatype : public PrimitiveTerm, public StatelessTerm {
@@ -92,14 +92,14 @@ namespace Psi {
 
     class EmptyType : public PrimitiveType, public StatelessTerm {
     public:
-      static llvm::Constant* llvm_empty_value(llvm::LLVMContext&);
-      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const;
+      static llvm::Constant* llvm_empty_value(LLVMConstantBuilder&);
+      virtual const llvm::Type* llvm_primitive_type(LLVMConstantBuilder&) const;
       typedef TrivialAccess<EmptyType> Access;
     };
 
     class BlockType : public PrimitiveType, public StatelessTerm {
     public:
-      virtual const llvm::Type* llvm_primitive_type(llvm::LLVMContext&) const;
+      virtual const llvm::Type* llvm_primitive_type(LLVMConstantBuilder&) const;
       typedef TrivialAccess<BlockType> Access;
     };
   }

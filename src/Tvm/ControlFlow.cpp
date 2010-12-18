@@ -43,7 +43,7 @@ namespace Psi {
 	irbuilder.CreateRet(result.known_value());
       }
 
-      return LLVMValue::known(EmptyType::llvm_empty_value(builder.llvm_context()));
+      return LLVMValue::known(EmptyType::llvm_empty_value(builder));
     }
 
     void Return::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {
@@ -84,7 +84,7 @@ namespace Psi {
       llvm::BasicBlock *false_target_llvm = llvm::cast<llvm::BasicBlock>(false_target.known_value());
       builder.irbuilder().CreateCondBr(cond_llvm, true_target_llvm, false_target_llvm);
 
-      return LLVMValue::known(EmptyType::llvm_empty_value(builder.llvm_context()));
+      return LLVMValue::known(EmptyType::llvm_empty_value(builder));
     }
 
     void ConditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<BlockTerm*>& targets) const {
@@ -114,7 +114,7 @@ namespace Psi {
       llvm::BasicBlock *target_llvm = llvm::cast<llvm::BasicBlock>(target.known_value());
       builder.irbuilder().CreateBr(target_llvm);
 
-      return LLVMValue::known(EmptyType::llvm_empty_value(builder.llvm_context()));
+      return LLVMValue::known(EmptyType::llvm_empty_value(builder));
     }
 
     void UnconditionalBranch::jump_targets(Context&, InstructionTerm& term, std::vector<BlockTerm*>& targets) const {

@@ -254,11 +254,13 @@ namespace Psi {
 	m_llvm_module.reset(new llvm::Module("", *m_llvm_context));
       }
 
+      if (!m_llvm_engine)
+	llvm::InitializeNativeTarget();
+
       LLVMGlobalBuilder builder(m_llvm_context.get(), m_llvm_module.get());
       llvm::GlobalValue *global = builder.build_global(term);
 
       if (!m_llvm_engine) {
-	llvm::InitializeNativeTarget();
 	m_llvm_engine.reset(llvm::EngineBuilder(m_llvm_module.release()).create());
 	PSI_ASSERT_MSG(m_llvm_engine.get(), "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
 

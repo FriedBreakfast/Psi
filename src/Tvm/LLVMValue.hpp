@@ -18,6 +18,7 @@ namespace llvm {
   class Twine;
   class Module;
   class Type;
+  class IntegerType;
   class TargetMachine;
   class TargetData;
   class BasicBlock;

@@ -13,6 +13,11 @@
 #include <llvm/DerivedTypes.h>
 #include <llvm/Module.h>
 #include <llvm/Support/IRBuilder.h>
+#include <llvm/System/Host.h>
+#include <llvm/Target/TargetData.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetRegistry.h>
+#include <llvm/Target/TargetSelect.h>
 
 namespace Psi {
   namespace Tvm {
@@ -217,13 +222,17 @@ namespace Psi {
 	  switch (term->term_type()) {
 	  case term_global_variable: {
 	    GlobalVariableTerm *global = checked_cast<GlobalVariableTerm*>(term);
-	    FunctionalTermPtr<PointerType> type = checked_cast_functional<PointerType>(global->type());
-	    const llvm::Type *llvm_type = self->build_type(type.backend().target_type());
-            if (!llvm_type)
-              throw LLVMBuildError("could not create global variable because its LLVM type is not known");
-            return new llvm::GlobalVariable(self->llvm_module(), llvm_type,
-                                            global->constant(), llvm::GlobalValue::InternalLinkage,
-                                            NULL, global->name());
+            Term *global_type = checked_cast_functional<PointerType>(global->type()).backend().target_type();
+	    const llvm::Type *llvm_type = self->build_type(global_type);
+            if (llvm_type) {
+              return new llvm::GlobalVariable(self->llvm_module(), llvm_type,
+                                              global->constant(), llvm::GlobalValue::InternalLinkage,
+                                              NULL, global->name());
+            } else {
+              llvm::Constant *size_align = self->build_constant(global_type);
+              BigInteger size = LLVMMetatype::to_size_constant(size_align);
+              BigInteger align = LLVMMetatype::to_align_constant(size_align);
+            }
 	  }
 
 	  case term_function: {
@@ -250,15 +259,38 @@ namespace Psi {
     }
 
     LLVMConstantBuilder::LLVMConstantBuilder(LLVMConstantBuilder *parent)
-      : m_parent(parent), m_context(parent->m_context) {
+      : m_parent(parent), m_llvm_context(parent->m_llvm_context),
+        m_llvm_target_machine(parent->m_llvm_target_machine) {
     }
 
-    LLVMConstantBuilder::LLVMConstantBuilder(llvm::LLVMContext *context)
-      : m_parent(0), m_context(context) {
-      PSI_ASSERT(m_context);
+    LLVMConstantBuilder::LLVMConstantBuilder(llvm::LLVMContext *context, llvm::TargetMachine *target_machine)
+      : m_parent(0), m_llvm_context(context),
+        m_llvm_target_machine(target_machine) {
+      PSI_ASSERT(m_llvm_context);
     }
 
     LLVMConstantBuilder::~LLVMConstantBuilder() {
+    }
+
+    /**
+     * Get the size of a type.
+     */
+    std::size_t LLVMConstantBuilder::type_size(const llvm::Type *ty) {
+      return llvm_target_machine()->getTargetData()->getTypeAllocSize(ty);
+    }
+
+    /**
+     * Get the alignment of a type
+     */
+    std::size_t LLVMConstantBuilder::type_alignment(const llvm::Type *ty) {
+      return llvm_target_machine()->getTargetData()->getPrefTypeAlignment(ty);
+    }
+
+    /**
+     * Get the type used to represent size_t.
+     */
+    const llvm::IntegerType* LLVMConstantBuilder::size_type() {
+      return llvm::IntegerType::get(llvm_context(), llvm_target_machine()->getTargetData()->getPointerSizeInBits());
     }
 
     /**
@@ -310,12 +342,85 @@ namespace Psi {
       }
     }
 
-    LLVMGlobalBuilder::LLVMGlobalBuilder(llvm::LLVMContext *context, llvm::Module *module)
-      : LLVMConstantBuilder(context), m_module(module) {
+    /**
+     * \brief Return the constant integer specified by the given term.
+     *
+     * This is currently just a utility function which runs
+     * build_constant and converts the result to an integer, raising
+     * an exception if this is not possible.
+     */
+    BigInteger LLVMConstantBuilder::build_constant_integer(Term *term) {
+      llvm::ConstantInt *ci = llvm::dyn_cast<llvm::ConstantInt>(build_constant(term));
+      if (!ci)
+        throw LLVMBuildError("cannot convert constant term to an integer");
+
+      return apint_to_bigint(ci->getValue());
+    }
+
+    /**
+     * Convert a BigInteger to an APInt with the specified number of
+     * bits.
+     *
+     * \param truncate Whether to truncate the result if it is too
+     * large to fit in the specified number of bits. If this is false,
+     * an exception is raised when the specified number of bits is not
+     * large enough to hold the value.
+     */
+    llvm::APInt LLVMConstantBuilder::bigint_to_apint(const BigInteger& bi, unsigned bits, bool is_signed, bool truncate) {
+      llvm::APInt a;
+
+      if (bi.using_mp()) {
+        unsigned val_bits = mpz_sizeinbase(bi.value_mp(), 2);
+        unsigned words = (val_bits + std::numeric_limits<uint64_t>::digits - 1) / std::numeric_limits<uint64_t>::digits;
+        llvm::SmallVector<uint64_t, 4> sv(words);
+        std::size_t count;
+        mpz_export(&sv[0], &count, -1, sizeof(uint64_t), 0, 0, bi.value_mp());
+        a = llvm::APInt(val_bits, static_cast<unsigned>(count), &sv[0]);
+      } else {
+        a = llvm::APInt(std::numeric_limits<long>::digits, bi.value_long(), true);
+      }
+
+      if (!truncate && (is_signed ? !a.isSignedIntN(bits) : !a.isIntN(bits)))
+        throw LLVMBuildError("integer value out of range");
+
+      return is_signed ? a.sextOrTrunc(bits) : a.zextOrTrunc(bits);
+    }
+
+    /**
+     * Convert an APInt to a BigInteger.
+     */
+    BigInteger LLVMConstantBuilder::apint_to_bigint(const llvm::APInt& ap) {
+      mpz_t rop;
+      mpz_init(rop);
+      mpz_import(rop, ap.getNumWords(), -1, sizeof(uint64_t), 0, 0, ap.getRawData());
+      BigInteger b;
+      b.set_mp_swap(rop);
+      mpz_clear(rop);
+      return b;
+    }
+
+    LLVMGlobalBuilder::LLVMGlobalBuilder(llvm::LLVMContext *context, llvm::Module *module, llvm::TargetMachine *target_machine)
+      : LLVMConstantBuilder(context, target_machine ? target_machine : llvm_host_machine()),
+        m_module(module) {
       PSI_ASSERT(m_module);
     }
 
     LLVMGlobalBuilder::~LLVMGlobalBuilder() {
+    }
+
+    llvm::TargetMachine* LLVMGlobalBuilder::llvm_host_machine() {
+      std::string host = llvm::sys::getHostTriple();
+
+      std::string error_msg;
+      const llvm::Target *target = llvm::TargetRegistry::lookupTarget(host, error_msg);
+      if (!target)
+	throw LLVMBuildError("Could not get LLVM JIT target: " + error_msg);
+
+      llvm::TargetMachine *tm = target->createTargetMachine(host, "");
+      if (!tm)
+	throw LLVMBuildError("Failed to create target machine");
+
+      return tm;
     }
 
     /**
@@ -407,7 +512,7 @@ namespace Psi {
       }
 
       PSI_ASSERT((term->category() != Term::category_type) ||
-                 (result.is_known() && (result.known_value()->getType() == LLVMMetatype::type(llvm_context()))));
+                 (result.is_known() && (result.known_value()->getType() == LLVMMetatype::type(*this))));
       return result;
     }
 
@@ -992,30 +1097,32 @@ namespace Psi {
       /**
        * \brief Get the LLVM type for Metatype values.
        */
-      llvm::Type *type(llvm::LLVMContext& c) {
-        const llvm::Type* i64 = llvm::Type::getInt64Ty(c);
-        return llvm::StructType::get(c, i64, i64, NULL);
+      const llvm::Type *type(LLVMConstantBuilder& c) {
+        const llvm::Type* int_ty = c.size_type();
+        return llvm::StructType::get(c.llvm_context(), int_ty, int_ty, NULL);
       }
 
       /**
        * \brief Get a metatype value for size and alignment
-       * specified in \c size_t.
+       * specified in BigInteger.
        */
-      llvm::Constant* from_size_t(llvm::LLVMContext& c, std::size_t size, std::size_t align) {
+      llvm::Constant* from_constant(LLVMConstantBuilder& c, const BigInteger& size, const BigInteger& align) {
         if (!align || (size % align != 0) || (align & (align - 1)))
           throw LLVMBuildError("invalid values for size or align of Metatype");
 
-        const llvm::Type *i64 = llvm::Type::getInt64Ty(c);
-        return from_constant(llvm::ConstantInt::get(i64, size),
-                             llvm::ConstantInt::get(i64, align));
+        const llvm::IntegerType *int_ty = c.size_type();
+        llvm::Constant* values[2] = {
+          llvm::ConstantInt::get(int_ty, LLVMConstantBuilder::bigint_to_apint(size, int_ty->getBitWidth(), false)),
+          llvm::ConstantInt::get(int_ty, LLVMConstantBuilder::bigint_to_apint(align, int_ty->getBitWidth(), false))
+        };
+        return llvm::ConstantStruct::get(c.llvm_context(), values, 2, false);
       }
 
       /**
        * \brief Get an LLVM value for Metatype for the given LLVM type.
        */
-      llvm::Constant* from_type(const llvm::Type* ty) {
-        return from_constant(llvm::ConstantExpr::getSizeOf(ty),
-                             llvm::ConstantExpr::getAlignOf(ty));
+      llvm::Constant* from_type(LLVMConstantBuilder& c, const llvm::Type *ty) {
+        return from_constant(c, c.type_size(ty), c.type_alignment(ty));
       }
 
       /**
@@ -1023,57 +1130,46 @@ namespace Psi {
        *
        * The result of this call will be a global constant.
        */
-      llvm::Constant* from_constant(llvm::Constant *size, llvm::Constant *align) {
-        if (!size->getType()->isIntegerTy(64) || !align->getType()->isIntegerTy(64))
-          throw TvmUserError("size or align in metatype is not a 64-bit integer");
-
-        if (llvm::isa<llvm::ConstantInt>(align) && (llvm::cast<llvm::ConstantInt>(align)->getValue().exactLogBase2() < 0))
-          throw TvmUserError("alignment is not a power of two");
-
-        llvm::Constant* values[2] = {size, align};
-        return llvm::ConstantStruct::get(size->getContext(), values, 2, false);
-      }
-
-      /**
-       * \brief Get an LLVM value for a specified size and alignment.
-       *
-       * The result of this call will be a global constant.
-       */
-      LLVMValue from_value(LLVMIRBuilder& irbuilder, llvm::Value *size, llvm::Value *align) {
-        llvm::Value *undef = llvm::UndefValue::get(type(irbuilder.getContext()));
-        llvm::Value *stage1 = irbuilder.CreateInsertValue(undef, size, 0);
-        llvm::Value *stage2 = irbuilder.CreateInsertValue(stage1, align, 1);
+      LLVMValue from_value(LLVMFunctionBuilder& builder, llvm::Value *size, llvm::Value *align) {
+        const llvm::Type *int_ty = builder.size_type();
+        if ((size->getType() != int_ty) || (align->getType() != int_ty))
+          throw LLVMBuildError("values supplied for metatype have the wrong type");
+        llvm::Value *undef = llvm::UndefValue::get(type(builder));
+        llvm::Value *stage1 = builder.irbuilder().CreateInsertValue(undef, size, 0);
+        llvm::Value *stage2 = builder.irbuilder().CreateInsertValue(stage1, align, 1);
         return LLVMValue::known(stage2);
       }
 
       /**
        * \brief Get the size value from a Metatype constant.
        */
-      llvm::Constant* to_size_constant(llvm::Constant *value) {
+      BigInteger to_size_constant(llvm::Constant *value) {
         unsigned zero = 0;
-        return llvm::ConstantExpr::getExtractValue(value, &zero, 1);
+        llvm::ConstantInt *ci = llvm::cast<llvm::ConstantInt>(llvm::ConstantExpr::getExtractValue(value, &zero, 1));
+        return LLVMConstantBuilder::apint_to_bigint(ci->getValue());
       }
 
       /**
        * \brief Get the alignment value from a Metatype constant.
        */
-      llvm::Constant* to_align_constant(llvm::Constant *value) {
+      BigInteger to_align_constant(llvm::Constant *value) {
         unsigned one = 1;
-        return llvm::ConstantExpr::getExtractValue(value, &one, 1);
+        llvm::ConstantInt *ci = llvm::cast<llvm::ConstantInt>(llvm::ConstantExpr::getExtractValue(value, &one, 1));
+        return LLVMConstantBuilder::apint_to_bigint(ci->getValue());
       }
 
       /**
        * \brief Get the size value from a Metatype value.
        */
-      llvm::Value* to_size_value(LLVMIRBuilder& irbuilder, llvm::Value* value) {
-        return irbuilder.CreateExtractValue(value, 0);
+      llvm::Value* to_size_value(LLVMFunctionBuilder& builder, llvm::Value* value) {
+        return builder.irbuilder().CreateExtractValue(value, 0);
       }
 
       /**
        * \brief Get the align value from a Metatype value.
        */
-      llvm::Value* to_align_value(LLVMIRBuilder& irbuilder, llvm::Value* value) {
-        return irbuilder.CreateExtractValue(value, 1);
+      llvm::Value* to_align_value(LLVMFunctionBuilder& builder, llvm::Value* value) {
+        return builder.irbuilder().CreateExtractValue(value, 1);
       }
     }
   }

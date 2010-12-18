@@ -9,6 +9,7 @@
 #include <boost/optional.hpp>
 
 #include "Core.hpp"
+#include "BigInteger.hpp"
 #include "../Utility.hpp"
 
 namespace Psi {
@@ -34,17 +35,27 @@ namespace Psi {
     public:
       ~LLVMConstantBuilder();
 
-      llvm::LLVMContext& llvm_context() {return *m_context;}
+      llvm::LLVMContext& llvm_context() {return *m_llvm_context;}
 
+      llvm::TargetMachine* llvm_target_machine() {return m_llvm_target_machine;}
       const llvm::Type* build_type(Term *term);
       llvm::Constant* build_constant(Term *term);
+      BigInteger build_constant_integer(Term *term);
+
+      const llvm::IntegerType *size_type();
+      std::size_t type_size(const llvm::Type *ty);
+      std::size_t type_alignment(const llvm::Type *ty);
+
+      static llvm::APInt bigint_to_apint(const BigInteger&, unsigned, bool=true, bool=false);
+      static BigInteger apint_to_bigint(const llvm::APInt&);
 
     private:
       LLVMConstantBuilder(LLVMConstantBuilder *parent);
-      LLVMConstantBuilder(llvm::LLVMContext *context);
+      LLVMConstantBuilder(llvm::LLVMContext *context, llvm::TargetMachine *target_machine);
 
       LLVMConstantBuilder *m_parent;
-      llvm::LLVMContext *m_context;
+      llvm::LLVMContext *m_llvm_context;
+      llvm::TargetMachine *m_llvm_target_machine;
 
       typedef std::tr1::unordered_map<Term*, boost::optional<const llvm::Type*> > TypeTermMap;
       TypeTermMap m_type_terms;
@@ -55,8 +66,10 @@ namespace Psi {
 
     class LLVMGlobalBuilder : public LLVMConstantBuilder {
     public:
-      LLVMGlobalBuilder(llvm::LLVMContext *context, llvm::Module *module);
+      LLVMGlobalBuilder(llvm::LLVMContext *context, llvm::Module *module, llvm::TargetMachine *target_machine=0);
       ~LLVMGlobalBuilder();
+
+      static llvm::TargetMachine* llvm_host_machine();
 
       void set_module(llvm::Module *module);
 
@@ -140,16 +153,15 @@ namespace Psi {
      * #Metatype.
      */
     namespace LLVMMetatype {
-      llvm::Type* type(llvm::LLVMContext&);
-      llvm::Constant* from_size_t(llvm::LLVMContext&, std::size_t size, std::size_t align);
-      llvm::Constant* from_type(const llvm::Type* ty);
-      llvm::Constant* from_constant(llvm::Constant *size, llvm::Constant *align);
-      LLVMValue from_value(LLVMIRBuilder&, llvm::Value *size, llvm::Value *align);
+      const llvm::Type* type(LLVMConstantBuilder&);
+      llvm::Constant* from_constant(LLVMConstantBuilder&, const BigInteger& size, const BigInteger& align);
+      llvm::Constant* from_type(LLVMConstantBuilder& builder, const llvm::Type* ty);
+      LLVMValue from_value(LLVMFunctionBuilder&, llvm::Value *size, llvm::Value *align);
 
-      llvm::Constant* to_size_constant(llvm::Constant *value);
-      llvm::Constant* to_align_constant(llvm::Constant *value);
-      llvm::Value* to_size_value(LLVMIRBuilder&, llvm::Value*);
-      llvm::Value* to_align_value(LLVMIRBuilder&, llvm::Value*);
+      BigInteger to_size_constant(llvm::Constant *value);
+      BigInteger to_align_constant(llvm::Constant *value);
+      llvm::Value* to_size_value(LLVMFunctionBuilder&, llvm::Value*);
+      llvm::Value* to_align_value(LLVMFunctionBuilder&, llvm::Value*);
     }
   }
 }

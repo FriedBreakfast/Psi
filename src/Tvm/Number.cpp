@@ -9,8 +9,8 @@
 
 namespace Psi {
   namespace Tvm {
-    const llvm::Type* BooleanType::llvm_primitive_type(llvm::LLVMContext& c) const {
-      return llvm::IntegerType::get(c, 1);
+    const llvm::Type* BooleanType::llvm_primitive_type(LLVMConstantBuilder& c) const {
+      return llvm::IntegerType::get(c.llvm_context(), 1);
     }
 
     FunctionalTermPtr<BooleanType> Context::get_boolean_type() {
@@ -34,16 +34,16 @@ namespace Psi {
       return FunctionalTypeResult(context.get_boolean_type(), false);
     }
 
-    llvm::Constant* ConstantBoolean::llvm_primitive_value(llvm::LLVMContext& c) const {
-      return m_value ? llvm::ConstantInt::getTrue(c) : llvm::ConstantInt::getFalse(c);
+    llvm::Constant* ConstantBoolean::llvm_primitive_value(LLVMConstantBuilder& c) const {
+      return m_value ? llvm::ConstantInt::getTrue(c.llvm_context()) : llvm::ConstantInt::getFalse(c.llvm_context());
     }
 
     IntegerType::IntegerType(bool is_signed, unsigned n_bits)
       : m_is_signed(is_signed), m_n_bits(n_bits) {
     }
 
-    const llvm::Type* IntegerType::llvm_primitive_type(llvm::LLVMContext& c) const {
-      return llvm::IntegerType::get(c, m_n_bits);
+    const llvm::Type* IntegerType::llvm_primitive_type(LLVMConstantBuilder& c) const {
+      return llvm::IntegerType::get(c.llvm_context(), m_n_bits);
     }
 
     bool IntegerType::operator == (const IntegerType& o) const {
@@ -58,38 +58,6 @@ namespace Psi {
       return h;
     }
 
-    llvm::APInt IntegerType::mpl_to_llvm(const mpz_class& value) const {
-      return mpl_to_llvm(m_is_signed, m_n_bits, value);
-    }
-
-    llvm::APInt IntegerType::mpl_to_llvm(bool is_signed, unsigned n_bits, const mpz_class& value) {
-      std::size_t value_bits = mpz_sizeinbase(value.get_mpz_t(), 2);
-      if (mpz_sgn(value.get_mpz_t()) < 0) {
-	if (!is_signed)
-	  throw TvmUserError("integer literal value of out range");
-	value_bits++;
-      }
-      value_bits = std::max(value_bits, std::size_t(n_bits));
-
-      std::string text = value.get_str(16);
-      llvm::APInt ap(value_bits, text, 16);
-
-      if (n_bits == value_bits)
-	return ap;
-
-      if (is_signed) {
-	if (ap.isSignedIntN(n_bits))
-	  return ap.sext(n_bits);
-	else
-	  throw TvmUserError("integer literal value of out range");
-      } else {
-	if (ap.isIntN(n_bits))
-	  return ap.zext(n_bits);
-	else
-	  throw TvmUserError("integer literal value of out range");
-      }
-    }
-
     /**
      * \brief Get an integer type term.
      */
@@ -97,7 +65,7 @@ namespace Psi {
       return get_functional_v(IntegerType(is_signed, n_bits));
     }
 
-    ConstantInteger::ConstantInteger(const IntegerType& type, const mpz_class& value)
+    ConstantInteger::ConstantInteger(const IntegerType& type, const BigInteger& value)
       : m_type(type), m_value(value) {
     }
 
@@ -108,7 +76,7 @@ namespace Psi {
     std::size_t hash_value(const ConstantInteger& self) {
       std::size_t h = 0;
       boost::hash_combine(h, self.m_type);
-      boost::hash_combine(h, self.m_value.get_ui());
+      boost::hash_combine(h, self.m_value.hash());
       return h;
     }
 
@@ -117,19 +85,19 @@ namespace Psi {
       return FunctionalTypeResult(context.get_functional_v(m_type), false);
     }
 
-    llvm::Constant* ConstantInteger::llvm_primitive_value(llvm::LLVMContext& c) const {
+    llvm::Constant* ConstantInteger::llvm_primitive_value(LLVMConstantBuilder& c) const {
       const llvm::Type *ty = m_type.llvm_primitive_type(c);
-      llvm::APInt llvm_value = m_type.mpl_to_llvm(m_value);
+      llvm::APInt llvm_value = c.bigint_to_apint(m_value, m_type.m_n_bits, m_type.m_is_signed);
       return llvm::ConstantInt::get(ty, llvm_value);
     }
 
     RealType::RealType(Width width) : m_width(width) {
     }
 
-    const llvm::Type* RealType::llvm_primitive_type(llvm::LLVMContext& c) const {
+    const llvm::Type* RealType::llvm_primitive_type(LLVMConstantBuilder& c) const {
       switch (m_width) {
-      case real_float: return llvm::Type::getFloatTy(c);
-      case real_double: return llvm::Type::getDoubleTy(c);
+      case real_float: return llvm::Type::getFloatTy(c.llvm_context());
+      case real_double: return llvm::Type::getDoubleTy(c.llvm_context());
       default: PSI_FAIL("unknown real width");
       }
     }
@@ -210,9 +178,9 @@ namespace Psi {
       return FunctionalTypeResult(context.get_functional_v(m_type), false);
     }
 
-    llvm::Constant* ConstantReal::llvm_primitive_value(llvm::LLVMContext& c) const {
+    llvm::Constant* ConstantReal::llvm_primitive_value(LLVMConstantBuilder& c) const {
       llvm::APFloat llvm_value = m_type.mpl_to_llvm(m_value);
-      return llvm::ConstantFP::get(c, llvm_value);
+      return llvm::ConstantFP::get(c.llvm_context(), llvm_value);
     }
 
     SpecialRealValue::SpecialRealValue(const RealType& type, SpecialReal value, bool negative)
@@ -238,8 +206,8 @@ namespace Psi {
       return FunctionalTypeResult(context.get_functional_v(m_type), false);
     }
 
-    llvm::Constant* SpecialRealValue::llvm_primitive_value(llvm::LLVMContext& c) const {
-      return llvm::ConstantFP::get(c, m_type.special_to_llvm(m_value, m_negative));
+    llvm::Constant* SpecialRealValue::llvm_primitive_value(LLVMConstantBuilder& c) const {
+      return llvm::ConstantFP::get(c.llvm_context(), m_type.special_to_llvm(m_value, m_negative));
     }
   }
 }

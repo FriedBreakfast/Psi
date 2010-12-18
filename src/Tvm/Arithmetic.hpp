@@ -9,8 +9,8 @@ namespace Psi {
     class ArithmeticOperation {
     public:
       static FunctionalTypeResult integer_binary_op_type(Context& context, ArrayPtr<Term*const> parameters);
-      static llvm::Constant* binary_op_constant(LLVMConstantBuilder& builder, FunctionalTerm& term,
-                                                llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*));
+      template<typename T>
+      static llvm::Constant* binary_op_constant(LLVMConstantBuilder& builder, FunctionalTerm& term, T op);
       static LLVMValue binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term,
                                              llvm::Value* (LLVMIRBuilder::*) (llvm::Value*,llvm::Value*,const llvm::Twine&));
 

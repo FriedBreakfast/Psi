@@ -101,9 +101,9 @@ namespace Psi {
           check_n_values(name, 2, expression);
           check_n_terms(name, 0, expression);
           unsigned n_bits = token_lexical_cast<unsigned>(name, 0, expression);
-          mpz_class value;
+          BigInteger value;
           try {
-            value.set_str(expression.values.back().text, 10);
+            value.set_str(expression.values.back().text);
           } catch (std::invalid_argument&) {
             throw AssemblerError(str(boost::format("%s: parameter 2 should be an integer") % name));
           }

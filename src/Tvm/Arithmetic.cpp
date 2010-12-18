@@ -1,6 +1,8 @@
 #include "Arithmetic.hpp"
 #include "Number.hpp"
 
+#include <functional>
+
 #include <llvm/Constant.h>
 #include <llvm/Support/IRBuilder.h>
 
@@ -21,11 +23,16 @@ namespace Psi {
       return FunctionalTypeResult(int_type, parameters[0]->phantom() || parameters[1]->phantom());
     }
 
-    llvm::Constant* ArithmeticOperation::binary_op_constant(LLVMConstantBuilder& builder, FunctionalTerm& term, llvm::Constant* (*callback) (llvm::Constant*, llvm::Constant*)) {
+    template<typename T>
+    llvm::Constant* ArithmeticOperation::binary_op_constant(LLVMConstantBuilder& builder, FunctionalTerm& term, T op) {
       BinaryAccess self(&term, NULL);
-      llvm::Constant* lhs = builder.build_constant(self.lhs());
-      llvm::Constant* rhs = builder.build_constant(self.rhs());
-      return callback(lhs, rhs);
+      FunctionalTermPtr<IntegerType> type = checked_cast_functional<IntegerType>(term.type());
+      BigInteger lhs = builder.build_constant_integer(self.lhs());
+      BigInteger rhs = builder.build_constant_integer(self.rhs());
+      BigInteger result = op(lhs, rhs);
+      llvm::APInt result_llvm = LLVMConstantBuilder::bigint_to_apint(result, type.backend().n_bits(), type.backend().is_signed(), true);
+      const llvm::IntegerType *type_llvm = llvm::IntegerType::get(builder.llvm_context(), type.backend().n_bits());
+      return llvm::ConstantInt::get(type_llvm, result_llvm);
     }
 
     LLVMValue ArithmeticOperation::binary_op_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term, llvm::Value* (LLVMIRBuilder::*callback) (llvm::Value*,llvm::Value*,const llvm::Twine&)) {
@@ -45,7 +52,7 @@ namespace Psi {
     }
 
     llvm::Constant* IntegerAdd::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
-      return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getAdd);
+      return ArithmeticOperation::binary_op_constant(builder, term, std::plus<BigInteger>());
     }
 
     FunctionalTypeResult IntegerSubtract::type(Context& context, ArrayPtr<Term*const> parameters) const {
@@ -57,7 +64,7 @@ namespace Psi {
     }
 
     llvm::Constant* IntegerSubtract::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
-      return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getSub);
+      return ArithmeticOperation::binary_op_constant(builder, term, std::minus<BigInteger>());
     }
 
     FunctionalTypeResult IntegerMultiply::type(Context& context, ArrayPtr<Term*const> parameters) const {
@@ -69,7 +76,7 @@ namespace Psi {
     }
 
     llvm::Constant* IntegerMultiply::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
-      return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getMul);
+      return ArithmeticOperation::binary_op_constant(builder, term, std::multiplies<BigInteger>());
     }
 
     FunctionalTypeResult IntegerDivide::type(Context& context, ArrayPtr<Term*const> parameters) const {
@@ -85,11 +92,7 @@ namespace Psi {
     }
 
     llvm::Constant* IntegerDivide::llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
-      bool is_signed = checked_cast_functional<IntegerType>(term.type()).backend().is_signed();
-      if (is_signed)
-        return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getSDiv);
-      else
-        return ArithmeticOperation::binary_op_constant(builder, term, llvm::ConstantExpr::getUDiv);
+      return ArithmeticOperation::binary_op_constant(builder, term, std::divides<BigInteger>());
     }
   }
 }

@@ -35,7 +35,7 @@ namespace Psi {
       Access self(&term, this);
       llvm::Value *target = builder.build_known_value(self.target());
       builder.create_store(target, self.value());
-      return LLVMValue::known(EmptyType::llvm_empty_value(builder.llvm_context()));
+      return LLVMValue::known(EmptyType::llvm_empty_value(builder));
     }
 
     void Store::jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>&) const {

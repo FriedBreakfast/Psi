@@ -24,7 +24,7 @@ namespace Psi {
       };
 
     private:
-      static llvm::Constant* llvm_value(llvm::LLVMContext&);
+      static llvm::Constant* llvm_value(LLVMConstantBuilder&);
     };
 
     class ArrayType : public StatelessTerm {

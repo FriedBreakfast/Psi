@@ -15,6 +15,7 @@ add_library(psi SHARED
   Tvm/Arithmetic.cpp Tvm/Arithmetic.hpp
   Tvm/Assembler.cpp Tvm/Assembler.hpp
   Tvm/AssemblerOperations.cpp
+  Tvm/BigInteger.cpp Tvm/BigInteger.hpp
   Tvm/ControlFlow.cpp Tvm/ControlFlow.hpp
   Tvm/Core.cpp Tvm/Core.hpp
   Tvm/Derived.cpp Tvm/Derived.hpp
