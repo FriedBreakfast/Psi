@@ -1,9 +1,10 @@
 #include "LLVMBuilder.hpp"
 #include "Core.hpp"
-#include "Derived.hpp"
 #include "Function.hpp"
 #include "Functional.hpp"
-#include "Primitive.hpp"
+#include "Operations.hpp"
+#include "Instructions.hpp"
+#include "Type.hpp"
 #include "Recursive.hpp"
 
 #include <stdexcept>
@@ -59,18 +60,18 @@ namespace Psi {
         const llvm::Type* build(Term* term) const {
 	  switch(term->term_type()) {
 	  case term_functional: {
-	    FunctionalTerm *cast_term = checked_cast<FunctionalTerm*>(term);
+	    FunctionalTerm *cast_term = cast<FunctionalTerm>(term);
 	    return cast_term->backend()->llvm_type(*self, *cast_term);
 	  }
 
 	  case term_apply: {
-	    Term* actual = checked_cast<ApplyTerm*>(term)->unpack();
+	    Term* actual = cast<ApplyTerm>(term)->unpack();
 	    PSI_ASSERT(actual->term_type() != term_apply);
 	    return self->build_type(actual);
 	  }
 
 	  case term_function_type: {
-	    FunctionTypeTerm* actual = checked_cast<FunctionTypeTerm*>(term);
+	    FunctionTypeTerm* actual = cast<FunctionTypeTerm>(term);
 	    if (actual->calling_convention() == cconv_tvm) {
 	      const llvm::Type* i8ptr = llvm::Type::getInt8PtrTy(self->llvm_context());
 	      std::vector<const llvm::Type*> params(actual->n_parameters() - actual->n_phantom_parameters() + 1, i8ptr);
@@ -123,12 +124,12 @@ namespace Psi {
         llvm::Constant* build(Term *term) const {
           switch (term->term_type()) {
           case term_functional: {
-            FunctionalTerm *cast_term = checked_cast<FunctionalTerm*>(term);
+            FunctionalTerm *cast_term = cast<FunctionalTerm>(term);
             return cast_term->backend()->llvm_value_constant(*self, *cast_term);
           }
            
           case term_apply: {
-            Term* actual = checked_cast<ApplyTerm*>(term)->unpack();
+            Term* actual = cast<ApplyTerm>(term)->unpack();
 	    PSI_ASSERT(actual->term_type() != term_apply);
 	    return self->build_constant(actual);
 	  }
@@ -181,7 +182,7 @@ namespace Psi {
           LLVMValue result;
 	  switch(term->term_type()) {
 	  case term_functional: {
-	    FunctionalTerm *cast_term = checked_cast<FunctionalTerm*>(term);
+	    FunctionalTerm *cast_term = cast<FunctionalTerm>(term);
 
             result = cast_term->backend()->llvm_value_instruction(*self, *cast_term);
 
@@ -193,7 +194,7 @@ namespace Psi {
 	  }
 
 	  case term_apply: {
-	    Term* actual = checked_cast<ApplyTerm*>(term)->unpack();
+	    Term* actual = cast<ApplyTerm>(term)->unpack();
 	    PSI_ASSERT(actual->term_type() != term_apply);
 	    result = self->build_value(actual);
             break;
@@ -221,8 +222,8 @@ namespace Psi {
 	llvm::GlobalValue* build(GlobalTerm *term) const {
 	  switch (term->term_type()) {
 	  case term_global_variable: {
-	    GlobalVariableTerm *global = checked_cast<GlobalVariableTerm*>(term);
-            Term *global_type = checked_cast_functional<PointerType>(global->type()).backend().target_type();
+	    GlobalVariableTerm *global = cast<GlobalVariableTerm>(term);
+            Term *global_type = cast<PointerType>(global->type())->target_type();
 	    const llvm::Type *llvm_type = self->build_type(global_type);
             if (llvm_type) {
               return new llvm::GlobalVariable(self->llvm_module(), llvm_type,
@@ -236,9 +237,9 @@ namespace Psi {
 	  }
 
 	  case term_function: {
-	    FunctionTerm *func = checked_cast<FunctionTerm*>(term);
-	    FunctionalTermPtr<PointerType> type = checked_cast_functional<PointerType>(func->type());
-	    FunctionTypeTerm* func_type = checked_cast<FunctionTypeTerm*>(type.backend().target_type());
+	    FunctionTerm *func = cast<FunctionTerm>(term);
+	    PointerType::Ptr type = cast<PointerType>(func->type());
+	    FunctionTypeTerm* func_type = cast<FunctionTypeTerm>(type.backend().target_type());
 	    const llvm::Type *llvm_type = self->build_type(func_type);
             if (!llvm_type)
               throw LLVMBuildError("could not create function because its LLVM type is not known");
@@ -330,7 +331,7 @@ namespace Psi {
         case term_function:
         case term_global_variable:
           PSI_ASSERT(!m_parent && term->global());
-          return static_cast<LLVMGlobalBuilder*>(this)->build_global(checked_cast<GlobalTerm*>(term));
+          return static_cast<LLVMGlobalBuilder*>(this)->build_global(cast<GlobalTerm>(term));
 
         case term_apply:
         case term_functional:
@@ -446,13 +447,13 @@ namespace Psi {
 	    if (t.first->term_type() == term_function) {
               LLVMIRBuilder irbuilder(llvm_context());
               LLVMFunctionBuilder fb(this,
-                                     checked_cast<FunctionTerm*>(t.first),
+                                     cast<FunctionTerm>(t.first),
                                      llvm::cast<llvm::Function>(t.second),
                                      &irbuilder);
               fb.run();
 	    } else {
 	      PSI_ASSERT(t.first->term_type() == term_global_variable);
-              if (Term* init_value = checked_cast<GlobalVariableTerm*>(t.first)->value())
+              if (Term* init_value = cast<GlobalVariableTerm>(t.first)->value())
                 llvm::cast<llvm::GlobalVariable>(t.second)->setInitializer(build_constant(init_value));
 	    }
 	    m_global_build_list.pop_front();
@@ -971,7 +972,7 @@ namespace Psi {
       // Okay, the type is unknown. However if it is an unknown-length
       // array of values with a known type, I can still get that
       // through to LLVM.
-      if (FunctionalTermPtr<ArrayType> as_array = dynamic_cast_functional<ArrayType>(stored_type)) {
+      if (ArrayType::Ptr as_array = dyn_cast<ArrayType>(stored_type)) {
         const llvm::Type *element_type = build_type(as_array.backend().element_type());
         if (element_type) {
           llvm::Value *length = build_known_value(as_array.backend().length());

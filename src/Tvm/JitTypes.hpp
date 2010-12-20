@@ -4,7 +4,9 @@
 #include <tr1/cstdint>
 
 /**
- * \file Mapping to C types as used by the JIT compiler.
+ * \file
+ *
+ * Mapping to C types as used by the JIT compiler.
  */
 
 namespace Psi {

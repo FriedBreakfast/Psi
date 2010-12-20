@@ -3,6 +3,8 @@
 
 #include <algorithm>
 
+#include <boost/type_traits/alignment_of.hpp>
+
 #include "Core.hpp"
 
 namespace Psi {
@@ -106,7 +108,7 @@ namespace Psi {
     template<typename T>
     struct SetupEquals {
       std::size_t operator () (const T& key, const HashTerm& value) const {
-	return key.equals(value);
+	return key.equals(const_cast<HashTerm*>(&value));
       }
     };
 
@@ -119,7 +121,7 @@ namespace Psi {
       std::pair<typename HashTermSetType::iterator, bool> existing =
 	m_hash_terms.insert_check(setup, SetupHasher<T>(), SetupEquals<T>(), commit_data);
       if (!existing.second)
-	return checked_cast<typename T::TermType*>(&*existing.first);
+	return cast<typename T::TermType>(&*existing.first);
 
       setup.prepare_initialize(this);
       typename T::TermType* term = allocate_term(setup);

@@ -43,7 +43,7 @@ namespace Psi {
       Term* recursive_base = rewriter(term->recursive());
       if (recursive_base->term_type() != term_recursive)
 	throw TvmInternalError("result of rewriting recursive term was not a recursive term");
-      RecursiveTerm* recursive = checked_cast<RecursiveTerm*>(recursive_base);
+      RecursiveTerm* recursive = cast<RecursiveTerm>(recursive_base);
       ParameterListRewriter<> parameters(term, ParameterListRewriterAdapter<T>(&rewriter));
       return term->context().apply_recursive(recursive, parameters.array());
     }
@@ -57,7 +57,7 @@ namespace Psi {
     template<typename T>
     FunctionalTerm* rewrite_functional_term(const T& rewriter, FunctionalTerm* term) {
       ParameterListRewriter<> parameters(term, ParameterListRewriterAdapter<T>(&rewriter));
-      return term->context().get_functional_bare(*term->backend(), parameters.array());
+      return term->rewrite(parameters.array());
     }
 
     /**
@@ -81,10 +81,10 @@ namespace Psi {
 			       "a recursive term (which cannot be rewritten)");
 
       case term_apply:
-	return rewrite_apply_term(rewriter, checked_cast<ApplyTerm*>(term));
+	return rewrite_apply_term(rewriter, cast<ApplyTerm>(term));
 
       case term_functional:
-	return rewrite_functional_term(rewriter, checked_cast<FunctionalTerm*>(term));
+	return rewrite_functional_term(rewriter, cast<FunctionalTerm>(term));
 
       case term_function_type:
         throw TvmInternalError("function type term rewriting must happen through TermRewriter");
@@ -118,7 +118,7 @@ namespace Psi {
 
         FunctionTypeParameterTerm* operator () (Term* term, ArrayPtr<FunctionTypeParameterTerm*const> previous) const {
           *m_status = previous;
-          FunctionTypeParameterTerm *param = checked_cast<FunctionTypeParameterTerm*>(term);	  
+          FunctionTypeParameterTerm *param = cast<FunctionTypeParameterTerm>(term);	  
           Term* type = (*m_callback)(param->type());
           return term->context().new_function_type_parameter(type);
         }
@@ -134,7 +134,7 @@ namespace Psi {
       Term* operator () (Term* term) {
         switch (term->term_type()) {
         case term_function_type: {
-          FunctionTypeTerm *cast_term = checked_cast<FunctionTypeTerm*>(term);
+          FunctionTypeTerm *cast_term = cast<FunctionTypeTerm>(term);
           PSI_ASSERT_MSG(m_functions.find(cast_term) == m_functions.end(),
                          "recursive function types not supported");
           ArrayPtr<FunctionTypeParameterTerm*const>& status = m_functions[cast_term];
@@ -154,7 +154,7 @@ namespace Psi {
         }
 
         case term_function_type_parameter: {
-          FunctionTypeParameterTerm *cast_term = checked_cast<FunctionTypeParameterTerm*>(term);
+          FunctionTypeParameterTerm *cast_term = cast<FunctionTypeParameterTerm>(term);
           FunctionTypeTerm* source = cast_term->source();
 
           FunctionMapType::iterator it = m_functions.find(source);

@@ -1,28 +1,172 @@
-#include "Derived.hpp"
-#include "Functional.hpp"
-#include "Primitive.hpp"
-#include "LLVMBuilder.hpp"
-#include "Number.hpp"
+#include "Type.hpp"
 
-#include <stdexcept>
-
-#include <llvm/Constants.h>
-#include <llvm/DerivedTypes.h>
-#include <llvm/Module.h>
-#include <llvm/Support/IRBuilder.h>
-#include <llvm/Target/TargetData.h>
-#include <llvm/Target/TargetMachine.h>
+using namespace Psi;
+using namespace Psi::Tvm;
 
 namespace Psi {
   namespace Tvm {
-    FunctionalTypeResult PointerType::type(Context& context, ArrayPtr<Term*const> parameters) const {
-      if (parameters.size() != 1)
-	throw TvmUserError("pointer type takes one parameter");
-      if (!parameters[0]->is_type())
-        throw TvmUserError("pointer argument must be a type");
-      return FunctionalTypeResult(context.get_metatype(), false);
+    namespace {
+      FunctionalTypeResult aggregate_type_check(Context& context, ArrayPtr<Term*const> parameters) {
+        bool phantom = false;
+        for (std::size_t i = 0; i < parameters.size(); ++i) {
+          if (!parameters[i]->is_type())
+            throw TvmUserError("members of an aggregate type must be types");
+          phantom = phantom || parameters[i]->phantom();
+        }
+
+        return FunctionalTypeResult(Metatype::get(context), phantom);
+      }
     }
 
+    const char Metatype::operation[] = "type";
+    const char EmptyType::operation[] = "empty";
+    const char EmptyValue::operation[] = "empty_v";
+    const char BlockType::operation[] = "block";
+    const char PointerType::operation[] = "pointer";
+    const char ArrayType::operation[] = "array";
+    const char ArrayValue::operation[] = "array_v";
+    const char StructType::operation[] = "struct";
+    const char StructValue::operation[] = "struct_v";
+    const char UnionType::operation[] = "union";
+    const char UnionValue::operation[] = "union_v";
+    const char IntegerType::operation[] = "int";
+    const char IntegerValue::operation[] = "int_c";
+
+    FunctionalTypeResult PointerType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 1)
+        throw TvmUserError("pointer type takes one parameter");
+      if (!parameters[0]->is_type())
+        throw TvmUserError("pointer argument must be a type");
+      return FunctionalTypeResult(Metatype::get(context), false);
+    }
+
+    PointerType::Ptr PointerType::get(Term *type) {
+      Term *params[] = {type};
+      return type->context().get_functional<PointerType>(Data(), ArrayPtr<Term*const>(params, 1));
+    }
+
+    FunctionalTypeResult ArrayType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 2)
+        throw TvmUserError("array type term takes two parameters");
+
+      if (!parameters[0]->is_type())
+        throw TvmUserError("first argument to array type term is not a type");
+
+      if (parameters[1]->type() != IntegerType::get(context, IntegerType::iptr, false))
+        throw TvmUserError("second argument to array type term is not a 64-bit integer");
+
+      return FunctionalTypeResult(Metatype::get(context), parameters[0]->phantom() || parameters[1]->phantom());
+    }
+
+    ArrayType::Ptr ArrayType::get(Term* element_type, Term* length) {
+      Term *params[] = {element_type, length};
+      return element_type->context().get_functional<ArrayType>(Data(), ArrayPtr<Term*const>(params, 2));
+    }
+
+    ArrayType::Ptr ArrayType::get(Term *element_type, const BigInteger& length) {
+      IntegerType::Ptr  size_type = IntegerType::get(element_type->context(), IntegerType::iptr, false);
+      Term *length_term = IntegerValue::get(size_type, length);
+      return get(element_type, length_term);
+    }
+
+    FunctionalTypeResult ArrayValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() < 1)
+        throw TvmUserError("array values require at least one parameter");
+
+      if (!parameters[0]->is_type())
+        throw TvmUserError("first argument to array value is not a type");
+
+      bool phantom = false;
+      for (std::size_t i = 1; i < parameters.size(); ++i) {
+        if (parameters[i]->type() != parameters[0])
+          throw TvmUserError("array value element is of the wrong type");
+        phantom = phantom || parameters[i]->phantom();
+      }
+
+      PSI_ASSERT(phantom || !parameters[0]->phantom());
+
+      return FunctionalTypeResult(ArrayType::get(parameters[0], parameters.size() - 1), phantom);
+    }
+
+    ArrayValue::Ptr ArrayValue::get(Term *element_type, ArrayPtr<Term*const> elements) {
+      ScopedTermPtrArray<> parameters(elements.size() + 1);
+      parameters[0] = element_type;
+      for (std::size_t i = 0, e = elements.size(); i != e; ++i)
+        parameters[i+1] = elements[i];
+      return element_type->context().get_functional<ArrayValue>(Data(), parameters.array());
+    }
+
+    FunctionalTypeResult StructType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      return aggregate_type_check(context, parameters);
+    }
+
+    StructType::Ptr StructType::get(Context& context, ArrayPtr<Term*const> members) {
+      return context.get_functional<StructType>(Data(), members);
+    }
+
+    FunctionalTypeResult StructValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      ScopedTermPtrArray<> member_types(parameters.size());
+
+      bool phantom = false;
+      for (std::size_t i = 0; i < parameters.size(); ++i) {
+        phantom = phantom || parameters[i]->phantom();
+        member_types[i] = parameters[i]->type();
+      }
+
+      Term *type = StructType::get(context, member_types.array());
+      PSI_ASSERT(phantom == type->phantom());
+
+      return FunctionalTypeResult(type, phantom);
+    }
+
+    StructValue::Ptr StructValue::get(Context& context, ArrayPtr<Term*const> elements) {
+      return context.get_functional<StructValue>(Data(), elements);
+    }
+
+    FunctionalTypeResult UnionType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      return aggregate_type_check(context, parameters);
+    }
+
+    /// \brief Get the index of the specified type in this union,
+    /// or -1 if the type is not present.
+    int UnionType::PtrHook::index_of_type(Term *type) const {
+      for (std::size_t i = 0; i < n_members(); ++i) {
+        if (type == member_type(i))
+          return i;
+      }
+      return -1;
+    }
+
+    /// \brief Check whether this union type contains the
+    /// specified type.
+    bool UnionType::PtrHook::contains_type(Term *type) const {
+      return index_of_type(type) >= 0;
+    }
+
+    UnionType::Ptr UnionType::get(Context& context, ArrayPtr<Term*const> members) {
+      return context.get_functional<UnionType>(Data(), members);
+    }
+
+    FunctionalTypeResult UnionValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 2)
+        throw TvmUserError("c_union takes two parameters");
+
+      UnionType::Ptr type = dyn_cast<UnionType>(parameters[0]);
+      if (!type)
+        throw TvmUserError("first argument to c_union must be a union type");
+
+      if (!type->contains_type(parameters[1]->type()))
+        throw TvmUserError("second argument to c_union must correspond to a member of the specified union type");
+
+      return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom());
+    }
+
+    UnionValue::Ptr UnionValue::get(UnionType::Ptr type, Term *value) {
+      Term *parameters[] = {type, value};
+      return type->context().get_functional<UnionValue>(Data(), ArrayPtr<Term*const>(parameters, 2));
+    }
+
+#if 0
     LLVMValue PointerType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm&) const {
       return LLVMValue::known(llvm_value(builder));
     }
@@ -42,10 +186,6 @@ namespace Psi {
         return target_ty->getPointerTo();
       else
         return llvm::Type::getInt8PtrTy(builder.llvm_context());
-    }
-
-    FunctionalTermPtr<PointerType> Context::get_pointer_type(Term* type) {
-      return get_functional_v(PointerType(), type);
     }
 
     namespace {
@@ -163,19 +303,6 @@ namespace Psi {
       }
     }
 
-    FunctionalTypeResult ArrayType::type(Context& context, ArrayPtr<Term*const> parameters) const {
-      if (parameters.size() != 2)
-	throw TvmUserError("array type term takes two parameters");
-
-      if (!parameters[0]->is_type())
-	throw TvmUserError("first argument to array type term is not a type");
-
-      if (parameters[1]->type() != context.get_integer_type(64, false))
-	throw TvmUserError("second argument to array type term is not a 64-bit integer");
-
-      return FunctionalTypeResult(context.get_metatype(), parameters[0]->phantom() || parameters[1]->phantom());
-    }
-
     LLVMValue ArrayType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
       Access self(&term, this);
 
@@ -211,34 +338,6 @@ namespace Psi {
         return NULL;
 
       return llvm::ArrayType::get(element_type, length_value->getZExtValue());
-    }
-
-    FunctionalTermPtr<ArrayType> Context::get_array_type(Term* element_type, Term* length) {
-      return get_functional_v(ArrayType(), element_type, length);
-    }
-
-    FunctionalTermPtr<ArrayType> Context::get_array_type(Term* element_type, std::size_t length) {
-      Term* length_term = get_functional_v(ConstantInteger(IntegerType(false, 64), length));
-      return get_functional_v(ArrayType(), element_type, length_term);
-    }
-
-    FunctionalTypeResult ArrayValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
-      if (parameters.size() < 1)
-        throw TvmUserError("array values require at least one parameter");
-
-      if (!parameters[0]->is_type())
-        throw TvmUserError("first argument to array value is not a type");
-
-      bool phantom = false;
-      for (std::size_t i = 1; i < parameters.size(); ++i) {
-        if (parameters[i]->type() != parameters[0])
-          throw TvmUserError("array value element is of the wrong type");
-        phantom = phantom || parameters[i]->phantom();
-      }
-
-      PSI_ASSERT(phantom || !parameters[0]->phantom());
-
-      return FunctionalTypeResult(context.get_array_type(parameters[0], parameters.size() - 1), phantom);
     }
 
     LLVMValue ArrayValue::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -280,24 +379,7 @@ namespace Psi {
       return llvm::ConstantArray::get(llvm::cast<llvm::ArrayType>(array_type), elements);
     }
 
-    FunctionalTermPtr<ArrayValue> Context::get_array_value(Term* element_type, ArrayPtr<Term*const> elements) {
-      ScopedTermPtrArray<> parameters(elements.size() + 1);
-      parameters[0] = element_type;
-      for (std::size_t i = 0; i < elements.size(); ++i)
-        parameters[i+1] = elements[i];
-      return get_functional(ArrayValue(), parameters.array());
-    }
 
-    FunctionalTypeResult AggregateType::type(Context& context, ArrayPtr<Term*const> parameters) const {
-      bool phantom = false;
-      for (std::size_t i = 0; i < parameters.size(); ++i) {
-        if (!parameters[i]->is_type())
-          throw TvmUserError("members of an aggregate type must be types");
-        phantom = phantom || parameters[i]->phantom();
-      }
-
-      return FunctionalTypeResult(context.get_metatype(), phantom);
-    }
 
     LLVMValue StructType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
       Access self(&term, this);
@@ -357,24 +439,7 @@ namespace Psi {
       return llvm::StructType::get(builder.llvm_context(), member_types);
     }
 
-    FunctionalTermPtr<StructType> Context::get_struct_type(ArrayPtr<Term*const> parameters) {
-      return get_functional(StructType(), parameters);
-    }
 
-    FunctionalTypeResult StructValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
-      ScopedTermPtrArray<> member_types(parameters.size());
-
-      bool phantom = false;
-      for (std::size_t i = 0; i < parameters.size(); ++i) {
-        phantom = phantom || parameters[i]->phantom();
-        member_types[i] = parameters[i]->type();
-      }
-
-      Term *type = context.get_struct_type(member_types.array());
-      PSI_ASSERT(phantom == type->phantom());
-
-      return FunctionalTypeResult(type, phantom);
-    }
 
     LLVMValue StructValue::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
       Access self(&term, this);
@@ -414,10 +479,6 @@ namespace Psi {
         members.push_back(builder.build_constant(self.member_value(i)));
 
       return llvm::ConstantStruct::get(builder.llvm_context(), members, false);
-    }
-
-    FunctionalTermPtr<StructValue> Context::get_struct_value(ArrayPtr<Term*const> parameters) {
-      return get_functional(StructValue(), parameters);
     }
 
     LLVMValue UnionType::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
@@ -476,32 +537,6 @@ namespace Psi {
       return llvm::UnionType::get(builder.llvm_context(), member_types);
     }
 
-    int UnionType::Access::index_of_type(Term *type) {
-      for (std::size_t i = 0; i < n_members(); ++i) {
-        if (type == member_type(i))
-          return i;
-      }
-      return -1;
-    }
-
-    bool UnionType::Access::contains_type(Term *type) {
-      return index_of_type(type) >= 0;
-    }
-
-    FunctionalTypeResult UnionValue::type(Context&, ArrayPtr<Term*const> parameters) const {
-      if (parameters.size() != 2)
-        throw TvmUserError("c_union takes two parameters");
-
-      FunctionalTermPtr<UnionType> type = dynamic_cast_functional<UnionType>(parameters[0]);
-      if (!type)
-        throw TvmUserError("first argument to c_union must be a union type");
-
-      if (!type.backend().contains_type(parameters[1]->type()))
-        throw TvmUserError("second argument to c_union must correspond to a member of the specified union type");
-
-      return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom());
-    }
-
     LLVMValue UnionValue::llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
       Access self(&term, this);
 
@@ -529,5 +564,6 @@ namespace Psi {
       llvm::Constant *val = builder.build_constant(self.value());
       return llvm::ConstantUnion::get(llvm::cast<llvm::UnionType>(ty), val);
     }
+#endif
   }
 }

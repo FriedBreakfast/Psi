@@ -1,13 +1,52 @@
 #include "Function.hpp"
 #include "Functional.hpp"
-#include "Primitive.hpp"
-#include "Utility.hpp"
 #include "Rewrite.hpp"
+#include "Type.hpp"
+#include "Utility.hpp"
 
 #include <stdexcept>
 
 namespace Psi {
   namespace Tvm {
+    /**
+     * \brief Internal type used to build function types.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(FunctionTypeResolverParameter)
+    struct Data {
+      unsigned depth;
+      unsigned index;
+
+      bool operator == (const Data& other) const {
+        return (depth == other.depth) && (index == other.index);
+      }
+
+      friend std::size_t hash_value(const Data& self) {
+        std::size_t h = 0;
+        boost::hash_combine(h, self.depth);
+        boost::hash_combine(h, self.index);
+        return h;
+      }
+    };
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the depth of this parameter relative to the
+    /// function type it is part of.
+    ///
+    /// If a parameter is used as the type of a parameter in its own
+    /// functions argument list, then this is zero. For each function
+    /// type it is then nested inside, this should increase by one.
+    unsigned depth() const {return data().depth;}
+    /// \brief Get the parameter number of this parameter in its
+    /// function.
+    unsigned index() const {return data().index;}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    FunctionTypeResolverParameter::Ptr get(Term* type, unsigned depth, unsigned index) {
+      Term *parameters[1] = {type};
+      Data data = {depth, index};
+      return type->context().get_functional<FunctionTypeResolverParameter>
+        (data, ArrayPtr<Term*const>(parameters, 1));
+    }
+    PSI_TVM_FUNCTIONAL_TYPE_END(FunctionTypeResolverParameter)
+
     FunctionTypeTerm::FunctionTypeTerm(const UserInitializer& ui,
 				       Context *context,
 				       Term *result_type,
@@ -17,7 +56,7 @@ namespace Psi {
       : Term(ui, context, term_function_type,
 	     result_type->abstract() || any_abstract(parameters) || any_abstract(phantom_parameters), true, false,
              common_source(result_type->source(), common_source(common_source(parameters), common_source(phantom_parameters))),
-	     context->get_metatype()),
+	     Metatype::get(*context)),
 	m_calling_convention(calling_convention),
         m_n_phantoms(phantom_parameters.size()) {
       set_base_parameter(0, result_type);
@@ -73,7 +112,7 @@ namespace Psi {
 
       switch(term->term_type()) {
       case term_functional: {
-	FunctionalTerm *cast_term = checked_cast<FunctionalTerm*>(term);
+	FunctionalTerm *cast_term = cast<FunctionalTerm>(term);
 	for (std::size_t i = 0; i < cast_term->n_parameters(); i++) {
 	  if (!check_function_type_complete(cast_term->parameter(i), functions))
 	    return false;
@@ -82,7 +121,7 @@ namespace Psi {
       }
 
       case term_function_type: {
-	FunctionTypeTerm *cast_term = checked_cast<FunctionTypeTerm*>(term);
+	FunctionTypeTerm *cast_term = cast<FunctionTypeTerm>(term);
 	std::pair<CheckCompleteMap::iterator, bool> it_pair = functions.insert(std::make_pair(cast_term, 0));
 	PSI_ASSERT(it_pair.second);
 	for (std::size_t i = 0; i < cast_term->n_parameters(); ++i, ++it_pair.first->second) {
@@ -98,7 +137,7 @@ namespace Psi {
       }
 
       case term_function_type_parameter: {
-	FunctionTypeParameterTerm *cast_term = checked_cast<FunctionTypeParameterTerm*>(term);
+	FunctionTypeParameterTerm *cast_term = cast<FunctionTypeParameterTerm>(term);
 	FunctionTypeTerm* source = cast_term->source();
 	if (!source)
 	  return false;
@@ -140,7 +179,7 @@ namespace Psi {
 
 	Term* operator () (Term* term, ArrayPtr<Term*const> previous) const {
 	  m_status->index = previous.size();
-	  FunctionTypeParameterTerm *param = checked_cast<FunctionTypeParameterTerm*>(term);	  
+	  FunctionTypeParameterTerm *param = cast<FunctionTypeParameterTerm>(term);	  
 	  return (*m_self)(param->type());
 	}
 
@@ -155,7 +194,7 @@ namespace Psi {
 
 	switch(term->term_type()) {
 	case term_function_type: {
-	  FunctionTypeTerm *cast_term = checked_cast<FunctionTypeTerm*>(term);
+	  FunctionTypeTerm *cast_term = cast<FunctionTypeTerm>(term);
 	  PSI_ASSERT_MSG(m_functions->find(cast_term) == m_functions->end(), "recursive function types not supported");
 	  FunctionResolveStatus& status = (*m_functions)[cast_term];
 	  status.depth = m_depth + 1;
@@ -174,7 +213,7 @@ namespace Psi {
 	}
 
 	case term_function_type_parameter: {
-	  FunctionTypeParameterTerm *cast_term = checked_cast<FunctionTypeParameterTerm*>(term);
+	  FunctionTypeParameterTerm *cast_term = cast<FunctionTypeParameterTerm>(term);
 	  FunctionTypeTerm* source = cast_term->source();
 
 	  FunctionResolveMap::iterator it = m_functions->find(source);
@@ -297,7 +336,7 @@ namespace Psi {
 
 	Term* operator () (Term* term) const {
           if (term->term_type() == term_function_type_parameter) {
-	    FunctionTypeParameterTerm *cast_term = checked_cast<FunctionTypeParameterTerm*>(term);
+	    FunctionTypeParameterTerm *cast_term = cast<FunctionTypeParameterTerm>(term);
 	    if (cast_term->source() == m_function) {
 	      return m_previous[cast_term->index()];
 	    } else {
@@ -321,7 +360,7 @@ namespace Psi {
      * \param previous Earlier parameters. Length of this array gives
      * the index of the parameter type to get.
      */
-    Term* FunctionTypeTerm::parameter_type_after(ArrayPtr<Term*const> previous) const {
+    Term* FunctionTypeTerm::parameter_type_after(ArrayPtr<Term*const> previous) {
       ParameterTypeRewriter rewriter(this, previous);
       return rewriter(parameter(previous.size())->type());
     }
@@ -330,7 +369,7 @@ namespace Psi {
      * Get the return type of a function of this type, given previous
      * parameters.
      */
-    Term* FunctionTypeTerm::result_type_after(ArrayPtr<Term*const> parameters) const {
+    Term* FunctionTypeTerm::result_type_after(ArrayPtr<Term*const> parameters) {
       if (parameters.size() != n_parameters())
 	throw TvmUserError("incorrect number of parameters");
       ParameterTypeRewriter rewriter(this, parameters);
@@ -366,7 +405,7 @@ namespace Psi {
       : HashTerm(ui, context, term_function_type_resolver,
 		 result_type->abstract() || any_abstract(parameter_types), true, false,
                  common_source(result_type->source(), common_source(parameter_types)),
-		 context->get_metatype(), hash),
+		 Metatype::get(*context), hash),
         m_n_phantom(n_phantom),
 	m_calling_convention(calling_convention) {
       set_base_parameter(1, result_type);
@@ -404,28 +443,27 @@ namespace Psi {
 	return m_parameter_types.size() + 2;
       }
 
-      bool equals(const HashTerm& term) const {
-	if ((m_hash != term.m_hash) || (term.term_type() != term_function_type_resolver))
+      bool equals(HashTerm *term) const {
+	if ((m_hash != term->m_hash) || (term->term_type() != term_function_type_resolver))
 	  return false;
 
-	const FunctionTypeResolverTerm& cast_term =
-	  checked_cast<const FunctionTypeResolverTerm&>(term);
+	FunctionTypeResolverTerm *cast_term = cast<FunctionTypeResolverTerm>(term);
 
-	if (m_parameter_types.size() != cast_term.n_parameters())
+	if (m_parameter_types.size() != cast_term->n_parameters())
 	  return false;
 
 	for (std::size_t i = 0; i < m_parameter_types.size(); ++i) {
-	  if (m_parameter_types[i] != cast_term.parameter_type(i))
+	  if (m_parameter_types[i] != cast_term->parameter_type(i))
 	    return false;
 	}
 
-	if (m_result_type != cast_term.result_type())
+	if (m_result_type != cast_term->result_type())
 	  return false;
 
-        if (m_n_phantom != cast_term.n_phantom_parameters())
+        if (m_n_phantom != cast_term->n_phantom_parameters())
           return false;
 
-	if (m_calling_convention != cast_term.calling_convention())
+	if (m_calling_convention != cast_term->calling_convention())
 	  return false;
 
 	return true;
@@ -445,56 +483,23 @@ namespace Psi {
       return hash_term_get(setup);
     }
 
-    FunctionTypeResolverParameter::FunctionTypeResolverParameter(std::size_t depth, std::size_t index)
-      : m_depth(depth), m_index(index) {
-    }
-
-    FunctionalTypeResult FunctionTypeResolverParameter::type(Context&, ArrayPtr<Term*const> parameters) const {
+#if 0
+    FunctionalTypeResult FunctionTypeResolverParameter::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
       PSI_ASSERT(parameters.size() == 1);
       return FunctionalTypeResult(parameters[0], false);
     }
-
-    LLVMValue FunctionTypeResolverParameter::llvm_value_instruction(LLVMFunctionBuilder&, FunctionalTerm&) const {
-      PSI_FAIL("resolver parameter should never interact with LLVM");
-    }
-
-    llvm::Constant* FunctionTypeResolverParameter::llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const {
-      PSI_FAIL("resolver parameter should never interact with LLVM");
-    }
-
-    llvm::Type* FunctionTypeResolverParameter::llvm_type(LLVMConstantBuilder&, Term&) const {
-      PSI_FAIL("resolver parameter should never interact with LLVM");
-    }
-
-    bool FunctionTypeResolverParameter::operator == (const FunctionTypeResolverParameter& o) const {
-      return (m_depth == o.m_depth) && (m_index == o.m_index);
-    }
-
-    std::size_t hash_value(const FunctionTypeResolverParameter& s) {
-      std::size_t h = 0;
-      boost::hash_combine(h, s.m_depth);
-      boost::hash_combine(h, s.m_index);
-      return h;
-    }
-
-    FunctionalTermPtr<FunctionTypeResolverParameter> Context::get_function_type_resolver_parameter(Term* type, std::size_t depth, std::size_t index) {
-      return get_functional_v(FunctionTypeResolverParameter(depth, index), type);
-    }
+#endif
 
     InstructionTerm::InstructionTerm(const UserInitializer& ui, Context *context,
-				     Term* type, ArrayPtr<Term*const> parameters,
-				     InstructionTermBackend *backend,
+				     Term* type, const char *operation,
+                                     ArrayPtr<Term*const> parameters,
                                      BlockTerm* block)
       : Term(ui, context, term_instruction,
 	     false, false, false, block, type),
-	m_backend(backend) {
+        m_operation(operation) {
 
       for (std::size_t i = 0; i < parameters.size(); ++i)
 	set_base_parameter(i, parameters[i]);
-    }
-
-    InstructionTerm::~InstructionTerm() {
-      m_backend->~InstructionTermBackend();
     }
 
     class InstructionTerm::Initializer {
@@ -503,30 +508,20 @@ namespace Psi {
 
       Initializer(Term* type,
 		  ArrayPtr<Term*const> parameters,
-		  const InstructionTermBackend *backend,
-                  BlockTerm* block,
-		  std::size_t proto_offset,
-		  std::size_t size)
+                  const InstructionTermSetup *setup,
+                  BlockTerm* block)
 	: m_type(type),
 	  m_parameters(parameters),
-	  m_backend(backend),
-          m_block(block),
-	  m_proto_offset(proto_offset),
-	  m_size(size) {
+          m_setup(setup),
+          m_block(block) {
       }
 
       InstructionTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
-	InstructionTermBackend *new_backend = m_backend->clone(ptr_offset(base, m_proto_offset));
-	try {
-	  return new (base) InstructionTerm(ui, context, m_type, m_parameters, new_backend, m_block);
-	} catch(...) {
-	  new_backend->~InstructionTermBackend();
-	  throw;
-	}
+        return m_setup->construct(base, ui, context, m_type, m_setup->operation, m_parameters, m_block);
       }
 
       std::size_t term_size() const {
-	return m_size;
+        return m_setup->term_size;
       }
 
       std::size_t n_uses() const {
@@ -536,10 +531,8 @@ namespace Psi {
     private:
       Term* m_type;
       ArrayPtr<Term*const> m_parameters;
-      const InstructionTermBackend *m_backend;
+      const InstructionTermSetup *m_setup;
       BlockTerm* m_block;
-      std::size_t m_proto_offset;
-      std::size_t m_size;
     };
 
     /**
@@ -549,11 +542,11 @@ namespace Psi {
      * dominator block refers to the function entry, i.e. before the
      * entry block is run, and therefore eveything is dominated by it.
      */
-    bool BlockTerm::dominated_by(BlockTerm* block) const {
+    bool BlockTerm::dominated_by(BlockTerm* block) {
       if (!block)
         return true;
 
-      for (const BlockTerm* b = this; b; b = b->dominator()) {
+      for (BlockTerm* b = this; b; b = b->dominator()) {
         if (block == b)
           return true;
       }
@@ -582,7 +575,7 @@ namespace Psi {
      * available, otherwise \c function will be set to the function
      * this block is part of.
      */
-    bool BlockTerm::check_available(Term* term) const {
+    bool BlockTerm::check_available(Term* term) {
       if (term->global())
         return true;
 
@@ -590,7 +583,7 @@ namespace Psi {
 
       switch (term->term_type()) {
       case term_functional: {
-        FunctionalTerm* cast_term = checked_cast<FunctionalTerm*>(term);
+        FunctionalTerm* cast_term = cast<FunctionalTerm>(term);
         std::size_t n = cast_term->n_parameters();
         for (std::size_t i = 0; i < n; ++i) {
           if (!check_available(cast_term->parameter(i)))
@@ -600,16 +593,16 @@ namespace Psi {
       }
 
       case term_instruction:
-        return dominated_by(checked_cast<InstructionTerm*>(term)->block());
+        return dominated_by(cast<InstructionTerm>(term)->block());
 
       case term_phi:
-        return dominated_by(checked_cast<PhiTerm*>(term)->block());
+        return dominated_by(cast<PhiTerm>(term)->block());
 
       case term_function_parameter:
-        return checked_cast<FunctionParameterTerm*>(term)->function() == function();
+        return cast<FunctionParameterTerm>(term)->function() == function();
 
       case term_block:
-        return checked_cast<BlockTerm*>(term)->function() == function();
+        return cast<BlockTerm>(term)->function() == function();
 
       default:
 	throw TvmUserError("unexpected term type");
@@ -619,12 +612,11 @@ namespace Psi {
     /**
      * \brief Get blocks that can run immediately after this one.
      */
-    std::vector<BlockTerm*> BlockTerm::successors() const {
+    std::vector<BlockTerm*> BlockTerm::successors() {
       std::vector<BlockTerm*> targets;
       for (InstructionList::const_iterator it = m_instructions.begin();
            it != m_instructions.end(); ++it) {
-        InstructionTerm& insn = const_cast<InstructionTerm&>(m_instructions.back());
-        insn.backend()->jump_targets(context(), insn, targets);
+        m_instructions.back().jump_targets(targets);
       }
       return targets;
     }
@@ -633,7 +625,7 @@ namespace Psi {
      * \brief Get blocks that can run between this one and the end of
      * the function (including this one).
      */
-    std::vector<BlockTerm*> BlockTerm::recursive_successors() const {
+    std::vector<BlockTerm*> BlockTerm::recursive_successors() {
       std::tr1::unordered_set<BlockTerm*> all_blocks;
       std::vector<BlockTerm*> queue;
       all_blocks.insert(const_cast<BlockTerm*>(this));
@@ -659,7 +651,7 @@ namespace Psi {
     /**
      * \brief Get a list of blocks dominated by this one.
      */
-    std::vector<BlockTerm*> BlockTerm::dominated_blocks() const {
+    std::vector<BlockTerm*> BlockTerm::dominated_blocks() {
       BlockTerm *self = const_cast<BlockTerm*>(this);
       std::vector<BlockTerm*> result;
       for (TermIterator<BlockTerm> it = self->term_users_begin<BlockTerm>();
@@ -673,7 +665,7 @@ namespace Psi {
       return result;
     }
 
-    InstructionTerm* BlockTerm::new_instruction_internal(const InstructionTermBackend& backend, ArrayPtr<Term*const> parameters) {
+    InstructionTerm* BlockTerm::new_instruction_bare(const InstructionTermSetup& setup, ArrayPtr<Term*const> parameters) {
       if (m_terminated)
         throw TvmUserError("cannot add instruction to already terminated block");
 
@@ -686,23 +678,18 @@ namespace Psi {
           throw TvmUserError("parameter value is not available in this block");
       }
 
-      std::pair<std::size_t, std::size_t> backend_size_align = backend.size_align();
-      PSI_ASSERT_MSG((backend_size_align.second & (backend_size_align.second - 1)) == 0, "alignment is not a power of two");
-      std::size_t proto_offset = struct_offset(0, sizeof(InstructionTerm), backend_size_align.second);
-      std::size_t size = proto_offset + backend_size_align.first;
-
-      Term* type = backend.type(context(), *function(), parameters);
+      Term* type = setup.type(function(), parameters);
       bool terminator = false;
       if (!type) {
         terminator = true;
-        type = context().get_empty_type();
+        type = EmptyType::get(context());
       }
 
-      InstructionTerm* insn = context().allocate_term(InstructionTerm::Initializer(type, parameters, &backend, this, proto_offset, size));
+      InstructionTerm* insn = context().allocate_term(InstructionTerm::Initializer(type, parameters, &setup, this));
 
       // End-of-block: need to find where we could be jumping to
       std::vector<BlockTerm*> jump_targets;
-      backend.jump_targets(context(), *insn, jump_targets);
+      insn->jump_targets(jump_targets);
       for (std::vector<BlockTerm*>::iterator it = jump_targets.begin();
            it != jump_targets.end(); ++it) {
         if (!dominated_by((*it)->dominator()))
@@ -784,7 +771,7 @@ namespace Psi {
     }
 
     BlockTerm::BlockTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, BlockTerm* dominator)
-      : Term(ui, context, term_block, false, false, false, function, context->get_block_type()),
+      : Term(ui, context, term_block, false, false, false, function, BlockType::get(*context)),
         m_terminated(false) {
 
       set_base_parameter(0, function);
@@ -872,13 +859,6 @@ namespace Psi {
      */
     FunctionTerm* Context::new_function(FunctionTypeTerm* type, const std::string& name) {
       return allocate_term(FunctionTerm::Initializer(type, name));
-    }
-
-    /**
-     * Get the signature of this function.
-     */
-    FunctionTypeTerm* FunctionTerm::function_type() const {
-      return checked_cast<FunctionTypeTerm*>(value_type());
     }
 
     /**

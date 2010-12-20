@@ -216,6 +216,96 @@ namespace Psi {
   T checked_cast(U* src) {
     return checked_cast_impl<T,U*>::cast(src);
   }
+
+  /**
+   * An adapter class used to make a static class look like a
+   * pointer. The star and arrow operators return a pointer to an
+   * internal structure which provides custom adapter functions.
+   *
+   * \tparam T Wrapper type. This should have a member \c GetType
+   * which is the type returned by the get function (without the
+   * pointer). This type should be copy-constructible.
+   */
+  template<typename T>
+  class PtrAdapter {
+    typedef void (PtrAdapter::*SafeBoolType)() const;
+    void safe_bool_true() const {}
+  public:
+    typedef PtrAdapter<T> ThisType;
+    typedef T WrapperType;
+    typedef typename T::GetType GetType;
+
+    PtrAdapter() {}
+    PtrAdapter(const WrapperType& wrapper) : m_wrapper(wrapper) {}
+
+    GetType* get() const {return m_wrapper.get();}
+    const WrapperType& operator * () const {return m_wrapper;}
+    const WrapperType* operator -> () const {return &m_wrapper;}
+
+    bool operator ! () const {return !get();}
+    bool operator == (const GetType *ptr) const {return ptr == get();}
+    bool operator != (const GetType *ptr) const {return ptr != get();}
+    bool operator < (const GetType *ptr) const {return ptr < get();}
+    bool operator == (const ThisType& ptr) const {return get() == ptr.get();}
+    bool operator != (const ThisType& ptr) const {return get() != ptr.get();}
+    bool operator < (const ThisType& ptr) const {return get() < ptr.get();}
+
+  private:
+    WrapperType m_wrapper;
+  };
+
+  /**
+   * Derived from PtrAdapter - also includes an implicit cast to
+   * pointer operation.
+   */
+  template<typename T>
+  class PtrDecayAdapter : public PtrAdapter<T> {
+  public:
+    PtrDecayAdapter() {}
+    PtrDecayAdapter(const T& wrapper) : PtrAdapter<T>(wrapper) {}
+
+    operator typename T::GetType* () const {return this->get();}
+  };
+
+  /**
+   * \brief Base class for types which should never be constructed.
+   */
+  class NonConstructible {
+  private:
+    NonConstructible();
+  };
+
+  /**
+   * A simple empty type, implementing equality comparison and
+   * hashing.
+   */
+  struct Empty {
+    bool operator == (const Empty&) const {return true;}
+    friend std::size_t hash_value(const Empty&) {return 0;}
+  };
+  
+  /**
+   * Base class which can be used to store empty types
+   * cheaply. Currently this is implemented by specializing for Empty.
+   */
+  template<typename T>
+  class CompressedBase {
+  public:
+    CompressedBase(const T& t) : m_value(t) {}
+    T& get() {return m_value;}
+    const T& get() const {return m_value;}
+
+  private:
+    T m_value;
+  };
+
+  template<>
+  class CompressedBase<Empty> : Empty {
+  public:
+    CompressedBase(const Empty&) {}
+    Empty& get() {return *this;}
+    const Empty& get() const {return *this;}
+  };
 }
 
 #endif

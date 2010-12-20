@@ -8,6 +8,8 @@
 #include "Derived.hpp"
 #include "JitTypes.hpp"
 
+#include <boost/type_traits/alignment_of.hpp>
+
 namespace Psi {
   namespace Tvm {
     BOOST_FIXTURE_TEST_SUITE(CoreTest, Test::ContextFixture)

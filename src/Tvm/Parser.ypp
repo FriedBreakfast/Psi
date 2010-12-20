@@ -103,7 +103,7 @@ namespace {
 %token INVALID
 %token ID
 %token OP
-%token VAL
+%token NUMBER
 %token FUNCTION "function"
 %token GLOBAL "global"
 %token DEFINE "define"
@@ -131,8 +131,8 @@ namespace {
   @$.last_column = 1;
 }
 
-%type<tokens> ID OP VAL value_list value_list_nonempty
-%type<expressions> expression root_expression id_expression op_expression bracket_expression term_list term_list_nonempty function_type
+%type<tokens> ID OP
+%type<expressions> NUMBER expression root_expression id_expression op_expression bracket_expression term_list term_list_nonempty term function_type
 %type<blocks> block_list block_list_nonempty block
 %type<named_expressions> statement_list statement parameter_list parameter_list_nonempty parameter
 %type<globals> root global function constant global_variable
@@ -293,15 +293,14 @@ id_expression: ID {
 
 op_expression: OP {
   UniquePtr<Token> op(list_to_ptr($1));
-  UniqueList<Token> values;
   UniqueList<Expression> terms;
-  $$ = list_one<Expression>(new CallExpression(@$, op, values, terms));
+  $$ = list_one<Expression>(new CallExpression(@$, op, terms));
 };
 
 bracket_expression:
-OP value_list term_list {
+OP term_list {
   UniquePtr<Token> op(list_to_ptr($1));
-  $$ = list_one<Expression>(new CallExpression(@$, op, *$2, *$3));
+  $$ = list_one<Expression>(new CallExpression(@$, op, *$2));
 }
 | PHI expression ':' phi_node_list {
   UniquePtr<Expression> type(list_to_ptr($2));
@@ -310,18 +309,16 @@ OP value_list term_list {
 | function_type
 ;
 
-value_list: {$$ = list_empty<Token>();} | value_list_nonempty;
-
-value_list_nonempty:
-VAL
-| value_list_nonempty VAL {$$ = list_append($1, $2);}
-;
-
 term_list: {$$ = list_empty<Expression>();} | term_list_nonempty;
 
 term_list_nonempty:
+term
+| term_list_nonempty term {$$ = list_append($1, $2);}
+;
+
+term:
 expression
-| term_list_nonempty expression {$$ = list_append($1, $2);}
+| NUMBER
 ;
 
 phi_node_list:
@@ -351,6 +348,22 @@ namespace {
     ("phi", PHI)
     ("cc_tvm", CC_TVM)
     ("cc_c", CC_C);
+
+  const std::tr1::unordered_map<char, LiteralType> signed_literals =
+    boost::assign::map_list_of<char, LiteralType>
+    ('b', literal_byte)
+    ('s', literal_short)
+    ('i', literal_int)
+    ('l', literal_long)
+    ('p', literal_intptr);
+
+  const std::tr1::unordered_map<char, LiteralType> unsigned_literals =
+    boost::assign::map_list_of<char, LiteralType>
+    ('b', literal_ubyte)
+    ('s', literal_ushort)
+    ('i', literal_uint)
+    ('l', literal_ulong)
+    ('p', literal_uintptr);
 
   /**
    * \brief Scanner function.
@@ -391,7 +404,7 @@ namespace {
 
     switch(*self.current) {
     case '#':
-      token_type = VAL;
+      token_type = NUMBER;
       SCANNER_ACCEPT();
       break;
 
@@ -427,6 +440,28 @@ namespace {
       std::tr1::unordered_map<std::string, int>::const_iterator it = keywords.find(text);
       if (it != keywords.end())
         return it->second;
+    } else if (token_type == NUMBER) {
+      if (text.size() < 2)
+        return 0;
+
+      std::tr1::unordered_map<char, LiteralType>::const_iterator it;
+      std::string literal_text;
+      Location literal_loc(*llocp);
+      if (text[0] == 'u') {
+        it = unsigned_literals.find(text[1]);
+        if (it == unsigned_literals.end())
+          return 0;
+        literal_loc.first_column += 2;
+      } else {
+        it = signed_literals.find(text[0]);
+        if (it == signed_literals.end())
+          return 0;
+        literal_loc.first_column += 1;
+      }
+
+      UniquePtr<Token> literal_token(new Token(literal_loc, literal_text));
+
+      lvalp->expressions = list_one<Expression>(new LiteralExpression(*llocp, it->second, literal_token));
     }
 
     lvalp->tokens = list_one<Token>(new Token(*llocp, text));
@@ -480,10 +515,9 @@ namespace Psi {
       }
 
       CallExpression::CallExpression(const Location& location_, UniquePtr<Token>& target_,
-				     UniqueList<Token>& values_, UniqueList<Expression>& terms_)
+				     UniqueList<Expression>& terms_)
 	: Expression(location_, expression_call) {
 	target.swap(target_);
-	values.swap(values_);
 	terms.swap(terms_);
       }
 
@@ -503,6 +537,15 @@ namespace Psi {
       }
 
       FunctionTypeExpression::~FunctionTypeExpression() {
+      }
+
+      LiteralExpression::LiteralExpression(const Location& location_, LiteralType literal_type_, UniquePtr<Token>& value_)
+        : Expression(location_, expression_literal),
+          literal_type(literal_type_) {
+        value.swap(value_);
+      }
+
+      LiteralExpression::~LiteralExpression() {
       }
 
       NamedExpression::NamedExpression(const Location& location_, UniquePtr<Token>& name_, UniquePtr<Expression>& expression_)

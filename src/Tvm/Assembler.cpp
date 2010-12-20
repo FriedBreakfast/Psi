@@ -2,6 +2,7 @@
 
 #include "Function.hpp"
 #include "Functional.hpp"
+#include "Type.hpp"
 
 #include <cstring>
 #include <stdexcept>
@@ -49,6 +50,33 @@ namespace Psi {
         return it->second(it->first, context, expression);
       }
 
+      FunctionalTerm* build_literal_int(IntegerType::Ptr type, const Parser::LiteralExpression& expression) {
+        BigInteger int_value;
+        int_value.set_str(expression.value->text);
+        return IntegerValue::get(type, int_value);
+      }
+
+      FunctionalTerm* build_literal(AssemblerContext& context, const Parser::LiteralExpression& expression) {
+        switch (expression.literal_type) {
+#define HANDLE_INT(lit_name,int_name)                                   \
+          case Parser::literal_##lit_name:                              \
+            return build_literal_int(IntegerType::get(context.context(), IntegerType::int_name, true), expression); \
+        case Parser::literal_u##lit_name:                               \
+            return build_literal_int(IntegerType::get(context.context(), IntegerType::int_name, false), expression);
+
+          HANDLE_INT(byte,  i8)
+          HANDLE_INT(short, i16)
+          HANDLE_INT(int,   i32)
+          HANDLE_INT(long,  i64)
+          HANDLE_INT(intptr, iptr)
+
+#undef HANDLE_INT
+
+        default:
+          PSI_FAIL("invalid literal type");
+        }
+      }
+
       Term* build_expression(AssemblerContext& context, const Parser::Expression& expression) {
 	switch(expression.expression_type) {
 	case Parser::expression_call:
@@ -59,6 +87,9 @@ namespace Psi {
 
 	case Parser::expression_function_type:
 	  return build_function_type(context, checked_cast<const Parser::FunctionTypeExpression&>(expression));
+
+        case Parser::expression_literal:
+          return build_literal(context, checked_cast<const Parser::LiteralExpression&>(expression));
 
 	default:
 	  PSI_FAIL("invalid expression type");
@@ -208,7 +239,7 @@ namespace Psi {
 
             for (UniqueList<Parser::PhiNode>::const_iterator kt = phi_expr.nodes.begin();
                  kt != phi_expr.nodes.end(); ++kt) {
-              BlockTerm *block = checked_cast<BlockTerm*>(my_context.get(kt->label->text));
+              BlockTerm *block = cast<BlockTerm>(my_context.get(kt->label->text));
               Term *value = build_expression(my_context, *kt->expression);
               phi_term->add_incoming(block, value);
             }
@@ -254,13 +285,13 @@ namespace Psi {
 	PSI_ASSERT(ptr);
 	if (it->value->global_type == Parser::global_function) {
           const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
-          FunctionTerm* function = checked_cast<FunctionTerm*>(ptr);
+          FunctionTerm* function = cast<FunctionTerm>(ptr);
           if (!def.blocks.empty())
             Assembler::build_function(asmct, *function, def);
 	} else {
           PSI_ASSERT(it->value->global_type == Parser::global_variable);
           const Parser::GlobalVariable& var = checked_cast<const Parser::GlobalVariable&>(*it->value);
-          GlobalVariableTerm* global_var = checked_cast<GlobalVariableTerm*>(ptr);
+          GlobalVariableTerm* global_var = cast<GlobalVariableTerm>(ptr);
           Term* value = Assembler::build_expression(asmct, *var.value);
           global_var->set_value(value);
 	}

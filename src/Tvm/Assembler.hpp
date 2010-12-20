@@ -10,6 +10,9 @@
 
 namespace Psi {
   namespace Tvm {
+    class InstructionTerm;
+    class BlockTerm;
+
     namespace Assembler {
       /**
        * Thrown when a syntactic error is detected in the

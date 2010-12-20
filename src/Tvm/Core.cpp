@@ -3,7 +3,7 @@
 #include "Functional.hpp"
 #include "Recursive.hpp"
 #include "Utility.hpp"
-#include "Derived.hpp"
+#include "Type.hpp"
 #include "LLVMBuilder.hpp"
 
 #include <stdexcept>
@@ -171,7 +171,7 @@ namespace Psi {
      * pointer to this type.
      */
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name)
-      : Term(ui, context, term_type, false, false, false, NULL, context->get_pointer_type(type)),
+      : Term(ui, context, term_type, false, false, false, NULL, PointerType::get(type)),
         m_name(name) {
       PSI_ASSERT(!type->phantom() && !type->parameterized() && !type->abstract());
     }
@@ -181,8 +181,7 @@ namespace Psi {
      * by the global's value.
      */
     Term* GlobalTerm::value_type() const {
-      FunctionalTerm* ft = checked_cast<FunctionalTerm*>(type());
-      return checked_cast_functional<PointerType>(ft).backend().target_type();
+      return cast<PointerType>(type())->target_type();
     }
 
     GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type,
@@ -240,6 +239,7 @@ namespace Psi {
       return t;
     }
 
+#if 0
     /**
      * \brief Just-in-time compile a term, and a get a pointer to
      * the result.
@@ -295,6 +295,48 @@ namespace Psi {
         m_llvm_jit_listeners.erase(l);
       }
     }
+#endif
+
+    std::size_t Context::CStringHash::operator () (const char *s) const {
+      std::size_t l = std::strlen(s);
+      return boost::hash_range(s, s+l);
+    }
+
+    bool Context::CStringEquals::operator () (const char *s1, const char *s2) const {
+      return (s1 == s2) || (std::strcmp(s1, s2) == 0);
+    }
+
+    /**
+     * Register the name of a term. This will raise an exception if a
+     * term with the same name is already registered.
+     *
+     * \param name Name of the term. This should point to a global
+     * variable since it is assumed that lifetime of the referenced
+     * storage is as long as the context.
+     */
+    void Context::register_term_name(const char *name) {
+      std::pair<TermNameSet::iterator, bool> r = m_term_names.insert(name);
+      if (!r.second && (*r.first != name))
+        throw TvmInternalError("Duplicate term name registered");
+    }
+
+    /**
+     * Lookup the name of a term. This gets the canonical address of
+     * the given name, or returns NULL if no such name is found. This,
+     * in combination with register_term_name, allows all term name
+     * comparisons to be done just using pointer comparison.
+     *
+     * \param name NULL-terminated string containing the name to look
+     * up.
+     */
+    const char *Context::lookup_term_name(const char *name) {
+      TermNameSet::iterator it = m_term_names.find(name);
+      if (it != m_term_names.end()) {
+        return *it;
+      } else {
+        return 0;
+      }
+    }
 
     Context::Context()
       : m_hash_term_buckets(new HashTermSetType::bucket_type[initial_hash_term_buckets]),
@@ -330,29 +372,6 @@ namespace Psi {
       print_hash_terms(std::cerr);
     }
 #endif
-
-    namespace {
-      std::size_t hash_type_info(const std::type_info& ti) {
-#if __GXX_MERGED_TYPEINFO_NAMES
-	return boost::hash_value(ti.name());
-#else
-	std::size_t h = 0;
-	for (const char *p = ti.name(); *p != '\0'; ++p)
-	  boost::hash_combine(h, *p);
-	return h;
-#endif
-      }
-    }
-
-    TermBackend::~TermBackend() {
-    }
-
-    std::size_t HashTermBackend::hash_value() const {
-      std::size_t h = 0;
-      boost::hash_combine(h, hash_internal());
-      boost::hash_combine(h, hash_type_info(typeid(*this)));
-      return h;
-    }
 
     /**
      * Return whether a term is unique, i.e. it is not functional so

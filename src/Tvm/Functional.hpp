@@ -11,12 +11,18 @@ namespace Psi {
       bool phantom;
     };
 
+#if 0
     /**
      * \brief Base class for building custom FunctionalTerm instances.
      */
-    class FunctionalTermBackend : public HashTermBackend {
+    class FunctionalTermBackend {
     public:
+      virtual ~FunctionalTermBackend();
+      std::size_t hash_value() const;
+      virtual bool equals(const FunctionalTermBackend& other) const = 0;
       virtual FunctionalTermBackend* clone(void *dest) const = 0;
+      virtual std::pair<std::size_t, std::size_t> size_align() const = 0;
+
       virtual FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const = 0;
 
       /**
@@ -35,7 +41,11 @@ namespace Psi {
 
       virtual llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const = 0;
       virtual const llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const = 0;
+
+    private:
+      virtual std::size_t hash_internal() const = 0;      
     };
+#endif
 
     /**
      * \brief Base class of functional (machine state independent) terms.
@@ -48,128 +58,210 @@ namespace Psi {
      */
     class FunctionalTerm : public HashTerm {
       friend class Context;
+      template<typename> friend class FunctionalTermSpecialized;
 
     public:
-      const FunctionalTermBackend* backend() const {return m_backend;}
+      const char *operation() const {return m_operation;}
       std::size_t n_parameters() const {return Term::n_base_parameters();}
       Term* parameter(std::size_t n) const {return get_base_parameter(n);}
 
+      /// Build a copy of this term with a new set of parameters.
+      virtual FunctionalTerm* rewrite(ArrayPtr<Term*const> parameters) = 0;
+ 
     private:
       class Setup;
       FunctionalTerm(const UserInitializer& ui, Context *context, Term* type,
-		     bool phantom, std::size_t hash, FunctionalTermBackend *backend,
+		     bool phantom, std::size_t hash, const char *operation,
 		     ArrayPtr<Term*const> parameters);
-      ~FunctionalTerm();
 
-      FunctionalTermBackend *m_backend;
+      const char *m_operation;
     };
 
-    template<>
-    struct TermIteratorCheck<FunctionalTerm> {
-      static bool check (TermType t) {
-	return t == term_functional;
-      }
-    };
+    template<> struct CastImplementation<FunctionalTerm> : CoreCastImplementation<FunctionalTerm, term_functional> {};
+
+    template<typename> class FunctionalTermSetupSpecialized;
 
     /**
-     * \brief Implementation of FunctionalTermBackend.
-     *
-     * Actual implementations of this type should be created by
-     * creating a class that this can wrap and getting a context to
-     * make the appropriate term.
+     * A specialization of FunctionalTerm which includes custom data.
      */
-    template<typename T>
-    class FunctionalTermBackendImpl : public FunctionalTermBackend {
+    template<typename TermTagType>
+    class FunctionalTermSpecialized : public FunctionalTerm, CompressedBase<typename TermTagType::Data> {
+      friend class FunctionalTermSetupSpecialized<TermTagType>;
+      typedef typename TermTagType::Data Data;
+
     public:
-      typedef T ImplType;
-      typedef FunctionalTermBackendImpl<T> ThisType;
+      const Data& data() const {return CompressedBase<Data>::get();}
 
-      FunctionalTermBackendImpl(const ImplType& impl) : m_impl(impl) {
+      virtual FunctionalTerm* rewrite(ArrayPtr<Term*const> parameters) {
+        return context().template get_functional<TermTagType>(data(), parameters);
+      }
+ 
+    private:
+      FunctionalTermSpecialized(const UserInitializer& ui, Context *context, Term* type,
+                                bool phantom, std::size_t hash, const char *operation,
+                                ArrayPtr<Term*const> parameters, const Data& data)
+        : FunctionalTerm(ui, context, type, phantom, hash, operation, parameters),
+          CompressedBase<Data>(data) {
+      }
+    };
+
+    class FunctionalTermSetup {
+      template<typename> friend struct FunctionalTermSetupSpecialized;
+
+      FunctionalTermSetup(const char *operation_, std::size_t data_hash_, std::size_t term_size_)
+        : operation(operation_), data_hash(data_hash_), term_size(term_size_) {}
+
+    public:
+      const char *operation;
+      std::size_t data_hash;
+      std::size_t term_size;
+      virtual bool data_equals(FunctionalTerm *term) const = 0;
+      virtual FunctionalTerm* construct(void *ptr,
+                                        const UserInitializer& ui, Context *context, Term* type,
+                                        bool phantom, std::size_t hash, const char *operation,
+                                        ArrayPtr<Term*const> parameters) const = 0;
+
+      virtual FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const = 0;
+    };
+
+    template<typename TermTagType>
+    struct FunctionalTermSetupSpecialized : FunctionalTermSetup {
+      typedef typename TermTagType::Data Data;
+
+      FunctionalTermSetupSpecialized(const Data *data_)
+        : FunctionalTermSetup(TermTagType::operation, boost::hash<Data>()(*data_),
+                              sizeof(FunctionalTermSpecialized<TermTagType>)), data(data_) {}
+
+      const Data *data;
+
+      virtual bool data_equals(FunctionalTerm *term) const {
+        return *data == checked_cast<FunctionalTermSpecialized<TermTagType>*>(term)->data();
       }
 
-      virtual ~FunctionalTermBackendImpl() {
-      }
-
-      virtual std::pair<std::size_t, std::size_t> size_align() const {
-        return std::make_pair(sizeof(ThisType), boost::alignment_of<ThisType>::value);
-      }
-
-      virtual bool equals(const FunctionalTermBackend& other) const {
-	return m_impl == checked_cast<const ThisType&>(other).m_impl;
-      }
-
-      virtual FunctionalTermBackend* clone(void *dest) const {
-        return new (dest) ThisType(*this);
+      virtual FunctionalTerm* construct(void *ptr,
+                                        const UserInitializer& ui, Context *context, Term* type,
+                                        bool phantom, std::size_t hash, const char *operation,
+                                        ArrayPtr<Term*const> parameters) const {
+        return new (ptr) FunctionalTermSpecialized<TermTagType>
+          (ui, context, type, phantom, hash, operation, parameters, *data);
       }
 
       virtual FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const {
-        return m_impl.type(context, parameters);
+        return TermTagType::type(context, *data, parameters);
       }
-
-      virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const {
-        return m_impl.llvm_value_instruction(builder, term);
-      }
-
-      virtual llvm::Constant* llvm_value_constant(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
-        return m_impl.llvm_value_constant(builder, term);
-      }
-
-      virtual const llvm::Type* llvm_type(LLVMConstantBuilder& builder, FunctionalTerm& term) const {
-        return m_impl.llvm_type(builder, term);
-      }
-
-      const ImplType& impl() const {
-        return m_impl;
-      }
-
-    private:
-      virtual std::size_t hash_internal() const {
-        boost::hash<ImplType> hasher;
-        return hasher(m_impl);
-      }
-
-      ImplType m_impl;
     };
 
-    template<typename T> FunctionalTermPtr<T> checked_cast_functional(FunctionalTerm* src) {
-      checked_cast<const FunctionalTermBackendImpl<T>*>(src->backend());
-      return FunctionalTermPtr<T>(src);
-    }
-
-    template<typename T, typename U> FunctionalTermPtr<T> checked_cast_functional(FunctionalTermPtr<U> src) {
-      return checked_cast_functional<T>(src.get());
-    }
-    
     /**
-     * \brief Perform a checked cast to a FunctionalTermPtr. This
-     * checks both the term type and the backend type.
+     * Base class for pointers to functional terms. This provides
+     * generic functions for all functional terms in a non-template
+     * class.
      */
-    template<typename T> FunctionalTermPtr<T> checked_cast_functional(Term* src) {
-      return checked_cast_functional<T>(checked_cast<FunctionalTerm*>(src));
-    }
-
-    template<typename T> FunctionalTermPtr<T> dynamic_cast_functional(FunctionalTerm* src) {
-      if (!dynamic_cast<const FunctionalTermBackendImpl<T>*>(src->backend()))
-        return FunctionalTermPtr<T>();
-      return FunctionalTermPtr<T>(src);
-    }
-
-    template<typename T, typename U> FunctionalTermPtr<T> dynamic_cast_functional(FunctionalTermPtr<U> src) {
-      return dynamic_cast_functional<T>(src.get());
-    }
+    class FunctionalTermPtr : public TermPtrBase {
+    public:
+      /// \brief To comply with the \c PtrAdapter interface.
+      typedef FunctionalTerm GetType;
+      FunctionalTermPtr() {}
+      explicit FunctionalTermPtr(FunctionalTerm *term) : TermPtrBase(term) {}
+      /// \brief To comply with the \c PtrAdapter interface.
+      FunctionalTerm* get() const {return checked_cast<FunctionalTerm*>(m_ptr);}
+      /// \copydoc FunctionalTerm::operation
+      const char *operation() const {return get()->operation();}
+    };
 
     /**
-     * \brief Perform a dynamic cast to a FunctionalTermPtr. This
-     * checks both the term type and the backend type.
+     * Base class for pointers to functional terms - this is
+     * specialized to individual term types.
      */
-    template<typename T> FunctionalTermPtr<T> dynamic_cast_functional(Term* src) {
-      FunctionalTerm *p = dynamic_cast<FunctionalTerm*>(src);
-      return p ? dynamic_cast_functional<T>(p) : FunctionalTermPtr<T>();
-    }
+    template<typename TermTagType>
+    class FunctionalTermPtrBase : public FunctionalTermPtr {
+    public:
+      FunctionalTermPtrBase() {}
+      explicit FunctionalTermPtrBase(FunctionalTerm *term) : FunctionalTermPtr(term) {}
+
+      /// \copydoc FunctionalTerm::rewrite
+      PtrDecayAdapter<typename TermTagType::PtrHook> rewrite(ArrayPtr<Term*const> parameters) {
+        return cast<TermTagType>(get()->rewrite(parameters));
+      }
+
+    protected:
+      const typename TermTagType::Data& data() const {
+        return checked_cast<FunctionalTermSpecialized<TermTagType>*>(get())->data();
+      }
+    };
 
     template<typename T>
-    FunctionalTermPtr<T> Context::get_functional(const T& proto, ArrayPtr<Term*const> parameters) {
-      return FunctionalTermPtr<T>(get_functional_bare(FunctionalTermBackendImpl<T>(proto), parameters));
+    struct FunctionalCastImplementation {
+      typedef typename T::Ptr Ptr;
+      typedef typename T::PtrHook Reference;
+
+      static Ptr null() {
+        return Ptr();
+      }
+
+      static Ptr cast(Term *t) {
+        return cast(checked_cast<FunctionalTerm*>(t));
+      }
+
+      static Ptr cast(FunctionalTerm *t) {
+        PSI_ASSERT(T::operation == t->operation());
+        return Ptr(typename T::PtrHook(checked_cast<FunctionalTermSpecialized<T>*>(t)));
+      }
+
+      static bool isa(Term *t) {
+        FunctionalTerm *ft = dyn_cast<FunctionalTerm>(t);
+        if (!ft)
+          return false;
+
+        return T::operation == ft->operation();
+      }
+    };
+
+#define PSI_TVM_FUNCTIONAL_TYPE(name) \
+    struct name : NonConstructible {  \
+    typedef name ThisType;            \
+    static const char operation[];
+
+#define PSI_TVM_FUNCTIONAL_PTR_HOOK()                                   \
+    struct PtrHook : FunctionalTermPtrBase<ThisType> {                  \
+    template<typename> friend struct FunctionalCastImplementation;      \
+  private:                                                              \
+  explicit PtrHook(FunctionalTerm *t) : FunctionalTermPtrBase<ThisType>(t) {} \
+  public:                                                               \
+  PtrHook() {}
+
+#define PSI_TVM_FUNCTIONAL_PTR_HOOK_END() }; typedef PtrDecayAdapter<PtrHook> Ptr;
+
+#ifndef PSI_DOXYGEN
+#define PSI_TVM_FUNCTIONAL_TYPE_CAST(name) template<> struct CastImplementation<name> : FunctionalCastImplementation<name> {};
+#else
+#define PSI_TVM_FUNCTIONAL_TYPE_CAST(name)
+#endif
+
+#define PSI_TVM_FUNCTIONAL_TYPE_END(name)                               \
+    static FunctionalTypeResult type(Context&, const Data&, ArrayPtr<Term*const>); \
+  };                                                                    \
+    PSI_TVM_FUNCTIONAL_TYPE_CAST(name)
+
+#define PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(name)    \
+    PSI_TVM_FUNCTIONAL_TYPE(name)               \
+    typedef Empty Data;                         \
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()               \
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()           \
+    static Ptr get(Context&);                   \
+    PSI_TVM_FUNCTIONAL_TYPE_END(name)
+
+#define PSI_TVM_FUNCTIONAL_TYPE_BINARY(name)            \
+    PSI_TVM_FUNCTIONAL_TYPE(name)                       \
+    typedef Empty Data;                                 \
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()                       \
+    Term* lhs() const {return get()->parameter(0);}     \
+    Term* rhs() const {return get()->parameter(1);}     \
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()                   \
+    static Ptr get(Term *lhs, Term *rhs);               \
+    PSI_TVM_FUNCTIONAL_TYPE_END(name)
+
+    template<typename T> typename T::Ptr Context::get_functional(const typename T::Data& data, ArrayPtr<Term*const> parameters) {
+      return cast<T>(get_functional_bare(FunctionalTermSetupSpecialized<T>(&data), parameters));
     }
   }
 }

@@ -12,24 +12,21 @@ add_library(psi SHARED
 
   ${BISON_Parser_OUTPUTS} Parser.hpp
 
-  Tvm/Arithmetic.cpp Tvm/Arithmetic.hpp
   Tvm/Assembler.cpp Tvm/Assembler.hpp
   Tvm/AssemblerOperations.cpp
   Tvm/BigInteger.cpp Tvm/BigInteger.hpp
-  Tvm/ControlFlow.cpp Tvm/ControlFlow.hpp
   Tvm/Core.cpp Tvm/Core.hpp
-  Tvm/Derived.cpp Tvm/Derived.hpp
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
   Tvm/JitTypes.hpp
   Tvm/LLVMBuilder.cpp Tvm/LLVMBuilder.hpp
   Tvm/LLVMValue.hpp
-  Tvm/Memory.cpp Tvm/Memory.hpp
-  Tvm/Number.cpp Tvm/Number.hpp
+  Tvm/Instructions.cpp Tvm/Instructions.hpp
+  Tvm/Operations.cpp Tvm/Operations.hpp
   ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
-  Tvm/Primitive.cpp Tvm/Primitive.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp
   Tvm/Rewrite.hpp
+  Tvm/Type.cpp Tvm/Type.hpp
   Tvm/User.cpp Tvm/User.hpp
   Tvm/Utility.cpp Tvm/Utility.hpp
 )

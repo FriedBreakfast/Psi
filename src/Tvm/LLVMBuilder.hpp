@@ -8,8 +8,12 @@
 
 #include <boost/optional.hpp>
 
+#include <llvm/Support/IRBuilder.h>
+#include <llvm/Target/TargetMachine.h>
+
 #include "Core.hpp"
 #include "BigInteger.hpp"
+#include "LLVMValue.hpp"
 #include "../Utility.hpp"
 
 namespace Psi {
@@ -87,6 +91,9 @@ namespace Psi {
       typedef std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*> GlobalTermMap;
       GlobalTermMap m_global_terms;
     };
+
+    class BlockTerm;
+    class PhiTerm;
 
     class LLVMFunctionBuilder : public LLVMConstantBuilder {
       friend class LLVMGlobalBuilder;

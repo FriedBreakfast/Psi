@@ -3,7 +3,6 @@
 #include "Function.hpp"
 #include "Functional.hpp"
 #include "Utility.hpp"
-#include "Primitive.hpp"
 
 #include <stdexcept>
 
@@ -160,17 +159,17 @@ namespace Psi {
       std::size_t n_uses() const {return m_parameters.size() + 1;}
       std::size_t hash() const {return m_hash;}
 
-      bool equals(const HashTerm& term) const {
-	if ((m_hash != term.m_hash) || (term.term_type() != term_apply))
+      bool equals(HashTerm *term) const {
+	if ((m_hash != term->m_hash) || (term->term_type() != term_apply))
 	  return false;
 
-	const ApplyTerm& cast_term = checked_cast<const ApplyTerm&>(term);
+	ApplyTerm *cast_term = cast<ApplyTerm>(term);
 
-	if (m_parameters.size() != cast_term.n_parameters())
+	if (m_parameters.size() != cast_term->n_parameters())
 	  return false;
 
 	for (std::size_t i = 0; i < m_parameters.size(); ++i) {
-	  if (m_parameters[i] != cast_term.parameter(i))
+	  if (m_parameters[i] != cast_term->parameter(i))
 	    return false;
 	}
 
@@ -189,7 +188,7 @@ namespace Psi {
       return hash_term_get(setup);
     }
 
-    Term* ApplyTerm::unpack() const {
+    Term* ApplyTerm::unpack() {
       throw TvmInternalError("not implemented");
     }
 
@@ -223,30 +222,30 @@ namespace Psi {
 
 	switch (term->term_type()) {
 	case term_functional: {
-	  FunctionalTerm& cast_term = checked_cast<FunctionalTerm&>(*term);
-	  for (std::size_t i = 0; i < cast_term.n_parameters(); ++i)
-	    insert_if_abstract(queue, set, cast_term.parameter(i));
+	  FunctionalTerm *cast_term = cast<FunctionalTerm>(term);
+	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
+	    insert_if_abstract(queue, set, cast_term->parameter(i));
 	  break;
 	}
 
 	case term_recursive: {
-	  RecursiveTerm& cast_term = checked_cast<RecursiveTerm&>(*term);
-	  if (!cast_term.result()) {
+	  RecursiveTerm *cast_term = cast<RecursiveTerm>(term);
+	  if (!cast_term->result()) {
 	    queue.clear();
 	    set.clear();
 	    return true;
 	  }
-	  insert_if_abstract(queue, set, cast_term.result());
-	  for (std::size_t i = 0; i < cast_term.n_parameters(); i++)
-	    insert_if_abstract(queue, set, cast_term.parameter(i)->type());
+	  insert_if_abstract(queue, set, cast_term->result());
+	  for (std::size_t i = 0; i < cast_term->n_parameters(); i++)
+	    insert_if_abstract(queue, set, cast_term->parameter(i)->type());
 	  break;
 	}
 
 	case term_function_type: {
-	  FunctionTypeTerm& cast_term = checked_cast<FunctionTypeTerm&>(*term);
-	  insert_if_abstract(queue, set, cast_term.result_type());
-	  for (std::size_t i = 0; i < cast_term.n_parameters(); ++i)
-	    insert_if_abstract(queue, set, cast_term.parameter(i)->type());
+	  FunctionTypeTerm *cast_term = cast<FunctionTypeTerm>(term);
+	  insert_if_abstract(queue, set, cast_term->result_type());
+	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
+	    insert_if_abstract(queue, set, cast_term->parameter(i)->type());
 	  break;
 	}
 
@@ -295,27 +294,27 @@ namespace Psi {
 
 	switch (term->term_type()) {
 	case term_functional: {
-	  FunctionalTerm& cast_term = checked_cast<FunctionalTerm&>(*term);
-	  clear_and_queue_if_abstract(queue, cast_term.type());
-	  for (std::size_t i = 0; i < cast_term.n_parameters(); ++i)
-	    clear_and_queue_if_abstract(queue, cast_term.parameter(i));
+	  FunctionalTerm *cast_term = cast<FunctionalTerm>(term);
+	  clear_and_queue_if_abstract(queue, cast_term->type());
+	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
+	    clear_and_queue_if_abstract(queue, cast_term->parameter(i));
 	  break;
 	}
 
 	case term_recursive: {
-	  RecursiveTerm& cast_term = checked_cast<RecursiveTerm&>(*term);
-	  PSI_ASSERT(cast_term.result());
-	  clear_and_queue_if_abstract(queue, cast_term.result());
-	  for (std::size_t i = 0; i < cast_term.n_parameters(); ++i)
-	    clear_and_queue_if_abstract(queue, cast_term.parameter(i)->type());
+	  RecursiveTerm *cast_term = cast<RecursiveTerm>(term);
+	  PSI_ASSERT(cast_term->result());
+	  clear_and_queue_if_abstract(queue, cast_term->result());
+	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
+	    clear_and_queue_if_abstract(queue, cast_term->parameter(i)->type());
 	  break;
 	}
 
 	case term_function_type: {
-	  FunctionTypeTerm& cast_term = checked_cast<FunctionTypeTerm&>(*term);
-	  clear_and_queue_if_abstract(queue, cast_term.result_type());
-	  for (std::size_t i = 0; i < cast_term.n_parameters(); ++i)
-	    clear_and_queue_if_abstract(queue, cast_term.parameter(i)->type());
+	  FunctionTypeTerm *cast_term = cast<FunctionTypeTerm>(term);
+	  clear_and_queue_if_abstract(queue, cast_term->result_type());
+	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
+	    clear_and_queue_if_abstract(queue, cast_term->parameter(i)->type());
 	  break;
 	}
 

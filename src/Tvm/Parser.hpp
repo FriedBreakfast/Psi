@@ -43,7 +43,8 @@ namespace Psi {
 	expression_phi,
 	expression_call,
 	expression_name,
-	expression_function_type
+	expression_function_type,
+        expression_literal
       };
 
       struct Expression : Element, boost::intrusive::list_base_hook<> {
@@ -78,11 +79,10 @@ namespace Psi {
 
       struct CallExpression : Expression {
 	CallExpression(const Location& location_, UniquePtr<Token>& target_,
-		       UniqueList<Token>& values_, UniqueList<Expression>& terms_);
+		       UniqueList<Expression>& terms_);
 	virtual ~CallExpression();
 
 	UniquePtr<Token> target;
-	UniqueList<Token> values;
 	UniqueList<Expression> terms;
       };
 
@@ -98,6 +98,27 @@ namespace Psi {
         UniqueList<NamedExpression> phantom_parameters;
 	UniqueList<NamedExpression> parameters;
 	UniquePtr<Expression> result_type;
+      };
+
+      enum LiteralType {
+        literal_byte,
+        literal_ubyte,
+        literal_short,
+        literal_ushort,
+        literal_int,
+        literal_uint,
+        literal_long,
+        literal_ulong,
+        literal_intptr,
+        literal_uintptr
+      };
+
+      struct LiteralExpression : Expression {
+        LiteralExpression(const Location& location_, LiteralType literal_type_, UniquePtr<Token>& value_);
+        virtual ~LiteralExpression();
+
+        LiteralType literal_type;
+        UniquePtr<Token> value;
       };
 
       struct Block : Element, boost::intrusive::list_base_hook<> {
