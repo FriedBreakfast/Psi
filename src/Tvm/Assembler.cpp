@@ -2,10 +2,11 @@
 
 #include "Function.hpp"
 #include "Functional.hpp"
-#include "Type.hpp"
+#include "Number.hpp"
 
 #include <cstring>
-#include <stdexcept>
+
+#include <boost/lexical_cast.hpp>
 #include <boost/next_prior.hpp>
 
 namespace Psi {
@@ -51,9 +52,16 @@ namespace Psi {
       }
 
       FunctionalTerm* build_literal_int(IntegerType::Ptr type, const Parser::LiteralExpression& expression) {
-        BigInteger int_value;
-        int_value.set_str(expression.value->text);
-        return IntegerValue::get(type, int_value);
+        uint64_t value;
+        try {
+          if (type->is_signed())
+            value = boost::lexical_cast<int64_t>(expression.value->text);
+          else
+            value = boost::lexical_cast<uint64_t>(expression.value->text);
+        } catch (boost::bad_lexical_cast&) {
+          throw AssemblerError("invalid integer literal");
+        }
+        return IntegerValue::get(type, value);
       }
 
       FunctionalTerm* build_literal(AssemblerContext& context, const Parser::LiteralExpression& expression) {

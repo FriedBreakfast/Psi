@@ -1,5 +1,4 @@
-/* -*- mode: html; coding: utf-8 -*- */
-/**
+<!-- -*- mode: html; coding: utf-8 -*- -->
 
 \page instructions Instruction set
 
@@ -215,5 +214,3 @@ signature since the type will depend on the user function.
 \verbatim
 call f(...) unwind label
 \endverbatim
-
-*/

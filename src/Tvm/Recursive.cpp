@@ -4,8 +4,6 @@
 #include "Functional.hpp"
 #include "Utility.hpp"
 
-#include <stdexcept>
-
 namespace Psi {
   namespace Tvm {
     RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type, bool phantom)

@@ -1,4 +1,4 @@
-/**
+<!-- -*- mode: html; -*- -->
 
 \mainpage
 
@@ -7,5 +7,3 @@
 <li>\ref instructions</li>
 <li>\ref notes</li>
 </ul>
-
-*/

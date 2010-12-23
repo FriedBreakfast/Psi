@@ -1,10 +1,12 @@
 #include "Test.hpp"
 #include "Assembler.hpp"
+#include "LLVM/Builder.hpp"
 
 #include <cstdlib>
 #include <iostream>
 
 #include <llvm/CodeGen/MachineFunction.h>
+#include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/Module.h>
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Target/TargetOptions.h>
@@ -12,15 +14,38 @@
 namespace Psi {
   namespace Tvm {
     namespace Test {
+      class ContextFixture::DebugListener : public llvm::JITEventListener {
+      public:
+        DebugListener(bool dump_llvm, bool dump_asm)
+          : m_dump_llvm(dump_llvm), m_dump_asm(dump_asm) {
+        }
+
+        virtual void NotifyFunctionEmitted (const llvm::Function &F, void*, size_t, const EmittedFunctionDetails& details) {
+          llvm::raw_os_ostream out(std::cerr);
+          if (m_dump_llvm)
+            F.print(out);
+          if (m_dump_asm)
+            details.MF->print(out);
+        }
+
+        //virtual void NotifyFreeingMachineCode (void *OldPtr)
+
+      private:
+        bool m_dump_llvm;
+        bool m_dump_asm;
+      };
+
       ContextFixture::ContextFixture()
-        : m_debug_listener(test_env("PSI_TEST_DUMP_LLVM"),
-                           test_env("PSI_TEST_DUMP_ASM")) {
+        : m_jit(create_llvm_jit(&context)),
+          m_debug_listener(new DebugListener(test_env("PSI_TEST_DUMP_LLVM"),
+                                             test_env("PSI_TEST_DUMP_ASM"))) {
 
         const char *emit_debug = std::getenv("PSI_TEST_DEBUG");
         if (emit_debug && (std::strcmp(emit_debug, "1") == 0))
             llvm::JITEmitDebugInfo = true;
 
-        context.register_llvm_jit_listener(&m_debug_listener);
+        boost::shared_ptr<LLVM::LLVMJit> llvm_jit = boost::static_pointer_cast<LLVM::LLVMJit>(m_jit);
+        llvm_jit->register_llvm_jit_listener(m_debug_listener.get());
       }
 
       ContextFixture::~ContextFixture() {
@@ -40,20 +65,8 @@ namespace Psi {
         AssemblerResult r = parse_and_build(context, src);
         AssemblerResult::iterator it = r.find(name);
         BOOST_REQUIRE(it != r.end());
-        void *result = context.term_jit(it->second);
+        void *result = m_jit->get_global(it->second);
         return result;
-      }
-
-      DebugListener::DebugListener(bool dump_llvm, bool dump_asm)
-        : m_dump_llvm(dump_llvm), m_dump_asm(dump_asm) {
-      }
-
-      void DebugListener::NotifyFunctionEmitted (const llvm::Function &F, void*, size_t, const EmittedFunctionDetails& details) {
-        llvm::raw_os_ostream out(std::cerr);
-        if (m_dump_llvm)
-          F.print(out);
-        if (m_dump_asm)
-          details.MF->print(out);
       }
     }
   }

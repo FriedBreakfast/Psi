@@ -1,10 +1,8 @@
+#include "Aggregate.hpp"
 #include "Function.hpp"
 #include "Functional.hpp"
 #include "Rewrite.hpp"
-#include "Type.hpp"
 #include "Utility.hpp"
-
-#include <stdexcept>
 
 namespace Psi {
   namespace Tvm {
@@ -13,6 +11,9 @@ namespace Psi {
      */
     PSI_TVM_FUNCTIONAL_TYPE(FunctionTypeResolverParameter)
     struct Data {
+      Data(unsigned depth_, unsigned index_)
+        : depth(depth_), index(index_) {}
+
       unsigned depth;
       unsigned index;
 
@@ -39,11 +40,10 @@ namespace Psi {
     /// function.
     unsigned index() const {return data().index;}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    FunctionTypeResolverParameter::Ptr get(Term* type, unsigned depth, unsigned index) {
+    static FunctionTypeResolverParameter::Ptr get(Term* type, unsigned depth, unsigned index) {
       Term *parameters[1] = {type};
-      Data data = {depth, index};
       return type->context().get_functional<FunctionTypeResolverParameter>
-        (data, ArrayPtr<Term*const>(parameters, 1));
+        (ArrayPtr<Term*const>(parameters, 1), Data(depth, index));
     }
     PSI_TVM_FUNCTIONAL_TYPE_END(FunctionTypeResolverParameter)
 
@@ -224,7 +224,7 @@ namespace Psi {
 
 	  Term* type = (*this)(cast_term->type());
 
-	  return term->context().get_function_type_resolver_parameter(type, m_depth - it->second.depth, cast_term->index());
+	  return FunctionTypeResolverParameter::get(type, m_depth - it->second.depth, cast_term->index());
 	}
 
 	default:

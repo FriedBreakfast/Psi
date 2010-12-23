@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <stdexcept>
+#include <stdint.h>
 
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
@@ -16,6 +17,12 @@
 #include "../Utility.hpp"
 
 namespace Psi {
+  /**
+   * A low level compiler system which should basically be
+   * functionally equivalent to C with support for a polymorphic type
+   * system, although the syntax and semantics for control flow are
+   * lower level, more akin to assembler.
+   */
   namespace Tvm {
     class Context;
     class Term;
@@ -42,9 +49,6 @@ namespace Psi {
      */
     enum TermType {
       term_ptr, ///<PersistentTermPtr: \copybrief PersistentTermPtr
-
-      ///@{
-      /// Non hashable terms
       term_instruction, ///< InstructionTerm: \copybrief InstructionTerm
       term_apply, ///< ApplyTerm: \copybrief ApplyTerm
       term_recursive, ///< RecursiveTerm: \copybrief RecursiveTerm
@@ -56,13 +60,8 @@ namespace Psi {
       term_phi, ///< PhiTerm: \copybrief PhiTerm
       term_function_type, ///< FunctionTypeTerm: \copybrief FunctionTypeTerm
       term_function_type_parameter, ///< FunctionTypeParameterTerm: \copybrief FunctionTypeParameterTerm
-      ///@}
-
-      ///@{
-      /// Hashable terms
       term_functional, ///< FunctionalTerm: \copybrief FunctionalTerm
       term_function_type_resolver, ///< FunctionTypeResolverTerm: \copybrief FunctionTypeResolverTerm
-      ///@}
     };
 
     /**
@@ -505,11 +504,6 @@ namespace Psi {
 
       TermListType m_all_terms;
 
-      struct CStringHash {std::size_t operator () (const char*) const;};
-      struct CStringEquals {bool operator () (const char*, const char*) const;};
-      typedef std::tr1::unordered_set<const char*, CStringHash, CStringEquals> TermNameSet;
-      TermNameSet m_term_names;
-
 #if PSI_DEBUG
       void dump_hash_terms();
       void print_hash_terms(std::ostream& output);
@@ -519,10 +513,7 @@ namespace Psi {
       Context();
       ~Context();
 
-      void register_term_name(const char *name);
-      const char *lookup_term_name(const char *name);
-
-      template<typename T> typename T::Ptr get_functional(const typename T::Data& data, ArrayPtr<Term*const> parameters);
+      template<typename T> typename T::Ptr get_functional(ArrayPtr<Term*const> parameters, const typename T::Data& data = typename T::Data());
 
       FunctionTypeTerm* get_function_type(CallingConvention calling_convention,
                                           Term* result,
@@ -559,7 +550,6 @@ namespace Psi {
       RecursiveParameterTerm* new_recursive_parameter(Term* type, bool phantom=false);
 
       FunctionTypeResolverTerm* get_function_type_resolver(Term* result, ArrayPtr<Term*const> parameters, std::size_t n_phantom, CallingConvention calling_convention);
-      Term* get_function_type_resolver_parameter(Term* type, std::size_t depth, std::size_t index);
 
       typedef std::tr1::unordered_map<FunctionTypeTerm*, std::size_t> CheckCompleteMap;
       bool check_function_type_complete(Term* term, CheckCompleteMap& functions);

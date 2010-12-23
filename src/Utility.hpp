@@ -7,6 +7,7 @@
 #include <tr1/functional>
 
 #include <boost/checked_delete.hpp>
+#include <boost/functional/hash.hpp>
 #include <boost/intrusive/list.hpp>
 
 namespace Psi {
@@ -305,6 +306,30 @@ namespace Psi {
     CompressedBase(const Empty&) {}
     Empty& get() {return *this;}
     const Empty& get() const {return *this;}
+  };
+
+  /**
+   * Wraps a primitive type to ensure it is initialized.
+   */
+  template<typename T>
+  class PrimitiveWrapper {
+  public:
+    PrimitiveWrapper(T value) : m_value(value) {}
+
+    T value() const {
+      return m_value;
+    }
+
+    bool operator == (const PrimitiveWrapper<T>& other) const {
+      return m_value == other.m_value;
+    }
+
+    friend std::size_t hash_value(const PrimitiveWrapper<T>& self) {
+      return boost::hash_value(self.m_value);
+    }
+
+  private:
+    T m_value;
   };
 }
 

@@ -4,9 +4,8 @@
 #include "Function.hpp"
 #include "Functional.hpp"
 #include "Number.hpp"
-#include "ControlFlow.hpp"
-#include "Primitive.hpp"
-#include "JitTypes.hpp"
+#include "Instructions.hpp"
+#include "Jit.hpp"
 
 #include "Test.hpp"
 
@@ -15,49 +14,11 @@ namespace Psi {
     BOOST_FIXTURE_TEST_SUITE(FunctionTest, Test::ContextFixture)
 
     BOOST_AUTO_TEST_CASE(FunctionTypeTest) {
-      IntegerType i32(true, 32);
-      Term *i32_t = context.get_functional_v(i32);
-      FunctionTypeTerm* func_type = context.get_function_type_fixed_v(i32_t);
+      Term *i32_t = IntegerType::get(context, IntegerType::i32, true);
+      FunctionTypeTerm* func_type = context.get_function_type_fixed(cconv_tvm, i32_t, ArrayPtr<Term*const>());
 
       BOOST_CHECK_EQUAL(func_type->calling_convention(), cconv_tvm);
       BOOST_CHECK_EQUAL(func_type->result_type(), i32_t); 
-    }
-
-    BOOST_AUTO_TEST_CASE(CCall_ReturnInt) {
-      const Jit::Int32 c = 45878594;
-
-      IntegerType i32(true, 32);
-      Term* i32_t = context.get_functional_v(i32);
-      Term* value = context.get_functional_v(ConstantInteger(i32, c));
-
-      FunctionTypeTerm* func_type = context.get_function_type_fixed_v(cconv_c, i32_t);
-      FunctionTerm* func = context.new_function(func_type, "f");
-      BlockTerm* entry = func->new_block();
-      func->set_entry(entry);
-      entry->new_instruction_v(Return(), value);
-
-      typedef Jit::Int32 (*callback_type) ();
-      callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
-
-      Jit::Int32 result = callback();
-      BOOST_CHECK_EQUAL(result, c);
-    }
-
-    BOOST_AUTO_TEST_CASE(CCall_ReturnIntParameter) {
-      const Jit::Int32 c = 258900654;
-
-      Term* i32_t = context.get_functional_v(IntegerType(true, 32));
-      FunctionTypeTerm* func_type = context.get_function_type_fixed_v(cconv_c, i32_t, i32_t);
-      FunctionTerm* func = context.new_function(func_type, "f");
-      BlockTerm* entry = func->new_block();
-      func->set_entry(entry);
-      entry->new_instruction_v(Return(), func->parameter(0));
-
-      typedef Jit::Int32 (*callback_type) (Jit::Int32);
-      callback_type callback = reinterpret_cast<callback_type>(context.term_jit(func));
-
-      Jit::Int32 result = callback(c);
-      BOOST_CHECK_EQUAL(result, c);
     }
 
     BOOST_AUTO_TEST_CASE(PhantomParameterTest) {

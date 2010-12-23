@@ -1,33 +1,11 @@
+#include "Aggregate.hpp"
 #include "Core.hpp"
 #include "Function.hpp"
 #include "Functional.hpp"
 #include "Recursive.hpp"
 #include "Utility.hpp"
-#include "Type.hpp"
-#include "LLVMBuilder.hpp"
 
-#include <stdexcept>
-#include <typeinfo>
 #include <iostream>
-
-#include <llvm/LLVMContext.h>
-#include <llvm/Type.h>
-#include <llvm/Constants.h>
-#include <llvm/DerivedTypes.h>
-#include <llvm/GlobalVariable.h>
-#include <llvm/Module.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/Support/IRBuilder.h>
-#include <llvm/Target/TargetMachine.h>
-#include <llvm/Target/TargetRegistry.h>
-#include <llvm/Target/TargetSelect.h>
-
-/*
- * Do not remove the JIT.h include. Although everything will build
- * fine, the JIT will not be available since JIT.h includes some magic
- * which ensures the JIT is really available.
- */
-#include <llvm/ExecutionEngine/JIT.h>
 
 namespace Psi {
   namespace Tvm {
@@ -237,105 +215,6 @@ namespace Psi {
       GlobalVariableTerm* t = new_global_variable(value->type(), constant, name);
       t->set_value(value);
       return t;
-    }
-
-#if 0
-    /**
-     * \brief Just-in-time compile a term, and a get a pointer to
-     * the result.
-     */
-    void* Context::term_jit(GlobalTerm* term) {
-      if ((term->m_term_type != term_global_variable) &&
-	  (term->m_term_type != term_function))
-	throw TvmUserError("Cannot JIT compile non-global term");
-
-      if (!m_llvm_context) {
-	m_llvm_context.reset(new llvm::LLVMContext());
-	m_llvm_module.reset(new llvm::Module("", *m_llvm_context));
-      }
-
-      if (!m_llvm_engine)
-	llvm::InitializeNativeTarget();
-
-      LLVMGlobalBuilder builder(m_llvm_context.get(), m_llvm_module.get());
-      llvm::GlobalValue *global = builder.build_global(term);
-
-      if (!m_llvm_engine) {
-	m_llvm_engine.reset(llvm::EngineBuilder(m_llvm_module.release()).create());
-	PSI_ASSERT_MSG(m_llvm_engine.get(), "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
-
-        // insert event listeners
-        for (std::tr1::unordered_set<llvm::JITEventListener*>::iterator it = m_llvm_jit_listeners.begin();
-             it != m_llvm_jit_listeners.end(); ++it) {
-          m_llvm_engine->RegisterJITEventListener(*it);
-        }
-
-        std::tr1::unordered_set<llvm::JITEventListener*>().swap(m_llvm_jit_listeners);
-      } else {
-	m_llvm_engine->addModule(m_llvm_module.release());
-      }
-
-      m_llvm_module.reset(new llvm::Module("", *m_llvm_context));
-
-      return m_llvm_engine->getPointerToGlobal(global);
-    }
-
-    void Context::register_llvm_jit_listener(llvm::JITEventListener *l) {
-      if (m_llvm_engine) {
-        m_llvm_engine->RegisterJITEventListener(l);
-      } else {
-        m_llvm_jit_listeners.insert(l);
-      }
-    }
-
-    void Context::unregister_llvm_jit_listener(llvm::JITEventListener *l) {
-      if (m_llvm_engine) {
-        m_llvm_engine->UnregisterJITEventListener(l);
-      } else {
-        m_llvm_jit_listeners.erase(l);
-      }
-    }
-#endif
-
-    std::size_t Context::CStringHash::operator () (const char *s) const {
-      std::size_t l = std::strlen(s);
-      return boost::hash_range(s, s+l);
-    }
-
-    bool Context::CStringEquals::operator () (const char *s1, const char *s2) const {
-      return (s1 == s2) || (std::strcmp(s1, s2) == 0);
-    }
-
-    /**
-     * Register the name of a term. This will raise an exception if a
-     * term with the same name is already registered.
-     *
-     * \param name Name of the term. This should point to a global
-     * variable since it is assumed that lifetime of the referenced
-     * storage is as long as the context.
-     */
-    void Context::register_term_name(const char *name) {
-      std::pair<TermNameSet::iterator, bool> r = m_term_names.insert(name);
-      if (!r.second && (*r.first != name))
-        throw TvmInternalError("Duplicate term name registered");
-    }
-
-    /**
-     * Lookup the name of a term. This gets the canonical address of
-     * the given name, or returns NULL if no such name is found. This,
-     * in combination with register_term_name, allows all term name
-     * comparisons to be done just using pointer comparison.
-     *
-     * \param name NULL-terminated string containing the name to look
-     * up.
-     */
-    const char *Context::lookup_term_name(const char *name) {
-      TermNameSet::iterator it = m_term_names.find(name);
-      if (it != m_term_names.end()) {
-        return *it;
-      } else {
-        return 0;
-      }
     }
 
     Context::Context()

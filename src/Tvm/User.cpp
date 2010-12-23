@@ -30,7 +30,7 @@ namespace Psi {
     }
 
     if (target) {
-      m_target = reinterpret_cast<std::tr1::intptr_t>(target);
+      m_target = reinterpret_cast<intptr_t>(target);
 
       Use *prev = &target->m_use;
       Use *next = prev->m_rest.use.next;
@@ -66,7 +66,7 @@ namespace Psi {
     PSI_ASSERT(used_head());
 
     for (Use *u = m_rest.use.next; u != this; u = u->m_rest.use.next)
-      u->m_target = reinterpret_cast<std::tr1::intptr_t>(target);
+      u->m_target = reinterpret_cast<intptr_t>(target);
 
     Use *prev = &target->m_use;
     Use *next = prev->m_rest.use.next;

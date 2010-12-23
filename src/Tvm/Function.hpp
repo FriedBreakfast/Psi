@@ -6,38 +6,6 @@
 
 namespace Psi {
   namespace Tvm {
-#if 0
-    /**
-     * \brief Base class for building custom InstructionTerm instances.
-     */
-    class InstructionTermBackend {
-    public:
-      /**
-       * Get the result type of this instruction for the given
-       * arguments. If this returns NULL, it means that this
-       * instruction terminates the block.
-       */
-      virtual Term* type(Context& context, const FunctionTerm& function, ArrayPtr<Term*const> parameters) const = 0;
-
-      /**
-       * Generate code to calculate the value for this term.
-       *
-       * \param builder Builder used to get functional values and to
-       * create instructions.
-       *
-       * \param term Term (with parameters) to generate code for.
-       */
-      virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, InstructionTerm& term) const = 0;
-
-      /**
-       * Get blocks which this function could jump to. This will only
-       * be called if #type returns NULL indicating this instruction
-       * terminates a block.
-       */
-      virtual void jump_targets(Context&, InstructionTerm&, std::vector<BlockTerm*>& targets) const = 0;
-    };
-#endif
-
     class BlockTerm;
 
     /**
@@ -216,7 +184,7 @@ namespace Psi {
       PhiTerm* new_phi(Term* type);
 
       template<typename T>
-      typename T::Ptr new_instruction(const typename T::Data& data, ArrayPtr<Term*const> parameters) {
+      typename T::Ptr new_instruction(ArrayPtr<Term*const> parameters, const typename T::Data& data = typename T::Data()) {
         return cast<T>(new_instruction_bare(InstructionTermSetupSpecialized<T>(&data), parameters));
       }
 

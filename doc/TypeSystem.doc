@@ -187,8 +187,8 @@ int main(int, char*[]) {
 }
 \endverbatim
 
-Will print <tt>{ \2* }</tt>, where it should actually print <tt>{ { {
-\6* }* }* }</tt>. The implication of this is that types containing
+Will print <tt>{ \\2* }</tt>, where it should actually print <tt>{ { {
+\\6* }* }* }</tt>. The implication of this is that types containing
 cycles must be identified by a unique identifier because in a case
 like this there is no way to distinguish the types at different points
 in the cycle: they are exactly structurally equivalent but distinct.

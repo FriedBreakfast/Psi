@@ -1,8 +1,6 @@
 #include "Utility.hpp"
 #include "Function.hpp"
 
-#include <stdexcept>
-
 namespace Psi {
   namespace Tvm {
     /**

@@ -7,28 +7,32 @@ bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGener
 set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
 
 add_library(psi SHARED
-  Container.hpp
   Utility.cpp Utility.hpp
 
   ${BISON_Parser_OUTPUTS} Parser.hpp
 
+  Tvm/Aggregate.cpp Tvm/Aggregate.hpp
   Tvm/Assembler.cpp Tvm/Assembler.hpp
   Tvm/AssemblerOperations.cpp
-  Tvm/BigInteger.cpp Tvm/BigInteger.hpp
   Tvm/Core.cpp Tvm/Core.hpp
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
-  Tvm/JitTypes.hpp
-  Tvm/LLVMBuilder.cpp Tvm/LLVMBuilder.hpp
-  Tvm/LLVMValue.hpp
+  Tvm/Jit.hpp
   Tvm/Instructions.cpp Tvm/Instructions.hpp
-  Tvm/Operations.cpp Tvm/Operations.hpp
+  Tvm/Number.cpp Tvm/Number.hpp
   ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp
   Tvm/Rewrite.hpp
-  Tvm/Type.cpp Tvm/Type.hpp
   Tvm/User.cpp Tvm/User.hpp
   Tvm/Utility.cpp Tvm/Utility.hpp
+
+  Tvm/LLVM/Builder.cpp Tvm/LLVM/Builder.hpp
+  Tvm/LLVM/Aggregate.cpp
+  Tvm/LLVM/Function.cpp
+  Tvm/LLVM/Instructions.cpp
+  Tvm/LLVM/Primitive.cpp
+  Tvm/LLVM/Number.cpp
+  Tvm/LLVM/Templates.hpp
 )
 
 #install(TARGETS psi
@@ -42,7 +46,7 @@ add_library(psi SHARED
 #endforeach()
 
 set_target_properties(psi PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
-target_link_libraries(psi ${LLVM_LIBS} ${LIB_GMP} ${LIB_GMPXX})
+target_link_libraries(psi ${LLVM_LIBS})
 
 #add_library(typetest SHARED
 #  ExpressionCompiler.cpp ExpressionCompiler.hpp
@@ -58,12 +62,11 @@ target_link_libraries(psi ${LLVM_LIBS} ${LIB_GMP} ${LIB_GMPXX})
 
 add_executable(test TestMain.cpp
   Tvm/Test.cpp Tvm/Test.hpp
-  Tvm/AssemblerTest.cpp
-  Tvm/CoreTest.cpp
-  Tvm/ControlFlowTest.cpp
+  Tvm/AggregateTest.cpp
+  Tvm/InstructionTest.cpp
   Tvm/DerivedTest.cpp
   Tvm/FunctionTest.cpp
-  Tvm/MemoryTest.cpp
+  Tvm/NumberTest.cpp
   Tvm/ParserTest.cpp
 #  MaybeTest.cpp
 #  TypeSystemTest.cpp

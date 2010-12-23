@@ -1,8 +1,6 @@
 #ifndef HPP_PSI_TVM_REWRITE
 #define HPP_PSI_TVM_REWRITE
 
-#include <stdexcept>
-
 #include "Core.hpp"
 #include "Functional.hpp"
 #include "Recursive.hpp"

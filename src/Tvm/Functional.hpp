@@ -11,42 +11,6 @@ namespace Psi {
       bool phantom;
     };
 
-#if 0
-    /**
-     * \brief Base class for building custom FunctionalTerm instances.
-     */
-    class FunctionalTermBackend {
-    public:
-      virtual ~FunctionalTermBackend();
-      std::size_t hash_value() const;
-      virtual bool equals(const FunctionalTermBackend& other) const = 0;
-      virtual FunctionalTermBackend* clone(void *dest) const = 0;
-      virtual std::pair<std::size_t, std::size_t> size_align() const = 0;
-
-      virtual FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const = 0;
-
-      /**
-       * Generate code to calculate the value for this term.
-       *
-       * \param builder Builder used to get functional values and to
-       * create instructions.
-       *
-       * \param term Term (with parameters) to generate code for.
-       *
-       * \param result_area Area to store the result of this
-       * instruction in. This will be NULL unless the value of this
-       * instruction has unknown type.
-       */
-      virtual LLVMValue llvm_value_instruction(LLVMFunctionBuilder& builder, FunctionalTerm& term) const = 0;
-
-      virtual llvm::Constant* llvm_value_constant(LLVMConstantBuilder&, FunctionalTerm&) const = 0;
-      virtual const llvm::Type* llvm_type(LLVMConstantBuilder&, FunctionalTerm&) const = 0;
-
-    private:
-      virtual std::size_t hash_internal() const = 0;      
-    };
-#endif
-
     /**
      * \brief Base class of functional (machine state independent) terms.
      *
@@ -93,7 +57,7 @@ namespace Psi {
       const Data& data() const {return CompressedBase<Data>::get();}
 
       virtual FunctionalTerm* rewrite(ArrayPtr<Term*const> parameters) {
-        return context().template get_functional<TermTagType>(data(), parameters);
+        return context().template get_functional<TermTagType>(parameters, data());
       }
  
     private:
@@ -250,17 +214,7 @@ namespace Psi {
     static Ptr get(Context&);                   \
     PSI_TVM_FUNCTIONAL_TYPE_END(name)
 
-#define PSI_TVM_FUNCTIONAL_TYPE_BINARY(name)            \
-    PSI_TVM_FUNCTIONAL_TYPE(name)                       \
-    typedef Empty Data;                                 \
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()                       \
-    Term* lhs() const {return get()->parameter(0);}     \
-    Term* rhs() const {return get()->parameter(1);}     \
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()                   \
-    static Ptr get(Term *lhs, Term *rhs);               \
-    PSI_TVM_FUNCTIONAL_TYPE_END(name)
-
-    template<typename T> typename T::Ptr Context::get_functional(const typename T::Data& data, ArrayPtr<Term*const> parameters) {
+    template<typename T> typename T::Ptr Context::get_functional(ArrayPtr<Term*const> parameters, const typename T::Data& data) {
       return cast<T>(get_functional_bare(FunctionalTermSetupSpecialized<T>(&data), parameters));
     }
   }

@@ -2,10 +2,10 @@
 #include <boost/format.hpp>
 #include <boost/function.hpp>
 
+#include "Aggregate.hpp"
 #include "Assembler.hpp"
 #include "Instructions.hpp"
-#include "Operations.hpp"
-#include "Type.hpp"
+#include "Number.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -27,7 +27,7 @@ namespace Psi {
         FunctionalTerm* operator () (const std::string&, AssemblerContext& context, const Parser::CallExpression& expression) const {
           ScopedTermPtrArray<> parameters(expression.terms.size());
           default_parameter_setup(parameters.array(), context, expression);
-          return context.context().template get_functional<T>(typename T::Data(), parameters.array());
+          return context.context().template get_functional<T>(parameters.array());
         }
       };
 
@@ -63,7 +63,7 @@ namespace Psi {
 
         FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_terms(name, 0, expression);
-          return ConstantBoolean::get(context.context(), value);
+          return BooleanValue::get(context.context(), value);
         }
       };
 
@@ -103,7 +103,7 @@ namespace Psi {
         InstructionTerm* operator () (const std::string&, BlockTerm& block, AssemblerContext& context, const Parser::CallExpression& expression) const {
           ScopedTermPtrArray<> parameters(expression.terms.size());
           default_parameter_setup(parameters.array(), context, expression);
-          return block.template new_instruction<T>(typename T::Data(), parameters.array());
+          return block.template new_instruction<T>(parameters.array());
         }
       };
 

@@ -39,17 +39,9 @@ if(NOT BISON_FOUND)
   message(SEND_ERROR "Bison not found")
 endif()
 
-# Find GMP
-find_library(LIB_GMP gmp)
-find_library(LIB_GMPXX gmpxx)
-find_path(GMP_INCLUDE_DIRECTORIES gmp.h)
-if(NOT LIB_GMP OR NOT LIB_GMPXX OR NOT GMP_INCLUDE_DIRECTORIES)
-  message(SEND_ERROR "GMP development files not found")
-endif()
-
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
-  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
   add_custom_target(doc
     rm -rf doc/html
     COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile

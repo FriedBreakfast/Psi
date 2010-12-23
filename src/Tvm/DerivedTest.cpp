@@ -1,6 +1,6 @@
 #include "Test.hpp"
 #include "Assembler.hpp"
-#include "JitTypes.hpp"
+#include "Jit.hpp"
 
 #include <boost/checked_delete.hpp>
 

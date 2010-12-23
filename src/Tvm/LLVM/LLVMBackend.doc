@@ -1,0 +1,51 @@
+<!-- -*- mode: html; -*- -->
+
+\page llvm_backend LLVM backend notes
+
+\section llvm_backend_type_representation Type representation
+
+LLVM cannot exactly represent Tvm types in several circumstances:
+
+<ol>
+<li>Types whose size and alignment is only known at runtime</li>
+<li>Unions</li>
+<li>Pointers to either of the above</li>
+</ol>
+
+\subsection llvm_backend_pointers
+
+All pointers are representation as <tt>i8*</tt>. This simplifies the
+code since it removes the need to worry about resolving recursive
+types or types with infinite recursion.
+
+\subsection llvm_backend_unknown_types Types whose size and alignment is only known at runtime
+
+There is no way to map such types to LLVM. They are treated as byte
+arrays and load and store operations map to \c memcpy. Any type
+containing such a type itself has unknown size and alignment and
+although in principle if earlier entries in the type are known it
+would be possible to build some sort of representation of the head
+part in practise I doubt it's worth it.
+
+\todo Instead of storing these as byte arrays, check the minimum
+alignment and store them using arrays of larger words.
+
+\subsection llvm_backend_union Unions
+
+LLVM does not support union types. This creates at tricky situation
+since I want to treat unions as equal with structs and arrays.
+
+\subsection llvm_backend_casting Casting
+
+Since LLVM cannot represent all types exactly, it is (often) necessary
+to cast from one type to another.
+
+\section llvm_backend_type_representation2 New type representation
+
+Aggregate types are not translated to LLVM. Instead (as in LLVM
+internally) each loaded type is broken down into its primitive
+elements, which are either primitive LLVM types or an 'unknown' type
+which just has its size and alignment given.
+
+Each primitive element is then broken down into ranges, which either
+contain an unknown value, a memory range (on the stack), or a register.

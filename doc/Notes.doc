@@ -1,5 +1,4 @@
-/* -*- mode: html -*- */
-/**
+<!-- -*- mode: html -*- -->
 
 \page notes Design notes
 
@@ -70,5 +69,3 @@ in types.
 
 Instruction terms can have their parameters modified freely. Phi terms
 should only have parameters added, and may be unified later.
-
- */

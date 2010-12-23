@@ -3,7 +3,8 @@
 
 #include <iterator>
 #include <cstddef>
-#include <tr1/cstdint>
+#include <stdint.h>
+
 #include <boost/iterator/iterator_facade.hpp>
 
 #include "../Utility.hpp"
@@ -68,7 +69,7 @@ namespace Psi {
     bool is_malloc();
 
   private:
-    std::tr1::intptr_t m_target;
+    intptr_t m_target;
 
     union {
       struct {

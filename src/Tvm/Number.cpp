@@ -1,213 +1,100 @@
+#include "Aggregate.hpp"
 #include "Number.hpp"
-#include "Functional.hpp"
-#include "../Utility.hpp"
-
-#include <sstream>
-
-#include <llvm/Constants.h>
-#include <llvm/DerivedTypes.h>
 
 namespace Psi {
   namespace Tvm {
-    const llvm::Type* BooleanType::llvm_primitive_type(LLVMConstantBuilder& c) const {
-      return llvm::IntegerType::get(c.llvm_context(), 1);
+    const char BooleanType::operation[] = "bool";
+    const char BooleanValue::operation[] = "bool_v";
+    const char IntegerType::operation[] = "int";
+    const char IntegerValue::operation[] = "int_v";
+    const char IntegerAdd::operation[] = "add";
+    const char IntegerSubtract::operation[] = "subtract";
+    const char IntegerMultiply::operation[] = "multiply";
+    const char IntegerDivide::operation[] = "divide";
+
+    FunctionalTypeResult BooleanType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 0)
+        throw TvmUserError("bool type takes no parameters");
+      return FunctionalTypeResult(Metatype::get(context), false);
     }
 
-    FunctionalTermPtr<BooleanType> Context::get_boolean_type() {
-      return get_functional_v(BooleanType());
+    /// \brief Get the boolean type
+    BooleanType::Ptr BooleanType::get(Context& context) {
+      return context.get_functional<BooleanType>(ArrayPtr<Term*const>(0, 0));
     }
 
-    ConstantBoolean::ConstantBoolean(bool value)
-      : m_value(value) {
+    FunctionalTypeResult BooleanValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 0)
+        throw TvmUserError("bool_v value takes no parameters");
+      return FunctionalTypeResult(BooleanType::get(context), false);
     }
 
-    bool ConstantBoolean::operator == (const ConstantBoolean& o) const {
-      return m_value == o.m_value;
+    /// \brief Get the boolean type
+    BooleanValue::Ptr BooleanValue::get(Context& context, bool value) {
+      return context.get_functional<BooleanValue>(ArrayPtr<Term*const>(0, 0), value);
     }
 
-    std::size_t hash_value(const ConstantBoolean& self) {
-      return self.m_value;
+    FunctionalTypeResult IntegerType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 0)
+        throw TvmUserError("int type takes no parameters");
+      return FunctionalTypeResult(Metatype::get(context), false);
     }
 
-    FunctionalTypeResult ConstantBoolean::type(Context& context, ArrayPtr<Term*const> parameters) const {
-      check_primitive_parameters(parameters);
-      return FunctionalTypeResult(context.get_boolean_type(), false);
+    /// \brief Get an integer type with the specified width and signedness
+    IntegerType::Ptr IntegerType::get(Context& context, Width width, bool is_signed) {
+      return context.get_functional<IntegerType>(ArrayPtr<Term*const>(0, 0), Data(width, is_signed));
     }
 
-    llvm::Constant* ConstantBoolean::llvm_primitive_value(LLVMConstantBuilder& c) const {
-      return m_value ? llvm::ConstantInt::getTrue(c.llvm_context()) : llvm::ConstantInt::getFalse(c.llvm_context());
+    FunctionalTypeResult IntegerValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 1)
+        throw TvmUserError("int_v value takes one parameter");
+      if (!isa<IntegerType>(parameters[0]))
+        throw TvmUserError("int_v parameter is not an integer type");
+      return FunctionalTypeResult(parameters[0], false);
     }
 
-    IntegerType::IntegerType(bool is_signed, unsigned n_bits)
-      : m_is_signed(is_signed), m_n_bits(n_bits) {
+    IntegerValue::Ptr IntegerValue::get(IntegerType::Ptr type, uint64_t value) {
+      Term *parameters[] = {type};
+      return type->context().get_functional<IntegerValue>(ArrayPtr<Term*const>(parameters, 1), value);
     }
 
-    const llvm::Type* IntegerType::llvm_primitive_type(LLVMConstantBuilder& c) const {
-      return llvm::IntegerType::get(c.llvm_context(), m_n_bits);
-    }
+    namespace {
+      FunctionalTypeResult binary_op_type(ArrayPtr<Term*const> parameters) {
+        if (parameters.size() != 2)
+          throw TvmUserError("binary arithmetic operation expects two operands");
 
-    bool IntegerType::operator == (const IntegerType& o) const {
-      return (m_is_signed == o.m_is_signed) &&
-	(m_n_bits == o.m_n_bits);
-    }
+        Term* type = parameters[0]->type();
+        if (type != parameters[1]->type())
+          throw TvmUserError("type mismatch between operands to binary arithmetic operation");
 
-    std::size_t hash_value(const IntegerType& self) {
-      std::size_t h = 0;
-      boost::hash_combine(h, self.m_is_signed);
-      boost::hash_combine(h, self.m_n_bits);
-      return h;
-    }
+        return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom());
+      }
 
-    /**
-     * \brief Get an integer type term.
-     */
-    FunctionalTermPtr<IntegerType> Context::get_integer_type(std::size_t n_bits, bool is_signed) {
-      return get_functional_v(IntegerType(is_signed, n_bits));
-    }
+      FunctionalTypeResult integer_binary_op_type(ArrayPtr<Term*const> parameters) {
+        FunctionalTypeResult result = binary_op_type(parameters);
 
-    ConstantInteger::ConstantInteger(const IntegerType& type, const BigInteger& value)
-      : m_type(type), m_value(value) {
-    }
+        if (!isa<IntegerType>(result.type))
+          throw TvmUserError("parameters to integer binary arithmetic operation were not integers");
 
-    bool ConstantInteger::operator == (const ConstantInteger& o) const {
-      return (m_type == o.m_type) && (m_value == o.m_value);
-    }
-
-    std::size_t hash_value(const ConstantInteger& self) {
-      std::size_t h = 0;
-      boost::hash_combine(h, self.m_type);
-      boost::hash_combine(h, self.m_value.hash());
-      return h;
-    }
-
-    FunctionalTypeResult ConstantInteger::type(Context& context, ArrayPtr<Term*const> parameters) const {
-      check_primitive_parameters(parameters);
-      return FunctionalTypeResult(context.get_functional_v(m_type), false);
-    }
-
-    llvm::Constant* ConstantInteger::llvm_primitive_value(LLVMConstantBuilder& c) const {
-      const llvm::Type *ty = m_type.llvm_primitive_type(c);
-      llvm::APInt llvm_value = c.bigint_to_apint(m_value, m_type.m_n_bits, m_type.m_is_signed);
-      return llvm::ConstantInt::get(ty, llvm_value);
-    }
-
-    RealType::RealType(Width width) : m_width(width) {
-    }
-
-    const llvm::Type* RealType::llvm_primitive_type(LLVMConstantBuilder& c) const {
-      switch (m_width) {
-      case real_float: return llvm::Type::getFloatTy(c.llvm_context());
-      case real_double: return llvm::Type::getDoubleTy(c.llvm_context());
-      default: PSI_FAIL("unknown real width");
+        return result;
       }
     }
 
-    bool RealType::operator == (const RealType& o) const {
-      return m_width == o.m_width;
+#define IMPLEMENT_BINARY(name,type_cb)                                  \
+    FunctionalTypeResult name::type(Context&, const Data&, ArrayPtr<Term*const> parameters) { \
+      return type_cb(parameters);                                       \
+    }                                                                   \
+                                                                        \
+    name::Ptr name::get(Term *lhs, Term *rhs) {                         \
+    Term *parameters[] = {lhs, rhs};                                    \
+    return lhs->context().get_functional<name>(ArrayPtr<Term*const>(parameters, 2)); \
     }
 
-    std::size_t hash_value(const RealType& self) {
-      std::size_t h = 0;
-      boost::hash_combine(h, self.m_width);
-      return h;
-    }
+#define IMPLEMENT_INT_BINARY(name) IMPLEMENT_BINARY(name,integer_binary_op_type)
 
-    const llvm::fltSemantics& RealType::llvm_semantics() const {
-      switch(m_width) {
-      case real_float: return llvm::APFloat::IEEEsingle;
-      case real_double: return llvm::APFloat::IEEEdouble;
-
-      default:
-        PSI_FAIL("unknown real width");
-      }
-    }
-
-    llvm::APFloat RealType::mpl_to_llvm(const mpf_class& value) const {
-      return mpl_to_llvm(llvm_semantics(), value);
-    }
-
-    llvm::APFloat RealType::special_to_llvm(SpecialReal which, bool negative) const {
-      return special_to_llvm(llvm_semantics(), which, negative);
-    }
-
-    llvm::APFloat RealType::mpl_to_llvm(const llvm::fltSemantics& semantics, const mpf_class& value) {
-      mp_exp_t exp;
-
-      std::stringstream r;
-      if (mpf_sgn(value.get_mpf_t()) < 0)
-	r << "-";
-
-      r << "0." << value.get_str(exp);
-      r << "e" << exp;
-
-      return llvm::APFloat(semantics, r.str());
-    }
-
-    llvm::APFloat RealType::special_to_llvm(const llvm::fltSemantics& semantics, SpecialReal v, bool negative) {
-      switch (v) {
-      case special_real_zero: return llvm::APFloat::getZero(semantics, negative);
-      case special_real_nan: return llvm::APFloat::getNaN(semantics, negative);
-      case special_real_qnan: return llvm::APFloat::getQNaN(semantics, negative);
-      case special_real_snan: return llvm::APFloat::getSNaN(semantics, negative);
-      case special_real_largest: return llvm::APFloat::getLargest(semantics, negative);
-      case special_real_smallest: return llvm::APFloat::getSmallest(semantics, negative);
-      case special_real_smallest_normalized: return llvm::APFloat::getSmallestNormalized(semantics, negative);
-
-      default:
-	PSI_FAIL("unknown special floating point value");
-      }
-    }
-
-    ConstantReal::ConstantReal(const RealType& type, const mpf_class& value)
-      : m_type(type), m_value(value) {
-    }
-
-    bool ConstantReal::operator == (const ConstantReal& o) const {
-      return (m_type == o.m_type) && (m_value == o.m_value);
-    }
-
-    std::size_t hash_value(const ConstantReal& self) {
-      std::size_t h = 0;
-      boost::hash_combine(h, self.m_type);
-      boost::hash_combine(h, self.m_value.get_d());
-      return h;
-    }
-
-    FunctionalTypeResult ConstantReal::type(Context& context, ArrayPtr<Term*const> parameters) const {
-      check_primitive_parameters(parameters);
-      return FunctionalTypeResult(context.get_functional_v(m_type), false);
-    }
-
-    llvm::Constant* ConstantReal::llvm_primitive_value(LLVMConstantBuilder& c) const {
-      llvm::APFloat llvm_value = m_type.mpl_to_llvm(m_value);
-      return llvm::ConstantFP::get(c.llvm_context(), llvm_value);
-    }
-
-    SpecialRealValue::SpecialRealValue(const RealType& type, SpecialReal value, bool negative)
-      : m_type(type), m_value(value), m_negative(negative) {
-    }
-
-    bool SpecialRealValue::operator == (const SpecialRealValue& o) const {
-      return (m_type == o.m_type) &&
-        (m_value == o.m_value) &&
-        (m_negative == o.m_negative);
-    }
-
-    std::size_t hash_value(const SpecialRealValue& self) {
-      std::size_t h = 0;
-      boost::hash_combine(h, self.m_type);
-      boost::hash_combine(h, self.m_value);
-      boost::hash_combine(h, self.m_negative);
-      return h;
-    }
-
-    FunctionalTypeResult SpecialRealValue::type(Context& context, ArrayPtr<Term*const> parameters) const {
-      check_primitive_parameters(parameters);
-      return FunctionalTypeResult(context.get_functional_v(m_type), false);
-    }
-
-    llvm::Constant* SpecialRealValue::llvm_primitive_value(LLVMConstantBuilder& c) const {
-      return llvm::ConstantFP::get(c.llvm_context(), m_type.special_to_llvm(m_value, m_negative));
-    }
+    IMPLEMENT_INT_BINARY(IntegerAdd)
+    IMPLEMENT_INT_BINARY(IntegerSubtract)
+    IMPLEMENT_INT_BINARY(IntegerMultiply)
+    IMPLEMENT_INT_BINARY(IntegerDivide)
   }
 }

@@ -1,14 +1,17 @@
+#include "Aggregate.hpp"
 #include "Instructions.hpp"
-#include "OperationMap.hpp"
-#include "Type.hpp"
-
-#include <boost/assign.hpp>
-
-using namespace Psi;
-using namespace Psi::Tvm;
+#include "Number.hpp"
 
 namespace Psi {
   namespace Tvm {
+    const char Return::operation[] = "return";
+    const char ConditionalBranch::operation[] = "cond_br";
+    const char UnconditionalBranch::operation[] = "br";
+    const char FunctionCall::operation[] = "call";
+    const char Store::operation[] = "store";
+    const char Load::operation[] = "load";
+    const char Alloca::operation[] = "alloca";
+
     Term* Return::type(FunctionTerm *function, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 1)
         throw TvmUserError("return instruction takes one argument");
