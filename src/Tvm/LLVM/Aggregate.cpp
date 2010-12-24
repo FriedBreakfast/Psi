@@ -16,8 +16,8 @@ namespace {
     PSI_FAIL("term cannot be used as a type");
   }
 
-  BuiltValue pointer_type_const(ConstantBuilder& builder, PointerType::Ptr) {
-    return value_known(metatype_from_type(builder, llvm::Type::getInt8PtrTy(builder.llvm_context())));
+  llvm::Value* pointer_type_const(ConstantBuilder& builder, PointerType::Ptr) {
+    return metatype_from_type(builder, llvm::Type::getInt8PtrTy(builder.llvm_context()));
   }
 
   const llvm::Type* pointer_type_type(ConstantBuilder& builder, PointerType::Ptr) {
@@ -31,7 +31,7 @@ namespace {
     class ConstantSizeAlign {
     public:
       ConstantSizeAlign(ConstantBuilder *builder, Term *type) {
-        llvm::Constant *metatype_val = builder->build_constant(type);
+        llvm::Constant *metatype_val = builder->build_constant_simple(type);
         m_size = &metatype_constant_size(metatype_val);
         m_align = &metatype_constant_align(metatype_val);
       }
@@ -89,7 +89,7 @@ namespace {
 
       llvm::Value* build_value() {
         if (!m_llvm_value)
-          m_llvm_value = m_builder->build_known_value(m_type);
+          m_llvm_value = m_builder->build_value_simple(m_type);
         return m_llvm_value;
       }
     };
@@ -131,9 +131,9 @@ namespace {
     }
   }
 
-  BuiltValue array_type_insn(FunctionBuilder& builder, ArrayType::Ptr term) {
+  llvm::Value* array_type_insn(FunctionBuilder& builder, ArrayType::Ptr term) {
     InstructionSizeAlign element(&builder, term->element_type());
-    llvm::Value *length = builder.build_known_value(term->length());
+    llvm::Value *length = builder.build_value_simple(term->length());
     llvm::Value *array_size = builder.irbuilder().CreateMul(element.size(), length);
     return metatype_from_value(builder, array_size, element.align());
   }
@@ -154,46 +154,48 @@ namespace {
     return llvm::ArrayType::get(element_type, length_value.getZExtValue());
   }
 
-  BuiltValue array_value_instruction(FunctionBuilder& builder, ArrayValue::Ptr term) {
-    if (const llvm::Type *array_type = builder.build_type(term->type())) {
-      llvm::Value *array = llvm::UndefValue::get(array_type);
+  BuiltValue* array_value_insn(FunctionBuilder& builder, ArrayValue::Ptr term) {
+    BuiltValue *value = builder.new_value(term->type());
+
+    if (value->simple_type) {
+      PSI_ASSERT(llvm::isa<llvm::ArrayType>(value->simple_type));
+      llvm::Value *array = llvm::UndefValue::get(value->simple_type);
 
       for (std::size_t i = 0; i < term->length(); ++i) {
-        llvm::Value *element = builder.build_known_value(term->value(i));
+        llvm::Value *element = builder.build_value_simple(term->value(i));
         array = builder.irbuilder().CreateInsertValue(array, element, i);
       }
 
-      return value_known(array);
+      value->simple_value = array;
     } else {
-      // Length should be known, so if the element type is known the
-      // whole array type should be known.
-      PSI_ASSERT(!builder.build_type(term->element_type()));
-
-      llvm::Value *storage = builder.create_alloca_for(term->type());
-
-      InstructionSizeAlign element(&builder, term->element_type());
-      llvm::Value *offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(builder.llvm_context()), 0);
-      for (std::size_t i = 0; i < term->length(); ++i) {
-        llvm::Value *ptr = builder.irbuilder().CreateInBoundsGEP(storage, offset);
-        builder.create_store(ptr, term->value(i));
-      }
-
-      return value_unknown(storage);
+      PSI_ASSERT(value->elements.size() == term->length());
+      for (std::size_t i = 0; i < term->length(); ++i)
+        value->elements[i] = builder.build_value(term->value(i));
     }
+
+    return value;
   }
 
-  llvm::Constant* array_value_const_constant(ConstantBuilder& builder, ArrayValue::Ptr term) {
-    const llvm::Type* array_type = builder.build_type(term->type());
-    PSI_ASSERT(array_type);
+  BuiltValue* array_value_const(ConstantBuilder& builder, ArrayValue::Ptr term) {
+    BuiltValue *value = builder.new_value(term->type());
 
-    std::vector<llvm::Constant*> elements;
-    for (std::size_t i = 0; i < term->length(); ++i)
-      elements.push_back(builder.build_constant(term->value(i)));
+    if (value->simple_type) {
+      PSI_ASSERT(llvm::isa<llvm::ArrayType>(value->simple_type));
+      llvm::SmallVector<llvm::Constant*, 4> elements(term->length());
+      for (std::size_t i = 0; i < term->length(); ++i)
+        elements[i] = builder.build_constant_simple(term->value(i));
 
-    return llvm::ConstantArray::get(llvm::cast<llvm::ArrayType>(array_type), elements);
+      value->simple_value = llvm::ConstantArray::get(llvm::cast<llvm::ArrayType>(value->simple_type), &elements[0], elements.size());
+    } else {
+      PSI_ASSERT(value->elements.size() == term->length());
+      for (std::size_t i = 0; i < term->length(); ++i)
+        value->elements[i] = builder.build_constant(term->value(i));
+    }
+
+    return value;
   }
 
-  BuiltValue struct_type_insn(FunctionBuilder& builder, StructType::Ptr term) {
+  llvm::Value* struct_type_insn(FunctionBuilder& builder, StructType::Ptr term) {
     PSI_ASSERT(term->n_members() > 0);
 
     IRBuilder& irbuilder = builder.irbuilder();
@@ -242,43 +244,45 @@ namespace {
   }
 
 
-  BuiltValue struct_value_insn(FunctionBuilder& builder, StructValue::Ptr term) {
-    PSI_ASSERT(!term->phantom());
+  BuiltValue* struct_value_insn(FunctionBuilder& builder, StructValue::Ptr term) {
+    BuiltValue *value = builder.new_value(term->type());
 
-    if (const llvm::Type* ty = builder.build_type(term->type())) {
-      llvm::Value *result = llvm::UndefValue::get(ty);
+    if (value->simple_type) {
+      PSI_ASSERT(llvm::isa<llvm::StructType>(value->simple_type));
+      llvm::Value *result = llvm::UndefValue::get(value->simple_type);
       for (std::size_t i = 0; i < term->n_members(); ++i) {
-        llvm::Value *val = builder.build_known_value(term->member_value(i));
+        llvm::Value *val = builder.build_value_simple(term->member_value(i));
         result = builder.irbuilder().CreateInsertValue(result, val, i);
       }
-      return value_known(result);
+      value->simple_value = result;
     } else {
-      llvm::Value *storage = builder.create_alloca_for(term->type());
-
-      llvm::Value *offset = llvm::ConstantInt::get(llvm::Type::getInt64Ty(builder.llvm_context()), 0);
-      for (std::size_t i = 0; i < term->n_members(); ++i) {
-        InstructionSizeAlign member_type(&builder, term->member_value(i)->type());
-        offset = instruction_align(builder.irbuilder(), offset, member_type.align());
-        llvm::Value *ptr = builder.irbuilder().CreateInBoundsGEP(storage, offset);
-        builder.create_store(ptr, term->member_value(i));
-        offset = builder.irbuilder().CreateAdd(offset, member_type.size());
-      }
-
-      return value_unknown(storage);
+      PSI_ASSERT(value->elements.size() == term->n_members());
+      for (std::size_t i = 0; i < term->n_members(); ++i)
+        value->elements[i] = builder.build_value(term->member_value(i));
     }
+
+    return value;
   }
 
-  llvm::Constant* struct_value_const(ConstantBuilder& builder, StructValue::Ptr term) {
-    PSI_ASSERT(!term->phantom());
+  BuiltValue* struct_value_const(ConstantBuilder& builder, StructValue::Ptr term) {
+    BuiltValue *value = builder.new_value(term->type());
 
-    std::vector<llvm::Constant*> members;
-    for (unsigned i = 0; i < term->n_members(); ++i)
-      members.push_back(builder.build_constant(term->member_value(i)));
+    if (value->simple_type) {
+      llvm::SmallVector<llvm::Constant*, 4> members(term->n_members());
+      for (unsigned i = 0; i < term->n_members(); ++i)
+        members[i] = builder.build_constant_simple(term->member_value(i));
 
-    return llvm::ConstantStruct::get(builder.llvm_context(), members, false);
+      value->simple_value = llvm::ConstantStruct::get(builder.llvm_context(), &members[0], members.size(), false);
+    } else {
+      PSI_ASSERT(value->elements.size() == term->n_members());
+      for (std::size_t i = 0; i < term->n_members(); ++i)
+        value->elements[i] = builder.build_constant(term->member_value(i));
+    }
+
+    return value;
   }
 
-  BuiltValue union_type_insn(FunctionBuilder& builder, UnionType::Ptr term) {
+  llvm::Value* union_type_insn(FunctionBuilder& builder, UnionType::Ptr term) {
     IRBuilder& irbuilder = builder.irbuilder();
     const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.llvm_context());
     llvm::Value *size = llvm::ConstantInt::get(i64, 0);
@@ -325,40 +329,45 @@ namespace {
     return llvm::UnionType::get(builder.llvm_context(), member_types);
   }
 
-  BuiltValue union_value_insn(FunctionBuilder& builder, UnionValue::Ptr term) {
-    PSI_ASSERT(!term->phantom());
+  BuiltValue* union_value_insn(FunctionBuilder& builder, UnionValue::Ptr term) {
+    BuiltValue *value = builder.new_value(term->type());
+    PSI_ASSERT(!value->simple_type);
 
-    if (const llvm::Type* ty = builder.build_type(term->type())) {
-      llvm::Value *undef = llvm::UndefValue::get(ty);
-      llvm::Value *val = builder.build_known_value(term->value());
-      int index = llvm::cast<llvm::UnionType>(ty)->getElementTypeIndex(val->getType());
-      llvm::Value *result = builder.irbuilder().CreateInsertValue(undef, val, index);
-      return value_known(result);
-    } else {
-      llvm::Value *storage = builder.create_alloca_for(term->type());
-      builder.create_store(storage, term->value());
-      return value_unknown(storage);
+    BuiltValue *element_value = builder.build_value(term->value());
+    UnionType::Ptr union_ty = term->type();
+    for (std::size_t i = 0; i < union_ty->n_members(); ++i) {
+      if (union_ty->member_type(i) == term->type())
+        value->elements[i] = element_value;
     }
+
+    return value;
   }
 
-  llvm::Constant* union_value_const(ConstantBuilder& builder, UnionValue::Ptr term) {
-    PSI_ASSERT(!term->phantom());
+  BuiltValue* union_value_const(ConstantBuilder& builder, UnionValue::Ptr term) {
+    BuiltValue *value = builder.new_value(term->type());
+    PSI_ASSERT(!value->simple_type);
 
-    const llvm::Type *ty = builder.build_type(term->type());
-    llvm::Constant *val = builder.build_constant(term->value());
-    return llvm::ConstantUnion::get(llvm::cast<llvm::UnionType>(ty), val);
+    BuiltValue *element_value = builder.build_constant(term->value());
+    UnionType::Ptr union_ty = term->type();
+    for (std::size_t i = 0; i < union_ty->n_members(); ++i) {
+      if (union_ty->member_type(i) == term->type())
+        value->elements[i] = element_value;
+    }
+
+    return value;
   }
 
-  BuiltValue function_specialize_insn(FunctionBuilder& builder, FunctionSpecialize::Ptr term) {
+  BuiltValue* function_specialize_insn(FunctionBuilder& builder, FunctionSpecialize::Ptr term) {
     return builder.build_value(term->function());
   }
 
-  llvm::Constant* function_specialize_const(ConstantBuilder& builder, FunctionSpecialize::Ptr term) {
+  BuiltValue* function_specialize_const(ConstantBuilder& builder, FunctionSpecialize::Ptr term) {
     return builder.build_constant(term->function());
   }
 
+#if 0
   struct CallbackMapValue {
-    virtual BuiltValue build_instruction(FunctionBuilder& builder, FunctionalTerm* term) const = 0;
+    virtual BuiltValue* build_instruction(FunctionBuilder& builder, FunctionalTerm* term) const = 0;
     virtual llvm::Constant* build_constant(ConstantBuilder& builder, FunctionalTerm* term) const = 0;
     virtual const llvm::Type* build_type(ConstantBuilder& builder, FunctionalTerm* term) const = 0;
   };
@@ -374,7 +383,7 @@ namespace {
       : m_insn_cb(insn_cb), m_const_cb(const_cb), m_type_cb(type_cb) {
     }
 
-    virtual BuiltValue build_instruction(FunctionBuilder& builder, FunctionalTerm* term) const {
+    virtual BuiltValue* build_instruction(FunctionBuilder& builder, FunctionalTerm* term) const {
       return m_insn_cb(builder, cast<TermTagType>(term));
     }
 
@@ -407,23 +416,93 @@ namespace {
       throw BuildError("unknown operation type");
     return *it->second;
   }
+#endif
 }
 
-/**
- * Build a value for a functional operation whose result always
- * (i.e. regardless of the arguments) has a known type. In practise,
- * this means numeric operations.
- */
-BuiltValue Psi::Tvm::LLVM::FunctionBuilder::build_value_functional(FunctionalTerm *term) {
-  return value_known(build_value_known_functional(term));
-}
+namespace Psi {
+  namespace Tvm {
+    namespace LLVM {
+      /**
+       * \brief Create a new BuiltValue.
+       */
+      BuiltValue* ConstantBuilder::new_value(Term *type) {
+        BuiltValue *bv;
+        const llvm::Type *llvm_type = build_type(type);
+        BuiltValue::State state = BuiltValue::state_unknown;
+        std::size_t n_elements = 0;
+        if (llvm_type) {
+          state = BuiltValue::state_simple;
+        } else {
+          if (ArrayType::Ptr array_ty = dyn_cast<ArrayType>(type)) {
+            if (array_ty->length()->global()) {
+              state = BuiltValue::state_sequence;
+              n_elements = build_constant_integer(array_ty->length()).getZExtValue();
+            }
+          } else if (StructType::Ptr struct_ty = dyn_cast<StructType>(type)) {
+            state = BuiltValue::state_sequence;
+            n_elements = struct_ty->n_members();
+          } else if (UnionType::Ptr union_ty = dyn_cast<UnionType>(type)) {
+            state = BuiltValue::state_union;
+            n_elements = union_ty->n_members();
+          }
+        }
 
-/**
- * Build an LLVM constant. The second component of the return value is
- * the required alignment of the return value.
- */
-std::pair<llvm::Constant*, uint64_t> Psi::Tvm::LLVM::GlobalBuilder::build_constant_internal(FunctionalTerm *term) {
-}
+        bv = new BuiltValue(type, state);
+        if (llvm_type)
+          bv->simple_type = llvm_type;
+        bv->elements.resize(n_elements, 0);
+        m_built_values.push_back(*bv);
+        return bv;
+      }
 
-const llvm::Type* Psi::Tvm::LLVM::ConstantBuilder::build_type_internal(FunctionalTerm *term) {
+      /**
+       * Build a value for a functional operation whose result always
+       * (i.e. regardless of the arguments) has a known type. In practise,
+       * this means numeric operations.
+       *
+       * This handles aggregate types. Primitive types are forwarded
+       * to build_value_functional_simple.
+       */
+      BuiltValue* FunctionBuilder::build_value_functional(FunctionalTerm *term) {
+        if (false) {
+        } else {
+          BuiltValue *result = new_value(term->type());
+          PSI_ASSERT(result->simple_type);
+          result->simple_value = build_value_functional_simple(term);
+          return result;
+        }
+      }
+
+      /**
+       * Build an LLVM constant. The second component of the return value is
+       * the required alignment of the return value.
+       *
+       * This handles aggregate types. Primitive types are forwarded
+       * to build_constant_internal_simple.
+       */
+      BuiltValue* GlobalBuilder::build_constant_internal(FunctionalTerm *term) {
+        if (false) {
+        } else {
+          BuiltValue *result = new_value(term->type());
+          PSI_ASSERT(result->simple_type);
+          result->simple_value = build_constant_internal_simple(term);
+          return result;
+        }
+      }
+
+      /**
+       * Internal function to do the actual work of building a
+       * type. This function handles aggregate types, primitive types
+       * are forwarded to build_type_internal_simple.
+       */
+      const llvm::Type* ConstantBuilder::build_type_internal(FunctionalTerm *term) {
+        if (false) {
+        } else {
+          const llvm::Type *result = build_type_internal_simple(term);
+          PSI_ASSERT_MSG(result, "all primitive types should map directly to LLVM");
+          return result;
+        }
+      }
+    }
+  }
 }

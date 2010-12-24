@@ -68,25 +68,6 @@ namespace Psi {
      * \brief Function calling conventions.
      */
     enum CallingConvention {
-      /**
-       * \brief TVM internal calling convention.
-       *
-       * This allows parameters to be passed whether or not their type
-       * is known, and works as follows:
-       *
-       * <ul>
-       * <li>All parameters are pointers</li>
-       * <li>The first parameter is the address to write the return value to.</li>
-       * <li>The remaining parameters are pointers to the values of each parameter.</li>
-       * <li>If a parameter type is a pointer, the pointer is passed, not the address
-       * of a variable holding the pointer.</li>
-       * <li>The return value is a pointer. If the return type is a pointer, the
-       * value of the pointer is returned, but must also be written to the return
-       * value address passed to the function. Otherwise the return value will be
-       * the same as the address passed in to write the result to.</li>
-       * </ul>
-       */
-      cconv_tvm,
       /// C convention, compatible with host system.
       cconv_c,
       /// MS __stdcall convention

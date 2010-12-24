@@ -32,6 +32,7 @@ add_library(psi SHARED
   Tvm/LLVM/Instructions.cpp
   Tvm/LLVM/Primitive.cpp
   Tvm/LLVM/Number.cpp
+  Tvm/LLVM/Targets.cpp
   Tvm/LLVM/Templates.hpp
 )
 

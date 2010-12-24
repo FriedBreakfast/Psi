@@ -14,11 +14,15 @@ namespace Psi {
 #ifdef __GNUC__
 #define PSI_ATTRIBUTE(x) __attribute__(x)
 #define PSI_NORETURN noreturn
-#define PSI_SENTINEL sentinel
+#if (__GNUC__ >= 4) && (__GNUC_MINOR__ >= 5)
+#define PSI_UNREACHABLE() __builtin_unreachable()
+#else
+#define PSI_UNREACHABLE() void()
+#endif
 #else
 #define PSI_ATTRIBUTE(x)
 #define PSI_NORETURN
-#define PSI_SENTINEL
+#define PSI_UNREACHABLE() void()
 #endif
 
 #ifdef PSI_DEBUG
@@ -36,7 +40,7 @@ namespace Psi {
 #else
 #define PSI_ASSERT_MSG(cond,msg) void()
 #define PSI_ASSERT(cond) void()
-#define PSI_FAIL(msg) void()
+#define PSI_FAIL(msg) PSI_UNREACHABLE()
 #define PSI_WARNING(cond) void()
 #endif
 
@@ -217,6 +221,19 @@ namespace Psi {
   T checked_cast(U* src) {
     return checked_cast_impl<T,U*>::cast(src);
   }
+
+  /**
+   * A base class for types which want to work with checked_cast but
+   * would not ordinarily have any virtual members (and hence RTTI
+   * would not be available). This class defines a virtual destructor
+   * if PSI_DEBUG is defined, so checked_cast will be able to verify
+   * casts.
+   */
+  struct CheckedCastBase {
+#ifdef PSI_DEBUG
+    virtual ~CheckedCastBase();
+#endif
+  };
 
   /**
    * An adapter class used to make a static class look like a

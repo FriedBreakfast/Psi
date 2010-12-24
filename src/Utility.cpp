@@ -4,6 +4,7 @@
 #include <iostream>
 
 namespace Psi {
+#ifdef PSI_DEBUG
   void assert_fail(const char *test, const char *msg) {
     std::cerr << "Assertion failed: ";
     if (test && msg)
@@ -22,4 +23,8 @@ namespace Psi {
       std::cerr << (msg ? msg : test);
     std::cerr << std::endl;
   }
+
+  CheckedCastBase::~CheckedCastBase() {
+  }
+#endif
 }

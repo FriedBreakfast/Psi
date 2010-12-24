@@ -59,14 +59,14 @@ namespace Psi {
        *
        * The result of this call will be a global constant.
        */
-      BuiltValue metatype_from_value(FunctionBuilder& builder, llvm::Value *size, llvm::Value *align) {
+      llvm::Value* metatype_from_value(FunctionBuilder& builder, llvm::Value *size, llvm::Value *align) {
         const llvm::Type *int_ty = builder.intptr_type();
         if ((size->getType() != int_ty) || (align->getType() != int_ty))
           throw BuildError("values supplied for metatype have the wrong type");
         llvm::Value *undef = llvm::UndefValue::get(metatype_type(builder));
         llvm::Value *stage1 = builder.irbuilder().CreateInsertValue(undef, size, 0);
         llvm::Value *stage2 = builder.irbuilder().CreateInsertValue(stage1, align, 1);
-        return value_known(stage2);
+        return stage2;
       }
 
       /**

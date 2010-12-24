@@ -63,8 +63,8 @@ namespace {
     InstructionBinaryOp(CallbackType callback_) : callback(callback_) {}
 
     llvm::Value* operator () (FunctionBuilder& builder, typename TermTagType::Ptr term) const {
-      llvm::Value* lhs = builder.build_known_value(term->lhs());
-      llvm::Value* rhs = builder.build_known_value(term->rhs());
+      llvm::Value* lhs = builder.build_value_simple(term->lhs());
+      llvm::Value* rhs = builder.build_value_simple(term->rhs());
       return (builder.irbuilder().*callback)(lhs, rhs, "");
     }
   };
@@ -144,13 +144,19 @@ namespace {
   }
 }
 
-/**
- * Build a value for a functional operation whose result always
- * (i.e. regardless of the arguments) has a known type. In practise,
- * this means numeric operations.
- */
-llvm::Value* Psi::Tvm::LLVM::FunctionBuilder::build_value_known_functional(FunctionalTerm *term) {
-}
+namespace Psi {
+  namespace Tvm {
+    namespace LLVM {
+      /**
+       * Build a value for a functional operation whose result always
+       * (i.e. regardless of the arguments) has a known type. In practise,
+       * this means numeric operations.
+       */
+      llvm::Value* FunctionBuilder::build_value_functional_simple(FunctionalTerm *term) {
+      }
 
-std::pair<llvm::Constant*, std::size_t> Psi::Tvm::LLVM::GlobalBuilder::build_constant_internal(FunctionalTerm *term) {
+      llvm::Constant* GlobalBuilder::build_constant_internal_simple(FunctionalTerm *term) {
+      }
+    }
+  }
 }

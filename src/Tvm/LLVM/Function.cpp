@@ -19,7 +19,7 @@ namespace Psi {
                              const FunctionBuilder::ValueTermMap *value_terms_)
           : self(self_), value_terms(value_terms_) {}
 
-        BuiltValue build(Term *term) const {
+        BuiltValue* build(Term *term) const {
           llvm::BasicBlock *old_insert_block = self->irbuilder().GetInsertBlock();
 
           // Set the insert point to the dominator block of the value
@@ -28,8 +28,9 @@ namespace Psi {
           PSI_ASSERT(src);
           if (src->term_type() == term_block) {
             FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(term->source());
-            PSI_ASSERT((it != value_terms->end()) && it->second.known());
-            new_insert_block = llvm::cast<llvm::BasicBlock>(it->second.known_value());
+            PSI_ASSERT((it != value_terms->end()) &&
+                       (it->second->state == BuiltValue::state_simple));
+            new_insert_block = llvm::cast<llvm::BasicBlock>(it->second->simple_value);
           } else {
             PSI_ASSERT(src->term_type() == term_function);
             new_insert_block = &self->llvm_function()->front();
@@ -50,15 +51,10 @@ namespace Psi {
             old_insert_block = NULL;
           }
 
-          BuiltValue result;
+          BuiltValue* result;
           switch(term->term_type()) {
           case term_functional: {
             result = self->build_value_functional(cast<FunctionalTerm>(term));
-
-            llvm::Value *val = result.known() ? result.known_value() : result.unknown_value();
-            if (llvm::isa<llvm::Instruction>(val) && (val->getType() != llvm::Type::getVoidTy(self->llvm_context())))
-              val->setName(self->term_name(term));
-
             break;
           }
 
@@ -73,6 +69,16 @@ namespace Psi {
             PSI_FAIL("unexpected term type");
           }
 
+          llvm::Instruction *value_insn = 0;
+          if (result->simple_value) {
+            value_insn = llvm::dyn_cast<llvm::Instruction>(result->simple_value);
+          } else if (result->raw_value) {
+            value_insn = llvm::dyn_cast<llvm::Instruction>(result->raw_value);
+          }
+
+          if (value_insn && !value_insn->hasName() && !value_insn->getType()->isVoidTy())
+            value_insn->setName(self->term_name(term));
+
           // restore original insert block
           if (old_insert_block)
             self->irbuilder().SetInsertPoint(old_insert_block);
@@ -80,8 +86,8 @@ namespace Psi {
           return result;
         }
 
-        BuiltValue invalid() const {return BuiltValue();}
-        bool valid(const BuiltValue& t) const {return t.valid();}
+        BuiltValue* invalid() const {return NULL;}
+        bool valid(BuiltValue *t) const {return t;}
       };
 
       FunctionBuilder::FunctionBuilder(GlobalBuilder *global_builder,
@@ -89,7 +95,8 @@ namespace Psi {
                                        llvm::Function *llvm_function,
                                        IRBuilder *irbuilder)
         : ConstantBuilder(&global_builder->llvm_context(),
-                          global_builder->llvm_target_machine()),
+                          global_builder->llvm_target_machine(),
+                          global_builder->target_fixes()),
           m_global_builder(global_builder),
           m_irbuilder(irbuilder),
           m_function(function),
@@ -99,7 +106,7 @@ namespace Psi {
       FunctionBuilder::~FunctionBuilder() {
       }
 
-      llvm::Constant* FunctionBuilder::build_constant(Term *term) {
+      BuiltValue* FunctionBuilder::build_constant(Term *term) {
         return m_global_builder->build_constant(term);
       }
 
@@ -114,15 +121,15 @@ namespace Psi {
       /**
        * \brief Create the code required to generate a value for the
        * given term.
+       *
+       * \pre <tt>!term->phantom()</tt>
        */
-      BuiltValue FunctionBuilder::build_value(Term* term) {
+      BuiltValue* FunctionBuilder::build_value(Term* term) {
+        PSI_ASSERT(!term->phantom());
+
         if (term->global())
-          return value_known(build_constant(term));
+          return build_constant(term);
 
-        if (term->phantom())
-          throw BuildError("cannot get value for phantom term");
-
-        BuiltValue result;
         switch (term->term_type()) {
         case term_function_parameter:
         case term_instruction:
@@ -130,32 +137,30 @@ namespace Psi {
         case term_block: {
           ValueTermMap::iterator it = m_value_terms.find(term);
           PSI_ASSERT(it != m_value_terms.end());
-          result = it->second;
-          break;
+          return it->second;
         }
 
         case term_apply:
         case term_functional:
-          result = build_term(m_value_terms, term, ValueBuilderCallback(this, &m_value_terms)).first;
-          break;
+          return build_term(m_value_terms, term, ValueBuilderCallback(this, &m_value_terms)).first;
 
         default:
           PSI_FAIL("unexpected term type");
         }
-
-        PSI_ASSERT((term->category() != Term::category_type) ||
-                   (result.known() && (result.known_value()->getType() == metatype_type(*this))));
-        return result;
       }
 
       /**
        * \brief Identical to build_value, but requires that the result
        * be of a known type so that an llvm::Value can be returned.
        */
-      llvm::Value* FunctionBuilder::build_known_value(Term *term) {
-        BuiltValue v = build_value(term);
-        PSI_ASSERT(v.known());
-        return v.known_value();
+      llvm::Value* FunctionBuilder::build_value_simple(Term *term) {
+        BuiltValue* v = build_value(term);
+        PSI_ASSERT(v->state == BuiltValue::state_simple);
+
+        if (!v->simple_value)
+          PSI_FAIL("not implemented - need to load from the stack");
+
+        return v->simple_value;
       }
 
       /**
@@ -163,40 +168,18 @@ namespace Psi {
        * whatever format the calling convention passes them in.
        */
       llvm::BasicBlock* FunctionBuilder::build_function_entry() {
-        llvm::BasicBlock *prolog_block = llvm::BasicBlock::Create(llvm_context(), "", m_llvm_function);
-        m_irbuilder->SetInsertPoint(prolog_block);
+        llvm::BasicBlock *prolog_block = llvm::BasicBlock::Create(llvm_context(), "", llvm_function());
+        irbuilder().SetInsertPoint(prolog_block);
+        llvm::SmallVector<BuiltValue*, 4> parameter_values;
+        target_fixes()->function_parameters_unpack(*this, function(), llvm_function(), parameter_values);
 
-        llvm::Function::ArgumentListType& argument_list = m_llvm_function->getArgumentList();
-        llvm::Function::ArgumentListType::const_iterator llvm_it = argument_list.begin();
-
-        CallingConvention calling_convention = m_function->function_type()->calling_convention();
-        std::size_t n_phantom = m_function->function_type()->n_phantom_parameters();
-
-        if (calling_convention == cconv_tvm) {
-          // Skip the first LLVM parameter snce it is the return
-          // address.
-          ++llvm_it;
-        }
-
-        for (std::size_t n = n_phantom; llvm_it != argument_list.end(); ++n, ++llvm_it) {
-          FunctionParameterTerm* param = m_function->parameter(n);
-          llvm::Argument *llvm_param = const_cast<llvm::Argument*>(&*llvm_it);
-
-          if (calling_convention == cconv_tvm) {
-            const llvm::Type* param_type_llvm = build_type(param->type());
-
-            if (param_type_llvm) {
-              llvm::Value *cast_param = irbuilder().CreatePointerCast(llvm_param, param_type_llvm->getPointerTo());
-              llvm::Value *load = irbuilder().CreateLoad(cast_param, term_name(param));
-              m_value_terms.insert(std::make_pair(param, value_known(load)));
-            } else {
-              llvm_param->setName(term_name(param));
-              m_value_terms.insert(std::make_pair(param, value_unknown(llvm_param)));
-            }
-          } else {
-            llvm_param->setName(term_name(param));
-            m_value_terms.insert(std::make_pair(param, value_known(llvm_param)));
-          }
+        std::size_t n_phantom = function()->function_type()->n_phantom_parameters();
+        for (std::size_t i = 0, e = parameter_values.size(); i != e; ++i) {
+          FunctionParameterTerm* param = m_function->parameter(i + n_phantom);
+          BuiltValue *value = parameter_values[i];
+          if (value->simple_value)
+            value->simple_value->setName(term_name(param));
+          m_value_terms.insert(std::make_pair(param, value));
         }
 
         return prolog_block;
@@ -222,7 +205,8 @@ namespace Psi {
             PhiTerm& phi = *kt;
             const llvm::Type *ty = build_type(phi.type());
             if (!ty) {
-              llvm::Value *size = irbuilder().CreateExtractValue(build_known_value(phi.type()), 0);
+              llvm::Value *size_align = build_value_simple(phi.type());
+              llvm::Value *size = irbuilder().CreateExtractValue(size_align, 0);
               llvm::AllocaInst *storage = irbuilder().CreateAlloca(llvm::Type::getInt8Ty(llvm_context()), size);
               storage->setAlignment(unknown_alloca_align());
               PSI_ASSERT(phi_storage_map.find(&phi) == phi_storage_map.end());
@@ -417,8 +401,9 @@ namespace Psi {
              it != blocks.end(); ++it) {
           llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(llvm_context(), term_name(it->first), m_llvm_function);
           it->second = llvm_bb;
+          BuiltValue *block_val = new_value_simple(it->first->type(), llvm_bb);
           std::pair<ValueTermMap::iterator, bool> insert_result =
-            m_value_terms.insert(std::make_pair(it->first, value_known(llvm_bb)));
+            m_value_terms.insert(std::make_pair(it->first, block_val));
           PSI_ASSERT(insert_result.second);
         }
 
@@ -481,7 +466,7 @@ namespace Psi {
           BlockTerm::InstructionList& insn_list = it->first->instructions();
           for (BlockTerm::InstructionList::iterator jt = insn_list.begin(); jt != insn_list.end(); ++jt) {
             InstructionTerm& insn = *jt;
-            BuiltValue r = build_value_instruction(&insn);
+            BuiltValue *r = build_value_instruction(&insn);
             m_value_terms.insert(std::make_pair(&insn, r));
           }
 
@@ -518,7 +503,7 @@ namespace Psi {
             PSI_ASSERT(m_value_terms.find(it->first->incoming_block(n)) != m_value_terms.end());
             llvm::BasicBlock *incoming_block =
               llvm::cast<llvm::BasicBlock>(m_value_terms.find(it->first->incoming_block(n))->second.known_value());
-            BuiltValue incoming_value = build_value(it->first->incoming_value(n));
+            BuiltValue* incoming_value = build_value(it->first->incoming_value(n));
 
             llvm::Value *value;
             if (unknown_type) {
@@ -581,43 +566,6 @@ namespace Psi {
       }
 
       /**
-       * Create an alloca instruction for the specified number of bytes
-       * using the maximum system alignment.
-       */
-      llvm::Instruction* FunctionBuilder::create_alloca(llvm::Value *size) {
-        llvm::AllocaInst *inst = irbuilder().CreateAlloca(llvm::Type::getInt8Ty(llvm_context()), size);
-        inst->setAlignment(unknown_alloca_align());
-        return inst;
-      }
-
-      /**
-       * Create an alloca instruction for the specified type. This
-       * requires that the type have a known value.
-       */
-      llvm::Value* FunctionBuilder::create_alloca_for(Term *stored_type) {
-        PSI_ASSERT(stored_type->category() == Term::category_type);
-
-        if (const llvm::Type* ty = build_type(stored_type))
-          return irbuilder().CreateAlloca(ty);
-
-        // Okay, the type is unknown. However if it is an unknown-length
-        // array of values with a known type, I can still get that
-        // through to LLVM.
-        if (ArrayType::Ptr as_array = dyn_cast<ArrayType>(stored_type)) {
-          const llvm::Type *element_type = build_type(as_array->element_type());
-          if (element_type) {
-            llvm::Value *length = build_known_value(as_array->length());
-            return irbuilder().CreateAlloca(element_type, length);
-          }
-        }
-
-        // Okay, it's really unknown, so just allocate as i8[n]
-        llvm::Value *size_align = build_known_value(stored_type);
-        llvm::Value *size = irbuilder().CreateExtractValue(size_align, 0);
-        return create_alloca(size);
-      }
-
-      /**
        * Call <tt>llvm.memcpy.p0i8.p0i8.i64</tt> with default alignment
        * and volatile parameters.
        */
@@ -640,7 +588,7 @@ namespace Psi {
        * type of \c src is empty.
        */
       void FunctionBuilder::create_store(llvm::Value *dest, Term *src) {
-        BuiltValue llvm_src = build_value(src);
+        BuiltValue* llvm_src = build_value(src);
 
         if (llvm_src.known()) {
           llvm::Value *cast_dest = cast_pointer_from_generic(dest, llvm_src.known_value()->getType()->getPointerTo());
@@ -657,7 +605,7 @@ namespace Psi {
        */
       void FunctionBuilder::create_store_unknown(llvm::Value *dest, llvm::Value *src, Term *src_type) {
         PSI_ASSERT(src_type->category() == Term::category_type);
-        llvm::Value *src_type_value = build_known_value(src_type);
+        llvm::Value *src_type_value = build_value_simple(src_type);
         llvm::Value *size = irbuilder().CreateExtractValue(src_type_value, 0);
         create_memcpy(dest, src, size);
       }

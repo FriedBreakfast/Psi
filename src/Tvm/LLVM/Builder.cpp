@@ -57,28 +57,8 @@ namespace Psi {
             return self->build_type(actual);
           }
 
-          case term_function_type: {
-            FunctionTypeTerm* actual = cast<FunctionTypeTerm>(term);
-            if (actual->calling_convention() == cconv_tvm) {
-              const llvm::Type* i8ptr = llvm::Type::getInt8PtrTy(self->llvm_context());
-              std::vector<const llvm::Type*> params(actual->n_parameters() - actual->n_phantom_parameters() + 1, i8ptr);
-              return llvm::FunctionType::get(llvm::Type::getVoidTy(self->llvm_context()), params, false);
-            } else {
-              std::size_t n_phantom = actual->n_phantom_parameters();
-              std::size_t n_parameters = actual->n_parameters() - n_phantom;
-              std::vector<const llvm::Type*> params;
-              for (std::size_t i = 0; i < n_parameters; ++i) {
-                const llvm::Type *param_type = self->build_type(actual->parameter(i+n_phantom)->type());
-                if (!param_type)
-                  return NULL;
-                params.push_back(param_type);
-              }
-              const llvm::Type *result_type = self->build_type(actual->result_type());
-              if (!result_type)
-                return NULL;
-              return llvm::FunctionType::get(result_type, params, false);
-            }
-          }
+          case term_function_type:
+            return self->target_fixes()->function_type(*self, cast<FunctionTypeTerm>(term));
 
           case term_function_parameter:
           case term_function_type_parameter:
@@ -104,12 +84,13 @@ namespace Psi {
         bool valid(const boost::optional<const llvm::Type*>& t) const {return t;}
       };
 
-      ConstantBuilder::ConstantBuilder(llvm::LLVMContext *context, llvm::TargetMachine *target_machine)
-        : m_llvm_context(context), m_llvm_target_machine(target_machine) {
+      ConstantBuilder::ConstantBuilder(llvm::LLVMContext *context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes)
+        : m_llvm_context(context), m_llvm_target_machine(target_machine), m_target_fixes(target_fixes) {
         PSI_ASSERT(m_llvm_context);
       }
 
       ConstantBuilder::~ConstantBuilder() {
+        m_built_values.clear_and_dispose(boost::checked_deleter<BuiltValue>());
       }
 
       /**
@@ -153,25 +134,37 @@ namespace Psi {
       }
 
       /**
-       * \brief Return the constant integer specified by the given term.
+       * \brief Return the constant value specified by a given term,
+       * assuming that it can be exactly represented as an LLVM
+       * constant.
        *
-       * This is currently just a utility function which runs
-       * build_constant and converts the result to an integer, raising
-       * an exception if this is not possible.
+       * \pre <tt>!term->phantom() && term->global()</tt>
        */
-      const llvm::APInt& ConstantBuilder::build_constant_integer(Term *term) {
-        llvm::ConstantInt *ci = llvm::dyn_cast<llvm::ConstantInt>(build_constant(term));
-        if (!ci)
-          throw BuildError("cannot convert constant term to an integer");
-
-        return ci->getValue();
+      llvm::Constant* ConstantBuilder::build_constant_simple(Term *term) {
+        BuiltValue *value = build_constant(term);
+        PSI_ASSERT(value->simple_value && llvm::isa<llvm::Constant>(value->simple_value));
+        return llvm::cast<llvm::Constant>(value->simple_value);
       }
 
-      struct GlobalBuilder::ConstantBuilderCallback : PtrValidBase<llvm::Constant> {
+      /**
+       * \brief Return the constant integer specified by the given term.
+       *
+       * This assumes that the conversion can be performed; this is
+       * asserted by debug checks.
+       *
+       * \pre <tt>!term->phantom() && term->global()</tt>
+       */
+      const llvm::APInt& ConstantBuilder::build_constant_integer(Term *term) {
+        llvm::Constant *c = build_constant_simple(term);
+        PSI_ASSERT(llvm::isa<llvm::ConstantInt>(c));
+        return llvm::cast<llvm::ConstantInt>(c)->getValue();
+      }
+
+      struct GlobalBuilder::ConstantBuilderCallback : PtrValidBase<BuiltValue> {
         GlobalBuilder *self;
         ConstantBuilderCallback(GlobalBuilder *self_) : self(self_) {}
 
-        llvm::Constant* build(Term *term) const {
+        BuiltValue* build(Term *term) const {
           switch (term->term_type()) {
           case term_functional:
             return self->build_constant_internal(cast<FunctionalTerm>(term));
@@ -180,6 +173,15 @@ namespace Psi {
             Term* actual = cast<ApplyTerm>(term)->unpack();
             PSI_ASSERT(actual->term_type() != term_apply);
             return self->build_constant(actual);
+          }
+
+          case term_global_variable:
+          case term_function: {
+            llvm::GlobalValue *value = self->build_global(cast<GlobalTerm>(term));
+            llvm::Constant *i8ptr_value = llvm::ConstantExpr::getPointerCast(value, llvm::Type::getInt8PtrTy(self->llvm_context()));
+            BuiltValue *bv = self->new_value(term->type());
+            bv->simple_value = i8ptr_value;
+            return bv;
           }
 
           default:
@@ -203,7 +205,7 @@ namespace Psi {
                                               global->constant(), llvm::GlobalValue::InternalLinkage,
                                               NULL, global->name());
             } else {
-              llvm::Constant *size_align = self->build_constant(global_type);
+              llvm::Constant *size_align = self->build_constant_simple(global_type);
               llvm::APInt size = metatype_constant_size(size_align);
               llvm::APInt align = metatype_constant_align(size_align);
             }
@@ -214,8 +216,7 @@ namespace Psi {
             PointerType::Ptr type = cast<PointerType>(func->type());
             FunctionTypeTerm* func_type = cast<FunctionTypeTerm>(type->target_type());
             const llvm::Type *llvm_type = self->build_type(func_type);
-            if (!llvm_type)
-              throw BuildError("could not create function because its LLVM type is not known");
+            PSI_ASSERT_MSG(llvm_type, "could not create function because its LLVM type is not known");
             return llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_type),
                                           llvm::GlobalValue::InternalLinkage,
                                           func->name(), &self->llvm_module());
@@ -227,8 +228,8 @@ namespace Psi {
         }
       };
 
-      GlobalBuilder::GlobalBuilder(llvm::LLVMContext *context, llvm::TargetMachine *target_machine, llvm::Module *module)
-        : ConstantBuilder(context, target_machine), m_module(module) {
+      GlobalBuilder::GlobalBuilder(llvm::LLVMContext *context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes, llvm::Module *module)
+        : ConstantBuilder(context, target_machine, target_fixes), m_module(module) {
         PSI_ASSERT(m_module);
       }
 
@@ -265,7 +266,8 @@ namespace Psi {
               } else {
                 PSI_ASSERT(t.first->term_type() == term_global_variable);
                 if (Term* init_value = cast<GlobalVariableTerm>(t.first)->value())
-                  llvm::cast<llvm::GlobalVariable>(t.second)->setInitializer(build_constant(init_value));
+                  //llvm::cast<llvm::GlobalVariable>(t.second)->setInitializer(build_constant(init_value));
+                  PSI_FAIL("not implemented");
               }
               m_global_build_list.pop_front();
             }
@@ -277,20 +279,18 @@ namespace Psi {
         return gv.first;
       }
 
-      llvm::Constant* GlobalBuilder::build_constant(Term *term) {
+      BuiltValue* GlobalBuilder::build_constant(Term *term) {
         PSI_ASSERT(!term->phantom() && term->global());
 
         switch (term->term_type()) {
         case term_function:
         case term_global_variable:
-          return build_global(cast<GlobalTerm>(term));
-
         case term_apply:
         case term_functional:
           return build_term(m_constant_terms, term, ConstantBuilderCallback(this)).first;
 
         default:
-          throw BuildError("constant builder encountered unexpected term type");
+          PSI_FAIL("constant builder encountered unexpected term type");
         }
       }
 
@@ -312,9 +312,10 @@ namespace Psi {
         return tm;
       }
 
-      LLVMJit::LLVMJit(Context *context)
+      LLVMJit::LLVMJit(Context *context, llvm::TargetMachine *host_machine)
         : m_context(context),
-          m_builder(&m_llvm_context, host_machine()),
+          m_target_fixes(create_target_fixes(host_machine->getTarget())),
+          m_builder(&m_llvm_context, host_machine, m_target_fixes.get()),
           m_llvm_engine(make_engine(m_llvm_context)) {
 
         llvm::InitializeNativeTarget();
@@ -364,7 +365,7 @@ namespace Psi {
      * Create a JIT compiler using LLVM as a backend.
      */
     boost::shared_ptr<Jit> create_llvm_jit(Context *context) {
-      return boost::make_shared<LLVM::LLVMJit>(context);
+      return boost::make_shared<LLVM::LLVMJit>(context, LLVM::host_machine());
     }
   }
 }

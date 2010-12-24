@@ -68,10 +68,6 @@ namespace Psi {
     Term* stored_type() const {return get()->parameter(0);}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
     PSI_TVM_INSTRUCTION_TYPE_END(Alloca)
-
-    class InstructionCallback {
-    public:
-    };
   }
 }
 
