@@ -13,14 +13,6 @@ namespace Psi {
   namespace Tvm {
     BOOST_FIXTURE_TEST_SUITE(FunctionTest, Test::ContextFixture)
 
-    BOOST_AUTO_TEST_CASE(FunctionTypeTest) {
-      Term *i32_t = IntegerType::get(context, IntegerType::i32, true);
-      FunctionTypeTerm* func_type = context.get_function_type_fixed(cconv_tvm, i32_t, ArrayPtr<Term*const>());
-
-      BOOST_CHECK_EQUAL(func_type->calling_convention(), cconv_tvm);
-      BOOST_CHECK_EQUAL(func_type->result_type(), i32_t); 
-    }
-
     BOOST_AUTO_TEST_CASE(PhantomParameterTest) {
       const char *src =
         "%f = function cc_c (%a:type|%b:bool,%c:(pointer %a),%d:(pointer %a)) > (pointer %a) {\n"

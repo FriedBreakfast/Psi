@@ -189,7 +189,8 @@ namespace Psi {
     struct PtrHook : FunctionalTermPtrBase<ThisType> {                  \
     template<typename> friend struct FunctionalCastImplementation;      \
   private:                                                              \
-  explicit PtrHook(FunctionalTerm *t) : FunctionalTermPtrBase<ThisType>(t) {} \
+  typedef FunctionalTermPtrBase<ThisType> BaseType;			\
+  explicit PtrHook(FunctionalTerm *t) : BaseType(t) {}			\
   public:                                                               \
   PtrHook() {}
 

@@ -14,7 +14,7 @@ using namespace Psi::Tvm::LLVM;
 
 namespace {
   BuiltValue* build_return(FunctionBuilder& builder, Return::Ptr insn) {
-    builder.target_fixes()->function_return(builder, builder.function()->function_type(), insn->value());
+    builder.target_fixes()->function_return(builder, builder.function()->function_type(), builder.llvm_function(), insn->value());
     return builder.empty_value();
   }
 
@@ -54,12 +54,14 @@ namespace {
 
   BuiltValue* build_store(FunctionBuilder& builder, Store::Ptr term) {
     llvm::Value *target = builder.build_value_simple(term->target());
-    builder.create_store(target, term->value());
+    BuiltValue *value = builder.build_value(term->value());
+    builder.store_value(value, target);
     return builder.empty_value();
   }
 
   BuiltValue* build_load(FunctionBuilder& builder, Load::Ptr term) {
-    PSI_FAIL("not implemented");
+    llvm::Value *target = builder.build_value_simple(term->target());
+    return builder.load_value(term->type(), target);
   }
 
   BuiltValue* build_alloca(FunctionBuilder& builder, Alloca::Ptr term) {
@@ -73,7 +75,7 @@ namespace {
       inst->setAlignment(builder.unknown_alloca_align());
     }
 
-    return builder.new_value_simple(term->type(), inst);
+    return builder.new_function_value_simple(term->type(), inst);
   }
 
   struct CallbackMapValue {

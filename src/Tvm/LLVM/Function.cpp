@@ -29,8 +29,8 @@ namespace Psi {
           if (src->term_type() == term_block) {
             FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(term->source());
             PSI_ASSERT((it != value_terms->end()) &&
-                       (it->second->state == BuiltValue::state_simple));
-            new_insert_block = llvm::cast<llvm::BasicBlock>(it->second->simple_value);
+                       (it->second->state() == BuiltValue::state_simple));
+            new_insert_block = llvm::cast<llvm::BasicBlock>(it->second->simple_value());
           } else {
             PSI_ASSERT(src->term_type() == term_function);
             new_insert_block = &self->llvm_function()->front();
@@ -69,15 +69,17 @@ namespace Psi {
             PSI_FAIL("unexpected term type");
           }
 
+#if 0
           llvm::Instruction *value_insn = 0;
-          if (result->simple_value) {
-            value_insn = llvm::dyn_cast<llvm::Instruction>(result->simple_value);
+          if (result->simple_type()) {
+            value_insn = llvm::dyn_cast<llvm::Instruction>(result->simple_value());
           } else if (result->raw_value) {
             value_insn = llvm::dyn_cast<llvm::Instruction>(result->raw_value);
           }
 
           if (value_insn && !value_insn->hasName() && !value_insn->getType()->isVoidTy())
             value_insn->setName(self->term_name(term));
+#endif
 
           // restore original insert block
           if (old_insert_block)
@@ -106,7 +108,7 @@ namespace Psi {
       FunctionBuilder::~FunctionBuilder() {
       }
 
-      BuiltValue* FunctionBuilder::build_constant(Term *term) {
+      ConstantValue* FunctionBuilder::build_constant(Term *term) {
         return m_global_builder->build_constant(term);
       }
 
@@ -155,12 +157,8 @@ namespace Psi {
        */
       llvm::Value* FunctionBuilder::build_value_simple(Term *term) {
         BuiltValue* v = build_value(term);
-        PSI_ASSERT(v->state == BuiltValue::state_simple);
-
-        if (!v->simple_value)
-          PSI_FAIL("not implemented - need to load from the stack");
-
-        return v->simple_value;
+        PSI_ASSERT(v->state() == BuiltValue::state_simple);
+	return v->simple_value();
       }
 
       /**
@@ -177,8 +175,10 @@ namespace Psi {
         for (std::size_t i = 0, e = parameter_values.size(); i != e; ++i) {
           FunctionParameterTerm* param = m_function->parameter(i + n_phantom);
           BuiltValue *value = parameter_values[i];
+#if 0
           if (value->simple_value)
             value->simple_value->setName(term_name(param));
+#endif
           m_value_terms.insert(std::make_pair(param, value));
         }
 
@@ -401,7 +401,7 @@ namespace Psi {
              it != blocks.end(); ++it) {
           llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(llvm_context(), term_name(it->first), m_llvm_function);
           it->second = llvm_bb;
-          BuiltValue *block_val = new_value_simple(it->first->type(), llvm_bb);
+          FunctionValue *block_val = new_function_value_simple(it->first->type(), llvm_bb);
           std::pair<ValueTermMap::iterator, bool> insert_result =
             m_value_terms.insert(std::make_pair(it->first, block_val));
           PSI_ASSERT(insert_result.second);
@@ -416,7 +416,7 @@ namespace Psi {
         PSI_ASSERT(blocks[0].first == entry_block);
         irbuilder().CreateBr(blocks[0].second);
 
-        std::tr1::unordered_map<PhiTerm*, llvm::PHINode*> phi_node_map;
+        std::tr1::unordered_map<PhiTerm*, BuiltValue*> phi_node_map;
 
         // Build basic blocks
         for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
@@ -424,35 +424,15 @@ namespace Psi {
           irbuilder().SetInsertPoint(it->second);
           PSI_ASSERT(it->second->empty());
 
-          // Set up phi terms
-          const BlockTerm::PhiList& phi_list = it->first->phi_nodes();
-          for (BlockTerm::PhiList::const_iterator jt = phi_list.begin(); jt != phi_list.end(); ++jt) {
-            PhiTerm& phi = const_cast<PhiTerm&>(*jt);
-            const llvm::Type* ty = build_type(phi.type());
-            llvm::PHINode *llvm_phi;
-            if (ty) {
-              llvm_phi = irbuilder().CreatePHI(ty);
-              m_value_terms.insert(std::make_pair(&phi, value_known(llvm_phi)));
-            } else {
-              llvm_phi = irbuilder().CreatePHI(llvm::Type::getInt8PtrTy(llvm_context()));
-              PSI_ASSERT(phi_storage_map.find(&phi) != phi_storage_map.end());
-              llvm::Value *phi_storage = phi_storage_map.find(&phi)->second;
-              m_value_terms.insert(std::make_pair(&phi, value_unknown(phi_storage)));
-            }
-            phi_node_map.insert(std::make_pair(&phi, llvm_phi));
-          }
+	  // Set up post-init insert point
+	  llvm::Instruction *post_init_instruction = insert_placeholder_instruction();
 
-          // For phi terms of unknown types, copy from existing storage
-          // which is possibly about to be deallocated to new storage.
-          for (BlockTerm::PhiList::const_iterator jt = phi_list.begin(); jt != phi_list.end(); ++jt) {
-            PhiTerm& phi = const_cast<PhiTerm&>(*jt);
-            const llvm::Type *ty = build_type(phi.type());
-            if (!ty) {
-              PSI_ASSERT(phi_node_map.find(&phi) != phi_node_map.end());
-              PSI_ASSERT(phi_storage_map.find(&phi) != phi_storage_map.end());
-              create_store_unknown(phi_storage_map.find(&phi)->second, phi_node_map.find(&phi)->second, phi.type());
-            }
-          }        
+          // Set up phi terms
+          BlockTerm::PhiList& phi_list = it->first->phi_nodes();
+          for (BlockTerm::PhiList::iterator jt = phi_list.begin(); jt != phi_list.end(); ++jt) {
+            PhiTerm *phi = &*jt;
+	    phi_node_map.insert(std::make_pair(phi, build_phi_node(phi->type(), post_init_instruction)));
+          }
 
           // Restore stack as it was when dominating block exited, so
           // any values alloca'd since then are removed. This is
@@ -495,30 +475,32 @@ namespace Psi {
         simplify_stack_save_restore();
 
         // Set up LLVM phi node incoming edges
-        for (std::tr1::unordered_map<PhiTerm*, llvm::PHINode*>::iterator it = phi_node_map.begin();
+        for (std::tr1::unordered_map<PhiTerm*, BuiltValue*>::iterator it = phi_node_map.begin();
              it != phi_node_map.end(); ++it) {
 
-          bool unknown_type = phi_storage_map.find(it->first) != phi_storage_map.end();
           for (std::size_t n = 0; n < it->first->n_incoming(); ++n) {
             PSI_ASSERT(m_value_terms.find(it->first->incoming_block(n)) != m_value_terms.end());
             llvm::BasicBlock *incoming_block =
-              llvm::cast<llvm::BasicBlock>(m_value_terms.find(it->first->incoming_block(n))->second.known_value());
+              llvm::cast<llvm::BasicBlock>(m_value_terms.find(it->first->incoming_block(n))->second->simple_value());
+	    PSI_ASSERT(incoming_block);
             BuiltValue* incoming_value = build_value(it->first->incoming_value(n));
-
-            llvm::Value *value;
-            if (unknown_type) {
-              if (!incoming_value.unknown())
-                throw BuildError("inconsistent incoming types to phi node");
-              value = incoming_value.unknown_value();
-            } else {
-              if (!incoming_value.known())
-                throw BuildError("inconsistent incoming types to phi node");
-              value = incoming_value.known_value();
-            }
-
-            it->second->addIncoming(value, incoming_block);
+	    populate_phi_node(it->second, incoming_block, incoming_value);
           }
         }
+      }
+
+      /**
+       * This creates a dummy instruction inside the function. This is
+       * used when an instruction is needed to mark an insertion point
+       * in a block, but no existing instruction is reliably
+       * available.
+       *
+       * Currently the returned instruction pattern is <tt>sub 0,
+       * undef</tt>.
+       */
+      llvm::Instruction* FunctionBuilder::insert_placeholder_instruction() {
+	llvm::Constant* undef_i8 = llvm::UndefValue::get(llvm::Type::getInt8Ty(llvm_context()));
+	return irbuilder().Insert(llvm::BinaryOperator::CreateNeg(undef_i8));
       }
 
       /**
@@ -565,6 +547,7 @@ namespace Psi {
         }
       }
 
+#if 0
       /**
        * Call <tt>llvm.memcpy.p0i8.p0i8.i64</tt> with default alignment
        * and volatile parameters.
@@ -579,36 +562,7 @@ namespace Psi {
           irbuilder().CreateCall5(intrinsic_memcpy_64(llvm_module()), dest, src, count, align, false_val);
         }
       }
-
-      /**
-       * Create a store instruction for the given term into
-       * memory. Handles cases where the term is known or not correctly.
-       *
-       * \return The store instruction created. This may be NULL if the
-       * type of \c src is empty.
-       */
-      void FunctionBuilder::create_store(llvm::Value *dest, Term *src) {
-        BuiltValue* llvm_src = build_value(src);
-
-        if (llvm_src.known()) {
-          llvm::Value *cast_dest = cast_pointer_from_generic(dest, llvm_src.known_value()->getType()->getPointerTo());
-          irbuilder().CreateStore(llvm_src.known_value(), cast_dest);
-        } else {
-          PSI_ASSERT(llvm_src.unknown());
-          create_store_unknown(dest, llvm_src.unknown_value(), src->type());
-        }
-      }
-
-      /**
-       * Create a memcpy call which stores an unknown term into a
-       * pointer.
-       */
-      void FunctionBuilder::create_store_unknown(llvm::Value *dest, llvm::Value *src, Term *src_type) {
-        PSI_ASSERT(src_type->category() == Term::category_type);
-        llvm::Value *src_type_value = build_value_simple(src_type);
-        llvm::Value *size = irbuilder().CreateExtractValue(src_type_value, 0);
-        create_memcpy(dest, src, size);
-      }
+#endif
 
       /**
        * Get one of the names for a term, or an empty StringRef if the

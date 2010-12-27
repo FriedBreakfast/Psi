@@ -218,7 +218,7 @@ FUNCTION calling_convention '(' parameter_list ')' '>' expression {
   $$ = list_one<Expression>(new FunctionTypeExpression(@$, $2, *$4, *$6, result));
 };
 
-calling_convention: {$$=cconv_tvm} | CC_TVM {$$=cconv_tvm} | CC_C {$$=cconv_c};
+calling_convention: {$$=cconv_c} | CC_C {$$=cconv_c};
 
 parameter_list: {$$ = list_empty<NamedExpression>();} | parameter_list_nonempty
 

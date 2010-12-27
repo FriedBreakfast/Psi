@@ -37,7 +37,7 @@ namespace Psi {
     Term* length() const {return get()->parameter(1);}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *element_type, Term *length);
-    static Ptr get(Term *element_type, uint64_t length);
+    static Ptr get(Term *element_type, unsigned length);
     PSI_TVM_FUNCTIONAL_TYPE_END(ArrayType)
 
     PSI_TVM_FUNCTIONAL_TYPE(ArrayValue)
@@ -46,7 +46,7 @@ namespace Psi {
     /// \brief Get the element type in the array.
     Term* element_type() const {return get()->parameter(0);}
     /// \brief Get the length of the array value.
-    std::size_t length() const {return get()->n_parameters() - 1;}
+    unsigned length() const {return get()->n_parameters() - 1;}
     /// \brief Get the value of the specified array element.
     Term* value(std::size_t n) const {return get()->parameter(n+1);}
     /// \brief Get the type of this value (overloaded to return an ArrayType).
@@ -59,7 +59,7 @@ namespace Psi {
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
     /// \brief Get the number of members in the aggregate.
-    std::size_t n_members() const {return get()->n_parameters();}
+    unsigned n_members() const {return get()->n_parameters();}
     /// \brief Get the type of the given member.
     Term* member_type(std::size_t i) const {return get()->parameter(i);}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
@@ -70,7 +70,7 @@ namespace Psi {
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
     /// \brief Get the number of elements in the struct.
-    std::size_t n_members() const {return get()->n_parameters();}
+    unsigned n_members() const {return get()->n_parameters();}
     /// \brief Get the value of the specified member.
     Term* member_value(std::size_t n) const {return get()->parameter(n);}
     /// \brief Get the type of this value (overloaded to return a StructType).
@@ -83,7 +83,7 @@ namespace Psi {
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
     /// \brief Get the number of members in the aggregate.
-    std::size_t n_members() const {return get()->n_parameters();}
+    unsigned n_members() const {return get()->n_parameters();}
     /// \brief Get the type of the given member.
     Term* member_type(std::size_t i) const {return get()->parameter(i);}
     int index_of_type(Term *type) const;
@@ -109,7 +109,7 @@ namespace Psi {
     /// \brief Get the function being specialized.
     Term* function() const {return get()->parameter(0);}
     /// \brief Get the number of parameters being applied.
-    std::size_t n_parameters() const {return get()->n_parameters() - 1;}
+    unsigned n_parameters() const {return get()->n_parameters() - 1;}
     /// \brief Get the value of the <tt>n</tt>th parameter being applied.
     Term* parameter(std::size_t n) const {return get()->parameter(n+1);}
     /// \brief Get the type of this value (overloaded to return a PointerType).

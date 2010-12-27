@@ -101,7 +101,7 @@ namespace Psi {
       return element_type->context().get_functional<ArrayType>(ArrayPtr<Term*const>(params, 2));
     }
 
-    ArrayType::Ptr ArrayType::get(Term *element_type, uint64_t length) {
+    ArrayType::Ptr ArrayType::get(Term *element_type, unsigned length) {
       IntegerType::Ptr  size_type = IntegerType::get(element_type->context(), IntegerType::iptr, false);
       Term *length_term = IntegerValue::get(size_type, length);
       return get(element_type, length_term);

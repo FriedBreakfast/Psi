@@ -52,16 +52,11 @@ namespace Psi {
       }
 
       FunctionalTerm* build_literal_int(IntegerType::Ptr type, const Parser::LiteralExpression& expression) {
-        uint64_t value;
-        try {
-          if (type->is_signed())
-            value = boost::lexical_cast<int64_t>(expression.value->text);
-          else
-            value = boost::lexical_cast<uint64_t>(expression.value->text);
-        } catch (boost::bad_lexical_cast&) {
-          throw AssemblerError("invalid integer literal");
-        }
-        return IntegerValue::get(type, value);
+	std::string value = expression.value->text;
+	bool negative = (value[0] == '-');
+	if (negative)
+	  value = value.substr(1);
+        return IntegerValue::get(type, value, negative);
       }
 
       FunctionalTerm* build_literal(AssemblerContext& context, const Parser::LiteralExpression& expression) {

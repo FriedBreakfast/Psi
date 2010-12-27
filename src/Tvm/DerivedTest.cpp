@@ -23,22 +23,6 @@ namespace Psi {
       BOOST_CHECK_EQUAL_COLLECTIONS(expected, expected+5, ptr, ptr+5);
     }
 
-    BOOST_AUTO_TEST_CASE(FunctionReturnArray) {
-      const char *src =
-        "%at = define (array (int #32) (c_uint #64 #3));\n"
-        "%f = function () > %at {\n"
-        "  return (c_array (int #32) (c_int #32 #576) (c_int #32 #34) (c_int #32 #9));\n"
-        "};\n";
-
-      typedef void (*FunctionType) (void*);
-      const Jit::Int32 expected[] = {576, 34, 9};
-      Jit::Int32 result[3];
-
-      FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
-      f(result);
-      BOOST_CHECK_EQUAL_COLLECTIONS(expected, expected+3, result, result+3);
-    }
-
     BOOST_AUTO_TEST_CASE(FunctionReturnByteArray) {
       const char *src =
         "%i8 = define (int #8);\n"

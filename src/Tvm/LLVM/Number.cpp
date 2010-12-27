@@ -35,6 +35,7 @@ namespace {
     case IntegerType::i16: return 16;
     case IntegerType::i32: return 32;
     case IntegerType::i64: return 64;
+    case IntegerType::i128: return 128;
 
     case IntegerType::iptr:
       return builder.intptr_type_bits();
@@ -51,7 +52,19 @@ namespace {
   llvm::Constant* integer_value_const(ConstantBuilder& builder, IntegerValue::Ptr term) {
     IntegerType::Ptr type = term->type();
     const llvm::Type *llvm_type = integer_type_type(builder, type);
-    llvm::APInt llvm_value(integer_type_bits(builder, type), term->value(), type->is_signed());
+
+    // Need to convert from a byte to a uint64_t representation
+    const unsigned char *bytes = term->value().bytes;
+    const unsigned num_words = sizeof(IntegerValue::Data::bytes) / 8;
+    uint64_t words[num_words];
+    for (std::size_t i = 0; i < num_words; ++i) {
+      uint64_t word = 0;
+      for (std::size_t j = 0; j < 8; ++j)
+	word = (word << 8) + bytes[i*8 + j];
+      words[i] = word;
+    }
+
+    llvm::APInt llvm_value(integer_type_bits(builder, type), num_words, words);
     return llvm::ConstantInt::get(llvm_type, llvm_value);
   }
 

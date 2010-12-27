@@ -90,7 +90,6 @@ namespace Psi {
       }
 
       ConstantBuilder::~ConstantBuilder() {
-        m_built_values.clear_and_dispose(boost::checked_deleter<BuiltValue>());
       }
 
       /**
@@ -141,9 +140,9 @@ namespace Psi {
        * \pre <tt>!term->phantom() && term->global()</tt>
        */
       llvm::Constant* ConstantBuilder::build_constant_simple(Term *term) {
-        BuiltValue *value = build_constant(term);
-        PSI_ASSERT(value->simple_value && llvm::isa<llvm::Constant>(value->simple_value));
-        return llvm::cast<llvm::Constant>(value->simple_value);
+        ConstantValue *value = build_constant(term);
+	PSI_ASSERT(value->simple_type());
+	return value->simple_value();
       }
 
       /**
@@ -160,11 +159,41 @@ namespace Psi {
         return llvm::cast<llvm::ConstantInt>(c)->getValue();
       }
 
-      struct GlobalBuilder::ConstantBuilderCallback : PtrValidBase<BuiltValue> {
+      /**
+       * Utility function to get an LLVM float type from a float
+       * width, bypassing the normal build_type mechanism.
+       */
+      const llvm::Type* ConstantBuilder::get_float_type(FloatType::Width width) {
+	switch (width) {
+	case FloatType::fp32:  return llvm::Type::getFloatTy(llvm_context());
+	case FloatType::fp64:  return llvm::Type::getDoubleTy(llvm_context());
+	case FloatType::fp128: return llvm::Type::getFP128Ty(llvm_context());
+	case FloatType::fp80:  return llvm::Type::getX86_FP80Ty(llvm_context());
+	default: PSI_FAIL("unknown floating point width");
+	}
+      }
+
+      /**
+       * Utility function to get an LLVM integer type from a float
+       * width, bypassing the normal build_type mechanism.
+       */
+      const llvm::IntegerType* ConstantBuilder::get_integer_type(IntegerType::Width width) {
+	switch (width) {
+	case IntegerType::i8:   return llvm::IntegerType::get(llvm_context(), 8);
+	case IntegerType::i16:  return llvm::IntegerType::get(llvm_context(), 16);
+	case IntegerType::i32:  return llvm::IntegerType::get(llvm_context(), 32);
+	case IntegerType::i64:  return llvm::IntegerType::get(llvm_context(), 64);
+	case IntegerType::i128: return llvm::IntegerType::get(llvm_context(), 128);
+	case IntegerType::iptr: return intptr_type();
+	default: PSI_FAIL("unknown integer width");
+	}
+      }
+
+      struct GlobalBuilder::ConstantBuilderCallback : PtrValidBase<ConstantValue> {
         GlobalBuilder *self;
         ConstantBuilderCallback(GlobalBuilder *self_) : self(self_) {}
 
-        BuiltValue* build(Term *term) const {
+        ConstantValue* build(Term *term) const {
           switch (term->term_type()) {
           case term_functional:
             return self->build_constant_internal(cast<FunctionalTerm>(term));
@@ -179,9 +208,7 @@ namespace Psi {
           case term_function: {
             llvm::GlobalValue *value = self->build_global(cast<GlobalTerm>(term));
             llvm::Constant *i8ptr_value = llvm::ConstantExpr::getPointerCast(value, llvm::Type::getInt8PtrTy(self->llvm_context()));
-            BuiltValue *bv = self->new_value(term->type());
-            bv->simple_value = i8ptr_value;
-            return bv;
+            return self->new_constant_value_simple(term->type(), i8ptr_value);
           }
 
           default:
@@ -264,10 +291,12 @@ namespace Psi {
                                    &irbuilder);
                 fb.run();
               } else {
+#if 0
                 PSI_ASSERT(t.first->term_type() == term_global_variable);
                 if (Term* init_value = cast<GlobalVariableTerm>(t.first)->value())
                   //llvm::cast<llvm::GlobalVariable>(t.second)->setInitializer(build_constant(init_value));
                   PSI_FAIL("not implemented");
+#endif
               }
               m_global_build_list.pop_front();
             }
@@ -279,7 +308,7 @@ namespace Psi {
         return gv.first;
       }
 
-      BuiltValue* GlobalBuilder::build_constant(Term *term) {
+      ConstantValue* GlobalBuilder::build_constant(Term *term) {
         PSI_ASSERT(!term->phantom() && term->global());
 
         switch (term->term_type()) {
