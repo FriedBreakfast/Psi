@@ -161,14 +161,33 @@ namespace Psi {
   namespace Tvm {
     namespace LLVM {
       /**
+       * Build a value for an instruction whose result always
+       * (i.e. regardless of the arguments) has a known type. In
+       * practise, this means numeric operations.
+       */
+      llvm::Value* FunctionBuilder::build_value_instruction_simple(InstructionTerm *term) {
+	PSI_FAIL("not implemented");
+      }
+
+      /**
        * Build a value for a functional operation whose result always
        * (i.e. regardless of the arguments) has a known type. In practise,
        * this means numeric operations.
        */
       llvm::Value* FunctionBuilder::build_value_functional_simple(FunctionalTerm *term) {
+	PSI_FAIL("not implemented");
       }
 
       llvm::Constant* GlobalBuilder::build_constant_internal_simple(FunctionalTerm *term) {
+	PSI_FAIL("not implemented");
+      }
+
+      /**
+       * Attempt to build a type representing a term. If no LLVM
+       * equivalent type exists, return NULL.
+       */
+      const llvm::Type* ConstantBuilder::build_type_internal_simple(FunctionalTerm *term) {
+	PSI_FAIL("not implemented");
       }
     }
   }

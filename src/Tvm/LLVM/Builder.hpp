@@ -31,6 +31,7 @@ namespace Psi {
       typedef llvm::IRBuilder<true, llvm::TargetFolder, llvm::IRBuilderDefaultInserter<true> > IRBuilder;
 
       class ConstantBuilder;
+      class GlobalBuilder;
       class FunctionBuilder;
 
       /**
@@ -111,11 +112,11 @@ namespace Psi {
 	virtual llvm::Constant *raw_value() const;
 
       private:
+	GlobalBuilder *m_builder;
 	llvm::Constant *m_simple_value;
 	llvm::SmallVector<char, 0> m_raw_value;
 
-	ConstantValue(ConstantBuilder& builder, Term *type)
-	  : BuiltValue(builder, type), m_simple_value(0) {}
+	ConstantValue(GlobalBuilder *builder, Term *type);
       };
 
       class FunctionValue : public BuiltValue {
@@ -133,14 +134,13 @@ namespace Psi {
 	virtual llvm::Value *raw_value() const;
 
       private:
+	FunctionBuilder *m_builder;
 	llvm::Instruction *m_origin;
 	llvm::Value *m_simple_value;
 	llvm::Value *m_raw_value;
 	llvm::SmallVector<BuiltValue*, 4> m_elements;
 
-	FunctionValue(ConstantBuilder& builder, Term *type, llvm::Instruction *origin)
-	  : BuiltValue(builder, type), m_origin(origin), m_simple_value(0), m_raw_value(0) {
-	}
+	FunctionValue(FunctionBuilder *builder, Term *type, llvm::Instruction *origin);
       };
 
       class ConstantBuilder;
@@ -188,6 +188,8 @@ namespace Psi {
       public:
         ~ConstantBuilder();
 
+	Context& context() {return *m_context;}
+
         /// \brief Get the LLVM context used to create IR.
         llvm::LLVMContext& llvm_context() {return *m_llvm_context;}
 
@@ -229,16 +231,21 @@ namespace Psi {
 	 */
 	virtual BuiltValue* get_element_value(BuiltValue *value, unsigned index) = 0;
 
-        BuiltValue* empty_value();
+	/**
+	 * Get the unique value of the empty type.
+	 */
+        BuiltValue* empty_value() {return m_empty_value;}
 
       private:
         struct TypeBuilderCallback;
 
-        ConstantBuilder(llvm::LLVMContext *context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes);
+        ConstantBuilder(Context *context, llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes);
 
+	Context *m_context;
         llvm::LLVMContext *m_llvm_context;
         llvm::TargetMachine *m_llvm_target_machine;
         TargetFixes *m_target_fixes;
+	BuiltValue *m_empty_value;
 
         typedef std::tr1::unordered_map<Term*, boost::optional<const llvm::Type*> > TypeTermMap;
         TypeTermMap m_type_terms;
@@ -249,7 +256,7 @@ namespace Psi {
 
       class GlobalBuilder : public ConstantBuilder {
       public:
-        GlobalBuilder(llvm::LLVMContext *context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes, llvm::Module *module=0);
+        GlobalBuilder(Context *context, llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes, llvm::Module *module=0);
         ~GlobalBuilder();
 
         void set_module(llvm::Module *module);
@@ -411,11 +418,11 @@ namespace Psi {
 
       llvm::TargetMachine* host_machine();
 
-      boost::shared_ptr<TargetFixes> create_target_fixes(const llvm::Target& target);
+      boost::shared_ptr<TargetFixes> create_target_fixes(const std::string& triple);
 
       class LLVMJit : public Jit {
       public:
-        LLVMJit(Context *context, llvm::TargetMachine *host_machine);
+        LLVMJit(Context *context, const std::string& host_triple, llvm::TargetMachine *host_machine);
         virtual ~LLVMJit();
 
         virtual void* get_global(GlobalTerm *global);

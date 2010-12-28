@@ -234,9 +234,23 @@ namespace Psi {
       return get(type, convert(value));
     }
 
+    FunctionalTypeResult FloatType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 0)
+        throw TvmUserError("float type takes no parameters");
+      return FunctionalTypeResult(Metatype::get(context), false);
+    }
+
     /// \brief Get a floating point type of the specified width.
     FloatType::Ptr FloatType::get(Context& context, Width width) {
       return context.get_functional<FloatType>(ArrayPtr<Term*const>(), width);
+    }
+
+    FunctionalTypeResult FloatValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 1)
+        throw TvmUserError("float_v value takes one parameter");
+      if (!isa<FloatType>(parameters[0]))
+        throw TvmUserError("float_v parameter is not an float type");
+      return FunctionalTypeResult(parameters[0], false);
     }
 
     FloatValue::Ptr FloatValue::get(FloatType::Ptr type, const Data& data) {

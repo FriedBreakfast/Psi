@@ -605,33 +605,6 @@ namespace {
       return convention_always_supported(id);
     }
   };
-
-  struct HostDescription {
-    std::string cpu;
-    std::string vendor;
-    std::string kernel;
-    std::string os;
-  };
-
-  HostDescription splitHostTriple(const char *triple) {
-    const char *first = std::strchr(triple, '-');
-    PSI_ASSERT(first);
-    const char *second = std::strchr(first+1, '-');
-    PSI_ASSERT(second);
-    const char *third = std::strchr(second+1, '-');
-
-    HostDescription result;
-    result.cpu.assign(triple, first);
-    result.vendor.assign(first+1, second);
-    if (third) {
-      result.kernel.assign(second+1, third);
-      result.os = (third+1);
-    } else {
-      result.os = (second+1);
-    }
-
-    return result;
-  }
 }
 
 namespace Psi {
@@ -641,17 +614,30 @@ namespace Psi {
        * Get the machine-specific set of LLVM workarounds for a given
        * machine. If no such workaround are available, this returns a
        * dummy class, but that may well break in some cases.
+       *
+       * \param triple An LLVM target triple, which will be parsed
+       * using the llvm::Triple class.
        */
-      boost::shared_ptr<TargetFixes> create_target_fixes(const llvm::Target& target) {
-        HostDescription hd = splitHostTriple(target.getName());
+      boost::shared_ptr<TargetFixes> create_target_fixes(const std::string& triple) {
+	llvm::Triple parsed_triple(triple);
 
-        if (hd.cpu == "x86_64") {
-          if (hd.os == "gnu") {
-            return boost::make_shared<TargetFixes_AMD64>();
-          }
-        }
+	switch (parsed_triple.getArch()) {
+	case llvm::Triple::x86_64:
+	  switch (parsed_triple.getOS()) {
+	  case llvm::Triple::Linux: return boost::make_shared<TargetFixes_AMD64>();
+	  default: break;
+	  }
+	  break;
 
+	default:
+	  break;
+	}
+
+#if 0
         return boost::make_shared<TargetFixes_Default>();
+#else
+	throw BuildError("Target " + triple + " not supported");
+#endif
       }
     }
   }

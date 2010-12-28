@@ -47,6 +47,15 @@ namespace Psi {
     }
     PSI_TVM_FUNCTIONAL_TYPE_END(FunctionTypeResolverParameter)
 
+    const char FunctionTypeResolverParameter::operation[] = "function_type_resolver_parameter";
+
+    FunctionalTypeResult FunctionTypeResolverParameter::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 1)
+	throw TvmInternalError("FunctionTypeResolverParameter takes one parameter");
+
+      return FunctionalTypeResult(parameters[0], parameters[0]->phantom());
+    }
+
     FunctionTypeTerm::FunctionTypeTerm(const UserInitializer& ui,
 				       Context *context,
 				       Term *result_type,

@@ -10,7 +10,7 @@ namespace Psi {
       BOOST_AUTO_TEST_SUITE(TvmParserTest)
 
       BOOST_AUTO_TEST_CASE(GlobalConst) {
-	const char *src = "%x = define (const_int #32 #0);";
+	const char *src = "%x = define #i0;";
 
 	UniqueList<NamedGlobalElement> result;
 	parse(result, src);
@@ -20,7 +20,7 @@ namespace Psi {
       }
 
       BOOST_AUTO_TEST_CASE(GlobalVariableExtern) {
-	const char *src = "%x = global (int #32);";
+	const char *src = "%x = global const i32;";
 
 	UniqueList<NamedGlobalElement> result;
 	parse(result, src);
@@ -30,7 +30,7 @@ namespace Psi {
       }
 
       BOOST_AUTO_TEST_CASE(GlobalVariable) {
-	const char *src = "%x = global (int #32) (const_int #32 #0);";
+	const char *src = "%x = global i32 #i0;";
 
 	UniqueList<NamedGlobalElement> result;
 	parse(result, src);
@@ -40,7 +40,7 @@ namespace Psi {
       }
 
       BOOST_AUTO_TEST_CASE(FunctionExtern) {
-	const char *src = "%x = function ((int #32), (int #64)) > (int #16);";
+	const char *src = "%x = function (i32, i64) > i16;";
 
 	UniqueList<NamedGlobalElement> result;
 	parse(result, src);
@@ -51,8 +51,8 @@ namespace Psi {
 
       BOOST_AUTO_TEST_CASE(Function) {
 	const char *src =
-	  "%x = function ((int #32), (int #64)) > (int #16) {\n"
-	  "   return (int #16 #0);"
+	  "%x = function (i32, i64) > i16 {\n"
+	  "   return #i0;"
 	  "};\n";
 
 	UniqueList<NamedGlobalElement> result;

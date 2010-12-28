@@ -129,7 +129,7 @@ namespace Psi {
     /// \brief Get the width of this floating point type.
     Width width() const {return data().value();}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    FloatType::Ptr get(Context&, Width width);
+    static FloatType::Ptr get(Context&, Width width);
     PSI_TVM_FUNCTIONAL_TYPE_END(FloatType)
 
     inline std::size_t hash_value(FloatType::Width w) {
@@ -156,7 +156,7 @@ namespace Psi {
     /// \brief Get the type of this term cast to FloatType::Ptr
     FloatType::Ptr type() const {return cast<FloatType>(BaseType::type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    FloatValue::Ptr get(FloatType::Ptr, const Data&);
+    static FloatValue::Ptr get(FloatType::Ptr, const Data&);
     PSI_TVM_FUNCTIONAL_TYPE_END(FloatValue)
 
     PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerAdd, IntegerType)

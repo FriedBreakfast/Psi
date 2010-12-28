@@ -43,18 +43,16 @@ namespace Psi {
         }
       };
 
-#if 0
-      struct RealTypeCallback {
-        RealType::Width width;
+      struct FloatTypeCallback {
+        FloatType::Width width;
 
-        RealTypeCallback(RealType::Width width_) : width(width_) {}
+        FloatTypeCallback(FloatType::Width width_) : width(width_) {}
 
         FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_terms(name, 0, expression);
-          return context.context().get_functional_v(RealType(width));
+	  return FloatType::get(context.context(), width);
         }
       };
-#endif
 
       struct BoolValueCallback {
         bool value;
@@ -72,18 +70,22 @@ namespace Psi {
         //("type", DefaultFunctionalCallback<Metatype>())
         //("pointer", DefaultFunctionalCallback<PointerType>())
         //("bool", DefaultFunctionalCallback<BooleanType>())
-        ("byte", IntTypeCallback(IntegerType::i8, true))
-        ("short", IntTypeCallback(IntegerType::i16, true))
-        ("int", IntTypeCallback(IntegerType::i32, true))
-        ("long", IntTypeCallback(IntegerType::i64, true))
-        ("intptr", IntTypeCallback(IntegerType::iptr, true))
-        ("ubyte", IntTypeCallback(IntegerType::i8, false))
-        ("ushort", IntTypeCallback(IntegerType::i16, false))
-        ("uint", IntTypeCallback(IntegerType::i32, false))
-        ("ulong", IntTypeCallback(IntegerType::i64, false))
-        ("uintptr", IntTypeCallback(IntegerType::iptr, false))
-        //("float", RealTypeCallback(RealType::real_float))
-        //("double", RealTypeCallback(RealType::real_double))
+        ("i8", IntTypeCallback(IntegerType::i8, true))
+        ("i16", IntTypeCallback(IntegerType::i16, true))
+        ("i32", IntTypeCallback(IntegerType::i32, true))
+        ("i64", IntTypeCallback(IntegerType::i64, true))
+        ("i128", IntTypeCallback(IntegerType::i128, true))
+        ("iptr", IntTypeCallback(IntegerType::iptr, true))
+        ("ui8", IntTypeCallback(IntegerType::i8, false))
+        ("ui16", IntTypeCallback(IntegerType::i16, false))
+        ("ui32", IntTypeCallback(IntegerType::i32, false))
+        ("ui64", IntTypeCallback(IntegerType::i64, false))
+        ("ui128", IntTypeCallback(IntegerType::i128, false))
+        ("uiptr", IntTypeCallback(IntegerType::iptr, false))
+        ("fp32", FloatTypeCallback(FloatType::fp32))
+        ("fp64", FloatTypeCallback(FloatType::fp64))
+        ("fp128", FloatTypeCallback(FloatType::fp128))
+        ("fp80", FloatTypeCallback(FloatType::fp80))
         ("true", BoolValueCallback(true))
         ("false", BoolValueCallback(false))
         ("add", DefaultFunctionalCallback<IntegerAdd>())

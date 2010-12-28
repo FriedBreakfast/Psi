@@ -96,9 +96,7 @@ namespace Psi {
                                        FunctionTerm *function,
                                        llvm::Function *llvm_function,
                                        IRBuilder *irbuilder)
-        : ConstantBuilder(&global_builder->llvm_context(),
-                          global_builder->llvm_target_machine(),
-                          global_builder->target_fixes()),
+        : ConstantBuilder(*global_builder),
           m_global_builder(global_builder),
           m_irbuilder(irbuilder),
           m_function(function),

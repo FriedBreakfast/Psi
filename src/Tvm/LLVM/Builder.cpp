@@ -84,8 +84,15 @@ namespace Psi {
         bool valid(const boost::optional<const llvm::Type*>& t) const {return t;}
       };
 
-      ConstantBuilder::ConstantBuilder(llvm::LLVMContext *context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes)
-        : m_llvm_context(context), m_llvm_target_machine(target_machine), m_target_fixes(target_fixes) {
+      ConstantBuilder::ConstantBuilder(Context *context,
+				       llvm::LLVMContext *llvm_context,
+				       llvm::TargetMachine *target_machine,
+				       TargetFixes *target_fixes)
+        : m_context(context),
+	  m_llvm_context(llvm_context),
+	  m_llvm_target_machine(target_machine),
+	  m_target_fixes(target_fixes),
+	  m_empty_value(0) {
         PSI_ASSERT(m_llvm_context);
       }
 
@@ -255,9 +262,10 @@ namespace Psi {
         }
       };
 
-      GlobalBuilder::GlobalBuilder(llvm::LLVMContext *context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes, llvm::Module *module)
-        : ConstantBuilder(context, target_machine, target_fixes), m_module(module) {
-        PSI_ASSERT(m_module);
+      GlobalBuilder::GlobalBuilder(Context *context, llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes, llvm::Module *module)
+        : ConstantBuilder(context, llvm_context, target_machine, target_fixes), m_module(module) {
+	llvm::Constant *empty_value = llvm::ConstantStruct::get(*llvm_context, 0, 0, false);
+	m_empty_value = new_constant_value_simple(EmptyType::get(*context), empty_value);
       }
 
       GlobalBuilder::~GlobalBuilder() {
@@ -323,31 +331,13 @@ namespace Psi {
         }
       }
 
-      /**
-       * Get the host machine data.
-       */
-      llvm::TargetMachine* host_machine() {
-        std::string host = llvm::sys::getHostTriple();
-
-        std::string error_msg;
-        const llvm::Target *target = llvm::TargetRegistry::lookupTarget(host, error_msg);
-        if (!target)
-          throw BuildError("Could not get LLVM JIT target: " + error_msg);
-
-        llvm::TargetMachine *tm = target->createTargetMachine(host, "");
-        if (!tm)
-          throw BuildError("Failed to create target machine");
-
-        return tm;
-      }
-
-      LLVMJit::LLVMJit(Context *context, llvm::TargetMachine *host_machine)
+      LLVMJit::LLVMJit(Context *context,
+		       const std::string& host_triple,
+		       llvm::TargetMachine *host_machine)
         : m_context(context),
-          m_target_fixes(create_target_fixes(host_machine->getTarget())),
-          m_builder(&m_llvm_context, host_machine, m_target_fixes.get()),
+          m_target_fixes(create_target_fixes(host_triple)),
+          m_builder(context, &m_llvm_context, host_machine, m_target_fixes.get()),
           m_llvm_engine(make_engine(m_llvm_context)) {
-
-        llvm::InitializeNativeTarget();
       }
 
       LLVMJit::~LLVMJit() {
@@ -394,7 +384,20 @@ namespace Psi {
      * Create a JIT compiler using LLVM as a backend.
      */
     boost::shared_ptr<Jit> create_llvm_jit(Context *context) {
-      return boost::make_shared<LLVM::LLVMJit>(context, LLVM::host_machine());
+      llvm::InitializeNativeTarget();
+
+      std::string host = llvm::sys::getHostTriple();
+
+      std::string error_msg;
+      const llvm::Target *target = llvm::TargetRegistry::lookupTarget(host, error_msg);
+      if (!target)
+	throw LLVM::BuildError("Could not get LLVM JIT target: " + error_msg);
+
+      llvm::TargetMachine *tm = target->createTargetMachine(host, "");
+      if (!tm)
+	throw LLVM::BuildError("Failed to create target machine");
+
+      return boost::make_shared<LLVM::LLVMJit>(context, host, tm);
     }
   }
 }

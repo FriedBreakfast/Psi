@@ -132,7 +132,7 @@ namespace {
 }
 
 %type<tokens> ID OP
-%type<expressions> NUMBER expression root_expression id_expression op_expression bracket_expression term_list term_list_nonempty term function_type
+%type<expressions> NUMBER expression root_expression id_expression op_expression bracket_expression term_list term_list_nonempty function_type
 %type<blocks> block_list block_list_nonempty block
 %type<named_expressions> statement_list statement parameter_list parameter_list_nonempty parameter
 %type<globals> root global function constant global_variable
@@ -275,13 +275,15 @@ root_expression ';' {
 ;
 
 expression:
-id_expression
+NUMBER
+| id_expression
 | op_expression
 | '(' root_expression ')' {$$ = $2;}
 ;
 
 root_expression:
-id_expression
+NUMBER
+| id_expression
 | bracket_expression
 | '(' root_expression ')' {$$ = $2;}
 ;
@@ -312,13 +314,8 @@ OP term_list {
 term_list: {$$ = list_empty<Expression>();} | term_list_nonempty;
 
 term_list_nonempty:
-term
-| term_list_nonempty term {$$ = list_append($1, $2);}
-;
-
-term:
 expression
-| NUMBER
+| term_list_nonempty expression {$$ = list_append($1, $2);}
 ;
 
 phi_node_list:

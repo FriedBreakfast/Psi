@@ -423,6 +423,30 @@ namespace Psi {
 	m_elements.resize(n_elements, 0);
       }
 
+      ConstantValue::ConstantValue(GlobalBuilder *builder, Term *type)
+	: BuiltValue(*builder, type), m_builder(builder), m_simple_value(0) {
+      }
+
+      llvm::Constant *ConstantValue::simple_value() const {
+	PSI_FAIL("not implemented");
+      }
+
+      llvm::Constant *ConstantValue::raw_value() const {
+	PSI_FAIL("not implemented");
+      }
+
+      FunctionValue::FunctionValue(FunctionBuilder *builder, Term *type, llvm::Instruction *origin)
+	: BuiltValue(*builder, type), m_builder(builder), m_origin(origin), m_simple_value(0), m_raw_value(0) {
+      }
+
+      llvm::Value *FunctionValue::simple_value() const {
+	PSI_FAIL("not implemented");
+      }
+
+      llvm::Value *FunctionValue::raw_value() const {
+	PSI_FAIL("not implemented");
+      }
+
       /**
        * Create a new ConstantValue object. This is an internal
        * function to handle the pool allocation and construction of
@@ -431,7 +455,7 @@ namespace Psi {
       ConstantValue* GlobalBuilder::new_constant_value(Term *type) {
 	ConstantValue *p = m_constant_value_pool.malloc();
 	try {
-	  return new (p) ConstantValue (*this, type);
+	  return new (p) ConstantValue (this, type);
 	} catch (...) {
 	  m_constant_value_pool.free(p);
 	  throw;
@@ -487,7 +511,7 @@ namespace Psi {
 
 	FunctionValue *p = m_function_value_pool.malloc();
 	try {
-	  return new (p) FunctionValue (*this, type, origin);
+	  return new (p) FunctionValue (this, type, origin);
 	} catch (...) {
 	  m_function_value_pool.free(p);
 	  throw;
@@ -534,18 +558,30 @@ namespace Psi {
        * Store a value to the specified memory address.
        */
       void FunctionBuilder::store_value(BuiltValue *value, llvm::Value *ptr) {
+	PSI_FAIL("not implemented");
       }
 
       /**
        * Load a value of the specified type from the specified memory address.
        */
       BuiltValue* FunctionBuilder::load_value(Term *type, llvm::Value *ptr) {
+	PSI_FAIL("not implemented");
+      }
+
+      llvm::Value* GlobalBuilder::value_to_llvm(BuiltValue *value) {
+	PSI_FAIL("not implemented");
       }
 
       llvm::Value* FunctionBuilder::value_to_llvm(BuiltValue *value) {
+	PSI_FAIL("not implemented");
+      }
+
+      BuiltValue* GlobalBuilder::get_element_value(BuiltValue *value, unsigned index) {
+	PSI_FAIL("not implemented");
       }
 
       BuiltValue* FunctionBuilder::get_element_value(BuiltValue *value, unsigned index) {
+	PSI_FAIL("not implemented");
       }
 
       /**
@@ -614,6 +650,20 @@ namespace Psi {
 
 	llvm::PHINode *llvm_phi = llvm::cast<llvm::PHINode>(phi_node_cast->m_raw_value);
 	llvm_phi->addIncoming(value->raw_value(), incoming_block);
+      }
+
+      /**
+       * Build a value for an instruction operation.
+       *
+       * This handles complex operations on aggregate types; numeric
+       * operations are forwarded to build_value_instruction_simple.
+       */
+      BuiltValue* FunctionBuilder::build_value_instruction(InstructionTerm *term) {
+	if (false) {
+	} else {
+	  llvm::Value *value = build_value_instruction_simple(term);
+	  return new_function_value_simple(term->type(), value);
+	}
       }
 
       /**

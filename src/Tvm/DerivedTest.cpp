@@ -10,7 +10,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(GlobalConstArray) {
       const char *src =
-        "%ar = global const (array (int #32) (c_uint #64 #5))\n"
+        "%ar = global const (array int #s5)\n"
         "(c_array (int #32)\n"
         " (c_int #32 #1)\n"
         " (c_int #32 #5)\n"
