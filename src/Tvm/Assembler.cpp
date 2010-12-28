@@ -12,8 +12,17 @@
 namespace Psi {
   namespace Tvm {
     namespace Assembler {
-      AssemblerError::AssemblerError(const std::string& msg)
-        : std::runtime_error(msg) {
+      AssemblerError::AssemblerError(const std::string& msg) {
+	m_message = "Psi TVM assembler error: ";
+	m_message += msg;
+	m_str = m_message.c_str();
+      }
+
+      AssemblerError::~AssemblerError() throw () {
+      }
+
+      const char* AssemblerError::what() const throw() {
+	return m_str;
       }
 
       AssemblerContext::AssemblerContext(Context *context) : m_context(context), m_parent(0) {

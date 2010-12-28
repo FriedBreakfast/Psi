@@ -65,11 +65,10 @@ namespace Psi {
         }
       };
 
+#define CALLBACK(ty) (ty::operation, DefaultFunctionalCallback<ty>())
+
       const std::tr1::unordered_map<std::string, FunctionalTermCallback> functional_ops =
         boost::assign::map_list_of<std::string, FunctionalTermCallback>
-        //("type", DefaultFunctionalCallback<Metatype>())
-        //("pointer", DefaultFunctionalCallback<PointerType>())
-        //("bool", DefaultFunctionalCallback<BooleanType>())
         ("i8", IntTypeCallback(IntegerType::i8, true))
         ("i16", IntTypeCallback(IntegerType::i16, true))
         ("i32", IntTypeCallback(IntegerType::i32, true))
@@ -85,20 +84,26 @@ namespace Psi {
         ("fp32", FloatTypeCallback(FloatType::fp32))
         ("fp64", FloatTypeCallback(FloatType::fp64))
         ("fp128", FloatTypeCallback(FloatType::fp128))
-        ("fp80", FloatTypeCallback(FloatType::fp80))
+        ("fp-x86-80", FloatTypeCallback(FloatType::fp_x86_80))
+	("fp-ppc-128", FloatTypeCallback(FloatType::fp_ppc_128))
         ("true", BoolValueCallback(true))
         ("false", BoolValueCallback(false))
-        ("add", DefaultFunctionalCallback<IntegerAdd>())
-        ("sub", DefaultFunctionalCallback<IntegerSubtract>())
-        ("mul", DefaultFunctionalCallback<IntegerMultiply>())
-        ("div", DefaultFunctionalCallback<IntegerDivide>())
-        ("specialize", DefaultFunctionalCallback<FunctionSpecialize>())
-        ("array", DefaultFunctionalCallback<ArrayType>())
-        ("array_c", DefaultFunctionalCallback<ArrayValue>())
-        ("struct", DefaultFunctionalCallback<StructType>())
-        ("struct_c", DefaultFunctionalCallback<StructValue>())
-        ("union", DefaultFunctionalCallback<UnionType>())
-        ("union_c", DefaultFunctionalCallback<UnionValue>());
+	CALLBACK(Metatype)
+	CALLBACK(PointerType)
+	CALLBACK(BooleanType)
+	CALLBACK(IntegerAdd)
+	CALLBACK(IntegerSubtract)
+	CALLBACK(IntegerMultiply)
+	CALLBACK(IntegerDivide)
+	CALLBACK(FunctionSpecialize)
+	CALLBACK(ArrayType)
+	CALLBACK(ArrayValue)
+	CALLBACK(StructType)
+	CALLBACK(StructValue)
+	CALLBACK(UnionType)
+	CALLBACK(UnionValue);
+
+#undef CALLBACK
 
       template<typename T>
       struct DefaultInstructionCallback {
@@ -109,15 +114,19 @@ namespace Psi {
         }
       };
 
+#define CALLBACK(ty) (ty::operation, DefaultInstructionCallback<ty>())
+
       const std::tr1::unordered_map<std::string, InstructionTermCallback> instruction_ops =
         boost::assign::map_list_of<std::string, InstructionTermCallback>
-	("br", DefaultInstructionCallback<UnconditionalBranch>())
-	("call", DefaultInstructionCallback<FunctionCall>())
-	("cond_br", DefaultInstructionCallback<ConditionalBranch>())
-	("return", DefaultInstructionCallback<Return>())
-        ("alloca", DefaultInstructionCallback<Alloca>())
-        ("load", DefaultInstructionCallback<Load>())
-        ("store", DefaultInstructionCallback<Store>());
+	CALLBACK(FunctionCall)
+	CALLBACK(UnconditionalBranch)
+	CALLBACK(ConditionalBranch)
+	CALLBACK(Return)
+	CALLBACK(Alloca)
+	CALLBACK(Load)
+	CALLBACK(Store);
+
+#undef CALLBACK
     }
   }
 }

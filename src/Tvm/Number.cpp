@@ -8,9 +8,9 @@ namespace Psi {
     const char IntegerType::operation[] = "int";
     const char IntegerValue::operation[] = "int_v";
     const char IntegerAdd::operation[] = "add";
-    const char IntegerSubtract::operation[] = "subtract";
-    const char IntegerMultiply::operation[] = "multiply";
-    const char IntegerDivide::operation[] = "divide";
+    const char IntegerSubtract::operation[] = "sub";
+    const char IntegerMultiply::operation[] = "mul";
+    const char IntegerDivide::operation[] = "div";
     const char FloatType::operation[] = "float";
     const char FloatValue::operation[] = "float_v";
 

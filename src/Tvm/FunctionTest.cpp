@@ -15,7 +15,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(PhantomParameterTest) {
       const char *src =
-        "%f = function cc_c (%a:type|%b:bool,%c:(pointer %a),%d:(pointer %a)) > (pointer %a) {\n"
+        "%f = function (%a:type|%b:bool,%c:(pointer %a),%d:(pointer %a)) > (pointer %a) {\n"
         " cond_br %b %tc %td;\n"
         "block %tc:\n"
         " return %c;\n"
@@ -38,7 +38,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(PhantomCallbackTest) {
       const char *src =
-        "%f = function cc_c(%a:type|%b:(pointer(function cc_c ((pointer %a),(pointer %a))>(pointer %a))),%c:(pointer %a),%d:(pointer %a)) > (pointer %a) {\n"
+        "%f = function (%a:type|%b:(pointer(function cc_c ((pointer %a),(pointer %a))>(pointer %a))),%c:(pointer %a),%d:(pointer %a)) > (pointer %a) {\n"
         "  %r = call %b %c %d;\n"
         "  return %r;\n"
         "};\n";
@@ -53,15 +53,14 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(PhiTest) {
       const char *src =
-        "%i32 = define (int #32);\n"
-        "%f = function cc_c (%a: bool, %b: %i32, %c: %i32) > %i32 {\n"
+        "%f = function (%a: bool, %b: i32, %c: i32) > i32 {\n"
         "  cond_br %a %tb %tc;\n"
         "block %tb:\n"
         "  br %end;\n"
         "block %tc:\n"
         "  br %end;\n"
         "block %end:\n"
-        "  %r = phi %i32: %tb > %b, %tc > %c;\n"
+        "  %r = phi i32: %tb > %b, %tc > %c;\n"
         "  return %r;\n"
         "};\n";
 

@@ -545,22 +545,29 @@ namespace Psi {
         }
       }
 
-#if 0
       /**
        * Call <tt>llvm.memcpy.p0i8.p0i8.i64</tt> with default alignment
        * and volatile parameters.
        */
-      void FunctionBuilder::create_memcpy(llvm::Value *dest, llvm::Value *src, llvm::Value *count) {
+      llvm::Instruction* FunctionBuilder::create_memcpy(llvm::Value *dest, llvm::Value *src, llvm::Value *count) {
         llvm::ConstantInt *align = llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvm_context()), 0);
         llvm::ConstantInt *false_val = llvm::ConstantInt::getFalse(llvm_context());
         PSI_ASSERT(llvm::cast<llvm::IntegerType>(count->getType())->getBitWidth() == intptr_type_bits());
         if (intptr_type_bits() <= 32) {
-          irbuilder().CreateCall5(intrinsic_memcpy_32(llvm_module()), dest, src, count, align, false_val);
+          return irbuilder().CreateCall5(intrinsic_memcpy_32(llvm_module()), dest, src, count, align, false_val);
         } else {
-          irbuilder().CreateCall5(intrinsic_memcpy_64(llvm_module()), dest, src, count, align, false_val);
+          return irbuilder().CreateCall5(intrinsic_memcpy_64(llvm_module()), dest, src, count, align, false_val);
         }
       }
-#endif
+
+      /// Returns the maximum alignment for any type supported. This
+      /// seems to have to be hardwired which is bad, but 8 should be
+      /// enough for all current platforms.
+      unsigned FunctionBuilder::unknown_alloca_align() {
+	unsigned int_align = type_alignment(get_integer_type(IntegerType::i128));
+	unsigned fp_align = type_alignment(get_float_type(FloatType::fp128));
+	return std::max(int_align, fp_align);
+      }
 
       /**
        * Get one of the names for a term, or an empty StringRef if the

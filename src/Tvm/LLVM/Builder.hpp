@@ -2,7 +2,7 @@
 #define HPP_PSI_TVM_LLVM_BUILDER
 
 #include <deque>
-#include <stdexcept>
+#include <exception>
 #include <tr1/unordered_map>
 
 #include <boost/intrusive/list.hpp>
@@ -39,9 +39,15 @@ namespace Psi {
        * these use PSI_ASSERT, but this can also be used when the error
        * condition has not been tested well enough.
        */
-      class BuildError : public std::logic_error {
+      class BuildError : public std::exception {
       public:
         explicit BuildError(const std::string& message);
+	virtual ~BuildError() throw ();
+	virtual const char* what() const throw();
+
+      private:
+	const char *m_str;
+	std::string m_message;
       };
 
       class BuiltValue : public boost::intrusive::list_base_hook<> {
@@ -317,10 +323,7 @@ namespace Psi {
         llvm::Function* llvm_function() {return m_llvm_function;}
         IRBuilder& irbuilder() {return *m_irbuilder;}
 
-        /// Returns the maximum alignment for any type supported. This
-        /// seems to have to be hardwired which is bad, but 8 should be
-        /// enough for all current platforms.
-        unsigned unknown_alloca_align() const {return 8;}
+        unsigned unknown_alloca_align();
 
 	llvm::Instruction* insert_placeholder_instruction();
 
@@ -350,6 +353,7 @@ namespace Psi {
 
         llvm::Value* cast_pointer_to_generic(llvm::Value *value);
         llvm::Value* cast_pointer_from_generic(llvm::Value *value, const llvm::Type *type);
+	llvm::Instruction* create_memcpy(llvm::Value *dest, llvm::Value *src, llvm::Value *count);
 
         llvm::StringRef term_name(Term *term);
 

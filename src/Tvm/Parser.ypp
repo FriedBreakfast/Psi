@@ -85,7 +85,8 @@ namespace {
     return ((c >= 'A') && (c <= 'Z')) ||
       ((c >= 'a') && (c <= 'z')) ||
       ((c >= '0') && (c <= '9')) ||
-      (c == '_');
+      (c == '_') ||
+      (c == '-');
   }
 
   int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self);
@@ -111,7 +112,6 @@ namespace {
 %token BLOCK "block"
 %token EXTERN "extern"
 %token CONST "const"
-%token CC_TVM "cc_tvm"
 %token CC_C "cc_c"
 
 %parse-param {ParserInternalArguments& arguments}
@@ -343,7 +343,6 @@ namespace {
     ("global", GLOBAL)
     ("function", FUNCTION)
     ("phi", PHI)
-    ("cc_tvm", CC_TVM)
     ("cc_c", CC_C);
 
   const std::tr1::unordered_map<char, LiteralType> signed_literals =
@@ -439,7 +438,7 @@ namespace {
         return it->second;
     } else if (token_type == NUMBER) {
       if (text.size() < 2)
-        return 0;
+        return INVALID;
 
       std::tr1::unordered_map<char, LiteralType>::const_iterator it;
       std::string literal_text;
@@ -447,13 +446,15 @@ namespace {
       if (text[0] == 'u') {
         it = unsigned_literals.find(text[1]);
         if (it == unsigned_literals.end())
-          return 0;
+          return INVALID;
         literal_loc.first_column += 2;
+	literal_text = text.substr(2);
       } else {
         it = signed_literals.find(text[0]);
         if (it == signed_literals.end())
-          return 0;
+          return INVALID;
         literal_loc.first_column += 1;
+	literal_text = text.substr(1);
       }
 
       UniquePtr<Token> literal_token(new Token(literal_loc, literal_text));

@@ -95,7 +95,7 @@ namespace Psi {
       }
 
       friend std::size_t hash_value(const Data& self) {
-	return boost::hash_range(self.bytes, self.bytes+sizeof(self.bytes));
+	return boost::hash_range(self.bytes, self.bytes+sizeof(bytes));
       }
     };
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -121,7 +121,9 @@ namespace Psi {
       fp32, ///< 32-bit IEEE float
       fp64, ///< 64-bit IEEE float
       fp128, ///< 128-bit IEEE float
-      fp80  ///< 80-bit x86 "long double" type
+      fp_x86_80,  ///< 80-bit x86 "long double" type
+      fp_ppc_128, ///< 128-bit PPC-specific floating point type. See
+		  ///"man float" on MacOS for details.
     };
 
     typedef PrimitiveWrapper<Width> Data;

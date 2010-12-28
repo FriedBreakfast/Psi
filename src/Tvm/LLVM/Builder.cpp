@@ -38,8 +38,17 @@ namespace Psi {
         bool valid(const T* t) const {return t;}
       };
 
-      BuildError::BuildError(const std::string& msg)
-        : std::logic_error(msg) {
+      BuildError::BuildError(const std::string& msg) {
+	m_message = "LLVM IR generation error: ";
+	m_message += msg;
+	m_str = m_message.c_str();
+      }
+
+      BuildError::~BuildError() throw () {
+      }
+
+      const char* BuildError::what() const throw() {
+	return m_str;
       }
 
       struct ConstantBuilder::TypeBuilderCallback {
@@ -175,7 +184,8 @@ namespace Psi {
 	case FloatType::fp32:  return llvm::Type::getFloatTy(llvm_context());
 	case FloatType::fp64:  return llvm::Type::getDoubleTy(llvm_context());
 	case FloatType::fp128: return llvm::Type::getFP128Ty(llvm_context());
-	case FloatType::fp80:  return llvm::Type::getX86_FP80Ty(llvm_context());
+	case FloatType::fp_x86_80:   return llvm::Type::getX86_FP80Ty(llvm_context());
+	case FloatType::fp_ppc_128:  return llvm::Type::getPPC_FP128Ty(llvm_context());
 	default: PSI_FAIL("unknown floating point width");
 	}
       }

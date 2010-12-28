@@ -9,7 +9,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(ReturnIntConst) {
       const char *src =
-        "%f = function cc_c () > int {\n"
+        "%f = function () > i32 {\n"
         "  return #i19;\n"
         "};\n";
 
@@ -19,7 +19,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(ReturnIntParameter) {
       const char *src =
-        "%f = function (%x:int) > int {\n"
+        "%f = function (%x:i32) > i32 {\n"
         "  return %x;\n"
         "};\n";
       
@@ -57,7 +57,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(UnconditionalBranchTest) {
       const char *src =
-        "%f = function cc_c () > int {\n"
+        "%f = function () > i32 {\n"
         "  br %label;\n"
         "block %label:\n"
         "  return #i42389789;\n"
@@ -71,7 +71,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(ConditionalBranchTest) {
       const char *src =
-        "%f = function cc_c (%a:bool) > int {\n"
+        "%f = function (%a:bool) > i32 {\n"
         "  cond_br %a %iftrue %iffalse;\n"
         "block %iftrue:\n"
         "  return #i344;\n"
@@ -88,12 +88,12 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(RecursiveCall) {
       const char *src =
-        "%inner = function () > int {\n"
+        "%inner = function () > i32 {\n"
         "  return #i40859;\n"
         "};\n"
         "\n"
-        "%outer = function cc_c() > int {\n"
-        "  %x = call inner;\n"
+        "%outer = function () > i32 {\n"
+        "  %x = call %inner;\n"
         "  return %x;\n"
         "};\n";
 
@@ -105,12 +105,12 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(RecursiveCallParameter) {
       const char *src =
-        "%inner = function (%a: int) > int {\n"
+        "%inner = function (%a: i32) > i32 {\n"
         "  return %a;\n"
         "};\n"
         "\n"
-        "%outer = function cc_c(%a: int) > int {\n"
-        "  %x = call inner %a;\n"
+        "%outer = function (%a: i32) > i32 {\n"
+        "  %x = call %inner %a;\n"
         "  return %x;\n"
         "};\n";
 
@@ -123,14 +123,12 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(Recursion) {
       const char *src =
-        "%i32 = define (int #32);\n"
-        "\n"
-        "%x = function (%a:%i32,%b:%i32) > %i32 {\n"
+        "%x = function (%a:i32,%b:i32) > i32 {\n"
         "  return (add %a %b);"
         "};\n"
         "\n"
-        "%main = function cc_c () > %i32 {\n"
-        "  %n = call %x (c_int #32 #19) (c_int #32 #8);\n"
+        "%main = function () > i32 {\n"
+        "  %n = call %x #i19 #i8;\n"
         "  return %n;\n"
         "};\n";
 
@@ -141,8 +139,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(ConditionalBranch) {
       const char *src =
-        "%i32 = define (int #32);\n"
-        "%fn = function cc_c (%a:bool,%b:%i32,%c:%i32) > %i32 {\n"
+        "%fn = function (%a:bool,%b:i32,%c:i32) > i32 {\n"
         "  cond_br %a %if_true %if_false;\n"
         "  %sum = add %b %c;\n"
         "  %dif = sub %b %c;\n"
@@ -162,14 +159,11 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(FunctionPointer) {
       const char *src =
-        "%i32 = define (int #32);\n"
-        "%i16 = define (int #16);\n"
-        "\n"
-        "%add16 = function (%a:%i16,%b:%i16) > %i16 {\n"
+        "%add16 = function (%a:i16,%b:i16) > i16 {\n"
         "  return (add %a %b);\n"
         "};\n"
         "\n"
-        "%add32 = function (%a:%i32,%b:%i32) > %i32 {\n"
+        "%add32 = function (%a:i32,%b:i32) > i32 {\n"
         "  return (add %a %b);\n"
         "};\n"
         "\n"
@@ -178,9 +172,9 @@ namespace Psi {
         "  return %r;\n"
         "};\n"
         "\n"
-        "%test = function cc_c () > bool {\n"
-        "  %rx = call %bincb %i32 (c_int #32 #25) (c_int #32 #17) %add32;\n"
-        "  %ry = call %bincb %i16 (c_int #16 #44) (c_int #16 #5) %add16;\n"
+        "%test = function () > bool {\n"
+        "  %rx = call %bincb i32 #i25 #i17 %add32;\n"
+        "  %ry = call %bincb i16 #s44 #s5 %add16;\n"
         "  return true;\n"
         "};\n";
 
@@ -198,14 +192,13 @@ namespace Psi {
      */
     BOOST_AUTO_TEST_CASE(FunctionalOperationDominatorGenerate) {
       const char *src =
-        "%i32 = define (int #32);\n"
-        "%f = function cc_c (%a: bool, %b: %i32, %c: %i32) > %i32 {\n"
+        "%f = function (%a: bool, %b: i32, %c: i32) > i32 {\n"
         "  %t = add %b %c;\n"
         "  cond_br %a %tc %fc;\n"
         "block %tc:\n"
-        "  return (add %t (c_int #32 #1));\n"
+        "  return (add %t #i1);\n"
         "block %fc:\n"
-        "  return (add %t (c_int #32 #2));\n"
+        "  return (add %t #i2);\n"
         "};\n";
 
       typedef Jit::Int32 (*FuncType) (Jit::Boolean,Jit::Int32,Jit::Int32);
@@ -216,8 +209,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(LoadTest) {
       const char *src =
-        "%i32 = define (int #32);\n"
-        "%f = function cc_c (%p : (pointer %i32)) > %i32 {\n"
+        "%f = function (%p : (pointer i32)) > i32 {\n"
         "  %x = load %p;\n"
         "  return %x;\n"
         "};\n";
@@ -231,8 +223,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(StoreTest) {
       const char *src =
-        "%i32 = define (int #32);\n"
-        "%f = function cc_c (%x : %i32, %p : (pointer %i32)) > bool {\n"
+        "%f = function (%x : i32, %p : (pointer i32)) > bool {\n"
         "  store %x %p;\n"
         "  return true;\n"
         "};\n";
@@ -254,9 +245,8 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(AllocaTest) {
       const char *src =
-        "%i32 = define (int #32);\n"
-        "%f = function cc_c (%cb : (pointer (function cc_c ((pointer %i32))>%i32))) > %i32 {\n"
-        "  %s = alloca %i32;\n"
+        "%f = function (%cb : (pointer (function cc_c ((pointer i32))>i32))) > i32 {\n"
+        "  %s = alloca i32;\n"
         "  call %cb %s;\n"
         "  %x = load %s;\n"
         "  return %x;\n"

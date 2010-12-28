@@ -91,7 +91,7 @@ namespace Psi {
         throw TvmUserError("first argument to array type term is not a type");
 
       if (parameters[1]->type() != IntegerType::get(context, IntegerType::iptr, false))
-        throw TvmUserError("second argument to array type term is not a 64-bit integer");
+        throw TvmUserError("second argument to array type term is not an unsigned intptr");
 
       return FunctionalTypeResult(Metatype::get(context), parameters[0]->phantom() || parameters[1]->phantom());
     }
@@ -102,7 +102,7 @@ namespace Psi {
     }
 
     ArrayType::Ptr ArrayType::get(Term *element_type, unsigned length) {
-      IntegerType::Ptr  size_type = IntegerType::get(element_type->context(), IntegerType::iptr, false);
+      IntegerType::Ptr size_type = IntegerType::get(element_type->context(), IntegerType::iptr, false);
       Term *length_term = IntegerValue::get(size_type, length);
       return get(element_type, length_term);
     }
@@ -187,14 +187,14 @@ namespace Psi {
 
     FunctionalTypeResult UnionValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 2)
-        throw TvmUserError("c_union takes two parameters");
+        throw TvmUserError("union_v takes two parameters");
 
       UnionType::Ptr type = dyn_cast<UnionType>(parameters[0]);
       if (!type)
-        throw TvmUserError("first argument to c_union must be a union type");
+        throw TvmUserError("first argument to union_v must be a union type");
 
       if (!type->contains_type(parameters[1]->type()))
-        throw TvmUserError("second argument to c_union must correspond to a member of the specified union type");
+        throw TvmUserError("second argument to union_v must correspond to a member of the specified union type");
 
       return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom());
     }

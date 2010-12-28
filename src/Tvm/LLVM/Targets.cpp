@@ -501,8 +501,8 @@ namespace {
 	uint64_t size = 0, align = 1;
 	unsigned n_elements = 0;
 	AMD64_Class amd64_class = amd64_no_class;
-	for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
-	  ElementTypeInfo child = get_element_info(builder, struct_ty->member_type(i));
+	for (unsigned i = 0, e = union_ty->n_members(); i != e; ++i) {
+	  ElementTypeInfo child = get_element_info(builder, union_ty->member_type(i));
 	  n_elements = std::max(n_elements, child.n_elements);
 	  size = std::max(size, child.size);
 	  align = std::max(align, child.align);

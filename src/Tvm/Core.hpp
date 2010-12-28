@@ -1,8 +1,8 @@
 #ifndef HPP_PSI_TVM_CORE
 #define HPP_PSI_TVM_CORE
 
+#include <exception>
 #include <vector>
-#include <stdexcept>
 #include <stdint.h>
 
 #include <tr1/unordered_map>
@@ -30,18 +30,30 @@ namespace Psi {
     /**
      * Thrown when an error is caused by the users use of the library.
      */
-    class TvmUserError : public std::runtime_error {
+    class TvmUserError : public std::exception {
     public:
-      TvmUserError(const std::string& msg);
+      explicit TvmUserError(const std::string& msg);
+      virtual ~TvmUserError() throw ();
+      virtual const char* what() const throw();
+
+    private:
+      const char *m_str;
+      std::string m_message;
     };
 
     /**
      * Thrown when an internal library error occurs, which should not
      * occur.
      */
-    class TvmInternalError : public std::logic_error {
+    class TvmInternalError : public std::exception {
     public:
-      TvmInternalError(const std::string& msg);
+      explicit TvmInternalError(const std::string& msg);
+      virtual ~TvmInternalError() throw ();
+      virtual const char* what() const throw();
+
+    private:
+      const char *m_str;
+      std::string m_message;
     };
 
     /**

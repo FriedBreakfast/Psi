@@ -390,8 +390,11 @@ namespace {
 
   CallbackMapValue& get_callback(const char *s) {
     CallbackMapType::const_iterator it = callbacks.find(s);
-    if (it == callbacks.end())
-      throw BuildError("unknown operation type");
+    if (it == callbacks.end()) {
+      std::string msg = "unknown operation type in LLVM backend: ";
+      msg += s;
+      throw BuildError(msg);
+    }
     return *it->second;
   }
 #endif
@@ -615,13 +618,18 @@ namespace Psi {
 
 	// Type is neither a known simple type nor an aggregate I
 	// can handle, so create it as an unknown type.
+	const llvm::Type *i8_type = llvm::Type::getInt8Ty(llvm_context());
 	const llvm::Type *i8ptr_type = llvm::Type::getInt8PtrTy(llvm_context());
+
 	llvm::PHINode *phi = llvm::PHINode::Create(i8ptr_type);
 	irbuilder().GetInsertBlock()->getInstList().push_front(phi);
 
-	PSI_FAIL("not imeplemented - need to copy type to newly alloca'd memory");
+	llvm::Value *type_size = metatype_value_size(*this, build_value_simple(type));
+	llvm::AllocaInst *copy_dest = irbuilder().CreateAlloca(i8_type, type_size);
+	copy_dest->setAlignment(unknown_alloca_align());
+	llvm::Instruction *memcpy_insn = create_memcpy(copy_dest, phi, type_size);
 
-	return new_function_value_raw(type, phi, insert_point);
+	return new_function_value_raw(type, memcpy_insn, memcpy_insn);
       }
 
       /**

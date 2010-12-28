@@ -10,13 +10,8 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(GlobalConstArray) {
       const char *src =
-        "%ar = global const (array int #s5)\n"
-        "(c_array (int #32)\n"
-        " (c_int #32 #1)\n"
-        " (c_int #32 #5)\n"
-        " (c_int #32 #17)\n"
-        " (c_int #32 #9)\n"
-        " (c_int #32 #2));\n";
+        "%ar = global const (array i32 #up5)\n"
+        " (array_v i32 #i1 #i5 #i17 #i9 #i2);\n";
 
       const Jit::Int32 expected[] = {1, 5, 17, 9, 2};
       const Jit::Int32 *ptr = static_cast<Jit::Int32*>(jit_single("ar", src));
@@ -25,9 +20,8 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(FunctionReturnByteArray) {
       const char *src =
-        "%i8 = define (int #8);\n"
-        "%f = function cc_c (%a:%i8,%b:%i8,%c:%i8,%d:%i8,%e:%i8,%f:%i8,%g:%i8,%h:%i8) > (array %i8 (c_uint #64 #8)) {\n"
-        "  return (c_array %i8 %a %b %c %d %e %f %g %h);\n"
+        "%f = function (%a:i8,%b:i8,%c:i8,%d:i8,%e:i8,%f:i8,%g:i8,%h:i8) > (array i8 #up8) {\n"
+        "  return (array_v i8 %a %b %c %d %e %f %g %h);\n"
         "};\n";
 
       const Jit::Int8 x[] = {23, 34, 9, -19, 53, 95, -103, 2};
@@ -58,13 +52,8 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(GlobalConstStruct) {
       const char *src =
-        "%ar = global const (struct (int #32) (int #64) (int #16) (int #32) (int #8))\n"
-        "(c_struct\n"
-        " (c_int #32 #134)\n"
-        " (c_int #64 #654)\n"
-        " (c_int #16 #129)\n"
-        " (c_int #32 #43)\n"
-        " (c_int #8 #7));\n";
+        "%ar = global const (struct i32 i64 i16 i32 i8)\n"
+        "(struct_v #i134 #l654 #s129 #i43 #b7);\n";
 
       TestStructType expected = {134, 654, 129, 43, 7};
       const TestStructType *ptr = static_cast<TestStructType*>(jit_single("ar", src));
@@ -73,14 +62,9 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(FunctionReturnStruct) {
       const char *src =
-        "%at = define (struct (int #32) (int #64) (int #16) (int #32) (int #8));\n"
-        "%f = function cc_c () > %at {\n"
-        "  return (c_struct\n"
-        "   (c_int #32 #541)\n"
-        "   (c_int #64 #3590)\n"
-        "   (c_int #16 #1)\n"
-        "   (c_int #32 #155)\n"
-        "   (c_int #8 #99));\n"
+        "%at = define (struct i32 i64 i16 i32 i8);\n"
+        "%f = function () > %at {\n"
+        "  return (struct_v #i541 #l3590 #s1 #i155 #b99);\n"
         "};\n";
 
       typedef TestStructType (*FunctionType) ();
@@ -98,11 +82,9 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(GlobalConstUnion) {
       const char *src =
-        "%u = define (union (int #64) (array (int #32) (c_uint #64 #2)));\n"
-        "%ar = global const (array %u (c_uint #64 #2))\n"
-        " (c_array %u\n"
-        "  (c_union %u (c_int #64 #43256))\n"
-        "  (c_union %u (c_array (int #32) (c_int #32 #14361) (c_int #32 #15))));\n";
+        "%u = define (union i64 (array i32 #up2));\n"
+        "%ar = global const (array %u #up2)\n"
+        " (array_v %u (union_v %u #l43256) (union_v %u (array_v i32 #i14361 #i15)));\n";
 
       const TestUnionType *ptr = static_cast<TestUnionType*>(jit_single("ar", src));
       BOOST_CHECK_EQUAL(ptr[0].a, 43256);
@@ -112,9 +94,9 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(FunctionReturnUnion) {
       const char *src =
-        "%u = define (union (int #64) (array (int #32) (c_uint #64 #2)));\n"
-        "%f = function cc_c (%a:(int #64), %b:(int #32)) > (array %u (c_uint #64 #2)) {\n"
-        "  return (c_array %u (c_union %u %a) (c_union %u (c_array (int #32) %b %b)));\n"
+        "%u = define (union i64 (array i32 #up2));\n"
+        "%f = function (%a:i64, %b:i32) > (array %u #up2) {\n"
+        "  return (array_v %u (union_v %u %a) (union_v %u (array_v i32 %b %b)));\n"
         "};\n";
 
       struct TestReturnType {TestUnionType u[2];};

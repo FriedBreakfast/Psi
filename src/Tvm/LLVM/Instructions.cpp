@@ -122,5 +122,15 @@ namespace {
 
 namespace Psi {
   namespace Tvm {
+    namespace LLVM {
+      /**
+       * Build a value for an instruction whose result always
+       * (i.e. regardless of the arguments) has a known type. In
+       * practise, this means numeric operations.
+       */
+      llvm::Value* FunctionBuilder::build_value_instruction_simple(InstructionTerm *term) {
+	PSI_FAIL("not implemented");
+      }
+    }
   }
 }

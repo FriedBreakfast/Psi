@@ -9,12 +9,30 @@
 
 namespace Psi {
   namespace Tvm {
-    TvmUserError::TvmUserError(const std::string& msg)
-      : std::runtime_error(msg) {
+    TvmUserError::TvmUserError(const std::string& msg) {
+      m_message = "Psi TVM user error: ";
+      m_message += msg;
+      m_str = m_message.c_str();
     }
 
-    TvmInternalError::TvmInternalError(const std::string& msg)
-      : std::logic_error(msg) {
+    TvmUserError::~TvmUserError() throw () {
+    }
+
+    const char* TvmUserError::what() const throw() {
+      return m_str;
+    }
+
+    TvmInternalError::TvmInternalError(const std::string& msg) {
+      m_message = "Psi TVM internal error: ";
+      m_message += msg;
+      m_str = m_message.c_str();
+    }
+
+    TvmInternalError::~TvmInternalError() throw () {
+    }
+
+    const char* TvmInternalError::what() const throw() {
+      return m_str;
     }
 
     TermUser::TermUser(const UserInitializer& ui, TermType term_type)

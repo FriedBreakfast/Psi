@@ -1,7 +1,7 @@
 #ifndef HPP_PSI_TVM_ASSEMBLER
 #define HPP_PSI_TVM_ASSEMBLER
 
-#include <stdexcept>
+#include <exception>
 #include <boost/function.hpp>
 #include <tr1/unordered_map>
 
@@ -18,9 +18,15 @@ namespace Psi {
        * Thrown when a syntactic error is detected in the
        * assembler. Semantic errors will be raised using TvmUserError.
        */
-      class AssemblerError : public std::runtime_error {
+      class AssemblerError : public std::exception {
       public:
-        AssemblerError(const std::string& msg);
+	explicit AssemblerError(const std::string& msg);
+	virtual ~AssemblerError() throw ();
+	virtual const char* what() const throw();
+
+      private:
+	const char *m_str;
+	std::string m_message;
       };
 
       class AssemblerContext {
