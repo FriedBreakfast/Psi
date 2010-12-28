@@ -223,7 +223,9 @@ namespace Psi {
         const llvm::IntegerType *intptr_type();
         unsigned intptr_type_bits();
         uint64_t type_size(const llvm::Type *ty);
-        uint64_t type_alignment(const llvm::Type *ty);
+        unsigned type_alignment(const llvm::Type *ty);
+	uint64_t constant_type_size(Term *term);
+	unsigned constant_type_alignment(Term *term);
 
 	/**
 	 * Convert a BuiltValue to an LLVM value. The value should
@@ -306,7 +308,26 @@ namespace Psi {
 
         ConstantValue* build_constant_internal(FunctionalTerm *term);
         llvm::Constant* build_constant_internal_simple(FunctionalTerm *term);
-        const llvm::Type* build_constant_type(FunctionalTerm *term);
+
+	/**
+	 * When building types and values for global variables, extra
+	 * information is required since the value may be padded to
+	 * force correct alignment, so alignment information is
+	 * required as well.
+	 */
+	template<typename T>
+	struct GlobalResult {
+	  GlobalResult(T *value_, unsigned alignment_) : value(value_), alignment(alignment_) {}
+
+	  T *value;
+	  unsigned alignment;
+	};
+
+	class GlobalSequenceTypeBuilder;
+	class GlobalSequenceValueBuilder;
+	GlobalResult<llvm::Constant> build_global_value(Term *term);
+        GlobalResult<const llvm::Type> build_global_type(Term *term);
+	std::pair<uint64_t, const llvm::Type*> pad_to_alignment(const llvm::Type *field, unsigned alignment, uint64_t size);
       };
 
       class FunctionBuilder : public ConstantBuilder {

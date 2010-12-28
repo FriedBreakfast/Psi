@@ -130,8 +130,24 @@ namespace Psi {
       /**
        * Get the alignment of a type
        */
-      uint64_t ConstantBuilder::type_alignment(const llvm::Type *ty) {
+      unsigned ConstantBuilder::type_alignment(const llvm::Type *ty) {
         return llvm_target_machine()->getTargetData()->getABITypeAlignment(ty);
+      }
+
+      /**
+       * Get the size of a type from a type term.
+       */
+      uint64_t ConstantBuilder::constant_type_size(Term *type) {
+	llvm::Constant *size_align = build_constant_simple(type);
+	return metatype_constant_size(size_align).getZExtValue();
+      }
+
+      /**
+       * Get the alignment of a type from a type term.
+       */
+      unsigned ConstantBuilder::constant_type_alignment(Term *type) {
+	llvm::Constant *size_align = build_constant_simple(type);
+	return metatype_constant_align(size_align).getZExtValue();
       }
 
       /**
@@ -243,16 +259,31 @@ namespace Psi {
           case term_global_variable: {
             GlobalVariableTerm *global = cast<GlobalVariableTerm>(term);
             Term *global_type = cast<PointerType>(global->type())->target_type();
-            const llvm::Type *llvm_type = self->build_type(global_type);
-            if (llvm_type) {
-              return new llvm::GlobalVariable(self->llvm_module(), llvm_type,
-                                              global->constant(), llvm::GlobalValue::InternalLinkage,
-                                              NULL, global->name());
-            } else {
-              llvm::Constant *size_align = self->build_constant_simple(global_type);
-              llvm::APInt size = metatype_constant_size(size_align);
-              llvm::APInt align = metatype_constant_align(size_align);
+            const llvm::Type *llvm_type;
+	    unsigned align = 1;
+	    if (global->value()) {
+	      GlobalResult<const llvm::Type> global_result = self->build_global_type(global->value());
+	      align = global_result.alignment;
+	      llvm_type = global_result.value;
+
+	      uint64_t padding = self->constant_type_size(global->value_type()) - self->type_size(global_result.value);
+	      if (padding > 0) {
+		const llvm::Type *padding_type = llvm::ArrayType::get(llvm::Type::getInt8Ty(self->llvm_context()), padding);
+		std::vector<const llvm::Type*> elements;
+		elements.push_back(global_result.value);
+		elements.push_back(padding_type);
+		llvm_type = llvm::StructType::get(self->llvm_context(), elements, false);
+	      }
+            } else if ((llvm_type = self->build_type(global->value_type()))) {
+	    } else {
+              align = self->constant_type_alignment(global_type);
+	      llvm_type = llvm::ArrayType::get(llvm::Type::getInt8Ty(self->llvm_context()), self->constant_type_size(global_type));
             }
+	    llvm::GlobalValue *result = new llvm::GlobalVariable(self->llvm_module(), llvm_type,
+								 global->constant(), llvm::GlobalValue::InternalLinkage,
+								 NULL, global->name());
+	    result->setAlignment(align);
+	    return result;
           }
 
           case term_function: {
@@ -309,12 +340,23 @@ namespace Psi {
                                    &irbuilder);
                 fb.run();
               } else {
-#if 0
                 PSI_ASSERT(t.first->term_type() == term_global_variable);
-                if (Term* init_value = cast<GlobalVariableTerm>(t.first)->value())
-                  //llvm::cast<llvm::GlobalVariable>(t.second)->setInitializer(build_constant(init_value));
-                  PSI_FAIL("not implemented");
-#endif
+		GlobalVariableTerm *global_variable = cast<GlobalVariableTerm>(t.first);
+                if (Term* init_value = global_variable->value()) {
+		  GlobalResult<llvm::Constant> value = build_global_value(init_value);
+		  llvm::Constant *final_value = value.value;
+
+		  uint64_t padding = constant_type_size(global_variable->value_type()) - type_size(value.value->getType());
+		  if (padding > 0) {
+		    const llvm::Type *padding_type = llvm::ArrayType::get(llvm::Type::getInt8Ty(llvm_context()), padding);
+		    llvm::Constant *padding_value = llvm::UndefValue::get(padding_type);
+		    std::vector<llvm::Constant*> elements;
+		    elements.push_back(value.value);
+		    elements.push_back(padding_value);
+		    final_value = llvm::ConstantStruct::get(llvm_context(), elements, false);
+		  }
+                  llvm::cast<llvm::GlobalVariable>(t.second)->setInitializer(final_value);
+		}
               }
               m_global_build_list.pop_front();
             }

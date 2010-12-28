@@ -405,25 +405,31 @@ namespace Psi {
     namespace LLVM {
       BuiltValue::BuiltValue(ConstantBuilder& builder, Term *type)
 	: m_type(type), m_state(state_unknown) {
-        m_simple_type = builder.build_type(m_type);
-	unsigned n_elements = 0;
-        if (m_simple_type) {
-          m_state = state_simple;
-        } else {
-          if (ArrayType::Ptr array_ty = dyn_cast<ArrayType>(m_type)) {
-            if (array_ty->length()->global()) {
-              m_state = state_sequence;
-              n_elements = builder.build_constant_integer(array_ty->length()).getZExtValue();
-            }
-          } else if (StructType::Ptr struct_ty = dyn_cast<StructType>(type)) {
-            m_state = state_sequence;
-            n_elements = struct_ty->n_members();
-          } else if (UnionType::Ptr union_ty = dyn_cast<UnionType>(type)) {
-            m_state = state_union;
-            n_elements = union_ty->n_members();
-          }
-        }
-	m_elements.resize(n_elements, 0);
+	if (type) {
+	  m_simple_type = builder.build_type(m_type);
+	  unsigned n_elements = 0;
+	  if (m_simple_type) {
+	    m_state = state_simple;
+	  } else {
+	    if (ArrayType::Ptr array_ty = dyn_cast<ArrayType>(m_type)) {
+	      if (array_ty->length()->global()) {
+		m_state = state_sequence;
+		n_elements = builder.build_constant_integer(array_ty->length()).getZExtValue();
+	      }
+	    } else if (StructType::Ptr struct_ty = dyn_cast<StructType>(type)) {
+	      m_state = state_sequence;
+	      n_elements = struct_ty->n_members();
+	    } else if (UnionType::Ptr union_ty = dyn_cast<UnionType>(type)) {
+	      m_state = state_union;
+	      n_elements = union_ty->n_members();
+	    }
+	  }
+	  m_elements.resize(n_elements, 0);
+	} else {
+	  // special case for metatype, which has a NULL type
+	  m_state = state_simple;
+	  m_simple_type = metatype_type(builder);
+	}
       }
 
       ConstantValue::ConstantValue(GlobalBuilder *builder, Term *type)
@@ -431,7 +437,11 @@ namespace Psi {
       }
 
       llvm::Constant *ConstantValue::simple_value() const {
-	PSI_FAIL("not implemented");
+	if (!m_simple_value) {
+	  PSI_FAIL("not implemented");
+	}
+
+	return m_simple_value;
       }
 
       llvm::Constant *ConstantValue::raw_value() const {
@@ -443,11 +453,19 @@ namespace Psi {
       }
 
       llvm::Value *FunctionValue::simple_value() const {
-	PSI_FAIL("not implemented");
+	if (!m_simple_value) {
+	  PSI_FAIL("not implemented");
+	}
+
+	return m_simple_value;
       }
 
       llvm::Value *FunctionValue::raw_value() const {
-	PSI_FAIL("not implemented");
+	if (!m_raw_value) {
+	  PSI_FAIL("not implemented");
+	}
+
+	return m_raw_value;
       }
 
       /**
@@ -701,6 +719,147 @@ namespace Psi {
 	  llvm::Constant *value = build_constant_internal_simple(term);
 	  return new_constant_value_simple(term->type(), value);
         }
+      }
+
+      /**
+       * Return a type which will cause a field of the given type to
+       * have the right alignment, or NULL if no padding field is
+       * necessary.
+       *
+       * \param size Current size of the structure being built.
+       */
+      std::pair<uint64_t, const llvm::Type*> GlobalBuilder::pad_to_alignment(const llvm::Type *field, unsigned alignment, uint64_t size) {
+	unsigned natural_alignment = type_alignment(field);
+	PSI_ASSERT(alignment >= natural_alignment);
+
+	uint64_t field_offset = (size + alignment - 1) & (alignment - 1);
+	uint64_t field_end = field_offset + type_size(field);
+	// Offset from size to correct position
+	unsigned padding = field_offset - size;
+	if (padding < natural_alignment)
+	  return std::make_pair(field_end, static_cast<const llvm::Type*>(0));
+
+	// Bytes of padding needed to get to a position where the natural alignment will work
+	unsigned required_padding = padding - natural_alignment + 1;
+	return std::make_pair(field_end, llvm::ArrayType::get(llvm::Type::getInt8Ty(llvm_context()), required_padding));
+      }
+
+      class GlobalBuilder::GlobalSequenceTypeBuilder {
+      public:
+	GlobalSequenceTypeBuilder(GlobalBuilder *builder_) : builder(builder_), size(0), alignment(1) {}
+
+	void add_member(const GlobalBuilder::GlobalResult<const llvm::Type>& member) {
+	  // Pad to alignment
+	  std::pair<uint64_t, const llvm::Type*> padding = builder->pad_to_alignment(member.value, member.alignment, size);
+	  if (padding.second)
+	    members.push_back(padding.second);
+	  alignment = std::max(alignment, member.alignment);
+	  size = padding.first;
+	  members.push_back(member.value);
+	}
+
+	GlobalBuilder::GlobalResult<const llvm::Type> result() {
+	  const llvm::Type *ty = llvm::StructType::get(builder->llvm_context(), members, false);
+	  return GlobalBuilder::GlobalResult<const llvm::Type>(ty, alignment);
+	}
+
+      private:
+	GlobalBuilder *builder;
+	uint64_t size;
+	unsigned alignment;
+	std::vector<const llvm::Type*> members;
+      };
+
+      class GlobalBuilder::GlobalSequenceValueBuilder {
+      public:
+	GlobalSequenceValueBuilder(GlobalBuilder *builder_) : builder(builder_), size(0), alignment(1) {}
+
+	void add_member(const GlobalBuilder::GlobalResult<llvm::Constant>& member) {
+	  // Pad to alignment
+	  std::pair<uint64_t, const llvm::Type*> padding = builder->pad_to_alignment(member.value->getType(), member.alignment, size);
+	  if (padding.second) {
+	    llvm::Constant *padding_val = llvm::UndefValue::get(padding.second);
+	    members.push_back(padding_val);
+	  }
+	  alignment = std::max(alignment, member.alignment);
+	  size = padding.first;
+	  members.push_back(member.value);
+	}
+
+	GlobalBuilder::GlobalResult<llvm::Constant> result() {
+	  llvm::Constant *val = llvm::ConstantStruct::get(builder->llvm_context(), members, false);
+	  return GlobalBuilder::GlobalResult<llvm::Constant>(val, alignment);
+	}
+
+      private:
+	GlobalBuilder *builder;
+	uint64_t size;
+	unsigned alignment;
+	std::vector<llvm::Constant*> members;
+      };
+
+      /**
+       * Build a value for assigning to a global variable.
+       */
+      GlobalBuilder::GlobalResult<llvm::Constant> GlobalBuilder::build_global_value(Term *term) {
+	if (StructValue::Ptr struct_val = dyn_cast<StructValue>(term)) {
+	  GlobalSequenceValueBuilder builder(this);
+	  for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i)
+	    builder.add_member(build_global_value(struct_val->member_value(i)));
+	  return builder.result();
+	} else if (ArrayValue::Ptr array_val = dyn_cast<ArrayValue>(term)) {
+	  // arrays are represented as structs in global variables
+	  // because they could be an array of unions, which would
+	  // then have different types.
+	  GlobalSequenceValueBuilder builder(this);
+	  for (unsigned i = 0, e = array_val->length(); i != e; ++i)
+	    builder.add_member(build_global_value(array_val->value(i)));
+	  return builder.result();
+	} else if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(term)) {
+	  UnionType::Ptr union_ty = union_val->type();
+	  unsigned alignment = 1;
+	  for (unsigned i = 0, e = union_ty->n_members(); i != e; ++i)
+	    alignment = std::max(alignment, constant_type_alignment(union_ty->member_type(i)));
+	  GlobalResult<llvm::Constant> value_result = build_global_value(union_val->value());
+	  PSI_ASSERT(alignment >= value_result.alignment);
+	  return GlobalResult<llvm::Constant>(value_result.value, alignment);
+	} else {
+	  const llvm::Type *ty = build_type(term->type());
+	  return GlobalResult<llvm::Constant>(build_constant_simple(term), type_alignment(ty));
+	}
+      }
+
+      /**
+       * Build a type for a global variable - this returns the type
+       * used to store this term, rather than the type to store terms
+       * of this type.
+       */
+      GlobalBuilder::GlobalResult<const llvm::Type> GlobalBuilder::build_global_type(Term *term) {
+	if (StructValue::Ptr struct_val = dyn_cast<StructValue>(term)) {
+	  GlobalSequenceTypeBuilder builder(this);
+	  for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i)
+	    builder.add_member(build_global_type(struct_val->member_value(i)));
+	  return builder.result();
+	} else if (ArrayValue::Ptr array_val = dyn_cast<ArrayValue>(term)) {
+	  // arrays are represented as structs in global variables
+	  // because they could be an array of unions, which would
+	  // then have different types.
+	  GlobalSequenceTypeBuilder builder(this);
+	  for (unsigned i = 0, e = array_val->length(); i != e; ++i)
+	    builder.add_member(build_global_type(array_val->value(i)));
+	  return builder.result();
+	} else if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(term)) {
+	  UnionType::Ptr union_ty = union_val->type();
+	  unsigned alignment = 1;
+	  for (unsigned i = 0, e = union_ty->n_members(); i != e; ++i)
+	    alignment = std::max(alignment, constant_type_alignment(union_ty->member_type(i)));
+	  GlobalResult<const llvm::Type> value_result = build_global_type(union_val->value());
+	  PSI_ASSERT(alignment >= value_result.alignment);
+	  return GlobalResult<const llvm::Type>(value_result.value, alignment);
+	} else {
+	  const llvm::Type *ty = build_type(term->type());
+	  return GlobalResult<const llvm::Type>(ty, type_alignment(ty));
+	}
       }
 
       /**
