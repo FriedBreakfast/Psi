@@ -79,16 +79,19 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_TYPE_END(IntegerType)
 
     PSI_TVM_FUNCTIONAL_TYPE(IntegerValue)
-    /// \brief Integer data - stores the initial value as an array of
-    /// 8 bytes, in little-endian order. The number of valid bytes
-    /// depends on the integer type, and there should always be enough
-    /// bytes available to store the value of the largest integer
-    /// type. All bytes which are out of range of the integer type
-    /// must be set to zero or 0xFF depending on whether the
-    /// initializer is positive or negative for easy extension and
-    /// truncation.
+    /**
+     * \brief Integer data - stores the initial value as an array of 8
+     * bytes, in little-endian order.
+     *
+     * The number of valid bytes depends on the integer type, and
+     * there should always be enough bytes available to store the
+     * value of the largest integer type. All bytes which are out of
+     * range of the integer type must be set to zero or 0xFF depending
+     * on whether the initializer is positive or negative for easy
+     * extension and truncation.
+     */
     struct Data {
-      unsigned char bytes[8];
+      unsigned char bytes[16];
 
       bool operator == (const Data& other) const {
 	return std::equal(bytes, bytes+sizeof(bytes), other.bytes);
@@ -141,7 +144,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_TYPE(FloatValue)
     struct Data {
       unsigned exponent;
-      char mantissa[8];
+      char mantissa[16];
 
       bool operator == (const Data& other) const {
 	return (exponent == other.exponent) && std::equal(mantissa, mantissa+sizeof(mantissa), other.mantissa);

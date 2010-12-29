@@ -327,7 +327,16 @@ namespace Psi {
 	class GlobalSequenceValueBuilder;
 	GlobalResult<llvm::Constant> build_global_value(Term *term);
         GlobalResult<const llvm::Type> build_global_type(Term *term);
-	std::pair<uint64_t, const llvm::Type*> pad_to_alignment(const llvm::Type *field, unsigned alignment, uint64_t size);
+
+	struct PaddingStatus {
+	  uint64_t size;
+	  uint64_t llvm_size;
+
+	  PaddingStatus();
+	  PaddingStatus(uint64_t, uint64_t);
+	};
+
+	std::pair<PaddingStatus, const llvm::Type*> pad_to_alignment(Term *field_type, const llvm::Type *llvm_field_type, unsigned alignment, PaddingStatus status);
       };
 
       class FunctionBuilder : public ConstantBuilder {

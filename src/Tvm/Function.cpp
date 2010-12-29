@@ -696,12 +696,24 @@ namespace Psi {
 
       InstructionTerm* insn = context().allocate_term(InstructionTerm::Initializer(type, parameters, &setup, this));
 
-      // End-of-block: need to find where we could be jumping to
+      // Any instruction can exit via a jump (this is how exceptions
+      // are handled), so this checks whether the jump targets of an
+      // instruction are valid given the dominator structure specified
+      // by the user.
+
       std::vector<BlockTerm*> jump_targets;
       insn->jump_targets(jump_targets);
+
+      // If the current instruction is not the last one in the block,
+      // jump edges are due to exceptions and therefore variables from
+      // the current block are not considered available. Therefore in
+      // this case the block which dominates this block is considered
+      // the incoming edge of the jump.
+      BlockTerm *source_block = terminator ? this : dominator();
+
       for (std::vector<BlockTerm*>::iterator it = jump_targets.begin();
            it != jump_targets.end(); ++it) {
-        if (!dominated_by((*it)->dominator()))
+	if (!source_dominated((*it)->dominator(), source_block))
           throw TvmUserError("instruction jump target dominator block may not have run");
       }
 

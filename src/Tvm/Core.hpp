@@ -422,6 +422,7 @@ namespace Psi {
       std::string m_name;
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<GlobalTerm> {
       typedef GlobalTerm *Ptr;
       typedef GlobalTerm& Reference;
@@ -438,6 +439,7 @@ namespace Psi {
 	return (t->term_type() == term_global_variable) || (t->term_type() == term_function);
       }
     };
+#endif
 
     /**
      * \brief Global variable.
@@ -462,7 +464,9 @@ namespace Psi {
       bool m_constant;
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<GlobalVariableTerm> : CoreCastImplementation<GlobalVariableTerm, term_global_variable> {};
+#endif
 
     class FunctionalTerm;
     class FunctionalTermSetup;

@@ -266,9 +266,11 @@ namespace Psi {
 	      align = global_result.alignment;
 	      llvm_type = global_result.value;
 
-	      uint64_t padding = self->constant_type_size(global->value_type()) - self->type_size(global_result.value);
-	      if (padding > 0) {
-		const llvm::Type *padding_type = llvm::ArrayType::get(llvm::Type::getInt8Ty(self->llvm_context()), padding);
+	      PaddingStatus padding_status(self->constant_type_size(global->value_type()),
+					   self->type_size(global_result.value));
+	      const llvm::Type *padding_type = self->pad_to_alignment(BooleanType::get(self->context()), llvm::Type::getInt1Ty(self->llvm_context()), 1, padding_status).second;
+
+	      if (padding_type) {
 		std::vector<const llvm::Type*> elements;
 		elements.push_back(global_result.value);
 		elements.push_back(padding_type);
@@ -346,15 +348,18 @@ namespace Psi {
 		  GlobalResult<llvm::Constant> value = build_global_value(init_value);
 		  llvm::Constant *final_value = value.value;
 
-		  uint64_t padding = constant_type_size(global_variable->value_type()) - type_size(value.value->getType());
-		  if (padding > 0) {
-		    const llvm::Type *padding_type = llvm::ArrayType::get(llvm::Type::getInt8Ty(llvm_context()), padding);
+		  PaddingStatus padding_status(constant_type_size(global_variable->value_type()),
+					       type_size(value.value->getType()));
+		  const llvm::Type *padding_type = pad_to_alignment(BooleanType::get(context()), llvm::Type::getInt1Ty(llvm_context()), 1, padding_status).second;
+
+		  if (padding_type) {
 		    llvm::Constant *padding_value = llvm::UndefValue::get(padding_type);
 		    std::vector<llvm::Constant*> elements;
 		    elements.push_back(value.value);
 		    elements.push_back(padding_value);
 		    final_value = llvm::ConstantStruct::get(llvm_context(), elements, false);
 		  }
+
                   llvm::cast<llvm::GlobalVariable>(t.second)->setInitializer(final_value);
 		}
               }

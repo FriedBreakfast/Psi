@@ -13,7 +13,9 @@ namespace Psi {
       RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type, bool phantom);
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<RecursiveParameterTerm> : CoreCastImplementation<RecursiveParameterTerm, term_recursive_parameter> {};
+#endif
 
     /**
      * \brief Recursive term: usually used to create recursive types.
@@ -41,7 +43,9 @@ namespace Psi {
                     bool phantom);
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<RecursiveTerm> : CoreCastImplementation<RecursiveTerm, term_recursive> {};
+#endif
 
     class ApplyTerm : public HashTerm {
       friend class Context;
@@ -59,7 +63,9 @@ namespace Psi {
 		ArrayPtr<Term*const> parameters, std::size_t hash);
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<ApplyTerm> : CoreCastImplementation<ApplyTerm, term_apply> {};
+#endif
 
     inline RecursiveParameterTerm* RecursiveTerm::parameter(std::size_t i) {
       return cast<RecursiveParameterTerm>(get_base_parameter(i+2));

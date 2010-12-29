@@ -16,14 +16,6 @@ namespace {
     PSI_FAIL("term cannot be used as a type");
   }
 
-  llvm::Value* pointer_type_const(GlobalBuilder& builder, PointerType::Ptr) {
-    return metatype_from_type(builder, llvm::Type::getInt8PtrTy(builder.llvm_context()));
-  }
-
-  const llvm::Type* pointer_type_type(ConstantBuilder& builder, PointerType::Ptr) {
-    return llvm::Type::getInt8PtrTy(builder.llvm_context());
-  }
-
   namespace {
     /**
      * Compute size and alignment of a type from its term.
@@ -339,14 +331,13 @@ namespace {
     return builder.build_value(term->function());
   }
 
-  BuiltValue* function_specialize_const(GlobalBuilder& builder, FunctionSpecialize::Ptr term) {
+  ConstantValue* function_specialize_const(GlobalBuilder& builder, FunctionSpecialize::Ptr term) {
     return builder.build_constant(term->function());
   }
 
-#if 0
   struct CallbackMapValue {
     virtual BuiltValue* build_instruction(FunctionBuilder& builder, FunctionalTerm* term) const = 0;
-    virtual llvm::Constant* build_constant(ConstantBuilder& builder, FunctionalTerm* term) const = 0;
+    virtual ConstantValue* build_constant(GlobalBuilder& builder, FunctionalTerm* term) const = 0;
     virtual const llvm::Type* build_type(ConstantBuilder& builder, FunctionalTerm* term) const = 0;
   };
 
@@ -365,7 +356,7 @@ namespace {
       return m_insn_cb(builder, cast<TermTagType>(term));
     }
 
-    virtual llvm::Constant* build_constant(ConstantBuilder& builder, FunctionalTerm* term) const {
+    virtual ConstantValue* build_constant(GlobalBuilder& builder, FunctionalTerm* term) const {
       return m_const_cb(builder, cast<TermTagType>(term));
     }
 
@@ -379,25 +370,65 @@ namespace {
     return boost::make_shared<CallbackMapValueImpl<TermTagType, InsnCbType, ConstCbType, TypeCbType> >(insn_cb, const_cb, type_cb);
   }
 
+  template<typename TermTagType, typename InsnCbType>
+  class SimpleInsnWrapper {
+    InsnCbType m_insn_cb;
+
+  public:
+    SimpleInsnWrapper(InsnCbType insn_cb) : m_insn_cb(insn_cb) {}
+
+    BuiltValue* operator () (FunctionBuilder& builder, typename TermTagType::Ptr term) const {
+      llvm::Value *value = m_insn_cb(builder, term);
+      return builder.new_function_value_simple(term->type(), value);
+    }
+  };
+
+  template<typename TermTagType, typename InsnCbType>
+  SimpleInsnWrapper<TermTagType, InsnCbType> make_simple_insn_wrapper(InsnCbType insn_cb) {
+    return SimpleInsnWrapper<TermTagType, InsnCbType>(insn_cb);
+  }
+
+  template<typename TermTagType, typename ConstCbType>
+  class SimpleConstWrapper {
+    ConstCbType m_insn_cb;
+
+  public:
+    SimpleConstWrapper(ConstCbType insn_cb) : m_insn_cb(insn_cb) {}
+
+    ConstantValue* operator () (GlobalBuilder& builder, typename TermTagType::Ptr term) const {
+      llvm::Constant *value = m_insn_cb(builder, term);
+      return builder.new_constant_value_simple(term->type(), value);
+    }
+  };
+
+  template<typename TermTagType, typename ConstCbType>
+  SimpleConstWrapper<TermTagType, ConstCbType> make_simple_const_wrapper(ConstCbType insn_cb) {
+    return SimpleConstWrapper<TermTagType, ConstCbType>(insn_cb);
+  }
+
 #define CALLBACK(ty,cb_insn,cb_const,cb_type) (ty::operation, make_callback_map_value<ty>(cb_insn, cb_const, cb_type))
 #define OP_CALLBACK(ty,cb_insn,cb_const) CALLBACK(ty,cb_insn,cb_const,invalid_type_callback)
+#define TYPE_CALLBACK(ty,cb_insn,cb_const,cb_type) CALLBACK(ty,make_simple_insn_wrapper<ty>(cb_insn),make_simple_const_wrapper<ty>(cb_const),cb_type)
 
   typedef std::tr1::unordered_map<const char*, boost::shared_ptr<CallbackMapValue> > CallbackMapType;
 
   const CallbackMapType callbacks =
     boost::assign::map_list_of<const char*, CallbackMapType::mapped_type>
+    TYPE_CALLBACK(ArrayType, array_type_insn, array_type_const, array_type_type)
+    TYPE_CALLBACK(StructType, struct_type_insn, struct_type_const, struct_type_type)
+    TYPE_CALLBACK(UnionType, union_type_insn, union_type_const, union_type_type)
+    OP_CALLBACK(ArrayValue, array_value_insn, array_value_const)
+    OP_CALLBACK(StructValue, struct_value_insn, struct_value_const)
+    OP_CALLBACK(UnionValue, union_value_insn, union_value_const)
     OP_CALLBACK(FunctionSpecialize, function_specialize_insn, function_specialize_const);
 
-  CallbackMapValue& get_callback(const char *s) {
+  const CallbackMapValue *get_callback(const char *s) {
     CallbackMapType::const_iterator it = callbacks.find(s);
-    if (it == callbacks.end()) {
-      std::string msg = "unknown operation type in LLVM backend: ";
-      msg += s;
-      throw BuildError(msg);
-    }
-    return *it->second;
+    if (it != callbacks.end())
+      return it->second.get();
+    else
+      return 0;
   }
-#endif
 }
 
 namespace Psi {
@@ -657,7 +688,7 @@ namespace Psi {
       void FunctionBuilder::populate_phi_node(BuiltValue *phi_node, llvm::BasicBlock *incoming_block, BuiltValue *value) {
 	FunctionValue *phi_node_cast = checked_cast<FunctionValue*>(phi_node);
 
-	if (const llvm::Type *simple_type = build_type(phi_node->type())) {
+	if (phi_node->simple_type()) {
 	  llvm::PHINode *llvm_phi = llvm::cast<llvm::PHINode>(phi_node_cast->m_simple_value);
 	  llvm_phi->addIncoming(value->simple_value(), incoming_block);
 	  return;
@@ -698,7 +729,8 @@ namespace Psi {
        * to build_value_functional_simple.
        */
       BuiltValue* FunctionBuilder::build_value_functional(FunctionalTerm *term) {
-        if (false) {
+	if (const CallbackMapValue *cb = get_callback(term->operation())) {
+	  return cb->build_instruction(*this, term);
         } else {
 	  llvm::Value *value = build_value_functional_simple(term);
 	  return new_function_value_simple(term->type(), value);
@@ -713,11 +745,21 @@ namespace Psi {
        * to build_constant_internal_simple.
        */
       ConstantValue* GlobalBuilder::build_constant_internal(FunctionalTerm *term) {
-        if (false) {
+	if (const CallbackMapValue *cb = get_callback(term->operation())) {
+	  return cb->build_constant(*this, term);
         } else {
 	  llvm::Constant *value = build_constant_internal_simple(term);
 	  return new_constant_value_simple(term->type(), value);
         }
+      }
+
+      GlobalBuilder::PaddingStatus::PaddingStatus()
+	: size(0), llvm_size(0) {
+      }
+
+      GlobalBuilder::PaddingStatus::PaddingStatus(uint64_t size_, uint64_t llvm_size_)
+	: size(size_), llvm_size(llvm_size_) {
+	PSI_ASSERT(size >= llvm_size);
       }
 
       /**
@@ -726,34 +768,41 @@ namespace Psi {
        * necessary.
        *
        * \param size Current size of the structure being built.
+       *
+       * \param llvm_size Current size of the fields visible to LLVM -
+       * this may differ from \c size since individual union values
+       * may be much smaller than the union itself.
        */
-      std::pair<uint64_t, const llvm::Type*> GlobalBuilder::pad_to_alignment(const llvm::Type *field, unsigned alignment, uint64_t size) {
-	unsigned natural_alignment = type_alignment(field);
+      std::pair<GlobalBuilder::PaddingStatus, const llvm::Type*>
+      GlobalBuilder::pad_to_alignment(Term *field_type, const llvm::Type *llvm_field_type, unsigned alignment, PaddingStatus status) {
+	unsigned natural_alignment = type_alignment(llvm_field_type);
 	PSI_ASSERT(alignment >= natural_alignment);
 
-	uint64_t field_offset = (size + alignment - 1) & (alignment - 1);
-	uint64_t field_end = field_offset + type_size(field);
+	uint64_t field_offset = (status.size + alignment - 1) & ~(alignment - 1);
 	// Offset from size to correct position
-	unsigned padding = field_offset - size;
+	uint64_t padding = field_offset - status.llvm_size;
+
+	PaddingStatus new_status(field_offset + constant_type_size(field_type),
+				 field_offset + type_size(llvm_field_type));
 	if (padding < natural_alignment)
-	  return std::make_pair(field_end, static_cast<const llvm::Type*>(0));
+	  return std::make_pair(new_status, static_cast<const llvm::Type*>(0));
 
 	// Bytes of padding needed to get to a position where the natural alignment will work
-	unsigned required_padding = padding - natural_alignment + 1;
-	return std::make_pair(field_end, llvm::ArrayType::get(llvm::Type::getInt8Ty(llvm_context()), required_padding));
+	uint64_t required_padding = padding - natural_alignment + 1;
+	return std::make_pair(new_status, llvm::ArrayType::get(llvm::Type::getInt8Ty(llvm_context()), required_padding));
       }
 
       class GlobalBuilder::GlobalSequenceTypeBuilder {
       public:
-	GlobalSequenceTypeBuilder(GlobalBuilder *builder_) : builder(builder_), size(0), alignment(1) {}
+	GlobalSequenceTypeBuilder(GlobalBuilder *builder_) : builder(builder_), alignment(1) {}
 
-	void add_member(const GlobalBuilder::GlobalResult<const llvm::Type>& member) {
+	void add_member(Term *member_type, const GlobalBuilder::GlobalResult<const llvm::Type>& member) {
 	  // Pad to alignment
-	  std::pair<uint64_t, const llvm::Type*> padding = builder->pad_to_alignment(member.value, member.alignment, size);
+	  std::pair<PaddingStatus, const llvm::Type*> padding = builder->pad_to_alignment(member_type, member.value, member.alignment, padding_status);
 	  if (padding.second)
 	    members.push_back(padding.second);
 	  alignment = std::max(alignment, member.alignment);
-	  size = padding.first;
+	  padding_status = padding.first;
 	  members.push_back(member.value);
 	}
 
@@ -764,24 +813,24 @@ namespace Psi {
 
       private:
 	GlobalBuilder *builder;
-	uint64_t size;
+	PaddingStatus padding_status;
 	unsigned alignment;
 	std::vector<const llvm::Type*> members;
       };
 
       class GlobalBuilder::GlobalSequenceValueBuilder {
       public:
-	GlobalSequenceValueBuilder(GlobalBuilder *builder_) : builder(builder_), size(0), alignment(1) {}
+	GlobalSequenceValueBuilder(GlobalBuilder *builder_) : builder(builder_), alignment(1) {}
 
-	void add_member(const GlobalBuilder::GlobalResult<llvm::Constant>& member) {
+	void add_member(Term *member_type, const GlobalBuilder::GlobalResult<llvm::Constant>& member) {
 	  // Pad to alignment
-	  std::pair<uint64_t, const llvm::Type*> padding = builder->pad_to_alignment(member.value->getType(), member.alignment, size);
+	  std::pair<PaddingStatus, const llvm::Type*> padding = builder->pad_to_alignment(member_type, member.value->getType(), member.alignment, padding_status);
 	  if (padding.second) {
 	    llvm::Constant *padding_val = llvm::UndefValue::get(padding.second);
 	    members.push_back(padding_val);
 	  }
 	  alignment = std::max(alignment, member.alignment);
-	  size = padding.first;
+	  padding_status = padding.first;
 	  members.push_back(member.value);
 	}
 
@@ -792,7 +841,7 @@ namespace Psi {
 
       private:
 	GlobalBuilder *builder;
-	uint64_t size;
+	PaddingStatus padding_status;
 	unsigned alignment;
 	std::vector<llvm::Constant*> members;
       };
@@ -803,16 +852,20 @@ namespace Psi {
       GlobalBuilder::GlobalResult<llvm::Constant> GlobalBuilder::build_global_value(Term *term) {
 	if (StructValue::Ptr struct_val = dyn_cast<StructValue>(term)) {
 	  GlobalSequenceValueBuilder builder(this);
-	  for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i)
-	    builder.add_member(build_global_value(struct_val->member_value(i)));
+	  for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i) {
+	    Term *member_value = struct_val->member_value(i);
+	    builder.add_member(member_value->type(), build_global_value(member_value));
+	  }
 	  return builder.result();
 	} else if (ArrayValue::Ptr array_val = dyn_cast<ArrayValue>(term)) {
 	  // arrays are represented as structs in global variables
 	  // because they could be an array of unions, which would
 	  // then have different types.
 	  GlobalSequenceValueBuilder builder(this);
-	  for (unsigned i = 0, e = array_val->length(); i != e; ++i)
-	    builder.add_member(build_global_value(array_val->value(i)));
+	  for (unsigned i = 0, e = array_val->length(); i != e; ++i) {
+	    Term *member_value = array_val->value(i);
+	    builder.add_member(member_value->type(), build_global_value(member_value));
+	  }
 	  return builder.result();
 	} else if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(term)) {
 	  UnionType::Ptr union_ty = union_val->type();
@@ -836,16 +889,20 @@ namespace Psi {
       GlobalBuilder::GlobalResult<const llvm::Type> GlobalBuilder::build_global_type(Term *term) {
 	if (StructValue::Ptr struct_val = dyn_cast<StructValue>(term)) {
 	  GlobalSequenceTypeBuilder builder(this);
-	  for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i)
-	    builder.add_member(build_global_type(struct_val->member_value(i)));
+	  for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i) {
+	    Term *member_value = struct_val->member_value(i);
+	    builder.add_member(member_value->type(), build_global_type(member_value));
+	  }
 	  return builder.result();
 	} else if (ArrayValue::Ptr array_val = dyn_cast<ArrayValue>(term)) {
 	  // arrays are represented as structs in global variables
 	  // because they could be an array of unions, which would
 	  // then have different types.
 	  GlobalSequenceTypeBuilder builder(this);
-	  for (unsigned i = 0, e = array_val->length(); i != e; ++i)
-	    builder.add_member(build_global_type(array_val->value(i)));
+	  for (unsigned i = 0, e = array_val->length(); i != e; ++i) {
+	    Term *member_value = array_val->value(i);
+	    builder.add_member(member_value->type(), build_global_type(member_value));
+	  }
 	  return builder.result();
 	} else if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(term)) {
 	  UnionType::Ptr union_ty = union_val->type();
@@ -867,7 +924,8 @@ namespace Psi {
        * are forwarded to build_type_internal_simple.
        */
       const llvm::Type* ConstantBuilder::build_type_internal(FunctionalTerm *term) {
-        if (false) {
+	if (const CallbackMapValue *cb = get_callback(term->operation())) {
+	  return cb->build_type(*this, term);
         } else {
           const llvm::Type *result = build_type_internal_simple(term);
           PSI_ASSERT_MSG(result, "all primitive types should map directly to LLVM");

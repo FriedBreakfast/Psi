@@ -38,7 +38,9 @@ namespace Psi {
       InstructionListHook m_instruction_list_hook;
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<InstructionTerm> : CoreCastImplementation<InstructionTerm, term_instruction> {};
+#endif
 
     template<typename TermTagType>
     class InstructionTermSpecialized : public InstructionTerm, CompressedBase<typename TermTagType::Data> {
@@ -164,7 +166,9 @@ namespace Psi {
       std::size_t m_n_incoming;
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<PhiTerm> : CoreCastImplementation<PhiTerm, term_phi> {};
+#endif
 
     /**
      * \brief Block (list of instructions) inside a function. The
@@ -214,7 +218,9 @@ namespace Psi {
       InstructionTerm* new_instruction_bare(const InstructionTermSetup& setup, ArrayPtr<Term*const> parameters);
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<BlockTerm> : CoreCastImplementation<BlockTerm, term_block> {};
+#endif
 
     bool block_dominates(BlockTerm *a, BlockTerm *b);
 
@@ -230,7 +236,9 @@ namespace Psi {
       FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type, bool phantom);
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<FunctionParameterTerm> : CoreCastImplementation<FunctionParameterTerm, term_function_parameter> {};
+#endif
 
     /**
      * \brief %Function.
@@ -273,7 +281,9 @@ namespace Psi {
       TermNameMap m_name_map;
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<FunctionTerm> : CoreCastImplementation<FunctionTerm, term_function> {};
+#endif
 
     class FunctionTypeTerm;
 
@@ -290,7 +300,9 @@ namespace Psi {
       std::size_t m_index;
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<FunctionTypeParameterTerm> : CoreCastImplementation<FunctionTypeParameterTerm, term_function_type_parameter> {};
+#endif
 
     /**
      * Term for types of functions. This cannot be implemented as a
@@ -327,7 +339,9 @@ namespace Psi {
       std::size_t m_n_phantoms;
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<FunctionTypeTerm> : CoreCastImplementation<FunctionTypeTerm, term_function_type> {};
+#endif
 
     /**
      * \brief Internal type used to build function types.
@@ -352,7 +366,9 @@ namespace Psi {
       CallingConvention m_calling_convention;
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<FunctionTypeResolverTerm> : CoreCastImplementation<FunctionTypeResolverTerm, term_function_type_resolver> {};
+#endif
 
     template<typename T>
     struct InstructionCastImplementation {

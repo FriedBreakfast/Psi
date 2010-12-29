@@ -41,7 +41,9 @@ namespace Psi {
       const char *m_operation;
     };
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<FunctionalTerm> : CoreCastImplementation<FunctionalTerm, term_functional> {};
+#endif
 
     template<typename> class FunctionalTermSetupSpecialized;
 
