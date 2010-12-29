@@ -167,24 +167,24 @@ namespace Psi {
         /**
          * Map a function type into LLVM.
          */
-        virtual const llvm::FunctionType* function_type(ConstantBuilder& builder, FunctionTypeTerm *term) const = 0;
+        virtual const llvm::FunctionType* function_type(ConstantBuilder& builder, FunctionTypeTerm *term) = 0;
 
         /**
          * Set up a function call.
          */
-        virtual BuiltValue* function_call(FunctionBuilder& builder, llvm::Value *target, FunctionTypeTerm *target_type, FunctionCall::Ptr insn) const = 0;
+        virtual BuiltValue* function_call(FunctionBuilder& builder, llvm::Value *target, FunctionTypeTerm *target_type, FunctionCall::Ptr insn) = 0;
 
         /**
          * Unpack the parameters passed to a function into a friendly
          * form.
          */
         virtual void function_parameters_unpack(FunctionBuilder& builder, FunctionTerm *function,
-                                                llvm::Function *llvm_function, llvm::SmallVectorImpl<BuiltValue*>& result) const = 0;
+                                                llvm::Function *llvm_function, llvm::SmallVectorImpl<BuiltValue*>& result) = 0;
 
         /**
          * Create a function return.
          */
-        virtual void function_return(FunctionBuilder& builder, FunctionTypeTerm *function_type, llvm::Function *llvm_function, Term *value) const = 0;
+        virtual void function_return(FunctionBuilder& builder, FunctionTypeTerm *function_type, llvm::Function *llvm_function, Term *value) = 0;
       };
 
       class ConstantBuilder {
@@ -404,7 +404,7 @@ namespace Psi {
         bool has_outstanding_alloca(llvm::BasicBlock *block);
 
         BuiltValue* build_value_instruction(InstructionTerm *term);
-        llvm::Value* build_value_instruction_simple(InstructionTerm *term);
+        BuiltValue* build_value_instruction_simple(InstructionTerm *term);
         BuiltValue* build_value_functional(FunctionalTerm *term);
         llvm::Value* build_value_functional_simple(FunctionalTerm *term);
 

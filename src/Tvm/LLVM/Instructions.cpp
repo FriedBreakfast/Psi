@@ -110,12 +110,16 @@ namespace {
     CALLBACK(Return, build_return)
     CALLBACK(ConditionalBranch, build_conditional_branch)
     CALLBACK(UnconditionalBranch, build_unconditional_branch)
-    CALLBACK(FunctionCall, build_function_call);
+    CALLBACK(FunctionCall, build_function_call)
+    CALLBACK(Alloca, build_alloca);
 
-  CallbackMapValue& get_callback(const char *s) {
+  const CallbackMapValue& get_callback(const char *s) {
     CallbackMapType::const_iterator it = callbacks.find(s);
-    if (it == callbacks.end())
-      throw BuildError("unknown instruction type");
+    if (it == callbacks.end()) {
+      std::string msg = "unknown instruction type in LLVM backend: ";
+      msg += s;
+      throw BuildError(msg);
+    }
     return *it->second;
   }
 }
@@ -128,8 +132,8 @@ namespace Psi {
        * (i.e. regardless of the arguments) has a known type. In
        * practise, this means numeric operations.
        */
-      llvm::Value* FunctionBuilder::build_value_instruction_simple(InstructionTerm *term) {
-	PSI_FAIL("not implemented");
+      BuiltValue* FunctionBuilder::build_value_instruction_simple(InstructionTerm *term) {
+	return get_callback(term->operation()).build_instruction(*this, term);
       }
     }
   }

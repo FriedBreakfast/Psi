@@ -23,13 +23,11 @@ namespace Psi {
         "  return %x;\n"
         "};\n";
       
-      typedef void (*CallbackType) (void*,const void*);
+      typedef Jit::Int32 (*CallbackType) (Jit::Int32);
       CallbackType f = reinterpret_cast<CallbackType>(jit_single("f", src));
 
       const Jit::Int32 c = 143096367;
-      Jit::Int32 result;
-      f(&result, &c);
-      BOOST_CHECK_EQUAL(result, c);
+      BOOST_CHECK_EQUAL(f(c), c);
     }
 
     BOOST_AUTO_TEST_CASE(ReturnDependent) {

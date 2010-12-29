@@ -35,7 +35,7 @@ namespace Psi {
     BOOST_AUTO_TEST_CASE(IntegerSubtract) {
       const char *src =
         "%mul = function (%a:i32,%b:i32) > i32 {\n"
-        "  return (add %a %b);\n"
+        "  return (sub %a %b);\n"
         "};\n";
 
       typedef Jit::Int32 (*FuncType) (Jit::Int32,Jit::Int32);
@@ -54,6 +54,31 @@ namespace Psi {
       FuncType f = reinterpret_cast<FuncType>(jit_single("mul", src));
       BOOST_CHECK_EQUAL(f(4,5), 20);
       BOOST_CHECK_EQUAL(f(34,19), 646);
+    }
+
+    BOOST_AUTO_TEST_CASE(UnsignedIntegerDivide) {
+      const char *src =
+        "%udiv = function (%a:ui32,%b:ui32) > ui32 {\n"
+        "  return (div %a %b);\n"
+        "};\n";
+
+      typedef Jit::Int32 (*FuncType) (Jit::Int32,Jit::Int32);
+      FuncType f = reinterpret_cast<FuncType>(jit_single("udiv", src));
+      BOOST_CHECK_EQUAL(f(100, 20), 5);
+      BOOST_CHECK_EQUAL(f(69, 7), 9);
+    }
+
+    BOOST_AUTO_TEST_CASE(SignedIntegerDivide) {
+      const char *src =
+        "%sdiv = function (%a:i32,%b:i32) > i32 {\n"
+        "  return (div %a %b);\n"
+        "};\n";
+
+      typedef Jit::Int32 (*FuncType) (Jit::Int32,Jit::Int32);
+      FuncType f = reinterpret_cast<FuncType>(jit_single("sdiv", src));
+      BOOST_CHECK_EQUAL(f(-15,-5), 3);
+      BOOST_CHECK_EQUAL(f(-17,-5), 3); // check round-toward-zero behaviour
+      BOOST_CHECK_EQUAL(f(35,-9), -3);
     }
 
     BOOST_AUTO_TEST_SUITE_END()

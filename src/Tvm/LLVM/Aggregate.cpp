@@ -687,8 +687,7 @@ namespace Psi {
       BuiltValue* FunctionBuilder::build_value_instruction(InstructionTerm *term) {
 	if (false) {
 	} else {
-	  llvm::Value *value = build_value_instruction_simple(term);
-	  return new_function_value_simple(term->type(), value);
+	  return build_value_instruction_simple(term);
 	}
       }
 
@@ -824,8 +823,8 @@ namespace Psi {
 	  PSI_ASSERT(alignment >= value_result.alignment);
 	  return GlobalResult<llvm::Constant>(value_result.value, alignment);
 	} else {
-	  const llvm::Type *ty = build_type(term->type());
-	  return GlobalResult<llvm::Constant>(build_constant_simple(term), type_alignment(ty));
+	  llvm::Constant *value = build_constant_simple(term);
+	  return GlobalResult<llvm::Constant>(value, type_alignment(value->getType()));
 	}
       }
 

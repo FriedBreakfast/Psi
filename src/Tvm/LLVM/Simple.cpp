@@ -33,6 +33,10 @@ namespace {
     return llvm::ConstantStruct::get(builder.llvm_context(), 0, 0, false);
   }
 
+  const llvm::Type* pointer_type_type(ConstantBuilder& builder, PointerType::Ptr) {
+    return llvm::Type::getInt8PtrTy(builder.llvm_context());
+  }
+
   const llvm::Type* block_type_type(ConstantBuilder& builder, BlockType::Ptr) {
     return llvm::Type::getLabelTy(builder.llvm_context());
   }
@@ -60,8 +64,8 @@ namespace {
     uint64_t words[num_words];
     for (std::size_t i = 0; i < num_words; ++i) {
       uint64_t word = 0;
-      for (std::size_t j = 0; j < 8; ++j)
-	word = (word << 8) + bytes[i*8 + j];
+      for (std::size_t j = 1; j <= 8; ++j)
+	word = (word << 8) + bytes[(i+1)*8 - j];
       words[i] = word;
     }
 
@@ -200,6 +204,7 @@ namespace {
     TYPE_CALLBACK(Metatype, metatype_type)
     TYPE_CALLBACK(EmptyType, empty_type_type)
     TYPE_CALLBACK(BlockType, block_type_type)
+    TYPE_CALLBACK(PointerType, pointer_type_type)
     TYPE_CALLBACK(BooleanType, boolean_type_type)
     TYPE_CALLBACK(IntegerType, integer_type_type)
     TYPE_CALLBACK(FloatType, float_type_type)
@@ -212,7 +217,7 @@ namespace {
     INTEGER_OP_CALLBACK(IntegerMultiply, CreateMul, operator *, CreateMul, operator *)
     INTEGER_OP_CALLBACK(IntegerDivide, CreateUDiv, udiv, CreateSDiv, sdiv);
 
-  CallbackMapValue& get_callback(const char *s) {
+  const CallbackMapValue& get_callback(const char *s) {
     CallbackMapType::const_iterator it = callbacks.find(s);
     if (it == callbacks.end()) {
       std::string msg = "unknown operation type in LLVM backend: ";
