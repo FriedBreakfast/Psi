@@ -107,6 +107,15 @@ namespace Psi {
 	}
 
 	/**
+	 * Construct an ElementTypeInfo object for a type which is a
+	 * single EVT in LLVM, and is accurately represented by this
+	 * type.
+	 */
+	static ElementTypeInfo primitive_element_info(ConstantBuilder& builder, const llvm::Type *ty, AMD64_Class amd_class) {
+	  return ElementTypeInfo(TargetParameterCategory::simple, amd_class, builder.type_size(ty), builder.type_alignment(ty), 1);
+	}
+
+	/**
 	 * Compute element type info for a sub-part of the object.
 	 */
 	static ElementTypeInfo get_element_info(ConstantBuilder& builder, Term *element) {
@@ -156,15 +165,16 @@ namespace Psi {
 	    size = align_to(size, align);
 	    return ElementTypeInfo(category, amd64_class, size, align, n_elements);
 	  } else if (PointerType::Ptr ptr_ty = dyn_cast<PointerType>(element)) {
-	    const llvm::Type *ty = llvm::Type::getInt8PtrTy(builder.llvm_context());
-	    return ElementTypeInfo(TargetParameterCategory::simple, amd64_integer, builder.type_size(ty), builder.type_alignment(ty), 1);
+	    return primitive_element_info(builder, builder.get_pointer_type(), amd64_integer);
 	  } else if (FloatType::Ptr float_ty = dyn_cast<FloatType>(element)) {
-	    const llvm::Type *ty = builder.get_float_type(float_ty->width());
-	    return ElementTypeInfo(TargetParameterCategory::simple, amd64_sse, builder.type_size(ty), builder.type_alignment(ty), 1);
+	    return primitive_element_info(builder, builder.get_float_type(float_ty->width()), amd64_integer);
+	  } else if (BooleanType::Ptr bool_ty = dyn_cast<BooleanType>(element)) {
+	    return primitive_element_info(builder, builder.get_boolean_type(), amd64_integer);
 	  } else if (IntegerType::Ptr int_ty = dyn_cast<IntegerType>(element)) {
-	    const llvm::Type *ty = builder.get_integer_type(int_ty->width());
-	    return ElementTypeInfo(TargetParameterCategory::simple, amd64_integer, builder.type_size(ty), builder.type_alignment(ty), 1);
+	    return primitive_element_info(builder, builder.get_integer_type(int_ty->width()), amd64_integer);
 	  } else {
+	    PSI_ASSERT_MSG(!dyn_cast<FunctionTypeParameterTerm>(element) && !dyn_cast<FunctionParameterTerm>(element),
+			   "low-level parameter type should not depend on function type parameters");
 	    PSI_FAIL("unknown type");
 	  }
 	}
@@ -185,7 +195,12 @@ namespace Psi {
 	      result.amd64_class = amd64_memory;
 	    } else if (result.n_elements > 2) {
 	      // more than two elements means that it will not be passed
-	      // as 2xi8 in two integer registers, so we must re-pack it.
+	      // as 2xi64 in two integer registers, so we must re-pack it.
+	      result.category = TargetParameterCategory::altered;
+	    } else if ((result.n_elements == 2) && (result.size < 16)) {
+	      PSI_ASSERT(result.size <= 8);
+	      // In this case there are two elements, but they fit
+	      // into one 64-bit register so must be packed.
 	      result.category = TargetParameterCategory::altered;
 	    } else {
 	      PSI_ASSERT(result.category != TargetParameterCategory::force_ptr);

@@ -184,37 +184,6 @@ namespace Psi {
       }
 
       /**
-       * Allocate space on the stack for unknown typed-phi node values
-       * in all dominated blocks. This wastes some space since it has to
-       * be done in the dominating rather than dominated block, but
-       * without closer control over the stack pointer (which isn't
-       * available in LLVM) I can't do anything else.
-       *
-       * This is also somewhat inefficient since it uses the
-       * user-specified dominator blocks to decide where to put the
-       * alloca instructions, when accurate dominator blocks could
-       * instead be used.
-       */
-      void FunctionBuilder::build_phi_alloca(std::tr1::unordered_map<PhiTerm*, llvm::Value*>& phi_storage_map,
-                                             const std::vector<BlockTerm*>& dominated) {
-        for (std::vector<BlockTerm*>::const_iterator jt = dominated.begin(); jt != dominated.end(); ++jt) {
-          BlockTerm::PhiList& phi_list = (*jt)->phi_nodes();
-          for (BlockTerm::PhiList::iterator kt = phi_list.begin(); kt != phi_list.end(); ++kt) {
-            PhiTerm& phi = *kt;
-            const llvm::Type *ty = build_type(phi.type());
-            if (!ty) {
-              llvm::Value *size_align = build_value_simple(phi.type());
-              llvm::Value *size = irbuilder().CreateExtractValue(size_align, 0);
-              llvm::AllocaInst *storage = irbuilder().CreateAlloca(llvm::Type::getInt8Ty(llvm_context()), size);
-              storage->setAlignment(unknown_alloca_align());
-              PSI_ASSERT(phi_storage_map.find(&phi) == phi_storage_map.end());
-              phi_storage_map[&phi] = storage;
-            }
-          }
-        }
-      }
-
-      /**
        * Checks whether the given block has any outstanding alloca
        * instructions, i.e. whether the stack pointer on exit is
        * different to the stack pointer on entry, apart from the
@@ -348,7 +317,6 @@ namespace Psi {
 
       void FunctionBuilder::run() {
         std::tr1::unordered_map<BlockTerm*, llvm::Value*> stack_pointers;
-        std::tr1::unordered_map<PhiTerm*, llvm::Value*> phi_storage_map;
 
         // Set up parameters
         llvm::BasicBlock *llvm_prolog_block = build_function_entry();
@@ -407,8 +375,6 @@ namespace Psi {
 
         // Finish prolog block
         irbuilder().SetInsertPoint(llvm_prolog_block);
-        // set up phi nodes for entry blocks
-        build_phi_alloca(phi_storage_map, entry_blocks);
         // Save prolog stack and jump into entry
         stack_pointers[NULL] = irbuilder().CreateCall(intrinsic_stacksave(llvm_module()));
         PSI_ASSERT(blocks[0].first == entry_block);
@@ -429,7 +395,9 @@ namespace Psi {
           BlockTerm::PhiList& phi_list = it->first->phi_nodes();
           for (BlockTerm::PhiList::iterator jt = phi_list.begin(); jt != phi_list.end(); ++jt) {
             PhiTerm *phi = &*jt;
-	    phi_node_map.insert(std::make_pair(phi, build_phi_node(phi->type(), post_init_instruction)));
+	    BuiltValue *phi_value = build_phi_node(phi->type(), post_init_instruction);
+	    phi_node_map.insert(std::make_pair(phi, phi_value));
+            m_value_terms.insert(std::make_pair(phi, phi_value));
           }
 
           // Restore stack as it was when dominating block exited, so
@@ -443,9 +411,9 @@ namespace Psi {
           // Build instructions!
           BlockTerm::InstructionList& insn_list = it->first->instructions();
           for (BlockTerm::InstructionList::iterator jt = insn_list.begin(); jt != insn_list.end(); ++jt) {
-            InstructionTerm& insn = *jt;
-            BuiltValue *r = build_value_instruction(&insn);
-            m_value_terms.insert(std::make_pair(&insn, r));
+            InstructionTerm *insn = &*jt;
+            BuiltValue *r = build_value_instruction(insn);
+            m_value_terms.insert(std::make_pair(insn, r));
           }
 
           if (!it->second->getTerminator())
@@ -454,9 +422,6 @@ namespace Psi {
           // Build block epilog: must move the IRBuilder insert point to
           // before the terminating instruction first.
           irbuilder().SetInsertPoint(it->second, boost::prior(it->second->end()));
-
-          // Allocate phi node storage for dominated blocks
-          build_phi_alloca(phi_storage_map, it->first->dominated_blocks());
 
           // Save stack pointer so it can be restored in dominated
           // blocks. This only needs to be done if the alloca is used
@@ -511,14 +476,14 @@ namespace Psi {
       llvm::Value* FunctionBuilder::cast_pointer_to_generic(llvm::Value *value) {
         PSI_ASSERT(value->getType()->isPointerTy());
 
-        const llvm::Type *i8ptr = llvm::Type::getInt8PtrTy(llvm_context());
-        if (value->getType() == i8ptr)
+        const llvm::Type *ptr_type = get_pointer_type();
+        if (value->getType() == ptr_type)
           return value;
 
         if (llvm::Constant *const_value = llvm::dyn_cast<llvm::Constant>(value)) {
-          return llvm::ConstantExpr::getPointerCast(const_value, i8ptr);
+          return llvm::ConstantExpr::getBitCast(const_value, ptr_type);
         } else {
-          return irbuilder().CreatePointerCast(value, i8ptr);
+          return irbuilder().CreateBitCast(value, ptr_type);
         }
       }
 
@@ -537,7 +502,7 @@ namespace Psi {
         if (value->getType() == type)
           return value;
 
-        PSI_ASSERT(value->getType() == llvm::Type::getInt8PtrTy(llvm_context()));
+        PSI_ASSERT(value->getType() == get_pointer_type());
         if (llvm::Constant *const_value = llvm::dyn_cast<llvm::Constant>(value)) {
           return llvm::ConstantExpr::getPointerCast(const_value, type);
         } else {

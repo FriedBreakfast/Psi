@@ -111,12 +111,12 @@ namespace Psi {
 
 	  /**
 	   * \brief Decode a value returned by a called function.
-	   * If
-	   * return_by_sret_setup returned a non-NULL value, this will be
-	   * passed in the last parameter. It is safe to assume that the
-	   * return value from return_by_sret_setup will always be passed
-	   * as the third parameter so it is not necessary to check whether
-	   * it is NULL.
+	   *
+	   * If return_by_sret_setup returned a non-NULL value, this
+	   * will be passed in the last parameter. It is safe to
+	   * assume that the return value from return_by_sret_setup
+	   * will always be passed as the third parameter so it is not
+	   * necessary to check whether it is NULL.
 	   */
 	  virtual BuiltValue* return_unpack(FunctionBuilder& builder, llvm::Value *value, llvm::Value *sret_addr) const = 0;
 
@@ -146,10 +146,10 @@ namespace Psi {
 	};
 
       private:
-	Callback *m_callback;
+	const Callback *m_callback;
 
       public:
-	TargetFunctionCallCommon(Callback *callback);
+	TargetFunctionCallCommon(const Callback *callback);
 
 	static boost::shared_ptr<ParameterHandler> parameter_handler_simple(ConstantBuilder& builder, Term *type, llvm::CallingConv::ID cconv);
 	static boost::shared_ptr<ParameterHandler> parameter_handler_change_type_by_memory(Term *type, const llvm::Type *llvm_type, llvm::CallingConv::ID calling_convention);

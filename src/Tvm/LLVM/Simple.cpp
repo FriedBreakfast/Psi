@@ -21,7 +21,7 @@ namespace {
   }
 
   const llvm::Type *metatype_type(ConstantBuilder& builder, Metatype::Ptr) {
-    std::vector<const llvm::Type*> elements(2, builder.intptr_type());
+    std::vector<const llvm::Type*> elements(2, builder.get_intptr_type());
     return llvm::StructType::get(builder.llvm_context(), elements);
   }
 
@@ -34,7 +34,7 @@ namespace {
   }
 
   const llvm::Type* pointer_type_type(ConstantBuilder& builder, PointerType::Ptr) {
-    return llvm::Type::getInt8PtrTy(builder.llvm_context());
+    return builder.get_pointer_type();
   }
 
   const llvm::Type* block_type_type(ConstantBuilder& builder, BlockType::Ptr) {
@@ -42,7 +42,7 @@ namespace {
   }
 
   const llvm::Type* boolean_type_type(ConstantBuilder& builder, BooleanType::Ptr) {
-    return llvm::IntegerType::get(builder.llvm_context(), 1);
+    return builder.get_boolean_type();
   }
 
   llvm::Constant* boolean_value_const(ConstantBuilder& builder, BooleanValue::Ptr term) {

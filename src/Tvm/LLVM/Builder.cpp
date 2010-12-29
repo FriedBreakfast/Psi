@@ -153,7 +153,7 @@ namespace Psi {
       /**
        * Get the type used to represent intptr_t.
        */
-      const llvm::IntegerType* ConstantBuilder::intptr_type() {
+      const llvm::IntegerType* ConstantBuilder::get_intptr_type() {
         return llvm_target_machine()->getTargetData()->getIntPtrType(llvm_context());
       }
 
@@ -161,7 +161,7 @@ namespace Psi {
        * Get the number of bits in an intptr_t.
        */
       unsigned ConstantBuilder::intptr_type_bits() {
-        return intptr_type()->getBitWidth();
+        return get_intptr_type()->getBitWidth();
       }
 
       /**
@@ -207,6 +207,14 @@ namespace Psi {
       }
 
       /**
+       * Utility function to get the LLVM type used to represent a
+       * boolean value.
+       */
+      const llvm::IntegerType* ConstantBuilder::get_boolean_type() {
+	return llvm::Type::getInt1Ty(llvm_context());
+      }
+
+      /**
        * Utility function to get an LLVM integer type from a float
        * width, bypassing the normal build_type mechanism.
        */
@@ -217,9 +225,26 @@ namespace Psi {
 	case IntegerType::i32:  return llvm::IntegerType::get(llvm_context(), 32);
 	case IntegerType::i64:  return llvm::IntegerType::get(llvm_context(), 64);
 	case IntegerType::i128: return llvm::IntegerType::get(llvm_context(), 128);
-	case IntegerType::iptr: return intptr_type();
+	case IntegerType::iptr: return get_intptr_type();
 	default: PSI_FAIL("unknown integer width");
 	}
+      }
+
+      /**
+       * Get the type used to represent one byte, i.e. the units of
+       * size for this system.
+       */
+      const llvm::Type* ConstantBuilder::get_byte_type() {
+	return llvm::Type::getInt8Ty(llvm_context());
+      }
+
+      /**
+       * Utility function to return the LLVM type used to represent
+       * all pointers. This will always be a pointer to the type
+       * returned by get_byte_type.
+       */
+      const llvm::Type* ConstantBuilder::get_pointer_type() {
+	return get_byte_type()->getPointerTo();
       }
 
       struct GlobalBuilder::ConstantBuilderCallback : PtrValidBase<ConstantValue> {
@@ -240,7 +265,7 @@ namespace Psi {
           case term_global_variable:
           case term_function: {
             llvm::GlobalValue *value = self->build_global(cast<GlobalTerm>(term));
-            llvm::Constant *i8ptr_value = llvm::ConstantExpr::getPointerCast(value, llvm::Type::getInt8PtrTy(self->llvm_context()));
+            llvm::Constant *i8ptr_value = llvm::ConstantExpr::getBitCast(value, self->get_pointer_type());
             return self->new_constant_value_simple(term->type(), i8ptr_value);
           }
 
@@ -268,7 +293,7 @@ namespace Psi {
 
 	      PaddingStatus padding_status(self->constant_type_size(global->value_type()),
 					   self->type_size(global_result.value));
-	      const llvm::Type *padding_type = self->pad_to_alignment(BooleanType::get(self->context()), llvm::Type::getInt1Ty(self->llvm_context()), 1, padding_status).second;
+	      const llvm::Type *padding_type = self->pad_to_alignment(BooleanType::get(self->context()), self->get_boolean_type(), 1, padding_status).second;
 
 	      if (padding_type) {
 		std::vector<const llvm::Type*> elements;
@@ -279,7 +304,7 @@ namespace Psi {
             } else if ((llvm_type = self->build_type(global->value_type()))) {
 	    } else {
               align = self->constant_type_alignment(global_type);
-	      llvm_type = llvm::ArrayType::get(llvm::Type::getInt8Ty(self->llvm_context()), self->constant_type_size(global_type));
+	      llvm_type = llvm::ArrayType::get(self->get_byte_type(), self->constant_type_size(global_type));
             }
 	    llvm::GlobalValue *result = new llvm::GlobalVariable(self->llvm_module(), llvm_type,
 								 global->constant(), llvm::GlobalValue::InternalLinkage,
@@ -350,7 +375,7 @@ namespace Psi {
 
 		  PaddingStatus padding_status(constant_type_size(global_variable->value_type()),
 					       type_size(value.value->getType()));
-		  const llvm::Type *padding_type = pad_to_alignment(BooleanType::get(context()), llvm::Type::getInt1Ty(llvm_context()), 1, padding_status).second;
+		  const llvm::Type *padding_type = pad_to_alignment(BooleanType::get(context()), get_boolean_type(), 1, padding_status).second;
 
 		  if (padding_type) {
 		    llvm::Constant *padding_value = llvm::UndefValue::get(padding_type);

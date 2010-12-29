@@ -11,7 +11,7 @@
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
-      TargetFunctionCallCommon::TargetFunctionCallCommon(Callback *callback) : m_callback(callback) {
+      TargetFunctionCallCommon::TargetFunctionCallCommon(const Callback *callback) : m_callback(callback) {
       }
 
       /**
@@ -195,6 +195,7 @@ namespace Psi {
        * back.
        */
       class TargetFunctionCallCommon::ParameterHandlerChangeTypeByMemory : public ParameterHandler {
+
       public:
 	ParameterHandlerChangeTypeByMemory(Term *type, const llvm::Type *llvm_type, llvm::CallingConv::ID calling_convention)
 	  : ParameterHandler(type, llvm_type, calling_convention) {
@@ -205,23 +206,29 @@ namespace Psi {
 	}
 
 	virtual llvm::Value* pack(FunctionBuilder& builder, Term *value) const {
-	  PSI_FAIL("not implemented");
+	  llvm::Value *ptr_value = builder.build_value(value)->raw_value();
+	  llvm::Value *cast_ptr = builder.irbuilder().CreateBitCast(ptr_value, llvm_type()->getPointerTo());
+	  return builder.irbuilder().CreateLoad(cast_ptr);
 	}
 
 	virtual BuiltValue* unpack(FunctionBuilder& builder, llvm::Value *value) const {
-	  PSI_FAIL("not implemented");
+	  llvm::AllocaInst *alloca_ptr = builder.irbuilder().CreateAlloca(value->getType());
+	  alloca_ptr->setAlignment(builder.constant_type_alignment(type()));
+	  builder.irbuilder().CreateStore(value, alloca_ptr);
+	  llvm::Value *byte_ptr = builder.irbuilder().CreateBitCast(alloca_ptr, builder.get_pointer_type());
+	  return builder.new_function_value_raw(type(), byte_ptr);
 	}
 
 	virtual llvm::Value* return_by_sret_setup(FunctionBuilder&) const {
 	  return NULL;
 	}
 
-	virtual void return_pack(FunctionBuilder& builder, llvm::Function *llvm_function, Term *value) const {
-	  PSI_FAIL("not implemented");
+	virtual void return_pack(FunctionBuilder& builder, llvm::Function*, Term *value) const {
+	  builder.irbuilder().CreateRet(pack(builder, value));
 	}
 
 	virtual BuiltValue* return_unpack(FunctionBuilder& builder, llvm::Value *value, llvm::Value*) const {
-	  PSI_FAIL("not implemented");
+	  return unpack(builder, value);
 	}
       };
 
@@ -246,7 +253,7 @@ namespace Psi {
       class TargetFunctionCallCommon::ParameterHandlerForcePtr : public ParameterHandler {
       public:
 	ParameterHandlerForcePtr(ConstantBuilder& builder, Term *type, llvm::CallingConv::ID calling_convention)
-	  : ParameterHandler(type, llvm::Type::getInt8PtrTy(builder.llvm_context()), calling_convention) {
+	  : ParameterHandler(type, builder.get_pointer_type(), calling_convention) {
 	}
 
 	virtual bool return_by_sret() const {
@@ -254,23 +261,28 @@ namespace Psi {
 	}
 
 	virtual llvm::Value* pack(FunctionBuilder& builder, Term *value) const {
-	  PSI_FAIL("not implemented");
+	  return builder.build_value(value)->raw_value();
 	}
 
 	virtual BuiltValue* unpack(FunctionBuilder& builder, llvm::Value *value) const {
-	  PSI_FAIL("not implemented");
+	  return builder.new_function_value_raw(type(), value);
 	}
 
 	virtual llvm::Value* return_by_sret_setup(FunctionBuilder& builder) const {
+	  uint64_t alloca_size = builder.constant_type_size(type());
+	  llvm::Value *alloca_size_value = llvm::ConstantInt::get(builder.get_intptr_type(), alloca_size);
+	  llvm::AllocaInst *alloca_ptr = builder.irbuilder().CreateAlloca(builder.get_byte_type(), alloca_size_value);
+	  alloca_ptr->setAlignment(builder.constant_type_alignment(type()));
+	  return alloca_ptr;
+	}
+
+	virtual void return_pack(FunctionBuilder& builder, llvm::Function* function, Term *value) const {
+	  llvm::Value *sret_parameter = &function->getArgumentList().front();
 	  PSI_FAIL("not implemented");
 	}
 
-	virtual void return_pack(FunctionBuilder& builder, llvm::Function*, Term *value) const {
-	  PSI_FAIL("not implemented");
-	}
-
-	virtual BuiltValue* return_unpack(FunctionBuilder& builder, llvm::Value *value, llvm::Value* sret_addr) const {
-	  PSI_FAIL("not implemented");
+	virtual BuiltValue* return_unpack(FunctionBuilder& builder, llvm::Value*, llvm::Value* sret_addr) const {
+	  return builder.new_function_value_raw(type(), sret_addr);
 	}
       };
 

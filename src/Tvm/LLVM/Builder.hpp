@@ -208,7 +208,12 @@ namespace Psi {
         virtual const llvm::Type* build_type(Term *term);
 
 	const llvm::Type* get_float_type(FloatType::Width);
+	const llvm::IntegerType* get_boolean_type();
 	const llvm::IntegerType* get_integer_type(IntegerType::Width);
+	const llvm::Type* get_byte_type();
+	const llvm::Type* get_pointer_type();
+        const llvm::IntegerType *get_intptr_type();
+        unsigned intptr_type_bits();
 
         /**
          * \brief Return the constant value specified by the given term.
@@ -220,8 +225,6 @@ namespace Psi {
         llvm::Constant* build_constant_simple(Term *term);
         const llvm::APInt& build_constant_integer(Term *term);
 
-        const llvm::IntegerType *intptr_type();
-        unsigned intptr_type_bits();
         uint64_t type_size(const llvm::Type *ty);
         unsigned type_alignment(const llvm::Type *ty);
 	uint64_t constant_type_size(Term *term);
@@ -406,8 +409,6 @@ namespace Psi {
 
         void run();
         llvm::BasicBlock* build_function_entry();
-        void build_phi_alloca(std::tr1::unordered_map<PhiTerm*, llvm::Value*>& phi_storage_map,
-                              const std::vector<BlockTerm*>& dominated);
         void simplify_stack_save_restore();
         llvm::CallInst* first_stack_restore(llvm::BasicBlock *block);
         bool has_outstanding_alloca(llvm::BasicBlock *block);

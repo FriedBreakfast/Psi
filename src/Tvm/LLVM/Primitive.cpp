@@ -9,7 +9,7 @@ namespace Psi {
        * \brief Get the LLVM type for Metatype values.
        */
       const llvm::Type *metatype_type(ConstantBuilder& c) {
-        const llvm::Type* int_ty = c.intptr_type();
+        const llvm::Type* int_ty = c.get_intptr_type();
         return llvm::StructType::get(c.llvm_context(), int_ty, int_ty, NULL);
       }
 
@@ -22,7 +22,7 @@ namespace Psi {
         PSI_ASSERT(!size.urem(align));
         PSI_ASSERT(!(align & (align - 1)));
 
-        const llvm::IntegerType *int_ty = c.intptr_type();
+        const llvm::IntegerType *int_ty = c.get_intptr_type();
         llvm::Constant* values[2] = {
           llvm::ConstantInt::get(int_ty, size),
           llvm::ConstantInt::get(int_ty, align)
@@ -39,7 +39,7 @@ namespace Psi {
         PSI_ASSERT(size % align == 0);
         PSI_ASSERT((align & (align - 1)) == 0);
 
-        const llvm::IntegerType *int_ty = c.intptr_type();
+        const llvm::IntegerType *int_ty = c.get_intptr_type();
         llvm::Constant* values[2] = {
           llvm::ConstantInt::get(int_ty, size),
           llvm::ConstantInt::get(int_ty, align)
@@ -60,7 +60,7 @@ namespace Psi {
        * The result of this call will be a global constant.
        */
       llvm::Value* metatype_from_value(FunctionBuilder& builder, llvm::Value *size, llvm::Value *align) {
-        const llvm::Type *int_ty = builder.intptr_type();
+        const llvm::Type *int_ty = builder.get_intptr_type();
         if ((size->getType() != int_ty) || (align->getType() != int_ty))
           throw BuildError("values supplied for metatype have the wrong type");
         llvm::Value *undef = llvm::UndefValue::get(metatype_type(builder));
