@@ -404,6 +404,9 @@ namespace Psi {
 
         ValueTermMap m_value_terms;
 
+	typedef std::deque<llvm::Instruction*> PlaceholderInstructionList;
+	PlaceholderInstructionList m_placeholder_instructions;
+
 	boost::object_pool<FunctionValue> m_function_value_pool;
 	FunctionValue* new_function_value(Term *type, llvm::Instruction *origin);
 

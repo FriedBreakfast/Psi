@@ -450,6 +450,13 @@ namespace Psi {
 	    populate_phi_node(it->second, incoming_block, incoming_value);
           }
         }
+
+	// Erase placeholder instructions
+	for (PlaceholderInstructionList::iterator it = m_placeholder_instructions.begin();
+	     it != m_placeholder_instructions.end(); ++it) {
+	  (*it)->eraseFromParent();
+	}
+	m_placeholder_instructions.clear();
       }
 
       /**
@@ -463,7 +470,9 @@ namespace Psi {
        */
       llvm::Instruction* FunctionBuilder::insert_placeholder_instruction() {
 	llvm::Constant* undef_i8 = llvm::UndefValue::get(llvm::Type::getInt8Ty(llvm_context()));
-	return irbuilder().Insert(llvm::BinaryOperator::CreateNeg(undef_i8));
+	llvm::Instruction *insn = irbuilder().Insert(llvm::BinaryOperator::CreateNeg(undef_i8));
+	m_placeholder_instructions.push_back(insn);
+	return insn;
       }
 
       /**
