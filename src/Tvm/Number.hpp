@@ -21,6 +21,16 @@
   static Ptr get(Term *lhs, Term *rhs);                                 \
   PSI_TVM_FUNCTIONAL_TYPE_END(name)
 
+#define PSI_TVM_FUNCTIONAL_TYPE_UNARY(name,value_type)			\
+  PSI_TVM_FUNCTIONAL_TYPE(name)						\
+  typedef Empty Data;							\
+  PSI_TVM_FUNCTIONAL_PTR_HOOK()						\
+  Term* parameter() const {return get()->parameter(0);}			\
+  value_type::Ptr type() const {return cast<value_type>(BaseType::type());} \
+  PSI_TVM_FUNCTIONAL_PTR_HOOK_END()					\
+  static Ptr get(Term *parameter);					\
+  PSI_TVM_FUNCTIONAL_TYPE_END(name)
+
 namespace Psi {
   namespace Tvm {
     PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(BooleanType)
@@ -76,6 +86,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
 
     static Ptr get(Context&, Width, bool);
+    static Ptr get_size(Context&);
     PSI_TVM_FUNCTIONAL_TYPE_END(IntegerType)
 
     PSI_TVM_FUNCTIONAL_TYPE(IntegerValue)
@@ -168,6 +179,39 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerSubtract, IntegerType)
     PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerMultiply, IntegerType)
     PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerDivide, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_UNARY(IntegerNegative, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitAnd, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitOr, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitXor, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_UNARY(BitNot, IntegerType)
+
+    /**
+     * Possible comparison operands, used by both IntegerCompare and
+     * FloatCompare.
+     */
+    enum Comparison {
+      cmp_eq,
+      cmp_ne,
+      cmp_gt,
+      cmp_ge,
+      cmp_lt,
+      cmp_le
+    };
+
+    /**
+     * Comparison operation between two integer operands.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(IntegerCompare)
+    typedef Comparison Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the comparison operation being performed
+    Comparison comparison() const {return data();}
+    Term* lhs() const {return get()->parameter(0);}
+    Term* rhs() const {return get()->parameter(1);}
+    IntegerType::Ptr type() const {return cast<IntegerType>(BaseType::type());}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static IntegerCompare::Ptr get(Comparison cmp, Term *lhs, Term *rhs);
+    PSI_TVM_FUNCTIONAL_TYPE_END(IntegerCompare)
   }
 }
 

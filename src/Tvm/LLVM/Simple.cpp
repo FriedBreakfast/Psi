@@ -25,6 +25,28 @@ namespace {
     return llvm::StructType::get(builder.llvm_context(), elements);
   }
 
+  llvm::Constant *metatype_size_const(ConstantBuilder& builder, MetatypeSize::Ptr term) {
+    llvm::Constant *value = builder.build_constant_simple(term->target());
+    unsigned zero = 0;
+    return llvm::ConstantExpr::getExtractValue(value, &zero, 1);
+  }
+
+  llvm::Value *metatype_size_insn(FunctionBuilder& builder, MetatypeSize::Ptr term) {
+    llvm::Value *value = builder.build_value_simple(term->target());
+    return builder.irbuilder().CreateExtractValue(value, 0);
+  }
+
+  llvm::Constant *metatype_alignment_const(ConstantBuilder& builder, MetatypeAlignment::Ptr term) {
+    llvm::Constant *value = builder.build_constant_simple(term->target());
+    unsigned one = 1;
+    return llvm::ConstantExpr::getExtractValue(value, &one, 1);
+  }
+
+  llvm::Value *metatype_alignment_insn(FunctionBuilder& builder, MetatypeAlignment::Ptr term) {
+    llvm::Value *value = builder.build_value_simple(term->target());
+    return builder.irbuilder().CreateExtractValue(value, 1);
+  }
+
   const llvm::Type* empty_type_type(ConstantBuilder& builder, EmptyType::Ptr) {
     return llvm::StructType::get(builder.llvm_context());
   }
@@ -212,6 +234,8 @@ namespace {
     VALUE_CALLBACK(BooleanValue, boolean_value_const)
     VALUE_CALLBACK(IntegerValue, integer_value_const)
     VALUE_CALLBACK(FloatValue, float_value_const)
+    OP_CALLBACK(MetatypeSize, metatype_size_insn, metatype_size_const)
+    OP_CALLBACK(MetatypeAlignment, metatype_alignment_insn, metatype_alignment_const)
     INTEGER_OP_CALLBACK(IntegerAdd, CreateAdd, operator +, CreateAdd, operator +)
     INTEGER_OP_CALLBACK(IntegerSubtract, CreateSub, operator -, CreateSub, operator -)
     INTEGER_OP_CALLBACK(IntegerMultiply, CreateMul, operator *, CreateMul, operator *)

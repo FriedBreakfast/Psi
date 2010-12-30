@@ -138,16 +138,14 @@ namespace Psi {
        * Get the size of a type from a type term.
        */
       uint64_t ConstantBuilder::constant_type_size(Term *type) {
-	llvm::Constant *size_align = build_constant_simple(type);
-	return metatype_constant_size(size_align).getZExtValue();
+	return build_constant_integer(MetatypeSize::get(type)).getZExtValue();
       }
 
       /**
        * Get the alignment of a type from a type term.
        */
       unsigned ConstantBuilder::constant_type_alignment(Term *type) {
-	llvm::Constant *size_align = build_constant_simple(type);
-	return metatype_constant_align(size_align).getZExtValue();
+	return build_constant_integer(MetatypeAlignment::get(type)).getZExtValue();
       }
 
       /**

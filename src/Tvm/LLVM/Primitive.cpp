@@ -69,45 +69,6 @@ namespace Psi {
         return stage2;
       }
 
-      /**
-       * \brief Get the size value from a Metatype constant.
-       */
-      const llvm::APInt& metatype_constant_size(llvm::Constant *value) {
-        unsigned zero = 0;
-        llvm::ConstantInt *ci = llvm::cast<llvm::ConstantInt>(llvm::ConstantExpr::getExtractValue(value, &zero, 1));
-        return ci->getValue();
-      }
-
-      /**
-       * \brief Get the alignment value from a Metatype constant.
-       */
-      const llvm::APInt& metatype_constant_align(llvm::Constant *value) {
-        unsigned one = 1;
-        llvm::ConstantInt *ci = llvm::cast<llvm::ConstantInt>(llvm::ConstantExpr::getExtractValue(value, &one, 1));
-        return ci->getValue();
-      }
-
-      /**
-       * \brief Get the size value from a Metatype value.
-       */
-      llvm::Value* metatype_value_size(FunctionBuilder& builder, llvm::Value* value) {
-        return builder.irbuilder().CreateExtractValue(value, 0);
-      }
-
-      /**
-       * \brief Get the align value from a Metatype value.
-       */
-      llvm::Value* metatype_value_align(FunctionBuilder& builder, llvm::Value* value) {
-        return builder.irbuilder().CreateExtractValue(value, 1);
-      }
-
-      /**
-       * Get the value of the empty type.
-       */
-      llvm::Value* empty_value(ConstantBuilder& builder) {
-        return llvm::ConstantStruct::get(builder.llvm_context(), NULL, 0, false);
-      }
-
       /// \brief Utility function used by intrinsic_memcpy_64 and
       /// intrinsic_memcpy_32.
       llvm::Function* intrinsic_memcpy_n(llvm::Module& m, const llvm::IntegerType *size_type, const char *name) {

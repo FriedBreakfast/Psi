@@ -14,10 +14,50 @@
 
 namespace Psi {
   namespace Tvm {
-    PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(Metatype)
     PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(EmptyType)
     PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(EmptyValue)
     PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(BlockType)
+
+    PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(Metatype)
+
+    /**
+     * Generate a value for Metatype.
+     *
+     * This can be used by the user, however without pointer casts the
+     * generated type will be no use. It is mostly present to support
+     * code generation, where the other types use this to construct a
+     * type.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(MetatypeValue)
+    typedef Empty Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the size of this type
+    Term *size() const {return get()->parameter(0);}
+    /// \brief Get the alignment of this type
+    Term *alignment() const {return get()->parameter(1);}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *size, Term *alignment);
+    PSI_TVM_FUNCTIONAL_TYPE_END(MetatypeValue)
+
+    /// Operation to get the size of a type, like \c sizeof in C.
+    PSI_TVM_FUNCTIONAL_TYPE(MetatypeSize)
+    typedef Empty Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the target of this instruction
+    Term* target() const {return get()->parameter(0);}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *target);
+    PSI_TVM_FUNCTIONAL_TYPE_END(MetatypeSize)
+
+    /// Operation to the the alignment of a type, like \c alignof in C99
+    PSI_TVM_FUNCTIONAL_TYPE(MetatypeAlignment)
+    typedef Empty Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the target of this instruction
+    Term* target() const {return get()->parameter(0);}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *target);
+    PSI_TVM_FUNCTIONAL_TYPE_END(MetatypeAlignment)
 
     PSI_TVM_FUNCTIONAL_TYPE(PointerType)
     typedef Empty Data;
@@ -27,6 +67,19 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *target_type);
     PSI_TVM_FUNCTIONAL_TYPE_END(PointerType)
+
+    PSI_TVM_FUNCTIONAL_TYPE(PointerCast)
+    typedef Empty Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the pointer being cast
+    Term *pointer() const {return get()->parameter(0);}
+    /// \brief Get the target type of the cast
+    Term *target_type() const {return get()->parameter(1);}
+    /// \brief Get the type of this cast, cast to a pointer type.
+    PointerType::Ptr type() const {return cast<PointerType>(BaseType::type());}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *pointer, Term *target_type);
+    PSI_TVM_FUNCTIONAL_TYPE_END(PointerCast)
 
     PSI_TVM_FUNCTIONAL_TYPE(ArrayType)
     typedef Empty Data;
@@ -55,6 +108,18 @@ namespace Psi {
     static Ptr get(Term *element_type, ArrayPtr<Term*const> elements);
     PSI_TVM_FUNCTIONAL_TYPE_END(ArrayValue)
 
+    /// \brief Get the value of an array element
+    PSI_TVM_FUNCTIONAL_TYPE(ArrayElement)
+    typedef Empty Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the array being indexed
+    Term *aggregate() const {return get()->parameter(0);}
+    /// \brief Get the index
+    Term *index() const {return get()->parameter(1);}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *aggregate, Term *index);
+    PSI_TVM_FUNCTIONAL_TYPE_END(ArrayElement)
+
     PSI_TVM_FUNCTIONAL_TYPE(StructType)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -79,6 +144,18 @@ namespace Psi {
     static Ptr get(Context&, ArrayPtr<Term*const> elements);
     PSI_TVM_FUNCTIONAL_TYPE_END(StructValue)
 
+    /// \brief Get the value of a struct member
+    PSI_TVM_FUNCTIONAL_TYPE(StructElement)
+    typedef unsigned Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the struct being accessed
+    Term *aggregate() const {return get()->parameter(0);}
+    /// \brief Get the index of the member being accessed
+    unsigned index() const {return data();}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *structure, unsigned index);
+    PSI_TVM_FUNCTIONAL_TYPE_END(StructElement)
+
     PSI_TVM_FUNCTIONAL_TYPE(UnionType)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -91,6 +168,19 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Context&, ArrayPtr<Term*const> elements);
     PSI_TVM_FUNCTIONAL_TYPE_END(UnionType)
+
+    /// \brief Get the value of a union member
+    PSI_TVM_FUNCTIONAL_TYPE(UnionElement)
+    typedef unsigned Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the union being accessed
+    Term *aggregate() const {return get()->parameter(0);}
+    /// \brief Get the type of the member being accessed
+    Term *member_type() const {return get()->parameter(1);}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *aggregate, Term *member_type);
+    static Ptr get(Term *aggregate, unsigned index);
+    PSI_TVM_FUNCTIONAL_TYPE_END(UnionElement)
 
     PSI_TVM_FUNCTIONAL_TYPE(UnionValue)
     typedef Empty Data;

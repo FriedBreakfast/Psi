@@ -65,9 +65,9 @@ namespace {
   }
 
   BuiltValue* build_alloca(FunctionBuilder& builder, Alloca::Ptr term) {
-    llvm::Value *size_align = builder.build_value_simple(term->stored_type());
-    llvm::Value *size = metatype_value_size(builder, size_align);
-    llvm::Value *align = metatype_value_align(builder, size_align);
+    Term *stored_type = term->stored_type();
+    llvm::Value *size = builder.build_value_simple(MetatypeSize::get(stored_type));
+    llvm::Value *align = builder.build_value_simple(MetatypeAlignment::get(stored_type));
     llvm::AllocaInst *inst = builder.irbuilder().CreateAlloca(builder.get_byte_type(), size);
     if (llvm::ConstantInt *ci = llvm::dyn_cast<llvm::ConstantInt>(align)) {
       inst->setAlignment(ci->getValue().getZExtValue());

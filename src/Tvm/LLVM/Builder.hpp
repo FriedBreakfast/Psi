@@ -76,35 +76,59 @@ namespace Psi {
 	Term *m_type;
 	State m_state;
 	const llvm::Type *m_simple_type;
-	llvm::SmallVector<BuiltValue*, 4> m_elements;
+	unsigned m_n_elements;
 
       public:
         /**
          * The term type this value represents.
          */
-	Term *type() const {return m_type;}
+	Term *type() {return m_type;}
 
         /**
          * Which subclass of BuiltValue this is in fact an
          * instance of.
          */
-        State state() const {return m_state;}
+        State state() {return m_state;}
+
+	/**
+	 * If this is an aggregate, return the number of elements in
+	 * it.
+	 */
+	unsigned n_elements() {return m_n_elements;}
 
         /**
          * If this value has a simple LLVM type, this gives that type.
          */
-        const llvm::Type *simple_type() const {return m_simple_type;}
+        const llvm::Type *simple_type() {return m_simple_type;}
 
 	/**
 	 * Return a simple value corresponding to this value.
 	 */
-	virtual llvm::Value *simple_value() const = 0;
+	virtual llvm::Value *simple_value() = 0;
 
 	/**
 	 * Return a value which is a pointer to the encoded data for
 	 * this value.
 	 */
-	virtual llvm::Value *raw_value() const = 0;
+	virtual llvm::Value *raw_value() = 0;
+
+	/**
+	 * Get a BuiltValue for an element of an existing value at a
+	 * fixed index. This function works for struct types.
+	 */
+	virtual BuiltValue* struct_element_value(unsigned index) = 0;
+
+	/**
+	 * Get a BuiltValue for an element of an existing value at a
+	 * fixed index. This function works for array types.
+	 */
+	virtual BuiltValue* array_element_value(unsigned index) = 0;
+
+	/**
+	 * Get a BuiltValue for an element of an existing value at a
+	 * fixed index. This function works for union types.
+	 */
+	virtual BuiltValue* union_element_value(unsigned index) = 0;
 
       protected:
         BuiltValue(ConstantBuilder&, Term*);
@@ -114,15 +138,20 @@ namespace Psi {
 	friend class GlobalBuilder;
 
       public:
-	virtual llvm::Constant *simple_value() const;
-	virtual llvm::Constant *raw_value() const;
+	virtual llvm::Constant *simple_value();
+	virtual llvm::Constant *raw_value();
+	virtual ConstantValue* struct_element_value(unsigned index);
+	virtual ConstantValue* array_element_value(unsigned index);
+	virtual ConstantValue* union_element_value(unsigned index);
 
       private:
 	GlobalBuilder *m_builder;
 	llvm::Constant *m_simple_value;
 	llvm::SmallVector<char, 0> m_raw_value;
+	llvm::SmallVector<ConstantValue*, 4> m_elements;
 
 	ConstantValue(GlobalBuilder *builder, Term *type);
+	ConstantValue* struct_or_array_element_value(Term *element_type, unsigned index);
       };
 
       class FunctionValue : public BuiltValue {
@@ -136,8 +165,11 @@ namespace Psi {
 	 */
 	llvm::Instruction *origin() {return m_origin;}
 
-	virtual llvm::Value *simple_value() const;
-	virtual llvm::Value *raw_value() const;
+	virtual llvm::Value *simple_value();
+	virtual llvm::Value *raw_value();
+	virtual BuiltValue* struct_element_value(unsigned index);
+	virtual BuiltValue* array_element_value(unsigned index);
+	virtual BuiltValue* union_element_value(unsigned index);
 
       private:
 	FunctionBuilder *m_builder;
@@ -147,6 +179,7 @@ namespace Psi {
 	llvm::SmallVector<BuiltValue*, 4> m_elements;
 
 	FunctionValue(FunctionBuilder *builder, Term *type, llvm::Instruction *origin);
+	FunctionValue* struct_or_array_element_value(Term *element_type, unsigned index);
       };
 
       class ConstantBuilder;
@@ -231,18 +264,6 @@ namespace Psi {
 	unsigned constant_type_alignment(Term *term);
 
 	/**
-	 * Convert a BuiltValue to an LLVM value. The value should
-	 * have a simple type.
-	 */
-	virtual llvm::Value* value_to_llvm(BuiltValue *value) = 0;
-
-	/**
-	 * Get a BuiltValue for an element of an existing value at a
-	 * fixed index. This works for struct, array and union types.
-	 */
-	virtual BuiltValue* get_element_value(BuiltValue *value, unsigned index) = 0;
-
-	/**
 	 * Get the unique value of the empty type.
 	 */
         BuiltValue* empty_value() {return m_empty_value;}
@@ -266,6 +287,8 @@ namespace Psi {
       };
 
       class GlobalBuilder : public ConstantBuilder {
+	friend class ConstantValue;
+
       public:
         GlobalBuilder(Context *context, llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes, llvm::Module *module=0);
         ~GlobalBuilder();
@@ -277,9 +300,6 @@ namespace Psi {
         virtual ConstantValue* build_constant(Term *term);
         llvm::GlobalValue* build_global(GlobalTerm *term);
 
-	virtual llvm::Value* value_to_llvm(BuiltValue *value);
-	virtual BuiltValue* get_element_value(BuiltValue *value, unsigned index);
-
 	///@{
 	/**
 	 * Functions for creating new ConstantValue objects.
@@ -288,6 +308,16 @@ namespace Psi {
 	ConstantValue* new_constant_value_simple(Term *type, llvm::Constant *value);
 	ConstantValue* new_constant_value_raw(Term *type, const llvm::SmallVectorImpl<char>& data);
 	ConstantValue* new_constant_value_aggregate(Term *type, const llvm::SmallVectorImpl<ConstantValue*>& elements);
+	///@}
+
+	///@{
+	/**
+	 * Various functions to help with accessing aggregates and
+	 * pointers.
+	 */
+
+	llvm::Constant* array_element_offset(Term *array_type);
+	llvm::Constant* array_element_offset();
 	///@}
 
       protected:
@@ -342,8 +372,20 @@ namespace Psi {
 	std::pair<PaddingStatus, const llvm::Type*> pad_to_alignment(Term *field_type, const llvm::Type *llvm_field_type, unsigned alignment, PaddingStatus status);
       };
 
+      /**
+       * RAII way to set the insert point for a FunctionBuilder. On
+       * destruction of this object, the original insert point will be
+       * restored.
+       */
+      class FunctionBuilderInsertPointGuard {
+      public:
+
+      private:
+      };
+
       class FunctionBuilder : public ConstantBuilder {
         friend class GlobalBuilder;
+	friend class FunctionValue;
 
       public:
         typedef std::tr1::unordered_map<Term*, BuiltValue*> ValueTermMap;
@@ -381,8 +423,6 @@ namespace Psi {
 
 	void store_value(BuiltValue *value, llvm::Value *ptr);
 	BuiltValue* load_value(Term *type, llvm::Value *ptr);
-	virtual llvm::Value* value_to_llvm(BuiltValue *value);
-	virtual BuiltValue* get_element_value(BuiltValue *value, unsigned index);
 
         llvm::Value* cast_pointer_to_generic(llvm::Value *value);
         llvm::Value* cast_pointer_from_generic(llvm::Value *value, const llvm::Type *type);
@@ -445,14 +485,7 @@ namespace Psi {
       llvm::Constant* metatype_from_constant(ConstantBuilder&, uint64_t size, uint64_t align);
       llvm::Constant* metatype_from_type(ConstantBuilder& builder, const llvm::Type* ty);
       llvm::Value* metatype_from_value(FunctionBuilder&, llvm::Value *size, llvm::Value *align);
-
-      const llvm::APInt& metatype_constant_size(llvm::Constant *value);
-      const llvm::APInt& metatype_constant_align(llvm::Constant *value);
-      llvm::Value* metatype_value_size(FunctionBuilder&, llvm::Value*);
-      llvm::Value* metatype_value_align(FunctionBuilder&, llvm::Value*);
       ///@}
-
-      llvm::Value* empty_value(ConstantBuilder&);
 
       llvm::TargetMachine* host_machine();
 

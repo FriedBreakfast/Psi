@@ -7,10 +7,6 @@ namespace Psi {
     const char BooleanValue::operation[] = "bool_v";
     const char IntegerType::operation[] = "int";
     const char IntegerValue::operation[] = "int_v";
-    const char IntegerAdd::operation[] = "add";
-    const char IntegerSubtract::operation[] = "sub";
-    const char IntegerMultiply::operation[] = "mul";
-    const char IntegerDivide::operation[] = "div";
     const char FloatType::operation[] = "float";
     const char FloatValue::operation[] = "float_v";
 
@@ -45,6 +41,11 @@ namespace Psi {
     /// \brief Get an integer type with the specified width and signedness
     IntegerType::Ptr IntegerType::get(Context& context, Width width, bool is_signed) {
       return context.get_functional<IntegerType>(ArrayPtr<Term*const>(), Data(width, is_signed));
+    }
+
+    /// \brief Get the integer type for intptr.
+    IntegerType::Ptr IntegerType::get_size(Context& context) {
+      return get(context, iptr, false);
     }
 
     FunctionalTypeResult IntegerValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
@@ -259,42 +260,96 @@ namespace Psi {
     }
 
     namespace {
-      FunctionalTypeResult binary_op_type(ArrayPtr<Term*const> parameters) {
+      FunctionalTypeResult binary_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
         if (parameters.size() != 2)
-          throw TvmUserError("binary arithmetic operation expects two operands");
+          throw TvmUserError(std::string(operation) + " expects two operands");
 
         Term* type = parameters[0]->type();
         if (type != parameters[1]->type())
-          throw TvmUserError("type mismatch between operands to binary arithmetic operation");
+          throw TvmUserError(std::string(operation) + ": both operands must be of the same type");
 
         return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom());
       }
 
-      FunctionalTypeResult integer_binary_op_type(ArrayPtr<Term*const> parameters) {
-        FunctionalTypeResult result = binary_op_type(parameters);
+      FunctionalTypeResult integer_binary_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
+        FunctionalTypeResult result = binary_op_type(operation, parameters);
 
         if (!isa<IntegerType>(result.type))
-          throw TvmUserError("parameters to integer binary arithmetic operation were not integers");
+          throw TvmUserError(std::string(operation) + ": parameters must be integers");
+
+        return result;
+      }
+
+      FunctionalTypeResult unary_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
+        if (parameters.size() != 1)
+          throw TvmUserError(std::string(operation) + " expects two operands");
+
+        return FunctionalTypeResult(parameters[0]->type(), parameters[0]->phantom());
+      }
+
+      FunctionalTypeResult integer_unary_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
+        FunctionalTypeResult result = unary_op_type(operation, parameters);
+
+        if (!isa<IntegerType>(result.type))
+          throw TvmUserError(std::string(operation) + ": parameter must be an integers");
 
         return result;
       }
     }
 
-#define IMPLEMENT_BINARY(name,type_cb)                                  \
+#define IMPLEMENT_BINARY(name,op_name,type_cb)				\
+    const char name::operation[] = op_name;				\
+									\
     FunctionalTypeResult name::type(Context&, const Data&, ArrayPtr<Term*const> parameters) { \
-      return type_cb(parameters);                                       \
+      return type_cb(name::operation, parameters);			\
     }                                                                   \
                                                                         \
     name::Ptr name::get(Term *lhs, Term *rhs) {                         \
-    Term *parameters[] = {lhs, rhs};                                    \
-    return lhs->context().get_functional<name>(ArrayPtr<Term*const>(parameters, 2)); \
+      Term *parameters[] = {lhs, rhs};					\
+      return lhs->context().get_functional<name>(ArrayPtr<Term*const>(parameters, 2)); \
     }
 
-#define IMPLEMENT_INT_BINARY(name) IMPLEMENT_BINARY(name,integer_binary_op_type)
+#define IMPLEMENT_UNARY(name,op_name,type_cb)				\
+    const char name::operation[] = op_name;				\
+									\
+    FunctionalTypeResult name::type(Context&, const Data&, ArrayPtr<Term*const> parameters) { \
+      return type_cb(name::operation, parameters);			\
+    }                                                                   \
+                                                                        \
+    name::Ptr name::get(Term *parameter) {				\
+      Term *parameters[] = {parameter};					\
+      return parameter->context().get_functional<name>(ArrayPtr<Term*const>(parameters, 1)); \
+    }
 
-    IMPLEMENT_INT_BINARY(IntegerAdd)
-    IMPLEMENT_INT_BINARY(IntegerSubtract)
-    IMPLEMENT_INT_BINARY(IntegerMultiply)
-    IMPLEMENT_INT_BINARY(IntegerDivide)
+#define IMPLEMENT_INT_BINARY(name,op_name) IMPLEMENT_BINARY(name,op_name,integer_binary_op_type)
+#define IMPLEMENT_INT_UNARY(name,op_name) IMPLEMENT_UNARY(name,op_name,integer_unary_op_type)
+
+    IMPLEMENT_INT_BINARY(IntegerAdd, "add")
+    IMPLEMENT_INT_BINARY(IntegerSubtract, "sub")
+    IMPLEMENT_INT_BINARY(IntegerMultiply, "mul")
+    IMPLEMENT_INT_BINARY(IntegerDivide, "div")
+    IMPLEMENT_INT_UNARY(IntegerNegative, "neg")
+    IMPLEMENT_INT_BINARY(BitAnd, "bit_and")
+    IMPLEMENT_INT_BINARY(BitOr, "bit_or")
+    IMPLEMENT_INT_BINARY(BitXor, "bit_xor")
+    IMPLEMENT_INT_UNARY(BitNot, "bit_not")
+
+    FunctionalTypeResult IntegerCompare::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 2)
+	throw TvmUserError("cmp expects two operands");
+
+      if (parameters[0]->type() != parameters[1]->type())
+	throw TvmUserError("cmp: both operands must be of the same type");
+
+      if (!isa<IntegerType>(parameters[0]->type()))
+	throw TvmUserError("cmp operands must have integer type");
+
+      return FunctionalTypeResult(BooleanType::get(context), parameters[0]->phantom() || parameters[1]->phantom());
+    }
+
+    IntegerCompare::Ptr IntegerCompare::get(Comparison cmp, Term *lhs, Term *rhs) {
+      Term *parameters[] = {lhs, rhs};
+      return lhs->context().get_functional<IntegerCompare>(ArrayPtr<Term*const>(parameters, 2), cmp);
+    }
   }
 }

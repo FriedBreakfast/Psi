@@ -16,90 +16,21 @@ namespace {
     PSI_FAIL("term cannot be used as a type");
   }
 
-  namespace {
-    /**
-     * Compute size and alignment of a type from its term.
-     */
-    class ConstantSizeAlign {
-    public:
-      ConstantSizeAlign(ConstantBuilder *builder, Term *type) {
-        llvm::Constant *metatype_val = builder->build_constant_simple(type);
-        m_size = &metatype_constant_size(metatype_val);
-        m_align = &metatype_constant_align(metatype_val);
-      }
 
-      const llvm::APInt& size() const {return *m_size;}
-      const llvm::APInt& align() const {return *m_align;}
-
-    private:
-      const llvm::APInt *m_size, *m_align;
-    };
-
-    /**
-     *
-     */
-    class InstructionSizeAlign {
-    public:
-      InstructionSizeAlign(FunctionBuilder *builder, Term *type)
-        : m_builder(builder),
-          m_type(type),
-          m_llvm_type(builder->build_type(type)),
-          m_llvm_size(0),
-          m_llvm_align(0) {
-      }
-
-    public:
-      llvm::Value* size() {
-        if (!m_llvm_size) {
-          if (m_llvm_type) {
-            m_llvm_size = llvm::ConstantInt::get(m_builder->get_intptr_type(), m_builder->type_size(m_llvm_type));
-          } else {
-            m_llvm_size = metatype_value_size(*m_builder, build_value());
-          }
-        }
-
-        return m_llvm_size;
-      }
-
-      llvm::Value* align() {
-        if (!m_llvm_align) {
-          if (m_llvm_type)
-            m_llvm_align = llvm::ConstantInt::get(m_builder->get_intptr_type(), m_builder->type_alignment(m_llvm_type));
-          else
-            m_llvm_align = metatype_value_align(*m_builder, build_value());
-        }
-
-        return m_llvm_align;
-      }
-
-    private:
-      FunctionBuilder *m_builder;
-      Term *m_type;
-      const llvm::Type *m_llvm_type;
-      llvm::Value *m_llvm_size, *m_llvm_align;
-      llvm::Value *m_llvm_value;
-
-      llvm::Value* build_value() {
-        if (!m_llvm_value)
-          m_llvm_value = m_builder->build_value_simple(m_type);
-        return m_llvm_value;
-      }
-    };
-
+  namespace{
     /**
      * Align an offset to a specified alignment, which must be a
      * power of two.
      *
      * The formula used is: <tt>(offset + align - 1) & ~(align - 1)</tt>
      */
-    llvm::APInt constant_align(const llvm::APInt& offset, const llvm::APInt& align) {
-      llvm::APInt x = align;
-      --x;
-      llvm::APInt y = offset;
-      y += x;
-      x.flip();
-      y &= x;
-      return y;
+    Term* align_to(Term *offset, Term *align) {
+      Context& context = offset->context();
+      Term *one = IntegerValue::get(IntegerType::get_size(context), 1);
+      Term *align_minus_one = IntegerSubtract::get(align, one);
+      Term *offset_plus_align_minus_one = IntegerAdd::get(offset, align_minus_one);
+      Term *not_align_minus_one = BitNot::get(align_minus_one);
+      return BitAnd::get(offset_plus_align_minus_one, not_align_minus_one);
     }
 
     /**
@@ -109,31 +40,11 @@ namespace {
       llvm::Value *cmp = irbuilder.CreateICmpULT(left, right);
       return irbuilder.CreateSelect(cmp, left, right);
     }
-
-    /*
-     * Align a size to a boundary. The formula is: <tt>(size + align
-     * - 1) & ~(align - 1)</tt>. <tt>align</tt> must be a power of two.
-     */
-    llvm::Value* instruction_align(IRBuilder& irbuilder, llvm::Value* size, llvm::Value* align) {
-      llvm::Constant* one = llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(size->getType()), 1);
-      llvm::Value* a = irbuilder.CreateSub(align, one);
-      llvm::Value* b = irbuilder.CreateAdd(size, a);
-      llvm::Value* c = irbuilder.CreateNot(align);
-      return irbuilder.CreateAnd(b, c);
-    }
   }
 
-  llvm::Value* array_type_insn(FunctionBuilder& builder, ArrayType::Ptr term) {
-    InstructionSizeAlign element(&builder, term->element_type());
-    llvm::Value *length = builder.build_value_simple(term->length());
-    llvm::Value *array_size = builder.irbuilder().CreateMul(element.size(), length);
-    return metatype_from_value(builder, array_size, element.align());
-  }
-
-  llvm::Constant* array_type_const(GlobalBuilder& builder, ArrayType::Ptr term) {
-    ConstantSizeAlign element(&builder, term->element_type());
-    llvm::APInt length = builder.build_constant_integer(term->length());
-    return metatype_from_constant(builder, element.size() * length, element.align());
+  Term *array_type_term(Context&, ArrayType::Ptr term) {
+    return MetatypeValue::get(IntegerMultiply::get(MetatypeSize::get(term->element_type()), term->length()),
+			      MetatypeAlignment::get(term->element_type()));
   }
 
   const llvm::Type* array_type_type(ConstantBuilder& builder, ArrayType::Ptr term) {
@@ -181,6 +92,23 @@ namespace {
 
       return builder.new_constant_value_aggregate(term->type(), elements);
     }
+  }
+
+  Term* struct_type_term(Context& context, StructType::Ptr term) {
+    IntegerType::Ptr intptr_type = IntegerType::get_size(context);
+    Term *size = IntegerValue::get(intptr_type, 0);
+    Term *alignment = IntegerValue::get(intptr_type, 1);
+
+    for (unsigned i = 0; i < term->n_members(); ++i) {
+      Term *member_type = term->member_type(i);
+      Term *member_size = MetatypeSize::get(member_type);
+      Term *member_alignment = MetatypeSize::get(member_type);
+      size = IntegerAdd::get(align_to(size, member_alignment), member_size);
+      PSI_FAIL("not implemented");
+    }
+
+    size = align_to(size, alignment);
+    return MetatypeValue::get(size, alignment);
   }
 
   llvm::Value* struct_type_insn(FunctionBuilder& builder, StructType::Ptr term) {
@@ -435,27 +363,25 @@ namespace Psi {
   namespace Tvm {
     namespace LLVM {
       BuiltValue::BuiltValue(ConstantBuilder& builder, Term *type)
-	: m_type(type), m_state(state_unknown) {
+	: m_type(type), m_state(state_unknown), m_n_elements(0) {
 	if (type) {
 	  m_simple_type = builder.build_type(m_type);
-	  unsigned n_elements = 0;
 	  if (m_simple_type) {
 	    m_state = state_simple;
 	  } else {
 	    if (ArrayType::Ptr array_ty = dyn_cast<ArrayType>(m_type)) {
 	      if (array_ty->length()->global()) {
 		m_state = state_sequence;
-		n_elements = builder.build_constant_integer(array_ty->length()).getZExtValue();
+		m_n_elements = builder.build_constant_integer(array_ty->length()).getZExtValue();
 	      }
 	    } else if (StructType::Ptr struct_ty = dyn_cast<StructType>(type)) {
 	      m_state = state_sequence;
-	      n_elements = struct_ty->n_members();
+	      m_n_elements = struct_ty->n_members();
 	    } else if (UnionType::Ptr union_ty = dyn_cast<UnionType>(type)) {
 	      m_state = state_union;
-	      n_elements = union_ty->n_members();
+	      m_n_elements = union_ty->n_members();
 	    }
 	  }
-	  m_elements.resize(n_elements, 0);
 	} else {
 	  // special case for metatype, which has a NULL type
 	  m_state = state_simple;
@@ -464,10 +390,11 @@ namespace Psi {
       }
 
       ConstantValue::ConstantValue(GlobalBuilder *builder, Term *type)
-	: BuiltValue(*builder, type), m_builder(builder), m_simple_value(0) {
+	: BuiltValue(*builder, type), m_builder(builder),
+	  m_simple_value(0), m_elements(n_elements(), 0) {
       }
 
-      llvm::Constant *ConstantValue::simple_value() const {
+      llvm::Constant *ConstantValue::simple_value() {
 	if (!m_simple_value) {
 	  PSI_FAIL("not implemented");
 	}
@@ -475,15 +402,53 @@ namespace Psi {
 	return m_simple_value;
       }
 
-      llvm::Constant *ConstantValue::raw_value() const {
+      llvm::Constant *ConstantValue::raw_value() {
 	PSI_FAIL("not implemented");
       }
 
-      FunctionValue::FunctionValue(FunctionBuilder *builder, Term *type, llvm::Instruction *origin)
-	: BuiltValue(*builder, type), m_builder(builder), m_origin(origin), m_simple_value(0), m_raw_value(0) {
+      ConstantValue* ConstantValue::struct_element_value(unsigned index) {
+	PSI_ASSERT(isa<StructType>(type()) && (index < m_elements.size()));
+
+	if (!m_elements[index])
+	  m_elements[index] = struct_or_array_element_value(cast<StructType>(type())->member_type(index), index);
+
+	return m_elements[index];
       }
 
-      llvm::Value *FunctionValue::simple_value() const {
+      ConstantValue* ConstantValue::array_element_value(unsigned index) {
+	PSI_ASSERT(isa<ArrayType>(type()) && (index < m_elements.size()));
+
+	if (!m_elements[index])
+	  m_elements[index] = struct_or_array_element_value(cast<ArrayType>(type())->element_type(), index);
+
+	return m_elements[index];
+      }
+
+      /**
+       * Common code for implementing struct_element_value and
+       * array_element_value, since accessing structs and arrays in
+       * LLVM is basically the same.
+       */
+      ConstantValue* ConstantValue::struct_or_array_element_value(Term *element_type, unsigned index) {
+	PSI_FAIL("not implemented");
+      }
+
+      ConstantValue* ConstantValue::union_element_value(unsigned index) {
+	PSI_ASSERT(isa<UnionType>(type()) && (index < m_elements.size()));
+
+	if (!m_elements[index]) {
+	  PSI_FAIL("not implemented");
+	}
+
+	return m_elements[index];
+      }
+
+      FunctionValue::FunctionValue(FunctionBuilder *builder, Term *type, llvm::Instruction *origin)
+	: BuiltValue(*builder, type), m_builder(builder), m_origin(origin),
+	  m_simple_value(0), m_raw_value(0), m_elements(n_elements(), 0) {
+      }
+
+      llvm::Value *FunctionValue::simple_value() {
 	if (!m_simple_value) {
 	  PSI_FAIL("not implemented");
 	}
@@ -491,12 +456,56 @@ namespace Psi {
 	return m_simple_value;
       }
 
-      llvm::Value *FunctionValue::raw_value() const {
+      llvm::Value *FunctionValue::raw_value() {
 	if (!m_raw_value) {
 	  PSI_FAIL("not implemented");
 	}
 
 	return m_raw_value;
+      }
+
+
+      BuiltValue* FunctionValue::struct_element_value(unsigned index) {
+	PSI_ASSERT(isa<StructType>(type()) && (index < m_elements.size()));
+
+	if (!m_elements[index])
+	  m_elements[index] = struct_or_array_element_value(cast<StructType>(type())->member_type(index), index);
+
+	return m_elements[index];
+      }
+
+      BuiltValue* FunctionValue::array_element_value(unsigned index) {
+	PSI_ASSERT(isa<ArrayType>(type()) && (index < m_elements.size()));
+
+	if (!m_elements[index])
+	  m_elements[index] = struct_or_array_element_value(cast<ArrayType>(type())->element_type(), index);
+
+	return m_elements[index];
+      }
+
+      /**
+       * Common code for implementing struct_element_value and
+       * array_element_value, since accessing structs and arrays in
+       * LLVM is basically the same.
+       */
+      FunctionValue* FunctionValue::struct_or_array_element_value(Term *element_type, unsigned index) {
+	PSI_ASSERT(m_simple_value || m_raw_value);
+	IRBuilder irbuilder(m_builder->irbuilder());
+	irbuilder.SetInsertPoint(m_origin->getParent(), m_origin);
+	FunctionValue *result = m_builder->new_function_value(element_type, m_origin);
+	result->m_simple_value = m_simple_value ? irbuilder.CreateExtractValue(m_simple_value, index) : 0;
+	//result->m_raw_value = m_raw_value ? irbuilder.CreateInBoundsGEP(m_raw_value, struct_element_offset_insn(irbuilder, index)) : 0;
+	return result;
+      }
+
+      BuiltValue* FunctionValue::union_element_value(unsigned index) {
+	PSI_ASSERT(isa<UnionType>(type()) && (index < m_elements.size()));
+
+	if (!m_elements[index]) {
+	  PSI_FAIL("not implemented");
+	}
+
+	return m_elements[index];
       }
 
       /**
@@ -620,22 +629,6 @@ namespace Psi {
 	PSI_FAIL("not implemented");
       }
 
-      llvm::Value* GlobalBuilder::value_to_llvm(BuiltValue *value) {
-	PSI_FAIL("not implemented");
-      }
-
-      llvm::Value* FunctionBuilder::value_to_llvm(BuiltValue *value) {
-	PSI_FAIL("not implemented");
-      }
-
-      BuiltValue* GlobalBuilder::get_element_value(BuiltValue *value, unsigned index) {
-	PSI_FAIL("not implemented");
-      }
-
-      BuiltValue* FunctionBuilder::get_element_value(BuiltValue *value, unsigned index) {
-	PSI_FAIL("not implemented");
-      }
-
       /**
        * Create a PHI node for a given value type, by traversing the
        * type and handling each component in a default way
@@ -683,6 +676,7 @@ namespace Psi {
        * block.
        */
       void FunctionBuilder::populate_phi_node(BuiltValue *phi_node, llvm::BasicBlock *incoming_block, BuiltValue *value) {
+	PSI_ASSERT(phi_node);
 	FunctionValue *phi_node_cast = checked_cast<FunctionValue*>(phi_node);
 
 	if (phi_node->simple_type()) {
@@ -691,13 +685,13 @@ namespace Psi {
 	  return;
 	} else if (StructType::Ptr struct_ty = dyn_cast<StructType>(phi_node->type())) {
 	  for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i)
-	    populate_phi_node(phi_node->m_elements[i], incoming_block, value->m_elements[i]);
+	    populate_phi_node(phi_node_cast->m_elements[i], incoming_block, value->struct_element_value(i));
 	  return;
 	} else if (ArrayType::Ptr array_ty = dyn_cast<ArrayType>(phi_node->type())) {
 	  if (array_ty->length()->global()) {
 	    unsigned length = build_constant_integer(array_ty->length()).getZExtValue();
 	    for (unsigned i = 0; i != length; ++i)
-	      populate_phi_node(phi_node->m_elements[i], incoming_block, value->m_elements[i]);
+	      populate_phi_node(phi_node_cast->m_elements[i], incoming_block, value->array_element_value(i));
 	    return;
 	  }
 	}
