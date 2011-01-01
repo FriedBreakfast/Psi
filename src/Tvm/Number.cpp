@@ -9,6 +9,8 @@ namespace Psi {
     const char IntegerValue::operation[] = "int_v";
     const char FloatType::operation[] = "float";
     const char FloatValue::operation[] = "float_v";
+    const char IntegerCompare::operation[] = "cmp";
+    const char SelectValue::operation[] = "select";
 
     FunctionalTypeResult BooleanType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
@@ -350,6 +352,25 @@ namespace Psi {
     IntegerCompare::Ptr IntegerCompare::get(Comparison cmp, Term *lhs, Term *rhs) {
       Term *parameters[] = {lhs, rhs};
       return lhs->context().get_functional<IntegerCompare>(ArrayPtr<Term*const>(parameters, 2), cmp);
+    }
+
+    FunctionalTypeResult SelectValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 3)
+	throw TvmUserError("select takes three operands");
+
+      if (parameters[0]->type() != BooleanType::get(context))
+	throw TvmUserError("select: first operand must be of type bool");
+
+      Term *type = parameters[1]->type();
+      if (type != parameters[2]->type())
+	throw TvmUserError("select: second and third operands must have the same type");
+
+      return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom() || parameters[2]->phantom());
+    }
+
+    SelectValue::Ptr SelectValue::get(Term *condition, Term *true_value, Term *false_value) {
+      Term *parameters[] = {condition, true_value, false_value};
+      return condition->context().get_functional<SelectValue>(ArrayPtr<Term*const>(parameters, 3));
     }
   }
 }

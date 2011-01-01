@@ -11,25 +11,16 @@
  */
 
 #define PSI_TVM_FUNCTIONAL_TYPE_BINARY(name,value_type)                 \
-  PSI_TVM_FUNCTIONAL_TYPE(name)                                         \
-  typedef Empty Data;                                                   \
-  PSI_TVM_FUNCTIONAL_PTR_HOOK()                                         \
-  Term* lhs() const {return get()->parameter(0);}                       \
-  Term* rhs() const {return get()->parameter(1);}                       \
-  value_type::Ptr type() const {return cast<value_type>(BaseType::type());} \
-  PSI_TVM_FUNCTIONAL_PTR_HOOK_END()                                     \
+  struct name : BinaryOperation {					\
   static Ptr get(Term *lhs, Term *rhs);                                 \
-  PSI_TVM_FUNCTIONAL_TYPE_END(name)
+  };									\
+  template<> struct CastImplementation<name> : CastImplementation<BinaryOperation> {};
 
 #define PSI_TVM_FUNCTIONAL_TYPE_UNARY(name,value_type)			\
-  PSI_TVM_FUNCTIONAL_TYPE(name)						\
-  typedef Empty Data;							\
-  PSI_TVM_FUNCTIONAL_PTR_HOOK()						\
-  Term* parameter() const {return get()->parameter(0);}			\
-  value_type::Ptr type() const {return cast<value_type>(BaseType::type());} \
-  PSI_TVM_FUNCTIONAL_PTR_HOOK_END()					\
+  struct name : UnaryOperation {					\
   static Ptr get(Term *parameter);					\
-  PSI_TVM_FUNCTIONAL_TYPE_END(name)
+  };									\
+  template<> struct CastImplementation<name> : CastImplementation<UnaryOperation> {};
 
 namespace Psi {
   namespace Tvm {
@@ -175,15 +166,15 @@ namespace Psi {
     static FloatValue::Ptr get(FloatType::Ptr, const Data&);
     PSI_TVM_FUNCTIONAL_TYPE_END(FloatValue)
 
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerAdd, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerSubtract, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerMultiply, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerDivide, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_UNARY(IntegerNegative, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitAnd, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitOr, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitXor, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_UNARY(BitNot, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(AddOperation, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(SubtractOperation, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(MultiplyOperation, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(DivideOperation, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_UNARY(NegativeOperation, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitAndOperation, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitOrOperation, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitXorOperation, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_UNARY(BitNotOperation, IntegerType)
 
     /**
      * Possible comparison operands, used by both IntegerCompare and
@@ -202,16 +193,32 @@ namespace Psi {
      * Comparison operation between two integer operands.
      */
     PSI_TVM_FUNCTIONAL_TYPE(IntegerCompare)
-    typedef Comparison Data;
+    typedef PrimitiveWrapper<Comparison> Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
     /// \brief Get the comparison operation being performed
-    Comparison comparison() const {return data();}
+    Comparison comparison() const {return data().get();}
     Term* lhs() const {return get()->parameter(0);}
     Term* rhs() const {return get()->parameter(1);}
     IntegerType::Ptr type() const {return cast<IntegerType>(BaseType::type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static IntegerCompare::Ptr get(Comparison cmp, Term *lhs, Term *rhs);
     PSI_TVM_FUNCTIONAL_TYPE_END(IntegerCompare)
+
+    /**
+     * Select a value based on a boolean condition.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(SelectValue)
+    typedef Empty Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the condition which selects which value is returned.
+    Term *condition() const {return get()->parameter(0);}
+    /// \brief Get the value of this term if \c condition is true.
+    Term *true_value() const {return get()->parameter(1);}
+    /// \brief Get the value of this term if \c condition is false.
+    Term *false_value() const {return get()->parameter(2);}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static SelectValue::Ptr get(Term *condition, Term *true_value, Term *false_value);
+    PSI_TVM_FUNCTIONAL_TYPE_END(SelectValue)
   }
 }
 

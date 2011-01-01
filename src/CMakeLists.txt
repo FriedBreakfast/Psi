@@ -12,11 +12,13 @@ add_library(psi SHARED
   ${BISON_Parser_OUTPUTS} Parser.hpp
 
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
+  Tvm/AggregateLowering.cpp
   Tvm/Assembler.cpp Tvm/Assembler.hpp
   Tvm/AssemblerOperations.cpp
   Tvm/Core.cpp Tvm/Core.hpp
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
+  Tvm/FunctionalRewrite.hpp
   Tvm/Jit.hpp
   Tvm/Instructions.cpp Tvm/Instructions.hpp
   Tvm/Number.cpp Tvm/Number.hpp
@@ -26,15 +28,15 @@ add_library(psi SHARED
   Tvm/User.cpp Tvm/User.hpp
   Tvm/Utility.cpp Tvm/Utility.hpp
 
-  Tvm/LLVM/Builder.cpp Tvm/LLVM/Builder.hpp
-  Tvm/LLVM/Aggregate.cpp
-  Tvm/LLVM/Function.cpp
-  Tvm/LLVM/Instructions.cpp
-  Tvm/LLVM/Primitive.cpp
-  Tvm/LLVM/Simple.cpp
-  Tvm/LLVM/Target.cpp Tvm/LLVM/Target.hpp
-  Tvm/LLVM/Target_AMD64.cpp
-  Tvm/LLVM/Templates.hpp
+  #Tvm/LLVM/Builder.cpp Tvm/LLVM/Builder.hpp
+  #Tvm/LLVM/Aggregate.cpp
+  #Tvm/LLVM/Function.cpp
+  #Tvm/LLVM/Instructions.cpp
+  #Tvm/LLVM/Primitive.cpp
+  #Tvm/LLVM/Simple.cpp
+  #Tvm/LLVM/Target.cpp Tvm/LLVM/Target.hpp
+  #Tvm/LLVM/Target_AMD64.cpp
+  #Tvm/LLVM/Templates.hpp
 )
 
 #install(TARGETS psi

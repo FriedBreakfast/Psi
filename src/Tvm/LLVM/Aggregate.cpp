@@ -16,37 +16,6 @@ namespace {
     PSI_FAIL("term cannot be used as a type");
   }
 
-
-  namespace{
-    /**
-     * Align an offset to a specified alignment, which must be a
-     * power of two.
-     *
-     * The formula used is: <tt>(offset + align - 1) & ~(align - 1)</tt>
-     */
-    Term* align_to(Term *offset, Term *align) {
-      Context& context = offset->context();
-      Term *one = IntegerValue::get(IntegerType::get_size(context), 1);
-      Term *align_minus_one = IntegerSubtract::get(align, one);
-      Term *offset_plus_align_minus_one = IntegerAdd::get(offset, align_minus_one);
-      Term *not_align_minus_one = BitNot::get(align_minus_one);
-      return BitAnd::get(offset_plus_align_minus_one, not_align_minus_one);
-    }
-
-    /**
-     * Compute the maximum of two values.
-     */
-    llvm::Value* instruction_max(IRBuilder& irbuilder, llvm::Value *left, llvm::Value *right) {
-      llvm::Value *cmp = irbuilder.CreateICmpULT(left, right);
-      return irbuilder.CreateSelect(cmp, left, right);
-    }
-  }
-
-  Term *array_type_term(Context&, ArrayType::Ptr term) {
-    return MetatypeValue::get(IntegerMultiply::get(MetatypeSize::get(term->element_type()), term->length()),
-			      MetatypeAlignment::get(term->element_type()));
-  }
-
   const llvm::Type* array_type_type(ConstantBuilder& builder, ArrayType::Ptr term) {
     const llvm::Type* element_type = builder.build_type(term->element_type());
     if (!element_type)
@@ -94,58 +63,6 @@ namespace {
     }
   }
 
-  Term* struct_type_term(Context& context, StructType::Ptr term) {
-    IntegerType::Ptr intptr_type = IntegerType::get_size(context);
-    Term *size = IntegerValue::get(intptr_type, 0);
-    Term *alignment = IntegerValue::get(intptr_type, 1);
-
-    for (unsigned i = 0; i < term->n_members(); ++i) {
-      Term *member_type = term->member_type(i);
-      Term *member_size = MetatypeSize::get(member_type);
-      Term *member_alignment = MetatypeSize::get(member_type);
-      size = IntegerAdd::get(align_to(size, member_alignment), member_size);
-      PSI_FAIL("not implemented");
-    }
-
-    size = align_to(size, alignment);
-    return MetatypeValue::get(size, alignment);
-  }
-
-  llvm::Value* struct_type_insn(FunctionBuilder& builder, StructType::Ptr term) {
-    PSI_ASSERT(term->n_members() > 0);
-
-    IRBuilder& irbuilder = builder.irbuilder();
-    const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.llvm_context());
-    llvm::Value *size = llvm::ConstantInt::get(i64, 0);
-    llvm::Value *align = llvm::ConstantInt::get(i64, 1);
-
-    for (std::size_t i = 0; i < term->n_members(); ++i) {
-      InstructionSizeAlign member(&builder, term->member_type(i));
-      size = irbuilder.CreateAdd(instruction_align(irbuilder, size, member.align()), member.size());
-      align = instruction_max(irbuilder, align, member.align());
-    }
-
-    // size should always be a multiple of align
-    size = instruction_align(irbuilder, size, align);
-    return metatype_from_value(builder, size, align);
-  }
-
-  llvm::Constant* struct_type_const(GlobalBuilder& builder, StructType::Ptr term) {
-    llvm::APInt size(builder.intptr_type_bits(), 0);
-    llvm::APInt align(builder.intptr_type_bits(), 1);
-
-    for (std::size_t i = 0; i < term->n_members(); ++i) {
-      ConstantSizeAlign member(&builder, term->member_type(i));
-      size = constant_align(size, member.align()) + member.size();
-      if (member.align().ugt(align))
-        align = member.align();
-    }
-
-    // size should always be a multiple of align
-    size = constant_align(size, align);
-    return metatype_from_constant(builder, size, align);
-  }
-
   const llvm::Type* struct_type_type(ConstantBuilder& builder, StructType::Ptr term) {
     std::vector<const llvm::Type*> member_types;
     for (std::size_t i = 0; i < term->n_members(); ++i) {
@@ -191,40 +108,6 @@ namespace {
         elements.push_back(builder.build_constant(term->member_value(i)));
       return builder.new_constant_value_aggregate(term->type(), elements);
     }
-  }
-
-  llvm::Value* union_type_insn(FunctionBuilder& builder, UnionType::Ptr term) {
-    IRBuilder& irbuilder = builder.irbuilder();
-    const llvm::Type *i64 = llvm::Type::getInt64Ty(builder.llvm_context());
-    llvm::Value *size = llvm::ConstantInt::get(i64, 0);
-    llvm::Value *align = llvm::ConstantInt::get(i64, 1);
-
-    for (std::size_t i = 0; i < term->n_members(); ++i) {
-      InstructionSizeAlign member(&builder, term->member_type(i));
-      size = instruction_max(irbuilder, size, member.size());
-      align = instruction_max(irbuilder, align, member.align());
-    }
-
-    // size should always be a multiple of align
-    size = instruction_align(irbuilder, size, align);
-    return metatype_from_value(builder, size, align);
-  }
-
-  llvm::Constant* union_type_const(GlobalBuilder& builder, UnionType::Ptr term) {
-    llvm::APInt size(builder.intptr_type_bits(), 0);
-    llvm::APInt align(builder.intptr_type_bits(), 1);
-
-    for (std::size_t i = 0; i < term->n_members(); ++i) {
-      ConstantSizeAlign member(&builder, term->member_type(i));
-      if (member.size().ugt(size))
-        size = member.size();
-      if (member.align().ugt(align))
-        align = member.align();
-    }
-
-    // size should always be a multiple of align
-    size = constant_align(size, align);
-    return metatype_from_constant(builder, size, align);
   }
 
   const llvm::Type* union_type_type(ConstantBuilder&, UnionType::Ptr) {
@@ -340,7 +223,7 @@ namespace {
 
   typedef std::tr1::unordered_map<const char*, boost::shared_ptr<CallbackMapValue> > CallbackMapType;
 
-  const CallbackMapType callbacks =
+  const CallbackMapType callbacks/* =
     boost::assign::map_list_of<const char*, CallbackMapType::mapped_type>
     TYPE_CALLBACK(ArrayType, array_type_insn, array_type_const, array_type_type)
     TYPE_CALLBACK(StructType, struct_type_insn, struct_type_const, struct_type_type)
@@ -348,7 +231,7 @@ namespace {
     OP_CALLBACK(ArrayValue, array_value_insn, array_value_const)
     OP_CALLBACK(StructValue, struct_value_insn, struct_value_const)
     OP_CALLBACK(UnionValue, union_value_insn, union_value_const)
-    OP_CALLBACK(FunctionSpecialize, function_specialize_insn, function_specialize_const);
+    OP_CALLBACK(FunctionSpecialize, function_specialize_insn, function_specialize_const)*/;
 
   const CallbackMapValue *get_callback(const char *s) {
     CallbackMapType::const_iterator it = callbacks.find(s);
@@ -663,7 +546,7 @@ namespace Psi {
 	llvm::PHINode *phi = llvm::PHINode::Create(get_pointer_type());
 	irbuilder().GetInsertBlock()->getInstList().push_front(phi);
 
-	llvm::Value *type_size = metatype_value_size(*this, build_value_simple(type));
+	llvm::Value *type_size = build_value_simple(MetatypeSize::get(type));
 	llvm::AllocaInst *copy_dest = irbuilder().CreateAlloca(get_byte_type(), type_size);
 	copy_dest->setAlignment(unknown_alloca_align());
 	llvm::Instruction *memcpy_insn = create_memcpy(copy_dest, phi, type_size);
