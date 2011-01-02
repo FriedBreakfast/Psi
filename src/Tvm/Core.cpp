@@ -81,7 +81,7 @@ namespace Psi {
         m_context(context),
         m_source(source) {
 
-      PSI_ASSERT(!source || (source->term_type() == term_function) || (source->term_type() == term_block));
+      PSI_ASSERT(!source || (source->term_type() == term_function) || (source->term_type() == term_block) || (source->term_type() == term_instruction));
 
       if (!type) {
         if (term_type != term_recursive) {

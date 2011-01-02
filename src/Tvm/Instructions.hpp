@@ -11,6 +11,7 @@ namespace Psi {
     /// \brief Get the value returned to the caller.
     Term* value() const {return get()->parameter(0);}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
+    static Ptr create(InstructionInsertPoint, Term*);
     PSI_TVM_INSTRUCTION_TYPE_END(Return)
 
     PSI_TVM_INSTRUCTION_TYPE(ConditionalBranch)
@@ -23,6 +24,7 @@ namespace Psi {
     /// \brief Get the block jumped to if \c condition is false.
     BlockTerm* false_target() const {return cast<BlockTerm>(get()->parameter(2));}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
+    static Ptr create(InstructionInsertPoint, Term*, Term*, Term*);
     PSI_TVM_INSTRUCTION_TYPE_END(ConditionalBranch)
 
     PSI_TVM_INSTRUCTION_TYPE(UnconditionalBranch)
@@ -31,6 +33,7 @@ namespace Psi {
     /// \brief Get the block jumped to.
     BlockTerm* target() const {return cast<BlockTerm>(get()->parameter(0));}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
+    static Ptr create(InstructionInsertPoint, Term*);
     PSI_TVM_INSTRUCTION_TYPE_END(UnconditionalBranch)
 
     PSI_TVM_INSTRUCTION_TYPE(FunctionCall)
@@ -41,6 +44,7 @@ namespace Psi {
     /// \brief Get the value of the <tt>n</tt>th parameter used.
     Term* parameter(std::size_t n) const {return get()->parameter(n+1);}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
+    static Ptr create(InstructionInsertPoint,Term*,ArrayPtr<Term*const>);
     PSI_TVM_INSTRUCTION_TYPE_END(FunctionCall)
 
     PSI_TVM_INSTRUCTION_TYPE(Store)
@@ -51,6 +55,7 @@ namespace Psi {
     /// \brief Get the memory address which is to be written to
     Term* target() const {return get()->parameter(1);}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
+    static Ptr create(InstructionInsertPoint,Term*,Term*);
     PSI_TVM_INSTRUCTION_TYPE_END(Store)
 
     PSI_TVM_INSTRUCTION_TYPE(Load)
@@ -59,6 +64,7 @@ namespace Psi {
     /// \brief Get the pointer being read from
     Term* target() const {return get()->parameter(0);}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
+    static Ptr create(InstructionInsertPoint,Term*);
     PSI_TVM_INSTRUCTION_TYPE_END(Load)
 
     PSI_TVM_INSTRUCTION_TYPE(Alloca)
@@ -67,6 +73,7 @@ namespace Psi {
     /// \brief Get the type which storage is allocated for
     Term* stored_type() const {return get()->parameter(0);}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
+    static Ptr create(InstructionInsertPoint,Term*);
     PSI_TVM_INSTRUCTION_TYPE_END(Alloca)
   }
 }

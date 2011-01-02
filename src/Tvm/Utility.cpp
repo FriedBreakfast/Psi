@@ -3,6 +3,68 @@
 
 namespace Psi {
   namespace Tvm {
+    namespace {
+      Term* common_source_fail() {
+        throw TvmUserError("cannot find common term source");
+      }
+      
+      Term* common_source_function_function(FunctionTerm *f1, FunctionTerm *f2) {
+        if (f1 == f2)
+          return f1;
+        else
+          return common_source_fail();
+      }
+      
+      Term* common_source_function_block(FunctionTerm *f, BlockTerm *b) {
+        if (f == b->function())
+          return f;
+        else
+          return common_source_fail();
+      }
+
+      Term* common_source_function_instruction(FunctionTerm *f, InstructionTerm *i) {
+        if (f == i->block()->function())
+          return i;
+        else
+          return common_source_fail();
+      }
+
+      Term* common_source_block_block(BlockTerm *b1, BlockTerm *b2) {
+        if (b1->dominated_by(b2))
+          return b1;
+        else if (b2->dominated_by(b1))
+          return b2;
+        else
+          return common_source_fail();
+      }
+      
+      Term* common_source_block_instruction(BlockTerm *b, InstructionTerm *i) {
+        if (i->block()->dominated_by(b))
+          return i;
+        else if (b->dominated_by(i->block()))
+          return b;
+        else
+          return common_source_fail();
+      }
+      
+      Term* common_source_instruction_instruction(InstructionTerm *i1, InstructionTerm *i2) {
+        BlockTerm *b1 = i1->block(), *b2 = i2->block();
+        if (b1 == b2) {
+          BlockTerm::InstructionList& insn_list = b1->instructions();
+          for (BlockTerm::InstructionList::iterator it = insn_list.iterator_to(*i1); it != insn_list.end(); ++it) {
+            if (&*it == i2)
+              return i2;
+          }
+          return i1;
+        } else if (b1->dominated_by(b2))
+          return i1;
+        else if (b2->dominated_by(b1))
+          return i2;
+        else
+          return common_source_fail();
+      }
+    }
+    
     /**
      * Find the common dominator of the two blocks. If no such block
      * exists, throw an exception.
@@ -12,51 +74,31 @@ namespace Psi {
         switch (t1->term_type()) {
         case term_function:
           switch (t2->term_type()) {
-          case term_function:
-            if (t1 == t2)
-              return t1;
-            else
-              goto common_source_fail;
-
-          case term_block:
-            if (t1 == cast<BlockTerm>(t2)->function())
-              return t2;
-            else
-              goto common_source_fail;
-
-          default:
-            PSI_FAIL("unexpected term type");
+          case term_function: return common_source_function_function(cast<FunctionTerm>(t1), cast<FunctionTerm>(t2));
+          case term_block: return common_source_function_block(cast<FunctionTerm>(t1), cast<BlockTerm>(t2));
+          case term_instruction: return common_source_function_instruction(cast<FunctionTerm>(t1), cast<InstructionTerm>(t2));
+          default: PSI_FAIL("unexpected term type");
           }
 
         case term_block:
           switch (t2->term_type()) {
-          case term_function:
-            if (t2 == cast<BlockTerm>(t1)->function())
-              return t1;
-            else
-              goto common_source_fail;
-
-          case term_block: {
-            BlockTerm *bt1 = cast<BlockTerm>(t1);
-            BlockTerm *bt2 = cast<BlockTerm>(t2);
-            if (bt1->dominated_by(bt2))
-              return t1;
-            else if (bt2->dominated_by(bt1))
-              return t2;
-            else
-              goto common_source_fail;
+          case term_function: return common_source_function_block(cast<FunctionTerm>(t2), cast<BlockTerm>(t1));
+          case term_block: return common_source_block_block(cast<BlockTerm>(t1), cast<BlockTerm>(t2));
+          case term_instruction: return common_source_block_instruction(cast<BlockTerm>(t1), cast<InstructionTerm>(t2));
+          default: PSI_FAIL("unexpected term type");
           }
 
-          default:
-            PSI_FAIL("unexpected term type");
+        case term_instruction:
+          switch (t2->term_type()) {
+          case term_function: return common_source_function_instruction(cast<FunctionTerm>(t2), cast<InstructionTerm>(t1));
+          case term_block: return common_source_block_instruction(cast<BlockTerm>(t2), cast<InstructionTerm>(t1));
+          case term_instruction: return common_source_instruction_instruction(cast<InstructionTerm>(t1), cast<InstructionTerm>(t2));
+          default: PSI_FAIL("unexpected term type");
           }
 
         default:
           PSI_FAIL("unexpected term type");
         }
-
-      common_source_fail:
-        throw TvmUserError("cannot find common term source block");
       } else {
         return t1 ? t1 : t2;
       }

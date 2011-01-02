@@ -26,6 +26,7 @@ namespace Psi {
     const char MetatypeAlignment::operation[] = "alignof";
     const char PointerType::operation[] = "pointer";
     const char PointerCast::operation[] = "cast";
+    const char PointerOffset::operation[] = "offset";
     const char ArrayType::operation[] = "array";
     const char ArrayValue::operation[] = "array_v";
     const char ArrayElement::operation[] = "array_el";
@@ -133,7 +134,7 @@ namespace Psi {
     FunctionalTypeResult PointerCast::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 2)
 	throw TvmUserError("cast takes two parameters");
-      if (isa<PointerType>(parameters[0]->type()))
+      if (!isa<PointerType>(parameters[0]->type()))
 	throw TvmUserError("first argument to cast is not a pointer");
       if (!parameters[1]->is_type())
 	throw TvmUserError("second argument to cast is not a type");
@@ -143,6 +144,29 @@ namespace Psi {
     PointerCast::Ptr PointerCast::get(Term *pointer, Term *target_type) {
       Term *params[] = {pointer, target_type};
       return pointer->context().get_functional<PointerCast>(ArrayPtr<Term*const>(params, 2));
+    }
+    
+    FunctionalTypeResult PointerOffset::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 2)
+        throw TvmUserError("offset takes two parameters");
+      if (!isa<PointerType>(parameters[0]->type()))
+        throw TvmUserError("first argument to offset is not a pointer");
+      IntegerType::Ptr int_ty = dyn_cast<IntegerType>(parameters[1]->type());
+      if (!int_ty || (int_ty->width() != IntegerType::iptr))
+        throw TvmUserError("second argument to offset is not an intptr or uintptr");
+      return FunctionalTypeResult(parameters[0]->type(), parameters[0]->phantom() || parameters[1]->phantom());
+    }
+    
+    /**
+     * Get an offset term.
+     * 
+     * \param ptr Pointer to offset from.
+     * 
+     * \param offset Offset in units of the pointed-to type.
+     */
+    PointerOffset::Ptr PointerOffset::get(Term *ptr, Term *offset) {
+      Term *parameters[] = {ptr, offset};
+      return ptr->context().get_functional<PointerOffset>(ArrayPtr<Term*const>(parameters, 2));
     }
 
     FunctionalTypeResult ArrayType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -165,7 +189,7 @@ namespace Psi {
 
     ArrayType::Ptr ArrayType::get(Term *element_type, unsigned length) {
       IntegerType::Ptr size_type = IntegerType::get_size(element_type->context());
-      Term *length_term = IntegerValue::get(size_type, length);
+      Term *length_term = IntegerValue::get(size_type, IntegerValue::convert(length));
       return get(element_type, length_term);
     }
 
@@ -299,7 +323,7 @@ namespace Psi {
       return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom());
     }
 
-    UnionValue::Ptr UnionValue::get(UnionType::Ptr type, Term *value) {
+    UnionValue::Ptr UnionValue::get(Term* type, Term* value) {
       Term *parameters[] = {type, value};
       return type->context().get_functional<UnionValue>(ArrayPtr<Term*const>(parameters, 2));
     }
@@ -321,17 +345,6 @@ namespace Psi {
     UnionElement::Ptr UnionElement::get(Term *aggregate, Term *member_type) {
       Term *parameters[] = {aggregate, member_type};
       return aggregate->context().get_functional<UnionElement>(ArrayPtr<Term*const>(parameters, 2));
-    }
-
-    UnionElement::Ptr UnionElement::get(Term *aggregate, unsigned index) {
-      UnionType::Ptr union_ty = dyn_cast<UnionType>(aggregate->type());
-      if (!union_ty)
-	throw TvmUserError("first argument to union_el must have union type");
-
-      if (index >= union_ty->n_members())
-	throw TvmUserError("union_el member index out of range");
-
-      return get(aggregate, union_ty->member_type(index));
     }
 
     FunctionalTypeResult FunctionSpecialize::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {

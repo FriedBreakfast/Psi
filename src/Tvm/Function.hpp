@@ -187,9 +187,22 @@ namespace Psi {
 
       PhiTerm* new_phi(Term* type);
 
+      /**
+       * Create a new instruction in this block.
+       * 
+       * \tparam T Instruction type to create.
+       * 
+       * \param parameters Parameters to the created instruction.
+       * 
+       * \param insert_before Instruction to insert the new instruction
+       * before. If null, insert the new instruction at the end of this
+       * block.
+       * 
+       * \param data Custom (non-term) data for the new instruction.
+       */
       template<typename T>
-      typename T::Ptr new_instruction(ArrayPtr<Term*const> parameters, const typename T::Data& data = typename T::Data()) {
-        return cast<T>(new_instruction_bare(InstructionTermSetupSpecialized<T>(&data), parameters));
+      typename T::Ptr new_instruction(ArrayPtr<Term*const> parameters, InstructionTerm *insert_before=0, const typename T::Data& data = typename T::Data()) {
+        return cast<T>(new_instruction_bare(InstructionTermSetupSpecialized<T>(&data), parameters, insert_before));
       }
 
       InstructionList& instructions() {return m_instructions;}
@@ -202,7 +215,7 @@ namespace Psi {
       /** \brief Get a pointer to the dominating block. */
       BlockTerm* dominator();
 
-      bool check_available(Term* term);
+      bool check_available(Term* term, InstructionTerm *before=0);
       bool dominated_by(BlockTerm* block);
       std::vector<BlockTerm*> successors();
       std::vector<BlockTerm*> recursive_successors();
@@ -215,7 +228,7 @@ namespace Psi {
       PhiList m_phi_nodes;
       bool m_terminated;
 
-      InstructionTerm* new_instruction_bare(const InstructionTermSetup& setup, ArrayPtr<Term*const> parameters);
+      InstructionTerm* new_instruction_bare(const InstructionTermSetup& setup, ArrayPtr<Term*const> parameters, InstructionTerm *insert_before);
     };
 
 #ifndef PSI_DOXYGEN
@@ -369,6 +382,46 @@ namespace Psi {
 #ifndef PSI_DOXYGEN
     template<> struct CastImplementation<FunctionTypeResolverTerm> : CoreCastImplementation<FunctionTypeResolverTerm, term_function_type_resolver> {};
 #endif
+    
+    /**
+     * Helper class for inserting instructions into blocks.
+     */
+    class InstructionInsertPoint {
+      /// \brief Block to insert instructions into
+      BlockTerm *m_block;
+      /// \brief Instruction to insert new instructions before
+      InstructionTerm *m_instruction;
+    public:
+      /**
+       * Constructs an invalid inserter.
+       */
+      InstructionInsertPoint() : m_block(0), m_instruction(0) {}
+      
+      /**
+       * Construct an inserter which inserts instructions at the end of
+       * the specified block.
+       * 
+       * \param insert_at_end Block to append instructions to.
+       */
+      explicit InstructionInsertPoint(BlockTerm *insert_at_end)
+      : m_block(insert_at_end), m_instruction(0) {}
+      
+      /**
+       * Construct an inserter which inserts instructions in the same
+       * block as the specified instruction, just before it.
+       * 
+       * \param insert_before Instruction to insert created instructions
+       * before.
+       */
+      explicit InstructionInsertPoint(InstructionTerm *insert_before)
+      : m_block(insert_before->block()), m_instruction(insert_before) {}
+      
+      template<typename T>
+      typename T::Ptr create(ArrayPtr<Term*const> parameters, const typename T::Data& data = typename T::Data()) {
+        PSI_ASSERT(m_block);
+        return m_block->new_instruction<T>(parameters, m_instruction, data);
+      }
+    };
 
     template<typename T>
     struct InstructionCastImplementation {

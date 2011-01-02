@@ -235,7 +235,22 @@ namespace Psi {
       // What this means is somewhat type specific, for instance a
       // pointer type to phantom type is not considered phantom.
       bool phantom() const {return m_phantom;}
-      /// \brief Get the term which generates this one - this will either be a function or a block
+      /**
+       * \brief Get the term which generates this one.
+       * 
+       * The source can be several different types of term. A term type
+       * further down the list overrides one further up since the higher
+       * up item must be a parent of the lower one.
+       * 
+       * <ol>
+       * <li>Null - this term is global.</li>
+       * <li>Function - non-constant values are parameters to the
+       * given function.</li>
+       * <li>Block - non-constant values are phi nodes in this block.</li>
+       * <li>Instruction - this is the last instruction contributing to
+       * the resulting value</li>
+       * </ol>
+       */
       Term* source() const {return m_source;}
       /// \brief Get the category of this value (whether it is a metatype, type, or value)
       Category category() const {return static_cast<Category>(m_category);}

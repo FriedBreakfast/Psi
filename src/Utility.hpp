@@ -255,6 +255,7 @@ namespace Psi {
 
     PtrAdapter() {}
     PtrAdapter(const WrapperType& wrapper) : m_wrapper(wrapper) {}
+    template<typename U> PtrAdapter(const PtrAdapter<U>& src) : m_wrapper(src.m_wrapper) {}
 
     GetType* get() const {return m_wrapper.get();}
     const WrapperType& operator * () const {return m_wrapper;}
@@ -281,6 +282,7 @@ namespace Psi {
   public:
     PtrDecayAdapter() {}
     PtrDecayAdapter(const T& wrapper) : PtrAdapter<T>(wrapper) {}
+    template<typename U> PtrDecayAdapter(const PtrAdapter<U>& src) : PtrAdapter<T>(src) {}
 
     operator typename T::GetType* () const {return this->get();}
   };

@@ -28,6 +28,16 @@ namespace Psi {
 
     void Return::jump_targets(Ptr, std::vector<BlockTerm*>&) {
     }
+    
+    /**
+     * Create a return instruction.
+     * 
+     * \param value Value to return.
+     */
+    Return::Ptr Return::create(InstructionInsertPoint insert_point, Term *value) {
+      Term *parameters[] = {value};
+      return insert_point.create<Return>(ArrayPtr<Term*const>(parameters,1));
+    }
 
     Term* ConditionalBranch::type(FunctionTerm* function, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 3)
@@ -56,6 +66,20 @@ namespace Psi {
       targets.push_back(insn->false_target());
     }
 
+    /**
+     * Create a cond_br instruction.
+     * 
+     * \param condition Used to select which branch is taken.
+     * 
+     * \param true_target Branch taken if \c condition is true.
+     * 
+     * \param false_target Branch taken if \c condition is false.
+     */
+    ConditionalBranch::Ptr ConditionalBranch::create(InstructionInsertPoint insert_point, Term *condition, Term *true_target, Term *false_target) {
+      Term *parameters[] = {condition, true_target, false_target};
+      return insert_point.create<ConditionalBranch>(ArrayPtr<Term*const>(parameters,3));
+    }
+
     Term* UnconditionalBranch::type(FunctionTerm*, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 1)
         throw TvmUserError("unconditional branch instruction takes one argument - the branch target");
@@ -71,6 +95,16 @@ namespace Psi {
 
     void UnconditionalBranch::jump_targets(UnconditionalBranch::Ptr insn, std::vector<BlockTerm*>& targets) {
       targets.push_back(insn->target());
+    }
+
+    /**
+     * Create a br instruction.
+     * 
+     * \param target Block to jump to.
+     */
+    UnconditionalBranch::Ptr UnconditionalBranch::create(InstructionInsertPoint insert_point, Term *target) {
+      Term *parameters[] = {target};
+      return insert_point.create<UnconditionalBranch>(ArrayPtr<Term*const>(parameters,1));
     }
 
     Term* FunctionCall::type(FunctionTerm*, const Data&, ArrayPtr<Term*const> parameters) {
@@ -112,7 +146,22 @@ namespace Psi {
 
     void FunctionCall::jump_targets(Ptr, std::vector<BlockTerm*>&) {
     }
-
+    
+    /**
+     * Create a call instruction.
+     * 
+     * \param target Function to call.
+     * 
+     * \param parameters Parameters to pass.
+     */
+    FunctionCall::Ptr FunctionCall::create(InstructionInsertPoint insert_point, Term *target, ArrayPtr<Term*const> parameters) {
+      ScopedTermPtrArray<> insn_params(parameters.size() + 1);
+      insn_params[0] = target;
+      for (std::size_t i = 0, e = parameters.size(); i != e; ++i)
+        insn_params[i+1] = parameters[1];
+      return insert_point.create<FunctionCall>(insn_params.array());
+    }
+    
     Term* Store::type(FunctionTerm* function, const Store::Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 2)
         throw TvmUserError("store instruction takes two parameters");
@@ -134,6 +183,18 @@ namespace Psi {
     }
 
     void Store::jump_targets(Ptr, std::vector<BlockTerm*>&) {
+    }
+
+    /**
+     * Create a store instruction.
+     * 
+     * \param value Value to store.
+     * 
+     * \param ptr Location to store \c value to.
+     */
+    Store::Ptr Store::create(InstructionInsertPoint insert_point, Term *value, Term *ptr) {
+      Term *parameters[] = {value, ptr};
+      return insert_point.create<Store>(ArrayPtr<Term*const>(parameters, 2));
     }
 
     Term* Load::type(FunctionTerm*, const Data&, ArrayPtr<Term*const> parameters) {
@@ -158,6 +219,16 @@ namespace Psi {
     void Load::jump_targets(Ptr, std::vector<BlockTerm*>&) {
     }
 
+    /**
+     * Create a load instruction.
+     * 
+     * \param ptr Location to load a value from.
+     */
+    Load::Ptr Load::create(InstructionInsertPoint insert_point, Term *ptr) {
+      Term *parameters[] = {ptr};
+      return insert_point.create<Load>(ArrayPtr<Term*const>(parameters, 1));
+    }
+
     Term* Alloca::type(FunctionTerm*, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 1)
         throw TvmUserError("alloca instruction takes one parameter");
@@ -172,6 +243,16 @@ namespace Psi {
     }
 
     void Alloca::jump_targets(Ptr, std::vector<BlockTerm*>&) {
+    }
+
+    /**
+     * Create an alloca instruction.
+     * 
+     * \param type Type to allocate memory for on the stack.
+     */
+    Alloca::Ptr Alloca::create(InstructionInsertPoint insert_point, Term *type) {
+      Term *parameters[] = {type};
+      return insert_point.create<Alloca>(ArrayPtr<Term*const>(parameters, 1));
     }
   }
 }

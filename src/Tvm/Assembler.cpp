@@ -2,6 +2,7 @@
 
 #include "Function.hpp"
 #include "Functional.hpp"
+#include "FunctionalBuilder.hpp"
 #include "Number.hpp"
 
 #include <cstring>
@@ -50,7 +51,7 @@ namespace Psi {
 	  throw AssemblerError("Name defined twice: " + name);
       }
 
-      FunctionalTerm* build_functional_expression(AssemblerContext& context, const Parser::CallExpression& expression) {
+      Term* build_functional_expression(AssemblerContext& context, const Parser::CallExpression& expression) {
         std::tr1::unordered_map<std::string, FunctionalTermCallback>::const_iterator it =
           functional_ops.find(expression.target->text);
 
@@ -60,15 +61,15 @@ namespace Psi {
         return it->second(it->first, context, expression);
       }
 
-      FunctionalTerm* build_literal_int(IntegerType::Ptr type, const Parser::LiteralExpression& expression) {
+      Term* build_literal_int(Term* type, const Parser::LiteralExpression& expression) {
 	std::string value = expression.value->text;
 	bool negative = (value[0] == '-');
 	if (negative)
 	  value = value.substr(1);
-        return IntegerValue::get(type, value, negative);
+        return FunctionalBuilder::int_value(type, value, negative);
       }
 
-      FunctionalTerm* build_literal(AssemblerContext& context, const Parser::LiteralExpression& expression) {
+      Term* build_literal(AssemblerContext& context, const Parser::LiteralExpression& expression) {
         switch (expression.literal_type) {
 #define HANDLE_INT(lit_name,int_name)                                   \
           case Parser::literal_##lit_name:                              \

@@ -43,6 +43,12 @@ namespace Psi {
        * implementation).
        */
       virtual bool is_unary_op() const = 0;
+      
+      /**
+       * Check whether this is a simple operation which takes no parameters
+       * (it should also have no additional data associated with it).
+       */
+      virtual bool is_simple_op() const = 0;
  
     private:
       class Setup;
@@ -57,10 +63,9 @@ namespace Psi {
     template<> struct CastImplementation<FunctionalTerm> : CoreCastImplementation<FunctionalTerm, term_functional> {};
 #endif
 
-    template<typename> class FunctionalTermSetupSpecialized;
-
     template<typename DataType>
     class FunctionalTermWithData : public FunctionalTerm, CompressedBase<DataType> {
+      template<typename> friend class FunctionalTermSpecialized;
       typedef DataType Data;
 
     public:
@@ -75,6 +80,8 @@ namespace Psi {
       }
     };
 
+    template<typename> class FunctionalTermSetupSpecialized;
+
     /**
      * A specialization of FunctionalTerm which includes custom data.
      */
@@ -82,10 +89,11 @@ namespace Psi {
     class FunctionalTermSpecialized : public FunctionalTermWithData<typename TermTagType::Data> {
       friend class FunctionalTermSetupSpecialized<TermTagType>;
       typedef typename TermTagType::Data Data;
+      typedef FunctionalTermWithData<Data> BaseType;
 
     public:
       virtual FunctionalTerm* rewrite(ArrayPtr<Term*const> parameters) {
-        return context().template get_functional<TermTagType>(parameters, data());
+        return this->context().template get_functional<TermTagType>(parameters, this->data());
       }
 
       virtual bool is_binary_op() const {
@@ -95,12 +103,16 @@ namespace Psi {
       virtual bool is_unary_op() const {
 	return TermTagType::is_unary_op;
       }
+      
+      virtual bool is_simple_op() const {
+	return TermTagType::is_simple_op;
+      }
  
     private:
       FunctionalTermSpecialized(const UserInitializer& ui, Context *context, Term* type,
                                 bool phantom, std::size_t hash, const char *operation,
                                 ArrayPtr<Term*const> parameters, const Data& data)
-        : FunctionalTermWithData(ui, context, type, phantom, hash, operation, parameters, data) {
+        : BaseType(ui, context, type, phantom, hash, operation, parameters, data) {
       }
     };
 
@@ -173,11 +185,11 @@ namespace Psi {
      * Base class for pointers to functional terms - this is
      * specialized to individual term types.
      */
-    template<typename TermTagType>
-    class FunctionalTermPtrBase : public FunctionalTermPtr {
+    template<typename TermTagType, typename BasePtr>
+    class FunctionalTermPtrBase : public BasePtr {
     public:
       FunctionalTermPtrBase() {}
-      explicit FunctionalTermPtrBase(FunctionalTerm *term) : FunctionalTermPtr(term) {}
+      explicit FunctionalTermPtrBase(FunctionalTerm *term) : BasePtr(term) {}
 
       /// \copydoc FunctionalTerm::rewrite
       PtrDecayAdapter<typename TermTagType::PtrHook> rewrite(ArrayPtr<Term*const> parameters) const {
@@ -186,13 +198,13 @@ namespace Psi {
 
     protected:
       const typename TermTagType::Data& data() const {
-        return checked_cast<FunctionalTermSpecialized<TermTagType>*>(get())->data();
+        return checked_cast<FunctionalTermSpecialized<TermTagType>*>(this->get())->data();
       }
     };
 
-    template<typename Ptr, typename PtrHook, typename Backend>
+    template<typename Ptr_, typename PtrHook, typename Backend>
     struct FunctionalCastImplementation {
-      typedef Ptr Ptr;
+      typedef Ptr_ Ptr;
       typedef PtrHook Reference;
 
       static Ptr null() {
@@ -225,15 +237,17 @@ namespace Psi {
     struct FunctionalOperation : NonConstructible {
       static const bool is_binary_op = false;
       static const bool is_unary_op = false;
+      static const bool is_simple_op = false;
+      typedef FunctionalTermPtr PtrHook;
+      typedef PtrDecayAdapter<PtrHook> Ptr;
     };
 
     struct UnaryOperation : FunctionalOperation {
       static const bool is_unary_op = true;
       typedef Empty Data;
-      class PtrHook : FunctionalTermPtr {
-	friend class UnaryOperationCastImplementation;
-	PtrHook(FunctionalTerm *t) : FunctionalTermPtr(t) {}
-      public:
+      struct PtrHook : public FunctionalTermPtr {
+	PtrHook() {}
+	PtrHook(FunctionalTerm *t) : FunctionalTermPtr(t) {PSI_ASSERT(t->is_unary_op());}
 	/// \brief Get the parameter to this operation.
 	Term *parameter() const {return get()->parameter(0);}
       };
@@ -241,9 +255,9 @@ namespace Psi {
     };
 
     struct UnaryOperationCastImplementation {
-      static Ptr cast(FunctionalTerm *t) {
+      static UnaryOperation::Ptr cast(FunctionalTerm *t) {
 	PSI_ASSERT(t->is_unary_op());
-        return Ptr(typename T::PtrHook(t));
+        return UnaryOperation::Ptr(UnaryOperation::PtrHook(t));
       }
 
       static bool isa(FunctionalTerm *t) {
@@ -259,10 +273,9 @@ namespace Psi {
     struct BinaryOperation : FunctionalOperation {
       static const bool is_binary_op = true;
       typedef Empty Data;
-      class PtrHook : FunctionalTermPtr {
-	friend class BinaryOperationCastImplementation;
-	PtrHook(FunctionalTerm *t) : FunctionalTermPtr(t) {}
-      public:
+      struct PtrHook : public FunctionalTermPtr {
+	PtrHook() {}
+	PtrHook(FunctionalTerm *t) : FunctionalTermPtr(t) {PSI_ASSERT(t->is_binary_op());}
 	/// \brief Get the first parameter to this operation.
 	Term *lhs() const {return get()->parameter(0);}
 	/// \brief Get the second parameter to this operation.
@@ -272,9 +285,9 @@ namespace Psi {
     };
 
     struct BinaryOperationCastImplementation {
-      static Ptr cast(FunctionalTerm *t) {
+      static BinaryOperation::Ptr cast(FunctionalTerm *t) {
 	PSI_ASSERT(t->is_binary_op());
-        return Ptr(typename T::PtrHook(t));
+        return BinaryOperation::Ptr(BinaryOperation::PtrHook(t));
       }
 
       static bool isa(FunctionalTerm *t) {
@@ -284,27 +297,73 @@ namespace Psi {
 
 #ifndef PSI_DOXYGEN
     template<> struct CastImplementation<BinaryOperation>
-    : FunctionalCastImplementation<BinaryOperation::Ptr, BinaryOperation::PtrHook, > {};
+    : FunctionalCastImplementation<BinaryOperation::Ptr, BinaryOperation::PtrHook, BinaryOperationCastImplementation> {};
 #endif
+    
+    struct SimpleOperation : FunctionalOperation {
+      static const bool is_simple_op = true;
+      typedef Empty Data;
+      typedef FunctionalTermPtr PtrHook;
+      typedef PtrDecayAdapter<PtrHook> Ptr;
+    };
+    
+    struct SimpleOperationCastImplementation {
+      static SimpleOperation::Ptr cast(FunctionalTerm *t) {
+	PSI_ASSERT(t->is_simple_op());
+	return SimpleOperation::Ptr(FunctionalTermPtr(t));
+      }
+      
+      static bool isa(FunctionalTerm *t) {
+	return t->is_simple_op();
+      }
+    };
+    
+    template<typename TermTagType>
+    struct NamedOperationCastImplementation {
+      static typename TermTagType::Ptr cast(FunctionalTerm *t) {
+	PSI_ASSERT(isa(t));
+	return typename TermTagType::Ptr(typename TermTagType::PtrHook(t));
+      }
+      
+      static bool isa(FunctionalTerm *t) {
+	return t->operation() == TermTagType::operation;
+      }
+    };
+    
+    /**
+     * Base class for type terms. This does not have any functionality,
+     * but is here to group together types in the documentation.
+     */
+    struct TypeOperation : FunctionalOperation {
+    };
+    
+    /**
+     * Base class for value terms, i.e. constructor terms - it is not
+     * possible to optimize these terms since they do not represent
+     * operations on other terms, but construct values from other values.
+     */
+    struct ConstructorOperation : FunctionalOperation {
+    };
 
-#define PSI_TVM_FUNCTIONAL_TYPE(name) \
-    struct name : FunctionalOperation {  \
-    typedef name ThisType;            \
+#define PSI_TVM_FUNCTIONAL_TYPE(name,base) \
+    struct name : base {                   \
+    typedef name ThisType;                 \
+    typedef base BaseType;                 \
     static const char operation[];
 
-#define PSI_TVM_FUNCTIONAL_PTR_HOOK()                                   \
-    struct PtrHook : FunctionalTermPtrBase<ThisType> {                  \
-    template<typename> friend struct FunctionalCastImplementation;      \
-  private:                                                              \
-  typedef FunctionalTermPtrBase<ThisType> BaseType;			\
-  explicit PtrHook(FunctionalTerm *t) : BaseType(t) {}			\
-  public:                                                               \
-  PtrHook() {}
+#define PSI_TVM_FUNCTIONAL_PTR_HOOK()                                     \
+    struct PtrHook : FunctionalTermPtrBase<ThisType, BaseType::PtrHook> { \
+      friend struct NamedOperationCastImplementation<ThisType>;           \
+    private:                                                              \
+      typedef FunctionalTermPtrBase<ThisType, BaseType::PtrHook> PtrBaseType; \
+      explicit PtrHook(FunctionalTerm *t) : PtrBaseType(t) {}             \
+    public:                                                               \
+      PtrHook() {}
 
 #define PSI_TVM_FUNCTIONAL_PTR_HOOK_END() }; typedef PtrDecayAdapter<PtrHook> Ptr;
 
 #ifndef PSI_DOXYGEN
-#define PSI_TVM_FUNCTIONAL_TYPE_CAST(name) template<> struct CastImplementation<name> : FunctionalCastImplementation<name> {};
+#define PSI_TVM_FUNCTIONAL_TYPE_CAST(name) template<> struct CastImplementation<name> : FunctionalCastImplementation<name::Ptr, name::PtrHook, NamedOperationCastImplementation<name> > {};
 #else
 #define PSI_TVM_FUNCTIONAL_TYPE_CAST(name)
 #endif
@@ -314,13 +373,37 @@ namespace Psi {
   };                                                                    \
     PSI_TVM_FUNCTIONAL_TYPE_CAST(name)
 
-#define PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(name)    \
-    PSI_TVM_FUNCTIONAL_TYPE(name)               \
-    typedef Empty Data;                         \
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()               \
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()           \
-    static Ptr get(Context&);                   \
+  /**
+   * Macro for defining functional types which take no arguments and have no data.
+   */
+#define PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(name)       \
+    PSI_TVM_FUNCTIONAL_TYPE(name, SimpleOperation) \
+    static Ptr get(Context&);                      \
     PSI_TVM_FUNCTIONAL_TYPE_END(name)
+
+  /**
+   * Macro for defining functional types which take one argument and
+   * have no data.
+   */
+#define PSI_TVM_FUNCTIONAL_TYPE_UNARY(name, result_type)     \
+  PSI_TVM_FUNCTIONAL_TYPE(name, UnaryOperation) \
+  PSI_TVM_FUNCTIONAL_PTR_HOOK()                          \
+  CastImplementation<result_type>::Ptr type() const {return cast<result_type>(PtrBaseType::type());} \
+  PSI_TVM_FUNCTIONAL_PTR_HOOK_END()                      \
+  static Ptr get(Term *parameter);              \
+  PSI_TVM_FUNCTIONAL_TYPE_END(name)
+
+  /**
+   * Macro for defining functional types which take two arguments and
+   * have no data.
+   */
+#define PSI_TVM_FUNCTIONAL_TYPE_BINARY(name,result_type) \
+  PSI_TVM_FUNCTIONAL_TYPE(name, BinaryOperation)         \
+  PSI_TVM_FUNCTIONAL_PTR_HOOK()                          \
+  CastImplementation<result_type>::Ptr type() const {return cast<result_type>(PtrBaseType::type());} \
+  PSI_TVM_FUNCTIONAL_PTR_HOOK_END()                      \
+  static Ptr get(Term *lhs, Term *rhs);                  \
+  PSI_TVM_FUNCTIONAL_TYPE_END(name)
 
     template<typename T> typename T::Ptr Context::get_functional(ArrayPtr<Term*const> parameters, const typename T::Data& data) {
       return cast<T>(get_functional_bare(FunctionalTermSetupSpecialized<T>(&data), parameters));

@@ -9,7 +9,6 @@ namespace Psi {
     const char IntegerValue::operation[] = "int_v";
     const char FloatType::operation[] = "float";
     const char FloatValue::operation[] = "float_v";
-    const char IntegerCompare::operation[] = "cmp";
     const char SelectValue::operation[] = "select";
 
     FunctionalTypeResult BooleanType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -208,33 +207,9 @@ namespace Psi {
      * Get an integer value from specific data, produced by one of the
      * #parse or #convert functions.
      */
-    IntegerValue::Ptr IntegerValue::get(IntegerType::Ptr type, const Data& data) {
+    IntegerValue::Ptr IntegerValue::get(Term* type, const Data& data) {
       Term *parameters[] = {type};
       return type->context().get_functional<IntegerValue>(ArrayPtr<Term*const>(parameters, 1), data);
-    }
-
-    /**
-     * Get an integer value by parsing a string containing the
-     * value. \see #parse for a description of the options.
-     */
-    IntegerValue::Ptr IntegerValue::get(IntegerType::Ptr type, const std::string& value, bool negative, unsigned base) {
-      return get(type, parse(value, negative, base));
-    }
-
-    /**
-     * Get an integer value from a simple int. \see #convert(int) for
-     * details.
-     */
-    IntegerValue::Ptr IntegerValue::get(IntegerType::Ptr type, int value) {
-      return get(type, convert(value));
-    }
-
-    /**
-     * Get an integer value from a simple int. \see #convert(int) for
-     * details.
-     */
-    IntegerValue::Ptr IntegerValue::get(IntegerType::Ptr type, unsigned value) {
-      return get(type, convert(value));
     }
 
     FunctionalTypeResult FloatType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -256,7 +231,7 @@ namespace Psi {
       return FunctionalTypeResult(parameters[0], false);
     }
 
-    FloatValue::Ptr FloatValue::get(FloatType::Ptr type, const Data& data) {
+    FloatValue::Ptr FloatValue::get(Term* type, const Data& data) {
       Term *parameters[] = {type};
       return type->context().get_functional<FloatValue>(ArrayPtr<Term*const>(parameters, 1), data);
     }
@@ -297,6 +272,12 @@ namespace Psi {
 
         return result;
       }
+
+      FunctionalTypeResult integer_cmp_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
+        FunctionalTypeResult result = integer_binary_op_type(operation, parameters);
+        result.type = BooleanType::get(result.type->context());
+        return result;
+      }
     }
 
 #define IMPLEMENT_BINARY(name,op_name,type_cb)				\
@@ -325,6 +306,7 @@ namespace Psi {
 
 #define IMPLEMENT_INT_BINARY(name,op_name) IMPLEMENT_BINARY(name,op_name,integer_binary_op_type)
 #define IMPLEMENT_INT_UNARY(name,op_name) IMPLEMENT_UNARY(name,op_name,integer_unary_op_type)
+#define IMPLEMENT_INT_COMPARE(name,op_name) IMPLEMENT_BINARY(name,op_name,integer_cmp_op_type)
 
     IMPLEMENT_INT_BINARY(IntegerAdd, "add")
     IMPLEMENT_INT_BINARY(IntegerSubtract, "sub")
@@ -335,24 +317,12 @@ namespace Psi {
     IMPLEMENT_INT_BINARY(BitOr, "bit_or")
     IMPLEMENT_INT_BINARY(BitXor, "bit_xor")
     IMPLEMENT_INT_UNARY(BitNot, "bit_not")
-
-    FunctionalTypeResult IntegerCompare::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 2)
-	throw TvmUserError("cmp expects two operands");
-
-      if (parameters[0]->type() != parameters[1]->type())
-	throw TvmUserError("cmp: both operands must be of the same type");
-
-      if (!isa<IntegerType>(parameters[0]->type()))
-	throw TvmUserError("cmp operands must have integer type");
-
-      return FunctionalTypeResult(BooleanType::get(context), parameters[0]->phantom() || parameters[1]->phantom());
-    }
-
-    IntegerCompare::Ptr IntegerCompare::get(Comparison cmp, Term *lhs, Term *rhs) {
-      Term *parameters[] = {lhs, rhs};
-      return lhs->context().get_functional<IntegerCompare>(ArrayPtr<Term*const>(parameters, 2), cmp);
-    }
+    IMPLEMENT_INT_COMPARE(IntegerCompareEq, "cmp_eq")
+    IMPLEMENT_INT_COMPARE(IntegerCompareNe, "cmp_ne")
+    IMPLEMENT_INT_COMPARE(IntegerCompareGt, "cmp_gt")
+    IMPLEMENT_INT_COMPARE(IntegerCompareGe, "cmp_ge")
+    IMPLEMENT_INT_COMPARE(IntegerCompareLt, "cmp_lt")
+    IMPLEMENT_INT_COMPARE(IntegerCompareLe, "cmp_le")
 
     FunctionalTypeResult SelectValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 3)

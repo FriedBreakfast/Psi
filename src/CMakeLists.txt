@@ -18,9 +18,11 @@ add_library(psi SHARED
   Tvm/Core.cpp Tvm/Core.hpp
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
+  Tvm/FunctionalBuilder.cpp Tvm/FunctionalBuilder.hpp
   Tvm/FunctionalRewrite.hpp
   Tvm/Jit.hpp
   Tvm/Instructions.cpp Tvm/Instructions.hpp
+  Tvm/InstructionBuilder.cpp Tvm/InstructionBuilder.hpp
   Tvm/Number.cpp Tvm/Number.hpp
   ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp

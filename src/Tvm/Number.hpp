@@ -10,23 +10,11 @@
  * and BooleanValue.
  */
 
-#define PSI_TVM_FUNCTIONAL_TYPE_BINARY(name,value_type)                 \
-  struct name : BinaryOperation {					\
-  static Ptr get(Term *lhs, Term *rhs);                                 \
-  };									\
-  template<> struct CastImplementation<name> : CastImplementation<BinaryOperation> {};
-
-#define PSI_TVM_FUNCTIONAL_TYPE_UNARY(name,value_type)			\
-  struct name : UnaryOperation {					\
-  static Ptr get(Term *parameter);					\
-  };									\
-  template<> struct CastImplementation<name> : CastImplementation<UnaryOperation> {};
-
 namespace Psi {
   namespace Tvm {
     PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(BooleanType)
 
-    PSI_TVM_FUNCTIONAL_TYPE(BooleanValue)
+    PSI_TVM_FUNCTIONAL_TYPE(BooleanValue, ConstructorOperation)
     typedef PrimitiveWrapper<bool> Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
     /// \brief Get the value of this constant.
@@ -35,7 +23,7 @@ namespace Psi {
     static Ptr get(Context&, bool);
     PSI_TVM_FUNCTIONAL_TYPE_END(BooleanValue)
 
-    PSI_TVM_FUNCTIONAL_TYPE(IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE(IntegerType, TypeOperation)
     /// \brief Available integer bit widths
     enum Width {
       i8, ///< 8 bits
@@ -80,7 +68,7 @@ namespace Psi {
     static Ptr get_size(Context&);
     PSI_TVM_FUNCTIONAL_TYPE_END(IntegerType)
 
-    PSI_TVM_FUNCTIONAL_TYPE(IntegerValue)
+    PSI_TVM_FUNCTIONAL_TYPE(IntegerValue, ConstructorOperation)
     /**
      * \brief Integer data - stores the initial value as an array of 8
      * bytes, in little-endian order.
@@ -109,19 +97,16 @@ namespace Psi {
     /// \brief Get the value of this constant.
     const Data& value() const {return data();}
     /// \brief Get the type of this term cast to IntegerType::Ptr
-    IntegerType::Ptr type() const {return cast<IntegerType>(BaseType::type());}
+    IntegerType::Ptr type() const {return cast<IntegerType>(PtrBaseType::type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static unsigned data_bits(const Data&, bool);
     static Data parse(const std::string&, bool=false, unsigned=10);
     static Data convert(int);
     static Data convert(unsigned);
-    static Ptr get(IntegerType::Ptr, const Data&);
-    static Ptr get(IntegerType::Ptr, const std::string&, bool=false, unsigned=10);
-    static Ptr get(IntegerType::Ptr, int);
-    static Ptr get(IntegerType::Ptr, unsigned);
+    static Ptr get(Term*, const Data&);
     PSI_TVM_FUNCTIONAL_TYPE_END(IntegerValue)
 
-    PSI_TVM_FUNCTIONAL_TYPE(FloatType)
+    PSI_TVM_FUNCTIONAL_TYPE(FloatType, TypeOperation)
     enum Width {
       fp32, ///< 32-bit IEEE float
       fp64, ///< 64-bit IEEE float
@@ -143,7 +128,7 @@ namespace Psi {
       return boost::hash_value(int(w));
     }
 
-    PSI_TVM_FUNCTIONAL_TYPE(FloatValue)
+    PSI_TVM_FUNCTIONAL_TYPE(FloatValue, ConstructorOperation)
     struct Data {
       unsigned exponent;
       char mantissa[16];
@@ -161,53 +146,32 @@ namespace Psi {
     };
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
     /// \brief Get the type of this term cast to FloatType::Ptr
-    FloatType::Ptr type() const {return cast<FloatType>(BaseType::type());}
+    FloatType::Ptr type() const {return cast<FloatType>(PtrBaseType::type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static FloatValue::Ptr get(FloatType::Ptr, const Data&);
+    static FloatValue::Ptr get(Term*, const Data&);
     PSI_TVM_FUNCTIONAL_TYPE_END(FloatValue)
 
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(AddOperation, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(SubtractOperation, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(MultiplyOperation, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(DivideOperation, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_UNARY(NegativeOperation, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitAndOperation, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitOrOperation, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitXorOperation, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_UNARY(BitNotOperation, IntegerType)
-
-    /**
-     * Possible comparison operands, used by both IntegerCompare and
-     * FloatCompare.
-     */
-    enum Comparison {
-      cmp_eq,
-      cmp_ne,
-      cmp_gt,
-      cmp_ge,
-      cmp_lt,
-      cmp_le
-    };
-
-    /**
-     * Comparison operation between two integer operands.
-     */
-    PSI_TVM_FUNCTIONAL_TYPE(IntegerCompare)
-    typedef PrimitiveWrapper<Comparison> Data;
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the comparison operation being performed
-    Comparison comparison() const {return data().get();}
-    Term* lhs() const {return get()->parameter(0);}
-    Term* rhs() const {return get()->parameter(1);}
-    IntegerType::Ptr type() const {return cast<IntegerType>(BaseType::type());}
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static IntegerCompare::Ptr get(Comparison cmp, Term *lhs, Term *rhs);
-    PSI_TVM_FUNCTIONAL_TYPE_END(IntegerCompare)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerAdd, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerSubtract, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerMultiply, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerDivide, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_UNARY(IntegerNegative, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitAnd, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitOr, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitXor, IntegerType)
+    PSI_TVM_FUNCTIONAL_TYPE_UNARY(BitNot, IntegerType)
+    
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareEq, BooleanType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareNe, BooleanType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareGt, BooleanType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareGe, BooleanType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareLt, BooleanType)
+    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareLe, BooleanType)
 
     /**
      * Select a value based on a boolean condition.
      */
-    PSI_TVM_FUNCTIONAL_TYPE(SelectValue)
+    PSI_TVM_FUNCTIONAL_TYPE(SelectValue, FunctionalOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
     /// \brief Get the condition which selects which value is returned.

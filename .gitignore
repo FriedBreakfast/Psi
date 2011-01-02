@@ -3,4 +3,6 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 /build/
+.kdev4
+/*.kdev4
 *~
