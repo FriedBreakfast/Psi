@@ -3,6 +3,8 @@
 
 #include "Functional.hpp"
 
+#include <boost/optional.hpp>
+
 /**
  * \file
  *
@@ -98,8 +100,14 @@ namespace Psi {
     const Data& value() const {return data();}
     /// \brief Get the type of this term cast to IntegerType::Ptr
     IntegerType::Ptr type() const {return cast<IntegerType>(PtrBaseType::type());}
+    /// \brief Get the value of this integer as an unsigned integer, if it is in range, else return boost::none
+    boost::optional<unsigned> value_unsigned() const {return data_value_unsigned(data(), type()->is_signed());}
+    /// \brief Get the value of this integer as a signed integer, if it is in range, else return boost::none
+    boost::optional<int> value_int() const {return data_value_int(data(), type()->is_signed());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static unsigned data_bits(const Data&, bool);
+    static boost::optional<unsigned> data_value_unsigned(const Data&, bool);
+    static boost::optional<int> data_value_int(const Data&, bool);
     static Data parse(const std::string&, bool=false, unsigned=10);
     static Data convert(int);
     static Data convert(unsigned);

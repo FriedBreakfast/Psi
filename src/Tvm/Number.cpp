@@ -88,6 +88,63 @@ namespace Psi {
     }      
 
     /**
+     * \brief Convert a Data instance to an unsigned integer.
+     * 
+     * \param data Value to convert.
+     * 
+     * \param is_signed Whether the contents of \c data should be
+     * treated as signed or unsigned.
+     * 
+     * \return Converted value, or \c boost::none if the converted
+     * value is not within the range of an <tt>unsigned int</tt>.
+     */
+    boost::optional<unsigned> IntegerValue::data_value_unsigned(const Data& data, bool is_signed) {
+      std::size_t i = sizeof(data.bytes);
+      if (is_signed && data.bytes[i-1] & 0x80)
+        // value is negative, so out of range of an unsigned int
+        return boost::none;
+      
+      for (; i > sizeof(unsigned); --i) {
+        if (data.bytes[i-1] != 0)
+          return boost::none;
+      }
+      
+      unsigned result = 0;
+      for (; i > 0; --i)
+        result = (result << 8) | data.bytes[i-1];
+
+      return result;
+    }
+    
+    /**
+     * \brief Convert a Data instance to a signed integer.
+     * 
+     * \param data Value to convert.
+     * 
+     * \param is_signed Whether the contents of \c data should be
+     * treated as signed or unsigned.
+     * 
+     * \return Converted value, or \c boost::none if the converted
+     * value is not within the range of a \c int.
+     */
+    boost::optional<int> IntegerValue::data_value_int(const Data& data, bool is_signed) {
+      std::size_t i = sizeof(data.bytes);
+      bool negative = is_signed && (data.bytes[i] & 0x80);
+      unsigned char trivial_byte = negative ? 0xFF : 0;
+      
+      for (; i > sizeof(int); --i) {
+        if (data.bytes[i-1] != trivial_byte)
+          return boost::none;
+      }
+      
+      int result = 0;
+      for (; i > 0; --i)
+        result = (result << 8) | data.bytes[i-1];
+      
+      return result;
+    }
+
+    /**
      * Parse an integer and convert it to the internal byte array
      * format. Note that this function does not parse minus signs or
      * base-specific prefixes such as '0x' - these should be handled

@@ -144,7 +144,19 @@ namespace Psi {
      * \param index Index into the array.
      */
     Term* FunctionalBuilder::array_element(Term* array, Term* index) {
-      return ArrayElement::get(array, index);
+      Term *result = ArrayElement::get(array, index);
+      
+      if (ArrayValue::Ptr array_val = dyn_cast<ArrayValue>(array)) {
+        if (IntegerValue::Ptr index_val = dyn_cast<IntegerValue>(index)) {
+          boost::optional<unsigned> index_ui = index_val->value_unsigned();
+          if (index_ui && (*index_ui < array_val->length()))
+            return array_val->value(*index_ui);
+          else
+            throw TvmUserError("array index out of range");
+        }
+      }
+      
+      return result;
     }
     
     /**
@@ -164,7 +176,13 @@ namespace Psi {
      * \param index Index of the member to get a value for.
      */
     Term* FunctionalBuilder::struct_element(Term* aggregate, unsigned index) {
-      return StructElement::get(aggregate, index);
+      Term *result = StructElement::get(aggregate, index);
+      
+      if (StructValue::Ptr struct_val = dyn_cast<StructValue>(aggregate)) {
+        return struct_val->member_value(index);
+      }
+      
+      return result;
     }
     
     /**
@@ -174,7 +192,15 @@ namespace Psi {
      * \param member_type Type of the member whose value is returned.
      */
     Term* FunctionalBuilder::union_element(Term* aggregate, Term* member_type) {
-      return UnionElement::get(aggregate, member_type);
+      Term *result = UnionElement::get(aggregate, member_type);
+      
+      if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(aggregate)) {
+        Term *value = union_val->value();
+        if (member_type == value->type())
+          return value;
+      }
+      
+      return result;
     }
     
     /**
@@ -194,6 +220,72 @@ namespace Psi {
       if (index >= union_ty->n_members())
         throw TvmUserError("union member index out of range");
       return union_element(aggregate, union_ty->member_type(index));
+    }
+    
+    /**
+     * \brief Get a pointer to an array element.
+     * 
+     * \param aggregate Pointer to an array.
+     * 
+     * \param index Index of element to get.
+     */
+    Term* FunctionalBuilder::array_element_ptr(Term *array, Term *index) {
+      return ArrayElementPtr::get(array, index);
+    }
+    
+    /**
+     * \brief Get a pointer to an array element.
+     * 
+     * \param aggregate Pointer to an array.
+     * 
+     * \param index Index of element to get.
+     */
+    Term* FunctionalBuilder::array_element_ptr(Term *array, unsigned index) {
+      return array_element_ptr(array, int_value(size_type(array->context()), index));
+    }
+    
+    /**
+     * \brief Get a pointer to a struct member.
+     * 
+     * \param aggregate Pointer to a struct.
+     * 
+     * \param index Index of member to get a pointer to.
+     */
+    Term* FunctionalBuilder::struct_element_ptr(Term *aggregate, unsigned index) {
+      return StructElementPtr::get(aggregate, index);
+    }
+    
+    /**
+     * \brief Get a pointer to a union member.
+     * 
+     * \param aggregate Pointer to a union.
+     * 
+     * \param type Member type to get a pointer to.
+     */
+    Term* FunctionalBuilder::union_element_ptr(Term *aggregate, Term *type) {
+      return UnionElementPtr::get(aggregate, type);
+    }
+    
+    /**
+     * \brief Get a pointer to a union member.
+     * 
+     * This looks up the type of the member specified and forwards to
+     * union_element_ptr(Term*,Term*).
+     * 
+     * \param aggregate Pointer to a union.
+     * 
+     * \param index Index of member to get a pointer to.
+     */
+    Term* FunctionalBuilder::union_element_ptr(Term *aggregate, unsigned index) {
+      PointerType::Ptr union_ptr_ty = dyn_cast<PointerType>(aggregate->type());
+      if (!union_ptr_ty)
+        throw TvmUserError("union_ep aggregate parameter is not a pointer");
+      UnionType::Ptr union_ty = dyn_cast<UnionType>(union_ptr_ty->target_type());
+      if (!union_ty)
+        throw TvmUserError("union_ep aggregate parameter is not a pointer to a union");
+      if (index >= union_ty->n_members())
+        throw TvmUserError("union member index out of range");
+      return union_element_ptr(aggregate, union_ty->member_type(index));
     }
     
     /**
@@ -321,32 +413,32 @@ namespace Psi {
       return BitNot::get(parameter);
     }
 
-    /// \brief Get an integer "==" comparison operation
+    /// \brief Get an integer == comparison operation
     Term *FunctionalBuilder::cmp_eq(Term *lhs, Term *rhs) {
       return IntegerCompareEq::get(lhs, rhs);
     }
     
-    /// \brief Get an integer "!=" comparison operation
+    /// \brief Get an integer != comparison operation
     Term *FunctionalBuilder::cmp_ne(Term *lhs, Term *rhs) {
       return IntegerCompareNe::get(lhs, rhs);
     }
     
-    /// \brief Get an integer "&gt;" comparison operation
+    /// \brief Get an integer \> comparison operation
     Term *FunctionalBuilder::cmp_gt(Term *lhs, Term *rhs) {
       return IntegerCompareGt::get(lhs, rhs);
     }
     
-    /// \brief Get an integer "&gt;=" comparison operation
+    /// \brief Get an integer \> comparison operation
     Term *FunctionalBuilder::cmp_ge(Term *lhs, Term *rhs) {
       return IntegerCompareGe::get(lhs, rhs);
     }
     
-    /// \brief Get an integer "&lt;" comparison operation
+    /// \brief Get an integer \< comparison operation
     Term *FunctionalBuilder::cmp_lt(Term *lhs, Term *rhs) {
       return IntegerCompareLt::get(lhs, rhs);
     }
     
-    /// \brief Get an integer "&lt;=" comparison operation
+    /// \brief Get an integer \<= comparison operation
     Term *FunctionalBuilder::cmp_le(Term *lhs, Term *rhs) {
       return IntegerCompareLe::get(lhs, rhs);
     }
@@ -378,7 +470,15 @@ namespace Psi {
       return bit_and(offset_plus_align_minus_one, not_align_minus_one);
     }
   
-    /// \brief Get a select operation.
+    /**
+     * \brief Get a select operation.
+     * 
+     * \param condition Condition to use to decide which value is returned.
+     * 
+     * \param if_true Value of this operation if \c condition is true.
+     * 
+     * \param if_false Value of this operation if \c condition is false.
+     */
     Term *FunctionalBuilder::select(Term *condition, Term *if_true, Term *if_false) {
       return SelectValue::get(condition, if_true, if_false);
     }

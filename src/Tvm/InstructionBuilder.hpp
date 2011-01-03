@@ -5,6 +5,16 @@
 
 namespace Psi {
   namespace Tvm {
+    /**
+     * \brief Utility class for creating instructions.
+     * 
+     * Use this in preference to the direct <tt>Insn::create</tt>
+     * methods since these can more easily be updated in the case
+     * that the underlying functioning of an operation changes.
+     * 
+     * \see FunctionalBuilder: the corresponding class for
+     * creating functional terms.
+     */
     class InstructionBuilder {
       InstructionInsertPoint m_insert_point;
       

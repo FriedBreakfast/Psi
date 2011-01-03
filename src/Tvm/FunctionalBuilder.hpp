@@ -13,6 +13,15 @@ namespace Psi {
      * 
      * Use this rather than <tt>Op::get</tt> methods since they are much
      * easier to update if the underlying mechanism changes.
+     * 
+     * This also performs some simple constant folding where possible, in
+     * a platform independent way.
+     * 
+     * Note that when implementing such constant folding operations, the
+     * regular operation must still be created in order to perform type
+     * checking. This is far from ideal.
+     * 
+     * \see InstructionBuilder: the corresponding class for instruction terms.
      */
     struct FunctionalBuilder : NonConstructible {
       /// \name Metatype operations
@@ -52,6 +61,15 @@ namespace Psi {
       static Term* struct_element(Term*, unsigned);
       static Term* union_element(Term*, Term*);
       static Term* union_element(Term*, unsigned);
+      ///@}
+      
+      /// \name Aggregate pointer functions
+      ///@{
+      static Term* array_element_ptr(Term*, Term*);
+      static Term* array_element_ptr(Term*, unsigned);
+      static Term* struct_element_ptr(Term*, unsigned);
+      static Term* union_element_ptr(Term*, Term*);
+      static Term* union_element_ptr(Term*, unsigned);
       ///@}
       
       /// \name Pointer operations

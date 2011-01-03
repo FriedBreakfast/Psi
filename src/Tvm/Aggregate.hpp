@@ -14,14 +14,34 @@
 
 namespace Psi {
   namespace Tvm {
+    /**
+     * \brief The empty type.
+     * 
+     * This is not equivalent to a struct, union or array
+     * with no elements.
+     */
     PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(EmptyType)
+    
+    /**
+     * \brief The unique value of the empty type.
+     */
     PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(EmptyValue)
+    
+    /**
+     * \brief The type of a BlockTerm.
+     */
     PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(BlockType)
 
+    /**
+     * \brief The type of every term which can be used as a type except itself.
+     * 
+     * This is the \c type term: all terms which can be used as types are
+     * themselves of type \c type except \c type, which has no type.
+     */
     PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(Metatype)
 
     /**
-     * Generate a value for Metatype.
+     * \brief Generate a value for Metatype.
      *
      * This can be used by the user, however without pointer casts the
      * generated type will be no use. It is mostly present to support
@@ -45,6 +65,9 @@ namespace Psi {
     /// Operation to the the alignment of a type, like \c alignof in C99
     PSI_TVM_FUNCTIONAL_TYPE_UNARY(MetatypeAlignment, Term)
 
+    /**
+     * \brief A pointer type.
+     */
     PSI_TVM_FUNCTIONAL_TYPE(PointerType, FunctionalOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -54,6 +77,9 @@ namespace Psi {
     static Ptr get(Term *target_type);
     PSI_TVM_FUNCTIONAL_TYPE_END(PointerType)
 
+    /**
+     * \brief Cast a pointer from one type to another while keeping its address the same.
+     */
     PSI_TVM_FUNCTIONAL_TYPE(PointerCast, FunctionalOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -67,6 +93,14 @@ namespace Psi {
     static Ptr get(Term *pointer, Term *target_type);
     PSI_TVM_FUNCTIONAL_TYPE_END(PointerCast)
     
+    /**
+     * \brief Change the memory address pointed to by a pointer.
+     * 
+     * The \c offset parameter to this operation must be an intptr
+     * or uintptr - exactly how the operation works depends on
+     * whether it is signed or unsigned. The \c offset parameter
+     * is measured in units of the pointed-to type.
+     */
     PSI_TVM_FUNCTIONAL_TYPE(PointerOffset, FunctionalOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -80,6 +114,9 @@ namespace Psi {
     static Ptr get(Term *pointer, Term *offset);
     PSI_TVM_FUNCTIONAL_TYPE_END(PointerOffset)
 
+    /**
+     * \brief An array type - a collection of identical elements of fixed length.
+     */
     PSI_TVM_FUNCTIONAL_TYPE(ArrayType, TypeOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -92,6 +129,9 @@ namespace Psi {
     static Ptr get(Term *element_type, unsigned length);
     PSI_TVM_FUNCTIONAL_TYPE_END(ArrayType)
 
+    /**
+     * \brief Constructs a value for ArrayType from a list of element values.
+     */
     PSI_TVM_FUNCTIONAL_TYPE(ArrayValue, ConstructorOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -111,7 +151,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_TYPE(ArrayElement, FunctionalOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the array being indexed
+    /// \brief Get the array being subscripted
     Term *aggregate() const {return get()->parameter(0);}
     /// \brief Get the index
     Term *index() const {return get()->parameter(1);}
@@ -119,6 +159,24 @@ namespace Psi {
     static Ptr get(Term *aggregate, Term *index);
     PSI_TVM_FUNCTIONAL_TYPE_END(ArrayElement)
 
+    /**
+     * \brief Get a pointer to an element of an array
+     * from a pointer to an array.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(ArrayElementPtr, FunctionalOperation)
+    typedef Empty Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the array being subscripted
+    Term *aggregate_ptr() const {return get()->parameter(0);}
+    /// \brief Get the index
+    Term *index() const {return get()->parameter(1);}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *aggregate_ptr, Term *index);
+    PSI_TVM_FUNCTIONAL_TYPE_END(ArrayElementPtr)
+
+    /**
+     * \brief The struct type, which contains a series of values of different types.
+     */
     PSI_TVM_FUNCTIONAL_TYPE(StructType, TypeOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -130,6 +188,9 @@ namespace Psi {
     static Ptr get(Context&, ArrayPtr<Term*const> elements);
     PSI_TVM_FUNCTIONAL_TYPE_END(StructType)
 
+    /**
+     * \brief Constructs a value of type StructType from the values of the individual elements.
+     */
     PSI_TVM_FUNCTIONAL_TYPE(StructValue, ConstructorOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -145,16 +206,35 @@ namespace Psi {
 
     /// \brief Get the value of a struct member
     PSI_TVM_FUNCTIONAL_TYPE(StructElement, FunctionalOperation)
-    typedef unsigned Data;
+    typedef PrimitiveWrapper<unsigned> Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
     /// \brief Get the struct being accessed
     Term *aggregate() const {return get()->parameter(0);}
     /// \brief Get the index of the member being accessed
-    unsigned index() const {return data();}
+    unsigned index() const {return data().value();}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *structure, unsigned index);
     PSI_TVM_FUNCTIONAL_TYPE_END(StructElement)
 
+    /**
+     * \brief Get a pointer to a member of a struct from a
+     * pointer to the struct.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(StructElementPtr, FunctionalOperation)
+    typedef PrimitiveWrapper<unsigned> Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the struct being subscripted
+    Term *aggregate_ptr() const {return get()->parameter(0);}
+    /// \brief Get the index
+    unsigned index() const {return data().value();}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *aggregate_ptr, unsigned index);
+    PSI_TVM_FUNCTIONAL_TYPE_END(StructElementPtr)
+
+    /**
+     * \brief The union type - a type which holds a value of one type
+     * from a set of possible types.
+     */
     PSI_TVM_FUNCTIONAL_TYPE(UnionType, TypeOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
@@ -168,6 +248,21 @@ namespace Psi {
     static Ptr get(Context&, ArrayPtr<Term*const> elements);
     PSI_TVM_FUNCTIONAL_TYPE_END(UnionType)
 
+    /**
+     * \brief Constructs a value for UnionType from the type plus the value
+     * of the member this particular instance is holding.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(UnionValue, ConstructorOperation)
+    typedef Empty Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the value of whichever element this represents.
+    Term* value() const {return get()->parameter(1);}
+    /// \brief Get the type of this value (overloaded to return a UnionType).
+    UnionType::Ptr type() const {return cast<UnionType>(TermPtrBase::type());}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term* type, Term *value);
+    PSI_TVM_FUNCTIONAL_TYPE_END(UnionValue)
+
     /// \brief Get the value of a union member
     PSI_TVM_FUNCTIONAL_TYPE(UnionElement, FunctionalOperation)
     typedef unsigned Data;
@@ -180,17 +275,35 @@ namespace Psi {
     static Ptr get(Term *aggregate, Term *member_type);
     PSI_TVM_FUNCTIONAL_TYPE_END(UnionElement)
 
-    PSI_TVM_FUNCTIONAL_TYPE(UnionValue, ConstructorOperation)
+    /**
+     * \brief Gets a pointer to a member of a union from a
+     * pointer to the union.
+     * 
+     * This operation doesn't really need to exist: it's
+     * entirely equivalent to PointerCast, but I put it in
+     * because it's semantically different.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(UnionElementPtr, FunctionalOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the value of whichever element this represents.
-    Term* value() const {return get()->parameter(1);}
-    /// \brief Get the type of this value (overloaded to return a UnionType).
-    UnionType::Ptr type() const {return cast<UnionType>(TermPtrBase::type());}
+    /// \brief Get the struct being subscripted
+    Term *aggregate_ptr() const {return get()->parameter(0);}
+    /// \brief Get the index
+    Term *member_type() const {return get()->parameter(1);}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static Ptr get(Term* type, Term *value);
-    PSI_TVM_FUNCTIONAL_TYPE_END(UnionValue)
+    static Ptr get(Term *aggregate_ptr, Term *member_type);
+    PSI_TVM_FUNCTIONAL_TYPE_END(UnionElementPtr)
 
+    /**
+     * \brief Specialize a function pointer.
+     * 
+     * Function types in Tvm can include &lsquo;ghost&rdquo; terms,
+     * which are only used to track type information and are not actually
+     * passed to the target function. A function pointer of a simpler
+     * type with fewer ghost terms can be generated using this operation.
+     * Note that this is not like wrapping a function in another function:
+     * it does not adjust the pointer, merely the type.
+     */
     PSI_TVM_FUNCTIONAL_TYPE(FunctionSpecialize, FunctionalOperation)
     typedef Empty Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
