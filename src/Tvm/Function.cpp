@@ -492,20 +492,14 @@ namespace Psi {
       return hash_term_get(setup);
     }
 
-#if 0
-    FunctionalTypeResult FunctionTypeResolverParameter::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
-      PSI_ASSERT(parameters.size() == 1);
-      return FunctionalTypeResult(parameters[0], false);
-    }
-#endif
-
     InstructionTerm::InstructionTerm(const UserInitializer& ui, Context *context,
 				     Term* type, const char *operation,
                                      ArrayPtr<Term*const> parameters,
                                      BlockTerm* block)
       : Term(ui, context, term_instruction,
-	     false, false, false, block, type),
-        m_operation(operation) {
+	     false, false, false, this, type),
+        m_operation(operation),
+        m_block(block) {
 
       for (std::size_t i = 0; i < parameters.size(); ++i)
 	set_base_parameter(i, parameters[i]);

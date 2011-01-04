@@ -19,7 +19,7 @@ namespace Psi {
 
     public:
       const char *operation() {return m_operation;}
-      BlockTerm* block();
+      BlockTerm* block() {return m_block;}
       std::size_t n_parameters() {return Term::n_base_parameters();}
       Term* parameter(std::size_t n) {return get_base_parameter(n);}
 
@@ -36,6 +36,7 @@ namespace Psi {
       const char *m_operation;
       typedef boost::intrusive::list_member_hook<> InstructionListHook;
       InstructionListHook m_instruction_list_hook;
+      BlockTerm *m_block;
     };
 
 #ifndef PSI_DOXYGEN
@@ -471,10 +472,6 @@ namespace Psi {
     static Term* type(FunctionTerm*, const Data&, ArrayPtr<Term*const>); \
     static void jump_targets(Ptr, std::vector<BlockTerm*>&);            \
   }; PSI_TVM_INSTRUCTION_TYPE_CAST(name)
-
-    inline BlockTerm* InstructionTerm::block() {
-      return cast<BlockTerm>(source());
-    }
 
     inline BlockTerm* PhiTerm::block() {
       return cast<BlockTerm>(source());
