@@ -1,8 +1,27 @@
 #include "InstructionBuilder.hpp"
 #include "Instructions.hpp"
+#include "FunctionalBuilder.hpp"
 
 namespace Psi {
   namespace Tvm {
+    /**
+     * \brief Default constructor.
+     * 
+     * Before this object can be used, the insertion point must be
+     * set using the various set_insert_point methods.
+     */
+    InstructionBuilder::InstructionBuilder() {
+    }
+    
+    /**
+     * \brief Constructor which sets the insertion point.
+     * 
+     * \param ip Insertion point to initialize this builder with.
+     */
+    InstructionBuilder::InstructionBuilder(const InstructionInsertPoint& ip)
+    : m_insert_point(ip) {
+    }
+    
     /**
      * Set the insert point.
      */
@@ -74,10 +93,49 @@ namespace Psi {
     /**
      * \brief Allocate memory for a variable on the stack.
      * 
+     * This version of the function allocates space for one
+     * unit of the given type.
+     * 
+     * \param type Type to allocate space for.
+     * 
+     * \param count Number of elements of type \c type to
+     * allocate space for.
+     * 
+     * \param alignment Minimum alignment of the returned
+     * pointer. This is only honored up to a system-dependent
+     * maximum alignment - see Alloca class documentation for
+     * details.
+     */
+    InstructionTerm* InstructionBuilder::alloca_(Term* type, Term *count, Term* alignment) {
+      return Alloca::create(m_insert_point, type, count, alignment);
+    }
+
+    /**
+     * \brief Allocate memory for a variable on the stack.
+     * 
+     * This version of the function allocates space for one
+     * unit of the given type.
+     * 
+     * \param type Type to allocate space for.
+     * 
+     * \param count Number of elements of type \c type to
+     * allocate space for.
+     */
+    InstructionTerm* InstructionBuilder::alloca_(Term* type, Term *count) {
+      return alloca_(type, count, FunctionalBuilder::size_value(type->context(), 1));
+    }
+
+    /**
+     * \brief Allocate memory for a variable on the stack.
+     * 
+     * This version of the function allocates space for one
+     * unit of the given type.
+     * 
      * \param type Type to allocate space for.
      */
     InstructionTerm* InstructionBuilder::alloca_(Term* type) {
-      return Alloca::create(m_insert_point, type);
+      Term *one = FunctionalBuilder::size_value(type->context(), 1);
+      return alloca_(type, one, one);
     }
     
     /**
@@ -98,6 +156,37 @@ namespace Psi {
      */
     InstructionTerm* InstructionBuilder::store(Term* value, Term* ptr) {
       return Store::create(m_insert_point, value, ptr);
+    }
+    
+    /**
+     * \brief Create a memcpy instruction.
+     * 
+     * \param dest Copy destination.
+     * 
+     * \param src Copy source.
+     * 
+     * \param count Number of bytes to copy.
+     * 
+     * \param alignment Alignment hint.
+     */
+    InstructionTerm* InstructionBuilder::memcpy(Term *dest, Term *src, Term *count, Term *alignment) {
+      return MemCpy::create(m_insert_point, dest, src, count, alignment);
+    }
+    
+    /**
+     * \brief Create a memcpy instruction.
+     * 
+     * This sets the alignment hint to 1, i.e. unaligned.
+     * 
+     * \param dest Copy destination.
+     * 
+     * \param src Copy source.
+     * 
+     * \param count Number of bytes to copy.
+     */
+    InstructionTerm* InstructionBuilder::memcpy(Term *dest, Term *src, Term *count) {
+      Term *one = FunctionalBuilder::size_value(dest->context(), 1);
+      return memcpy(dest, src, count, one);
     }
   }
 }

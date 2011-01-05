@@ -229,16 +229,22 @@ namespace Psi {
       return insert_point.create<Load>(ArrayPtr<Term*const>(parameters, 1));
     }
 
-    Term* Alloca::type(FunctionTerm*, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 1)
-        throw TvmUserError("alloca instruction takes one parameter");
+    Term* Alloca::type(FunctionTerm *function, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 3)
+        throw TvmUserError("alloca instruction takes three parameters");
 
       if (!parameters[0]->is_type())
-        throw TvmUserError("parameter to alloca is not a type");
+        throw TvmUserError("first parameter to alloca is not a type");
 
-      if (parameters[0]->phantom())
+      if (parameters[1]->type() != IntegerType::get_size(function->context()))
+        throw TvmUserError("second parameter to alloca is not a uintptr");
+
+      if (parameters[2]->type() != IntegerType::get_size(function->context()))
+        throw TvmUserError("third parameter to alloca is not a uintptr");
+      
+      if (parameters[0]->phantom() || parameters[1]->phantom() || parameters[2]->phantom())
         throw TvmUserError("parameter to alloca cannot be phantom");
-
+      
       return PointerType::get(parameters[0]);
     }
 
@@ -249,10 +255,51 @@ namespace Psi {
      * Create an alloca instruction.
      * 
      * \param type Type to allocate memory for on the stack.
+     * 
+     * \param count Number of elements of type \c type to allocate.
+     * 
+     * \param alignment Minimum alignment of the returned pointer.
+     * This is not always honored - see the Alloca class documentation
+     * for details.
      */
-    Alloca::Ptr Alloca::create(InstructionInsertPoint insert_point, Term *type) {
-      Term *parameters[] = {type};
-      return insert_point.create<Alloca>(ArrayPtr<Term*const>(parameters, 1));
+    Alloca::Ptr Alloca::create(InstructionInsertPoint insert_point, Term *type, Term *count, Term* alignment) {
+      Term *parameters[] = {type, count, alignment};
+      return insert_point.create<Alloca>(ArrayPtr<Term*const>(parameters, 3));
+    }
+    
+    Term* MemCpy::type(FunctionTerm *function, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 4)
+        throw TvmUserError("memcpy instruction takes four parameters");
+      
+      Term *byte_ptr_type = PointerType::get(ByteType::get(function->context()));
+      if ((parameters[0]->type() != byte_ptr_type) || (parameters[1]->type() != byte_ptr_type))
+        throw TvmUserError("first two parameters to memcpy instruction must be byte pointers");
+      
+      Term *size_type = IntegerType::get_size(function->context());
+      if ((parameters[2]->type() != size_type) || (parameters[3]->type() != size_type))
+        throw TvmUserError("third and fourth parameters to memcpy instruction must be uintptr");
+      
+      return EmptyType::get(function->context());
+    }
+    
+    void MemCpy::jump_targets(Ptr, std::vector<BlockTerm*>&) {
+    }
+    
+    /**
+     * Create a memcpy instruction.
+     * 
+     * \param dest Copy destination.
+     * 
+     * \param src Copy source.
+     * 
+     * \param count Number of bytes to copy.
+     * 
+     * \param alignment Alignment hint. Both source and destination pointers
+     * must be aligned to this boundary.
+     */
+    MemCpy::Ptr MemCpy::create(InstructionInsertPoint insert_point, Term *dest, Term *src, Term *count, Term *alignment) {
+      Term *parameters[] = {dest, src, count, alignment};
+      return insert_point.create<MemCpy>(ArrayPtr<Term*const>(parameters, 4));
     }
   }
 }

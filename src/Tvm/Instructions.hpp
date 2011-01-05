@@ -67,14 +67,63 @@ namespace Psi {
     static Ptr create(InstructionInsertPoint,Term*);
     PSI_TVM_INSTRUCTION_TYPE_END(Load)
 
+    /**
+     * \brief Stack allocation instruction.
+     * 
+     * Strictly speaking since dynamically sized arrays are fully
+     * supported the second parameter shouldn't be necessary and I
+     * don't recommend it's use during code generation, however
+     * it is useful in later passes because it allows enforcing the
+     * rule that the first parameter is a simple type and the second
+     * a number.
+     * 
+     * Regarding alignment, alignment requests are only honoured up
+     * to the maximum alignment of any type on the system: for
+     * alignments which are not known, the compiler may simply replace
+     * them with a system-dependent maximum alignment.
+     * 
+     * As for minumum alignment, the pointer returned will always be
+     * aligned to at least the alignment of \c stored_type, regardless
+     * of the specified alignment. The value 1 is therefore a safe
+     * default when no custom alignment is required.
+     */
     PSI_TVM_INSTRUCTION_TYPE(Alloca)
     typedef Empty Data;
     PSI_TVM_INSTRUCTION_PTR_HOOK()
     /// \brief Get the type which storage is allocated for
     Term* stored_type() const {return get()->parameter(0);}
+    /// \brief Get the number of elements of storage being allocated.
+    Term* count() const {return get()->parameter(1);}
+    /// \brief Get the minimum alignment of the returned pointer.
+    Term* alignment() const {return get()->parameter(2);}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint,Term*);
+    static Ptr create(InstructionInsertPoint,Term*,Term*,Term*);
     PSI_TVM_INSTRUCTION_TYPE_END(Alloca)
+    
+    /**
+     * \brief memcpy as an instruction.
+     * 
+     * This exists because during code generation load and store operations
+     * on complex types may be replaced by memcpy.
+     * 
+     * Unlike most operations, which have their destination last, this
+     * follows the ordinary memcpy convention and has the destination
+     * first and source second.
+     */
+    PSI_TVM_INSTRUCTION_TYPE(MemCpy)
+    typedef Empty Data;
+    PSI_TVM_INSTRUCTION_PTR_HOOK()
+    /// \brief Copy destination
+    Term* dest() const {return get()->parameter(0);}
+    /// \brief Copy source
+    Term* source() const {return get()->parameter(1);}
+    /// \brief Number of bytes to copy
+    Term* count() const {return get()->parameter(2);}
+    /// \brief Alignment hint
+    Term* alignment() const {return get()->parameter(3);}
+    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
+    static Ptr create(InstructionInsertPoint,Term*,Term*,Term*,Term*);
+    PSI_TVM_INSTRUCTION_TYPE_END(MemCpy)
   }
 }
 

@@ -332,10 +332,10 @@ namespace Psi {
       friend class Context;
     public:
       /// \brief Return the number of phantom parameters.
-      std::size_t n_phantom_parameters() {return m_n_phantoms;}
+      unsigned n_phantom_parameters() {return m_n_phantoms;}
       /// \brief Return the number of parameters, including both
       /// phantom and ordinary parameters.
-      std::size_t n_parameters() {return n_base_parameters() - 1;}
+      unsigned n_parameters() {return n_base_parameters() - 1;}
       FunctionTypeParameterTerm* parameter(std::size_t i) {return cast<FunctionTypeParameterTerm>(get_base_parameter(i+1));}
       Term* result_type() {return get_base_parameter(0);}
       CallingConvention calling_convention() {return m_calling_convention;}
@@ -350,7 +350,7 @@ namespace Psi {
 		       CallingConvention calling_convention);
 
       CallingConvention m_calling_convention;
-      std::size_t m_n_phantoms;
+      unsigned m_n_phantoms;
     };
 
 #ifndef PSI_DOXYGEN
@@ -416,6 +416,8 @@ namespace Psi {
        */
       explicit InstructionInsertPoint(InstructionTerm *insert_before)
       : m_block(insert_before->block()), m_instruction(insert_before) {}
+      
+      static InstructionInsertPoint after_source(Term*);
       
       template<typename T>
       typename T::Ptr create(ArrayPtr<Term*const> parameters, const typename T::Data& data = typename T::Data()) {

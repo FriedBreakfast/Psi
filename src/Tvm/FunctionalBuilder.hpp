@@ -37,6 +37,7 @@ namespace Psi {
       static Term* block_type(Context&);
       static Term* empty_type(Context&);
       static Term* empty_value(Context&);
+      static Term* byte_type(Context&);
       ///@}
       
       /// \name Aggregate types
@@ -85,6 +86,7 @@ namespace Psi {
       static Term* int_value(Term*, int);
       static Term* int_value(Term*, unsigned);
       static Term* int_value(Term*, const std::string&, bool=false, unsigned=10);
+      static Term* size_value(Context&, unsigned);
       ///@}
       
       /// \name Integer arithmetic operations

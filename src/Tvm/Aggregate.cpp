@@ -20,6 +20,7 @@ namespace Psi {
     const char EmptyType::operation[] = "empty";
     const char EmptyValue::operation[] = "empty_v";
     const char BlockType::operation[] = "block";
+    const char ByteType::operation[] = "byte";
     const char Metatype::operation[] = "type";
     const char MetatypeValue::operation[] = "type_v";
     const char MetatypeSize::operation[] = "sizeof";
@@ -119,6 +120,16 @@ namespace Psi {
 
     BlockType::Ptr BlockType::get(Context& context) {
       return context.get_functional<BlockType>(ArrayPtr<Term*const>());
+    }
+
+    FunctionalTypeResult ByteType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 0)
+        throw TvmUserError("byte type takes no parameters");
+      return FunctionalTypeResult(Metatype::get(context), false);
+    }
+
+    ByteType::Ptr ByteType::get(Context& context) {
+      return context.get_functional<ByteType>(ArrayPtr<Term*const>());
     }
 
     FunctionalTypeResult PointerType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {

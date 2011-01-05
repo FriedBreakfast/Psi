@@ -89,6 +89,7 @@ namespace Psi {
         ("true", BoolValueCallback(true))
         ("false", BoolValueCallback(false))
 	CALLBACK(Metatype)
+        CALLBACK(ByteType)
 	CALLBACK(PointerType)
 	CALLBACK(BooleanType)
 	CALLBACK(IntegerAdd)

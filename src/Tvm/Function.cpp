@@ -913,6 +913,9 @@ namespace Psi {
 
     /**
      * \brief Create a new block.
+     * 
+     * \param dominator Dominating block. If this is NULL, only parameters
+     * are available in this block.
      */
     BlockTerm* FunctionTerm::new_block(BlockTerm* dominator) {
       return context().allocate_term(BlockTerm::Initializer(this, dominator));
@@ -920,6 +923,8 @@ namespace Psi {
 
     /**
      * \brief Create a new block.
+     * 
+     * Equivalent to <tt>new_block(NULL)</tt>.
      */
     BlockTerm* FunctionTerm::new_block() {
       return new_block(NULL);
@@ -930,6 +935,52 @@ namespace Psi {
      */
     void FunctionTerm::add_term_name(Term *term, const std::string& name) {
       m_name_map.insert(std::make_pair(term, name));
+    }
+
+    /**
+     * \brief Return an insert point which is just after the given source term.
+     * 
+     * \param source Source to insert instructions after. This should be a
+     * value source as returned by Term::source().
+     */
+    InstructionInsertPoint InstructionInsertPoint::after_source(Term *source) {
+      switch (source->term_type()) {
+      // switch statements allow some weird stuff...
+      {
+        BlockTerm *block;
+        
+      case term_function:
+        block = cast<FunctionTerm>(source)->entry();
+        goto block_function_common;
+
+      case term_block:
+        block = cast<BlockTerm>(source);
+        goto block_function_common;
+      
+      block_function_common:
+        BlockTerm::InstructionList& insn_list = block->instructions();
+        if (insn_list.empty())
+          return InstructionInsertPoint(block);
+        else
+          return InstructionInsertPoint(&insn_list.front());
+      }
+
+      case term_instruction: {
+        InstructionTerm *insn = cast<InstructionTerm>(source);
+        BlockTerm *block = insn->block();
+        BlockTerm::InstructionList& insn_list = block->instructions();
+        BlockTerm::InstructionList::iterator insn_it = insn_list.iterator_to(*insn);
+        ++insn_it;
+        if (insn_it == insn_list.end())
+          return InstructionInsertPoint(block);
+        else
+          return InstructionInsertPoint(&*insn_it);
+        break;
+      }
+
+      default:
+        PSI_FAIL("unexpected term type");
+      }
     }
   }
 }

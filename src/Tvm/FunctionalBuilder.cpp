@@ -47,6 +47,11 @@ namespace Psi {
       return EmptyValue::get(context);
     }
     
+    /// \brief Get the byte type
+    Term* FunctionalBuilder::byte_type(Context& context) {
+      return ByteType::get(context);
+    }
+    
     /**
      * \brief Get a the type of a pointer to a type.
      * 
@@ -367,6 +372,20 @@ namespace Psi {
     Term* FunctionalBuilder::int_value(Term* type, const std::string& value, bool negative, unsigned base) {
       return IntegerValue::get(type, IntegerValue::parse(value, negative, base));
     }
+    
+    /**
+     * Get a uintptr constant containing the given value.
+     * 
+     * This is just a utility function that uses int_value and
+     * size_type, but saves some typing.
+     * 
+     * \param context Context to create the constant in.
+     * 
+     * \param value Value to initialize the constant with.
+     */
+    Term* FunctionalBuilder::size_value(Context& context, unsigned value) {
+      return int_value(size_type(context), value);
+    }
 
     /// \brief Get an integer add operation.
     Term *FunctionalBuilder::add(Term *lhs, Term *rhs) {
@@ -462,8 +481,7 @@ namespace Psi {
      * The formula used is: <tt>(offset + align - 1) & ~(align - 1)</tt>
      */
     Term* FunctionalBuilder::align_to(Term *offset, Term *align) {
-      Context& context = offset->context();
-      Term *one = int_value(size_type(context), 1);
+      Term *one = size_value(offset->context(), 1);
       Term *align_minus_one = sub(align, one);
       Term *offset_plus_align_minus_one = add(offset, align_minus_one);
       Term *not_align_minus_one = bit_not(align_minus_one);

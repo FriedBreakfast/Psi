@@ -19,6 +19,9 @@ namespace Psi {
       InstructionInsertPoint m_insert_point;
       
     public:
+      InstructionBuilder();
+      explicit InstructionBuilder(const InstructionInsertPoint&);
+      
       /// \name Insert point control
       ///@{
       void set_insert_point(const InstructionInsertPoint&);
@@ -36,9 +39,13 @@ namespace Psi {
       
       /// \name Memory operations
       ///@{
+      InstructionTerm* alloca_(Term*,Term*,Term*);
+      InstructionTerm* alloca_(Term*,Term*);
       InstructionTerm* alloca_(Term*);
       InstructionTerm* load(Term*);
       InstructionTerm* store(Term*,Term*);
+      InstructionTerm* memcpy(Term*,Term*,Term*,Term*);
+      InstructionTerm* memcpy(Term*,Term*,Term*);
       ///@}
     };
   }

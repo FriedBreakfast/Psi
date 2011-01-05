@@ -31,6 +31,13 @@ namespace Psi {
      * \brief The type of a BlockTerm.
      */
     PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(BlockType)
+    
+    /**
+     * \brief The smallest unit of storage in the system.
+     * 
+     * \c sizeof and \c alignof are measure in units of this type.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(ByteType)
 
     /**
      * \brief The type of every term which can be used as a type except itself.
