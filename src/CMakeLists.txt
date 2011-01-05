@@ -19,7 +19,6 @@ add_library(psi SHARED
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
   Tvm/FunctionalBuilder.cpp Tvm/FunctionalBuilder.hpp
-  Tvm/FunctionalRewrite.hpp
   Tvm/Jit.hpp
   Tvm/Instructions.cpp Tvm/Instructions.hpp
   Tvm/InstructionBuilder.cpp Tvm/InstructionBuilder.hpp
@@ -27,19 +26,25 @@ add_library(psi SHARED
   ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp
   Tvm/Rewrite.hpp
+  Tvm/TermOperationMap.hpp
   Tvm/User.cpp Tvm/User.hpp
   Tvm/Utility.cpp Tvm/Utility.hpp
-
-  #Tvm/LLVM/Builder.cpp Tvm/LLVM/Builder.hpp
-  #Tvm/LLVM/Aggregate.cpp
-  #Tvm/LLVM/Function.cpp
-  #Tvm/LLVM/Instructions.cpp
-  #Tvm/LLVM/Primitive.cpp
-  #Tvm/LLVM/Simple.cpp
-  #Tvm/LLVM/Target.cpp Tvm/LLVM/Target.hpp
-  #Tvm/LLVM/Target_AMD64.cpp
-  #Tvm/LLVM/Templates.hpp
 )
+
+add_library(psi-llvm MODULE
+  Tvm/LLVM/Builder.cpp Tvm/LLVM/Builder.hpp
+  Tvm/LLVM/Aggregate.cpp
+  Tvm/LLVM/Function.cpp
+  Tvm/LLVM/Instructions.cpp
+  Tvm/LLVM/Primitive.cpp
+  Tvm/LLVM/Simple.cpp
+  Tvm/LLVM/Target.cpp Tvm/LLVM/Target.hpp
+  Tvm/LLVM/Target_AMD64.cpp
+  Tvm/LLVM/Templates.hpp
+)
+
+set_target_properties(psi-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
+target_link_libraries(psi-llvm ${LLVM_LIBS})
 
 #install(TARGETS psi
 #  LIBRARY DESTINATION lib
@@ -50,9 +55,6 @@ add_library(psi SHARED
 #  file(GLOB headers ${dir}/*.hpp)
 #  install(FILES ${headers} DESTINATION include/${dir})
 #endforeach()
-
-set_target_properties(psi PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
-target_link_libraries(psi ${LLVM_LIBS})
 
 #add_library(typetest SHARED
 #  ExpressionCompiler.cpp ExpressionCompiler.hpp
@@ -80,7 +82,5 @@ add_executable(test TestMain.cpp
   )
 
 set_target_properties(test PROPERTIES
-  COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK"
-  COMPILE_FLAGS "${LLVM_CXX_FLAGS}"
-  LINK_FLAGS "${LLVM_LDFLAGS}")
+  COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
 target_link_libraries(test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} "psi")
