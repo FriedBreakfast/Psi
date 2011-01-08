@@ -71,6 +71,22 @@ namespace Psi {
 
     /// Operation to the the alignment of a type, like \c alignof in C99
     PSI_TVM_FUNCTIONAL_TYPE_UNARY(MetatypeAlignment, Term)
+    
+    /**
+     * \brief An undefined value.
+     * 
+     * This is a valid value for any type, and can be freely replaced
+     * by any other value whatsoever during compilation. Note that while
+     * two terms which contain undefined values may be pointer-wise equal,
+     * they may not evaluate to the same value at run-time (since they
+     * are not completely well defined).
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(UndefinedValue, FunctionalOperation)
+    typedef Empty Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *type);
+    PSI_TVM_FUNCTIONAL_TYPE_END(UndefinedValue)
 
     /**
      * \brief A pointer type.
@@ -162,6 +178,8 @@ namespace Psi {
     Term *aggregate() const {return get()->parameter(0);}
     /// \brief Get the index
     Term *index() const {return get()->parameter(1);}
+    /// \brief Get the type of array being accessed
+    ArrayType::Ptr aggregate_type() const {return cast<ArrayType>(aggregate()->type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *aggregate, Term *index);
     PSI_TVM_FUNCTIONAL_TYPE_END(ArrayElement)
@@ -177,6 +195,8 @@ namespace Psi {
     Term *aggregate_ptr() const {return get()->parameter(0);}
     /// \brief Get the index
     Term *index() const {return get()->parameter(1);}
+    /// \brief Get the array type being subscripted
+    ArrayType::Ptr aggregate_type() const {return cast<ArrayType>(cast<PointerType>(aggregate_ptr()->type())->target_type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *aggregate_ptr, Term *index);
     PSI_TVM_FUNCTIONAL_TYPE_END(ArrayElementPtr)
@@ -219,6 +239,8 @@ namespace Psi {
     Term *aggregate() const {return get()->parameter(0);}
     /// \brief Get the index of the member being accessed
     unsigned index() const {return data().value();}
+    /// \brief Get the type of struct being accessed
+    StructType::Ptr aggregate_type() const {return cast<StructType>(aggregate()->type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *structure, unsigned index);
     PSI_TVM_FUNCTIONAL_TYPE_END(StructElement)
@@ -234,9 +256,28 @@ namespace Psi {
     Term *aggregate_ptr() const {return get()->parameter(0);}
     /// \brief Get the index
     unsigned index() const {return data().value();}
+    /// \brief Get the struct type being subscripted
+    StructType::Ptr aggregate_type() const {return cast<StructType>(cast<PointerType>(aggregate_ptr()->type())->target_type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *aggregate_ptr, unsigned index);
     PSI_TVM_FUNCTIONAL_TYPE_END(StructElementPtr)
+
+    /**
+     * \brief Get the offset of a struct member
+     * 
+     * This should be considered an internal operation, and not be
+     * created by the user.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(StructElementOffset, FunctionalOperation)
+    typedef PrimitiveWrapper<unsigned> Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the struct type
+    StructType::Ptr aggregate_type() const {return cast<StructType>(get()->parameter(0));}
+    /// \brief Get the index of the member we're getting the offset of
+    unsigned index() const {return data().value();}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term *struct_type, unsigned index);
+    PSI_TVM_FUNCTIONAL_TYPE_END(StructElementOffset)
 
     /**
      * \brief The union type - a type which holds a value of one type
@@ -278,6 +319,8 @@ namespace Psi {
     Term *aggregate() const {return get()->parameter(0);}
     /// \brief Get the type of the member being accessed
     Term *member_type() const {return get()->parameter(1);}
+    /// \brief Get the union type being subscripted
+    UnionType::Ptr aggregate_type() const {return cast<UnionType>(aggregate()->type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *aggregate, Term *member_type);
     PSI_TVM_FUNCTIONAL_TYPE_END(UnionElement)
@@ -297,6 +340,8 @@ namespace Psi {
     Term *aggregate_ptr() const {return get()->parameter(0);}
     /// \brief Get the index
     Term *member_type() const {return get()->parameter(1);}
+    /// \brief Get the union type being subscripted
+    UnionType::Ptr aggregate_type() const {return cast<UnionType>(cast<PointerType>(aggregate_ptr()->type())->target_type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *aggregate_ptr, Term *member_type);
     PSI_TVM_FUNCTIONAL_TYPE_END(UnionElementPtr)

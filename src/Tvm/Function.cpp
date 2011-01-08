@@ -181,22 +181,6 @@ namespace Psi {
 	: m_depth(depth), m_functions(functions) {
       }
 
-      class FunctionTypeParameterListCallback {
-      public:
-	FunctionTypeParameterListCallback(const FunctionTypeResolverRewriter *self, FunctionResolveStatus *status)
-	  : m_self(self), m_status(status) {}
-
-	Term* operator () (Term* term, ArrayPtr<Term*const> previous) const {
-	  m_status->index = previous.size();
-	  FunctionTypeParameterTerm *param = cast<FunctionTypeParameterTerm>(term);	  
-	  return (*m_self)(param->type());
-	}
-
-      private:
-	const FunctionTypeResolverRewriter *m_self;
-	FunctionResolveStatus *m_status;
-      };
-
       Term* operator () (Term* term) const {
 	if (!term->parameterized())
 	  return term;
@@ -210,13 +194,16 @@ namespace Psi {
 	  status.index = 0;
 
 	  FunctionTypeResolverRewriter child(m_depth+1, m_functions);
-	  ParameterListRewriter<> parameters(cast_term,
-                                             FunctionTypeParameterListCallback(&child, &status));
-          status.index = cast_term->n_parameters();
+          ScopedArray<Term*> parameters(cast_term->n_parameters());
+          for (unsigned i = 0; i != parameters.size(); ++i) {
+            parameters[i] = child(cast_term->parameter(i)->type());
+            status.index = i;
+          }
+          
 	  Term* result_type = child(cast_term->result_type());
 	  m_functions->erase(cast_term);
 
-	  return term->context().get_function_type_resolver(result_type, parameters.array(),
+	  return term->context().get_function_type_resolver(result_type, parameters,
                                                             cast_term->n_phantom_parameters(),
                                                             cast_term->calling_convention());
 	}
@@ -308,13 +295,17 @@ namespace Psi {
       status.index = 0;
 
       FunctionTypeResolverRewriter rewriter(0, &functions);
-      ParameterListRewriter<> internal_parameters(term, FunctionTypeResolverRewriter::FunctionTypeParameterListCallback(&rewriter, &status));
+      ScopedArray<Term*> internal_parameters(term->n_parameters());
+      for (unsigned i = 0; i != internal_parameters.size(); ++i) {
+        internal_parameters[i] = rewriter(term->parameter(i)->type());
+        status.index = i;
+      }
       PSI_ASSERT(parameters.size() + phantom_parameters.size() == internal_parameters.size());
       status.index = internal_parameters.size();
       Term* internal_result_type = rewriter(term->result_type());
       PSI_ASSERT((functions.erase(term), functions.empty()));
 
-      FunctionTypeResolverTerm* internal = get_function_type_resolver(internal_result_type, internal_parameters.array(),
+      FunctionTypeResolverTerm* internal = get_function_type_resolver(internal_result_type, internal_parameters,
                                                                       term->n_phantom_parameters(), calling_convention);
       if (internal->get_function_type()) {
 	// A matching type exists
@@ -331,10 +322,10 @@ namespace Psi {
     FunctionTypeTerm* Context::get_function_type_fixed(CallingConvention calling_convention,
                                                        Term* result,
                                                        ArrayPtr<Term*const> parameter_types) {
-      ScopedTermPtrArray<FunctionTypeParameterTerm> parameters(parameter_types.size());
+      ScopedArray<FunctionTypeParameterTerm*> parameters(parameter_types.size());
       for (std::size_t i = 0; i < parameter_types.size(); ++i)
 	parameters[i] = new_function_type_parameter(parameter_types[i]);
-      return get_function_type(calling_convention, result, ArrayPtr<FunctionTypeParameterTerm*const>(), parameters.array());
+      return get_function_type(calling_convention, result, ArrayPtr<FunctionTypeParameterTerm*const>(), parameters);
     }
 
     namespace {
@@ -861,15 +852,15 @@ namespace Psi {
 
     FunctionTerm::FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type, const std::string& name)
       : GlobalTerm(ui, context, term_function, type, name) {
-      ScopedTermPtrArray<> parameters(type->n_parameters());
+      ScopedArray<Term*> parameters(type->n_parameters());
       for (std::size_t i = 0; i < parameters.size(); ++i) {
-	Term* param_type = type->parameter_type_after(parameters.array().slice(0, i));
+	Term* param_type = type->parameter_type_after(parameters.slice(0, i));
 	FunctionParameterTerm* param = context->allocate_term(FunctionParameterTerm::Initializer(this, param_type, i<type->n_phantom_parameters()));
         set_base_parameter(i+2, param);
 	parameters[i] = param;
       }
 
-      set_base_parameter(1, type->result_type_after(parameters.array()));
+      set_base_parameter(1, type->result_type_after(parameters));
     }
 
     class FunctionTerm::Initializer : public InitializerBase<FunctionTerm> {

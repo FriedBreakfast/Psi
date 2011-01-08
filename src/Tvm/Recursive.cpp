@@ -88,10 +88,10 @@ namespace Psi {
       }
 
       if (true) {
-        ScopedTermPtrArray<RecursiveParameterTerm> parameters(parameter_types.size());
+        ScopedArray<RecursiveParameterTerm*> parameters(parameter_types.size());
         for (std::size_t i = 0; i < parameters.size(); ++i)
           parameters[i] = new_recursive_parameter(parameter_types[i]);
-        return allocate_term(RecursiveTerm::Initializer(source, result_type, parameters.array(), phantom));
+        return allocate_term(RecursiveTerm::Initializer(source, result_type, parameters, phantom));
       } else {
       throw_dominator:
         throw TvmUserError("block specified for recursive term is not dominated by parameter and result type blocks");

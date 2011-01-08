@@ -11,6 +11,7 @@ namespace Psi {
     const char Store::operation[] = "store";
     const char Load::operation[] = "load";
     const char Alloca::operation[] = "alloca";
+    const char MemCpy::operation[] = "memcpy";
 
     Term* Return::type(FunctionTerm *function, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 1)
@@ -155,11 +156,11 @@ namespace Psi {
      * \param parameters Parameters to pass.
      */
     FunctionCall::Ptr FunctionCall::create(InstructionInsertPoint insert_point, Term *target, ArrayPtr<Term*const> parameters) {
-      ScopedTermPtrArray<> insn_params(parameters.size() + 1);
+      ScopedArray<Term*> insn_params(parameters.size() + 1);
       insn_params[0] = target;
       for (std::size_t i = 0, e = parameters.size(); i != e; ++i)
         insn_params[i+1] = parameters[1];
-      return insert_point.create<FunctionCall>(insn_params.array());
+      return insert_point.create<FunctionCall>(insn_params);
     }
     
     Term* Store::type(FunctionTerm* function, const Store::Data&, ArrayPtr<Term*const> parameters) {
@@ -271,9 +272,11 @@ namespace Psi {
       if (parameters.size() != 4)
         throw TvmUserError("memcpy instruction takes four parameters");
       
-      Term *byte_ptr_type = PointerType::get(ByteType::get(function->context()));
-      if ((parameters[0]->type() != byte_ptr_type) || (parameters[1]->type() != byte_ptr_type))
-        throw TvmUserError("first two parameters to memcpy instruction must be byte pointers");
+      if (!isa<PointerType>(parameters[0]->type()))
+        throw TvmUserError("first parameter to memcpy instruction is not a pointer");
+      
+      if (parameters[0]->type() != parameters[1]->type())
+        throw TvmUserError("first two parameters to memcpy instruction must have the same type");
       
       Term *size_type = IntegerType::get_size(function->context());
       if ((parameters[2]->type() != size_type) || (parameters[3]->type() != size_type))

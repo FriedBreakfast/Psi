@@ -236,7 +236,7 @@ namespace Psi {
     }
 
     Context::Context()
-      : m_hash_term_buckets(new HashTermSetType::bucket_type[initial_hash_term_buckets]),
+      : m_hash_term_buckets(initial_hash_term_buckets),
 	m_hash_terms(HashTermSetType::bucket_traits(m_hash_term_buckets.get(), initial_hash_term_buckets)) {
     }
 

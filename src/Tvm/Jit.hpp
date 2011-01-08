@@ -39,10 +39,7 @@ namespace Psi {
       typedef double Double;
 
       /**
-       * \brief Value type of MetatypeTerm.
-       *
-       * This is here for easy interfacing with C++ and must be kept in
-       * sync with LLVMGlobalBuilder::metatype_type.
+       * \brief Value type of Metatype.
        */
       struct Metatype {
 	UIntPtr size;
@@ -57,8 +54,6 @@ namespace Psi {
        */
       virtual void* get_global(GlobalTerm *global) = 0;
     };
-
-    boost::shared_ptr<Jit> create_llvm_jit(Context *context);
   }
 }
 

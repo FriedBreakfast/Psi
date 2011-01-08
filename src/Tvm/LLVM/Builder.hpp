@@ -10,8 +10,8 @@
 #include <boost/pool/object_pool.hpp>
 #include <boost/shared_array.hpp>
 
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/LLVMContext.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/Support/IRBuilder.h>
 #include <llvm/Support/TargetFolder.h>
 #include <llvm/Target/TargetMachine.h>

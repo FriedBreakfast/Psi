@@ -3,12 +3,14 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 #include <tr1/functional>
 
 #include <boost/checked_delete.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/intrusive/list.hpp>
+#include <boost/noncopyable.hpp>
 
 namespace Psi {
 #ifdef __GNUC__
@@ -45,6 +47,14 @@ namespace Psi {
 #endif
 
   /**
+   * \brief Base class for types which should never be constructed.
+   */
+  class NonConstructible {
+  private:
+    NonConstructible();
+  };
+
+  /**
    * \brief Gets a pointer to a containing class from a pointer to a
    * member.
    *
@@ -78,32 +88,156 @@ namespace Psi {
   bool is_sorted(ForwardIterator first, ForwardIterator last) {
     return is_sorted(first, last, std::less<typename ForwardIterator::value_type>());
   }
+  
+  template<typename> class ArrayPtr;
+  
+  /**
+   * \brief Base class for various array classes.
+   * 
+   * This is noncopyable so that inheriting classes must supply
+   * copy and assignment operators manually.
+   */
+  template<typename T>
+  class ArrayWithLength : boost::noncopyable {
+    typedef void (ArrayWithLength::*SafeBoolType)() const;
+    void safe_bool_true() const {}
+
+  protected:
+    T *m_ptr;
+    std::size_t m_size;
+    
+    ArrayWithLength() : m_ptr(0), m_size(0) {}
+    ArrayWithLength(T *ptr, std::size_t size) : m_ptr(ptr), m_size(size) {}
+
+  public:
+    T* get() const {return m_ptr;}
+    T& operator [] (std::size_t n) const {PSI_ASSERT(n < m_size); return m_ptr[n];}
+    std::size_t size() const {return m_size;}
+    ArrayPtr<T> slice(std::size_t, std::size_t);
+  };
 
   /**
    * \brief Array reference which also stores a length.
    *
    * This allows a pointer and a length to be passed around easily,
    * but does not perform any memory management.
+   * 
+   * This is copy constructible but not assignable since these should
+   * be temporary objects.
    */
   template<typename T>
-  class ArrayPtr {
+  class ArrayPtr : public ArrayWithLength<T> {
   public:
-    ArrayPtr() : m_ptr(0), m_size(0) {}
-    ArrayPtr(T *ptr, std::size_t size) : m_ptr(ptr), m_size(size) {}
-    template<typename U> ArrayPtr(ArrayPtr<U> src) : m_ptr(src.get()), m_size(src.size()) {}
-
-    T* get() const {return m_ptr;}
-    T& operator [] (std::size_t n) const {PSI_ASSERT(n < m_size); return m_ptr[n];}
-    std::size_t size() const {return m_size;}
-
-    ArrayPtr<T> slice(std::size_t start, std::size_t end) {
-      PSI_ASSERT((start <= end) && (end <= m_size));
-      return ArrayPtr<T>(m_ptr+start, end-start);
+    ArrayPtr() {}
+    ArrayPtr(T *ptr, std::size_t size) : ArrayWithLength<T>(ptr, size) {}
+    ArrayPtr(const ArrayPtr& src) : ArrayWithLength<T>(src.get(), src.size()) {}
+    template<typename U> ArrayPtr(const ArrayWithLength<U>& src) : ArrayWithLength<T>(src.get(), src.size()) {}
+    template<typename U, typename Alloc>
+    ArrayPtr(const std::vector<U, Alloc>& src) : ArrayWithLength<T>(&src.front(), src.size()) {}
+    
+    ArrayPtr& operator = (const ArrayPtr& src) {
+      this->m_ptr = src.m_ptr;
+      this->m_size = src.m_size;
+      return *this;
+    }
+    
+    template<typename U>
+    ArrayPtr& operator = (const ArrayWithLength<U>& src) {
+      this->m_ptr = src.get();
+      this->m_size = src.size();
+      return *this;
     }
 
   private:
     T *m_ptr;
     std::size_t m_size;
+  };
+  
+  /**
+   * Array slice operation - returns an ArrayPtr which is a view on this
+   * array from start to end (end is not included so that end-start elements
+   * are available).
+   */
+  template<typename T>
+  ArrayPtr<T> ArrayWithLength<T>::slice(std::size_t start, std::size_t end) {
+    PSI_ASSERT((start <= end) && (end <= m_size));
+    return ArrayPtr<T>(m_ptr+start, end-start);
+  }
+  
+  /**
+   * \brief Scoped, dynamically allocated array.
+   * 
+   * This allocates the array pointer and knows the length of the array;
+   * it also supplies a conversion operator to ArrayPtr.
+   */
+  template<typename T>
+  class ScopedArray : public ArrayWithLength<T> {
+  public:
+    explicit ScopedArray(std::size_t n) : ArrayWithLength<T>(new T[n], n) {}
+    ~ScopedArray() {delete [] this->m_ptr;}
+  };
+  
+  template<typename T, unsigned N>
+  class StaticArray : public ArrayWithLength<T> {
+    T m_data[N];
+
+  public:
+    StaticArray() : ArrayWithLength<T>(m_data, N) {}
+  };
+  
+#define PSI_STATIC_ARRAY_IMPL(n,params,inits) \
+  template<typename T> class StaticArray<T, n> : public ArrayWithLength<T> { \
+    T m_data[n]; \
+    \
+  public: \
+    StaticArray() : ArrayWithLength<T>(m_data, n) {} \
+    StaticArray params : ArrayWithLength<T>(m_data, n) {inits;} \
+  };
+  
+  PSI_STATIC_ARRAY_IMPL(1, (const T& t1), (m_data[0]=t1))
+  PSI_STATIC_ARRAY_IMPL(2, (const T& t1, const T& t2), (m_data[0]=t1,m_data[1]=t2))
+  PSI_STATIC_ARRAY_IMPL(3, (const T& t1, const T& t2, const T& t3), (m_data[0]=t1,m_data[1]=t2,m_data[2]=t3))
+  PSI_STATIC_ARRAY_IMPL(4, (const T& t1, const T& t2, const T& t3, const T& t4), (m_data[0]=t1,m_data[1]=t2,m_data[2]=t3,m_data[3]=t4))
+  
+#undef PSI_STATIC_ARRAY_IMPL
+
+  template<typename T>
+  class UniqueArray : public ArrayWithLength<T> {
+  public:
+    UniqueArray() : ArrayWithLength<T>() {}
+    explicit UniqueArray(std::size_t n) : ArrayWithLength<T>(new T[n], n) {}
+    ~UniqueArray() {
+      if (this->m_ptr)
+        delete [] this->m_ptr;
+    }
+    
+    void reset() {
+      delete [] this->m_ptr;
+      this->m_ptr = 0;
+      this->m_size = 0;
+    }
+
+    void reset(T *ptr, std::size_t n) {
+      reset();
+      this->m_ptr = ptr;
+      this->m_size = n;
+    }
+
+    void reset(std::size_t n) {
+      reset(new T[n], n);
+    }
+
+    T* release() {
+      T *ptr = this->m_ptr;
+      this->m_ptr = 0;
+      this->m_size = 0;
+      return ptr;
+    }
+
+    void swap(UniqueArray& o) {
+      std::swap(this->m_ptr, o.m_ptr);
+      std::swap(this->m_size, o.m_size);
+    }
   };
 
   template<typename T>
@@ -139,36 +273,6 @@ namespace Psi {
 
   template<typename T> void swap(UniquePtr<T>& a, UniquePtr<T>& b) {a.swap(b);}
 
-  template<typename T>
-  class UniqueArray {
-    typedef void (UniqueArray::*SafeBoolType)() const;
-    void safe_bool_true() const {}
-  public:
-    explicit UniqueArray(T *p=0) : m_p(p) {}
-    ~UniqueArray() {delete [] m_p;}
-
-    void reset(T *p=0) {
-      delete [] m_p;
-      m_p = p;
-    }
-
-    T* release() {
-      T *p = m_p;
-      m_p = 0;
-      return p;
-    }
-
-    T& operator [] (const std::size_t i) {return m_p[i];}
-    T* get() const {return m_p;}
-    operator SafeBoolType () const {return m_p ? &UniqueArray::safe_bool_true : 0;}
-
-    void swap(UniqueArray& o) {std::swap(m_p, o.m_p);}
-
-  private:
-    UniqueArray(const UniqueArray&);
-    T *m_p;
-  };
-
   /**
    * Version of boost::intrusive::list which deletes all owned objects
    * on destruction.
@@ -177,7 +281,7 @@ namespace Psi {
   class UniqueList : public boost::intrusive::list<T> {
   public:
     ~UniqueList() {
-      clear_and_dispose(boost::checked_deleter<T>());
+      this->clear_and_dispose(boost::checked_deleter<T>());
     }
   };
 
@@ -285,14 +389,6 @@ namespace Psi {
     template<typename U> PtrDecayAdapter(const PtrAdapter<U>& src) : PtrAdapter<T>(src) {}
 
     operator typename T::GetType* () const {return this->get();}
-  };
-
-  /**
-   * \brief Base class for types which should never be constructed.
-   */
-  class NonConstructible {
-  private:
-    NonConstructible();
   };
 
   /**

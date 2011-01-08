@@ -116,8 +116,8 @@ namespace Psi {
     /// \brief Copy destination
     Term* dest() const {return get()->parameter(0);}
     /// \brief Copy source
-    Term* source() const {return get()->parameter(1);}
-    /// \brief Number of bytes to copy
+    Term* src() const {return get()->parameter(1);}
+    /// \brief Number of elements to copy
     Term* count() const {return get()->parameter(2);}
     /// \brief Alignment hint
     Term* alignment() const {return get()->parameter(3);}

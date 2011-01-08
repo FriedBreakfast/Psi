@@ -26,7 +26,7 @@ namespace Psi {
 
     public:
       const char *operation() const {return m_operation;}
-      std::size_t n_parameters() const {return Term::n_base_parameters();}
+      unsigned n_parameters() const {return Term::n_base_parameters();}
       Term* parameter(std::size_t n) const {return get_base_parameter(n);}
 
       /// Build a copy of this term with a new set of parameters.

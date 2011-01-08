@@ -41,11 +41,13 @@ namespace Psi {
       ///@{
       InstructionTerm* alloca_(Term*,Term*,Term*);
       InstructionTerm* alloca_(Term*,Term*);
+      InstructionTerm* alloca_(Term*,unsigned);
       InstructionTerm* alloca_(Term*);
       InstructionTerm* load(Term*);
       InstructionTerm* store(Term*,Term*);
       InstructionTerm* memcpy(Term*,Term*,Term*,Term*);
       InstructionTerm* memcpy(Term*,Term*,Term*);
+      InstructionTerm* memcpy(Term*,Term*,unsigned);
       ///@}
     };
   }

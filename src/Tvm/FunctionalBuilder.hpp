@@ -38,6 +38,8 @@ namespace Psi {
       static Term* empty_type(Context&);
       static Term* empty_value(Context&);
       static Term* byte_type(Context&);
+      static Term* byte_pointer_type(Context&);
+      static Term* undef(Term*);
       ///@}
       
       /// \name Aggregate types
@@ -73,10 +75,13 @@ namespace Psi {
       static Term* union_element_ptr(Term*, unsigned);
       ///@}
       
+      static Term* struct_element_offset(Term*, unsigned);
+      
       /// \name Pointer operations
       ///@{
       static Term* pointer_cast(Term*, Term*);
       static Term* pointer_offset(Term*, Term*);
+      static Term* pointer_offset(Term*, unsigned);
       ///@}
       
       /// \name Integer type and value construction operations

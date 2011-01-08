@@ -124,6 +124,11 @@ namespace Psi {
     InstructionTerm* InstructionBuilder::alloca_(Term* type, Term *count) {
       return alloca_(type, count, FunctionalBuilder::size_value(type->context(), 1));
     }
+    
+    /// \copydoc InstructionBuilder::alloca_(Term*,Term*)
+    InstructionTerm* InstructionBuilder::alloca_(Term *type, unsigned count) {
+      return alloca_(type, FunctionalBuilder::size_value(type->context(), count));
+    }
 
     /**
      * \brief Allocate memory for a variable on the stack.
@@ -187,6 +192,12 @@ namespace Psi {
     InstructionTerm* InstructionBuilder::memcpy(Term *dest, Term *src, Term *count) {
       Term *one = FunctionalBuilder::size_value(dest->context(), 1);
       return memcpy(dest, src, count, one);
+    }
+
+    /// \copydoc InstructionBuilder::memcpy(Term*,Term*,Term*)
+    InstructionTerm* InstructionBuilder::memcpy(Term *dest, Term *src, unsigned count) {
+      Term *count_term = FunctionalBuilder::size_value(dest->context(), count);
+      return memcpy(dest, src, count_term);
     }
   }
 }

@@ -25,9 +25,9 @@ namespace Psi {
       template<typename T>
       struct DefaultFunctionalCallback {
         FunctionalTerm* operator () (const std::string&, AssemblerContext& context, const Parser::CallExpression& expression) const {
-          ScopedTermPtrArray<> parameters(expression.terms.size());
-          default_parameter_setup(parameters.array(), context, expression);
-          return context.context().template get_functional<T>(parameters.array());
+          ScopedArray<Term*> parameters(expression.terms.size());
+          default_parameter_setup(parameters, context, expression);
+          return context.context().template get_functional<T>(parameters);
         }
       };
 
@@ -109,9 +109,9 @@ namespace Psi {
       template<typename T>
       struct DefaultInstructionCallback {
         InstructionTerm* operator () (const std::string&, BlockTerm& block, AssemblerContext& context, const Parser::CallExpression& expression) const {
-          ScopedTermPtrArray<> parameters(expression.terms.size());
-          default_parameter_setup(parameters.array(), context, expression);
-          return block.template new_instruction<T>(parameters.array());
+          ScopedArray<Term*> parameters(expression.terms.size());
+          default_parameter_setup(parameters, context, expression);
+          return block.template new_instruction<T>(parameters);
         }
       };
 

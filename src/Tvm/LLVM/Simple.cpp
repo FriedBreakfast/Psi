@@ -26,24 +26,24 @@ namespace {
   }
 
   llvm::Constant *metatype_size_const(ConstantBuilder& builder, MetatypeSize::Ptr term) {
-    llvm::Constant *value = builder.build_constant_simple(term->target());
+    llvm::Constant *value = builder.build_constant_simple(term->parameter());
     unsigned zero = 0;
     return llvm::ConstantExpr::getExtractValue(value, &zero, 1);
   }
 
   llvm::Value *metatype_size_insn(FunctionBuilder& builder, MetatypeSize::Ptr term) {
-    llvm::Value *value = builder.build_value_simple(term->target());
+    llvm::Value *value = builder.build_value_simple(term->parameter());
     return builder.irbuilder().CreateExtractValue(value, 0);
   }
 
   llvm::Constant *metatype_alignment_const(ConstantBuilder& builder, MetatypeAlignment::Ptr term) {
-    llvm::Constant *value = builder.build_constant_simple(term->target());
+    llvm::Constant *value = builder.build_constant_simple(term->parameter());
     unsigned one = 1;
     return llvm::ConstantExpr::getExtractValue(value, &one, 1);
   }
 
   llvm::Value *metatype_alignment_insn(FunctionBuilder& builder, MetatypeAlignment::Ptr term) {
-    llvm::Value *value = builder.build_value_simple(term->target());
+    llvm::Value *value = builder.build_value_simple(term->parameter());
     return builder.irbuilder().CreateExtractValue(value, 1);
   }
 

@@ -126,15 +126,15 @@ namespace Psi {
       FunctionTypeTerm* build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type) {
 	AssemblerContext my_context(&context);
 
-        ScopedTermPtrArray<FunctionTypeParameterTerm> phantom_parameters(function_type.phantom_parameters.size());
-        build_function_parameters(my_context, function_type.phantom_parameters, phantom_parameters.array());
+        ScopedArray<FunctionTypeParameterTerm*> phantom_parameters(function_type.phantom_parameters.size());
+        build_function_parameters(my_context, function_type.phantom_parameters, phantom_parameters);
 
-        ScopedTermPtrArray<FunctionTypeParameterTerm> parameters(function_type.parameters.size());
-        build_function_parameters(my_context, function_type.parameters, parameters.array());
+        ScopedArray<FunctionTypeParameterTerm*> parameters(function_type.parameters.size());
+        build_function_parameters(my_context, function_type.parameters, parameters);
 
 	Term* result_type = build_expression(my_context, *function_type.result_type);
 
-	return context.context().get_function_type(function_type.calling_convention, result_type, phantom_parameters.array(), parameters.array());
+	return context.context().get_function_type(function_type.calling_convention, result_type, phantom_parameters, parameters);
       }
 
       Term* build_instruction_expression(AssemblerContext& context, BlockTerm& block, const Parser::CallExpression& expression) {

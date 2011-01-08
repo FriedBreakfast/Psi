@@ -18,18 +18,27 @@ namespace Psi {
     Term* FunctionalBuilder::type_size(Term *type) {
       if (MetatypeValue::Ptr mt = dyn_cast<MetatypeValue>(type)) {
         return mt->size();
-      } else {
-        return MetatypeSize::get(type);
       }
+      
+      Term *result = MetatypeSize::get(type);
+      
+      if (isa<UndefinedValue>(type))
+        return undef(result->type());
+      
+      return result;
     }
     
     /// \brief Get the alignment of a type.
     Term* FunctionalBuilder::type_alignment(Term *type) {
-      if (MetatypeValue::Ptr mt = dyn_cast<MetatypeValue>(type)) {
+      if (MetatypeValue::Ptr mt = dyn_cast<MetatypeValue>(type))
         return mt->alignment();
-      } else {
-        return MetatypeAlignment::get(type);
-      }
+
+      Term *result = MetatypeAlignment::get(type);
+      
+      if (isa<UndefinedValue>(type))
+        return undef(result->type());
+      
+      return result;
     }
 
     /// \brief Get the type of blocks
@@ -52,6 +61,16 @@ namespace Psi {
       return ByteType::get(context);
     }
     
+    /// \brief Get the pointer-to-byte type
+    Term* FunctionalBuilder::byte_pointer_type(Context& context) {
+      return PointerType::get(ByteType::get(context));
+    }
+    
+    /// \brief Get an undefined value of the specified type.
+    Term* FunctionalBuilder::undef(Term *type) {
+      return UndefinedValue::get(type);
+    }
+
     /**
      * \brief Get a the type of a pointer to a type.
      * 
@@ -131,7 +150,12 @@ namespace Psi {
      * \param value Value for an element of the union.
      */
     Term* FunctionalBuilder::union_value(Term* type, Term* value) {
-      return UnionValue::get(cast<UnionType>(type), value);
+      Term *result = UnionValue::get(cast<UnionType>(type), value);
+      
+      if (isa<UndefinedValue>(value))
+        return undef(type);
+      
+      return result;
     }
     
     /**
@@ -159,6 +183,8 @@ namespace Psi {
           else
             throw TvmUserError("array index out of range");
         }
+      } else if (isa<UndefinedValue>(array) || isa<UndefinedValue>(index)) {
+        return undef(result->type());
       }
       
       return result;
@@ -185,6 +211,8 @@ namespace Psi {
       
       if (StructValue::Ptr struct_val = dyn_cast<StructValue>(aggregate)) {
         return struct_val->member_value(index);
+      } else if (isa<UndefinedValue>(aggregate)) {
+        return undef(result->type());
       }
       
       return result;
@@ -203,6 +231,8 @@ namespace Psi {
         Term *value = union_val->value();
         if (member_type == value->type())
           return value;
+      } else if (isa<UndefinedValue>(aggregate)) {
+        return undef(result->type());
       }
       
       return result;
@@ -235,7 +265,12 @@ namespace Psi {
      * \param index Index of element to get.
      */
     Term* FunctionalBuilder::array_element_ptr(Term *array, Term *index) {
-      return ArrayElementPtr::get(array, index);
+      Term *result = ArrayElementPtr::get(array, index);
+      
+      if (isa<UndefinedValue>(array) || isa<UndefinedValue>(index))
+        return undef(result->type());
+      
+      return result;
     }
     
     /**
@@ -257,7 +292,12 @@ namespace Psi {
      * \param index Index of member to get a pointer to.
      */
     Term* FunctionalBuilder::struct_element_ptr(Term *aggregate, unsigned index) {
-      return StructElementPtr::get(aggregate, index);
+      Term *result = StructElementPtr::get(aggregate, index);
+      
+      if (isa<UndefinedValue>(aggregate))
+        return undef(result->type());
+      
+      return result;
     }
     
     /**
@@ -268,7 +308,12 @@ namespace Psi {
      * \param type Member type to get a pointer to.
      */
     Term* FunctionalBuilder::union_element_ptr(Term *aggregate, Term *type) {
-      return UnionElementPtr::get(aggregate, type);
+      Term *result = UnionElementPtr::get(aggregate, type);
+      
+      if (isa<UndefinedValue>(aggregate))
+        return undef(result->type());
+      
+      return result;
     }
     
     /**
@@ -294,6 +339,17 @@ namespace Psi {
     }
     
     /**
+     * \brief Get the offset of a struct element.
+     * 
+     * \param type Struct type being examined.
+     * 
+     * \param index Index of member to get the offset of.
+     */
+    Term* FunctionalBuilder::struct_element_offset(Term *type, unsigned index) {
+      return StructElementOffset::get(type, index);
+    }
+    
+    /**
      * \brief Cast a pointer from one type to another.
      * 
      * \param ptr Original pointer.
@@ -310,7 +366,17 @@ namespace Psi {
         else
           break;
       }
-      return PointerCast::get(ptr, result_type);
+      PointerType::Ptr base_type = cast<PointerType>(ptr->type());
+      if (base_type->target_type() == result_type) {
+        return ptr;
+      } else {
+        Term *result = PointerCast::get(ptr, result_type);
+        
+        if (isa<UndefinedValue>(ptr))
+          return undef(result->type());
+        
+        return result;
+      }
     }
     
     /**
@@ -322,7 +388,22 @@ namespace Psi {
      * pointed-to type.
      */
     Term* FunctionalBuilder::pointer_offset(Term *ptr, Term *offset) {
-      return PointerOffset::get(ptr, offset);
+      Term *result = PointerOffset::get(ptr, offset);
+      
+      if (isa<UndefinedValue>(ptr) || isa<UndefinedValue>(offset))
+        return undef(result->type());
+      
+      return result;
+    }
+
+    /// \copydoc FunctionalBuilder::pointer_offset(Term*,Term*)
+    Term* FunctionalBuilder::pointer_offset(Term *ptr, unsigned offset) {
+      Term *result = PointerOffset::get(ptr, size_value(ptr->context(), offset));
+      
+      if (!offset)
+        return ptr;
+      
+      return result;
     }
     
     /// \brief Get an integer type
@@ -386,30 +467,44 @@ namespace Psi {
     Term* FunctionalBuilder::size_value(Context& context, unsigned value) {
       return int_value(size_type(context), value);
     }
+    
+    namespace {
+      Term *unary_undef(Term *result, Term *param) {
+        if (isa<UndefinedValue>(param))
+          return FunctionalBuilder::undef(result->type());
+        return result;
+      }
+      
+      Term *binary_undef(Term *result, Term *lhs, Term *rhs) {
+        if (isa<UndefinedValue>(lhs) || isa<UndefinedValue>(rhs))
+          return FunctionalBuilder::undef(result->type());
+        return result;
+      }
+    }
 
     /// \brief Get an integer add operation.
     Term *FunctionalBuilder::add(Term *lhs, Term *rhs) {
-      return IntegerAdd::get(lhs, rhs);
+      return binary_undef(IntegerAdd::get(lhs, rhs), lhs, rhs);
     }
     
     /// \brief Get an integer subtract operation.
     Term *FunctionalBuilder::sub(Term *lhs, Term *rhs) {
-      return IntegerSubtract::get(lhs, rhs);
+      return binary_undef(IntegerSubtract::get(lhs, rhs), lhs, rhs);
     }
     
     /// \brief Get an integer multiply operation.
     Term *FunctionalBuilder::mul(Term *lhs, Term *rhs) {
-      return IntegerMultiply::get(lhs, rhs);
+      return binary_undef(IntegerMultiply::get(lhs, rhs), lhs, rhs);
     }
     
     /// \brief Get an integer division operation.
     Term *FunctionalBuilder::div(Term *lhs, Term *rhs) {
-      return IntegerDivide::get(lhs, rhs);
+      return binary_undef(IntegerDivide::get(lhs, rhs), lhs, rhs);
     }
     
     /// \brief Get an integer negation operation
     Term *FunctionalBuilder::neg(Term *parameter) {
-      return IntegerNegative::get(parameter);
+      return unary_undef(IntegerNegative::get(parameter), parameter);
     }
     
     /// \brief Get a bitwise and operation
@@ -424,42 +519,42 @@ namespace Psi {
     
     /// \brief Get a bitwise exclusive or operation
     Term *FunctionalBuilder::bit_xor(Term *lhs, Term *rhs) {
-      return BitXor::get(lhs, rhs);
+      return binary_undef(BitXor::get(lhs, rhs), lhs, rhs);
     }
     
     /// \brief Get a bitwise inverse operation
     Term *FunctionalBuilder::bit_not(Term *parameter) {
-      return BitNot::get(parameter);
+      return unary_undef(BitNot::get(parameter), parameter);
     }
 
     /// \brief Get an integer == comparison operation
     Term *FunctionalBuilder::cmp_eq(Term *lhs, Term *rhs) {
-      return IntegerCompareEq::get(lhs, rhs);
+      return binary_undef(IntegerCompareEq::get(lhs, rhs), lhs, rhs);
     }
     
     /// \brief Get an integer != comparison operation
     Term *FunctionalBuilder::cmp_ne(Term *lhs, Term *rhs) {
-      return IntegerCompareNe::get(lhs, rhs);
+      return binary_undef(IntegerCompareNe::get(lhs, rhs), lhs, rhs);
     }
     
     /// \brief Get an integer \> comparison operation
     Term *FunctionalBuilder::cmp_gt(Term *lhs, Term *rhs) {
-      return IntegerCompareGt::get(lhs, rhs);
+      return binary_undef(IntegerCompareGt::get(lhs, rhs), lhs, rhs);
     }
     
     /// \brief Get an integer \> comparison operation
     Term *FunctionalBuilder::cmp_ge(Term *lhs, Term *rhs) {
-      return IntegerCompareGe::get(lhs, rhs);
+      return binary_undef(IntegerCompareGe::get(lhs, rhs), lhs, rhs);
     }
     
     /// \brief Get an integer \< comparison operation
     Term *FunctionalBuilder::cmp_lt(Term *lhs, Term *rhs) {
-      return IntegerCompareLt::get(lhs, rhs);
+      return binary_undef(IntegerCompareLt::get(lhs, rhs), lhs, rhs);
     }
     
     /// \brief Get an integer \<= comparison operation
     Term *FunctionalBuilder::cmp_le(Term *lhs, Term *rhs) {
-      return IntegerCompareLe::get(lhs, rhs);
+      return binary_undef(IntegerCompareLe::get(lhs, rhs), lhs, rhs);
     }
 
     /// \brief Get the maximum of two integers
@@ -498,7 +593,20 @@ namespace Psi {
      * \param if_false Value of this operation if \c condition is false.
      */
     Term *FunctionalBuilder::select(Term *condition, Term *if_true, Term *if_false) {
-      return SelectValue::get(condition, if_true, if_false);
+      Term *result = SelectValue::get(condition, if_true, if_false);
+      if (if_true == if_false)
+        return if_true;
+      if (BooleanValue::Ptr bool_val = dyn_cast<BooleanValue>(condition))
+        return bool_val->value() ? if_true : if_false;
+      
+      /* 
+       * Can't set to undef if any of the incoming values is undefined because it is
+       * reasonable to expect that the select operation returns one of the values
+       * regardless of the condition.
+       */
+      if (isa<UndefinedValue>(condition) && (isa<UndefinedValue>(if_true) || isa<UndefinedValue>(if_false)))
+        return undef(result->type());
+      return result;
     }
   }
 }

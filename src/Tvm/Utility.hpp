@@ -129,8 +129,7 @@ namespace Psi {
 
       if (m_hash_terms.size() >= m_hash_terms.bucket_count()) {
 	std::size_t n_buckets = m_hash_terms.bucket_count() * 2;
-	UniqueArray<typename HashTermSetType::bucket_type> buckets
-	  (new typename HashTermSetType::bucket_type[n_buckets]);
+	UniqueArray<typename HashTermSetType::bucket_type> buckets(n_buckets);
 	m_hash_terms.rehash(typename HashTermSetType::bucket_traits(buckets.get(), n_buckets));
 	m_hash_term_buckets.swap(buckets);
       }

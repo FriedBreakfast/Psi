@@ -1,19 +1,13 @@
 #include "Test.hpp"
 #include "Assembler.hpp"
-#include "LLVM/Builder.hpp"
 
 #include <cstdlib>
 #include <iostream>
 
-#include <llvm/CodeGen/MachineFunction.h>
-#include <llvm/ExecutionEngine/JITEventListener.h>
-#include <llvm/Module.h>
-#include <llvm/Support/raw_os_ostream.h>
-#include <llvm/Target/TargetOptions.h>
-
 namespace Psi {
   namespace Tvm {
     namespace Test {
+#if 0
       class ContextFixture::DebugListener : public llvm::JITEventListener {
       public:
         DebugListener(bool dump_llvm, bool dump_asm)
@@ -34,8 +28,10 @@ namespace Psi {
         bool m_dump_llvm;
         bool m_dump_asm;
       };
+#endif
 
-      ContextFixture::ContextFixture()
+      ContextFixture::ContextFixture() {}
+#if 0
         : m_jit(create_llvm_jit(&context)),
           m_debug_listener(new DebugListener(test_env("PSI_TEST_DUMP_LLVM"),
                                              test_env("PSI_TEST_DUMP_ASM"))) {
@@ -47,6 +43,7 @@ namespace Psi {
         boost::shared_ptr<LLVM::LLVMJit> llvm_jit = boost::static_pointer_cast<LLVM::LLVMJit>(m_jit);
         llvm_jit->register_llvm_jit_listener(m_debug_listener.get());
       }
+#endif
 
       ContextFixture::~ContextFixture() {
       }

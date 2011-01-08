@@ -59,12 +59,12 @@ namespace Psi {
       boost::shared_ptr<Callback> m_default_callback;
       
     public:
-      ResultType call(UserParameter& parameter, Term *term) const {
-        typename CallbackMapType::const_iterator it = m_callback_map.find(term);
+      ResultType call(UserParameter& parameter, TermType *term) const {
+        typename CallbackMapType::const_iterator it = m_callback_map.find(term->operation());
         if (it != m_callback_map.end()) {
-          PSI_FAIL("not implemented");
-        } else {
           return it->second->call(parameter, term);
+        } else {
+          return m_default_callback->call(parameter, term);
         }
       }
       

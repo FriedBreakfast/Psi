@@ -25,6 +25,7 @@ namespace Psi {
     const char MetatypeValue::operation[] = "type_v";
     const char MetatypeSize::operation[] = "sizeof";
     const char MetatypeAlignment::operation[] = "alignof";
+    const char UndefinedValue::operation[] = "undef";
     const char PointerType::operation[] = "pointer";
     const char PointerCast::operation[] = "cast";
     const char PointerOffset::operation[] = "offset";
@@ -36,6 +37,7 @@ namespace Psi {
     const char StructValue::operation[] = "struct_v";
     const char StructElement::operation[] = "struct_el";
     const char StructElementPtr::operation[] = "struct_ep";
+    const char StructElementOffset::operation[] = "struct_eo";
     const char UnionType::operation[] = "union";
     const char UnionValue::operation[] = "union_v";
     const char UnionElement::operation[] = "union_el";
@@ -62,8 +64,7 @@ namespace Psi {
     }
 
     MetatypeValue::Ptr MetatypeValue::get(Term *size, Term *alignment) {
-      Term *params[2] = {size, alignment};
-      return size->context().get_functional<MetatypeValue>(ArrayPtr<Term*const>(params, 2));
+      return size->context().get_functional<MetatypeValue>(StaticArray<Term*,2>(size, alignment));
     }
 
     FunctionalTypeResult MetatypeSize::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -75,8 +76,7 @@ namespace Psi {
     }
 
     MetatypeSize::Ptr MetatypeSize::get(Term *target) {
-      Term *params[1] = {target};
-      return target->context().get_functional<MetatypeSize>(ArrayPtr<Term*const>(params, 1));
+      return target->context().get_functional<MetatypeSize>(StaticArray<Term*,1>(target));
     }
 
     FunctionalTypeResult MetatypeAlignment::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -88,8 +88,7 @@ namespace Psi {
     }
 
     MetatypeAlignment::Ptr MetatypeAlignment::get(Term *target) {
-      Term *params[1] = {target};
-      return target->context().get_functional<MetatypeAlignment>(ArrayPtr<Term*const>(params, 1));
+      return target->context().get_functional<MetatypeAlignment>(StaticArray<Term*,1>(target));
     }
 
     FunctionalTypeResult EmptyType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -131,6 +130,18 @@ namespace Psi {
     ByteType::Ptr ByteType::get(Context& context) {
       return context.get_functional<ByteType>(ArrayPtr<Term*const>());
     }
+    
+    FunctionalTypeResult UndefinedValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 1)
+        throw TvmUserError("undef takes one parameter");
+      if (!parameters[0]->is_type())
+        throw TvmUserError("parameter to undef must be a type");
+      return FunctionalTypeResult(parameters[0], parameters[0]->phantom());
+    }
+    
+    UndefinedValue::Ptr UndefinedValue::get(Term* type) {
+      return type->context().get_functional<UndefinedValue>(StaticArray<Term*,1>(type));
+    }
 
     FunctionalTypeResult PointerType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 1)
@@ -141,8 +152,7 @@ namespace Psi {
     }
 
     PointerType::Ptr PointerType::get(Term *type) {
-      Term *params[] = {type};
-      return type->context().get_functional<PointerType>(ArrayPtr<Term*const>(params, 1));
+      return type->context().get_functional<PointerType>(StaticArray<Term*,1>(type));
     }
 
     FunctionalTypeResult PointerCast::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
@@ -156,8 +166,7 @@ namespace Psi {
     }
 
     PointerCast::Ptr PointerCast::get(Term *pointer, Term *target_type) {
-      Term *params[] = {pointer, target_type};
-      return pointer->context().get_functional<PointerCast>(ArrayPtr<Term*const>(params, 2));
+      return pointer->context().get_functional<PointerCast>(StaticArray<Term*,2>(pointer, target_type));
     }
     
     FunctionalTypeResult PointerOffset::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
@@ -179,8 +188,7 @@ namespace Psi {
      * \param offset Offset in units of the pointed-to type.
      */
     PointerOffset::Ptr PointerOffset::get(Term *ptr, Term *offset) {
-      Term *parameters[] = {ptr, offset};
-      return ptr->context().get_functional<PointerOffset>(ArrayPtr<Term*const>(parameters, 2));
+      return ptr->context().get_functional<PointerOffset>(StaticArray<Term*,2>(ptr, offset));
     }
 
     FunctionalTypeResult ArrayType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -197,8 +205,7 @@ namespace Psi {
     }
 
     ArrayType::Ptr ArrayType::get(Term* element_type, Term* length) {
-      Term *params[] = {element_type, length};
-      return element_type->context().get_functional<ArrayType>(ArrayPtr<Term*const>(params, 2));
+      return element_type->context().get_functional<ArrayType>(StaticArray<Term*,2>(element_type, length));
     }
 
     ArrayType::Ptr ArrayType::get(Term *element_type, unsigned length) {
@@ -227,11 +234,11 @@ namespace Psi {
     }
 
     ArrayValue::Ptr ArrayValue::get(Term *element_type, ArrayPtr<Term*const> elements) {
-      ScopedTermPtrArray<> parameters(elements.size() + 1);
+      ScopedArray<Term*> parameters(elements.size() + 1);
       parameters[0] = element_type;
       for (std::size_t i = 0, e = elements.size(); i != e; ++i)
         parameters[i+1] = elements[i];
-      return element_type->context().get_functional<ArrayValue>(parameters.array());
+      return element_type->context().get_functional<ArrayValue>(parameters);
     }
 
     FunctionalTypeResult ArrayElement::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -249,8 +256,7 @@ namespace Psi {
     }
 
     ArrayElement::Ptr ArrayElement::get(Term *aggregate, Term *index) {
-      Term *parameters[] = {aggregate, index};
-      return aggregate->context().get_functional<ArrayElement>(ArrayPtr<Term*const>(parameters, 2));
+      return aggregate->context().get_functional<ArrayElement>(StaticArray<Term*,2>(aggregate, index));
     }
     
     FunctionalTypeResult ArrayElementPtr::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -272,8 +278,7 @@ namespace Psi {
     }
 
     ArrayElementPtr::Ptr ArrayElementPtr::get(Term *aggregate_ptr, Term *index) {
-      Term *parameters[] = {aggregate_ptr, index};
-      return aggregate_ptr->context().get_functional<ArrayElementPtr>(ArrayPtr<Term*const>(parameters, 2));
+      return aggregate_ptr->context().get_functional<ArrayElementPtr>(StaticArray<Term*,2>(aggregate_ptr, index));
     }
 
     FunctionalTypeResult StructType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -285,7 +290,7 @@ namespace Psi {
     }
 
     FunctionalTypeResult StructValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
-      ScopedTermPtrArray<> member_types(parameters.size());
+      ScopedArray<Term*> member_types(parameters.size());
 
       bool phantom = false;
       for (std::size_t i = 0; i < parameters.size(); ++i) {
@@ -293,7 +298,7 @@ namespace Psi {
         member_types[i] = parameters[i]->type();
       }
 
-      Term *type = StructType::get(context, member_types.array());
+      Term *type = StructType::get(context, member_types);
       PSI_ASSERT(phantom == type->phantom());
 
       return FunctionalTypeResult(type, phantom);
@@ -318,8 +323,7 @@ namespace Psi {
     }
 
     StructElement::Ptr StructElement::get(Term *aggregate, unsigned index) {
-      Term *parameters[] = {aggregate};
-      return aggregate->context().get_functional<StructElement>(ArrayPtr<Term*const>(parameters, 1), index);
+      return aggregate->context().get_functional<StructElement>(StaticArray<Term*,1>(aggregate), index);
     }
 
     FunctionalTypeResult StructElementPtr::type(Context&, const Data& index, ArrayPtr<Term*const> parameters) {
@@ -341,8 +345,25 @@ namespace Psi {
     }
 
     StructElementPtr::Ptr StructElementPtr::get(Term *aggregate_ptr, unsigned index) {
-      Term *parameters[] = {aggregate_ptr};
-      return aggregate_ptr->context().get_functional<StructElementPtr>(ArrayPtr<Term*const>(parameters, 1), index);
+      return aggregate_ptr->context().get_functional<StructElementPtr>(StaticArray<Term*,1>(aggregate_ptr), index);
+    }
+
+    FunctionalTypeResult StructElementOffset::type(Context& context, const Data& index, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 1)
+        throw TvmUserError("struct_eo takes one parameter");
+      
+      StructType::Ptr struct_ty = dyn_cast<StructType>(parameters[0]);
+      if (!struct_ty)
+        throw TvmUserError("first argument to struct_eo is not a struct type");
+      
+      if (index.value() >= struct_ty->n_members())
+        throw TvmUserError("struct_eo member index out of range");
+
+      return FunctionalTypeResult(IntegerType::get_size(context), parameters[0]->phantom());
+    }
+
+    StructElementOffset::Ptr StructElementOffset::get(Term *type, unsigned index) {
+      return type->context().get_functional<StructElementOffset>(StaticArray<Term*,1>(type), index);
     }
 
     FunctionalTypeResult UnionType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -384,8 +405,7 @@ namespace Psi {
     }
 
     UnionValue::Ptr UnionValue::get(Term* type, Term* value) {
-      Term *parameters[] = {type, value};
-      return type->context().get_functional<UnionValue>(ArrayPtr<Term*const>(parameters, 2));
+      return type->context().get_functional<UnionValue>(StaticArray<Term*,2>(type, value));
     }
 
     FunctionalTypeResult UnionElement::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
@@ -403,8 +423,7 @@ namespace Psi {
     }
 
     UnionElement::Ptr UnionElement::get(Term *aggregate, Term *member_type) {
-      Term *parameters[] = {aggregate, member_type};
-      return aggregate->context().get_functional<UnionElement>(ArrayPtr<Term*const>(parameters, 2));
+      return aggregate->context().get_functional<UnionElement>(StaticArray<Term*,2>(aggregate, member_type));
     }
 
     FunctionalTypeResult UnionElementPtr::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
@@ -426,8 +445,7 @@ namespace Psi {
     }
 
     UnionElementPtr::Ptr UnionElementPtr::get(Term *aggregate_ptr, Term *member_type) {
-      Term *parameters[] = {aggregate_ptr, member_type};
-      return aggregate_ptr->context().get_functional<UnionElementPtr>(ArrayPtr<Term*const>(parameters, 2));
+      return aggregate_ptr->context().get_functional<UnionElementPtr>(StaticArray<Term*,2>(aggregate_ptr, member_type));
     }
 
     FunctionalTypeResult FunctionSpecialize::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -448,19 +466,19 @@ namespace Psi {
       if (n_applied > function_type->n_phantom_parameters())
         throw TvmUserError("Too many parameters given to apply_phantom");
 
-      ScopedTermPtrArray<> apply_parameters(function_type->n_parameters());
+      ScopedArray<Term*> apply_parameters(function_type->n_parameters());
       for (std::size_t i = 0; i < n_applied; ++i)
         apply_parameters[i] = parameters[i+1];
 
-      ScopedTermPtrArray<FunctionTypeParameterTerm> new_parameters(function_type->n_parameters() - n_applied);
+      ScopedArray<FunctionTypeParameterTerm*> new_parameters(function_type->n_parameters() - n_applied);
       for (std::size_t i = 0; i < new_parameters.size(); ++i) {
-        Term* type = function_type->parameter_type_after(apply_parameters.array().slice(0, n_applied + i));
+        Term* type = function_type->parameter_type_after(apply_parameters.slice(0, n_applied + i));
         FunctionTypeParameterTerm* param = context.new_function_type_parameter(type);
         apply_parameters[i + n_applied] = param;
         new_parameters[i] = param;
       }
 
-      Term* result_type = function_type->result_type_after(apply_parameters.array());
+      Term* result_type = function_type->result_type_after(apply_parameters);
 
       std::size_t result_n_phantom = function_type->n_phantom_parameters() - n_applied;
       std::size_t result_n_normal = function_type->n_parameters() - function_type->n_phantom_parameters();
@@ -468,8 +486,8 @@ namespace Psi {
       FunctionTypeTerm* result_function_type = context.get_function_type
         (function_type->calling_convention(),
          result_type,
-         new_parameters.array().slice(0, result_n_phantom),
-         new_parameters.array().slice(result_n_phantom, result_n_phantom+result_n_normal));
+         new_parameters.slice(0, result_n_phantom),
+         new_parameters.slice(result_n_phantom, result_n_phantom+result_n_normal));
 
       return FunctionalTypeResult(PointerType::get(result_function_type), parameters[0]->phantom());
     }

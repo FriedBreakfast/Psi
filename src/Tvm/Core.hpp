@@ -150,33 +150,6 @@ namespace Psi {
       Use m_uses[2];
     };
 
-    template<typename T=Term>
-    class ScopedTermPtrArray {
-    public:
-      ScopedTermPtrArray(std::size_t size)
-        : m_size(size), m_ptr(new T*[size]) {
-      }
-
-      ~ScopedTermPtrArray() {
-        delete [] m_ptr;
-      }
-
-      T*& operator[] (std::size_t n) {PSI_ASSERT(n < m_size); return m_ptr[n];}
-      std::size_t size() const {return m_size;}
-      T** get() {return m_ptr;}
-
-      ArrayPtr<T*> array() const {
-        return ArrayPtr<T*>(m_ptr, m_size);
-      }
-
-    private:
-      ScopedTermPtrArray(const ScopedTermPtrArray&);
-      const ScopedTermPtrArray& operator = (const ScopedTermPtrArray&);
-
-      std::size_t m_size;
-      T **m_ptr;
-    };
-
     /**
      * \brief Base class for all compile- and run-time values.
      *
@@ -278,7 +251,7 @@ namespace Psi {
       boost::intrusive::list_member_hook<> m_term_list_hook;
 
     protected:
-      std::size_t n_base_parameters() const {
+      unsigned n_base_parameters() const {
 	return n_uses() - 1;
       }
 
