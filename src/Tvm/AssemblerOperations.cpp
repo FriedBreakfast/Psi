@@ -93,7 +93,6 @@ namespace Psi {
 	CALLBACK(PointerType)
 	CALLBACK(BooleanType)
 	CALLBACK(IntegerAdd)
-	CALLBACK(IntegerSubtract)
 	CALLBACK(IntegerMultiply)
 	CALLBACK(IntegerDivide)
 	CALLBACK(FunctionSpecialize)

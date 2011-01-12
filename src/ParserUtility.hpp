@@ -81,9 +81,9 @@ namespace Psi {
 	  new_stack_size = *yystacksize * 2;
 	}
 
-	UniqueArray<YYS> new_yys(new YYS[new_stack_size]);
-	UniqueArray<YYV> new_yyv(new YYV[new_stack_size]);
-	UniqueArray<YYL> new_yyl(new YYL[new_stack_size]);
+	UniqueArray<YYS> new_yys(new_stack_size);
+	UniqueArray<YYV> new_yyv(new_stack_size);
+	UniqueArray<YYL> new_yyl(new_stack_size);
 
 	std::copy(*yysp, *yysp + yyssize / sizeof(**yysp), new_yys.get());
 	std::copy(*yyvp, *yyvp + yyvsize / sizeof(**yyvp), new_yyv.get());

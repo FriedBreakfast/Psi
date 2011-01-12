@@ -2,8 +2,7 @@
 #define HPP_PSI_TVM_NUMBER
 
 #include "Functional.hpp"
-
-#include <boost/optional.hpp>
+#include "BigInteger.hpp"
 
 /**
  * \file
@@ -71,47 +70,15 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_TYPE_END(IntegerType)
 
     PSI_TVM_FUNCTIONAL_TYPE(IntegerValue, ConstructorOperation)
-    /**
-     * \brief Integer data - stores the initial value as an array of 8
-     * bytes, in little-endian order.
-     *
-     * The number of valid bytes depends on the integer type, and
-     * there should always be enough bytes available to store the
-     * value of the largest integer type. All bytes which are out of
-     * range of the integer type must be set to zero or 0xFF depending
-     * on whether the initializer is positive or negative for easy
-     * extension and truncation.
-     */
-    struct Data {
-      unsigned char bytes[16];
-
-      bool operator == (const Data& other) const {
-	return std::equal(bytes, bytes+sizeof(bytes), other.bytes);
-      }
-
-      friend std::size_t hash_value(const Data& self) {
-	return boost::hash_range(self.bytes, self.bytes+sizeof(bytes));
-      }
-    };
+    typedef BigInteger Data;
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the number of bits required to represent the value this constant actually holds
-    unsigned bits() const {return data_bits(data(), type()->is_signed());}
     /// \brief Get the value of this constant.
     const Data& value() const {return data();}
     /// \brief Get the type of this term cast to IntegerType::Ptr
     IntegerType::Ptr type() const {return cast<IntegerType>(PtrBaseType::type());}
-    /// \brief Get the value of this integer as an unsigned integer, if it is in range, else return boost::none
-    boost::optional<unsigned> value_unsigned() const {return data_value_unsigned(data(), type()->is_signed());}
-    /// \brief Get the value of this integer as a signed integer, if it is in range, else return boost::none
-    boost::optional<int> value_int() const {return data_value_int(data(), type()->is_signed());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static unsigned data_bits(const Data&, bool);
-    static boost::optional<unsigned> data_value_unsigned(const Data&, bool);
-    static boost::optional<int> data_value_int(const Data&, bool);
-    static Data parse(const std::string&, bool=false, unsigned=10);
-    static Data convert(int);
-    static Data convert(unsigned);
-    static Ptr get(Term*, const Data&);
+    static unsigned value_bits(IntegerType::Width);
+    static Ptr get(Term*, const BigInteger&);
     PSI_TVM_FUNCTIONAL_TYPE_END(IntegerValue)
 
     PSI_TVM_FUNCTIONAL_TYPE(FloatType, TypeOperation)
@@ -160,7 +127,6 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_TYPE_END(FloatValue)
 
     PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerAdd, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerSubtract, IntegerType)
     PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerMultiply, IntegerType)
     PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerDivide, IntegerType)
     PSI_TVM_FUNCTIONAL_TYPE_UNARY(IntegerNegative, IntegerType)

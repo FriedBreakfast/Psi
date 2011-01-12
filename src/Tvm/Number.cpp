@@ -19,7 +19,7 @@ namespace Psi {
 
     /// \brief Get the boolean type
     BooleanType::Ptr BooleanType::get(Context& context) {
-      return context.get_functional<BooleanType>(ArrayPtr<Term*const>());
+      return context.get_functional<BooleanType>(ArrayPtr<Term*>());
     }
 
     FunctionalTypeResult BooleanValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -30,7 +30,7 @@ namespace Psi {
 
     /// \brief Get the boolean type
     BooleanValue::Ptr BooleanValue::get(Context& context, bool value) {
-      return context.get_functional<BooleanValue>(ArrayPtr<Term*const>(), value);
+      return context.get_functional<BooleanValue>(ArrayPtr<Term*>(), value);
     }
 
     FunctionalTypeResult IntegerType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -41,7 +41,7 @@ namespace Psi {
 
     /// \brief Get an integer type with the specified width and signedness
     IntegerType::Ptr IntegerType::get(Context& context, Width width, bool is_signed) {
-      return context.get_functional<IntegerType>(ArrayPtr<Term*const>(), Data(width, is_signed));
+      return context.get_functional<IntegerType>(ArrayPtr<Term*>(), Data(width, is_signed));
     }
 
     /// \brief Get the integer type for intptr.
@@ -58,215 +58,28 @@ namespace Psi {
     }
 
     /**
-     * Get the number of bits required to actually represent the value
-     * held by the given data structure.
-     *
-     * \param is_signed Whether to count the number of bits required
-     * to store the value as a signed or unsigned value.
-     */
-    unsigned IntegerValue::data_bits(const Data& data, bool is_signed) {
-      std::size_t i = sizeof(data.bytes) - 1;
-      bool negative = is_signed && (data.bytes[i] & 0x80);
-      unsigned char trivial_byte = negative ? 0xFF : 0;
-
-      for (; i > 0; --i) {
-	if (data.bytes[i] != trivial_byte)
-	  break;
-      }
-
-      std::size_t bits = i*8;
-      unsigned char high_bits = data.bytes[i] ^ trivial_byte;
-      for (; high_bits > 0; high_bits >>= 1, ++bits);
-
-      // Signed values require one additional bit to denote the sign
-      // (algorithmically this arises because the most significant bit
-      // will always be zero after the xor with 0 or 0xFF).
-      if (is_signed)
-	++bits;
-
-      return bits;
-    }      
-
-    /**
-     * \brief Convert a Data instance to an unsigned integer.
-     * 
-     * \param data Value to convert.
-     * 
-     * \param is_signed Whether the contents of \c data should be
-     * treated as signed or unsigned.
-     * 
-     * \return Converted value, or \c boost::none if the converted
-     * value is not within the range of an <tt>unsigned int</tt>.
-     */
-    boost::optional<unsigned> IntegerValue::data_value_unsigned(const Data& data, bool is_signed) {
-      std::size_t i = sizeof(data.bytes);
-      if (is_signed && data.bytes[i-1] & 0x80)
-        // value is negative, so out of range of an unsigned int
-        return boost::none;
-      
-      for (; i > sizeof(unsigned); --i) {
-        if (data.bytes[i-1] != 0)
-          return boost::none;
-      }
-      
-      unsigned result = 0;
-      for (; i > 0; --i)
-        result = (result << 8) | data.bytes[i-1];
-
-      return result;
-    }
-    
-    /**
-     * \brief Convert a Data instance to a signed integer.
-     * 
-     * \param data Value to convert.
-     * 
-     * \param is_signed Whether the contents of \c data should be
-     * treated as signed or unsigned.
-     * 
-     * \return Converted value, or \c boost::none if the converted
-     * value is not within the range of a \c int.
-     */
-    boost::optional<int> IntegerValue::data_value_int(const Data& data, bool is_signed) {
-      std::size_t i = sizeof(data.bytes);
-      bool negative = is_signed && (data.bytes[i] & 0x80);
-      unsigned char trivial_byte = negative ? 0xFF : 0;
-      
-      for (; i > sizeof(int); --i) {
-        if (data.bytes[i-1] != trivial_byte)
-          return boost::none;
-      }
-      
-      int result = 0;
-      for (; i > 0; --i)
-        result = (result << 8) | data.bytes[i-1];
-      
-      return result;
-    }
-
-    /**
-     * Parse an integer and convert it to the internal byte array
-     * format. Note that this function does not parse minus signs or
-     * base-specific prefixes such as '0x' - these should be handled
-     * externally and the \c negative and \c base parameters set
-     * accordingly.
-     *
-     * Note that this does not currently detect numerical overflows,
-     * i.e. numbers which are too large to represent in the number of
-     * bytes a number currently uses.
-     *
-     * This algorithm is currently very inefficient, with three nested
-     * loops.
-     */
-    IntegerValue::Data IntegerValue::parse(const std::string& value, bool negative, unsigned base) {
-      Data result;
-      std::fill(result.bytes, result.bytes+sizeof(result.bytes), 0);
-
-      if ((base < 2) || (base > 35))
-	throw TvmUserError("Unsupported numerical base, must be between 2 and 35 inclusive");
-
-      for (std::size_t pos = 0; pos < value.size(); ++pos) {
-	if (pos > 0) {
-	  // multiply current value by the base - base is known to be
-	  // a small number so a simple algorithm can be used.
-	  unsigned carry = 0;
-	  for (std::size_t i = 0; i < sizeof(result.bytes); ++i) {
-	    unsigned wide_value = result.bytes[i];
-	    wide_value = wide_value*base + carry;
-	    carry = wide_value >> 8;
-	    result.bytes[i] = wide_value & 0xFF;
-	  }
-	}
-
-	unsigned char digit = value[pos], digit_value;
-	if ((digit >= '0') && (digit <= '9'))
-	  digit_value = digit - '0';
-	else if ((digit >= 'a') && (digit <= 'z'))
-	  digit_value = digit - 'a';
-	else if ((digit >= 'A') && (digit <= 'A'))
-	  digit_value = digit - 'A';
-	else
-	  throw TvmUserError("Unrecognised digit in parsing");
-
-	if (digit_value >= base)
-	  throw TvmUserError("Digit out of range for base");
-
-	unsigned char carry = digit_value;
-	for (std::size_t i = 0; i < sizeof(result.bytes); ++i) {
-	  if (result.bytes[i] <= 0xFF - digit_value) {
-	    result.bytes[i] += carry;
-	    break;
-	  } else {
-	    result.bytes[i] += carry;
-	    carry = 1;
-	  }
-	}
-      }
-
-      if (negative) {
-	// two's complement - negate and add one
-	for (std::size_t i = 0; i < sizeof(result.bytes); ++i)
-	  result.bytes[i] = ~result.bytes[i];
-
-	for (std::size_t i = 0; i < sizeof(result.bytes); ++i) {
-	  if (result.bytes[i] != 0xFF) {
-	    result.bytes[i] += 1;
-	    break;
-	  } else {
-	    result.bytes[i] = 0;
-	  }
-	}
-      }
-
-      return result;
-    }
-
-    /**
-     * Convert an integer value to the internal byte array
-     * representation. This should only be used for small integer
-     * constants which will always fit in the native integer type - do
-     * not use this for computed values which could potentially
-     * overflow, instead, create constant expressions for those.
-     */
-    IntegerValue::Data IntegerValue::convert(int value) {
-      Data result;
-      unsigned u_value = value, i;
-      for (i = 0; u_value > 0; ++i, u_value >>= 8)
-	result.bytes[i] = static_cast<unsigned char>(u_value);
-
-      unsigned char sign_byte = value >= 0 ? 0 : 0xFF;
-      for (; i < sizeof(Data::bytes); ++i)
-	result.bytes[i] = sign_byte;
-
-      return result;
-    }
-
-    /**
-     * Convert an integer value to the internal byte array
-     * representation. This should only be used for small integer
-     * constants which will always fit in the native integer type - do
-     * not use this for computed values which could potentially
-     * overflow, instead, create constant expressions for those.
-     */
-    IntegerValue::Data IntegerValue::convert(unsigned value) {
-      Data result;
-      unsigned u_value = value, i;
-      for (i = 0; u_value > 0; ++i, u_value >>= 8)
-	result.bytes[i] = static_cast<unsigned char>(u_value);
-
-      for (; i < sizeof(Data::bytes); ++i)
-	result.bytes[i] = 0;
-
-      return result;
-    }
-
-    /**
      * Get an integer value from specific data, produced by one of the
      * #parse or #convert functions.
      */
     IntegerValue::Ptr IntegerValue::get(Term* type, const Data& data) {
-      Term *parameters[] = {type};
-      return type->context().get_functional<IntegerValue>(ArrayPtr<Term*const>(parameters, 1), data);
+      return type->context().get_functional<IntegerValue>(StaticArray<Term*,1>(type), data);
+    }
+    
+    /**
+     * Get the number of bits used to represent constants of the given width.
+     * This will equal the with of the type except for intptr, where it is
+     * machine dependent but treated as 64 bits.
+     */
+    unsigned IntegerValue::value_bits(IntegerType::Width width) {
+      switch (width) {
+      case IntegerType::i8: return 8;
+      case IntegerType::i16: return 16;
+      case IntegerType::i32: return 32;
+      case IntegerType::i64: return 64;
+      case IntegerType::i128: return 128;
+      case IntegerType::iptr: return 64;
+      default: PSI_FAIL("unexpected integer width");
+      }
     }
 
     FunctionalTypeResult FloatType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -277,7 +90,7 @@ namespace Psi {
 
     /// \brief Get a floating point type of the specified width.
     FloatType::Ptr FloatType::get(Context& context, Width width) {
-      return context.get_functional<FloatType>(ArrayPtr<Term*const>(), width);
+      return context.get_functional<FloatType>(ArrayPtr<Term*>(), width);
     }
 
     FunctionalTypeResult FloatValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
@@ -289,8 +102,7 @@ namespace Psi {
     }
 
     FloatValue::Ptr FloatValue::get(Term* type, const Data& data) {
-      Term *parameters[] = {type};
-      return type->context().get_functional<FloatValue>(ArrayPtr<Term*const>(parameters, 1), data);
+      return type->context().get_functional<FloatValue>(StaticArray<Term*,1>(type), data);
     }
 
     namespace {
@@ -366,7 +178,6 @@ namespace Psi {
 #define IMPLEMENT_INT_COMPARE(name,op_name) IMPLEMENT_BINARY(name,op_name,integer_cmp_op_type)
 
     IMPLEMENT_INT_BINARY(IntegerAdd, "add")
-    IMPLEMENT_INT_BINARY(IntegerSubtract, "sub")
     IMPLEMENT_INT_BINARY(IntegerMultiply, "mul")
     IMPLEMENT_INT_BINARY(IntegerDivide, "div")
     IMPLEMENT_INT_UNARY(IntegerNegative, "neg")
@@ -396,8 +207,7 @@ namespace Psi {
     }
 
     SelectValue::Ptr SelectValue::get(Term *condition, Term *true_value, Term *false_value) {
-      Term *parameters[] = {condition, true_value, false_value};
-      return condition->context().get_functional<SelectValue>(ArrayPtr<Term*const>(parameters, 3));
+      return condition->context().get_functional<SelectValue>(StaticArray<Term*,3>(condition, true_value, false_value));
     }
   }
 }

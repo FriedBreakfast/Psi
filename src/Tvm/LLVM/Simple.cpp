@@ -79,19 +79,7 @@ namespace {
 
   llvm::Constant* integer_value_const(ConstantBuilder& builder, IntegerValue::Ptr term) {
     const llvm::IntegerType *llvm_type = builder.get_integer_type(term->type()->width());
-
-    // Need to convert from a byte to a uint64_t representation
-    const unsigned char *bytes = term->value().bytes;
-    const unsigned num_words = sizeof(IntegerValue::Data::bytes) / 8;
-    uint64_t words[num_words];
-    for (std::size_t i = 0; i < num_words; ++i) {
-      uint64_t word = 0;
-      for (std::size_t j = 1; j <= 8; ++j)
-	word = (word << 8) + bytes[(i+1)*8 - j];
-      words[i] = word;
-    }
-
-    llvm::APInt llvm_value(llvm_type->getBitWidth(), num_words, words);
+    llvm::APInt llvm_value(llvm_type->getBitWidth(), term->value().num_words(), term->value().words());
     return llvm::ConstantInt::get(llvm_type, llvm_value);
   }
 
@@ -237,7 +225,6 @@ namespace {
     OP_CALLBACK(MetatypeSize, metatype_size_insn, metatype_size_const)
     OP_CALLBACK(MetatypeAlignment, metatype_alignment_insn, metatype_alignment_const)
     INTEGER_OP_CALLBACK(IntegerAdd, CreateAdd, operator +, CreateAdd, operator +)
-    INTEGER_OP_CALLBACK(IntegerSubtract, CreateSub, operator -, CreateSub, operator -)
     INTEGER_OP_CALLBACK(IntegerMultiply, CreateMul, operator *, CreateMul, operator *)
     INTEGER_OP_CALLBACK(IntegerDivide, CreateUDiv, udiv, CreateSDiv, sdiv);
 

@@ -6,54 +6,12 @@
 #include "Aggregate.hpp"
 #include "Instructions.hpp"
 #include "InstructionBuilder.hpp"
+#include "ModuleRewriter.hpp"
 
 #include <tr1/unordered_map>
-#include <boost/shared_ptr.hpp>
 
 namespace Psi {
-  namespace Tvm {
-    /**
-     * Rewrite a term in two stages.
-     * 
-     * The first stage sets the term up, and the second initializes it.
-     * This is effective for global and function terms, which can be
-     * created in this way.
-     */
-    class GlobalTermRewriter {
-      GlobalTerm *m_new_term;
-      
-    public:
-      GlobalTermRewriter() : m_new_term(0) {}
-      virtual ~GlobalTermRewriter() {}
-      
-      /**
-       * Pointer to rewritten term.
-       */
-      
-      GlobalTerm *new_term() const {return m_new_term;}
-      
-      /**
-       * Run the term rewrite.
-       */
-      virtual void run() = 0;
-      
-    protected:
-      /**
-       * Set the value of the result term.
-       */
-      void new_term(GlobalTerm *value) {m_new_term = value;}
-    };
-    
-    /**
-     * Base class for types which completely rewrite functions.
-     */
-    struct ModuleRewriterPass {
-      /**
-       * Prepare a function rewrite.
-       */
-      virtual boost::shared_ptr<GlobalTermRewriter> rewrite_global(FunctionTerm *f) = 0;
-    };
-    
+  namespace Tvm {    
     /**
      * A function pass which removes aggregate operations by rewriting
      * them in terms of pointer offsets, so that later stages need not
@@ -114,28 +72,61 @@ namespace Psi {
         Term *value() const {return m_value;}
       };
 
-    private:
-      typedef std::tr1::unordered_map<Term*, Type> TypeMapType;
-      typedef std::tr1::unordered_map<Term*, Value> ValueMapType;
-      
     public:
-      // Forward declaration required to get the 'friend' declaration in
-      // TypeValueMap to work correctly
       class FunctionRunner;
+      class GlobalVariableRunner;
       
-      class TypeValueMap {
+      class AggregateLoweringRewriter {
         friend class FunctionRunner;
+        friend class GlobalVariableRunner;
         
-      private:
+        AggregateLoweringPass *m_pass;
+        
+        typedef std::tr1::unordered_map<Term*, Type> TypeMapType;
+        typedef std::tr1::unordered_map<Term*, Value> ValueMapType;
+
         TypeMapType m_type_map;
         ValueMapType m_value_map;
+        
+      public:
+        AggregateLoweringRewriter(AggregateLoweringPass*);
+        
+        /// \brief Get the pass object this belongs to
+        AggregateLoweringPass& pass() {return *m_pass;}
+        
+        /// \brief Get the context this pass belongs to
+        Context& context() {return pass().context();}
+
+        virtual Type rewrite_type(Term*);
+        virtual Value rewrite_value(Term*);
+        
+        /**
+         * \brief \em Load a value.
+         * 
+         * Given a pointer to a value, this returns a Value corresponding to the
+         * data at that pointer.
+         * 
+         * \param load_term Term to assign the result of this load to.
+         */
+        virtual Value load_value(Term* load_term, Term *ptr) = 0;
+        
+        /**
+         * \brief \em Store a value.
+         * 
+         * This stores the value to memory, also creating the memory to store the
+         * value in. If the value is a constant it will be created as a global;
+         * if it is a variable it will be created using the alloca instruction.
+         */
+        virtual Term* store_value(Term *value, Term *alloc_type, Term *alloc_count, Term *alloc_alignment) = 0;
+
+        Term* rewrite_value_stack(Term*);
+        Term* rewrite_value_ptr(Term*);
       };
 
       /**
        * Class which actually runs the pass, and holds per-run data.
        */
-      class FunctionRunner : public GlobalTermRewriter, public TypeValueMap {
-        AggregateLoweringPass *m_pass;
+      class FunctionRunner : public GlobalTermRewriter, public AggregateLoweringRewriter {
         FunctionTerm *m_old_function;
         InstructionBuilder m_builder;
         
@@ -145,37 +136,29 @@ namespace Psi {
         FunctionRunner(AggregateLoweringPass *pass, FunctionTerm *function);
         virtual void run();
         
-        /// \brief Get the pass object this belongs to
-        AggregateLoweringPass& pass() {return *m_pass;}
-        
         /// \brief Get the new version of the function
         FunctionTerm* new_function() {return cast<FunctionTerm>(new_term());}
         
         /// \brief Get the function being rebuilt
         FunctionTerm* old_function() {return m_old_function;}
         
-        /// \brief Get the context this pass belongs to
-        Context& context() {return pass().context();}
-        
         /// \brief Return an InstructionBuilder set to the current instruction insert point.
         InstructionBuilder& builder() {return m_builder;}
         
-        Type rewrite_type(Term*);
-        
-        Value rewrite_value(Term*);
-        Term* rewrite_value_stack(Term*);
-        Term* rewrite_value_ptr(Term*);
-        
-        Value store_value(Term *value, Term *ptr);
-        Value load_value(Term *load_term, Term *ptr, bool=true);
+        virtual Value load_value(Term*, Term*);
+        Value load_value(Term*, Term*, bool);
+        virtual Term* store_value(Term*, Term*, Term*, Term*);
+        Term* store_value(Term*, Term*);
+
+        virtual Type rewrite_type(Term*);
+        virtual Value rewrite_value(Term*);
       };
       
-      struct PaddingStatus {
-        unsigned original_size;
-        unsigned rewrite_size;
-
-        PaddingStatus();
-        PaddingStatus(unsigned, unsigned);
+      class ModuleRewriter : public AggregateLoweringRewriter {
+      public:
+        ModuleRewriter(AggregateLoweringPass*);
+        virtual Value load_value(Term*, Term*);
+        virtual Term* store_value(Term*, Term*, Term*, Term*);
       };
       
       class GlobalVariableRunner : public GlobalTermRewriter {
@@ -278,11 +261,8 @@ namespace Psi {
       struct TypeTermRewriter;
       struct FunctionalTermRewriter;
       struct InstructionTermRewriter;
-      TypeValueMap m_term_map;
       Context *m_context;
-      
-      Type rewrite_type(Term*);
-      Value rewrite_value(Term*);
+      ModuleRewriter m_global_rewriter;
 
       struct GlobalBuildStatus {
         GlobalBuildStatus();
@@ -298,6 +278,7 @@ namespace Psi {
       
       GlobalBuildStatus rewrite_global_type(Term*);
       void global_append(GlobalBuildStatus& status, const GlobalBuildStatus& child);
+      void global_pad_to_size(GlobalBuildStatus& status, unsigned size, unsigned alignment);
 
     public:
       AggregateLoweringPass(Context*,TargetCallback*);
@@ -306,6 +287,8 @@ namespace Psi {
 
       /// \brief Get the context this pass belongs to
       Context& context() const {return *m_context;}
+      
+      AggregateLoweringRewriter& global_rewriter() {return m_global_rewriter;}
 
       /**
        * Callback used to rewrite function types and function calls

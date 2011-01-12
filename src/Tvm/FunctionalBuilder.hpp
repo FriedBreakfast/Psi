@@ -86,6 +86,8 @@ namespace Psi {
       
       /// \name Integer type and value construction operations
       ///@{
+      static Term* bool_type(Context&);
+      static Term* bool_value(Context&, bool);
       static Term* int_type(Context&, IntegerType::Width, bool);
       static Term* size_type(Context&);
       static Term* int_value(Term*, int);

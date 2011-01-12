@@ -15,6 +15,7 @@ add_library(psi SHARED
   Tvm/AggregateLowering.cpp
   Tvm/Assembler.cpp Tvm/Assembler.hpp
   Tvm/AssemblerOperations.cpp
+  Tvm/BigInteger.cpp Tvm/BigInteger.hpp
   Tvm/Core.cpp Tvm/Core.hpp
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp

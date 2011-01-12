@@ -147,10 +147,6 @@ namespace Psi {
       this->m_size = src.size();
       return *this;
     }
-
-  private:
-    T *m_ptr;
-    std::size_t m_size;
   };
   
   /**
@@ -184,7 +180,7 @@ namespace Psi {
   public:
     StaticArray() : ArrayWithLength<T>(m_data, N) {}
   };
-  
+
 #define PSI_STATIC_ARRAY_IMPL(n,params,inits) \
   template<typename T> class StaticArray<T, n> : public ArrayWithLength<T> { \
     T m_data[n]; \
@@ -237,6 +233,82 @@ namespace Psi {
     void swap(UniqueArray& o) {
       std::swap(this->m_ptr, o.m_ptr);
       std::swap(this->m_size, o.m_size);
+    }
+  };
+
+  template<typename T, unsigned N>
+  class SmallArray : public ArrayWithLength<T> {
+    T m_data[N];
+  public:
+    SmallArray() {}
+    explicit SmallArray(unsigned length) {resize(length);}
+    ~SmallArray() {if (this->m_size > N) delete [] this->m_ptr;}
+    
+    SmallArray(const SmallArray& other) : ArrayWithLength<T>() {
+      assign(other);
+    }
+    
+    SmallArray(const ArrayWithLength<T>& other) {
+      assign(other);
+    }
+    
+    void resize(std::size_t new_size, const T& extend_value=T()) {
+      if (this->m_size == new_size)
+        return;
+      
+      if (new_size > N) {
+        UniqueArray<T> new_ptr(new_size);
+        if (this->m_size < new_size) {
+          std::copy(this->m_ptr, this->m_ptr + this->m_size, new_ptr.get());
+          std::fill(new_ptr.get() + this->m_size, new_ptr.get() + new_size, extend_value);
+        } else {
+          std::copy(this->m_ptr, this->m_ptr + new_size, new_ptr.get());
+        }
+        if (this->m_size > N)
+          delete [] this->m_ptr;
+        else
+          std::fill(this->m_data, this->m_data + N, T());
+        this->m_ptr = new_ptr.release();
+      } else {
+        if (this->m_size > N) {
+          std::copy(this->m_ptr, this->m_ptr + new_size, this->m_data);
+          delete [] this->m_ptr;
+          this->m_ptr = m_data;
+        }
+        std::fill(this->m_data + new_size, this->m_data + N, extend_value);
+      }
+      
+      this->m_size = new_size;
+    }
+    
+    void assign(const ArrayWithLength<T>& src) {
+      if (this->m_size != src.size()) {
+        if (this->m_size > N) {
+          delete [] this->m_ptr;
+          this->m_ptr = 0;
+          this->m_size = 0;
+        }
+
+        if (src.size() > N) {
+          this->m_ptr = new T[src.size()];
+        } else {
+          this->m_ptr = m_data;
+          std::fill(this->m_data + src.size(), this->m_data + N, T());
+        }
+        
+        this->m_size = src.size();
+      }
+      std::copy(src.get(), src.get() + src.size(), this->get());
+    }
+
+    const SmallArray& operator = (const ArrayWithLength<T>& src) {
+      assign(src);
+      return *this;
+    }
+
+    const SmallArray& operator = (const SmallArray& src) {
+      assign(src);
+      return *this;
     }
   };
 

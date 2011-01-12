@@ -1,6 +1,7 @@
 #include "Aggregate.hpp"
 #include "Number.hpp"
 #include "Function.hpp"
+#include "FunctionalBuilder.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -210,7 +211,7 @@ namespace Psi {
 
     ArrayType::Ptr ArrayType::get(Term *element_type, unsigned length) {
       IntegerType::Ptr size_type = IntegerType::get_size(element_type->context());
-      Term *length_term = IntegerValue::get(size_type, IntegerValue::convert(length));
+      Term *length_term = FunctionalBuilder::int_value(FunctionalBuilder::size_type(element_type->context()), length);
       return get(element_type, length_term);
     }
 
