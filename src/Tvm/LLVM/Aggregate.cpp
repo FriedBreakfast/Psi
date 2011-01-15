@@ -17,12 +17,6 @@ namespace {
     PSI_FAIL("term cannot be used as a type");
   }
 
-  const llvm::Type* array_type(ConstantBuilder& builder, ArrayType::Ptr term) {
-    const llvm::Type* element_type = builder.build_type(term->element_type());
-    const llvm::APInt& length_value = builder.build_constant_integer(term->length());
-    return llvm::ArrayType::get(element_type, length_value.getZExtValue());
-  }
-
   llvm::Value* array_value_insn(FunctionBuilder& builder, ArrayValue::Ptr term) {
     const llvm::Type *type = builder.build_type(term->type());
     llvm::Value *array = llvm::UndefValue::get(type);
@@ -41,14 +35,6 @@ namespace {
       elements[i] = builder.build_constant(term->value(i));
 
     return llvm::ConstantArray::get(llvm::cast<llvm::ArrayType>(type), &elements[0], elements.size());
-  }
-
-  const llvm::Type* struct_type(ConstantBuilder& builder, StructType::Ptr term) {
-    std::vector<const llvm::Type*> member_types;
-    for (unsigned i = 0, e = term->n_members(); i != e; ++i)
-      member_types.push_back(builder.build_type(term->member_type(i)));
-
-    return llvm::StructType::get(builder.llvm_context(), member_types);
   }
 
   llvm::Value* struct_value_insn(FunctionBuilder& builder, StructValue::Ptr term) {
@@ -120,9 +106,7 @@ namespace {
     TypeWrapper(TypeCbType type_cb) : m_type_cb(type_cb) {}
 
     llvm::Constant* operator () (ConstantBuilder& builder, typename TermTagType::Ptr term) const {
-      const llvm::Type *llvm_type = m_type_cb(builder, term);
-      uint64_t size = builder.type_size(llvm_type), alignment = builder.type_alignment(llvm_type);
-      return metatype_from_constant(builder, size, alignment);
+      return metatype_from_type(builder, m_type_cb(builder, term));
     }
   };
 
@@ -139,8 +123,6 @@ namespace {
 
   const CallbackMapType callbacks =
     boost::assign::map_list_of<const char*, CallbackMapType::mapped_type>
-    TYPE_CALLBACK(ArrayType, array_type)
-    TYPE_CALLBACK(StructType, struct_type)
     OP_CALLBACK(ArrayValue, array_value_insn, array_value_const)
     OP_CALLBACK(StructValue, struct_value_insn, struct_value_const)
     OP_CALLBACK(FunctionSpecialize, function_specialize_insn, function_specialize_const);

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.6)
 project(type-test)
 
+include(CTest)
+
 # Locate LLVM
 find_program(LLVM_CONFIG NAMES llvm-config)
 
@@ -28,7 +30,7 @@ if(CMAKE_COMPILER_IS_GNUCXX)
   string(REGEX REPLACE "-g.?" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
 endif()
 
-# Locate Boost (only required for unit tests)
+# Locate Boost
 find_package(Boost 1.36.0 COMPONENTS unit_test_framework)
 if(NOT Boost_FOUND)
   message(SEND_ERROR "Boost not found")
@@ -47,5 +49,7 @@ if(DOXYGEN_FOUND)
     COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} VERBATIM)
 endif()
+
+enable_testing()
 
 add_subdirectory(src)

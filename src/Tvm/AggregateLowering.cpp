@@ -81,7 +81,7 @@ namespace Psi {
         return Type(term->rewrite(rewriter.context(), StaticArray<Term*,0>()));
       }
       
-      typedef TermOperationMap<FunctionalTerm, Type, AggregateLoweringRewriter> CallbackMap;
+      typedef TermOperationMap<FunctionalTerm, Type, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
       
       static CallbackMap callback_map_initializer() {
@@ -245,7 +245,7 @@ namespace Psi {
         }
       }
       
-      typedef TermOperationMap<FunctionalTerm, Value, AggregateLoweringRewriter> CallbackMap;
+      typedef TermOperationMap<FunctionalTerm, Value, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
       
       static CallbackMap callback_map_initializer() {
@@ -337,7 +337,7 @@ namespace Psi {
         }
       }
       
-      typedef TermOperationMap<InstructionTerm, Value, FunctionRunner> CallbackMap;
+      typedef TermOperationMap<InstructionTerm, Value, FunctionRunner&> CallbackMap;
       static CallbackMap callback_map;
       
       static CallbackMap callback_map_initializer() {

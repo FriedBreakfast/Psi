@@ -1,16 +1,9 @@
-include_directories(${Boost_INCLUDE_DIRS} ${GMP_INCLUDE_DIRECTORIES})
-
-bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp)
-set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
+include_directories(${Boost_INCLUDE_DIRS})
 
 bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated)
 set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
 
-add_library(psi SHARED
-  Utility.cpp Utility.hpp
-
-  ${BISON_Parser_OUTPUTS} Parser.hpp
-
+add_library(psi-tvm SHARED
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
   Tvm/AggregateLowering.cpp
   Tvm/Assembler.cpp Tvm/Assembler.hpp
@@ -34,8 +27,25 @@ add_library(psi SHARED
   Tvm/Utility.hpp
 )
 
-if(${UNIX})
-target_link_libraries(psi -ldl)
+if(UNIX)
+  target_link_libraries(psi-tvm -ldl)
+endif()
+
+if(BUILD_TESTING)
+  add_executable(psi-tvm-test
+    Tvm/Test.cpp Tvm/Test.hpp
+    Tvm/AggregateTest.cpp
+    Tvm/InstructionTest.cpp
+    Tvm/DerivedTest.cpp
+    Tvm/FunctionTest.cpp
+    Tvm/NumberTest.cpp
+    Tvm/ParserTest.cpp
+  )
+
+  set_target_properties(psi-tvm-test PROPERTIES COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
+  target_link_libraries(psi-tvm-test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} psi-tvm)
+
+  add_test(psi-tvm-test psi-tvm-test)
 endif()
 
 add_library(psi-llvm MODULE
@@ -51,43 +61,18 @@ add_library(psi-llvm MODULE
 )
 
 set_target_properties(psi-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
-target_link_libraries(psi-llvm ${LLVM_LIBS})
+target_link_libraries(psi-llvm psi-tvm ${LLVM_LIBS})
+
+bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp)
+set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
+
+add_library(psi SHARED
+  Utility.cpp Utility.hpp
+  ${BISON_Parser_OUTPUTS} Parser.hpp
+)
+
+target_link_libraries(psi psi-tvm)
 
 #install(TARGETS psi
 #  LIBRARY DESTINATION lib
 #  PUBLIC_HEADER DESTINATION include/Psi)
-
-#foreach(dir "." "Tvm")
-#  message(STATUS ${dir})
-#  file(GLOB headers ${dir}/*.hpp)
-#  install(FILES ${headers} DESTINATION include/${dir})
-#endforeach()
-
-#add_library(typetest SHARED
-#  ExpressionCompiler.cpp ExpressionCompiler.hpp
-#  TypeSystem.cpp TypeSystem.hpp
-#  ${BISON_Parser_OUTPUTS} Parser.hpp
-#  Utility.cpp Utility.hpp
-#  Maybe.hpp
-#  Variant.hpp)
-
-#set_target_properties(typetest PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
-
-#add_executable(type-test TypeTest.cpp)
-
-add_executable(test TestMain.cpp
-  Tvm/Test.cpp Tvm/Test.hpp
-  Tvm/AggregateTest.cpp
-  Tvm/InstructionTest.cpp
-  Tvm/DerivedTest.cpp
-  Tvm/FunctionTest.cpp
-  Tvm/NumberTest.cpp
-  Tvm/ParserTest.cpp
-#  MaybeTest.cpp
-#  TypeSystemTest.cpp
-#  VariantTest.cpp
-  )
-
-set_target_properties(test PROPERTIES
-  COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
-target_link_libraries(test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} "psi")

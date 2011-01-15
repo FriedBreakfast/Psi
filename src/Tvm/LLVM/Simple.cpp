@@ -20,11 +20,6 @@ namespace {
     PSI_FAIL("term cannot be used as a type");
   }
 
-  const llvm::Type *metatype_type(ConstantBuilder& builder, Metatype::Ptr) {
-    std::vector<const llvm::Type*> elements(2, builder.get_intptr_type());
-    return llvm::StructType::get(builder.llvm_context(), elements);
-  }
-
   llvm::Constant *metatype_size_const(ConstantBuilder& builder, MetatypeSize::Ptr term) {
     llvm::Constant *value = builder.build_constant(term->parameter());
     unsigned zero = 0;
@@ -47,24 +42,8 @@ namespace {
     return builder.irbuilder().CreateExtractValue(value, 1);
   }
 
-  const llvm::Type* empty_type_type(ConstantBuilder& builder, EmptyType::Ptr) {
-    return llvm::StructType::get(builder.llvm_context());
-  }
-
   llvm::Constant* empty_value_const(ConstantBuilder& builder, EmptyValue::Ptr) {
     return llvm::ConstantStruct::get(builder.llvm_context(), 0, 0, false);
-  }
-
-  const llvm::Type* pointer_type_type(ConstantBuilder& builder, PointerType::Ptr) {
-    return builder.get_pointer_type();
-  }
-
-  const llvm::Type* block_type_type(ConstantBuilder& builder, BlockType::Ptr) {
-    return llvm::Type::getLabelTy(builder.llvm_context());
-  }
-
-  const llvm::Type* boolean_type_type(ConstantBuilder& builder, BooleanType::Ptr) {
-    return builder.get_boolean_type();
   }
 
   llvm::Constant* boolean_value_const(ConstantBuilder& builder, BooleanValue::Ptr term) {
@@ -73,18 +52,10 @@ namespace {
       : llvm::ConstantInt::getFalse(builder.llvm_context());
   }
 
-  const llvm::Type* integer_type_type(ConstantBuilder& builder, IntegerType::Ptr term) {
-    return builder.get_integer_type(term->width());
-  }
-
   llvm::Constant* integer_value_const(ConstantBuilder& builder, IntegerValue::Ptr term) {
     const llvm::IntegerType *llvm_type = builder.get_integer_type(term->type()->width());
     llvm::APInt llvm_value(llvm_type->getBitWidth(), term->value().num_words(), term->value().words());
     return llvm::ConstantInt::get(llvm_type, llvm_value);
-  }
-
-  const llvm::Type* float_type_type(ConstantBuilder& builder, FloatType::Ptr term) {
-    return builder.get_float_type(term->width());
   }
 
   llvm::Constant* float_value_const(ConstantBuilder& builder, FloatValue::Ptr term) {
@@ -180,44 +151,15 @@ namespace {
     return boost::make_shared<CallbackMapValueImpl<TermTagType, InsnCbType, ConstCbType, TypeCbType> >(insn_cb, const_cb, type_cb);
   }
 
-  /**
-   * Adapts a callback which generates an LLVM type to one which
-   * generates the equivalent metatype value.
-   */
-  template<typename TermTagType, typename TypeCbType>
-  class TypeAdapter {
-    TypeCbType m_type_cb;
-
-  public:
-    TypeAdapter(TypeCbType type_cb) : m_type_cb(type_cb) {}
-
-    llvm::Constant* operator () (ConstantBuilder& builder, typename TermTagType::Ptr term) const {
-      return metatype_from_type(builder, m_type_cb(builder, term));
-    }
-  };
-
-  template<typename TermTagType, typename TypeCbType>
-  TypeAdapter<TermTagType, TypeCbType> make_type_adapter(TypeCbType type_cb) {
-    return TypeAdapter<TermTagType, TypeCbType>(type_cb);
-  }
-
 #define CALLBACK(ty,cb_insn,cb_const,cb_type) (ty::operation, make_callback_map_value<ty>((cb_insn), (cb_const), (cb_type)))
 #define OP_CALLBACK(ty,cb_insn,cb_const) CALLBACK(ty,(cb_insn),(cb_const),invalid_type_callback)
 #define INTEGER_OP_CALLBACK(ty,ui_insn_op,ui_const_op,si_insn_op,si_const_op) OP_CALLBACK(ty, IntegerInstructionBinaryOp<ty>(&IRBuilder::ui_insn_op, &IRBuilder::si_insn_op), (IntegerConstantBinaryOp<ty>(&llvm::APInt::ui_const_op, &llvm::APInt::si_const_op)))
-#define TYPE_CALLBACK(ty,cb_type) CALLBACK(ty, make_type_adapter<ty>((cb_type)), make_type_adapter<ty>((cb_type)), (cb_type))
 #define VALUE_CALLBACK(ty,cb_const) CALLBACK(ty,(cb_const),(cb_const),invalid_type_callback)
 
   typedef std::tr1::unordered_map<const char*, boost::shared_ptr<CallbackMapValue> > CallbackMapType;
 
   const CallbackMapType callbacks =
     boost::assign::map_list_of<const char*, CallbackMapType::mapped_type>
-    TYPE_CALLBACK(Metatype, metatype_type)
-    TYPE_CALLBACK(EmptyType, empty_type_type)
-    TYPE_CALLBACK(BlockType, block_type_type)
-    TYPE_CALLBACK(PointerType, pointer_type_type)
-    TYPE_CALLBACK(BooleanType, boolean_type_type)
-    TYPE_CALLBACK(IntegerType, integer_type_type)
-    TYPE_CALLBACK(FloatType, float_type_type)
     VALUE_CALLBACK(EmptyValue, empty_value_const)
     VALUE_CALLBACK(BooleanValue, boolean_value_const)
     VALUE_CALLBACK(IntegerValue, integer_value_const)

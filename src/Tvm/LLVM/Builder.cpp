@@ -12,11 +12,18 @@
 #include <llvm/DerivedTypes.h>
 #include <llvm/Module.h>
 #include <llvm/Support/IRBuilder.h>
+#include <llvm/Support/raw_os_ostream.h>
 #include <llvm/System/Host.h>
+#include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/Target/TargetData.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetRegistry.h>
 #include <llvm/Target/TargetSelect.h>
+
+#ifdef PSI_DEBUG
+#include <iostream>
+#include <llvm/CodeGen/MachineFunction.h>
+#endif
 
 /*
  * Do not remove the JIT.h include. Although everything will build
@@ -346,14 +353,13 @@ namespace Psi {
           PSI_FAIL("constant builder encountered unexpected term type");
         }
       }
-
+      
       LLVMJit::LLVMJit(const boost::shared_ptr<JitFactory>& jit_factory,
                        const std::string& host_triple,
 		       llvm::TargetMachine *host_machine)
         : Jit(jit_factory),
           m_target_fixes(create_target_fixes(host_triple)),
-          m_builder(&m_llvm_context, host_machine, m_target_fixes.get()),
-          m_llvm_engine(make_engine(m_llvm_context)) {
+          m_builder(&m_llvm_context, host_machine, m_target_fixes.get()) {
       }
 
       LLVMJit::~LLVMJit() {
@@ -377,30 +383,58 @@ namespace Psi {
         return m_llvm_engine->getPointerToGlobal(llvm_global);
       }
 
-      /**
-       * Register a listener for the JIT. Just a passthrough to the
-       * corresponding method on llvm::ExecutionEngine.
-       */
-      void LLVMJit::register_llvm_jit_listener(llvm::JITEventListener *l) {
-        m_llvm_engine->RegisterJITEventListener(l);
-      }
+#ifdef PSI_DEBUG
+      class DebugListener : public llvm::JITEventListener {
+      public:
+        DebugListener(bool dump_ir, bool dump_asm)
+          : m_dump_ir(dump_ir), m_dump_asm(dump_asm) {
+        }
 
-      /**
-       * Unregister a listener for the JIT. Just a passthrough to the
-       * corresponding method on llvm::ExecutionEngine.
-       */
-      void LLVMJit::unregister_llvm_jit_listener(llvm::JITEventListener *l) {
-        m_llvm_engine->UnregisterJITEventListener(l);
-      }
+        virtual void NotifyFunctionEmitted (const llvm::Function &F, void*, size_t, const EmittedFunctionDetails& details) {
+          llvm::raw_os_ostream out(std::cerr);
+          if (m_dump_ir)
+            F.print(out);
+          if (m_dump_asm)
+            details.MF->print(out);
+        }
+
+        //virtual void NotifyFreeingMachineCode (void *OldPtr)
+
+      private:
+        bool m_dump_ir;
+        bool m_dump_asm;
+      };
+#endif
 
       /**
        * Create the LLVM Jit.
        */
-      llvm::ExecutionEngine* LLVMJit::make_engine(llvm::LLVMContext& context) {
-        llvm::Module *module = new llvm::Module(".tvm_fake_jit", context);
+      llvm::ExecutionEngine* LLVMJit::make_engine(llvm::Module *module) {
         llvm::EngineBuilder builder(module);
         llvm::ExecutionEngine *engine = builder.create();
         PSI_ASSERT_MSG(engine, "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
+        
+#ifdef PSI_DEBUG
+        const char *debug_mode = std::getenv("PSI_LLVM_DEBUG");
+        if (debug_mode) {
+          bool dump_ir, dump_asm;
+          if (std::strcmp(debug_mode, "all") == 0) {
+            dump_ir = dump_asm = true;
+          } else if (std::strcmp(debug_mode, "asm") == 0) {
+            dump_ir = false; dump_asm = true;
+          } else if (std::strcmp(debug_mode, "ir") == 0) {
+            dump_ir = true; dump_asm = false;
+          } else {
+            dump_ir = dump_asm = false;
+          }
+          
+          if (dump_asm || dump_ir) {
+            m_debug_listener = boost::make_shared<DebugListener>(dump_ir, dump_asm);
+            m_llvm_engine->RegisterJITEventListener(m_debug_listener.get());
+          }
+        }
+#endif
+        
         return engine;
       }
     }

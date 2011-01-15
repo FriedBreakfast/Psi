@@ -1,58 +1,34 @@
+#define BOOST_TEST_MAIN
+#define BOOST_TEST_NO_MAIN
+#include <boost/test/unit_test.hpp>
+
 #include "Test.hpp"
 #include "Assembler.hpp"
 
 #include <cstdlib>
 #include <iostream>
 
+namespace {
+  boost::shared_ptr<Psi::Tvm::JitFactory> jit_factory;
+}
+
+int main(int argc, char *argv[]) {
+  const char *jit = std::getenv("PSI_TEST_JIT");
+  if (!jit)
+    jit = "llvm";
+  
+  jit_factory = Psi::Tvm::JitFactory::get(jit);
+  return boost::unit_test::unit_test_main(&init_unit_test, argc, argv);
+}
+
 namespace Psi {
   namespace Tvm {
     namespace Test {
-#if 0
-      class ContextFixture::DebugListener : public llvm::JITEventListener {
-      public:
-        DebugListener(bool dump_llvm, bool dump_asm)
-          : m_dump_llvm(dump_llvm), m_dump_asm(dump_asm) {
-        }
-
-        virtual void NotifyFunctionEmitted (const llvm::Function &F, void*, size_t, const EmittedFunctionDetails& details) {
-          llvm::raw_os_ostream out(std::cerr);
-          if (m_dump_llvm)
-            F.print(out);
-          if (m_dump_asm)
-            details.MF->print(out);
-        }
-
-        //virtual void NotifyFreeingMachineCode (void *OldPtr)
-
-      private:
-        bool m_dump_llvm;
-        bool m_dump_asm;
-      };
-#endif
-
-      ContextFixture::ContextFixture() : module(&context) {}
-#if 0
-        : m_jit(create_llvm_jit(&context)),
-          m_debug_listener(new DebugListener(test_env("PSI_TEST_DUMP_LLVM"),
-                                             test_env("PSI_TEST_DUMP_ASM"))) {
-
-        const char *emit_debug = std::getenv("PSI_TEST_DEBUG");
-        if (emit_debug && (std::strcmp(emit_debug, "1") == 0))
-            llvm::JITEmitDebugInfo = true;
-
-        boost::shared_ptr<LLVM::LLVMJit> llvm_jit = boost::static_pointer_cast<LLVM::LLVMJit>(m_jit);
-        llvm_jit->register_llvm_jit_listener(m_debug_listener.get());
+      ContextFixture::ContextFixture()
+      : module(&context), m_jit(jit_factory->create_jit()) {
       }
-#endif
 
       ContextFixture::~ContextFixture() {
-      }
-
-      bool ContextFixture::test_env(const char *name) {
-        const char *value = std::getenv(name);
-        if (value && (std::strcmp(value, "1") == 0))
-          return true;
-        return false;
       }
 
       /**

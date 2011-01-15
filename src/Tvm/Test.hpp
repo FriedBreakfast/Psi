@@ -18,7 +18,6 @@ namespace Psi {
         ContextFixture();
         ~ContextFixture();
 
-        static bool test_env(const char *name);
         void* jit_single(const char *name, const char *src);
 
       private:

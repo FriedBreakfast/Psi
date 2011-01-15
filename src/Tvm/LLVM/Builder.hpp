@@ -7,6 +7,7 @@
 
 #include <llvm/LLVMContext.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/Support/IRBuilder.h>
 #include <llvm/Support/TargetFolder.h>
 #include <llvm/Target/TargetMachine.h>
@@ -264,16 +265,16 @@ namespace Psi {
         virtual void rebuild_module(Module*, bool);
         virtual void* get_symbol(GlobalTerm*);
 
-        void register_llvm_jit_listener(llvm::JITEventListener *l);
-        void unregister_llvm_jit_listener(llvm::JITEventListener *l);
-
       private:
         llvm::LLVMContext m_llvm_context;
         boost::shared_ptr<TargetFixes> m_target_fixes;
         ModuleBuilder m_builder;
+#ifdef PSI_DEBUG
+        boost::shared_ptr<llvm::JITEventListener> m_debug_listener;
+#endif
         boost::shared_ptr<llvm::ExecutionEngine> m_llvm_engine;
 
-        static llvm::ExecutionEngine *make_engine(llvm::LLVMContext& context);
+        llvm::ExecutionEngine *make_engine(llvm::Module*);
       };
     }
   }
