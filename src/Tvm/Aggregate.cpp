@@ -445,18 +445,18 @@ namespace Psi {
 
     FunctionalTypeResult FunctionSpecialize::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() < 1)
-        throw TvmUserError("apply_phantom requires at least one parameter");
+        throw TvmUserError("specialize requires at least one parameter");
 
       std::size_t n_applied = parameters.size() - 1;
 
       Term *target = parameters[0];
       PointerType::Ptr target_ptr_type = dyn_cast<PointerType>(target->type());
       if (!target_ptr_type)
-	throw TvmUserError("apply_phantom target is not a function pointer");
+	throw TvmUserError("specialize target is not a function pointer");
 
       FunctionTypeTerm* function_type = dyn_cast<FunctionTypeTerm>(target_ptr_type->target_type());
       if (!function_type)
-	throw TvmUserError("apply_phantom target is not a function pointer");
+	throw TvmUserError("specialize target is not a function pointer");
 
       if (n_applied > function_type->n_phantom_parameters())
         throw TvmUserError("Too many parameters given to apply_phantom");
@@ -485,6 +485,13 @@ namespace Psi {
          new_parameters.slice(result_n_phantom, result_n_phantom+result_n_normal));
 
       return FunctionalTypeResult(FunctionalBuilder::pointer_type(result_function_type), parameters[0]->source());
+    }
+    
+    FunctionSpecialize::Ptr FunctionSpecialize::get(Term *function, ArrayPtr<Term*const> parameters) {
+      ScopedArray<Term*> all_parameters(parameters.size()+1);
+      all_parameters[0] = function;
+      std::copy(parameters.get(), parameters.get()+parameters.size(), all_parameters.get()+1);
+      return function->context().get_functional<FunctionSpecialize>(all_parameters);
     }
   }
 }

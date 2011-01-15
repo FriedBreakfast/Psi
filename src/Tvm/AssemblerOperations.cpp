@@ -6,13 +6,14 @@
 #include "Assembler.hpp"
 #include "Instructions.hpp"
 #include "Number.hpp"
+#include "FunctionalBuilder.hpp"
 
 namespace Psi {
   namespace Tvm {
     namespace Assembler {
       void check_n_terms(const std::string& name, std::size_t expected, const Parser::CallExpression& expression) {
         if (expression.terms.size() != expected)
-          throw TvmUserError(str(boost::format("%s: %d term parameters expected") % name % expected));
+          throw TvmUserError(str(boost::format("%s: %d parameters expected") % name % expected));
       }
 
       void default_parameter_setup(ArrayPtr<Term*> parameters, AssemblerContext& context, const Parser::CallExpression& expression) {
@@ -21,13 +22,67 @@ namespace Psi {
 	for (UniqueList<Parser::Expression>::const_iterator it = expression.terms.begin(); it != expression.terms.end(); ++n, ++it)
 	  parameters[n] = build_expression(context, *it);
       }
+      
+      struct NullaryOpCallback {
+        typedef Term* (*GetterType) (Context&);
+        GetterType getter;
+        NullaryOpCallback(GetterType getter_) : getter(getter_) {}
+        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
+          check_n_terms(name, 0, expression);
+          return getter(context.context());
+        }
+      };
+      
+      struct UnaryOpCallback {
+        typedef Term* (*GetterType) (Term*);
+        GetterType getter;
+        UnaryOpCallback(GetterType getter_) : getter(getter_) {}
+        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
+          check_n_terms(name, 1, expression);
+          return getter(build_expression(context, expression.terms.front()));
+        }
+      };
 
-      template<typename T>
-      struct DefaultFunctionalCallback {
-        FunctionalTerm* operator () (const std::string&, AssemblerContext& context, const Parser::CallExpression& expression) const {
+      struct BinaryOpCallback {
+        typedef Term* (*GetterType) (Term*,Term*);
+        GetterType getter;
+        BinaryOpCallback(GetterType getter_) : getter(getter_) {}
+        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
+          check_n_terms(name, 2, expression);
+          StaticArray<Term*, 2> parameters;
+          default_parameter_setup(parameters, context, expression);
+          return getter(parameters[0], parameters[1]);
+        }
+      };
+      
+      struct ContextArrayCallback {
+        typedef Term* (*GetterType) (Context&,ArrayPtr<Term*const>);
+        GetterType getter;
+        ContextArrayCallback(GetterType getter_) : getter(getter_) {}
+        Term* operator () (const std::string&, AssemblerContext& context, const Parser::CallExpression& expression) {
           ScopedArray<Term*> parameters(expression.terms.size());
           default_parameter_setup(parameters, context, expression);
-          return context.context().template get_functional<T>(parameters);
+          return getter(context.context(), parameters);
+        }
+      };
+      
+      struct TermPlusArrayCallback {
+        typedef Term* (*GetterType) (Term*,ArrayPtr<Term*const>);
+        GetterType getter;
+        TermPlusArrayCallback(GetterType getter_) : getter(getter_) {}
+        Term* operator () (const std::string&, AssemblerContext& context, const Parser::CallExpression& expression) {
+          ScopedArray<Term*> parameters(expression.terms.size());
+          default_parameter_setup(parameters, context, expression);
+          return getter(parameters[0], parameters.slice(1, parameters.size()));
+        }
+      };
+      
+      struct StructElementCallback {
+        typedef Term* (*GetterType) (Term*,unsigned);
+        GetterType getter;
+        StructElementCallback(GetterType getter_) : getter(getter_) {}
+        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
+          PSI_FAIL("not implemented");
         }
       };
 
@@ -37,9 +92,9 @@ namespace Psi {
 
         IntTypeCallback(IntegerType::Width width_, bool is_signed_) : width(width_), is_signed(is_signed_) {}
 
-        FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
+        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_terms(name, 0, expression);
-          return IntegerType::get(context.context(), width, is_signed);
+          return FunctionalBuilder::int_type(context.context(), width, is_signed);
         }
       };
 
@@ -48,7 +103,7 @@ namespace Psi {
 
         FloatTypeCallback(FloatType::Width width_) : width(width_) {}
 
-        FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
+        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_terms(name, 0, expression);
 	  return FloatType::get(context.context(), width);
         }
@@ -59,13 +114,11 @@ namespace Psi {
 
         BoolValueCallback(bool value_) : value(value_) {}
 
-        FunctionalTerm* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
+        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_terms(name, 0, expression);
-          return BooleanValue::get(context.context(), value);
+          return FunctionalBuilder::bool_value(context.context(), value);
         }
       };
-
-#define CALLBACK(ty) (ty::operation, DefaultFunctionalCallback<ty>())
 
       const std::tr1::unordered_map<std::string, FunctionalTermCallback> functional_ops =
         boost::assign::map_list_of<std::string, FunctionalTermCallback>
@@ -88,22 +141,26 @@ namespace Psi {
 	("fp-ppc-128", FloatTypeCallback(FloatType::fp_ppc_128))
         ("true", BoolValueCallback(true))
         ("false", BoolValueCallback(false))
-	CALLBACK(Metatype)
-        CALLBACK(ByteType)
-	CALLBACK(PointerType)
-	CALLBACK(BooleanType)
-	CALLBACK(IntegerAdd)
-	CALLBACK(IntegerMultiply)
-	CALLBACK(IntegerDivide)
-	CALLBACK(FunctionSpecialize)
-	CALLBACK(ArrayType)
-	CALLBACK(ArrayValue)
-	CALLBACK(StructType)
-	CALLBACK(StructValue)
-	CALLBACK(UnionType)
-	CALLBACK(UnionValue);
-
-#undef CALLBACK
+        ("type", NullaryOpCallback(&FunctionalBuilder::type_type))
+        ("byte", NullaryOpCallback(&FunctionalBuilder::byte_type))
+        ("pointer", UnaryOpCallback(&FunctionalBuilder::pointer_type))
+        ("add", BinaryOpCallback(&FunctionalBuilder::add))
+        ("sub", BinaryOpCallback(&FunctionalBuilder::sub))
+        ("mul", BinaryOpCallback(&FunctionalBuilder::mul))
+        ("div", BinaryOpCallback(&FunctionalBuilder::div))
+        ("array", BinaryOpCallback(&FunctionalBuilder::array_type))
+        ("array_v", TermPlusArrayCallback(&FunctionalBuilder::array_value))
+        ("array_el", BinaryOpCallback(&FunctionalBuilder::array_element))
+        ("array_ep", BinaryOpCallback(&FunctionalBuilder::array_element_ptr))
+        ("struct", ContextArrayCallback(&FunctionalBuilder::struct_type))
+        ("struct_v", ContextArrayCallback(&FunctionalBuilder::struct_value))
+        ("struct_el", StructElementCallback(&FunctionalBuilder::struct_element))
+        ("struct_ep", StructElementCallback(&FunctionalBuilder::struct_element_ptr))
+        ("union", ContextArrayCallback(&FunctionalBuilder::union_type))
+        ("union_v", BinaryOpCallback(&FunctionalBuilder::union_value))
+        ("union_el", BinaryOpCallback(&FunctionalBuilder::union_element))
+        ("union_ep", BinaryOpCallback(&FunctionalBuilder::union_element_ptr))
+        ("specialize", TermPlusArrayCallback(&FunctionalBuilder::specialize));
 
       template<typename T>
       struct DefaultInstructionCallback {

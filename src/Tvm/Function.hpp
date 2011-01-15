@@ -255,7 +255,7 @@ namespace Psi {
      * \brief %Function.
      */
     class FunctionTerm : public GlobalTerm {
-      friend class Context;
+      friend class Module;
     public:
       typedef std::tr1::unordered_multimap<Term*, std::string> TermNameMap;
 

@@ -99,39 +99,40 @@ namespace Psi {
       
       /// \name Integer arithmetic operations
       ///@{      
-      static Term *add(Term *lhs, Term *rhs);
-      static Term *sub(Term *lhs, Term *rhs);
-      static Term *mul(Term *lhs, Term *rhs);
-      static Term *div(Term *lhs, Term *rhs);
-      static Term *neg(Term *parameter);
+      static Term *add(Term*, Term*);
+      static Term *sub(Term*, Term*);
+      static Term *mul(Term*, Term*);
+      static Term *div(Term*, Term*);
+      static Term *neg(Term*);
       ///@}
       
       /// \name Integer bitwise operations
       ///@{
-      static Term *bit_and(Term *lhs, Term *rhs);
-      static Term *bit_or(Term *lhs, Term *rhs);
-      static Term *bit_xor(Term *lhs, Term *rhs);
-      static Term *bit_not(Term *parameter);
+      static Term *bit_and(Term*, Term*);
+      static Term *bit_or(Term*, Term*);
+      static Term *bit_xor(Term*, Term*);
+      static Term *bit_not(Term*);
       ///@}
       
       /// \name Integer comparison operations
       ///@{      
-      static Term *cmp_eq(Term *lhs, Term *rhs);
-      static Term *cmp_ne(Term *lhs, Term *rhs);
-      static Term *cmp_gt(Term *lhs, Term *rhs);
-      static Term *cmp_ge(Term *lhs, Term *rhs);
-      static Term *cmp_lt(Term *lhs, Term *rhs);
-      static Term *cmp_le(Term *lhs, Term *rhs);
+      static Term *cmp_eq(Term*, Term*);
+      static Term *cmp_ne(Term*, Term*);
+      static Term *cmp_gt(Term*, Term*);
+      static Term *cmp_ge(Term*, Term*);
+      static Term *cmp_lt(Term*, Term*);
+      static Term *cmp_le(Term*, Term*);
       ///@}
       
       /// \name Other integer operations
       ///@{
-      static Term *max(Term *lhs, Term *rhs);
-      static Term *min(Term *lhs, Term *rhs);
-      static Term* align_to(Term *offset, Term *align);
+      static Term *max(Term*, Term*);
+      static Term *min(Term*, Term*);
+      static Term* align_to(Term*, Term*);
       ///@}
       
-      static Term *select(Term *condition, Term *if_true, Term *if_false);
+      static Term *select(Term*, Term*, Term*);
+      static Term *specialize(Term*, ArrayPtr<Term*const>);
     };
   }
 }

@@ -372,6 +372,7 @@ namespace Psi {
       return cast<FunctionTypeTerm>(type()->target_type());
     }
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static FunctionSpecialize::Ptr get(Term*, ArrayPtr<Term*const>);
     PSI_TVM_FUNCTIONAL_TYPE_END(FunctionSpecialize)
   }
 }

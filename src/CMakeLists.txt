@@ -27,9 +27,10 @@ add_library(psi SHARED
   ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp
   Tvm/Rewrite.hpp
+  Tvm/Source.cpp
   Tvm/TermOperationMap.hpp
   Tvm/User.cpp Tvm/User.hpp
-  Tvm/Utility.cpp Tvm/Utility.hpp
+  Tvm/Utility.hpp
 )
 
 add_library(psi-llvm MODULE

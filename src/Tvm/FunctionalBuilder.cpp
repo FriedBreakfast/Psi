@@ -828,5 +828,19 @@ namespace Psi {
         return undef(result->type());
       return result;
     }
+
+    /**
+     * Specialize a function by binding values to its phantom parameters.
+     */
+    Term* FunctionalBuilder::specialize(Term *function, ArrayPtr<Term*const> parameters) {      
+      if (parameters.size() == 0) {
+        if (!isa<PointerType>(function) || !isa<FunctionTypeTerm>(cast<PointerType>(function)->target_type()))
+          throw TvmUserError("specialize target is not a function pointer");
+
+        return function;
+      }
+      
+      return FunctionSpecialize::get(function, parameters);
+    }
   }
 }

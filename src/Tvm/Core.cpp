@@ -42,11 +42,12 @@ namespace Psi {
     m_source(source) {
 
       PSI_ASSERT(!source ||
+        (source->term_type() == term_global_variable) ||
         (source->term_type() == term_function) ||
         (source->term_type() == term_block) ||
         (source->term_type() == term_instruction) ||
         (source->term_type() == term_function_type_parameter) ||
-        ((source->term_type() == term_function_parameter) && source->phantom()));
+        (source->term_type() == term_function_parameter));
 
       if (!type) {
         if (term_type != term_recursive) {
@@ -104,21 +105,6 @@ namespace Psi {
       else
         return boost::hash_value(this);
     }
-
-    /**
-     * \brief Return true if the value of this term is not known
-     * 
-     * What this means is somewhat type specific, for instance a
-     * pointer type to phantom type is not considered phantom.
-     */
-    bool Term::phantom() const {
-      return source() ? isa<FunctionParameterTerm>(source()) : false;
-    }
-    
-    /// \brief Whether this is part of a function type (i.e. it contains function type parameters)
-    bool Term::parameterized() const {
-      return source() ? isa<FunctionTypeParameterTerm>(source()) : false;
-    }
     
     std::size_t Context::HashTermHasher::operator() (const HashTerm& h) const {
       return h.m_hash;
@@ -142,7 +128,7 @@ namespace Psi {
      * pointer to this type.
      */
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name)
-      : Term(ui, context, term_type, NULL, PointerType::get(type)),
+      : Term(ui, context, term_type, this, PointerType::get(type)),
         m_name(name) {
       PSI_ASSERT(!type->source());
     }
@@ -156,29 +142,32 @@ namespace Psi {
     }
 
     GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type,
-                                           bool constant, const std::string& name)
+                                           const std::string& name)
       : GlobalTerm(ui, context, term_global_variable, type, name),
-	m_constant(constant) {
+	m_constant(false) {
     }
 
     void GlobalVariableTerm::set_value(Term* value) {
-      if (!value->global())
-	throw TvmUserError("value of global variable must be a global");
-
       if (value->phantom())
         throw TvmUserError("value of global variable cannot be phantom");
+
+      if (value->source()) {
+        GlobalTerm *source = dyn_cast<GlobalTerm>(value->source());
+        if (!source || (module() != source->module()))
+          throw TvmUserError("value of global variable must be a global from the same module");
+      }
 
       set_base_parameter(0, value);
     }
 
     class GlobalVariableTerm::Initializer : public InitializerBase<GlobalVariableTerm> {
     public:
-      Initializer(Term* type, bool constant, const std::string& name)
-	: m_type(type), m_constant(constant), m_name(name) {
+      Initializer(Term* type, const std::string& name)
+	: m_type(type), m_name(name) {
       }
 
       GlobalVariableTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) GlobalVariableTerm(ui, context, m_type, m_constant, m_name);
+	return new (base) GlobalVariableTerm(ui, context, m_type, m_name);
       }
 
       std::size_t n_uses() const {
@@ -187,25 +176,24 @@ namespace Psi {
 
     private:
       Term* m_type;
-      bool m_constant;
       std::string m_name;
     };
 
     /**
      * \brief Create a new global term.
      */
-    GlobalVariableTerm* Context::new_global_variable(Term* type, bool constant, const std::string& name) {
+    GlobalVariableTerm* Module::new_global_variable(const std::string& name, Term* type) {
       if (type->phantom())
         throw TvmUserError("global variable type cannot be phantom");
 
-      return allocate_term(GlobalVariableTerm::Initializer(type, constant, name));
+      return context().allocate_term(GlobalVariableTerm::Initializer(type, name));
     }
 
     /**
      * \brief Create a new global term, initialized with the specified value.
      */
-    GlobalVariableTerm* Context::new_global_variable_set(Term* value, bool constant, const std::string& name) {
-      GlobalVariableTerm* t = new_global_variable(value->type(), constant, name);
+    GlobalVariableTerm* Module::new_global_variable_set(const std::string& name, Term* value) {
+      GlobalVariableTerm* t = new_global_variable(name, value->type());
       t->set_value(value);
       return t;
     }

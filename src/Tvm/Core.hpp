@@ -25,6 +25,7 @@ namespace Psi {
    */
   namespace Tvm {
     class Context;
+    class Module;
     class Term;
 
     /**
@@ -88,7 +89,13 @@ namespace Psi {
       cconv_x86_fastcall
     };
 
-    template<typename T> struct CastImplementation;
+#ifndef PSI_DOXYGEN    
+    template<typename T> struct CastImplementation {
+      // This exists to prevent SFINAE from claiming that no matching
+      // function exists when calling cast or dyn_cast.
+      typedef void Ptr;
+    };
+#endif
 
     template<typename T, typename U>
     typename CastImplementation<T>::Ptr cast(U *p) {
@@ -97,7 +104,7 @@ namespace Psi {
 
     template<typename T, typename U>
     bool isa(U *p) {
-      return CastImplementation<T>::isa(p);
+      return !p || CastImplementation<T>::isa(p);
     }
 
     template<typename T, typename U>
@@ -149,8 +156,6 @@ namespace Psi {
       TermType term_type() const {return static_cast<TermType>(m_term_type);}
       /// \brief Whether this term can be the type of another term
       bool is_type() const {return (m_category == category_metatype) || (m_category == category_type);}
-      /// \brief If this term is global: it only contains references to constant values and global addresses.
-      bool global() const {return !m_source;}
 
       bool phantom() const;
       bool parameterized() const;
@@ -168,6 +173,7 @@ namespace Psi {
        * given function.</li>
        * <li>Phantom parameter - a phantom value</li>
        * <li>Function type parameter - a parameterized value</li>
+       * <li>Global term - uses values from this module</li>
        * <li>Block - non-constant values are phi nodes in this block.</li>
        * <li>Instruction - this is the last instruction contributing to
        * the resulting value</li>
@@ -259,8 +265,6 @@ namespace Psi {
       TermType term_type() const {return m_ptr->term_type();}
       /// \copydoc Term::is_type
       bool is_type() const {return m_ptr->is_type();}
-      /// \copydoc Term::global
-      bool global() const {return m_ptr->global();}
       /// \copydoc Term::phantom
       bool phantom() const {return m_ptr->phantom();}
       /// \copydoc Term::source
@@ -318,14 +322,20 @@ namespace Psi {
     class GlobalTerm : public Term {
       friend class GlobalVariableTerm;
       friend class FunctionTerm;
+      friend class Module;
 
     public:
       Term* value_type() const;
+      /// \brief Get the module this global belongs to.
+      Module* module() const {return m_module;}
+      /// \brief Get the name of this global within the module.
       const std::string& name() const {return m_name;}
 
     private:
-      GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name);
+      GlobalTerm(const UserInitializer&, Context *, TermType , Term* , const std::string&);
       std::string m_name;
+      Module *m_module;
+      boost::intrusive::unordered_set_member_hook<> m_term_set_hook;
     };
 
 #ifndef PSI_DOXYGEN
@@ -351,21 +361,24 @@ namespace Psi {
      * \brief Global variable.
      */
     class GlobalVariableTerm : public GlobalTerm {
-      friend class Context;
+      friend class Module;
 
     public:
       void set_value(Term* value);
       Term* value() const {return get_base_parameter(0);}
 
+      /**
+       * \brief Whether this global is created in a read only section
+       * 
+       * By default, global variables are created in writable sections.
+       */
       bool constant() const {return m_constant;}
+      /// \brief Set whether this global is created in a read only section
+      void set_constant(bool is_const) {m_constant = is_const;}
 
     private:
       class Initializer;
-      /**
-       * Need to add parameters for linkage and possibly thread
-       * locality.
-       */
-      GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type, bool constant, const std::string& name);
+      GlobalVariableTerm(const UserInitializer&, Context*, Term*, const std::string&);
 
       bool m_constant;
     };
@@ -382,11 +395,49 @@ namespace Psi {
     class ApplyTerm;
     class RecursiveTerm;
     class RecursiveParameterTerm;
+    
+    /**
+     * \brief Tvm module class.
+     * 
+     * A collection of functions and global variables which can be compiled
+     * and linked to other modules.
+     */
+    class Module {
+    public:
+      struct GlobalTermHasher {std::size_t operator () (const GlobalTerm&) const;};
+      
+      typedef boost::intrusive::unordered_set<GlobalTerm,
+                                              boost::intrusive::member_hook<GlobalTerm, boost::intrusive::unordered_set_member_hook<>, &GlobalTerm::m_term_set_hook>,
+                                              boost::intrusive::hash<GlobalTermHasher>,
+                                              boost::intrusive::power_2_buckets<true> > ModuleMemberList;
+                                              
+    private:
+      Context *m_context;
+      ModuleMemberList m_members;
+      
+    public:
+      /// \brief Get the context this module belongs to.
+      Context& context() {return *m_context;}
+      /// \brief Get the map of members of this module
+      ModuleMemberList& members() {return m_members;}
+      
+      GlobalTerm* get_member(const std::string&);
+      GlobalVariableTerm* new_global_variable(const std::string&, Term*);
+      GlobalVariableTerm* new_global_variable_set(const std::string&, Term*);
+      FunctionTerm* new_function(const std::string&, FunctionTypeTerm*);
+    };
 
+    /**
+     * \brief Tvm context class.
+     * 
+     * Manages memory for terms, and ensures that equivalent terms are
+     * not duplicated.
+     */
     class Context {
       friend class HashTerm;
       friend class FunctionTerm;
       friend class BlockTerm;
+      friend class Module;
 
       struct TermDisposer;
       struct HashTermHasher {std::size_t operator () (const HashTerm&) const;};
@@ -435,11 +486,6 @@ namespace Psi {
 
       void resolve_recursive(RecursiveTerm* recursive, Term* to);
 
-      GlobalVariableTerm* new_global_variable(Term* type, bool constant, const std::string& name);
-      GlobalVariableTerm* new_global_variable_set(Term* value, bool constant, const std::string& name);
-
-      FunctionTerm* new_function(FunctionTypeTerm* type, const std::string& name);
-
     private:
       Context(const Context&);
 
@@ -454,6 +500,8 @@ namespace Psi {
     };
 
     bool term_unique(Term* term);
+    Term* common_source(Term *t1, Term *t2);
+    bool source_dominated(Term *dominator, Term *dominated);
   }
 }
 

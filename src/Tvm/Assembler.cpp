@@ -26,14 +26,18 @@ namespace Psi {
 	return m_str;
       }
 
-      AssemblerContext::AssemblerContext(Context *context) : m_context(context), m_parent(0) {
+      AssemblerContext::AssemblerContext(Module *module) : m_module(module), m_parent(0) {
       }
 
-      AssemblerContext::AssemblerContext(const AssemblerContext *parent) : m_context(parent->m_context), m_parent(parent) {
+      AssemblerContext::AssemblerContext(const AssemblerContext *parent) : m_module(parent->m_module), m_parent(parent) {
+      }
+      
+      Module& AssemblerContext::module() const {
+        return *m_module;
       }
 
       Context& AssemblerContext::context() const {
-	return *m_context;
+	return module().context();
       }
 
       Term* AssemblerContext::get(const std::string& name) const {
@@ -73,9 +77,9 @@ namespace Psi {
         switch (expression.literal_type) {
 #define HANDLE_INT(lit_name,int_name)                                   \
           case Parser::literal_##lit_name:                              \
-            return build_literal_int(IntegerType::get(context.context(), IntegerType::int_name, true), expression); \
+            return build_literal_int(FunctionalBuilder::int_type(context.context(), IntegerType::int_name, true), expression); \
         case Parser::literal_u##lit_name:                               \
-            return build_literal_int(IntegerType::get(context.context(), IntegerType::int_name, false), expression);
+            return build_literal_int(FunctionalBuilder::int_type(context.context(), IntegerType::int_name, false), expression);
 
           HANDLE_INT(byte,  i8)
           HANDLE_INT(short, i16)
@@ -263,8 +267,8 @@ namespace Psi {
       }
     }
 
-    AssemblerResult build(Context& context, const boost::intrusive::list<Parser::NamedGlobalElement>& globals) {
-      Assembler::AssemblerContext asmct(&context);
+    AssemblerResult build(Module& module, const boost::intrusive::list<Parser::NamedGlobalElement>& globals) {
+      Assembler::AssemblerContext asmct(&module);
       AssemblerResult result;
 
       for (UniqueList<Parser::NamedGlobalElement>::const_iterator it = globals.begin();
@@ -272,13 +276,14 @@ namespace Psi {
 	if (it->value->global_type == Parser::global_function) {
           const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
           FunctionTypeTerm* function_type = Assembler::build_function_type(asmct, *def.type);
-          FunctionTerm* function = context.new_function(function_type, it->name->text);
+          FunctionTerm* function = module.new_function(it->name->text, function_type);
 	  asmct.put(it->name->text, function);
 	  result[it->name->text] = function;
 	} else if (it->value->global_type == Parser::global_variable) {
           const Parser::GlobalVariable& var = checked_cast<const Parser::GlobalVariable&>(*it->value);
           Term* global_type = Assembler::build_expression(asmct, *var.type);
-          GlobalVariableTerm* global_var = context.new_global_variable(global_type, var.constant, it->name->text);
+          GlobalVariableTerm* global_var = module.new_global_variable(it->name->text, global_type);
+          global_var->set_constant(var.constant);
           asmct.put(it->name->text, global_var);
           result[it->name->text] = global_var;
 	} else {

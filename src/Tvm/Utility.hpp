@@ -17,9 +17,6 @@ namespace Psi {
       return bl;
     }
 
-    Term* common_source(Term *t1, Term *t2);
-    bool source_dominated(Term *dominator, Term *dominated);
-
     /**
      * \brief Compute the offset to the next field.
      *

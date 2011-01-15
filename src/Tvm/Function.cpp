@@ -578,8 +578,8 @@ namespace Psi {
     /**
      * \brief Create a new function.
      */
-    FunctionTerm* Context::new_function(FunctionTypeTerm* type, const std::string& name) {
-      return allocate_term(FunctionTerm::Initializer(type, name));
+    FunctionTerm* Module::new_function(const std::string& name, FunctionTypeTerm* type) {
+      return context().allocate_term(FunctionTerm::Initializer(type, name));
     }
 
     /**

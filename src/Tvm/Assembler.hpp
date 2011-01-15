@@ -31,15 +31,16 @@ namespace Psi {
 
       class AssemblerContext {
       public:
-	AssemblerContext(Context *context);
+	AssemblerContext(Module *module);
 	AssemblerContext(const AssemblerContext *parent);
 
+        Module& module() const;
 	Context& context() const;
 	Term* get(const std::string& name) const;
 	void put(const std::string& name, Term* value);
 
       private:
-	Context *m_context;
+        Module *m_module;
 	const AssemblerContext *m_parent;
         typedef std::tr1::unordered_map<std::string, Term*> TermMap;
 	TermMap m_terms;
@@ -50,7 +51,7 @@ namespace Psi {
       FunctionTerm* build_function(AssemblerContext& context, const Parser::Function& function);
       Term* build_call_expression(AssemblerContext& context, const Parser::Expression& expression);
 
-      typedef boost::function<FunctionalTerm*(const std::string&,AssemblerContext&,const Parser::CallExpression&)> FunctionalTermCallback;
+      typedef boost::function<Term*(const std::string&,AssemblerContext&,const Parser::CallExpression&)> FunctionalTermCallback;
       typedef boost::function<InstructionTerm*(const std::string&,BlockTerm&,AssemblerContext&,const Parser::CallExpression&)> InstructionTermCallback;
 
       extern const std::tr1::unordered_map<std::string, FunctionalTermCallback> functional_ops;
