@@ -2,44 +2,19 @@
 #define HPP_PSI_TVM_REWRITE
 
 #include "Core.hpp"
+#include "Function.hpp"
 #include "Functional.hpp"
 #include "Recursive.hpp"
 
 namespace Psi {
   namespace Tvm {
-#if 0
-    template<typename T=Term>
-    class ParameterListRewriter : public ScopedArray<T*> {
-    public:
-      template<typename U, typename V>
-      ParameterListRewriter(U term, const V& rewriter)
-	: ScopedArray<T*>(term->n_parameters()) {
-	for (std::size_t i = 0; i != this->size(); ++i)
-          (*this)[i] = rewriter(term->parameter(i), this->slice(0, i));
-      }
-    };
-
-    template<typename T>
-    class ParameterListRewriterAdapter {
-    public:
-      ParameterListRewriterAdapter(const T *self) : m_self(self) {}
-
-      Term* operator () (Term* term, ArrayPtr<Term*const>) const {
-	return (*m_self)(term);
-      }
-
-    private:
-      const T *m_self;
-    };
-#endif
-
     /**
      * Rewrite an apply term, using a callback to rewrite each
      * parameter, and return an apply term over the rewritten
      * parameters. This allows rewriting of the recursive term used.
      */
     template<typename T>
-    ApplyTerm* rewrite_apply_term(const T& rewriter, ApplyTerm* term) {
+    ApplyTerm* rewrite_apply_term(T& rewriter, ApplyTerm* term) {
       Term* recursive_base = rewriter(term->recursive());
       if (recursive_base->term_type() != term_recursive)
 	throw TvmInternalError("result of rewriting recursive term was not a recursive term");
@@ -57,7 +32,7 @@ namespace Psi {
      * apply term.
      */
     template<typename T>
-    FunctionalTerm* rewrite_functional_term(const T& rewriter, FunctionalTerm* term) {
+    FunctionalTerm* rewrite_functional_term(T& rewriter, FunctionalTerm* term) {
       ScopedArray<Term*> parameters(term->n_parameters());
       for (unsigned i = 0; i != parameters.size(); ++i)
         parameters[i] = rewriter(term->parameter(i));
@@ -70,7 +45,7 @@ namespace Psi {
      * #rewrite_apply_term and #rewrite_functional_term.
      */
     template<typename T>
-    Term* rewrite_term_default(const T& rewriter, Term* term) {
+    Term* rewrite_term_default(T& rewriter, Term* term) {
       if (term_unique(term))
         return term;
 
@@ -94,13 +69,7 @@ namespace Psi {
         throw TvmInternalError("function type term rewriting must happen through TermRewriter");
 
       case term_function_type_parameter:
-	throw TvmInternalError("cannot rewrite a function type parameter term in a "
-                               "default way since it must be mapped to a value "
-                               "from rewriting earlier terms");
-
-      case term_function_type_resolver:
-	throw TvmInternalError("function type resolver terms should not be passed "
-                               "to rewrite_term_default");
+        throw TvmInternalError("unresolved function parameter encountered during term rewriting");
 
       default:
 	throw TvmInternalError("unknown term type");
@@ -113,61 +82,70 @@ namespace Psi {
      */
     template<typename T>
     class TermRewriter {
-      typedef std::tr1::unordered_map<FunctionTypeTerm*, ArrayPtr<FunctionTypeParameterTerm*const> > FunctionMapType;
+      typedef std::tr1::unordered_map<std::pair<std::size_t, std::size_t>, FunctionTypeParameterTerm*,
+                                      boost::hash<std::pair<std::size_t, std::size_t> > > FunctionParameterMapType;
+      TermRewriter(const TermRewriter&);
+      T *m_user;
+      std::size_t m_depth;
+      FunctionParameterMapType m_function_parameters;
 
     public:
-      explicit TermRewriter(T *user) : m_user(user) {}
+      explicit TermRewriter(T *user) : m_user(user), m_depth(0) {}
+      
+      /**
+       * Return the number of function types that have been entered.
+       */
+      std::size_t function_type_depth() const {
+        return m_depth;
+      }
 
       Term* operator () (Term* term) {
         switch (term->term_type()) {
         case term_function_type: {
+          ++m_depth;
           FunctionTypeTerm *cast_term = cast<FunctionTypeTerm>(term);
-          PSI_ASSERT_MSG(m_functions.find(cast_term) == m_functions.end(),
-                         "recursive function types not supported");
-          ArrayPtr<FunctionTypeParameterTerm*const>& status = m_functions[cast_term];
+          
           ScopedArray<FunctionTypeParameterTerm*> parameters(cast_term->n_parameters());
-          for (unsigned i = 0; i != parameters.size(); ++i) {
-            status = parameters.slice(0, i);
-            Term *param_type = (*m_user)(cast_term->parameter(i)->type());
+          for (unsigned i = 0, e = parameters.size(); i != e; ++i) {
+            Term *param_type = (*m_user)(cast_term->parameter_type(i));
             parameters[i] = term->context().new_function_type_parameter(param_type);
+            m_function_parameters[std::make_pair(m_depth, i)] = parameters[i];
           }
 
           Term* result_type = (*m_user)(cast_term->result_type());
-          m_functions.erase(cast_term);
+          
+          for (unsigned i = 0, e = parameters.size(); i != e; ++i)
+            m_function_parameters.erase(std::make_pair(m_depth, i));
 
           std::size_t n_phantom = cast_term->n_phantom_parameters();
           std::size_t n_parameters = cast_term->n_parameters();
 
+          --m_depth;
           return term->context().get_function_type
             (cast_term->calling_convention(),
              result_type,
              parameters.slice(0, n_phantom),
              parameters.slice(n_phantom, n_parameters - n_phantom));
         }
-
-        case term_function_type_parameter: {
-          FunctionTypeParameterTerm *cast_term = cast<FunctionTypeParameterTerm>(term);
-          FunctionTypeTerm* source = cast_term->source();
-
-          FunctionMapType::iterator it = m_functions.find(source);
-          if (it == m_functions.end())
-            throw TvmInternalError("encountered parameter to unknown function during term rewriting");
-
-          if (cast_term->index() >= it->second.size())
-            throw TvmInternalError("function type parameter definition refers to value of later parameter");
-
-          return it->second[cast_term->index()];
+        
+        case term_functional: {
+          if (FunctionTypeResolvedParameter::Ptr parameter = dyn_cast<FunctionTypeResolvedParameter>(term)) {
+            if (parameter->depth() >= m_depth)
+              throw TvmInternalError("unknown function type parameter encountered during term rewriting");
+            std::pair<std::size_t, std::size_t> index(m_depth - parameter->depth(), parameter->index());
+            PSI_ASSERT(m_function_parameters.find(index) != m_function_parameters.end());
+            return m_function_parameters[index];
+          } else {
+            break;
+          }
         }
 
         default:
-          return rewrite_term_default(*m_user, term);
+          break;
         }
+        
+        return rewrite_term_default(*m_user, term);
       }
-
-    private:
-      TermRewriter(const TermRewriter&);
-      FunctionMapType m_functions;
-      T *m_user;
     };
   }
 }

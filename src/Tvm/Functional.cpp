@@ -3,15 +3,10 @@
 
 namespace Psi {
   namespace Tvm {
-    FunctionalTerm::FunctionalTerm(const UserInitializer& ui, Context *context, Term* type,
-				   bool phantom, std::size_t hash, const char *operation,
+    FunctionalTerm::FunctionalTerm(const UserInitializer& ui, Context *context, Term* type, Term *source,
+				   std::size_t hash, const char *operation,
 				   ArrayPtr<Term*const> parameters)
-      : HashTerm(ui, context, term_functional,
-		 term_abstract(type) || any_abstract(parameters),
-		 term_parameterized(type) || any_parameterized(parameters),
-                 phantom,
-                 common_source(term_source(type), common_source(parameters)),
-		 type, hash),
+      : HashTerm(ui, context, term_functional, source, type, hash),
 	m_operation(operation) {
       for (std::size_t i = 0; i < parameters.size(); ++i)
 	set_base_parameter(i, parameters[i]);
@@ -34,11 +29,15 @@ namespace Psi {
       void prepare_initialize(Context *context) {
         FunctionalTypeResult tr = m_setup->type(*context, m_parameters);
         m_type = tr.type;
-        m_phantom = tr.phantom;
+        if (tr.phantom) {
+          PSI_FAIL("not implemented");
+        } else {
+          PSI_FAIL("not implemented");
+        }
       }
 
       FunctionalTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
-        return m_setup->construct(base, ui, context, m_type, m_phantom, m_hash, m_setup->operation, m_parameters);
+        return m_setup->construct(base, ui, context, m_type, m_source, m_hash, m_setup->operation, m_parameters);
       }
 
       std::size_t hash() const {
@@ -80,8 +79,7 @@ namespace Psi {
       std::size_t m_hash;
       ArrayPtr<Term*const> m_parameters;
       const FunctionalTermSetup *m_setup;
-      Term* m_type;
-      bool m_phantom;
+      Term *m_type, *m_source;
     };
 
     /**

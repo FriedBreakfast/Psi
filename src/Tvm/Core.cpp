@@ -46,38 +46,8 @@ namespace Psi {
       User::resize_uses(n);
     }
 
-    PersistentTermPtr::PersistentTermPtr()
-      : TermUser(UserInitializer(1, m_uses), term_ptr) {
-    }
-
-    PersistentTermPtr::PersistentTermPtr(const PersistentTermPtr& src)
-      : TermUser(UserInitializer(1, m_uses), term_ptr) {
-      reset(src.get());
-    }
-
-    PersistentTermPtr::PersistentTermPtr(Term *ptr)
-      : TermUser(UserInitializer(1, m_uses), term_ptr) {
-      reset(ptr);
-    }
-
-    PersistentTermPtr::~PersistentTermPtr() {
-      reset(0);
-    }
-
-    void PersistentTermPtr::reset(Term *term) {
-      use_set(0, term);
-    }
-
-    const PersistentTermPtr& PersistentTermPtr::operator = (const PersistentTermPtr& o) {
-      reset(o.get());
-      return *this;
-    }
-
-    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool phantom, Term *source, Term* type)
+    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type)
       : TermUser(ui, term_type),
-        m_abstract(abstract),
-        m_parameterized(parameterized),
-        m_phantom(phantom),
         m_context(context),
         m_source(source) {
 
@@ -134,23 +104,33 @@ namespace Psi {
     }
 
     std::size_t Term::hash_value() const {
-      switch (term_type()) {
-      case term_functional:
-      case term_function_type_resolver:
-	return checked_cast<const HashTerm*>(this)->m_hash;
-
-      default:
-	PSI_ASSERT(!dynamic_cast<const HashTerm*>(this));
-	return boost::hash_value(this);
-      }
+      if (HashTerm *ht = dyn_cast<HashTerm>(const_cast<Term*>(this)))
+        return ht->m_hash;
+      else
+        return boost::hash_value(this);
     }
 
+    /**
+     * \brief Return true if the value of this term is not known
+     * 
+     * What this means is somewhat type specific, for instance a
+     * pointer type to phantom type is not considered phantom.
+     */
+    bool Term::phantom() const {
+      return source() ? isa<FunctionParameterTerm>(source()) : false;
+    }
+    
+    /// \brief Whether this is part of a function type (i.e. it contains function type parameters)
+    bool Term::parameterized() const {
+      return source() ? isa<FunctionTypeParameterTerm>(source()) : false;
+    }
+    
     std::size_t Context::HashTermHasher::operator() (const HashTerm& h) const {
       return h.m_hash;
     }
 
-    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool phantom, Term *source, Term* type, std::size_t hash)
-      : Term(ui, context, term_type, abstract, parameterized, phantom, source, type),
+    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type, std::size_t hash)
+      : Term(ui, context, term_type, source, type),
 	m_hash(hash) {
     }
 
@@ -167,9 +147,9 @@ namespace Psi {
      * pointer to this type.
      */
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name)
-      : Term(ui, context, term_type, false, false, false, NULL, PointerType::get(type)),
+      : Term(ui, context, term_type, NULL, PointerType::get(type)),
         m_name(name) {
-      PSI_ASSERT(!type->phantom() && !type->parameterized() && !type->abstract());
+      PSI_ASSERT(!type->source());
     }
 
     /**
@@ -190,8 +170,8 @@ namespace Psi {
       if (!value->global())
 	throw TvmUserError("value of global variable must be a global");
 
-      if (value->phantom() || value->abstract() || value->parameterized())
-        throw TvmUserError("value of global variable cannot be phantom, abstract or parameterized");
+      if (value->phantom())
+        throw TvmUserError("value of global variable cannot be phantom");
 
       set_base_parameter(0, value);
     }
@@ -220,8 +200,8 @@ namespace Psi {
      * \brief Create a new global term.
      */
     GlobalVariableTerm* Context::new_global_variable(Term* type, bool constant, const std::string& name) {
-      if (type->phantom() || type->abstract() || type->parameterized())
-        throw TvmUserError("global variable type cannot be phantom, abstract or parameterized");
+      if (type->phantom())
+        throw TvmUserError("global variable type cannot be phantom");
 
       return allocate_term(GlobalVariableTerm::Initializer(type, constant, name));
     }

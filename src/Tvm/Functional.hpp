@@ -53,7 +53,7 @@ namespace Psi {
     private:
       class Setup;
       FunctionalTerm(const UserInitializer& ui, Context *context, Term* type,
-		     bool phantom, std::size_t hash, const char *operation,
+		     Term *source, std::size_t hash, const char *operation,
 		     ArrayPtr<Term*const> parameters);
 
       const char *m_operation;
@@ -73,9 +73,9 @@ namespace Psi {
 
     private:
       FunctionalTermWithData(const UserInitializer& ui, Context *context, Term* type,
-			     bool phantom, std::size_t hash, const char *operation,
+			     Term *source, std::size_t hash, const char *operation,
 			     ArrayPtr<Term*const> parameters, const Data& data)
-        : FunctionalTerm(ui, context, type, phantom, hash, operation, parameters),
+        : FunctionalTerm(ui, context, type, source, hash, operation, parameters),
           CompressedBase<Data>(data) {
       }
     };
@@ -110,9 +110,9 @@ namespace Psi {
  
     private:
       FunctionalTermSpecialized(const UserInitializer& ui, Context *context, Term* type,
-                                bool phantom, std::size_t hash, const char *operation,
+                                Term *source, std::size_t hash, const char *operation,
                                 ArrayPtr<Term*const> parameters, const Data& data)
-        : BaseType(ui, context, type, phantom, hash, operation, parameters, data) {
+        : BaseType(ui, context, type, source, hash, operation, parameters, data) {
       }
     };
 
@@ -128,8 +128,8 @@ namespace Psi {
       std::size_t term_size;
       virtual bool data_equals(FunctionalTerm *term) const = 0;
       virtual FunctionalTerm* construct(void *ptr,
-                                        const UserInitializer& ui, Context *context, Term* type,
-                                        bool phantom, std::size_t hash, const char *operation,
+                                        const UserInitializer& ui, Context *context, Term* type, Term *source,
+                                        std::size_t hash, const char *operation,
                                         ArrayPtr<Term*const> parameters) const = 0;
 
       virtual FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const = 0;
@@ -150,11 +150,11 @@ namespace Psi {
       }
 
       virtual FunctionalTerm* construct(void *ptr,
-                                        const UserInitializer& ui, Context *context, Term* type,
-                                        bool phantom, std::size_t hash, const char *operation,
+                                        const UserInitializer& ui, Context *context, Term* type, Term *source,
+                                        std::size_t hash, const char *operation,
                                         ArrayPtr<Term*const> parameters) const {
         return new (ptr) FunctionalTermSpecialized<TermTagType>
-          (ui, context, type, phantom, hash, operation, parameters, *data);
+          (ui, context, type, source, hash, operation, parameters, *data);
       }
 
       virtual FunctionalTypeResult type(Context& context, ArrayPtr<Term*const> parameters) const {

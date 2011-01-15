@@ -77,6 +77,8 @@ namespace Psi {
           case term_function: return common_source_function_function(cast<FunctionTerm>(t1), cast<FunctionTerm>(t2));
           case term_block: return common_source_function_block(cast<FunctionTerm>(t1), cast<BlockTerm>(t2));
           case term_instruction: return common_source_function_instruction(cast<FunctionTerm>(t1), cast<InstructionTerm>(t2));
+          case term_function_parameter: return t2;
+          case term_function_type_parameter: return t2;
           default: PSI_FAIL("unexpected term type");
           }
 
@@ -85,6 +87,8 @@ namespace Psi {
           case term_function: return common_source_function_block(cast<FunctionTerm>(t2), cast<BlockTerm>(t1));
           case term_block: return common_source_block_block(cast<BlockTerm>(t1), cast<BlockTerm>(t2));
           case term_instruction: return common_source_block_instruction(cast<BlockTerm>(t1), cast<InstructionTerm>(t2));
+          case term_function_parameter: return t2;
+          case term_function_type_parameter: return t2;
           default: PSI_FAIL("unexpected term type");
           }
 
@@ -93,7 +97,25 @@ namespace Psi {
           case term_function: return common_source_function_instruction(cast<FunctionTerm>(t2), cast<InstructionTerm>(t1));
           case term_block: return common_source_block_instruction(cast<BlockTerm>(t2), cast<InstructionTerm>(t1));
           case term_instruction: return common_source_instruction_instruction(cast<InstructionTerm>(t1), cast<InstructionTerm>(t2));
+          case term_function_parameter: return t2;
           default: PSI_FAIL("unexpected term type");
+          }
+          
+        case term_function_type_parameter:
+          switch (t2->term_type()) {
+          default: return t1;
+          case term_function_type_parameter: return std::max(t1, t2);
+          }
+          
+        case term_function_parameter:
+          switch (t2->term_type()) {
+          default: return t1;
+          case term_function_type_parameter: return t2;          
+          case term_function_parameter: {
+            if (cast<FunctionParameterTerm>(t1)->function() != cast<FunctionParameterTerm>(t2)->function())
+              return common_source_fail();
+            return std::max(t1, t2);
+          }
           }
 
         default:

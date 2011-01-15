@@ -533,9 +533,7 @@ namespace Psi {
       }
       m_value_map[old_function()->entry()] = Value(entry_block, true);
 
-      std::vector<BlockTerm*> sorted_blocks = topsort_blocks();
-      PSI_ASSERT(!sorted_blocks.empty());
-      PSI_ASSERT(sorted_blocks[0] == old_function()->entry());
+      std::vector<BlockTerm*> sorted_blocks = old_function()->topsort_blocks();
       
       // Set up block mapping for all blocks except the entry block,
       // which has already been handled
@@ -564,50 +562,6 @@ namespace Psi {
             m_value_map[insn] = value;
         }
       }
-    }
-
-    /**
-     * Work out the order in which to build the blocks so all instruction values
-     * required to build an instruction are available.
-     */
-    std::vector<BlockTerm*> AggregateLoweringPass::FunctionRunner::topsort_blocks() {
-      // Set up basic blocks
-      BlockTerm* entry_block = old_function()->entry();
-      std::tr1::unordered_set<BlockTerm*> visited_blocks;
-      std::vector<BlockTerm*> block_queue;
-      std::vector<BlockTerm*> blocks;
-      visited_blocks.insert(entry_block);
-      block_queue.push_back(entry_block);
-      blocks.push_back(entry_block);
-
-      // find root block set
-      while (!block_queue.empty()) {
-        BlockTerm *bl = block_queue.back();
-        block_queue.pop_back();
-
-        if (!bl->terminated())
-          throw TvmUserError("cannot perform aggregate lowering on function with unterminated blocks");
-
-        std::vector<BlockTerm*> successors = bl->successors();
-        for (std::vector<BlockTerm*>::iterator it = successors.begin();
-              it != successors.end(); ++it) {
-          std::pair<std::tr1::unordered_set<BlockTerm*>::iterator, bool> p = visited_blocks.insert(*it);
-          if (p.second) {
-            block_queue.push_back(*it);
-            if (!(*it)->dominator())
-              blocks.push_back(*it);
-          }
-        }
-      }
-
-      // get remaining blocks in topological order
-      for (std::size_t i = 0; i < blocks.size(); ++i) {
-        std::vector<BlockTerm*> dominated = blocks[i]->dominated_blocks();
-        for (std::vector<BlockTerm*>::iterator it = dominated.begin(); it != dominated.end(); ++it)
-          blocks.push_back(*it);
-      }
-      
-      return blocks;
     }
 
     AggregateLoweringPass::Value AggregateLoweringPass::FunctionRunner::load_value(Term *load_term, Term *ptr) {

@@ -6,23 +6,22 @@
 
 namespace Psi {
   namespace Tvm {
-    RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type, bool phantom)
-      : Term(ui, context, term_recursive_parameter, true, false, phantom, term_source(type), type) {
+    RecursiveParameterTerm::RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type)
+      : Term(ui, context, term_recursive_parameter, type->source(), type) {
     }
 
     class RecursiveParameterTerm::Initializer : public InitializerBase<RecursiveParameterTerm> {
     public:
-      Initializer(Term* type, bool phantom) : m_type(type), m_phantom(phantom) {}
+      Initializer(Term* type) : m_type(type) {}
 
       RecursiveParameterTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
-	return new (base) RecursiveParameterTerm(ui, context, m_type, m_phantom);
+	return new (base) RecursiveParameterTerm(ui, context, m_type);
       }
 
       std::size_t n_uses() const {return 0;}
 
     private:
       Term* m_type;
-      bool m_phantom;
     };
 
     /**
@@ -35,37 +34,33 @@ namespace Psi {
      * parameters can have phantom values in them without making the
      * overall value a phantom (unless it is always a phantom).
      */
-    RecursiveParameterTerm* Context::new_recursive_parameter(Term* type, bool phantom) {
-      return allocate_term(RecursiveParameterTerm::Initializer(type, phantom));
+    RecursiveParameterTerm* Context::new_recursive_parameter(Term* type) {
+      return allocate_term(RecursiveParameterTerm::Initializer(type));
     }
 
     RecursiveTerm::RecursiveTerm(const UserInitializer& ui, Context *context, Term* result_type,
-				 Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters,
-                                 bool phantom)
-      : Term(ui, context, term_recursive, true, false, phantom, source, NULL) {
-      set_base_parameter(0, result_type);
-      for (std::size_t i = 0; i < parameters.size(); ++i) {
-	set_base_parameter(i+2, parameters[i]);
-      }
+				 Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters)
+      : Term(ui, context, term_recursive, source, result_type) {
+      for (std::size_t i = 0; i < parameters.size(); ++i)
+	set_base_parameter(i+1, parameters[i]);
     }
 
     class RecursiveTerm::Initializer : public InitializerBase<RecursiveTerm> {
     public:
-      Initializer(Term *source, Term* type, ArrayPtr<RecursiveParameterTerm*const> parameters, bool phantom)
-	: m_source(source), m_type(type), m_parameters(parameters), m_phantom(phantom) {
+      Initializer(Term *source, Term* type, ArrayPtr<RecursiveParameterTerm*const> parameters)
+	: m_source(source), m_type(type), m_parameters(parameters) {
       }
 
       RecursiveTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) RecursiveTerm(ui, context, m_type, m_source, m_parameters, m_phantom);
+	return new (base) RecursiveTerm(ui, context, m_type, m_source, m_parameters);
       }
 
-      std::size_t n_uses() const {return 1;}
+      std::size_t n_uses() const {return m_parameters.size() + 1;}
 
     private:
       Term *m_source;
-      Term* m_type;
+      Term *m_type;
       ArrayPtr<RecursiveParameterTerm*const> m_parameters;
-      bool m_phantom;
     };
 
     /**
@@ -77,8 +72,7 @@ namespace Psi {
      */
     RecursiveTerm* Context::new_recursive(Term *source,
                                           Term* result_type,
-                                          ArrayPtr<Term*const> parameter_types,
-                                          bool phantom) {
+                                          ArrayPtr<Term*const> parameter_types) {
       if (source_dominated(result_type->source(), source))
         goto throw_dominator;
 
@@ -91,7 +85,7 @@ namespace Psi {
         ScopedArray<RecursiveParameterTerm*> parameters(parameter_types.size());
         for (std::size_t i = 0; i < parameters.size(); ++i)
           parameters[i] = new_recursive_parameter(parameter_types[i]);
-        return allocate_term(RecursiveTerm::Initializer(source, result_type, parameters, phantom));
+        return allocate_term(RecursiveTerm::Initializer(source, result_type, parameters));
       } else {
       throw_dominator:
         throw TvmUserError("block specified for recursive term is not dominated by parameter and result type blocks");
@@ -109,28 +103,11 @@ namespace Psi {
       return context().apply_recursive(this, parameters);
     }
 
-    namespace {
-      bool apply_is_phantom(RecursiveTerm *recursive, ArrayPtr<Term*const> parameters) {
-        if (recursive->phantom())
-          return true;
-
-        PSI_ASSERT(recursive->n_parameters() == parameters.size());
-        for (std::size_t i = 0; i < parameters.size(); i++) {
-          if (!recursive->parameter(i)->phantom() && parameters[i]->phantom())
-            return true;
-        }
-
-        return false;
-      }
-    }
-
     ApplyTerm::ApplyTerm(const UserInitializer& ui, Context *context, RecursiveTerm *recursive,
 			 ArrayPtr<Term*const> parameters, std::size_t hash)
       : HashTerm(ui, context, term_apply,
-                 recursive->abstract() || any_abstract(parameters), false,
-                 apply_is_phantom(recursive, parameters),
                  common_source(recursive->source(), common_source(parameters)),
-                 recursive->result_type(), hash) {
+                 recursive->type(), hash) {
       set_base_parameter(0, recursive);
       for (std::size_t i = 0; i < parameters.size(); ++i)
 	set_base_parameter(i+1, parameters[i]);
@@ -190,145 +167,6 @@ namespace Psi {
       throw TvmInternalError("not implemented");
     }
 
-    namespace {
-      void insert_if_abstract(std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set, Term* term) {
-	if (term->abstract()) {
-	  if (set.insert(term).second)
-	    queue.push_back(term);
-	}
-      }
-    }
-
-    /**
-     * \brief Deep search a term to determine whether it is really
-     * abstract.
-     */
-    bool Context::search_for_abstract(Term *term, std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set) {
-      if (!term->abstract())
-	return false;
-
-      PSI_ASSERT(queue.empty() && set.empty());
-      queue.push_back(term);
-      set.insert(term);
-      while(!queue.empty()) {
-	Term *term = queue.back();
-	queue.pop_back();
-
-	PSI_ASSERT(term->abstract());
-
-	insert_if_abstract(queue, set, term->type());
-
-	switch (term->term_type()) {
-	case term_functional: {
-	  FunctionalTerm *cast_term = cast<FunctionalTerm>(term);
-	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
-	    insert_if_abstract(queue, set, cast_term->parameter(i));
-	  break;
-	}
-
-	case term_recursive: {
-	  RecursiveTerm *cast_term = cast<RecursiveTerm>(term);
-	  if (!cast_term->result()) {
-	    queue.clear();
-	    set.clear();
-	    return true;
-	  }
-	  insert_if_abstract(queue, set, cast_term->result());
-	  for (std::size_t i = 0; i < cast_term->n_parameters(); i++)
-	    insert_if_abstract(queue, set, cast_term->parameter(i)->type());
-	  break;
-	}
-
-	case term_function_type: {
-	  FunctionTypeTerm *cast_term = cast<FunctionTypeTerm>(term);
-	  insert_if_abstract(queue, set, cast_term->result_type());
-	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
-	    insert_if_abstract(queue, set, cast_term->parameter(i)->type());
-	  break;
-	}
-
-	case term_recursive_parameter:
-	case term_function_type_parameter: {
-	  // Don't need to check these since they're covered by the
-	  // function_type and recursive case
-	  break;
-	}
-
-	default:
-	  PSI_FAIL("unexpected abstract term type");
-	}
-      }
-
-      queue.clear();
-      set.clear();
-      return false;
-    }
-
-    void Context::clear_and_queue_if_abstract(std::vector<Term*>& queue, Term* t) {
-      if (t->abstract()) {
-	t->m_abstract = false;
-	queue.push_back(t);
-      }
-    }
-
-    /**
-     * \brief Clear abstract flag in this term and all its
-     * descendents.
-     *
-     * \param queue Vector to use to queue terms to clear. This is an
-     * optimization since #resolve_recursive calls this function
-     * repeatedly and this saves reallocating queue space. It must be
-     * empty on entry to this function.
-     */
-    void Context::clear_abstract(Term *term, std::vector<Term*>& queue) {
-      if (!term->abstract())
-	return;
-
-      PSI_ASSERT(queue.empty());
-      queue.push_back(term);
-      while(!queue.empty()) {
-	Term *term = queue.back();
-	queue.pop_back();
-
-	switch (term->term_type()) {
-	case term_functional: {
-	  FunctionalTerm *cast_term = cast<FunctionalTerm>(term);
-	  clear_and_queue_if_abstract(queue, cast_term->type());
-	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
-	    clear_and_queue_if_abstract(queue, cast_term->parameter(i));
-	  break;
-	}
-
-	case term_recursive: {
-	  RecursiveTerm *cast_term = cast<RecursiveTerm>(term);
-	  PSI_ASSERT(cast_term->result());
-	  clear_and_queue_if_abstract(queue, cast_term->result());
-	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
-	    clear_and_queue_if_abstract(queue, cast_term->parameter(i)->type());
-	  break;
-	}
-
-	case term_function_type: {
-	  FunctionTypeTerm *cast_term = cast<FunctionTypeTerm>(term);
-	  clear_and_queue_if_abstract(queue, cast_term->result_type());
-	  for (std::size_t i = 0; i < cast_term->n_parameters(); ++i)
-	    clear_and_queue_if_abstract(queue, cast_term->parameter(i)->type());
-	  break;
-	}
-
-	case term_recursive_parameter:
-	case term_function_type_parameter: {
-	  // Don't need to check these since they're covered by the
-	  // function_type and recursive cases
-	  break;
-	}
-
-	default:
-	  PSI_FAIL("unexpected abstract term type");
-	}
-      }
-    }
-
     /**
      * \brief Resolve an opaque term.
      */
@@ -352,27 +190,6 @@ namespace Psi {
         throw TvmUserError("non-phantom recursive term cannot be resolved to a phantom term");
 
       recursive->set_base_parameter(1, to);
-
-      std::vector<Term*> queue;
-      std::tr1::unordered_set<Term*> set;
-      if (!search_for_abstract(recursive, queue, set)) {
-	recursive->m_abstract = false;
-
-	clear_abstract(recursive, queue);
-
-	std::vector<Term*> upward_queue;
-	upward_queue.push_back(recursive);
-	while (!upward_queue.empty()) {
-	  Term *t = upward_queue.back();
-	  upward_queue.pop_back();
-	  for (TermIterator<Term> it = t->term_users_begin<Term>(); it != t->term_users_end<Term>(); ++it) {
-	    if (it->abstract() && !search_for_abstract(&*it, queue, set)) {
-	      clear_abstract(&*it, queue);
-	      upward_queue.push_back(&*it);
-	    }
-	  }
-	}
-      }
     }
   }
 }

@@ -9,37 +9,11 @@
 
 namespace Psi {
   namespace Tvm {
-    inline bool term_abstract(const Term *t) {
-      return t && t->abstract();
-    }
-
-    inline bool term_parameterized(const Term *t) {
-      return t && t->parameterized();
-    }
-
-    inline bool term_global(const Term *t) {
-      return !t || t->global();
-    }
-
-    inline Term* term_source(const Term *t) {
-      return t ? t->source() : NULL;
-    }
-
-    template<typename T>
-    bool any_abstract(ArrayPtr<T*const> t) {
-      return std::find_if(t.get(), t.get()+t.size(), term_abstract) != (t.get()+t.size());
-    }
-
-    template<typename T>
-    bool any_parameterized(ArrayPtr<T*const> t) {
-      return std::find_if(t.get(), t.get()+t.size(), term_parameterized) != (t.get()+t.size());
-    }
-
     template<typename T>
     Term* common_source(ArrayPtr<T*const> t) {
       Term *bl = NULL;
       for (std::size_t i = 0; i < t.size(); ++i)
-        bl = common_source(bl, term_source(t[i]));
+        bl = common_source(bl, t[i]->source());
       return bl;
     }
 

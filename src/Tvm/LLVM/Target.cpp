@@ -71,7 +71,7 @@ namespace Psi {
 	}
 
 	for (std::size_t i = 0; i != n_passed_parameters; ++i) {
-	  boost::shared_ptr<ParameterHandler> handler = m_callback->parameter_type_info(builder, cconv, term->parameter(i+n_phantom)->type());
+	  boost::shared_ptr<ParameterHandler> handler = m_callback->parameter_type_info(builder, cconv, term->parameter_type(i+n_phantom));
 	  parameter_types.push_back(handler->llvm_type());
 	}
 

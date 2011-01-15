@@ -10,7 +10,7 @@ namespace Psi {
 
     private:
       class Initializer;
-      RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type, bool phantom);
+      RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type);
     };
 
 #ifndef PSI_DOXYGEN
@@ -31,16 +31,14 @@ namespace Psi {
       void resolve(Term* term);
       ApplyTerm* apply(ArrayPtr<Term*const> parameters);
 
-      std::size_t n_parameters() {return n_base_parameters() - 2;}
+      std::size_t n_parameters() {return n_base_parameters() - 1;}
       RecursiveParameterTerm* parameter(std::size_t i);
-      Term* result_type() {return get_base_parameter(0);}
-      Term* result() {return get_base_parameter(1);}
+      Term* result() {return get_base_parameter(0);}
 
     private:
       class Initializer;
       RecursiveTerm(const UserInitializer& ui, Context *context, Term* result_type,
-                    Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters,
-                    bool phantom);
+                    Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters);
     };
 
 #ifndef PSI_DOXYGEN

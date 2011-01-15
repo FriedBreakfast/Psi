@@ -60,7 +60,6 @@ namespace Psi {
      * \brief Identifies the Term subclass this object actually is.
      */
     enum TermType {
-      term_ptr, ///<PersistentTermPtr: \copybrief PersistentTermPtr
       term_instruction, ///< InstructionTerm: \copybrief InstructionTerm
       term_apply, ///< ApplyTerm: \copybrief ApplyTerm
       term_recursive, ///< RecursiveTerm: \copybrief RecursiveTerm
@@ -73,7 +72,6 @@ namespace Psi {
       term_function_type, ///< FunctionTypeTerm: \copybrief FunctionTypeTerm
       term_function_type_parameter, ///< FunctionTypeParameterTerm: \copybrief FunctionTypeParameterTerm
       term_functional, ///< FunctionalTerm: \copybrief FunctionalTerm
-      term_function_type_resolver, ///< FunctionTypeResolverTerm: \copybrief FunctionTypeResolverTerm
     };
 
     /**
@@ -107,14 +105,9 @@ namespace Psi {
       return isa<T>(p) ? cast<T>(p) : CastImplementation<T>::null();
     }
 
-    template<typename> class TermIterator;
-    class PersistentTermPtr;
-
     class TermUser : User {
       friend class Context;
       friend class Term;
-      friend class PersistentTermPtr;
-      template<typename> friend class TermIterator;
 
     public:
       TermType term_type() const {return static_cast<TermType>(m_term_type);}
@@ -133,21 +126,6 @@ namespace Psi {
       void resize_uses(std::size_t n);
 
       unsigned char m_term_type;
-    };
-
-    class PersistentTermPtr : TermUser {
-    public:
-      PersistentTermPtr();
-      PersistentTermPtr(Term *term);
-      PersistentTermPtr(const PersistentTermPtr&);
-      ~PersistentTermPtr();
-
-      const PersistentTermPtr& operator = (const PersistentTermPtr& o);
-      Term* get() const {return use_get(0);}
-      void reset(Term *term=0);
-
-    private:
-      Use m_uses[2];
     };
 
     /**
@@ -183,7 +161,6 @@ namespace Psi {
       friend class RecursiveParameterTerm;
       friend class ApplyTerm;
       friend class FunctionalTerm;
-      friend class FunctionTypeResolverTerm;
 
     public:
       virtual ~Term();
@@ -197,17 +174,12 @@ namespace Psi {
 
       /// \brief Whether this term can be the type of another term
       bool is_type() const {return (m_category == category_metatype) || (m_category == category_type);}
-      /// \brief If this term is abstract: it contains references to recursive term parameters which are unresolved.
-      bool abstract() const {return m_abstract;}
-      /// \brief If this term is parameterized: it contains references to function type parameters which are unresolved.
-      bool parameterized() const {return m_parameterized;}
       /// \brief If this term is global: it only contains references to constant values and global addresses.
       bool global() const {return !m_source;}
-      /// \brief Return true if the value of this term is not known
-      //
-      // What this means is somewhat type specific, for instance a
-      // pointer type to phantom type is not considered phantom.
-      bool phantom() const {return m_phantom;}
+
+      bool phantom() const;
+      bool parameterized() const;
+
       /**
        * \brief Get the term which generates this one.
        * 
@@ -219,6 +191,7 @@ namespace Psi {
        * <li>Null - this term is global.</li>
        * <li>Function - non-constant values are parameters to the
        * given function.</li>
+       * <li>Phantom parameter - a phantom value</li>
        * <li>Block - non-constant values are phi nodes in this block.</li>
        * <li>Instruction - this is the last instruction contributing to
        * the resulting value</li>
@@ -234,18 +207,12 @@ namespace Psi {
       /** \brief Get the term describing the type of this term. */
       Term* type() const {return use_get(0);}
 
-      template<typename T> TermIterator<T> term_users_begin();
-      template<typename T> TermIterator<T> term_users_end();
-
     private:
-      Term(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool phantom, Term *source, Term* type);
+      Term(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type);
 
       std::size_t hash_value() const;
 
       unsigned char m_category : 2;
-      unsigned char m_abstract : 1;
-      unsigned char m_parameterized : 1;
-      unsigned char m_phantom : 1;
       Context *m_context;
       Term *m_source;
       boost::intrusive::list_member_hook<> m_term_list_hook;
@@ -272,6 +239,7 @@ namespace Psi {
       User::use_set(n, term);
     }
 
+#ifndef PSI_DOXYGEN
     template<> struct CastImplementation<Term> {
       typedef Term* Ptr;
       typedef Term& Reference;
@@ -284,10 +252,11 @@ namespace Psi {
         return checked_cast<Term*>(t);
       }
 
-      static bool isa(TermUser *t) {
-        return t->term_type() != term_ptr;
+      static bool isa(TermUser*) {
+        return true;
       }
     };
+#endif
 
     template<typename T, TermType term_type>
     struct CoreCastImplementation {
@@ -307,39 +276,6 @@ namespace Psi {
       }
     };
 
-    template<typename T>
-    class TermIterator
-      : public boost::iterator_facade<TermIterator<T>, T, boost::bidirectional_traversal_tag, typename CastImplementation<T>::Reference> {
-      friend class Term;
-      friend class boost::iterator_core_access;
-
-    public:
-      TermIterator() {}
-
-      typename CastImplementation<T>::Ptr get_ptr() const {return cast<T>(static_cast<TermUser*>(&*m_base));}
-
-    private:
-      UserIterator m_base;
-      TermIterator(const UserIterator& base) : m_base(base) {}
-      bool equal(const TermIterator& other) const {return m_base == other.m_base;}
-      typename CastImplementation<T>::Reference dereference() const {return *get_ptr();}
-      bool check_stop() const {return m_base.end() || isa<T>(static_cast<TermUser*>(&*m_base));}
-      void search_forward() {while (!check_stop()) ++m_base;}
-      void search_backward() {while (!check_stop()) --m_base;}
-      void increment() {++m_base; search_forward();}
-      void decrement() {--m_base; search_backward();}
-    };
-
-    template<typename T> TermIterator<T> Term::term_users_begin() {
-      TermIterator<T> result(users_begin());
-      result.search_forward();
-      return result;
-    }
-
-    template<typename T> TermIterator<T> Term::term_users_end() {
-      return TermIterator<T>(users_end());
-    }
-
     /**
      * For use with \c PtrAdapter. This is used by functional and
      * instruction terms to allow access to term-type-specific
@@ -354,10 +290,6 @@ namespace Psi {
       TermType term_type() const {return m_ptr->term_type();}
       /// \copydoc Term::is_type
       bool is_type() const {return m_ptr->is_type();}
-      /// \copydoc Term::abstract
-      bool abstract() const {return m_ptr->abstract();}
-      /// \copydoc Term::parameterized
-      bool parameterized() const {return m_ptr->parameterized();}
       /// \copydoc Term::global
       bool global() const {return m_ptr->global();}
       /// \copydoc Term::phantom
@@ -370,10 +302,6 @@ namespace Psi {
       Context& context() const {return m_ptr->context();}
       /// \copydoc Term::type
       Term* type() const {return m_ptr->type();}
-      /// \copydoc Term::term_users_begin
-      template<typename T> TermIterator<T> term_users_begin() {return m_ptr->term_users_begin<T>();}
-      /// \copydoc Term::term_users_end
-      template<typename T> TermIterator<T> term_users_end() {return m_ptr->term_users_end<T>();}
 
     protected:
       Term *m_ptr;
@@ -383,16 +311,37 @@ namespace Psi {
       friend class Context;
       friend class Term;
       friend class ApplyTerm;
+      friend class FunctionTypeTerm;
       friend class FunctionalTerm;
-      friend class FunctionTypeResolverTerm;
 
     private:
-      HashTerm(const UserInitializer& ui, Context *context, TermType term_type, bool abstract, bool parameterized, bool phantom, Term *source, Term* type, std::size_t hash);
+      HashTerm(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type, std::size_t hash);
       virtual ~HashTerm();
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
       TermSetHook m_term_set_hook;
       std::size_t m_hash;
     };
+
+#ifndef PSI_DOXYGEN
+    template<> struct CastImplementation<HashTerm> {
+      typedef HashTerm* Ptr;
+      typedef HashTerm& Reference;
+
+      static Ptr null() {
+        return 0;
+      }
+
+      static Ptr cast(TermUser *t) {
+        return checked_cast<HashTerm*>(t);
+      }
+
+      static bool isa(TermUser* t) {
+        return (t->term_type() == term_apply) ||
+        (t->term_type() == term_function_type) ||
+        (t->term_type() == term_functional);
+      }
+    };
+#endif
 
     /**
      * \brief Base class for globals: these are GlobalVariableTerm and FunctionTerm.
@@ -460,7 +409,6 @@ namespace Psi {
     class FunctionalTermSetup;
     class FunctionTypeTerm;
     class FunctionTypeParameterTerm;
-    class FunctionTypeResolverTerm;
     class FunctionTerm;
     class ApplyTerm;
     class RecursiveTerm;
@@ -514,10 +462,7 @@ namespace Psi {
       ApplyTerm* apply_recursive(RecursiveTerm* recursive,
                                  ArrayPtr<Term*const> parameters);
 
-      RecursiveTerm* new_recursive(Term *source,
-                                   Term* result_type,
-                                   ArrayPtr<Term*const> parameters,
-                                   bool phantom=false);
+      RecursiveTerm* new_recursive(Term*, Term*, ArrayPtr<Term*const>);
 
       void resolve_recursive(RecursiveTerm* recursive, Term* to);
 
@@ -532,19 +477,9 @@ namespace Psi {
       template<typename T> typename T::TermType* allocate_term(const T& initializer);
       template<typename T> typename T::TermType* hash_term_get(T& Setup);
 
-      RecursiveParameterTerm* new_recursive_parameter(Term* type, bool phantom=false);
-
-      FunctionTypeResolverTerm* get_function_type_resolver(Term* result, ArrayPtr<Term*const> parameters, std::size_t n_phantom, CallingConvention calling_convention);
-
-      typedef std::tr1::unordered_map<FunctionTypeTerm*, std::size_t> CheckCompleteMap;
-      bool check_function_type_complete(Term* term, CheckCompleteMap& functions);
+      RecursiveParameterTerm* new_recursive_parameter(Term* type);
 
       class FunctionTypeResolverRewriter;
-      bool search_for_abstract(Term *term, std::vector<Term*>& queue, std::tr1::unordered_set<Term*>& set);
-
-      static void clear_and_queue_if_abstract(std::vector<Term*>& queue, Term* t);
-
-      void clear_abstract(Term *term, std::vector<Term*>& queue);
 
       FunctionalTerm* get_functional_bare(const FunctionalTermSetup& setup, ArrayPtr<Term*const> parameters);
     };

@@ -220,7 +220,6 @@ namespace Psi {
       bool dominated_by(BlockTerm* block);
       std::vector<BlockTerm*> successors();
       std::vector<BlockTerm*> recursive_successors();
-      std::vector<BlockTerm*> dominated_blocks();
 
     private:
       class Initializer;
@@ -247,7 +246,7 @@ namespace Psi {
 
     private:
       class Initializer;
-      FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type, bool phantom);
+      FunctionParameterTerm(const UserInitializer&, Context*, FunctionTerm*, Term*, bool);
     };
 
 #ifndef PSI_DOXYGEN
@@ -288,6 +287,7 @@ namespace Psi {
 
       void add_term_name(Term *term, const std::string& name);
       const TermNameMap& term_name_map() {return m_name_map;}
+      std::vector<BlockTerm*> topsort_blocks();
 
     private:
       class Initializer;
@@ -299,91 +299,80 @@ namespace Psi {
     template<> struct CastImplementation<FunctionTerm> : CoreCastImplementation<FunctionTerm, term_function> {};
 #endif
 
-    class FunctionTypeTerm;
+    /**
+     * \brief Term type appearing in dependent types of completed function types.
+     */
+    PSI_TVM_FUNCTIONAL_TYPE(FunctionTypeResolvedParameter, FunctionalOperation)
+    struct Data {
+      Data(unsigned depth_, unsigned index_)
+        : depth(depth_), index(index_) {}
 
-    class FunctionTypeParameterTerm : public Term {
-      friend class Context;
-    public:
-      FunctionTypeTerm* source();
-      std::size_t index() {return m_index;}
+      unsigned depth;
+      unsigned index;
 
-    private:
-      class Initializer;
-      FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, Term* type);
-      void set_source(FunctionTypeTerm *term);
-      std::size_t m_index;
+      bool operator == (const Data&) const;
+      friend std::size_t hash_value(const Data&);
     };
-
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<FunctionTypeParameterTerm> : CoreCastImplementation<FunctionTypeParameterTerm, term_function_type_parameter> {};
-#endif
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the depth of this parameter relative to the
+    /// function type it is part of.
+    ///
+    /// If a parameter is used as the type of a parameter in its own
+    /// functions argument list, then this is zero. For each function
+    /// type it is then nested inside, this should increase by one.
+    unsigned depth() const {return data().depth;}
+    /// \brief Get the parameter number of this parameter in its
+    /// function.
+    unsigned index() const {return data().index;}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(Term* type, unsigned depth, unsigned index);
+    PSI_TVM_FUNCTIONAL_TYPE_END(FunctionTypeResolvedParameter)
 
     /**
-     * Term for types of functions. This cannot be implemented as a
-     * regular type because the types of later parameters can depend
-     * on the values of earlier parameters.
-     *
+     * \brief Type of functions.
+     * 
      * This is also used for implementing template types since the
      * template may be specialized by computing the result type of a
      * function call (note that there is no <tt>result_of</tt> term,
      * since the result must be the appropriate term itself).
      */
-    class FunctionTypeTerm : public Term {
+    class FunctionTypeTerm : public HashTerm {
       friend class Context;
     public:
+      Term* parameter_type(std::size_t n) {return get_base_parameter(n+1);}
       /// \brief Return the number of phantom parameters.
-      unsigned n_phantom_parameters() {return m_n_phantoms;}
+      std::size_t n_phantom_parameters() {return m_n_phantom;}
       /// \brief Return the number of parameters, including both
       /// phantom and ordinary parameters.
-      unsigned n_parameters() {return n_base_parameters() - 1;}
-      FunctionTypeParameterTerm* parameter(std::size_t i) {return cast<FunctionTypeParameterTerm>(get_base_parameter(i+1));}
+      std::size_t n_parameters() {return n_base_parameters()-1;}
       Term* result_type() {return get_base_parameter(0);}
       CallingConvention calling_convention() {return m_calling_convention;}
       Term* parameter_type_after(ArrayPtr<Term*const> previous);
       Term* result_type_after(ArrayPtr<Term*const> parameters);
 
     private:
-      class Initializer;
-      FunctionTypeTerm(const UserInitializer& ui, Context *context, Term *result_type,
-                       ArrayPtr<FunctionTypeParameterTerm*const> phantom_parameters,
-		       ArrayPtr<FunctionTypeParameterTerm*const> parameters,
-		       CallingConvention calling_convention);
-
-      CallingConvention m_calling_convention;
-      unsigned m_n_phantoms;
-    };
-
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<FunctionTypeTerm> : CoreCastImplementation<FunctionTypeTerm, term_function_type> {};
-#endif
-
-    /**
-     * \brief Internal type used to build function types.
-     */
-    class FunctionTypeResolverTerm : public HashTerm {
-      friend class Context;
-    public:
-      Term* parameter_type(std::size_t n) {return get_base_parameter(n+2);}
-      std::size_t n_phantom_parameters() {return m_n_phantom;}
-      std::size_t n_parameters() {return n_base_parameters()-2;}
-      Term* result_type() {return get_base_parameter(1);}
-      CallingConvention calling_convention() {return m_calling_convention;}
-
-    private:
       class Setup;
-      FunctionTypeResolverTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term* result_type,
-                               ArrayPtr<Term*const> parameter_types, std::size_t n_phantom, CallingConvention calling_convention);
-      FunctionTypeTerm* get_function_type() {return cast<FunctionTypeTerm>(get_base_parameter(0));}
-      void set_function_type(FunctionTypeTerm *term) {set_base_parameter(0, term);}
+      FunctionTypeTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term* result_type,
+                       ArrayPtr<Term*const> parameter_types, std::size_t n_phantom, CallingConvention calling_convention);
 
       std::size_t m_n_phantom;
       CallingConvention m_calling_convention;
     };
 
 #ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<FunctionTypeResolverTerm> : CoreCastImplementation<FunctionTypeResolverTerm, term_function_type_resolver> {};
+    template<> struct CastImplementation<FunctionTypeTerm> : CoreCastImplementation<FunctionTypeTerm, term_function_type> {};
 #endif
-    
+
+    class FunctionTypeParameterTerm : public Term {
+      friend class Context;
+      class Initializer;
+      FunctionTypeParameterTerm(const UserInitializer&, Context*, Term*);
+    };
+
+#ifndef PSI_DOXYGEN
+    template<> struct CastImplementation<FunctionTypeParameterTerm> : CoreCastImplementation<FunctionTypeParameterTerm, term_function_type_parameter> {};
+#endif
+
     /**
      * Helper class for inserting instructions into blocks.
      */
@@ -497,14 +486,6 @@ namespace Psi {
 
     inline FunctionTypeTerm* FunctionTerm::function_type() {
       return cast<FunctionTypeTerm>(value_type());
-    }
-
-    inline FunctionTypeTerm* FunctionTypeParameterTerm::source() {
-      return cast<FunctionTypeTerm>(get_base_parameter(0));
-    }
- 
-    inline void FunctionTypeParameterTerm::set_source(FunctionTypeTerm *term) {
-      set_base_parameter(0, term);
     }
   }
 }

@@ -323,54 +323,17 @@ namespace Psi {
 
         // Set up basic blocks
         BlockTerm* entry_block = m_function->entry();
-        std::tr1::unordered_set<BlockTerm*> visited_blocks;
-        std::vector<BlockTerm*> block_queue;
-        std::vector<BlockTerm*> entry_blocks;
-        visited_blocks.insert(entry_block);
-        block_queue.push_back(entry_block);
-        entry_blocks.push_back(entry_block);
-
-        // find root block set
-        while (!block_queue.empty()) {
-          BlockTerm *bl = block_queue.back();
-          block_queue.pop_back();
-
-          if (!bl->terminated())
-            throw BuildError("cannot compile function with unterminated blocks");
-
-          std::vector<BlockTerm*> successors = bl->successors();
-          for (std::vector<BlockTerm*>::iterator it = successors.begin();
-               it != successors.end(); ++it) {
-            std::pair<std::tr1::unordered_set<BlockTerm*>::iterator, bool> p = visited_blocks.insert(*it);
-            if (p.second) {
-              block_queue.push_back(*it);
-              if (!(*it)->dominator())
-                entry_blocks.push_back(*it);
-            }
-          }
-        }
-
-        // Set up entry blocks
-        std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
-        for (std::vector<BlockTerm*>::iterator it = entry_blocks.begin(); it != entry_blocks.end(); ++it)
-          blocks.push_back(std::make_pair(*it, static_cast<llvm::BasicBlock*>(0)));
-
-        // get remaining blocks in topological order
-        for (std::size_t i = 0; i < blocks.size(); ++i) {
-          std::vector<BlockTerm*> dominated = blocks[i].first->dominated_blocks();
-          for (std::vector<BlockTerm*>::iterator it = dominated.begin(); it != dominated.end(); ++it)
-            blocks.push_back(std::make_pair(*it, static_cast<llvm::BasicBlock*>(0)));
-        }
+        std::vector<BlockTerm*> sorted_blocks = m_function->topsort_blocks();
 
         // create llvm blocks
-        for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
-             it != blocks.end(); ++it) {
-          llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(llvm_context(), term_name(it->first), m_llvm_function);
-          it->second = llvm_bb;
-          FunctionValue *block_val = new_function_value_simple(it->first->type(), llvm_bb);
+        std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
+        for (std::vector<BlockTerm*>::iterator it = sorted_blocks.begin(); it != sorted_blocks.end(); ++it) {
+          llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(llvm_context(), term_name(*it), m_llvm_function);
+          FunctionValue *block_val = new_function_value_simple((*it)->type(), llvm_bb);
           std::pair<ValueTermMap::iterator, bool> insert_result =
-            m_value_terms.insert(std::make_pair(it->first, block_val));
+            m_value_terms.insert(std::make_pair(*it, block_val));
           PSI_ASSERT(insert_result.second);
+          blocks.push_back(std::make_pair(*it, llvm_bb));
         }
 
         // Finish prolog block
