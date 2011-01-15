@@ -319,20 +319,6 @@ namespace Psi {
     }
 
     /**
-     * Checks whether block \c a dominates block \c b. Handles cases
-     * where \c a or \c b are NULL correctly.
-     */
-    bool block_dominates(BlockTerm *a, BlockTerm *b) {
-      if (!a)
-        return true;
-
-      if (!b)
-        return false;
-
-      return b->dominated_by(a);
-    }
-
-    /**
      * Check if a term (i.e. all variables required by it) are
      * available in this block. If this block has not been added to a
      * function, the \c function parameter will be assigned to the
@@ -346,53 +332,7 @@ namespace Psi {
      * which occurs before this instruction is run.
      */
     bool BlockTerm::check_available(Term* term, InstructionTerm *before) {
-      if (term->global())
-        return true;
-
-      PSI_ASSERT(!term->parameterized());
-
-      switch (term->term_type()) {
-      case term_functional: {
-        FunctionalTerm* cast_term = cast<FunctionalTerm>(term);
-        std::size_t n = cast_term->n_parameters();
-        for (std::size_t i = 0; i < n; ++i) {
-          if (!check_available(cast_term->parameter(i)))
-            return false;
-        }
-        return true;
-      }
-
-      case term_instruction: {
-        InstructionTerm *cast_term = cast<InstructionTerm>(term);
-        if (this == cast_term->block()) {
-          if (!before)
-            return true;
-          
-          InstructionList::iterator before_it = m_instructions.iterator_to(*before);
-          InstructionList::iterator term_it = m_instructions.iterator_to(*cast_term);
-          for (++term_it; term_it != m_instructions.end(); ++term_it) {
-            if (term_it == before_it)
-              return true;
-          }
-          
-          return false;
-        } else {
-          return dominated_by(cast<InstructionTerm>(term)->block());
-        }
-      }
-
-      case term_phi:
-        return dominated_by(cast<PhiTerm>(term)->block());
-
-      case term_function_parameter:
-        return cast<FunctionParameterTerm>(term)->function() == function();
-
-      case term_block:
-        return cast<BlockTerm>(term)->function() == function();
-
-      default:
-	throw TvmUserError("unexpected term type");
-      }
+      return source_dominated(term->source(), before);
     }
 
     /**
@@ -441,8 +381,8 @@ namespace Psi {
       // Check parameters are valid and adjust dominator blocks
       for (std::size_t i = 0; i < parameters.size(); ++i) {
         Term *param = parameters[i];
-        if (param->parameterized())
-          throw TvmUserError("instructions cannot accept abstract parameters");
+        if (param->parameterized() || param->phantom())
+          throw TvmUserError("instructions cannot accept abstract or phantom parameters");
         if (!check_available(param, insert_before))
           throw TvmUserError("parameter value is not available in this block");
       }

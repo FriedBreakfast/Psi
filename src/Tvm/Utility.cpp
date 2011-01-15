@@ -102,10 +102,7 @@ namespace Psi {
           }
           
         case term_function_type_parameter:
-          switch (t2->term_type()) {
-          default: return t1;
-          case term_function_type_parameter: return std::max(t1, t2);
-          }
+          return t1;
           
         case term_function_parameter:
           switch (t2->term_type()) {
@@ -114,7 +111,7 @@ namespace Psi {
           case term_function_parameter: {
             if (cast<FunctionParameterTerm>(t1)->function() != cast<FunctionParameterTerm>(t2)->function())
               return common_source_fail();
-            return std::max(t1, t2);
+            return t1;
           }
           }
 
@@ -134,16 +131,49 @@ namespace Psi {
         switch (dominator->term_type()) {
         case term_function:
           switch (dominated->term_type()) {
+          default: return false;
           case term_function: return dominator == dominated;
           case term_block: return dominator == cast<BlockTerm>(dominated)->function();
-          default: PSI_FAIL("unexpected term type");
+          case term_instruction: return dominator == cast<InstructionTerm>(dominated)->block()->function();
           }
 
         case term_block:
           switch (dominated->term_type()) {
-          case term_function: return false;
+          default: return false;
           case term_block: return cast<BlockTerm>(dominated)->dominated_by(cast<BlockTerm>(dominator));
-          default: PSI_FAIL("unexpected term type");
+          case term_instruction: return cast<InstructionTerm>(dominated)->block()->dominated_by(cast<BlockTerm>(dominator));
+          }
+          
+        case term_instruction:
+          switch (dominated->term_type()) {
+          default: return false;
+          case term_block: return cast<BlockTerm>(dominated)->dominated_by(cast<InstructionTerm>(dominator)->block());
+          case term_instruction: {
+            InstructionTerm *dominator_insn = cast<InstructionTerm>(dominator);
+            InstructionTerm *dominated_insn = cast<InstructionTerm>(dominated);
+            if (dominator_insn->block() == dominated_insn->block()) {
+              BlockTerm *block = dominator_insn->block();
+              BlockTerm::InstructionList::iterator dominator_it = block->instructions().iterator_to(*dominator_insn);
+              BlockTerm::InstructionList::iterator dominated_it = block->instructions().iterator_to(*dominated_insn);
+              for (; dominator_it != block->instructions().end(); ++dominator_it) {
+                if (dominator_it == dominated_it)
+                  return true;
+              }
+              return false;
+            } else {
+              return dominated_insn->block()->dominated_by(dominator_insn->block());
+            }
+          }
+          }
+          
+        case term_function_type_parameter:
+          return true;
+          
+        case term_function_parameter:
+          switch (dominated->term_type()) {
+          default: return true;
+          case term_function_type_parameter: return false;
+          case term_function_parameter: return cast<FunctionParameterTerm>(dominator)->function() == cast<FunctionParameterTerm>(dominated)->function();
           }
 
         default:

@@ -235,8 +235,6 @@ namespace Psi {
     template<> struct CastImplementation<BlockTerm> : CoreCastImplementation<BlockTerm, term_block> {};
 #endif
 
-    bool block_dominates(BlockTerm *a, BlockTerm *b);
-
     class FunctionTerm;
 
     class FunctionParameterTerm : public Term {
