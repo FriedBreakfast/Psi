@@ -5,11 +5,6 @@
 #include <exception>
 #include <tr1/unordered_map>
 
-#include <boost/intrusive/list.hpp>
-#include <boost/optional.hpp>
-#include <boost/pool/object_pool.hpp>
-#include <boost/shared_array.hpp>
-
 #include <llvm/LLVMContext.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/Support/IRBuilder.h>
@@ -31,7 +26,7 @@ namespace Psi {
       typedef llvm::IRBuilder<true, llvm::TargetFolder, llvm::IRBuilderDefaultInserter<true> > IRBuilder;
 
       class ConstantBuilder;
-      class GlobalBuilder;
+      class ModuleBuilder;
       class FunctionBuilder;
 
       /**
@@ -50,138 +45,6 @@ namespace Psi {
 	std::string m_message;
       };
 
-      class BuiltValue : public boost::intrusive::list_base_hook<> {
-	friend class GlobalBuilder;
-	friend class FunctionBuilder;
-
-      public:
-        enum State {
-          /// A union value - LLVM cannot represent these
-          state_union,
-          /// A sequence (struct or array) value - LLVM can represent
-          /// these but not if they contain union or unknown
-          /// values. In this case, they are represented as sequences
-          /// here and LLVM only sees the members. Note that this only
-          /// applies when the number of elements in the sequence is
-          /// known; otherwise the unknown type applies.
-          state_sequence,
-          /// A value with a direct LLVM mapping.
-          state_simple,
-          /// A value which is just a black box of data, with a size
-          /// and an alignment.
-          state_unknown
-        };
-
-      private:
-	Term *m_type;
-	State m_state;
-	const llvm::Type *m_simple_type;
-	unsigned m_n_elements;
-
-      public:
-        /**
-         * The term type this value represents.
-         */
-	Term *type() {return m_type;}
-
-        /**
-         * Which subclass of BuiltValue this is in fact an
-         * instance of.
-         */
-        State state() {return m_state;}
-
-	/**
-	 * If this is an aggregate, return the number of elements in
-	 * it.
-	 */
-	unsigned n_elements() {return m_n_elements;}
-
-        /**
-         * If this value has a simple LLVM type, this gives that type.
-         */
-        const llvm::Type *simple_type() {return m_simple_type;}
-
-	/**
-	 * Return a simple value corresponding to this value.
-	 */
-	virtual llvm::Value *simple_value() = 0;
-
-	/**
-	 * Return a value which is a pointer to the encoded data for
-	 * this value.
-	 */
-	virtual llvm::Value *raw_value() = 0;
-
-	/**
-	 * Get a BuiltValue for an element of an existing value at a
-	 * fixed index. This function works for struct types.
-	 */
-	virtual BuiltValue* struct_element_value(unsigned index) = 0;
-
-	/**
-	 * Get a BuiltValue for an element of an existing value at a
-	 * fixed index. This function works for array types.
-	 */
-	virtual BuiltValue* array_element_value(unsigned index) = 0;
-
-	/**
-	 * Get a BuiltValue for an element of an existing value at a
-	 * fixed index. This function works for union types.
-	 */
-	virtual BuiltValue* union_element_value(unsigned index) = 0;
-
-      protected:
-        BuiltValue(ConstantBuilder&, Term*);
-      };
-
-      class ConstantValue : public BuiltValue {
-	friend class GlobalBuilder;
-
-      public:
-	virtual llvm::Constant *simple_value();
-	virtual llvm::Constant *raw_value();
-	virtual ConstantValue* struct_element_value(unsigned index);
-	virtual ConstantValue* array_element_value(unsigned index);
-	virtual ConstantValue* union_element_value(unsigned index);
-
-      private:
-	GlobalBuilder *m_builder;
-	llvm::Constant *m_simple_value;
-	llvm::SmallVector<char, 0> m_raw_value;
-	llvm::SmallVector<ConstantValue*, 4> m_elements;
-
-	ConstantValue(GlobalBuilder *builder, Term *type);
-	ConstantValue* struct_or_array_element_value(Term *element_type, unsigned index);
-      };
-
-      class FunctionValue : public BuiltValue {
-	friend class FunctionBuilder;
-
-      public:
-	/**
-	 * Where this value was created. When this value is converted
-	 * to other types, this is the point where the conversion
-	 * instructions are inserted.
-	 */
-	llvm::Instruction *origin() {return m_origin;}
-
-	virtual llvm::Value *simple_value();
-	virtual llvm::Value *raw_value();
-	virtual BuiltValue* struct_element_value(unsigned index);
-	virtual BuiltValue* array_element_value(unsigned index);
-	virtual BuiltValue* union_element_value(unsigned index);
-
-      private:
-	FunctionBuilder *m_builder;
-	llvm::Instruction *m_origin;
-	llvm::Value *m_simple_value;
-	llvm::Value *m_raw_value;
-	llvm::SmallVector<BuiltValue*, 4> m_elements;
-
-	FunctionValue(FunctionBuilder *builder, Term *type, llvm::Instruction *origin);
-	FunctionValue* struct_or_array_element_value(Term *element_type, unsigned index);
-      };
-
       class ConstantBuilder;
       class FunctionBuilder;
 
@@ -197,6 +60,7 @@ namespace Psi {
        * assumed these work correctly by default.
        */
       struct TargetFixes {
+#if 0
         /**
          * Map a function type into LLVM.
          */
@@ -205,7 +69,7 @@ namespace Psi {
         /**
          * Set up a function call.
          */
-        virtual BuiltValue* function_call(FunctionBuilder& builder, llvm::Value *target, FunctionTypeTerm *target_type, FunctionCall::Ptr insn) = 0;
+        virtual llvm::Instruction* function_call(FunctionBuilder& builder, llvm::Value *target, FunctionTypeTerm *target_type, FunctionCall::Ptr insn) = 0;
 
         /**
          * Unpack the parameters passed to a function into a friendly
@@ -218,16 +82,15 @@ namespace Psi {
          * Create a function return.
          */
         virtual void function_return(FunctionBuilder& builder, FunctionTypeTerm *function_type, llvm::Function *llvm_function, Term *value) = 0;
+#endif
       };
 
       class ConstantBuilder {
-        friend class GlobalBuilder;
+        friend class ModuleBuilder;
         friend class FunctionBuilder;
 
       public:
         ~ConstantBuilder();
-
-	Context& context() {return *m_context;}
 
         /// \brief Get the LLVM context used to create IR.
         llvm::LLVMContext& llvm_context() {return *m_llvm_context;}
@@ -253,9 +116,8 @@ namespace Psi {
          *
          * \pre <tt>!term->phantom() && term->global()</tt>
          */
-        virtual ConstantValue* build_constant(Term *term) = 0;
+        virtual llvm::Constant* build_constant(Term *term) = 0;
 
-        llvm::Constant* build_constant_simple(Term *term);
         const llvm::APInt& build_constant_integer(Term *term);
 
         uint64_t type_size(const llvm::Type *ty);
@@ -263,66 +125,39 @@ namespace Psi {
 	uint64_t constant_type_size(Term *term);
 	unsigned constant_type_alignment(Term *term);
 
-	/**
-	 * Get the unique value of the empty type.
-	 */
-        BuiltValue* empty_value() {return m_empty_value;}
-
       private:
         struct TypeBuilderCallback;
 
-        ConstantBuilder(Context *context, llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes);
+        ConstantBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes);
 
-	Context *m_context;
         llvm::LLVMContext *m_llvm_context;
         llvm::TargetMachine *m_llvm_target_machine;
         TargetFixes *m_target_fixes;
-	BuiltValue *m_empty_value;
 
-        typedef std::tr1::unordered_map<Term*, boost::optional<const llvm::Type*> > TypeTermMap;
+        typedef std::tr1::unordered_map<Term*, const llvm::Type*> TypeTermMap;
         TypeTermMap m_type_terms;
 
         const llvm::Type* build_type_internal(FunctionalTerm *term);
         const llvm::Type* build_type_internal_simple(FunctionalTerm *term);
       };
 
-      class GlobalBuilder : public ConstantBuilder {
+      class ModuleBuilder : public ConstantBuilder {
 	friend class ConstantValue;
 
       public:
-        GlobalBuilder(Context *context, llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes, llvm::Module *module=0);
-        ~GlobalBuilder();
+        ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes, llvm::Module *module=0);
+        ~ModuleBuilder();
 
         void set_module(llvm::Module *module);
 
         llvm::Module& llvm_module() {return *m_module;}
 
-        virtual ConstantValue* build_constant(Term *term);
+        virtual llvm::Constant* build_constant(Term *term);
         llvm::GlobalValue* build_global(GlobalTerm *term);
 
-	///@{
-	/**
-	 * Functions for creating new ConstantValue objects.
-	 */
-
-	ConstantValue* new_constant_value_simple(Term *type, llvm::Constant *value);
-	ConstantValue* new_constant_value_raw(Term *type, const llvm::SmallVectorImpl<char>& data);
-	ConstantValue* new_constant_value_aggregate(Term *type, const llvm::SmallVectorImpl<ConstantValue*>& elements);
-	///@}
-
-	///@{
-	/**
-	 * Various functions to help with accessing aggregates and
-	 * pointers.
-	 */
-
-	llvm::Constant* array_element_offset(Term *array_type);
-	llvm::Constant* array_element_offset();
-	///@}
-
       protected:
-        struct GlobalBuilderCallback;
         struct ConstantBuilderCallback;
+        struct GlobalBuilderCallback;
 
         llvm::Module *m_module;
 
@@ -333,62 +168,18 @@ namespace Psi {
         typedef std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*> GlobalTermMap;
         GlobalTermMap m_global_terms;
 
-        typedef std::tr1::unordered_map<Term*, ConstantValue*> ConstantTermMap;
+        typedef std::tr1::unordered_map<Term*, llvm::Constant*> ConstantTermMap;
         ConstantTermMap m_constant_terms;
 
-	boost::object_pool<ConstantValue> m_constant_value_pool;
-	ConstantValue* new_constant_value(Term *type);
-
-        ConstantValue* build_constant_internal(FunctionalTerm *term);
+        llvm::Constant* build_constant_internal(FunctionalTerm *term);
         llvm::Constant* build_constant_internal_simple(FunctionalTerm *term);
-
-	/**
-	 * When building types and values for global variables, extra
-	 * information is required since the value may be padded to
-	 * force correct alignment, so alignment information is
-	 * required as well.
-	 */
-	template<typename T>
-	struct GlobalResult {
-	  GlobalResult(T *value_, unsigned alignment_) : value(value_), alignment(alignment_) {}
-
-	  T *value;
-	  unsigned alignment;
-	};
-
-	class GlobalSequenceTypeBuilder;
-	class GlobalSequenceValueBuilder;
-	GlobalResult<llvm::Constant> build_global_value(Term *term);
-        GlobalResult<const llvm::Type> build_global_type(Term *term);
-
-	struct PaddingStatus {
-	  uint64_t size;
-	  uint64_t llvm_size;
-
-	  PaddingStatus();
-	  PaddingStatus(uint64_t, uint64_t);
-	};
-
-	std::pair<PaddingStatus, const llvm::Type*> pad_to_alignment(Term *field_type, const llvm::Type *llvm_field_type, unsigned alignment, PaddingStatus status);
-      };
-
-      /**
-       * RAII way to set the insert point for a FunctionBuilder. On
-       * destruction of this object, the original insert point will be
-       * restored.
-       */
-      class FunctionBuilderInsertPointGuard {
-      public:
-
-      private:
       };
 
       class FunctionBuilder : public ConstantBuilder {
-        friend class GlobalBuilder;
-	friend class FunctionValue;
+        friend class ModuleBuilder;
 
       public:
-        typedef std::tr1::unordered_map<Term*, BuiltValue*> ValueTermMap;
+        typedef std::tr1::unordered_map<Term*, llvm::Value*> ValueTermMap;
 
         ~FunctionBuilder();
 
@@ -400,43 +191,22 @@ namespace Psi {
 
         unsigned unknown_alloca_align();
 
-	llvm::Instruction* insert_placeholder_instruction();
-
         virtual const llvm::Type* build_type(Term *term);
-        virtual ConstantValue* build_constant(Term *term);
-        BuiltValue* build_value(Term *term);
-        llvm::Value* build_value_simple(Term *term);
-
-	///@{
-	/**
-	 * Functions for creating new FunctionValue objects.
-	 *
-	 * \param origin Instruction where the specified value was
-	 * created. If this is NULL, a placeholder instruction will be
-	 * inserted at the current position.
-	 */
-
-	FunctionValue* new_function_value_simple(Term *type, llvm::Value *value, llvm::Instruction *origin=0);
-	FunctionValue* new_function_value_raw(Term *type, llvm::Value *ptr, llvm::Instruction *origin=0);
-	FunctionValue* new_function_value_aggregate(Term *type, const llvm::SmallVectorImpl<BuiltValue*>& elements, llvm::Instruction *origin=0);
-	///@}
-
-	void store_value(BuiltValue *value, llvm::Value *ptr);
-	BuiltValue* load_value(Term *type, llvm::Value *ptr);
+        virtual llvm::Constant* build_constant(Term *term);
+        llvm::Value* build_value(Term *term);
 
         llvm::Value* cast_pointer_to_generic(llvm::Value *value);
         llvm::Value* cast_pointer_from_generic(llvm::Value *value, const llvm::Type *type);
-	llvm::Instruction* create_memcpy(llvm::Value *dest, llvm::Value *src, llvm::Value *count);
 
         llvm::StringRef term_name(Term *term);
 
       private:
         struct ValueBuilderCallback;
 
-        FunctionBuilder(GlobalBuilder *global_builder, FunctionTerm *function,
+        FunctionBuilder(ModuleBuilder *global_builder, FunctionTerm *function,
                         llvm::Function *llvm_function, IRBuilder *irbuilder);
 
-        GlobalBuilder *m_global_builder;
+        ModuleBuilder *m_global_builder;
         IRBuilder *m_irbuilder;
 
         FunctionTerm *m_function;
@@ -444,25 +214,18 @@ namespace Psi {
 
         ValueTermMap m_value_terms;
 
-	typedef std::deque<llvm::Instruction*> PlaceholderInstructionList;
-	PlaceholderInstructionList m_placeholder_instructions;
-
-	boost::object_pool<FunctionValue> m_function_value_pool;
-	FunctionValue* new_function_value(Term *type, llvm::Instruction *origin);
-
         void run();
         llvm::BasicBlock* build_function_entry();
         void simplify_stack_save_restore();
         llvm::CallInst* first_stack_restore(llvm::BasicBlock *block);
         bool has_outstanding_alloca(llvm::BasicBlock *block);
 
-        BuiltValue* build_value_instruction(InstructionTerm *term);
-        BuiltValue* build_value_instruction_simple(InstructionTerm *term);
-        BuiltValue* build_value_functional(FunctionalTerm *term);
+        llvm::Instruction* build_value_instruction(InstructionTerm *term);
+        llvm::Instruction* build_value_instruction_simple(InstructionTerm *term);
+        llvm::Value* build_value_functional(FunctionalTerm *term);
         llvm::Value* build_value_functional_simple(FunctionalTerm *term);
 
-	BuiltValue* build_phi_node(Term *type, llvm::Instruction *insert_point);
-	void populate_phi_node(BuiltValue *phi_node, llvm::BasicBlock *incoming_block, BuiltValue *value);
+	llvm::PHINode* build_phi_node(Term *type, llvm::Instruction *insert_point);
       };
 
       /**
@@ -493,19 +256,21 @@ namespace Psi {
 
       class LLVMJit : public Jit {
       public:
-        LLVMJit(Context *context, const std::string& host_triple, llvm::TargetMachine *host_machine);
+        LLVMJit(const boost::shared_ptr<JitFactory>&, const std::string&, llvm::TargetMachine*);
         virtual ~LLVMJit();
 
-        virtual void* get_global(GlobalTerm *global);
+        virtual void add_module(Module*);
+        virtual void remove_module(Module*);
+        virtual void rebuild_module(Module*, bool);
+        virtual void* get_symbol(GlobalTerm*);
 
         void register_llvm_jit_listener(llvm::JITEventListener *l);
         void unregister_llvm_jit_listener(llvm::JITEventListener *l);
 
       private:
-        Context *m_context;
         llvm::LLVMContext m_llvm_context;
         boost::shared_ptr<TargetFixes> m_target_fixes;
-        LLVM::GlobalBuilder m_builder;
+        ModuleBuilder m_builder;
         boost::shared_ptr<llvm::ExecutionEngine> m_llvm_engine;
 
         static llvm::ExecutionEngine *make_engine(llvm::LLVMContext& context);

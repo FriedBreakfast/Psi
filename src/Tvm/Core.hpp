@@ -104,7 +104,7 @@ namespace Psi {
 
     template<typename T, typename U>
     bool isa(U *p) {
-      return !p || CastImplementation<T>::isa(p);
+      return p && CastImplementation<T>::isa(p);
     }
 
     template<typename T, typename U>
@@ -330,12 +330,19 @@ namespace Psi {
       Module* module() const {return m_module;}
       /// \brief Get the name of this global within the module.
       const std::string& name() const {return m_name;}
+      
+      /// \brief Get the minumum alignment of this symbol
+      unsigned alignment() const {return m_alignment;}
+      /// \brief Set the minimum alignment of this symbol.
+      void set_alignment(unsigned new_alignment) {m_alignment = new_alignment;}
 
     private:
       GlobalTerm(const UserInitializer&, Context *, TermType , Term* , const std::string&);
       std::string m_name;
       Module *m_module;
       boost::intrusive::unordered_set_member_hook<> m_term_set_hook;
+      
+      unsigned m_alignment;
     };
 
 #ifndef PSI_DOXYGEN
@@ -402,7 +409,7 @@ namespace Psi {
      * A collection of functions and global variables which can be compiled
      * and linked to other modules.
      */
-    class Module {
+    class Module : public boost::noncopyable {
     public:
       struct GlobalTermHasher {std::size_t operator () (const GlobalTerm&) const;};
       
@@ -413,9 +420,14 @@ namespace Psi {
                                               
     private:
       Context *m_context;
+      static const std::size_t initial_members_buckets = 64;
+      UniqueArray<ModuleMemberList::bucket_type> m_members_buckets;
       ModuleMemberList m_members;
       
     public:
+      Module(Context*);
+      ~Module();
+      
       /// \brief Get the context this module belongs to.
       Context& context() {return *m_context;}
       /// \brief Get the map of members of this module

@@ -318,14 +318,14 @@ namespace Psi {
       return result;
     }
 
-    AssemblerResult parse_and_build(Context& context, const char *begin, const char *end) {
+    AssemblerResult parse_and_build(Module& module, const char *begin, const char *end) {
       UniqueList<Parser::NamedGlobalElement> globals;
       parse(globals, begin, end);
-      return build(context, globals);
+      return build(module, globals);
     }
 
-    AssemblerResult parse_and_build(Context& context, const char *begin) {
-      return parse_and_build(context, begin, begin+std::strlen(begin));
+    AssemblerResult parse_and_build(Module& module, const char *begin) {
+      return parse_and_build(module, begin, begin+std::strlen(begin));
     }
   }
 }

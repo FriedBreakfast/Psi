@@ -4,6 +4,12 @@
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
+      template<typename T>
+      struct PtrValidBase {
+        T* invalid() const {return NULL;}
+        bool valid(const T* t) const {return t;}
+      };
+
       /**
        * Utility callback for building functional or type terms
        * lazily.

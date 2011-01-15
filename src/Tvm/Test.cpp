@@ -30,7 +30,7 @@ namespace Psi {
       };
 #endif
 
-      ContextFixture::ContextFixture() {}
+      ContextFixture::ContextFixture() : module(&context) {}
 #if 0
         : m_jit(create_llvm_jit(&context)),
           m_debug_listener(new DebugListener(test_env("PSI_TEST_DUMP_LLVM"),
@@ -59,10 +59,10 @@ namespace Psi {
        * JIT compile some assembler code and return the value of a single symbol.
        */
       void* ContextFixture::jit_single(const char *name, const char *src) {
-        AssemblerResult r = parse_and_build(context, src);
+        AssemblerResult r = parse_and_build(module, src);
         AssemblerResult::iterator it = r.find(name);
         BOOST_REQUIRE(it != r.end());
-        void *result = m_jit->get_global(it->second);
+        void *result = m_jit->get_symbol(it->second);
         return result;
       }
     }

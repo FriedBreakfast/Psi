@@ -11,7 +11,7 @@
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
-      struct FunctionBuilder::ValueBuilderCallback {
+      struct FunctionBuilder::ValueBuilderCallback : PtrValidBase<llvm::Value> {
         FunctionBuilder *self;
         const FunctionBuilder::ValueTermMap *value_terms;
 
@@ -19,21 +19,34 @@ namespace Psi {
                              const FunctionBuilder::ValueTermMap *value_terms_)
           : self(self_), value_terms(value_terms_) {}
 
-        BuiltValue* build(Term *term) const {
+        llvm::Value* build(Term *term) const {
           llvm::BasicBlock *old_insert_block = self->irbuilder().GetInsertBlock();
 
           // Set the insert point to the dominator block of the value
           llvm::BasicBlock *new_insert_block;
           Term *src = term->source();
           PSI_ASSERT(src);
-          if (src->term_type() == term_block) {
-            FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(term->source());
-            PSI_ASSERT((it != value_terms->end()) &&
-                       (it->second->state() == BuiltValue::state_simple));
-            new_insert_block = llvm::cast<llvm::BasicBlock>(it->second->simple_value());
-          } else {
-            PSI_ASSERT(src->term_type() == term_function);
-            new_insert_block = &self->llvm_function()->front();
+          switch (src->term_type()) {
+            case term_instruction: {
+              FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(cast<InstructionTerm>(src)->block());
+              new_insert_block = llvm::cast<llvm::BasicBlock>(it->second);
+              break;
+            }
+            
+            case term_block: {
+              FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(cast<BlockTerm>(src));
+              new_insert_block = llvm::cast<llvm::BasicBlock>(it->second);
+              break;
+            }
+            
+            case term_function_parameter: {
+              FunctionParameterTerm *cast_src = cast<FunctionParameterTerm>(src);
+              PSI_ASSERT(!cast_src->phantom() && (cast_src->function() == self->function()));
+              new_insert_block = &self->llvm_function()->front();
+            }
+            
+            default:
+              PSI_FAIL("unexpected source term type");
           }
 
           if (new_insert_block != old_insert_block) {
@@ -51,7 +64,7 @@ namespace Psi {
             old_insert_block = NULL;
           }
 
-          BuiltValue* result;
+          llvm::Value* result;
           switch(term->term_type()) {
           case term_functional: {
             result = self->build_value_functional(cast<FunctionalTerm>(term));
@@ -69,17 +82,9 @@ namespace Psi {
             PSI_FAIL("unexpected term type");
           }
 
-#if 0
-          llvm::Instruction *value_insn = 0;
-          if (result->simple_type()) {
-            value_insn = llvm::dyn_cast<llvm::Instruction>(result->simple_value());
-          } else if (result->raw_value) {
-            value_insn = llvm::dyn_cast<llvm::Instruction>(result->raw_value);
-          }
-
+          llvm::Instruction *value_insn = llvm::dyn_cast<llvm::Instruction>(result);
           if (value_insn && !value_insn->hasName() && !value_insn->getType()->isVoidTy())
             value_insn->setName(self->term_name(term));
-#endif
 
           // restore original insert block
           if (old_insert_block)
@@ -87,12 +92,9 @@ namespace Psi {
 
           return result;
         }
-
-        BuiltValue* invalid() const {return NULL;}
-        bool valid(BuiltValue *t) const {return t;}
       };
 
-      FunctionBuilder::FunctionBuilder(GlobalBuilder *global_builder,
+      FunctionBuilder::FunctionBuilder(ModuleBuilder *global_builder,
                                        FunctionTerm *function,
                                        llvm::Function *llvm_function,
                                        IRBuilder *irbuilder)
@@ -106,12 +108,12 @@ namespace Psi {
       FunctionBuilder::~FunctionBuilder() {
       }
 
-      ConstantValue* FunctionBuilder::build_constant(Term *term) {
+      llvm::Constant* FunctionBuilder::build_constant(Term *term) {
         return m_global_builder->build_constant(term);
       }
 
       const llvm::Type* FunctionBuilder::build_type(Term* term) {
-        if (term->global()) {
+        if (!term->source() || isa<GlobalTerm>(term->source())) {
           return m_global_builder->build_type(term);
         } else {
           return ConstantBuilder::build_type(term);
@@ -124,10 +126,10 @@ namespace Psi {
        *
        * \pre <tt>!term->phantom()</tt>
        */
-      BuiltValue* FunctionBuilder::build_value(Term* term) {
+      llvm::Value* FunctionBuilder::build_value(Term* term) {
         PSI_ASSERT(!term->phantom());
 
-        if (term->global())
+        if (!term->source() || isa<GlobalTerm>(term->source()))
           return build_constant(term);
 
         switch (term->term_type()) {
@@ -150,33 +152,21 @@ namespace Psi {
       }
 
       /**
-       * \brief Identical to build_value, but requires that the result
-       * be of a known type so that an llvm::Value can be returned.
-       */
-      llvm::Value* FunctionBuilder::build_value_simple(Term *term) {
-        BuiltValue* v = build_value(term);
-        PSI_ASSERT(v->state() == BuiltValue::state_simple);
-	return v->simple_value();
-      }
-
-      /**
        * Set up function entry. This converts function parameters from
        * whatever format the calling convention passes them in.
        */
       llvm::BasicBlock* FunctionBuilder::build_function_entry() {
         llvm::BasicBlock *prolog_block = llvm::BasicBlock::Create(llvm_context(), "", llvm_function());
         irbuilder().SetInsertPoint(prolog_block);
-        llvm::SmallVector<BuiltValue*, 4> parameter_values;
-        target_fixes()->function_parameters_unpack(*this, function(), llvm_function(), parameter_values);
+        llvm::SmallVector<llvm::Value*, 4> parameter_values;
+        
+        //target_fixes()->function_parameters_unpack(*this, function(), llvm_function(), parameter_values);
 
         std::size_t n_phantom = function()->function_type()->n_phantom_parameters();
         for (std::size_t i = 0, e = parameter_values.size(); i != e; ++i) {
           FunctionParameterTerm* param = m_function->parameter(i + n_phantom);
-          BuiltValue *value = parameter_values[i];
-#if 0
-          if (value->simple_value)
-            value->simple_value->setName(term_name(param));
-#endif
+          llvm::Value *value = parameter_values[i];
+          value->setName(term_name(param));
           m_value_terms.insert(std::make_pair(param, value));
         }
 
@@ -329,9 +319,7 @@ namespace Psi {
         std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
         for (std::vector<BlockTerm*>::iterator it = sorted_blocks.begin(); it != sorted_blocks.end(); ++it) {
           llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(llvm_context(), term_name(*it), m_llvm_function);
-          FunctionValue *block_val = new_function_value_simple((*it)->type(), llvm_bb);
-          std::pair<ValueTermMap::iterator, bool> insert_result =
-            m_value_terms.insert(std::make_pair(*it, block_val));
+          std::pair<ValueTermMap::iterator, bool> insert_result = m_value_terms.insert(std::make_pair(*it, llvm_bb));
           PSI_ASSERT(insert_result.second);
           blocks.push_back(std::make_pair(*it, llvm_bb));
         }
@@ -343,7 +331,7 @@ namespace Psi {
         PSI_ASSERT(blocks[0].first == entry_block);
         irbuilder().CreateBr(blocks[0].second);
 
-        std::tr1::unordered_map<PhiTerm*, BuiltValue*> phi_node_map;
+        std::tr1::unordered_map<PhiTerm*, llvm::PHINode*> phi_node_map;
 
         // Build basic blocks
         for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
@@ -351,16 +339,14 @@ namespace Psi {
           irbuilder().SetInsertPoint(it->second);
           PSI_ASSERT(it->second->empty());
 
-	  // Set up post-init insert point
-	  llvm::Instruction *post_init_instruction = insert_placeholder_instruction();
-
           // Set up phi terms
           BlockTerm::PhiList& phi_list = it->first->phi_nodes();
           for (BlockTerm::PhiList::iterator jt = phi_list.begin(); jt != phi_list.end(); ++jt) {
             PhiTerm *phi = &*jt;
-	    BuiltValue *phi_value = build_phi_node(phi->type(), post_init_instruction);
-	    phi_node_map.insert(std::make_pair(phi, phi_value));
-            m_value_terms.insert(std::make_pair(phi, phi_value));
+            const llvm::Type *llvm_ty = build_type(phi->type());
+            llvm::PHINode *llvm_phi = irbuilder().CreatePHI(llvm_ty, term_name(phi));
+	    phi_node_map.insert(std::make_pair(phi, llvm_phi));
+            m_value_terms.insert(std::make_pair(phi, llvm_phi));
           }
 
           // Restore stack as it was when dominating block exited, so
@@ -375,7 +361,7 @@ namespace Psi {
           BlockTerm::InstructionList& insn_list = it->first->instructions();
           for (BlockTerm::InstructionList::iterator jt = insn_list.begin(); jt != insn_list.end(); ++jt) {
             InstructionTerm *insn = &*jt;
-            BuiltValue *r = build_value_instruction(insn);
+            llvm::Value *r = build_value_instruction(insn);
             m_value_terms.insert(std::make_pair(insn, r));
           }
 
@@ -401,41 +387,18 @@ namespace Psi {
         simplify_stack_save_restore();
 
         // Set up LLVM phi node incoming edges
-        for (std::tr1::unordered_map<PhiTerm*, BuiltValue*>::iterator it = phi_node_map.begin();
+        for (std::tr1::unordered_map<PhiTerm*, llvm::PHINode*>::iterator it = phi_node_map.begin();
              it != phi_node_map.end(); ++it) {
 
           for (std::size_t n = 0; n < it->first->n_incoming(); ++n) {
             PSI_ASSERT(m_value_terms.find(it->first->incoming_block(n)) != m_value_terms.end());
             llvm::BasicBlock *incoming_block =
-              llvm::cast<llvm::BasicBlock>(m_value_terms.find(it->first->incoming_block(n))->second->simple_value());
+              llvm::cast<llvm::BasicBlock>(m_value_terms.find(it->first->incoming_block(n))->second);
 	    PSI_ASSERT(incoming_block);
-            BuiltValue* incoming_value = build_value(it->first->incoming_value(n));
-	    populate_phi_node(it->second, incoming_block, incoming_value);
+            llvm::Value* incoming_value = build_value(it->first->incoming_value(n));
+	    it->second->addIncoming(incoming_value, incoming_block);
           }
         }
-
-	// Erase placeholder instructions
-	for (PlaceholderInstructionList::iterator it = m_placeholder_instructions.begin();
-	     it != m_placeholder_instructions.end(); ++it) {
-	  (*it)->eraseFromParent();
-	}
-	m_placeholder_instructions.clear();
-      }
-
-      /**
-       * This creates a dummy instruction inside the function. This is
-       * used when an instruction is needed to mark an insertion point
-       * in a block, but no existing instruction is reliably
-       * available.
-       *
-       * Currently the returned instruction pattern is <tt>sub 0,
-       * undef</tt>.
-       */
-      llvm::Instruction* FunctionBuilder::insert_placeholder_instruction() {
-	llvm::Constant* undef_i8 = llvm::UndefValue::get(llvm::Type::getInt8Ty(llvm_context()));
-	llvm::Instruction *insn = irbuilder().Insert(llvm::BinaryOperator::CreateNeg(undef_i8));
-	m_placeholder_instructions.push_back(insn);
-	return insn;
       }
 
       /**
@@ -479,21 +442,6 @@ namespace Psi {
           return llvm::ConstantExpr::getPointerCast(const_value, type);
         } else {
           return irbuilder().CreatePointerCast(value, type);
-        }
-      }
-
-      /**
-       * Call <tt>llvm.memcpy.p0i8.p0i8.i64</tt> with default alignment
-       * and volatile parameters.
-       */
-      llvm::Instruction* FunctionBuilder::create_memcpy(llvm::Value *dest, llvm::Value *src, llvm::Value *count) {
-        llvm::ConstantInt *align = llvm::ConstantInt::get(llvm::Type::getInt32Ty(llvm_context()), 0);
-        llvm::ConstantInt *false_val = llvm::ConstantInt::getFalse(llvm_context());
-        PSI_ASSERT(llvm::cast<llvm::IntegerType>(count->getType())->getBitWidth() == intptr_type_bits());
-        if (intptr_type_bits() <= 32) {
-          return irbuilder().CreateCall5(intrinsic_memcpy_32(llvm_module()), dest, src, count, align, false_val);
-        } else {
-          return irbuilder().CreateCall5(intrinsic_memcpy_64(llvm_module()), dest, src, count, align, false_val);
         }
       }
 

@@ -36,7 +36,7 @@ namespace Psi {
       ScopedArray<Term*> parameters(term->n_parameters());
       for (unsigned i = 0; i != parameters.size(); ++i)
         parameters[i] = rewriter(term->parameter(i));
-      return term->rewrite(parameters);
+      return term->rewrite(term->context(), parameters);
     }
 
     /**

@@ -3,45 +3,39 @@
 
 #include "Core.hpp"
 
-#include <boost/shared_ptr.hpp>
+#include <tr1/unordered_map>
 
 namespace Psi {
   namespace Tvm {
     /**
-     * Rewrite a term in two stages.
-     * 
-     * The first stage sets the term up, and the second initializes it.
-     * This is effective for global and function terms, which can be
-     * created in this way.
+     * Base class for types which rewrite entire modules.
      */
-    class GlobalTermRewriter {
+    class ModuleRewriter {
+      Module *m_source_module;
+      Module m_target_module;
+      typedef std::tr1::unordered_map<GlobalTerm*, GlobalTerm*> GlobalMapType;
+      GlobalMapType m_global_map;
+      
     protected:
-      GlobalTerm *m_new_term;
+      void global_map_put(GlobalTerm*,GlobalTerm*);
+      GlobalTerm* global_map_get(GlobalTerm*);
       
     public:
-      GlobalTermRewriter() : m_new_term(0) {}
-      virtual ~GlobalTermRewriter() {}
+      ModuleRewriter(Module*, Context* =0);
       
-      /**
-       * Pointer to rewritten term.
-       */
+      /// \brief The module being rewritten
+      Module* source_module() {return m_source_module;}
+      /// \brief The module where rewritten symbols are created
+      Module* target_module() {return &m_target_module;}
+            
+      GlobalTerm* target_symbol(GlobalTerm*);
+      FunctionTerm* target_symbol(FunctionTerm*);
+      GlobalVariableTerm* target_symbol(GlobalVariableTerm*);
       
-      GlobalTerm *new_term() const {return m_new_term;}
+      void update(bool incremental=true);
       
-      /**
-       * Run the term rewrite.
-       */
-      virtual void run() = 0;
-    };
-    
-    /**
-     * Base class for types which completely rewrite functions.
-     */
-    struct ModuleRewriterPass {
-      /**
-       * Prepare a function rewrite.
-       */
-      virtual boost::shared_ptr<GlobalTermRewriter> rewrite_global(FunctionTerm *f) = 0;
+    private:
+      virtual void update_implementation(bool incremental) = 0;
     };
   }
 }

@@ -17,7 +17,7 @@ namespace Psi {
      * them in terms of pointer offsets, so that later stages need not
      * handle them.
      */
-    class AggregateLoweringPass : public ModuleRewriterPass {
+    class AggregateLoweringPass : public ModuleRewriter {
     public:
       class Type {
         Term *m_stack_type, *m_heap_type;
@@ -79,6 +79,7 @@ namespace Psi {
       class AggregateLoweringRewriter {
         friend class FunctionRunner;
         friend class GlobalVariableRunner;
+        friend class AggregateLoweringPass;
         
         AggregateLoweringPass *m_pass;
         
@@ -94,7 +95,7 @@ namespace Psi {
         /// \brief Get the pass object this belongs to
         AggregateLoweringPass& pass() {return *m_pass;}
         
-        /// \brief Get the context this pass belongs to
+        /// \brief Get the (target) context this pass belongs to
         Context& context() {return pass().context();}
 
         virtual Type rewrite_type(Term*);
@@ -126,8 +127,8 @@ namespace Psi {
       /**
        * Class which actually runs the pass, and holds per-run data.
        */
-      class FunctionRunner : public GlobalTermRewriter, public AggregateLoweringRewriter {
-        FunctionTerm *m_old_function;
+      class FunctionRunner : public AggregateLoweringRewriter {
+        FunctionTerm *m_old_function, *m_new_function;
         InstructionBuilder m_builder;
         
         std::vector<BlockTerm*> topsort_blocks();
@@ -137,7 +138,7 @@ namespace Psi {
         virtual void run();
         
         /// \brief Get the new version of the function
-        FunctionTerm* new_function() {return cast<FunctionTerm>(new_term());}
+        FunctionTerm* new_function() {return m_new_function;}
         
         /// \brief Get the function being rebuilt
         FunctionTerm* old_function() {return m_old_function;}
@@ -154,34 +155,13 @@ namespace Psi {
         virtual Value rewrite_value(Term*);
       };
       
-      class ModuleRewriter : public AggregateLoweringRewriter {
+      class ModuleLevelRewriter : public AggregateLoweringRewriter {
       public:
-        ModuleRewriter(AggregateLoweringPass*);
+        ModuleLevelRewriter(AggregateLoweringPass*);
         virtual Value load_value(Term*, Term*);
         virtual Term* store_value(Term*, Term*, Term*, Term*);
       };
       
-      class GlobalVariableRunner : public GlobalTermRewriter {
-        AggregateLoweringPass *m_pass;
-        GlobalVariableTerm *m_old_global;
-        
-      public:
-        GlobalVariableRunner(AggregateLoweringPass *pass, GlobalVariableTerm *global);
-        virtual void run();
-        
-        /// \brief Get the pass this object belongs to
-        AggregateLoweringPass& pass() {return *m_pass;}
-        
-        /// \brief Get the new version of the global
-        GlobalVariableTerm* new_global() {return cast<GlobalVariableTerm>(new_term());}
-        
-        /// \brief Get the old version of the global
-        GlobalVariableTerm *old_global() {return m_old_global;}
-        
-        /// \brief Get the context this pass belongs to
-        Context& context() {return pass().context();}
-      };
-
       struct TypeSizeAlignment {
         unsigned size;
         unsigned alignment;
@@ -261,8 +241,7 @@ namespace Psi {
       struct TypeTermRewriter;
       struct FunctionalTermRewriter;
       struct InstructionTermRewriter;
-      Context *m_context;
-      ModuleRewriter m_global_rewriter;
+      ModuleLevelRewriter m_global_rewriter;
 
       struct GlobalBuildStatus {
         GlobalBuildStatus();
@@ -279,14 +258,13 @@ namespace Psi {
       GlobalBuildStatus rewrite_global_type(Term*);
       void global_append(GlobalBuildStatus& status, const GlobalBuildStatus& child);
       void global_pad_to_size(GlobalBuildStatus& status, unsigned size, unsigned alignment);
+      virtual void update_implementation(bool);
 
     public:
-      AggregateLoweringPass(Context*,TargetCallback*);
+      AggregateLoweringPass(Module*, TargetCallback*, Context*);
 
-      virtual boost::shared_ptr<GlobalTermRewriter> rewrite_global(GlobalTerm *f);
-
-      /// \brief Get the context this pass belongs to
-      Context& context() const {return *m_context;}
+      /// \brief Get the (target) context of this pass
+      Context& context() {return target_module()->context();}
       
       AggregateLoweringRewriter& global_rewriter() {return m_global_rewriter;}
 

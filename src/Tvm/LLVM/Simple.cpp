@@ -26,24 +26,24 @@ namespace {
   }
 
   llvm::Constant *metatype_size_const(ConstantBuilder& builder, MetatypeSize::Ptr term) {
-    llvm::Constant *value = builder.build_constant_simple(term->parameter());
+    llvm::Constant *value = builder.build_constant(term->parameter());
     unsigned zero = 0;
     return llvm::ConstantExpr::getExtractValue(value, &zero, 1);
   }
 
   llvm::Value *metatype_size_insn(FunctionBuilder& builder, MetatypeSize::Ptr term) {
-    llvm::Value *value = builder.build_value_simple(term->parameter());
+    llvm::Value *value = builder.build_value(term->parameter());
     return builder.irbuilder().CreateExtractValue(value, 0);
   }
 
   llvm::Constant *metatype_alignment_const(ConstantBuilder& builder, MetatypeAlignment::Ptr term) {
-    llvm::Constant *value = builder.build_constant_simple(term->parameter());
+    llvm::Constant *value = builder.build_constant(term->parameter());
     unsigned one = 1;
     return llvm::ConstantExpr::getExtractValue(value, &one, 1);
   }
 
   llvm::Value *metatype_alignment_insn(FunctionBuilder& builder, MetatypeAlignment::Ptr term) {
-    llvm::Value *value = builder.build_value_simple(term->parameter());
+    llvm::Value *value = builder.build_value(term->parameter());
     return builder.irbuilder().CreateExtractValue(value, 1);
   }
 
@@ -99,8 +99,8 @@ namespace {
     InstructionBinaryOp(CallbackType callback_) : callback(callback_) {}
 
     llvm::Value* operator () (FunctionBuilder& builder, typename TermTagType::Ptr term) const {
-      llvm::Value* lhs = builder.build_value_simple(term->lhs());
-      llvm::Value* rhs = builder.build_value_simple(term->rhs());
+      llvm::Value* lhs = builder.build_value(term->lhs());
+      llvm::Value* rhs = builder.build_value(term->rhs());
       return (builder.irbuilder().*callback)(lhs, rhs, "");
     }
   };
@@ -136,8 +136,8 @@ namespace {
     }
 
     llvm::Value* operator () (FunctionBuilder& builder, typename TermTagType::Ptr term) const {
-      llvm::Value* lhs = builder.build_value_simple(term->lhs());
-      llvm::Value* rhs = builder.build_value_simple(term->rhs());
+      llvm::Value* lhs = builder.build_value(term->lhs());
+      llvm::Value* rhs = builder.build_value(term->rhs());
       if (term->type()->is_signed())
 	return (builder.irbuilder().*si_callback)(lhs, rhs, "");
       else
@@ -251,7 +251,7 @@ namespace Psi {
 	return get_callback(term->operation()).build_instruction(*this, term);
       }
 
-      llvm::Constant* GlobalBuilder::build_constant_internal_simple(FunctionalTerm *term) {
+      llvm::Constant* ModuleBuilder::build_constant_internal_simple(FunctionalTerm *term) {
 	return get_callback(term->operation()).build_constant(*this, term);
       }
 

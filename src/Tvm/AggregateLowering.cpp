@@ -75,10 +75,10 @@ namespace Psi {
         return Type();
       }
       
-      static Type default_rewrite(AggregateLoweringRewriter&, FunctionalTerm *term) {
+      static Type default_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *term) {
         PSI_ASSERT(term->is_type());
-        PSI_ASSERT(term->global());
-        return Type(term);
+        PSI_ASSERT(term->n_parameters() == 0);
+        return Type(term->rewrite(rewriter.context(), StaticArray<Term*,0>()));
       }
       
       typedef TermOperationMap<FunctionalTerm, Type, AggregateLoweringRewriter> CallbackMap;
@@ -116,7 +116,7 @@ namespace Psi {
         ScopedArray<Term*> parameters(n_parameters);
         for (unsigned i = 0; i != n_parameters; ++i)
           parameters[i] = rewriter.rewrite_value_stack(term->parameter(i));
-        return Value(term->rewrite(parameters), true);
+        return Value(term->rewrite(rewriter.context(), parameters), true);
       }
       
       static Value aggregate_value_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *term) {
@@ -413,19 +413,17 @@ namespace Psi {
     }
     
     AggregateLoweringPass::FunctionRunner::FunctionRunner(AggregateLoweringPass* pass, FunctionTerm* old_function)
-    : GlobalTermRewriter(), AggregateLoweringRewriter(pass), m_old_function(old_function) {
+    : AggregateLoweringRewriter(pass), m_old_function(old_function) {
       FunctionTypeTerm *old_function_type = old_function->function_type();
       unsigned n_phantom_parameters = old_function_type->n_phantom_parameters();
       unsigned n_real_parameters = old_function_type->n_parameters() - n_phantom_parameters;
       ScopedArray<Value> parameters(n_real_parameters);
-      FunctionTerm *new_function = pass->target_callback->lower_function(*this, old_function, parameters);
-      PSI_ASSERT(new_function->n_parameters() == n_real_parameters);
+      m_new_function = pass->target_callback->lower_function(*this, old_function, parameters);
+      PSI_ASSERT(m_new_function->n_parameters() == n_real_parameters);
       
       // Put parameters into map
       for (unsigned i = 0; i != n_real_parameters; ++i)
         m_value_map.insert(std::make_pair(old_function->parameter(i + n_phantom_parameters), parameters[i]));
-      
-      pass->global_rewriter().m_value_map[old_function] = Value(new_function, true);
     }
     
     Term* AggregateLoweringPass::FunctionRunner::store_value(Term *value, Term *alloc_type, Term *alloc_count, Term *alloc_alignment) {
@@ -632,26 +630,26 @@ namespace Psi {
     }
     
     AggregateLoweringPass::Type AggregateLoweringPass::FunctionRunner::rewrite_type(Term *type) {
-      if (type->global())
+      if (!type->source() || isa<GlobalTerm>(type->source()))
         return pass().global_rewriter().rewrite_type(type);
       return AggregateLoweringRewriter::rewrite_type(type);
     }
     
     AggregateLoweringPass::Value AggregateLoweringPass::FunctionRunner::rewrite_value(Term *value) {
-      if (value->global())
+      if (!value->source() || isa<GlobalTerm>(value->source()))
         return pass().global_rewriter().rewrite_value(value);
       return AggregateLoweringRewriter::rewrite_value(value);
     }
     
-    AggregateLoweringPass::ModuleRewriter::ModuleRewriter(AggregateLoweringPass *pass)
+    AggregateLoweringPass::ModuleLevelRewriter::ModuleLevelRewriter(AggregateLoweringPass *pass)
     : AggregateLoweringRewriter(pass) {
     }
     
-    AggregateLoweringPass::Value AggregateLoweringPass::ModuleRewriter::load_value(Term* load_term, Term *ptr) {
+    AggregateLoweringPass::Value AggregateLoweringPass::ModuleLevelRewriter::load_value(Term* load_term, Term *ptr) {
       Term *origin = ptr;
       unsigned offset = 0;
       /*
-       * This is somewhat awkward - I have to work out the relationship of ptr to somewhat
+       * This is somewhat awkward - I have to work out the relationship of ptr to some
        * already existing global variable, and then simulate a load instruction.
        */
       while (true) {
@@ -668,7 +666,7 @@ namespace Psi {
           origin = struct_el->aggregate_ptr();
         } else if (UnionElementPtr::Ptr union_el = dyn_cast<UnionElementPtr>(origin)) {
           origin = union_el->aggregate_ptr();
-        } else if (GlobalVariableTerm *global = dyn_cast<GlobalVariableTerm>(origin)) {
+        } else if (isa<GlobalVariableTerm>(origin)) {
           break;
         } else {
           PSI_FAIL("unexpected term type in global pointer expression");
@@ -677,28 +675,7 @@ namespace Psi {
       PSI_FAIL("not implemented");
     }
     
-    Term* AggregateLoweringPass::ModuleRewriter::store_value(Term *value, Term *alloc_type, Term *alloc_count, Term *alloc_alignment) {
-      PSI_FAIL("not implemented");
-    }
-
-    AggregateLoweringPass::GlobalVariableRunner::GlobalVariableRunner(AggregateLoweringPass* pass, GlobalVariableTerm* global)
-    : GlobalTermRewriter(), m_pass(pass), m_old_global(global) {
-      std::vector<Term*> element_types;
-      GlobalBuildStatus status = pass->rewrite_global_type(global->value());
-      pass->global_pad_to_size(status, status.size, status.alignment);
-      Term *global_type;
-      if (status.elements.empty()) {
-        global_type = FunctionalBuilder::empty_type(context());
-      } else if (status.elements.size() == 1) {
-        global_type = status.elements.front();
-      } else {
-        global_type = FunctionalBuilder::struct_type(context(), status.elements);
-      }
-      m_new_term = pass->context().new_global_variable(global_type, global->constant(), global->name());
-      pass->global_rewriter().m_value_map[global] = Value(m_new_term, true);
-    }
-    
-    void AggregateLoweringPass::GlobalVariableRunner::run() {
+    Term* AggregateLoweringPass::ModuleLevelRewriter::store_value(Term *value, Term *alloc_type, Term *alloc_count, Term *alloc_alignment) {
       PSI_FAIL("not implemented");
     }
 
@@ -792,20 +769,71 @@ namespace Psi {
       }
     }
 
-    AggregateLoweringPass::AggregateLoweringPass(Context *context, TargetCallback *target_callback_)
-    : m_context(context),
+    /**
+     * \param source_module Module being rewritten
+     * 
+     * \param target_callback_ Target specific callback functions.
+     * 
+     * \param target_context Context to create rewritten module in. Uses the
+     * source module if this is NULL.
+     */
+    AggregateLoweringPass::AggregateLoweringPass(Module *source_module, TargetCallback *target_callback_, Context* target_context)
+    : ModuleRewriter(source_module, target_context),
     m_global_rewriter(this),
     target_callback(target_callback_),
     remove_only_unknown(false),
     remove_all_unions(false),
     flatten_globals(false) {
     }
-    
-    boost::shared_ptr<GlobalTermRewriter> AggregateLoweringPass::rewrite_global(GlobalTerm *global) {
-      if (global->term_type() == term_function) {
-        return boost::make_shared<FunctionRunner>(this, cast<FunctionTerm>(global));
-      } else {
-        return boost::make_shared<GlobalVariableRunner>(this, cast<GlobalVariableTerm>(global));
+
+    void AggregateLoweringPass::update_implementation(bool incremental) {
+      if (!incremental)
+        m_global_rewriter = ModuleLevelRewriter(this);
+      
+      std::vector<std::pair<GlobalVariableTerm*, GlobalVariableTerm*> > rewrite_globals;
+      std::vector<std::pair<FunctionTerm*, boost::shared_ptr<FunctionRunner> > > rewrite_functions;
+        
+      for (Module::ModuleMemberList::iterator i = source_module()->members().begin(),
+           e = source_module()->members().end(); i != e; ++i) {
+        
+        GlobalTerm *term = &*i;
+        if (global_map_get(term))
+          continue;
+      
+        if (GlobalVariableTerm *old_var = dyn_cast<GlobalVariableTerm>(term)) {
+          std::vector<Term*> element_types;
+          GlobalBuildStatus status = rewrite_global_type(old_var->value());
+          global_pad_to_size(status, status.size, status.alignment);
+          Term *global_type;
+          if (status.elements.empty()) {
+            global_type = FunctionalBuilder::empty_type(context());
+          } else if (status.elements.size() == 1) {
+            global_type = status.elements.front();
+          } else {
+            global_type = FunctionalBuilder::struct_type(context(), status.elements);
+          }
+          GlobalVariableTerm *new_var = target_module()->new_global_variable(old_var->name(), global_type);
+          new_var->set_constant(old_var->constant());
+          global_rewriter().m_value_map[old_var] = Value(new_var, true);
+          rewrite_globals.push_back(std::make_pair(old_var, new_var));
+        } else {
+          FunctionTerm *old_function = cast<FunctionTerm>(term);
+          boost::shared_ptr<FunctionRunner> runner(new FunctionRunner(this, old_function));
+          global_rewriter().m_value_map[old_function] = Value(runner->new_function(), true);
+          rewrite_functions.push_back(std::make_pair(old_function, runner));
+        }
+      }
+      
+      for (std::vector<std::pair<GlobalVariableTerm*, GlobalVariableTerm*> >::iterator
+           i = rewrite_globals.begin(), e = rewrite_globals.end(); i != e; ++i) {
+        GlobalVariableTerm *source = i->first, *target = i->second;
+        global_map_put(i->first, i->second);
+      }
+      
+      for (std::vector<std::pair<FunctionTerm*, boost::shared_ptr<FunctionRunner> > >::iterator
+           i = rewrite_functions.begin(), e = rewrite_functions.end(); i != e; ++i) {
+        i->second->run();
+        global_map_put(i->first, i->second->new_function());
       }
     }
   }

@@ -20,9 +20,10 @@ add_library(psi SHARED
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
   Tvm/FunctionalBuilder.cpp Tvm/FunctionalBuilder.hpp
-  Tvm/Jit.hpp
+  Tvm/Jit.cpp Tvm/Jit.hpp
   Tvm/Instructions.cpp Tvm/Instructions.hpp
   Tvm/InstructionBuilder.cpp Tvm/InstructionBuilder.hpp
+  Tvm/ModuleRewriter.cpp Tvm/ModuleRewriter.hpp
   Tvm/Number.cpp Tvm/Number.hpp
   ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp
@@ -32,6 +33,10 @@ add_library(psi SHARED
   Tvm/User.cpp Tvm/User.hpp
   Tvm/Utility.hpp
 )
+
+if(${UNIX})
+target_link_libraries(psi -ldl)
+endif()
 
 add_library(psi-llvm MODULE
   Tvm/LLVM/Builder.cpp Tvm/LLVM/Builder.hpp

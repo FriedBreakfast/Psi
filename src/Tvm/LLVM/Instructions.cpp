@@ -13,34 +13,27 @@ using namespace Psi::Tvm;
 using namespace Psi::Tvm::LLVM;
 
 namespace {
-  BuiltValue* build_return(FunctionBuilder& builder, Return::Ptr insn) {
-    builder.target_fixes()->function_return(builder, builder.function()->function_type(), builder.llvm_function(), insn->value());
-    return builder.empty_value();
+  llvm::Instruction* build_return(FunctionBuilder& builder, Return::Ptr insn) {
+    return builder.target_fixes()->function_return(builder, builder.function()->function_type(), builder.llvm_function(), insn->value());
   }
 
-  BuiltValue* build_conditional_branch(FunctionBuilder& builder, ConditionalBranch::Ptr insn) {
-    llvm::Value *cond = builder.build_value_simple(insn->condition());
-    llvm::BasicBlock *true_target = llvm::cast<llvm::BasicBlock>(builder.build_value_simple(insn->true_target()));
-    llvm::BasicBlock *false_target = llvm::cast<llvm::BasicBlock>(builder.build_value_simple(insn->false_target()));
-
-    builder.irbuilder().CreateCondBr(cond, true_target, false_target);
-
-    return builder.empty_value();
+  llvm::Instruction* build_conditional_branch(FunctionBuilder& builder, ConditionalBranch::Ptr insn) {
+    llvm::Value *cond = builder.build_value(insn->condition());
+    llvm::BasicBlock *true_target = llvm::cast<llvm::BasicBlock>(builder.build_value(insn->true_target()));
+    llvm::BasicBlock *false_target = llvm::cast<llvm::BasicBlock>(builder.build_value(insn->false_target()));
+    return builder.irbuilder().CreateCondBr(cond, true_target, false_target);
   }
 
-  BuiltValue* build_unconditional_branch(FunctionBuilder& builder, UnconditionalBranch::Ptr insn) {
-    llvm::BasicBlock *target = llvm::cast<llvm::BasicBlock>(builder.build_value_simple(insn->target()));
-
-    builder.irbuilder().CreateBr(target);
-
-    return builder.empty_value();
+  llvm::Instruction* build_unconditional_branch(FunctionBuilder& builder, UnconditionalBranch::Ptr insn) {
+    llvm::BasicBlock *target = llvm::cast<llvm::BasicBlock>(builder.build_value(insn->target()));
+    return builder.irbuilder().CreateBr(target);
   }
 
-  BuiltValue* build_function_call(FunctionBuilder& builder, FunctionCall::Ptr insn) {
+  llvm::Instruction* build_function_call(FunctionBuilder& builder, FunctionCall::Ptr insn) {
     FunctionTypeTerm* function_type = cast<FunctionTypeTerm>
       (cast<PointerType>(insn->target()->type())->target_type());
 
-    llvm::Value *target = builder.build_value_simple(insn->target());
+    llvm::Value *target = builder.build_value(insn->target());
 
     std::size_t n_phantom = function_type->n_phantom_parameters();
     std::size_t n_passed_parameters = function_type->n_parameters() - n_phantom;
@@ -52,34 +45,34 @@ namespace {
     return builder.target_fixes()->function_call(builder, target, function_type, insn);
   }
 
-  BuiltValue* build_store(FunctionBuilder& builder, Store::Ptr term) {
-    llvm::Value *target = builder.build_value_simple(term->target());
-    BuiltValue *value = builder.build_value(term->value());
-    builder.store_value(value, target);
-    return builder.empty_value();
+  llvm::Instruction* build_store(FunctionBuilder& builder, Store::Ptr term) {
+    llvm::Value *target = builder.build_value(term->target());
+    llvm::Value *value = builder.build_value(term->value());
+    return builder.irbuilder().CreateStore(value, target);
   }
 
-  BuiltValue* build_load(FunctionBuilder& builder, Load::Ptr term) {
-    llvm::Value *target = builder.build_value_simple(term->target());
-    return builder.load_value(term->type(), target);
+  llvm::Instruction* build_load(FunctionBuilder& builder, Load::Ptr term) {
+    llvm::Value *target = builder.build_value(term->target());
+    return builder.irbuilder().CreateLoad(target);
   }
 
-  BuiltValue* build_alloca(FunctionBuilder& builder, Alloca::Ptr term) {
-    Term *stored_type = term->stored_type();
-    llvm::Value *size = builder.build_value_simple(MetatypeSize::get(stored_type));
-    llvm::Value *align = builder.build_value_simple(MetatypeAlignment::get(stored_type));
-    llvm::AllocaInst *inst = builder.irbuilder().CreateAlloca(builder.get_byte_type(), size);
-    if (llvm::ConstantInt *ci = llvm::dyn_cast<llvm::ConstantInt>(align)) {
-      inst->setAlignment(ci->getValue().getZExtValue());
+  llvm::Instruction* build_alloca(FunctionBuilder& builder, Alloca::Ptr term) {
+    const llvm::Type *stored_type = builder.build_type(term->stored_type());
+    llvm::Value *count = builder.build_value(term->count());
+    llvm::Value *alignment = builder.build_value(term->alignment());
+    llvm::AllocaInst *inst = builder.irbuilder().CreateAlloca(stored_type, count);
+    
+    if (llvm::ConstantInt *const_alignment = llvm::dyn_cast<llvm::ConstantInt>(alignment)) {
+      inst->setAlignment(const_alignment->getValue().getZExtValue());
     } else {
       inst->setAlignment(builder.unknown_alloca_align());
     }
-
-    return builder.new_function_value_simple(term->type(), inst);
+    
+    return inst;
   }
 
   struct CallbackMapValue {
-    virtual BuiltValue* build_instruction(FunctionBuilder&, InstructionTerm*) const = 0;
+    virtual llvm::Instruction* build_instruction(FunctionBuilder&, InstructionTerm*) const = 0;
   };
 
   template<typename TermTagType, typename InsnCbType>
@@ -91,7 +84,7 @@ namespace {
       : m_insn_cb(insn_cb) {
     }
 
-    virtual BuiltValue* build_instruction(FunctionBuilder& builder, InstructionTerm* term) const {
+    virtual llvm::Instruction* build_instruction(FunctionBuilder& builder, InstructionTerm* term) const {
       return m_insn_cb(builder, cast<TermTagType>(term));
     }
   };
@@ -132,7 +125,7 @@ namespace Psi {
        * (i.e. regardless of the arguments) has a known type. In
        * practise, this means numeric operations.
        */
-      BuiltValue* FunctionBuilder::build_value_instruction_simple(InstructionTerm *term) {
+      llvm::Instruction* FunctionBuilder::build_value_instruction_simple(InstructionTerm *term) {
 	return get_callback(term->operation()).build_instruction(*this, term);
       }
     }

@@ -129,7 +129,8 @@ namespace Psi {
      */
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name)
       : Term(ui, context, term_type, this, PointerType::get(type)),
-        m_name(name) {
+        m_name(name),
+        m_alignment(1) {
       PSI_ASSERT(!type->source());
     }
 
@@ -232,6 +233,19 @@ namespace Psi {
       print_hash_terms(std::cerr);
     }
 #endif
+
+    std::size_t Module::GlobalTermHasher::operator() (const GlobalTerm& h) const {
+      return boost::hash_value(h.name());
+    }
+
+    Module::Module(Context *context)
+    : m_context(context),
+    m_members_buckets(initial_members_buckets),
+    m_members(ModuleMemberList::bucket_traits(m_members_buckets.get(), initial_members_buckets)) {
+    }
+    
+    Module::~Module() {
+    }
 
     /**
      * Return whether a term is unique, i.e. it is not functional so

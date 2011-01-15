@@ -60,9 +60,9 @@ namespace Psi {
 
     typedef std::tr1::unordered_map<std::string, GlobalTerm*> AssemblerResult;
 
-    AssemblerResult build(Context& context, const boost::intrusive::list<Parser::NamedGlobalElement>& globals);
-    AssemblerResult parse_and_build(Context& context, const char *begin, const char *end);
-    AssemblerResult parse_and_build(Context& context, const char *begin);
+    AssemblerResult build(Module&, const boost::intrusive::list<Parser::NamedGlobalElement>&);
+    AssemblerResult parse_and_build(Module&, const char*, const char*);
+    AssemblerResult parse_and_build(Module&, const char*);
   }
 }
 

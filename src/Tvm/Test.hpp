@@ -13,6 +13,7 @@ namespace Psi {
       class ContextFixture {
       public:
         Context context;
+        Module module;
 
         ContextFixture();
         ~ContextFixture();

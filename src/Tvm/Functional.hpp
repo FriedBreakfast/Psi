@@ -30,8 +30,16 @@ namespace Psi {
       unsigned n_parameters() const {return Term::n_base_parameters();}
       Term* parameter(std::size_t n) const {return get_base_parameter(n);}
 
-      /// Build a copy of this term with a new set of parameters.
-      virtual FunctionalTerm* rewrite(ArrayPtr<Term*const> parameters) = 0;
+      /**
+       * \brief Build a copy of this term with a new set of parameters.
+       * 
+       * \param context Context to create the new term in. This may be
+       * different to the current context of this term, but must match
+       * the context of all terms in \c parameters.
+       * 
+       * \param parameters Parameters for the rewritten term.
+       */
+      virtual FunctionalTerm* rewrite(Context& context, ArrayPtr<Term*const> parameters) = 0;
 
       /**
        * Check whether this is a simple binary operation (for casting
@@ -93,8 +101,8 @@ namespace Psi {
       typedef FunctionalTermWithData<Data> BaseType;
 
     public:
-      virtual FunctionalTerm* rewrite(ArrayPtr<Term*const> parameters) {
-        return this->context().template get_functional<TermTagType>(parameters, this->data());
+      virtual FunctionalTerm* rewrite(Context& context, ArrayPtr<Term*const> parameters) {
+        return context.template get_functional<TermTagType>(parameters, this->data());
       }
 
       virtual bool is_binary_op() const {
@@ -179,7 +187,7 @@ namespace Psi {
       /// \copydoc FunctionalTerm::operation
       const char *operation() const {return get()->operation();}
       /// \copydoc FunctionalTerm::rewrite
-      FunctionalTerm* rewrite(ArrayPtr<Term*const> parameters) const {return get()->rewrite(parameters);}
+      FunctionalTerm* rewrite(Context& context, ArrayPtr<Term*const> parameters) const {return get()->rewrite(context, parameters);}
     };
 
     /**
@@ -193,8 +201,8 @@ namespace Psi {
       explicit FunctionalTermPtrBase(FunctionalTerm *term) : BasePtr(term) {}
 
       /// \copydoc FunctionalTerm::rewrite
-      PtrDecayAdapter<typename TermTagType::PtrHook> rewrite(ArrayPtr<Term*const> parameters) const {
-        return cast<TermTagType>(FunctionalTermPtr::rewrite(parameters));
+      PtrDecayAdapter<typename TermTagType::PtrHook> rewrite(Context& context, ArrayPtr<Term*const> parameters) const {
+        return cast<TermTagType>(FunctionalTermPtr::rewrite(context, parameters));
       }
 
     protected:
