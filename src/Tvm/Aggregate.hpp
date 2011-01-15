@@ -149,7 +149,6 @@ namespace Psi {
     Term* length() const {return get()->parameter(1);}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *element_type, Term *length);
-    static Ptr get(Term *element_type, unsigned length);
     PSI_TVM_FUNCTIONAL_TYPE_END(ArrayType)
 
     /**

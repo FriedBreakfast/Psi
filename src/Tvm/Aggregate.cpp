@@ -2,19 +2,18 @@
 #include "Number.hpp"
 #include "Function.hpp"
 #include "FunctionalBuilder.hpp"
+#include "Utility.hpp"
 
 namespace Psi {
   namespace Tvm {
     namespace {
       FunctionalTypeResult aggregate_type_check(Context& context, ArrayPtr<Term*const> parameters) {
-        bool phantom = false;
         for (std::size_t i = 0; i < parameters.size(); ++i) {
           if (!parameters[i]->is_type())
             throw TvmUserError("members of an aggregate type must be types");
-          phantom = phantom || parameters[i]->phantom();
         }
 
-        return FunctionalTypeResult(Metatype::get(context), phantom);
+        return FunctionalBuilder::type_type(context);
       }
     }
 
@@ -48,7 +47,7 @@ namespace Psi {
     FunctionalTypeResult Metatype::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("type type takes no parameters");
-      return FunctionalTypeResult(NULL, false);
+      return NULL;
     }
 
     Metatype::Ptr Metatype::get(Context& context) {
@@ -58,10 +57,10 @@ namespace Psi {
     FunctionalTypeResult MetatypeValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 2)
         throw TvmUserError("type_v takes two parameters");
-      Term *intptr_type = IntegerType::get(context, IntegerType::iptr, false);
+      Term *intptr_type = FunctionalBuilder::size_type(context);
       if ((parameters[0]->type() != intptr_type) || (parameters[1]->type() != intptr_type))
 	throw TvmUserError("both parameters to type_v must be intptr");
-      return FunctionalTypeResult(Metatype::get(context), false);
+      return FunctionalBuilder::type_type(context);
     }
 
     MetatypeValue::Ptr MetatypeValue::get(Term *size, Term *alignment) {
@@ -71,9 +70,9 @@ namespace Psi {
     FunctionalTypeResult MetatypeSize::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 1)
         throw TvmUserError("sizeof takes one parameter");
-      if (parameters[0]->type() != Metatype::get(context))
+      if (parameters[0]->type() != FunctionalBuilder::type_type(context))
 	throw TvmUserError("parameter to sizeof must be a type");
-      return FunctionalTypeResult(IntegerType::get_size(context), false);
+      return FunctionalBuilder::size_type(context);
     }
 
     MetatypeSize::Ptr MetatypeSize::get(Term *target) {
@@ -83,9 +82,9 @@ namespace Psi {
     FunctionalTypeResult MetatypeAlignment::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 1)
         throw TvmUserError("alignof takes one parameter");
-      if (parameters[0]->type() != Metatype::get(context))
+      if (parameters[0]->type() != FunctionalBuilder::type_type(context))
 	throw TvmUserError("parameter to alignof must be a type");
-      return FunctionalTypeResult(IntegerType::get_size(context), false);
+      return FunctionalBuilder::size_type(context);
     }
 
     MetatypeAlignment::Ptr MetatypeAlignment::get(Term *target) {
@@ -95,7 +94,7 @@ namespace Psi {
     FunctionalTypeResult EmptyType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("empty type takes no parameters");
-      return FunctionalTypeResult(Metatype::get(context), false);
+      return FunctionalBuilder::type_type(context);
     }
 
     EmptyType::Ptr EmptyType::get(Context& context) {
@@ -105,7 +104,7 @@ namespace Psi {
     FunctionalTypeResult EmptyValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("empty_v value takes no parameters");
-      return FunctionalTypeResult(EmptyType::get(context), false);
+      return FunctionalBuilder::empty_type(context);
     }
 
     EmptyValue::Ptr EmptyValue::get(Context& context) {
@@ -115,7 +114,7 @@ namespace Psi {
     FunctionalTypeResult BlockType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("block type takes no parameters");
-      return FunctionalTypeResult(Metatype::get(context), false);
+      return FunctionalBuilder::type_type(context);
     }
 
     BlockType::Ptr BlockType::get(Context& context) {
@@ -125,7 +124,7 @@ namespace Psi {
     FunctionalTypeResult ByteType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("byte type takes no parameters");
-      return FunctionalTypeResult(Metatype::get(context), false);
+      return FunctionalBuilder::type_type(context);
     }
 
     ByteType::Ptr ByteType::get(Context& context) {
@@ -137,7 +136,7 @@ namespace Psi {
         throw TvmUserError("undef takes one parameter");
       if (!parameters[0]->is_type())
         throw TvmUserError("parameter to undef must be a type");
-      return FunctionalTypeResult(parameters[0], parameters[0]->phantom());
+      return parameters[0];
     }
     
     UndefinedValue::Ptr UndefinedValue::get(Term* type) {
@@ -149,7 +148,7 @@ namespace Psi {
         throw TvmUserError("pointer type takes one parameter");
       if (!parameters[0]->is_type())
         throw TvmUserError("pointer argument must be a type");
-      return FunctionalTypeResult(Metatype::get(context), false);
+      return FunctionalTypeResult(FunctionalBuilder::type_type(context), 0);
     }
 
     PointerType::Ptr PointerType::get(Term *type) {
@@ -163,7 +162,7 @@ namespace Psi {
 	throw TvmUserError("first argument to cast is not a pointer");
       if (!parameters[1]->is_type())
 	throw TvmUserError("second argument to cast is not a type");
-      return FunctionalTypeResult(PointerType::get(parameters[1]), parameters[0]->phantom());
+      return FunctionalTypeResult(FunctionalBuilder::pointer_type(parameters[1]), parameters[0]->source());
     }
 
     PointerCast::Ptr PointerCast::get(Term *pointer, Term *target_type) {
@@ -173,12 +172,14 @@ namespace Psi {
     FunctionalTypeResult PointerOffset::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 2)
         throw TvmUserError("offset takes two parameters");
-      if (!isa<PointerType>(parameters[0]->type()))
+      PointerType::Ptr ptr_type = dyn_cast<PointerType>(parameters[0]->type());
+      if (!ptr_type)
         throw TvmUserError("first argument to offset is not a pointer");
       IntegerType::Ptr int_ty = dyn_cast<IntegerType>(parameters[1]->type());
       if (!int_ty || (int_ty->width() != IntegerType::iptr))
         throw TvmUserError("second argument to offset is not an intptr or uintptr");
-      return FunctionalTypeResult(parameters[0]->type(), parameters[0]->phantom() || parameters[1]->phantom());
+      Term *source = common_source(parameters[0]->source(), common_source(ptr_type->source(), parameters[1]->source()));
+      return FunctionalTypeResult(parameters[0]->type(), source);
     }
     
     /**
@@ -199,20 +200,14 @@ namespace Psi {
       if (!parameters[0]->is_type())
         throw TvmUserError("first argument to array type term is not a type");
 
-      if (parameters[1]->type() != IntegerType::get_size(context))
+      if (parameters[1]->type() != FunctionalBuilder::size_type(context))
         throw TvmUserError("second argument to array type term is not an unsigned intptr");
 
-      return FunctionalTypeResult(Metatype::get(context), parameters[0]->phantom() || parameters[1]->phantom());
+      return FunctionalBuilder::type_type(context);
     }
 
     ArrayType::Ptr ArrayType::get(Term* element_type, Term* length) {
       return element_type->context().get_functional<ArrayType>(StaticArray<Term*,2>(element_type, length));
-    }
-
-    ArrayType::Ptr ArrayType::get(Term *element_type, unsigned length) {
-      IntegerType::Ptr size_type = IntegerType::get_size(element_type->context());
-      Term *length_term = FunctionalBuilder::int_value(FunctionalBuilder::size_type(element_type->context()), length);
-      return get(element_type, length_term);
     }
 
     FunctionalTypeResult ArrayValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
@@ -222,16 +217,12 @@ namespace Psi {
       if (!parameters[0]->is_type())
         throw TvmUserError("first argument to array value is not a type");
 
-      bool phantom = false;
       for (std::size_t i = 1; i < parameters.size(); ++i) {
         if (parameters[i]->type() != parameters[0])
           throw TvmUserError("array value element is of the wrong type");
-        phantom = phantom || parameters[i]->phantom();
       }
 
-      PSI_ASSERT(phantom || !parameters[0]->phantom());
-
-      return FunctionalTypeResult(ArrayType::get(parameters[0], parameters.size() - 1), phantom);
+      return FunctionalBuilder::array_type(parameters[0], parameters.size() - 1);
     }
 
     ArrayValue::Ptr ArrayValue::get(Term *element_type, ArrayPtr<Term*const> elements) {
@@ -250,10 +241,10 @@ namespace Psi {
       if (!array_ty)
 	throw TvmUserError("first parameter to array_el does not have array type");
 
-      if (parameters[1]->type() != IntegerType::get_size(context))
+      if (parameters[1]->type() != FunctionalBuilder::size_type(context))
 	throw TvmUserError("second parameter to array_el is not an intptr");
 
-      return FunctionalTypeResult(array_ty->element_type(), parameters[0]->phantom() || parameters[1]->phantom());
+      return array_ty->element_type();
     }
 
     ArrayElement::Ptr ArrayElement::get(Term *aggregate, Term *index) {
@@ -272,10 +263,11 @@ namespace Psi {
       if (!array_ty)
         throw TvmUserError("first parameter to array_ep is not a pointer to an array");
 
-      if (parameters[1]->type() != IntegerType::get_size(context))
+      if (parameters[1]->type() != FunctionalBuilder::size_type(context))
         throw TvmUserError("second parameter to array_ep is not an intptr");
 
-      return FunctionalTypeResult(PointerType::get(array_ty->element_type()), parameters[0]->phantom() || parameters[1]->phantom());
+      Term *source = common_source(parameters[0]->source(), common_source(parameters[1]->source(), array_ty->element_type()->source()));
+      return FunctionalTypeResult(FunctionalBuilder::pointer_type(array_ty->element_type()), source);
     }
 
     ArrayElementPtr::Ptr ArrayElementPtr::get(Term *aggregate_ptr, Term *index) {
@@ -293,16 +285,10 @@ namespace Psi {
     FunctionalTypeResult StructValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       ScopedArray<Term*> member_types(parameters.size());
 
-      bool phantom = false;
-      for (std::size_t i = 0; i < parameters.size(); ++i) {
-        phantom = phantom || parameters[i]->phantom();
+      for (std::size_t i = 0; i < parameters.size(); ++i)
         member_types[i] = parameters[i]->type();
-      }
 
-      Term *type = StructType::get(context, member_types);
-      PSI_ASSERT(phantom == type->phantom());
-
-      return FunctionalTypeResult(type, phantom);
+      return FunctionalBuilder::struct_type(context, member_types);
     }
 
     StructValue::Ptr StructValue::get(Context& context, ArrayPtr<Term*const> elements) {
@@ -320,7 +306,7 @@ namespace Psi {
       if (index.value() >= struct_ty->n_members())
 	throw TvmUserError("struct_el member index out of range");
 
-      return FunctionalTypeResult(struct_ty->member_type(index.value()), parameters[0]->phantom());
+      return struct_ty->member_type(index.value());
     }
 
     StructElement::Ptr StructElement::get(Term *aggregate, unsigned index) {
@@ -341,8 +327,12 @@ namespace Psi {
 
       if (index.value() >= struct_ty->n_members())
         throw TvmUserError("struct_ep member index out of range");
+      
+      Term *source = parameters[0]->source();
+      for (unsigned i = 0, e = index.value(); i != e; ++i)
+        source = common_source(source, struct_ty->member_type(i)->source());
 
-      return FunctionalTypeResult(PointerType::get(struct_ty->member_type(index.value())), parameters[0]->phantom());
+      return FunctionalTypeResult(FunctionalBuilder::pointer_type(struct_ty->member_type(index.value())), source);
     }
 
     StructElementPtr::Ptr StructElementPtr::get(Term *aggregate_ptr, unsigned index) {
@@ -360,7 +350,11 @@ namespace Psi {
       if (index.value() >= struct_ty->n_members())
         throw TvmUserError("struct_eo member index out of range");
 
-      return FunctionalTypeResult(IntegerType::get_size(context), parameters[0]->phantom());
+      Term *source = 0;
+      for (unsigned i = 0, e = index.value(); i != e; ++i)
+        source = common_source(source, struct_ty->member_type(i)->source());
+
+      return FunctionalTypeResult(FunctionalBuilder::size_type(context), source);
     }
 
     StructElementOffset::Ptr StructElementOffset::get(Term *type, unsigned index) {
@@ -402,7 +396,7 @@ namespace Psi {
       if (!type->contains_type(parameters[1]->type()))
         throw TvmUserError("second argument to union_v must correspond to a member of the specified union type");
 
-      return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom());
+      return type.get();
     }
 
     UnionValue::Ptr UnionValue::get(Term* type, Term* value) {
@@ -420,7 +414,7 @@ namespace Psi {
       if (!union_ty->contains_type(parameters[1]))
 	throw TvmUserError("second argument to union_el is not a member of the type of the first");
 
-      return FunctionalTypeResult(parameters[1], parameters[0]->phantom() || parameters[1]->phantom());
+      return parameters[1];
     }
 
     UnionElement::Ptr UnionElement::get(Term *aggregate, Term *member_type) {
@@ -442,7 +436,7 @@ namespace Psi {
       if (!union_ty->contains_type(parameters[1]))
         throw TvmUserError("second argument to union_ep is not a member of the type of the first");
 
-      return FunctionalTypeResult(PointerType::get(parameters[1]), parameters[0]->phantom() || parameters[1]->phantom());
+      return FunctionalTypeResult(FunctionalBuilder::pointer_type(parameters[1]), parameters[0]->source());
     }
 
     UnionElementPtr::Ptr UnionElementPtr::get(Term *aggregate_ptr, Term *member_type) {
@@ -490,7 +484,7 @@ namespace Psi {
          new_parameters.slice(0, result_n_phantom),
          new_parameters.slice(result_n_phantom, result_n_phantom+result_n_normal));
 
-      return FunctionalTypeResult(PointerType::get(result_function_type), parameters[0]->phantom());
+      return FunctionalTypeResult(FunctionalBuilder::pointer_type(result_function_type), parameters[0]->source());
     }
   }
 }

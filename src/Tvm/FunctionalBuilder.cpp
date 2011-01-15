@@ -91,6 +91,11 @@ namespace Psi {
       return ArrayType::get(element_type, length);
     }
     
+    /// \copydoc FunctionalBuilder::array_type(Term*,Term*)
+    Term* FunctionalBuilder::array_type(Term *element_type, unsigned length) {
+      return array_type(element_type, size_value(element_type->context(), length));
+    }
+    
     /**
      * \brief Get a struct aggregate type.
      * 

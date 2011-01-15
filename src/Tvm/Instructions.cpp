@@ -1,6 +1,6 @@
 #include "Aggregate.hpp"
 #include "Instructions.hpp"
-#include "Number.hpp"
+#include "FunctionalBuilder.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -51,7 +51,7 @@ namespace Psi {
 
       Term* true_target(parameters[1]);
       Term* false_target(parameters[2]);
-      if ((true_target->term_type() != term_block) || (false_target->term_type() != term_block))
+      if (!isa<BlockTerm>(true_target) || !isa<BlockTerm>(false_target))
         throw TvmUserError("second and third parameters to branch instruction must be blocks");
 
       PSI_ASSERT(!true_target->phantom() && !false_target->phantom());
@@ -236,11 +236,13 @@ namespace Psi {
 
       if (!parameters[0]->is_type())
         throw TvmUserError("first parameter to alloca is not a type");
+      
+      Term *size_type = FunctionalBuilder::size_type(function->context());
 
-      if (parameters[1]->type() != IntegerType::get_size(function->context()))
+      if (parameters[1]->type() != size_type)
         throw TvmUserError("second parameter to alloca is not a uintptr");
 
-      if (parameters[2]->type() != IntegerType::get_size(function->context()))
+      if (parameters[2]->type() != size_type)
         throw TvmUserError("third parameter to alloca is not a uintptr");
       
       if (parameters[0]->phantom() || parameters[1]->phantom() || parameters[2]->phantom())
@@ -278,7 +280,7 @@ namespace Psi {
       if (parameters[0]->type() != parameters[1]->type())
         throw TvmUserError("first two parameters to memcpy instruction must have the same type");
       
-      Term *size_type = IntegerType::get_size(function->context());
+      Term *size_type = FunctionalBuilder::size_type(function->context());
       if ((parameters[2]->type() != size_type) || (parameters[3]->type() != size_type))
         throw TvmUserError("third and fourth parameters to memcpy instruction must be uintptr");
       

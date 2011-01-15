@@ -29,11 +29,7 @@ namespace Psi {
       void prepare_initialize(Context *context) {
         FunctionalTypeResult tr = m_setup->type(*context, m_parameters);
         m_type = tr.type;
-        if (tr.phantom) {
-          PSI_FAIL("not implemented");
-        } else {
-          PSI_FAIL("not implemented");
-        }
+        m_source = tr.source_set ? tr.source : common_source(m_parameters);
       }
 
       FunctionalTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {

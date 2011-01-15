@@ -46,6 +46,7 @@ namespace Psi {
       ///@{
       static Term* pointer_type(Term*);
       static Term* array_type(Term*,Term*);
+      static Term* array_type(Term*,unsigned);
       static Term* struct_type(Context&, ArrayPtr<Term*const>);
       static Term* union_type(Context&, ArrayPtr<Term*const>);
       ///@}

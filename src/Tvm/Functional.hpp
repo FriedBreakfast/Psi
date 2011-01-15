@@ -6,9 +6,10 @@
 namespace Psi {
   namespace Tvm {
     struct FunctionalTypeResult {
-      FunctionalTypeResult(Term *type_, bool phantom_)  : type(type_), phantom(phantom_) {}
-      Term *type;
-      bool phantom;
+      FunctionalTypeResult(Term *type_) : type(type_), source(0), source_set(false) {}
+      FunctionalTypeResult(Term *type_, Term *source_)  : type(type_), source(source_), source_set(true) {}
+      Term *type, *source;
+      bool source_set;
     };
 
     /**

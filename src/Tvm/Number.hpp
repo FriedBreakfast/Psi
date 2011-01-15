@@ -66,7 +66,6 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
 
     static Ptr get(Context&, Width, bool);
-    static Ptr get_size(Context&);
     PSI_TVM_FUNCTIONAL_TYPE_END(IntegerType)
 
     PSI_TVM_FUNCTIONAL_TYPE(IntegerValue, ConstructorOperation)

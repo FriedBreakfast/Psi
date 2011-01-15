@@ -28,7 +28,7 @@ namespace Psi {
       if (parameters.size() != 1)
 	throw TvmInternalError("FunctionTypeResolverParameter takes one parameter");
 
-      return FunctionalTypeResult(parameters[0], parameters[0]->phantom());
+      return parameters[0];
     }
 
     FunctionTypeTerm::FunctionTypeTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term* result_type, ArrayPtr<Term*const> parameter_types, std::size_t n_phantom, CallingConvention calling_convention)

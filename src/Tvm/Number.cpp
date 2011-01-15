@@ -44,11 +44,6 @@ namespace Psi {
       return context.get_functional<IntegerType>(ArrayPtr<Term*>(), Data(width, is_signed));
     }
 
-    /// \brief Get the integer type for intptr.
-    IntegerType::Ptr IntegerType::get_size(Context& context) {
-      return get(context, iptr, false);
-    }
-
     FunctionalTypeResult IntegerValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 1)
         throw TvmUserError("int_v value takes one parameter");
@@ -114,7 +109,7 @@ namespace Psi {
         if (type != parameters[1]->type())
           throw TvmUserError(std::string(operation) + ": both operands must be of the same type");
 
-        return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom());
+        return type;
       }
 
       FunctionalTypeResult integer_binary_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
@@ -130,7 +125,7 @@ namespace Psi {
         if (parameters.size() != 1)
           throw TvmUserError(std::string(operation) + " expects two operands");
 
-        return FunctionalTypeResult(parameters[0]->type(), parameters[0]->phantom());
+        return parameters[0]->type();
       }
 
       FunctionalTypeResult integer_unary_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
@@ -203,7 +198,7 @@ namespace Psi {
       if (type != parameters[2]->type())
 	throw TvmUserError("select: second and third operands must have the same type");
 
-      return FunctionalTypeResult(type, parameters[0]->phantom() || parameters[1]->phantom() || parameters[2]->phantom());
+      return type;
     }
 
     SelectValue::Ptr SelectValue::get(Term *condition, Term *true_value, Term *false_value) {

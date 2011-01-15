@@ -167,6 +167,7 @@ namespace Psi {
        * <li>Function - non-constant values are parameters to the
        * given function.</li>
        * <li>Phantom parameter - a phantom value</li>
+       * <li>Function type parameter - a parameterized value</li>
        * <li>Block - non-constant values are phi nodes in this block.</li>
        * <li>Instruction - this is the last instruction contributing to
        * the resulting value</li>
