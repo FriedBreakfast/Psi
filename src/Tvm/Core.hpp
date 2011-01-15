@@ -105,29 +105,6 @@ namespace Psi {
       return isa<T>(p) ? cast<T>(p) : CastImplementation<T>::null();
     }
 
-    class TermUser : User {
-      friend class Context;
-      friend class Term;
-
-    public:
-      TermType term_type() const {return static_cast<TermType>(m_term_type);}
-
-    private:
-      TermUser(const UserInitializer& ui, TermType term_type);
-#ifdef PSI_DEBUG
-      virtual ~TermUser();
-#else
-      ~TermUser();
-#endif
-
-      inline std::size_t n_uses() const {return User::n_uses();}
-      inline Term* use_get(std::size_t n) const;
-      inline void use_set(std::size_t n, Term *term);
-      void resize_uses(std::size_t n);
-
-      unsigned char m_term_type;
-    };
-
     /**
      * \brief Base class for all compile- and run-time values.
      *
@@ -137,18 +114,14 @@ namespace Psi {
      * FunctionalTermBackend and InstructionTermBackend and then
      * wrapping that in either FunctionalTerm or InstructionTerm.
      */
-    class Term : public TermUser, Used {
-      friend class TermUser;
+    class Term : User, Used {
+      friend class Context;
 
       /**
        * So FunctionTerm can manage FunctionParameterTerm and
        * BlockTerm references.
        */
       friend class FunctionTerm;
-
-      friend class Context;
-      template<typename> friend class TermIterator;
-
       friend class GlobalTerm;
       friend class FunctionParameterTerm;
       friend class BlockTerm;
@@ -172,6 +145,8 @@ namespace Psi {
         category_recursive
       };
 
+      /// \brief The low level type of this term.
+      TermType term_type() const {return static_cast<TermType>(m_term_type);}
       /// \brief Whether this term can be the type of another term
       bool is_type() const {return (m_category == category_metatype) || (m_category == category_type);}
       /// \brief If this term is global: it only contains references to constant values and global addresses.
@@ -205,13 +180,14 @@ namespace Psi {
       Context& context() const {return *m_context;}
 
       /** \brief Get the term describing the type of this term. */
-      Term* type() const {return use_get(0);}
+      Term* type() const {return static_cast<Term*>(use_get(0));}
 
     private:
       Term(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type);
 
       std::size_t hash_value() const;
 
+      unsigned char m_term_type;
       unsigned char m_category : 2;
       Context *m_context;
       Term *m_source;
@@ -225,19 +201,11 @@ namespace Psi {
       void set_base_parameter(std::size_t n, Term *t);
 
       Term* get_base_parameter(std::size_t n) const {
-        return use_get(n+1);
+        return static_cast<Term*>(use_get(n+1));
       }
 
       void resize_base_parameters(std::size_t n);
     };
-
-    inline Term* TermUser::use_get(std::size_t n) const {
-      return static_cast<Term*>(User::use_get(n));
-    }
-
-    inline void TermUser::use_set(std::size_t n, Term *term) {
-      User::use_set(n, term);
-    }
 
 #ifndef PSI_DOXYGEN
     template<> struct CastImplementation<Term> {
@@ -248,11 +216,11 @@ namespace Psi {
         return 0;
       }
 
-      static Ptr cast(TermUser *t) {
+      static Ptr cast(Term *t) {
         return checked_cast<Term*>(t);
       }
 
-      static bool isa(TermUser*) {
+      static bool isa(Term*) {
         return true;
       }
     };
@@ -267,11 +235,11 @@ namespace Psi {
         return 0;
       }
 
-      static Ptr cast(TermUser *t) {
+      static Ptr cast(Term *t) {
         return checked_cast<T*>(t);
       }
 
-      static bool isa(TermUser *t) {
+      static bool isa(Term *t) {
         return t->term_type() == term_type;
       }
     };
@@ -331,11 +299,11 @@ namespace Psi {
         return 0;
       }
 
-      static Ptr cast(TermUser *t) {
+      static Ptr cast(Term *t) {
         return checked_cast<HashTerm*>(t);
       }
 
-      static bool isa(TermUser* t) {
+      static bool isa(Term* t) {
         return (t->term_type() == term_apply) ||
         (t->term_type() == term_function_type) ||
         (t->term_type() == term_functional);
@@ -368,11 +336,11 @@ namespace Psi {
         return 0;
       }
 
-      static Ptr cast(TermUser *t) {
+      static Ptr cast(Term *t) {
         return checked_cast<GlobalTerm*>(t);
       }
 
-      static bool isa(TermUser *t) {
+      static bool isa(Term *t) {
 	return (t->term_type() == term_global_variable) || (t->term_type() == term_function);
       }
     };

@@ -35,21 +35,11 @@ namespace Psi {
       return m_str;
     }
 
-    TermUser::TermUser(const UserInitializer& ui, TermType term_type)
-      : User(ui), m_term_type(term_type) {
-    }
-
-    TermUser::~TermUser() {
-    }
-
-    void TermUser::resize_uses(std::size_t n) {
-      User::resize_uses(n);
-    }
-
     Term::Term(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type)
-      : TermUser(ui, term_type),
-        m_context(context),
-        m_source(source) {
+    : User(ui),
+    m_term_type(term_type),
+    m_context(context),
+    m_source(source) {
 
       PSI_ASSERT(!source || (source->term_type() == term_function) || (source->term_type() == term_block) || (source->term_type() == term_instruction));
 
