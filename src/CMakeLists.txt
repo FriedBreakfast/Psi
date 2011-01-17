@@ -3,6 +3,13 @@ include_directories(${Boost_INCLUDE_DIRS})
 bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated)
 set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_library(psi-assert SHARED Assert.cpp Assert.hpp)
+  set(PSI_DEBUG_LIBS psi-assert)
+else()
+  set(PSI_DEBUG_LIBS)
+endif()
+
 add_library(psi-tvm SHARED
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
   Tvm/AggregateLowering.cpp
@@ -28,7 +35,7 @@ add_library(psi-tvm SHARED
 )
 
 if(UNIX)
-  target_link_libraries(psi-tvm -ldl)
+  target_link_libraries(psi-tvm ${PSI_DEBUG_LIBS} -ldl)
 endif()
 
 if(BUILD_TESTING)
@@ -61,12 +68,13 @@ add_library(psi-llvm MODULE
 )
 
 set_target_properties(psi-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
-target_link_libraries(psi-llvm psi-tvm ${LLVM_LIBS})
+target_link_libraries(psi-llvm psi-tvm psi-assert ${LLVM_LIBS})
 
 bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp)
 set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
 
 add_library(psi SHARED
+  Compiler.hpp
   Utility.cpp Utility.hpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
 )

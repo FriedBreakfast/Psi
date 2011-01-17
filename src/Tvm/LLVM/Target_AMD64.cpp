@@ -217,7 +217,7 @@ namespace Psi {
 	  return result;
 	}
 
-	struct FunctionCallCommonCallback : TargetFunctionCallCommon::Callback {
+	struct FunctionCallCommonCallback : TargetCommon::Callback {
 	  /**
 	   * Special handling is required in the following cases:
 	   *
@@ -238,19 +238,19 @@ namespace Psi {
 	   *
 	   * </ul>
 	   */
-	  virtual boost::shared_ptr<TargetFunctionCallCommon::ParameterHandler> parameter_type_info(ConstantBuilder& builder, llvm::CallingConv::ID cconv, Term *type) const {
+	  virtual boost::shared_ptr<TargetCommon::ParameterHandler> parameter_type_info(ConstantBuilder& builder, llvm::CallingConv::ID cconv, Term *type) const {
 	    ElementTypeInfo info = get_parameter_info(builder, type);
 	    switch (info.category) {
 	    case TargetParameterCategory::simple:
-	      return TargetFunctionCallCommon::parameter_handler_simple(builder, type, cconv);
+	      return TargetCommon::parameter_handler_simple(builder, type, cconv);
 
 	    case TargetParameterCategory::altered: {
 	      const llvm::Type *llvm_type = type_from_amd64_class_and_size(builder, info.amd64_class, info.size);
-	      return TargetFunctionCallCommon::parameter_handler_change_type_by_memory(type, llvm_type, cconv);
+	      return TargetCommon::parameter_handler_change_type_by_memory(type, llvm_type, cconv);
 	    }
 
 	    case TargetParameterCategory::force_ptr:
-	      return TargetFunctionCallCommon::parameter_handler_force_ptr(builder, type, cconv);
+	      return TargetCommon::parameter_handler_force_ptr(builder, type, cconv);
 
 	    default:
 	      PSI_FAIL("unknown parameter category");
@@ -265,12 +265,12 @@ namespace Psi {
 	   * 32-bit.
 	   */
 	  virtual bool convention_supported(llvm::CallingConv::ID id) const {
-	    return TargetFunctionCallCommon::convention_always_supported(id);
+	    return TargetCommon::convention_always_supported(id);
 	  }
 	};
 
 	FunctionCallCommonCallback m_function_call_callback;
-	TargetFunctionCallCommon m_function_call_common;
+	TargetCommon m_function_call_common;
 
       public:
 	TargetFixes_AMD64() : m_function_call_common(&m_function_call_callback) {

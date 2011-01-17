@@ -14,6 +14,7 @@
 #include <llvm/Value.h>
 
 #include "../Core.hpp"
+#include "../AggregateLowering.hpp"
 #include "../Jit.hpp"
 #include "../Function.hpp"
 #include "../Functional.hpp"
@@ -49,43 +50,6 @@ namespace Psi {
       class ConstantBuilder;
       class FunctionBuilder;
 
-      /**
-       * The inner workings of LLVM mean that it violates the ABI on
-       * some targets (for example, <tt>{i8,i8}</tt> will not be
-       * returned correctly on x86 and x86-64). This has to be worked
-       * around at the IR level, and this class is where to put
-       * machine-specific fixes to make LLVM work.
-       *
-       * Note that these only apply to C-style calling conventions,
-       * the internal calling convention just uses pointers and it is
-       * assumed these work correctly by default.
-       */
-      struct TargetFixes {
-#if 0
-        /**
-         * Map a function type into LLVM.
-         */
-        virtual const llvm::FunctionType* function_type(ConstantBuilder& builder, FunctionTypeTerm *term) = 0;
-
-        /**
-         * Set up a function call.
-         */
-        virtual llvm::Instruction* function_call(FunctionBuilder& builder, llvm::Value *target, FunctionTypeTerm *target_type, FunctionCall::Ptr insn) = 0;
-
-        /**
-         * Unpack the parameters passed to a function into a friendly
-         * form.
-         */
-        virtual void function_parameters_unpack(FunctionBuilder& builder, FunctionTerm *function,
-                                                llvm::Function *llvm_function, llvm::SmallVectorImpl<BuiltValue*>& result) = 0;
-
-        /**
-         * Create a function return.
-         */
-        virtual void function_return(FunctionBuilder& builder, FunctionTypeTerm *function_type, llvm::Function *llvm_function, Term *value) = 0;
-#endif
-      };
-
       class ConstantBuilder {
         friend class ModuleBuilder;
         friend class FunctionBuilder;
@@ -98,9 +62,6 @@ namespace Psi {
 
         /// \brief Get the llvm::TargetMachine we're building IR for.
         llvm::TargetMachine* llvm_target_machine() {return m_llvm_target_machine;}
-
-        /// \brief Get the target-specific set of LLVM fixes.
-        TargetFixes* target_fixes() {return m_target_fixes;}
 
         virtual const llvm::Type* build_type(Term *term);
 
@@ -129,11 +90,10 @@ namespace Psi {
       private:
         struct TypeBuilderCallback;
 
-        ConstantBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes);
+        ConstantBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine);
 
         llvm::LLVMContext *m_llvm_context;
         llvm::TargetMachine *m_llvm_target_machine;
-        TargetFixes *m_target_fixes;
 
         typedef std::tr1::unordered_map<Term*, const llvm::Type*> TypeTermMap;
         TypeTermMap m_type_terms;
@@ -146,7 +106,7 @@ namespace Psi {
 	friend class ConstantValue;
 
       public:
-        ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes, llvm::Module *module=0);
+        ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *module=0);
         ~ModuleBuilder();
 
         void set_module(llvm::Module *module);
@@ -253,7 +213,7 @@ namespace Psi {
 
       llvm::TargetMachine* host_machine();
 
-      boost::shared_ptr<TargetFixes> create_target_fixes(const std::string& triple);
+      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes(const std::string& triple);
 
       class LLVMJit : public Jit {
       public:
@@ -267,7 +227,7 @@ namespace Psi {
 
       private:
         llvm::LLVMContext m_llvm_context;
-        boost::shared_ptr<TargetFixes> m_target_fixes;
+        boost::shared_ptr<AggregateLoweringPass::TargetCallback> m_target_fixes;
         ModuleBuilder m_builder;
 #ifdef PSI_DEBUG
         boost::shared_ptr<llvm::JITEventListener> m_debug_listener;

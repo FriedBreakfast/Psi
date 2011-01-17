@@ -1,5 +1,6 @@
 #include "Builder.hpp"
 #include "Target.hpp"
+#include "../FunctionalBuilder.hpp"
 
 #include <boost/make_shared.hpp>
 #include <boost/optional.hpp>
@@ -11,7 +12,7 @@
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
-      TargetFunctionCallCommon::TargetFunctionCallCommon(const Callback *callback) : m_callback(callback) {
+      TargetCommon::TargetCommon(const Callback *callback) : m_callback(callback) {
       }
 
       /**
@@ -20,7 +21,7 @@ namespace Psi {
        * This will raise an exception if the given calling convention
        * is not supported on the target platform.
        */
-      llvm::CallingConv::ID TargetFunctionCallCommon::map_calling_convention(CallingConvention conv) {
+      llvm::CallingConv::ID TargetCommon::map_calling_convention(CallingConvention conv) {
 	llvm::CallingConv::ID id;
 	switch (conv) {
 	case cconv_c: id = llvm::CallingConv::C; break;
@@ -32,29 +33,102 @@ namespace Psi {
 	  throw BuildError("Unsupported calling convention");
 	}
 
-	if (!m_callback->convention_supported(id))
-	  throw BuildError("Calling convention does not make sense for target platform");
-
 	return id;
       }
 
-      /// \brief Check whether LLVM supports this convention on all
-      /// platforms.
-      bool TargetFunctionCallCommon::convention_always_supported(llvm::CallingConv::ID id) {
-	switch (id) {
-	case llvm::CallingConv::C:
-	case llvm::CallingConv::Fast:
-	case llvm::CallingConv::Cold:
-	case llvm::CallingConv::GHC:
-	  return true;
+      TargetCommon::LowerFunctionHelperResult
+      TargetCommon::lower_function_helper(Context& target_context, FunctionTypeTerm* function_type) {
+        if (!m_callback->convention_supported(function_type->calling_convention()))
+          throw BuildError("Calling convention is not supported on this platform");
+        
+        LowerFunctionHelperResult result;
+        std::vector<Term*> parameter_types;
 
-	default:
-	  return false;
-	}
+        result.return_handler =
+          m_callback->parameter_type_info(target_context, function_type->calling_convention(), function_type->result_type());
+        Term *return_type = result.return_handler->lowered_type();
+        result.sret = result.return_handler->return_by_sret();
+        if (result.sret)
+          parameter_types.push_back(return_type);
+
+        result.n_phantom = function_type->n_phantom_parameters();
+        result.n_passed_parameters = function_type->n_parameters() - result.n_phantom;
+        for (std::size_t i = 0; i != result.n_passed_parameters; ++i) {
+          boost::shared_ptr<ParameterHandler> handler = m_callback->parameter_type_info
+            (target_context, function_type->calling_convention(), function_type->parameter_type(i+result.n_phantom));
+          result.parameter_handlers.push_back(handler);
+          parameter_types.push_back(handler->lowered_type());
+        }
+        
+        result.lowered_type = target_context.get_function_type_fixed
+          (function_type->calling_convention(), return_type, parameter_types);
+          
+        return result;
       }
 
-      /// \copydoc TargetFixes::function_type
-      const llvm::FunctionType* TargetFunctionCallCommon::function_type(ConstantBuilder& builder, FunctionTypeTerm *term) {
+      AggregateLoweringPass::Value TargetCommon::lower_function_call(AggregateLoweringPass::FunctionRunner& runner, FunctionCall::Ptr term) {
+        LowerFunctionHelperResult helper_result = lower_function_helper(runner.new_function()->context(), term->target_function_type());
+        
+        int sret = helper_result.sret ? 1 : 0;
+        ScopedArray<Term*> parameters(sret + helper_result.n_passed_parameters);
+
+        Term *sret_addr = 0;
+        if (helper_result.sret) {
+          sret_addr = helper_result.return_handler->return_by_sret_setup(runner);
+          parameters[0] = sret_addr;
+        }
+        
+        for (std::size_t i = 0; i != helper_result.n_passed_parameters; ++i)
+          parameters[i+sret] = helper_result.parameter_handlers[i]->pack(runner, term->parameter(i+helper_result.n_phantom));
+        
+        Term *lowered_target = runner.rewrite_value_stack(term->target());
+        Term *cast_target = FunctionalBuilder::pointer_cast(lowered_target, helper_result.lowered_type);
+        Term *result = runner.builder().call(cast_target, parameters);
+        
+        return helper_result.return_handler->return_unpack(runner, result, sret_addr);
+      }
+
+      InstructionTerm* TargetCommon::lower_return(AggregateLoweringPass::FunctionRunner& runner, Term *value) {
+        FunctionTypeTerm *function_type = runner.old_function()->function_type();
+        boost::shared_ptr<ParameterHandler> return_handler =
+          m_callback->parameter_type_info(runner.new_function()->context(), function_type->calling_convention(), function_type->result_type());
+          
+        return return_handler->return_pack(runner, value);
+      }
+
+      AggregateLoweringPass::TargetCallback::LowerFunctionResult
+      TargetCommon::lower_function(AggregateLoweringPass& pass, FunctionTerm *function) {
+        LowerFunctionHelperResult helper_result = lower_function_helper(pass.target_module()->context(), function->function_type());
+        LowerFunctionResult result;
+        result.function = pass.target_module()->new_function(function->name(), helper_result.lowered_type);
+        
+        if (function->entry()) {
+          BlockTerm *entry = result.function->new_block();
+          result.function->set_entry(entry);
+          InstructionBuilder irbuilder;
+          irbuilder.set_insert_point(entry);
+          int sret = helper_result.sret ? 1 : 0;
+          for (std::size_t i = 0; i != helper_result.n_passed_parameters; ++i)
+            helper_result.parameter_handlers[i]->unpack(irbuilder, function->parameter(i+helper_result.n_phantom), result.function->parameter(i + sret), result.term_map);
+        }
+        
+        return result;
+      }
+      
+      Term* TargetCommon::convert_value(Term *value, Term *type) {
+        PSI_FAIL("not implemented");
+      }
+      
+      AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment(Term *type) {
+        PSI_FAIL("not implemented");
+      }
+      
+      std::pair<Term*, unsigned> TargetCommon::type_from_alignment(unsigned alignment) {
+        PSI_FAIL("not implemented");
+      }
+
+#if 0
+      const llvm::FunctionType* TargetCommon::function_type(ConstantBuilder& builder, FunctionTypeTerm *term) {
 	llvm::CallingConv::ID cconv = map_calling_convention(term->calling_convention());
 
 	std::size_t n_phantom = term->n_phantom_parameters();
@@ -79,7 +153,7 @@ namespace Psi {
       }
 
       /// \copydoc TargetFixes::function_call
-      BuiltValue* TargetFunctionCallCommon::function_call(FunctionBuilder& builder, llvm::Value *target, FunctionTypeTerm *target_type, FunctionCall::Ptr insn) {
+      BuiltValue* TargetCommon::function_call(FunctionBuilder& builder, llvm::Value *target, FunctionTypeTerm *target_type, FunctionCall::Ptr insn) {
 	llvm::CallingConv::ID cconv = map_calling_convention(target_type->calling_convention());
 
 	std::size_t n_phantom = target_type->n_phantom_parameters();
@@ -116,7 +190,7 @@ namespace Psi {
       }
 
       /// \copydoc TargetFixes::function_parameters_unpack
-      void TargetFunctionCallCommon::function_parameters_unpack(FunctionBuilder& builder, FunctionTerm *function,
+      void TargetCommon::function_parameters_unpack(FunctionBuilder& builder, FunctionTerm *function,
 								llvm::Function *llvm_function, llvm::SmallVectorImpl<BuiltValue*>& result) {
 	llvm::CallingConv::ID cconv = map_calling_convention(function->function_type()->calling_convention());
 
@@ -139,16 +213,17 @@ namespace Psi {
       }
 
       /// \copydoc TargetFixes::function_return
-      void TargetFunctionCallCommon::function_return(FunctionBuilder& builder, FunctionTypeTerm *function_type, llvm::Function *llvm_function, Term *value) {
+      void TargetCommon::function_return(FunctionBuilder& builder, FunctionTypeTerm *function_type, llvm::Function *llvm_function, Term *value) {
 	llvm::CallingConv::ID cconv = map_calling_convention(function_type->calling_convention());
 	boost::shared_ptr<ParameterHandler> return_handler = m_callback->parameter_type_info(builder, cconv, function_type->result_type());
 	return_handler->return_pack(builder, llvm_function, value);
       }
+#endif
 
       /**
        * A simple handler which just uses the LLVM default mechanism to pass each parameter.
        */
-      class TargetFunctionCallCommon::ParameterHandlerSimple : public ParameterHandler {
+      class TargetCommon::ParameterHandlerSimple : public ParameterHandler {
       public:
 	ParameterHandlerSimple(ConstantBuilder& builder, Term *type, llvm::CallingConv::ID calling_convention)
 	  : ParameterHandler(type, builder.build_type(type), calling_convention) {
@@ -185,7 +260,7 @@ namespace Psi {
        * parameter type by assuming that LLVM already has the correct
        * behaviour.
        */
-      boost::shared_ptr<TargetFunctionCallCommon::ParameterHandler> TargetFunctionCallCommon::parameter_handler_simple(ConstantBuilder& builder, Term *type, llvm::CallingConv::ID cconv) {
+      boost::shared_ptr<TargetCommon::ParameterHandler> TargetCommon::parameter_handler_simple(ConstantBuilder& builder, Term *type, llvm::CallingConv::ID cconv) {
 	return boost::make_shared<ParameterHandlerSimple>(boost::ref(builder), type, cconv);
       }
 
@@ -194,7 +269,7 @@ namespace Psi {
        * specific type by writing it to memory on the stack and reading it
        * back.
        */
-      class TargetFunctionCallCommon::ParameterHandlerChangeTypeByMemory : public ParameterHandler {
+      class TargetCommon::ParameterHandlerChangeTypeByMemory : public ParameterHandler {
 
       public:
 	ParameterHandlerChangeTypeByMemory(Term *type, const llvm::Type *llvm_type, llvm::CallingConv::ID calling_convention)
@@ -240,7 +315,7 @@ namespace Psi {
        * \param type The original type of the parameter.
        * \param llvm_type The type LLVM will use for the parameter.
        */
-      boost::shared_ptr<TargetFunctionCallCommon::ParameterHandler> TargetFunctionCallCommon::parameter_handler_change_type_by_memory(Term *type, const llvm::Type *llvm_type, llvm::CallingConv::ID calling_convention) {
+      boost::shared_ptr<TargetCommon::ParameterHandler> TargetCommon::parameter_handler_change_type_by_memory(Term *type, const llvm::Type *llvm_type, llvm::CallingConv::ID calling_convention) {
 	return boost::make_shared<ParameterHandlerChangeTypeByMemory>(type, llvm_type, calling_convention);
       }
 
@@ -250,7 +325,7 @@ namespace Psi {
        * returning by writing to the pointer in the first function
        * parameter.
        */
-      class TargetFunctionCallCommon::ParameterHandlerForcePtr : public ParameterHandler {
+      class TargetCommon::ParameterHandlerForcePtr : public ParameterHandler {
       public:
 	ParameterHandlerForcePtr(ConstantBuilder& builder, Term *type, llvm::CallingConv::ID calling_convention)
 	  : ParameterHandler(type, builder.get_pointer_type(), calling_convention) {
@@ -292,7 +367,7 @@ namespace Psi {
        * used when such a "by-reference" strategy will not be
        * correctly handled by LLVM.
        */
-      boost::shared_ptr<TargetFunctionCallCommon::ParameterHandler> TargetFunctionCallCommon::parameter_handler_force_ptr(ConstantBuilder& builder, Term *type, llvm::CallingConv::ID cconv) {
+      boost::shared_ptr<TargetCommon::ParameterHandler> TargetCommon::parameter_handler_force_ptr(ConstantBuilder& builder, Term *type, llvm::CallingConv::ID cconv) {
 	return boost::make_shared<ParameterHandlerForcePtr>(boost::ref(builder), type, cconv);
       }
 
@@ -301,9 +376,9 @@ namespace Psi {
        * works correctly in LLVM.
        */
       struct TargetFixes_Default : TargetFixes {
-	struct Callback : TargetFunctionCallCommon::Callback {
-	  virtual boost::shared_ptr<TargetFunctionCallCommon::ParameterHandler> parameter_type_info(ConstantBuilder& builder, llvm::CallingConv::ID cconv, Term *type) const {
-	    return TargetFunctionCallCommon::parameter_handler_simple(builder, type, cconv);
+	struct Callback : TargetCommon::Callback {
+	  virtual boost::shared_ptr<TargetCommon::ParameterHandler> parameter_type_info(ConstantBuilder& builder, llvm::CallingConv::ID cconv, Term *type) const {
+	    return TargetCommon::parameter_handler_simple(builder, type, cconv);
 	  }
 
 	  virtual bool convention_supported(llvm::CallingConv::ID) const {

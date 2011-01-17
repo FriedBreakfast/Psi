@@ -94,11 +94,9 @@ namespace Psi {
       };
 
       ConstantBuilder::ConstantBuilder(llvm::LLVMContext *llvm_context,
-				       llvm::TargetMachine *target_machine,
-				       TargetFixes *target_fixes)
+				       llvm::TargetMachine *target_machine)
         : m_llvm_context(llvm_context),
-	  m_llvm_target_machine(target_machine),
-	  m_target_fixes(target_fixes) {
+	  m_llvm_target_machine(target_machine) {
         PSI_ASSERT(m_llvm_context);
       }
 
@@ -289,8 +287,8 @@ namespace Psi {
         }
       };
 
-      ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, TargetFixes *target_fixes, llvm::Module *module)
-        : ConstantBuilder(llvm_context, target_machine, target_fixes), m_module(module) {
+      ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *module)
+        : ConstantBuilder(llvm_context, target_machine), m_module(module) {
       }
 
       ModuleBuilder::~ModuleBuilder() {
@@ -359,7 +357,7 @@ namespace Psi {
 		       llvm::TargetMachine *host_machine)
         : Jit(jit_factory),
           m_target_fixes(create_target_fixes(host_triple)),
-          m_builder(&m_llvm_context, host_machine, m_target_fixes.get()) {
+          m_builder(&m_llvm_context, host_machine) {
       }
 
       LLVMJit::~LLVMJit() {

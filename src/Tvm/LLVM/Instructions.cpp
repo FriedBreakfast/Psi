@@ -14,7 +14,7 @@ using namespace Psi::Tvm::LLVM;
 
 namespace {
   llvm::Instruction* build_return(FunctionBuilder& builder, Return::Ptr insn) {
-    return builder.target_fixes()->function_return(builder, builder.function()->function_type(), builder.llvm_function(), insn->value());
+    return builder.irbuilder().CreateRet(builder.build_value(insn->value()));
   }
 
   llvm::Instruction* build_conditional_branch(FunctionBuilder& builder, ConditionalBranch::Ptr insn) {
@@ -32,17 +32,20 @@ namespace {
   llvm::Instruction* build_function_call(FunctionBuilder& builder, FunctionCall::Ptr insn) {
     FunctionTypeTerm* function_type = cast<FunctionTypeTerm>
       (cast<PointerType>(insn->target()->type())->target_type());
+      
+    const llvm::Type *llvm_function_type = builder.build_type(function_type)->getPointerTo();
 
     llvm::Value *target = builder.build_value(insn->target());
 
     std::size_t n_phantom = function_type->n_phantom_parameters();
     std::size_t n_passed_parameters = function_type->n_parameters() - n_phantom;
 
-    llvm::SmallVector<Term*,4> parameters(n_passed_parameters);
+    llvm::SmallVector<llvm::Value*, 4> parameters(n_passed_parameters);
     for (std::size_t i = 0; i < n_passed_parameters; ++i)
-      parameters[i] = insn->parameter(i + n_phantom);
-
-    return builder.target_fixes()->function_call(builder, target, function_type, insn);
+      parameters[i] = builder.build_value(insn->parameter(i + n_phantom));
+    
+    llvm::Value *cast_target = builder.irbuilder().CreatePointerCast(target, llvm_function_type);
+    return builder.irbuilder().CreateCall(cast_target, parameters.begin(), parameters.end());
   }
 
   llvm::Instruction* build_store(FunctionBuilder& builder, Store::Ptr term) {

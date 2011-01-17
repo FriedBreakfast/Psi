@@ -2,6 +2,7 @@
 #define HPP_PSI_TVM_INSTRUCTIONS
 
 #include "Function.hpp"
+#include "Aggregate.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -43,6 +44,8 @@ namespace Psi {
     Term* target() const {return get()->parameter(0);}
     /// \brief Get the value of the <tt>n</tt>th parameter used.
     Term* parameter(std::size_t n) const {return get()->parameter(n+1);}
+    /// \brief Get the function type of the function being called.
+    FunctionTypeTerm* target_function_type() const {return cast<FunctionTypeTerm>(cast<PointerType>(target())->target_type());}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
     static Ptr create(InstructionInsertPoint,Term*,ArrayPtr<Term*const>);
     PSI_TVM_INSTRUCTION_TYPE_END(FunctionCall)

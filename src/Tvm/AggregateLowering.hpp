@@ -189,21 +189,31 @@ namespace Psi {
          * 
          * \return The actual return instruction created.
          */
-        virtual Term* lower_return(FunctionRunner& runner, Term *value) = 0;
+        virtual InstructionTerm* lower_return(FunctionRunner& runner, Term *value) = 0;
+        
+        struct LowerFunctionResult {
+          /// \brief Newly created function.
+          FunctionTerm *function;
+          /// \brief Map from source function parameters to target function terms.
+          std::tr1::unordered_map<Term*, Value> term_map;
+        };
         
         /**
          * Change a function's type and add entry code to decode
          * parameters into aggregates in the simplest possible way. The
          * remaining aggregates lowering code will handle the rest.
          * 
+         * The returned function need not have linkage set correctly,
+         * since this will always be the same as the source function it
+         * can be handled by the generic lowering code.
+         * 
          * \param runner Holds per-pass data.
          * 
-         * \param function Function to rewrite.
+         * \param name Name of function to create.
          * 
-         * \param parameters Values of non-phantom parameters should be
-         * stored here.
+         * \param function Function being lowered.
          */
-        virtual FunctionTerm* lower_function(FunctionRunner& runner, FunctionTerm *function, ArrayPtr<Value> parameters) = 0;
+        virtual LowerFunctionResult lower_function(AggregateLoweringPass& runner, FunctionTerm *function) = 0;
         
         /**
          * \brief Convert a value to another type.
@@ -234,7 +244,7 @@ namespace Psi {
          * \return A type with an alignment is less than or equal to \c aligment.
          * Its size must be the same as its alignment.
          */
-        virtual std::pair<Term*, unsigned> type_from_alignment(unsigned alignment);
+        virtual std::pair<Term*, unsigned> type_from_alignment(unsigned alignment) = 0;
       };
 
     private:

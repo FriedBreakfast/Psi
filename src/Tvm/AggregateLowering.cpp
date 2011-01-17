@@ -414,16 +414,8 @@ namespace Psi {
     
     AggregateLoweringPass::FunctionRunner::FunctionRunner(AggregateLoweringPass* pass, FunctionTerm* old_function)
     : AggregateLoweringRewriter(pass), m_old_function(old_function) {
-      FunctionTypeTerm *old_function_type = old_function->function_type();
-      unsigned n_phantom_parameters = old_function_type->n_phantom_parameters();
-      unsigned n_real_parameters = old_function_type->n_parameters() - n_phantom_parameters;
-      ScopedArray<Value> parameters(n_real_parameters);
-      m_new_function = pass->target_callback->lower_function(*this, old_function, parameters);
-      PSI_ASSERT(m_new_function->n_parameters() == n_real_parameters);
-      
-      // Put parameters into map
-      for (unsigned i = 0; i != n_real_parameters; ++i)
-        m_value_map.insert(std::make_pair(old_function->parameter(i + n_phantom_parameters), parameters[i]));
+      TargetCallback::LowerFunctionResult lowered_function = pass->target_callback->lower_function(*pass, old_function);
+      m_value_map.swap(lowered_function.term_map);
     }
     
     Term* AggregateLoweringPass::FunctionRunner::store_value(Term *value, Term *alloc_type, Term *alloc_count, Term *alloc_alignment) {
