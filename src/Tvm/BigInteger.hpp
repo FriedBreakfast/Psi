@@ -21,8 +21,6 @@ namespace Psi {
       typedef uint64_t WordType;
       
       unsigned m_bits;
-      /// \brief Mask for high bits
-      WordType m_mask;
       /// \brief Array of words, least significant word first (little endian)
       SmallArray<WordType, 2> m_words;
       

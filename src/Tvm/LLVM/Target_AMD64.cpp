@@ -2,6 +2,7 @@
 
 #include "../Aggregate.hpp"
 #include "../Number.hpp"
+#include "../FunctionalBuilder.hpp"
 
 #include <boost/make_shared.hpp>
 
@@ -23,7 +24,7 @@ namespace Psi {
        * Application Binary Interface AMD64 Architecture Processor
        * Supplement</a>
        */
-      class TargetFixes_AMD64 : public TargetFixes {
+      class TargetFixes_AMD64 : public TargetCommon {
 	/**
 	 * Used to classify how each parameter should be passed (or
 	 * returned).
@@ -82,24 +83,35 @@ namespace Psi {
 	 * Get the type used to pass a parameter of a given class with a
 	 * given size in bytes.
 	 */
-	static const llvm::Type* type_from_amd64_class_and_size(ConstantBuilder& builder, AMD64_Class amd64_class, uint64_t size) {
+	static Term* type_from_amd64_class_and_size(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, AMD64_Class amd64_class, uint64_t size) {
 	  switch (amd64_class) {
-	  case amd64_sse:
+	  case amd64_sse: {
+            FloatType::Width width;
 	    switch (size) {
-	    case 4:  return llvm::Type::getFloatTy(builder.llvm_context());
-	    case 8:  return llvm::Type::getDoubleTy(builder.llvm_context());
-	    case 16: return llvm::Type::getFP128Ty(builder.llvm_context());
+            case 4:  width = FloatType::fp32; break;
+	    case 8:  width = FloatType::fp64; break;
+	    case 16: width = FloatType::fp128; break;
 	    default: PSI_FAIL("unknown SSE floating point type width");
 	    }
+	    return FunctionalBuilder::float_type(rewriter.context(), width);
+          }
 
 	  case amd64_x87:
 	    PSI_ASSERT(size == 16);
-	    return llvm::Type::getX86_FP80Ty(builder.llvm_context());
+            return FunctionalBuilder::float_type(rewriter.context(), FloatType::fp_x86_80);
 
-	  case amd64_integer:
-	    // check size is a power of two
-	    PSI_ASSERT((size > 0) && (size <= 16) && !(size & (size - 1)));
-	    return llvm::IntegerType::get(builder.llvm_context(), size*8);
+	  case amd64_integer: {
+            IntegerType::Width width;
+            switch (size) {
+            case 1:  width = IntegerType::i8; break;
+            case 2:  width = IntegerType::i16; break;
+            case 4:  width = IntegerType::i32; break;
+            case 8:  width = IntegerType::i64; break;
+            case 16: width = IntegerType::i128; break;
+            default: PSI_FAIL("unknown integer width in AMD64 parameter passing");
+            }
+            return FunctionalBuilder::int_type(rewriter.context(), width, false);
+          }
 
 	  default:
 	    PSI_FAIL("unexpected amd64 parameter class here");
@@ -111,23 +123,22 @@ namespace Psi {
 	 * single EVT in LLVM, and is accurately represented by this
 	 * type.
 	 */
-	static ElementTypeInfo primitive_element_info(ConstantBuilder& builder, const llvm::Type *ty, AMD64_Class amd_class) {
-	  return ElementTypeInfo(TargetParameterCategory::simple, amd_class, builder.type_size(ty), builder.type_alignment(ty), 1);
+	static ElementTypeInfo primitive_element_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, Term *type, AMD64_Class amd_class) {
+          AggregateLoweringPass::TypeSizeAlignment size_align = rewriter.pass().target_callback->type_size_alignment(type);
+	  return ElementTypeInfo(TargetParameterCategory::simple, amd_class, size_align.size, size_align.alignment, 1);
 	}
 
 	/**
 	 * Compute element type info for a sub-part of the object.
 	 */
-	static ElementTypeInfo get_element_info(ConstantBuilder& builder, Term *element) {
+	static ElementTypeInfo get_element_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, Term *element) {
 	  if (StructType::Ptr struct_ty = dyn_cast<StructType>(element)) {
-	    std::vector<const llvm::Type*> child_types;
-	    bool child_types_valid = true;
 	    TargetParameterCategory category = TargetParameterCategory::simple;
 	    uint64_t size = 0, align = 1;
 	    unsigned n_elements = 0;
 	    AMD64_Class amd64_class = amd64_no_class;
 	    for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
-	      ElementTypeInfo child = get_element_info(builder, struct_ty->member_type(i));
+	      ElementTypeInfo child = get_element_info(rewriter, struct_ty->member_type(i));
 	      n_elements += child.n_elements;
 	      size = align_to(size, child.align);
 	      size += child.size;
@@ -136,17 +147,16 @@ namespace Psi {
 	      category = TargetParameterCategory::merge(category, child.category);
 	    }
 
-	    const llvm::Type *type = NULL;
-	    if (child_types_valid)
-	      type = llvm::StructType::get(builder.llvm_context(), child_types);
-
 	    size = align_to(size, align);
 	    return ElementTypeInfo(category, amd64_class, size, align, n_elements);
 	  } else if (ArrayType::Ptr array_ty = dyn_cast<ArrayType>(element)) {
-	    ElementTypeInfo child = get_element_info(builder, array_ty->element_type());
-	    uint64_t length = builder.build_constant_integer(array_ty->length()).getZExtValue();
-	    child.size *= length;
-	    child.n_elements *= length;
+	    ElementTypeInfo child = get_element_info(rewriter, array_ty->element_type());
+            IntegerValue::Ptr length = cast<IntegerValue>(rewriter.rewrite_value_stack(array_ty->length()));
+            boost::optional<unsigned> length_val = length->value().unsigned_value();
+            if (!length_val)
+              throw BuildError("array length value out of range");
+	    child.size *= *length_val;
+	    child.n_elements *= *length_val;
 	    return child;
 	  } else if (UnionType::Ptr union_ty = dyn_cast<UnionType>(element)) {
 	    TargetParameterCategory category = TargetParameterCategory::altered;
@@ -154,7 +164,7 @@ namespace Psi {
 	    unsigned n_elements = 0;
 	    AMD64_Class amd64_class = amd64_no_class;
 	    for (unsigned i = 0, e = union_ty->n_members(); i != e; ++i) {
-	      ElementTypeInfo child = get_element_info(builder, union_ty->member_type(i));
+	      ElementTypeInfo child = get_element_info(rewriter, union_ty->member_type(i));
 	      n_elements = std::max(n_elements, child.n_elements);
 	      size = std::max(size, child.size);
 	      align = std::max(align, child.align);
@@ -164,14 +174,11 @@ namespace Psi {
 
 	    size = align_to(size, align);
 	    return ElementTypeInfo(category, amd64_class, size, align, n_elements);
-	  } else if (PointerType::Ptr ptr_ty = dyn_cast<PointerType>(element)) {
-	    return primitive_element_info(builder, builder.get_pointer_type(), amd64_integer);
-	  } else if (FloatType::Ptr float_ty = dyn_cast<FloatType>(element)) {
-	    return primitive_element_info(builder, builder.get_float_type(float_ty->width()), amd64_integer);
-	  } else if (BooleanType::Ptr bool_ty = dyn_cast<BooleanType>(element)) {
-	    return primitive_element_info(builder, builder.get_boolean_type(), amd64_integer);
-	  } else if (IntegerType::Ptr int_ty = dyn_cast<IntegerType>(element)) {
-	    return primitive_element_info(builder, builder.get_integer_type(int_ty->width()), amd64_integer);
+	  } else if (isa<PointerType>(element) || isa<BooleanType>(element) || isa<IntegerType>(element)) {
+	    return primitive_element_info(rewriter, element, amd64_integer);
+          } else if (FloatType::Ptr float_ty = dyn_cast<FloatType>(element)) {
+            return primitive_element_info(rewriter, element,
+                                          (float_ty->width() != FloatType::fp_x86_80) ? amd64_sse : amd64_x87);
 	  } else {
 	    PSI_ASSERT_MSG(!dyn_cast<FunctionTypeParameterTerm>(element) && !dyn_cast<FunctionParameterTerm>(element),
 			   "low-level parameter type should not depend on function type parameters");
@@ -179,8 +186,8 @@ namespace Psi {
 	  }
 	}
 
-	static ElementTypeInfo get_parameter_info(ConstantBuilder& builder, Term *type) {
-	  ElementTypeInfo result = get_element_info(builder, type);
+	static ElementTypeInfo get_parameter_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, Term *type) {
+	  ElementTypeInfo result = get_element_info(rewriter, type);
 
 	  switch (result.amd64_class) {
 	  case amd64_sse:
@@ -214,6 +221,7 @@ namespace Psi {
 	    PSI_ASSERT(!result.size && !result.n_elements);
 	    break;
 	  }
+
 	  return result;
 	}
 
@@ -238,19 +246,19 @@ namespace Psi {
 	   *
 	   * </ul>
 	   */
-	  virtual boost::shared_ptr<TargetCommon::ParameterHandler> parameter_type_info(ConstantBuilder& builder, llvm::CallingConv::ID cconv, Term *type) const {
-	    ElementTypeInfo info = get_parameter_info(builder, type);
+          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, Term *type) const {
+	    ElementTypeInfo info = get_parameter_info(rewriter, type);
 	    switch (info.category) {
 	    case TargetParameterCategory::simple:
-	      return TargetCommon::parameter_handler_simple(builder, type, cconv);
+	      return TargetCommon::parameter_handler_simple(rewriter, type, cconv);
 
 	    case TargetParameterCategory::altered: {
-	      const llvm::Type *llvm_type = type_from_amd64_class_and_size(builder, info.amd64_class, info.size);
-	      return TargetCommon::parameter_handler_change_type_by_memory(type, llvm_type, cconv);
+	      Term *lowered_type = type_from_amd64_class_and_size(rewriter, info.amd64_class, info.size);
+	      return TargetCommon::parameter_handler_change_type_by_memory(type, lowered_type, cconv);
 	    }
 
 	    case TargetParameterCategory::force_ptr:
-	      return TargetCommon::parameter_handler_force_ptr(builder, type, cconv);
+	      return TargetCommon::parameter_handler_force_ptr(rewriter.context(), type, cconv);
 
 	    default:
 	      PSI_FAIL("unknown parameter category");
@@ -264,19 +272,16 @@ namespace Psi {
 	   * does not count x86-specific conventions, assuming that they are
 	   * 32-bit.
 	   */
-	  virtual bool convention_supported(llvm::CallingConv::ID id) const {
-	    return TargetCommon::convention_always_supported(id);
+	  virtual bool convention_supported(CallingConvention id) const {
+            return id == cconv_c;
 	  }
 	};
 
 	FunctionCallCommonCallback m_function_call_callback;
-	TargetCommon m_function_call_common;
 
       public:
-	TargetFixes_AMD64() : m_function_call_common(&m_function_call_callback) {
+	TargetFixes_AMD64() : TargetCommon(&m_function_call_callback) {
 	}
-
-	PSI_TVM_LLVM_TARGET_FUNCTION_CALL_COMMON_FORWARD(m_function_call_common)
       };
 
       /**
@@ -284,7 +289,7 @@ namespace Psi {
        *
        * \see TargetFixes_AMD64
        */
-      boost::shared_ptr<TargetFixes> create_target_fixes_amd64() {
+      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes_amd64() {
 	return boost::make_shared<TargetFixes_AMD64>();
       }
     }

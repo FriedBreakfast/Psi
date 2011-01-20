@@ -146,6 +146,8 @@ namespace Psi {
         /// \brief Return an InstructionBuilder set to the current instruction insert point.
         InstructionBuilder& builder() {return m_builder;}
         
+        void add_mapping(Term*, Term*, bool);
+        
         virtual Value load_value(Term*, Term*);
         Value load_value(Term*, Term*, bool);
         virtual Term* store_value(Term*, Term*, Term*, Term*);
@@ -179,7 +181,7 @@ namespace Psi {
          * 
          * \param runner Holds per-pass data.
          */
-        virtual Value lower_function_call(FunctionRunner& runner, FunctionCall::Ptr term) = 0;
+        virtual void lower_function_call(FunctionRunner& runner, FunctionCall::Ptr term) = 0;
 
         /**
          * Create a return instruction to return the given value
@@ -190,14 +192,7 @@ namespace Psi {
          * \return The actual return instruction created.
          */
         virtual InstructionTerm* lower_return(FunctionRunner& runner, Term *value) = 0;
-        
-        struct LowerFunctionResult {
-          /// \brief Newly created function.
-          FunctionTerm *function;
-          /// \brief Map from source function parameters to target function terms.
-          std::tr1::unordered_map<Term*, Value> term_map;
-        };
-        
+
         /**
          * Change a function's type and add entry code to decode
          * parameters into aggregates in the simplest possible way. The
@@ -213,7 +208,17 @@ namespace Psi {
          * 
          * \param function Function being lowered.
          */
-        virtual LowerFunctionResult lower_function(AggregateLoweringPass& runner, FunctionTerm *function) = 0;
+        virtual FunctionTerm* lower_function(AggregateLoweringPass& runner, FunctionTerm *function) = 0;
+        
+        /**
+         * Create necessary entry code into a function to convert low level
+         * parameter format.
+         * 
+         * \param source_function Original function.
+         * 
+         * \param target_function Newly created function.
+         */
+        virtual void lower_function_entry(FunctionRunner& runner, FunctionTerm *source_function, FunctionTerm *target_function) = 0;
         
         /**
          * \brief Convert a value to another type.

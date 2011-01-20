@@ -190,8 +190,8 @@ namespace Psi {
         if (this->m_size > N) {
           std::copy(this->m_ptr, this->m_ptr + new_size, this->m_data);
           delete [] this->m_ptr;
-          this->m_ptr = m_data;
         }
+        this->m_ptr = m_data;
         std::fill(this->m_data + new_size, this->m_data + N, extend_value);
       }
       

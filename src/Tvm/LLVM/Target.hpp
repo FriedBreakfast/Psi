@@ -77,9 +77,7 @@ namespace Psi {
           CallingConvention m_calling_convention;
 
 	public:
-	  ParameterHandler(Term *type, Term *lowered_type, CallingConvention calling_convention)
-	    : m_type(type), m_lowered_type(lowered_type), m_calling_convention(calling_convention) {
-	  }
+	  ParameterHandler(Term *type, Term *lowered_type, CallingConvention calling_convention);
 
 	  /// The type of term that this object was created to pass.
 	  Term *type() const {return m_type;}
@@ -99,8 +97,7 @@ namespace Psi {
 	  virtual Term* pack(AggregateLoweringPass::FunctionRunner& builder, Term *source_value) const = 0;
 
 	  /// \brief Convert a parameter from the passed type.
-	  virtual void unpack(InstructionBuilder& builder, Term *source_value, Term *target_value,
-                              std::tr1::unordered_map<Term*, AggregateLoweringPass::Value>& mapping) const = 0;
+	  virtual void unpack(AggregateLoweringPass::FunctionRunner& builder, Term *source_value, Term *target_value) const = 0;
 
 	  /**
 	   * \brief Prepare for a call which returns by a custom sret.
@@ -124,9 +121,7 @@ namespace Psi {
 	   * will always be passed as the third parameter so it is not
 	   * necessary to check whether it is NULL.
 	   */
-	  virtual AggregateLoweringPass::Value
-	  return_unpack(AggregateLoweringPass::FunctionRunner& builder,
-                        Term *target_value, Term *sret_addr) const = 0;
+	  virtual void return_unpack(AggregateLoweringPass::FunctionRunner& builder, Term *sret_addr, Term *source_value, Term *target_value) const = 0;
 	};
 
       private:
@@ -141,8 +136,8 @@ namespace Psi {
 	 */
 	struct Callback {
 	  /// \brief Return information about how to pass this parameter.
-	  virtual boost::shared_ptr<ParameterHandler> parameter_type_info(Context& target_context, CallingConvention cconv, Term *type) const = 0;
-    
+	  virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, Term *type) const = 0;
+
 	  /// \brief Checks whether a given calling convention actually
 	  /// makes sense for a given platform.
 	  virtual bool convention_supported(CallingConvention id) const = 0;
@@ -160,37 +155,25 @@ namespace Psi {
           std::size_t n_passed_parameters;
         };
         
-        LowerFunctionHelperResult lower_function_helper(Context&, FunctionTypeTerm*);
+        LowerFunctionHelperResult lower_function_helper(AggregateLoweringPass::AggregateLoweringRewriter&,  FunctionTypeTerm*);
 
       public:
 	TargetCommon(const Callback *callback);
 
-	static boost::shared_ptr<ParameterHandler> parameter_handler_simple(ConstantBuilder& builder, Term *type, llvm::CallingConv::ID cconv);
-	static boost::shared_ptr<ParameterHandler> parameter_handler_change_type_by_memory(Term *type, const llvm::Type *llvm_type, llvm::CallingConv::ID calling_convention);
-	static boost::shared_ptr<ParameterHandler> parameter_handler_force_ptr(ConstantBuilder& builder, Term *type, llvm::CallingConv::ID cconv);
+	static boost::shared_ptr<ParameterHandler> parameter_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter&, Term *, CallingConvention);
+	static boost::shared_ptr<ParameterHandler> parameter_handler_change_type_by_memory(Term*, Term*, CallingConvention);
+	static boost::shared_ptr<ParameterHandler> parameter_handler_force_ptr(Context&, Term*, CallingConvention);
 
         static llvm::CallingConv::ID map_calling_convention(CallingConvention conv);
 
-        virtual AggregateLoweringPass::Value lower_function_call(AggregateLoweringPass::FunctionRunner&, FunctionCall::Ptr);
+        virtual void lower_function_call(AggregateLoweringPass::FunctionRunner&, FunctionCall::Ptr);
         virtual InstructionTerm* lower_return(AggregateLoweringPass::FunctionRunner&, Term*);
-        virtual LowerFunctionResult lower_function(AggregateLoweringPass&, FunctionTerm*);
+        virtual FunctionTerm* lower_function(AggregateLoweringPass&, FunctionTerm*);
+        virtual void lower_function_entry(AggregateLoweringPass::FunctionRunner&, FunctionTerm*, FunctionTerm*);
         virtual Term* convert_value(Term*, Term*);
         virtual AggregateLoweringPass::TypeSizeAlignment type_size_alignment(Term*);
         virtual std::pair<Term*, unsigned> type_from_alignment(unsigned);
       };
-
-      /**
-       * Macro to generate forwarding code to TargetFunctionCallCommon
-       * inside a TargetFixes implementation.
-       *
-       * \param var The memeber variables which is an instance of
-       * TargetFunctionCallCommon.
-       */
-#define PSI_TVM_LLVM_TARGET_FUNCTION_CALL_COMMON_FORWARD(var)		\
-      virtual const llvm::FunctionType* function_type(ConstantBuilder& builder, FunctionTypeTerm *term) {return var.function_type(builder, term);} \
-      virtual BuiltValue* function_call(FunctionBuilder& builder, llvm::Value *target, FunctionTypeTerm *target_type, FunctionCall::Ptr insn) {return var.function_call(builder, target, target_type, insn);} \
-      virtual void function_parameters_unpack(FunctionBuilder& builder, FunctionTerm *function, llvm::Function *llvm_function, llvm::SmallVectorImpl<BuiltValue*>& result) {return var.function_parameters_unpack(builder, function, llvm_function, result);} \
-      virtual void function_return(FunctionBuilder& builder, FunctionTypeTerm *function_type, llvm::Function *llvm_function, Term *value) {return var.function_return(builder, function_type, llvm_function, value);}
 
       boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes_amd64();
     }

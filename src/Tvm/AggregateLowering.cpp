@@ -287,7 +287,8 @@ namespace Psi {
       }
 
       static Value call_rewrite(FunctionRunner& runner, FunctionCall::Ptr term) {
-        return runner.pass().target_callback->lower_function_call(runner, term);
+        runner.pass().target_callback->lower_function_call(runner, term);
+        return Value();
       }
 
       static Value alloca_rewrite(FunctionRunner& runner, Alloca::Ptr term) {
@@ -311,8 +312,8 @@ namespace Psi {
       
       static Value store_rewrite(FunctionRunner& runner, Store::Ptr term) {
         Term *ptr = runner.rewrite_value_stack(term->target());
-        Term *insn = runner.store_value(term->value(), ptr);
-        return insn ? Value(insn, true) : Value();
+        runner.store_value(term->value(), ptr);
+        return Value();
       }
       
       static Value memcpy_rewrite(FunctionRunner& runner, MemCpy::Ptr term) {
@@ -414,10 +415,24 @@ namespace Psi {
     
     AggregateLoweringPass::FunctionRunner::FunctionRunner(AggregateLoweringPass* pass, FunctionTerm* old_function)
     : AggregateLoweringRewriter(pass), m_old_function(old_function) {
-      TargetCallback::LowerFunctionResult lowered_function = pass->target_callback->lower_function(*pass, old_function);
-      m_value_map.swap(lowered_function.term_map);
+      m_new_function = pass->target_callback->lower_function(*pass, old_function);
+      if (old_function->entry()) {
+        BlockTerm *new_entry = new_function()->new_block();
+        new_function()->set_entry(new_entry);
+        builder().set_insert_point(new_entry);
+        pass->target_callback->lower_function_entry(*this, old_function, new_function());
+      }
     }
-    
+
+    /**
+     * \brief Add a key,value pair to the existing term mapping.
+     */
+    void AggregateLoweringPass::FunctionRunner::add_mapping(Term *source, Term *target, bool on_stack) {
+      PSI_ASSERT(&source->context() == &old_function()->context());
+      PSI_ASSERT(&target->context() == &new_function()->context());
+      m_value_map[source] = Value(target, on_stack);
+    }
+
     Term* AggregateLoweringPass::FunctionRunner::store_value(Term *value, Term *alloc_type, Term *alloc_count, Term *alloc_alignment) {
       Term *ptr = builder().alloca_(alloc_type, alloc_count, alloc_alignment);
       store_value(value, ptr);

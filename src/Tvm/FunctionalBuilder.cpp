@@ -842,5 +842,12 @@ namespace Psi {
       
       return FunctionSpecialize::get(function, parameters);
     }
+    
+    /**
+     * Get a floating point type.
+     */
+    Term* FunctionalBuilder::float_type(Context& context, FloatType::Width width) {
+      return FloatType::get(context, width);
+    }
   }
 }

@@ -131,6 +131,8 @@ namespace Psi {
       static Term* align_to(Term*, Term*);
       ///@}
       
+      static Term* float_type(Context&, FloatType::Width);
+      
       static Term *select(Term*, Term*, Term*);
       static Term *specialize(Term*, ArrayPtr<Term*const>);
     };

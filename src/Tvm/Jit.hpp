@@ -51,7 +51,7 @@ namespace Psi {
       };
 
       Jit(const boost::shared_ptr<JitFactory>& factory);
-      virtual ~Jit() {}
+      virtual ~Jit();
       
       /**
        * Add a module to this JIT.
