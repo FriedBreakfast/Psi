@@ -168,6 +168,7 @@ namespace Psi {
    */
   template<typename T>
   class PtrAdapter {
+    template<typename> friend class PtrAdapter;
     typedef void (PtrAdapter::*SafeBoolType)() const;
     void safe_bool_true() const {}
   public:

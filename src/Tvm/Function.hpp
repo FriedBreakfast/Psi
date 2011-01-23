@@ -266,18 +266,18 @@ namespace Psi {
        */
       FunctionTypeTerm* function_type();
 
-      std::size_t n_parameters() {return n_base_parameters() - 2;}
+      std::size_t n_parameters() {return n_base_parameters() - 3;}
       /** \brief Get a function parameter. */
-      FunctionParameterTerm* parameter(std::size_t n) {return cast<FunctionParameterTerm>(get_base_parameter(n+2));}
+      FunctionParameterTerm* parameter(std::size_t n) {return cast<FunctionParameterTerm>(get_base_parameter(n+3));}
 
       /**
        * Get the return type of this function, as viewed from inside the
        * function (i.e., with parameterized types replaced by parameters
        * to this function).
        */
-      Term* result_type() {return get_base_parameter(1);}
+      Term* result_type() {return get_base_parameter(2);}
 
-      BlockTerm* entry() {return cast<BlockTerm>(get_base_parameter(0));}
+      BlockTerm* entry() {return cast<BlockTerm>(get_base_parameter(1));}
       void set_entry(BlockTerm* block);
 
       BlockTerm* new_block();

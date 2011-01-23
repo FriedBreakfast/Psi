@@ -165,8 +165,8 @@ namespace Psi {
       };
       
       struct TypeSizeAlignment {
-        unsigned size;
-        unsigned alignment;
+        Term *size;
+        Term *alignment;
       };
 
       /**
@@ -247,9 +247,10 @@ namespace Psi {
          * \brief Get the type with alignment closest to the specified alignment.
          * 
          * \return A type with an alignment is less than or equal to \c aligment.
-         * Its size must be the same as its alignment.
+         * Its size must be the same as its alignment. The first member of the
+         * pair is the type, the second member of the pair is the size of the first.
          */
-        virtual std::pair<Term*, unsigned> type_from_alignment(unsigned alignment) = 0;
+        virtual std::pair<Term*,Term*> type_from_alignment(Term *alignment) = 0;
       };
 
     private:
@@ -259,20 +260,21 @@ namespace Psi {
       ModuleLevelRewriter m_global_rewriter;
 
       struct GlobalBuildStatus {
-        GlobalBuildStatus();
-        GlobalBuildStatus(Term*, unsigned, unsigned, unsigned);
+        GlobalBuildStatus(Context&);
+        GlobalBuildStatus(Term*, Term*, Term*, Term*);
         std::vector<Term*> elements;
         /// \brief Size of the entries in elements as a sequence (not including end padding to reach a multiple of alignment)
-        unsigned elements_size;
+        Term* elements_size;
         /// \brief Desired size of this set of elements.
-        unsigned size;
+        Term* size;
         /// \brief Desired alignment of this set of elements.
-        unsigned alignment;
+        Term* alignment;
       };
       
       GlobalBuildStatus rewrite_global_type(Term*);
-      void global_append(GlobalBuildStatus& status, const GlobalBuildStatus& child);
-      void global_pad_to_size(GlobalBuildStatus& status, unsigned size, unsigned alignment);
+      GlobalBuildStatus rewrite_global_value(Term*);
+      void global_append(GlobalBuildStatus&, const GlobalBuildStatus&, bool);
+      void global_pad_to_size(GlobalBuildStatus&, Term*, Term*, bool);
       virtual void update_implementation(bool);
 
     public:

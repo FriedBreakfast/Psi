@@ -67,6 +67,11 @@ namespace Psi {
        */
       class TargetCommon : public AggregateLoweringPass::TargetCallback {
       public:
+        struct TypeSizeAlignmentLiteral {
+          unsigned size;
+          unsigned alignment;
+        };
+
 	/**
 	 * \brief Base class for a handler for a particular parameter
 	 * type on a particular target.
@@ -145,6 +150,8 @@ namespace Psi {
 
       private:
 	const Callback *m_callback;
+        llvm::LLVMContext *m_context;
+        const llvm::TargetData *m_target_data;
         
         struct LowerFunctionHelperResult {
           FunctionTypeTerm *lowered_type;
@@ -156,15 +163,20 @@ namespace Psi {
         };
         
         LowerFunctionHelperResult lower_function_helper(AggregateLoweringPass::AggregateLoweringRewriter&,  FunctionTypeTerm*);
+        TypeSizeAlignmentLiteral type_size_alignment_simple(const llvm::Type*);
 
       public:
-	TargetCommon(const Callback *callback);
+	TargetCommon(const Callback*, llvm::LLVMContext*, const llvm::TargetData*);
 
 	static boost::shared_ptr<ParameterHandler> parameter_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter&, Term *, CallingConvention);
 	static boost::shared_ptr<ParameterHandler> parameter_handler_change_type_by_memory(Term*, Term*, CallingConvention);
 	static boost::shared_ptr<ParameterHandler> parameter_handler_force_ptr(Context&, Term*, CallingConvention);
 
         static llvm::CallingConv::ID map_calling_convention(CallingConvention conv);
+        
+        llvm::LLVMContext& context() const {return *m_context;}
+        
+        TypeSizeAlignmentLiteral type_size_alignment_literal(Term*);
 
         virtual void lower_function_call(AggregateLoweringPass::FunctionRunner&, FunctionCall::Ptr);
         virtual InstructionTerm* lower_return(AggregateLoweringPass::FunctionRunner&, Term*);
@@ -172,10 +184,10 @@ namespace Psi {
         virtual void lower_function_entry(AggregateLoweringPass::FunctionRunner&, FunctionTerm*, FunctionTerm*);
         virtual Term* convert_value(Term*, Term*);
         virtual AggregateLoweringPass::TypeSizeAlignment type_size_alignment(Term*);
-        virtual std::pair<Term*, unsigned> type_from_alignment(unsigned);
+        virtual std::pair<Term*,Term*> type_from_alignment(Term*);
       };
 
-      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes_amd64();
+      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes_amd64(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&);
     }
   }
 }

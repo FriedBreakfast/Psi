@@ -27,7 +27,7 @@ namespace Psi {
       
       std::pair<GlobalMapType::iterator, bool> result =
         m_global_map.insert(std::make_pair(key, value));
-      PSI_ASSERT(!result.second);  
+      PSI_ASSERT(result.second);
     }
     
     /**

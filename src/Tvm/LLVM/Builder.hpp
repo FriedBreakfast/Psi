@@ -70,14 +70,6 @@ namespace Psi {
 
         virtual const llvm::Type* build_type(Term *term);
 
-	const llvm::Type* get_float_type(FloatType::Width);
-	const llvm::IntegerType* get_boolean_type();
-	const llvm::IntegerType* get_integer_type(IntegerType::Width);
-	const llvm::Type* get_byte_type();
-	const llvm::Type* get_pointer_type();
-        const llvm::IntegerType *get_intptr_type();
-        unsigned intptr_type_bits();
-
         /**
          * \brief Return the constant value specified by the given term.
          *
@@ -104,7 +96,6 @@ namespace Psi {
         TypeTermMap m_type_terms;
 
         const llvm::Type* build_type_internal(FunctionalTerm *term);
-        const llvm::Type* build_type_internal_simple(FunctionalTerm *term);
       };
 
       class ModuleBuilder : public ConstantBuilder {
@@ -133,7 +124,6 @@ namespace Psi {
         ConstantTermMap m_constant_terms;
 
         llvm::Constant* build_constant_internal(FunctionalTerm *term);
-        llvm::Constant* build_constant_internal_simple(FunctionalTerm *term);
       };
 
       class FunctionBuilder : public ConstantBuilder {
@@ -153,9 +143,6 @@ namespace Psi {
         virtual const llvm::Type* build_type(Term *term);
         virtual llvm::Constant* build_constant(Term *term);
         llvm::Value* build_value(Term *term);
-
-        llvm::Value* cast_pointer_to_generic(llvm::Value *value);
-        llvm::Value* cast_pointer_from_generic(llvm::Value *value, const llvm::Type *type);
 
         llvm::StringRef term_name(Term *term);
 
@@ -179,9 +166,7 @@ namespace Psi {
         bool has_outstanding_alloca(llvm::BasicBlock *block);
 
         llvm::Instruction* build_value_instruction(InstructionTerm *term);
-        llvm::Instruction* build_value_instruction_simple(InstructionTerm *term);
         llvm::Value* build_value_functional(FunctionalTerm *term);
-        llvm::Value* build_value_functional_simple(FunctionalTerm *term);
 
 	llvm::PHINode* build_phi_node(Term *type, llvm::Instruction *insert_point);
       };
@@ -195,13 +180,21 @@ namespace Psi {
       llvm::Function* intrinsic_stacksave(llvm::Module& m);
       llvm::Function* intrinsic_stackrestore(llvm::Module& m);
       ///@}
+      
+      /**
+       * Functions for handling simple types.
+       */
+      ///@{
+      const llvm::IntegerType* integer_type(llvm::LLVMContext&, const llvm::TargetData*, IntegerType::Width);
+      const llvm::Type* float_type(llvm::LLVMContext&, FloatType::Width);
+      ///@}
 
       /**
        * Functions for generating the LLVM type of and LLVM values for
        * #Metatype.
        */
       ///@{
-      const llvm::Type* metatype_type(ConstantBuilder&);
+      const llvm::Type* metatype_type(llvm::LLVMContext&, const llvm::TargetData*);
       llvm::Constant* metatype_from_constant(ConstantBuilder&, const llvm::APInt& size, const llvm::APInt& align);
       llvm::Constant* metatype_from_constant(ConstantBuilder&, uint64_t size, uint64_t align);
       llvm::Constant* metatype_from_type(ConstantBuilder& builder, const llvm::Type* ty);
@@ -210,11 +203,11 @@ namespace Psi {
 
       llvm::TargetMachine* host_machine();
 
-      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes(const std::string& triple);
+      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&, const std::string&);
 
       class LLVMJit : public Jit {
       public:
-        LLVMJit(const boost::shared_ptr<JitFactory>&, const std::string&, llvm::TargetMachine*);
+        LLVMJit(const boost::shared_ptr<JitFactory>&, const std::string&, const boost::shared_ptr<llvm::TargetMachine>&);
         virtual ~LLVMJit();
 
         virtual void add_module(Module*);
@@ -225,7 +218,7 @@ namespace Psi {
       private:
         llvm::LLVMContext m_llvm_context;
         boost::shared_ptr<AggregateLoweringPass::TargetCallback> m_target_fixes;
-        llvm::TargetMachine *m_target_machine;
+        boost::shared_ptr<llvm::TargetMachine> m_target_machine;
         std::tr1::unordered_map<Module*, ModuleMapping> m_modules;
 #ifdef PSI_DEBUG
         boost::shared_ptr<llvm::JITEventListener> m_debug_listener;

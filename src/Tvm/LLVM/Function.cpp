@@ -7,6 +7,7 @@
 #include <boost/next_prior.hpp>
 
 #include <llvm/Function.h>
+#include <../lib/llvm-2.8/include/llvm/Target/TargetData.h>
 
 namespace Psi {
   namespace Tvm {
@@ -400,57 +401,11 @@ namespace Psi {
         }
       }
 
-      /**
-       * Cast a pointer to a generic pointer (i8*).
-       *
-       * \param type The type to cast to. This is the type of the
-       * returned value, so it is the pointer type not the pointed-to
-       * type.
-       */
-      llvm::Value* FunctionBuilder::cast_pointer_to_generic(llvm::Value *value) {
-        PSI_ASSERT(value->getType()->isPointerTy());
-
-        const llvm::Type *ptr_type = get_pointer_type();
-        if (value->getType() == ptr_type)
-          return value;
-
-        if (llvm::Constant *const_value = llvm::dyn_cast<llvm::Constant>(value)) {
-          return llvm::ConstantExpr::getBitCast(const_value, ptr_type);
-        } else {
-          return irbuilder().CreateBitCast(value, ptr_type);
-        }
-      }
-
-      /**
-       * Cast a pointer from a possibly-generic pointer. The type of
-       * value must either be the same as \c target_type, or it must be
-       * <tt>i8*</tt>.
-       *
-       * \param type The type to cast to. This is the type of the
-       * returned value, so it is the pointer type not the pointed-to
-       * type.
-       */
-      llvm::Value* FunctionBuilder::cast_pointer_from_generic(llvm::Value *value, const llvm::Type *type) {
-        PSI_ASSERT(value->getType()->isPointerTy());
-        PSI_ASSERT(type->isPointerTy());
-        if (value->getType() == type)
-          return value;
-
-        PSI_ASSERT(value->getType() == get_pointer_type());
-        if (llvm::Constant *const_value = llvm::dyn_cast<llvm::Constant>(value)) {
-          return llvm::ConstantExpr::getPointerCast(const_value, type);
-        } else {
-          return irbuilder().CreatePointerCast(value, type);
-        }
-      }
-
       /// Returns the maximum alignment for any type supported. This
-      /// seems to have to be hardwired which is bad, but 8 should be
+      /// seems to have to be hardwired which is bad, but 16 should be
       /// enough for all current platforms.
       unsigned FunctionBuilder::unknown_alloca_align() {
-	unsigned int_align = type_alignment(get_integer_type(IntegerType::i128));
-	unsigned fp_align = type_alignment(get_float_type(FloatType::fp128));
-	return std::max(int_align, fp_align);
+        return 16;
       }
 
       /**

@@ -124,11 +124,12 @@ namespace Psi {
   namespace Tvm {
     namespace LLVM {
       /**
-       * Build a value for an instruction whose result always
-       * (i.e. regardless of the arguments) has a known type. In
-       * practise, this means numeric operations.
+       * Build a value for an instruction operation.
+       *
+       * This handles complex operations on aggregate types; numeric
+       * operations are forwarded to build_value_instruction_simple.
        */
-      llvm::Instruction* FunctionBuilder::build_value_instruction_simple(InstructionTerm *term) {
+      llvm::Instruction* FunctionBuilder::build_value_instruction(InstructionTerm *term) {
 	return get_callback(term->operation()).build_instruction(*this, term);
       }
     }

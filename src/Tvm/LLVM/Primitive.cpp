@@ -1,6 +1,7 @@
 #include "Builder.hpp"
 
 #include <llvm/Module.h>
+#include <../lib/llvm-2.8/include/llvm/Target/TargetData.h>
 
 namespace Psi {
   namespace Tvm {
@@ -8,9 +9,9 @@ namespace Psi {
       /**
        * \brief Get the LLVM type for Metatype values.
        */
-      const llvm::Type *metatype_type(ConstantBuilder& c) {
-        const llvm::Type* int_ty = c.get_intptr_type();
-        return llvm::StructType::get(c.llvm_context(), int_ty, int_ty, NULL);
+      const llvm::Type *metatype_type(llvm::LLVMContext& context, const llvm::TargetData *target_data) {
+        const llvm::Type* int_ty = target_data->getIntPtrType(context);
+        return llvm::StructType::get(context, int_ty, int_ty, NULL);
       }
 
       /**
@@ -22,7 +23,7 @@ namespace Psi {
         PSI_ASSERT(!size.urem(align));
         PSI_ASSERT(!(align & (align - 1)));
 
-        const llvm::IntegerType *int_ty = c.get_intptr_type();
+        const llvm::IntegerType *int_ty = c.llvm_target_machine()->getTargetData()->getIntPtrType(c.llvm_context());
         llvm::Constant* values[2] = {
           llvm::ConstantInt::get(int_ty, size),
           llvm::ConstantInt::get(int_ty, align)
@@ -39,7 +40,7 @@ namespace Psi {
         PSI_ASSERT(size % align == 0);
         PSI_ASSERT((align & (align - 1)) == 0);
 
-        const llvm::IntegerType *int_ty = c.get_intptr_type();
+        const llvm::IntegerType *int_ty = c.llvm_target_machine()->getTargetData()->getIntPtrType(c.llvm_context());
         llvm::Constant* values[2] = {
           llvm::ConstantInt::get(int_ty, size),
           llvm::ConstantInt::get(int_ty, align)
@@ -60,10 +61,10 @@ namespace Psi {
        * The result of this call will be a global constant.
        */
       llvm::Value* metatype_from_value(FunctionBuilder& builder, llvm::Value *size, llvm::Value *align) {
-        const llvm::Type *int_ty = builder.get_intptr_type();
+        const llvm::IntegerType *int_ty = builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context());
         if ((size->getType() != int_ty) || (align->getType() != int_ty))
           throw BuildError("values supplied for metatype have the wrong type");
-        llvm::Value *undef = llvm::UndefValue::get(metatype_type(builder));
+        llvm::Value *undef = llvm::UndefValue::get(metatype_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData()));
         llvm::Value *stage1 = builder.irbuilder().CreateInsertValue(undef, size, 0);
         llvm::Value *stage2 = builder.irbuilder().CreateInsertValue(stage1, align, 1);
         return stage2;

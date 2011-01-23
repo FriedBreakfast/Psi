@@ -7,12 +7,15 @@
 #include <boost/ref.hpp>
 
 #include <llvm/Function.h>
+#include <llvm/Target/TargetData.h>
 #include <llvm/ADT/Triple.h>
+#include <../lib/llvm-2.8/include/llvm/Target/TargetRegistry.h>
 
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
-      TargetCommon::TargetCommon(const Callback *callback) : m_callback(callback) {
+      TargetCommon::TargetCommon(const Callback *callback, llvm::LLVMContext *context, const llvm::TargetData *target_data)
+      : m_callback(callback), m_context(context), m_target_data(target_data) {
       }
 
       /**
@@ -112,12 +115,100 @@ namespace Psi {
         PSI_FAIL("not implemented");
       }
       
-      AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment(Term *type) {
-        PSI_FAIL("not implemented");
+      TargetCommon::TypeSizeAlignmentLiteral TargetCommon::type_size_alignment_simple(const llvm::Type *llvm_type) {
+        TypeSizeAlignmentLiteral result;
+        result.size = m_target_data->getTypeAllocSize(llvm_type);
+        result.alignment = m_target_data->getABITypeAlignment(llvm_type);
+        return result;
       }
       
-      std::pair<Term*, unsigned> TargetCommon::type_from_alignment(unsigned alignment) {
-        PSI_FAIL("not implemented");
+      TargetCommon::TypeSizeAlignmentLiteral TargetCommon::type_size_alignment_literal(Term *type) {
+        TypeSizeAlignmentLiteral result;
+        
+        if (PointerType::Ptr pointer_ty = dyn_cast<PointerType>(type)) {
+          result.size = m_target_data->getPointerSize();
+          result.alignment = m_target_data->getPointerABIAlignment();
+        } else if (StructType::Ptr struct_ty = dyn_cast<StructType>(type)) {
+          result.size = 0;
+          result.alignment = 1;
+          
+          for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
+            TypeSizeAlignmentLiteral child = type_size_alignment_literal(struct_ty->member_type(i));
+            result.size = ((result.size + child.alignment - 1) & ~(child.alignment - 1)) + child.size;
+            result.alignment = std::max(result.alignment, child.alignment);
+          }
+          
+          result.size = (result.size + result.alignment - 1) & ~(result.alignment - 1);
+        } else if (ArrayType::Ptr array_ty = dyn_cast<ArrayType>(type)) {
+          result = type_size_alignment_literal(array_ty->element_type());
+          boost::optional<unsigned> length = cast<IntegerValue>(array_ty->length())->value().unsigned_value();
+          if (!length)
+            throw BuildError("array length out of range");
+          result.size *= *length;
+        } else if (UnionType::Ptr union_ty = dyn_cast<UnionType>(type)) {
+          result.size = 0;
+          result.alignment = 1;
+          
+          for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
+            TypeSizeAlignmentLiteral child = type_size_alignment_literal(struct_ty->member_type(i));
+            result.size = std::max(result.size, child.size);
+            result.alignment = std::max(result.alignment, child.alignment);
+          }
+
+          result.size = (result.size + result.alignment - 1) & ~(result.alignment - 1);
+        } else if (isa<BooleanType>(type)) {
+          result = type_size_alignment_simple(llvm::Type::getInt1Ty(context()));
+        } else if (isa<ByteType>(type)) {
+          result = type_size_alignment_simple(llvm::Type::getInt8Ty(context()));
+        } else if (IntegerType::Ptr int_ty = dyn_cast<IntegerType>(type)) {
+          result = type_size_alignment_simple(integer_type(context(), m_target_data, int_ty->width()));
+        } else if (FloatType::Ptr float_ty = dyn_cast<FloatType>(type)) {
+          result = type_size_alignment_simple(float_type(context(), float_ty->width()));
+        } else if (isa<Metatype>(type)) {
+          result = type_size_alignment_simple(metatype_type(context(), m_target_data));
+        } else {
+          throw BuildError("type not recognised by LLVM backend during aggregate lowering");
+        }
+        
+        return result;
+      }
+      
+      AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment(Term *type) {
+        TypeSizeAlignmentLiteral literal = type_size_alignment_literal(type);
+        AggregateLoweringPass::TypeSizeAlignment result;
+        result.size = FunctionalBuilder::size_value(type->context(), literal.size);
+        result.alignment = FunctionalBuilder::size_value(type->context(), literal.alignment);
+        return result;
+      }
+      
+      std::pair<Term*, Term*> TargetCommon::type_from_alignment(Term *alignment) {
+        if (IntegerValue::Ptr alignment_int_val = dyn_cast<IntegerValue>(alignment)) {
+          boost::optional<unsigned> alignment_val = alignment_int_val->value().unsigned_value();
+          if (alignment_val) {
+            unsigned real_alignment = std::min(*alignment_val, 16u);
+            for (; real_alignment > 1; real_alignment /= 2) {
+              unsigned abi_alignment = m_target_data->getABIIntegerTypeAlignment(real_alignment*8);
+              if (abi_alignment == real_alignment)
+                break;
+            }
+            
+            IntegerType::Width width;
+            switch (real_alignment) {
+            case 1: width = IntegerType::i8; break;
+            case 2: width = IntegerType::i16; break;
+            case 4: width = IntegerType::i32; break;
+            case 8: width = IntegerType::i64; break;
+            case 16: width = IntegerType::i128; break;
+            default: PSI_FAIL("should not reach here");
+            }
+            
+            Term *int_type = FunctionalBuilder::int_type(alignment->context(), width, false);
+            return std::make_pair(int_type, FunctionalBuilder::size_value(alignment->context(), real_alignment));
+          }
+        }
+        
+        return std::make_pair(FunctionalBuilder::byte_type(alignment->context()),
+                              FunctionalBuilder::size_value(alignment->context(), 1));
       }
 
       TargetCommon::ParameterHandler::ParameterHandler(Term *type, Term *lowered_type, CallingConvention calling_convention)
@@ -280,9 +371,7 @@ namespace Psi {
           
           AggregateLoweringPass::TypeSizeAlignment size_align = runner.pass().target_callback->type_size_alignment(type());
           Context& context = runner.new_function()->context();
-          return runner.builder().alloca_(FunctionalBuilder::byte_type(context),
-                                          FunctionalBuilder::size_value(context, size_align.size),
-                                          FunctionalBuilder::size_value(context, size_align.alignment));
+          return runner.builder().alloca_(FunctionalBuilder::byte_type(context), size_align.size, size_align.alignment);
 	}
 
         virtual InstructionTerm* return_pack(AggregateLoweringPass::FunctionRunner& builder, Term *value) const {
@@ -311,7 +400,6 @@ namespace Psi {
        * works correctly in LLVM.
        */
       class TargetDefault : public TargetCommon {
-        
       private:
 	struct Callback : TargetCommon::Callback {
           virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, Term *type) const {
@@ -324,9 +412,11 @@ namespace Psi {
 	};
         
         Callback m_callback;
+        boost::shared_ptr<llvm::TargetMachine> m_target_machine;
 
       public:
-        TargetDefault() : TargetCommon(&m_callback) {}
+        TargetDefault(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine)
+        : TargetCommon(&m_callback, context, target_machine->getTargetData()), m_target_machine(target_machine) {}
       };
 
       /**
@@ -337,13 +427,13 @@ namespace Psi {
        * \param triple An LLVM target triple, which will be parsed
        * using the llvm::Triple class.
        */
-      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes(const std::string& triple) {
+      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine, const std::string& triple) {
 	llvm::Triple parsed_triple(triple);
 
 	switch (parsed_triple.getArch()) {
 	case llvm::Triple::x86_64:
 	  switch (parsed_triple.getOS()) {
-	  case llvm::Triple::Linux: return create_target_fixes_amd64();
+	  case llvm::Triple::Linux: return create_target_fixes_amd64(context, target_machine);
 	  default: break;
 	  }
 	  break;
@@ -353,7 +443,7 @@ namespace Psi {
 	}
 
 #if 0
-        return boost::make_shared<TargetFixes_Default>();
+        return boost::make_shared<TargetDefault>(target_machine);
 #else
 	throw BuildError("Target " + triple + " not supported");
 #endif

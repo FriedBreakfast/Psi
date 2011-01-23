@@ -550,11 +550,11 @@ namespace Psi {
       for (std::size_t i = 0; i < parameters.size(); ++i) {
 	Term* param_type = type->parameter_type_after(parameters.slice(0, i));
 	FunctionParameterTerm* param = context->allocate_term(FunctionParameterTerm::Initializer(this, param_type, i<type->n_phantom_parameters()));
-        set_base_parameter(i+2, param);
+        set_base_parameter(i+3, param);
 	parameters[i] = param;
       }
 
-      set_base_parameter(1, type->result_type_after(parameters));
+      set_base_parameter(2, type->result_type_after(parameters));
     }
 
     class FunctionTerm::Initializer : public InitializerBase<FunctionTerm> {
@@ -568,7 +568,7 @@ namespace Psi {
       }
 
       std::size_t n_uses() const {
-	return m_type->n_parameters() + 2;
+	return m_type->n_parameters() + 3;
       }
 
     private:
@@ -597,7 +597,7 @@ namespace Psi {
       if (entry())
         throw TvmUserError("Cannot change the entry point of a function once it is set");
       
-      set_base_parameter(0, block);
+      set_base_parameter(1, block);
     }
 
     /**

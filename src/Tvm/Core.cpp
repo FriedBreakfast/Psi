@@ -2,6 +2,7 @@
 #include "Core.hpp"
 #include "Function.hpp"
 #include "Functional.hpp"
+#include "FunctionalBuilder.hpp"
 #include "Recursive.hpp"
 #include "Utility.hpp"
 
@@ -130,8 +131,7 @@ namespace Psi {
     GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name, Module *module)
       : Term(ui, context, term_type, this, PointerType::get(type)),
         m_name(name),
-        m_module(module),
-        m_alignment(1) {
+        m_module(module) {
       PSI_ASSERT(!type->source());
     }
 
@@ -159,7 +159,7 @@ namespace Psi {
           throw TvmUserError("value of global variable must be a global from the same module");
       }
 
-      set_base_parameter(0, value);
+      set_base_parameter(1, value);
     }
 
     class GlobalVariableTerm::Initializer : public InitializerBase<GlobalVariableTerm> {
@@ -173,7 +173,7 @@ namespace Psi {
       }
 
       std::size_t n_uses() const {
-	return 1;
+	return 2;
       }
 
     private:

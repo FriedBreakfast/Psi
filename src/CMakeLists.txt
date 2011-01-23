@@ -34,8 +34,9 @@ add_library(psi-tvm SHARED
   Tvm/Utility.hpp
 )
 
+target_link_libraries(psi-tvm ${PSI_DEBUG_LIBS})
 if(UNIX)
-  target_link_libraries(psi-tvm ${PSI_DEBUG_LIBS} -ldl)
+  target_link_libraries(psi-tvm -ldl)
 endif()
 
 if(BUILD_TESTING)
@@ -57,18 +58,19 @@ endif()
 
 add_library(psi-llvm MODULE
   Tvm/LLVM/Builder.cpp Tvm/LLVM/Builder.hpp
-  Tvm/LLVM/Aggregate.cpp
   Tvm/LLVM/Function.cpp
+  Tvm/LLVM/FunctionalConstant.cpp
+  Tvm/LLVM/FunctionalInstruction.cpp
   Tvm/LLVM/Instructions.cpp
   Tvm/LLVM/Primitive.cpp
-  Tvm/LLVM/Simple.cpp
   Tvm/LLVM/Target.cpp Tvm/LLVM/Target.hpp
   Tvm/LLVM/Target_AMD64.cpp
   Tvm/LLVM/Templates.hpp
+  Tvm/LLVM/Type.cpp
 )
 
 set_target_properties(psi-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
-target_link_libraries(psi-llvm psi-tvm psi-assert ${LLVM_LIBS})
+target_link_libraries(psi-llvm ${PSI_DEBUG_LIBS} ${LLVM_LIBS})
 
 bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp)
 set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")

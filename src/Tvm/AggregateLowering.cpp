@@ -84,7 +84,7 @@ namespace Psi {
       typedef TermOperationMap<FunctionalTerm, Type, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
       
-      static CallbackMap callback_map_initializer() {
+      static CallbackMap::Initializer callback_map_initializer() {
         return CallbackMap::initializer(default_rewrite)
           .add<ArrayType>(array_type_rewrite)
           .add<StructType>(struct_type_rewrite)
@@ -95,8 +95,7 @@ namespace Psi {
     };
     
     AggregateLoweringPass::TypeTermRewriter::CallbackMap
-      AggregateLoweringPass::TypeTermRewriter::callback_map =
-      AggregateLoweringPass::TypeTermRewriter::callback_map_initializer();
+      AggregateLoweringPass::TypeTermRewriter::callback_map(AggregateLoweringPass::TypeTermRewriter::callback_map_initializer());
       
     struct AggregateLoweringPass::FunctionalTermRewriter {
       static Value aggregate_type_rewrite(AggregateLoweringRewriter& rewriter, Term *term) {
@@ -248,7 +247,7 @@ namespace Psi {
       typedef TermOperationMap<FunctionalTerm, Value, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
       
-      static CallbackMap callback_map_initializer() {
+      static CallbackMap::Initializer callback_map_initializer() {
         return CallbackMap::initializer(default_rewrite)
           .add<ArrayType>(aggregate_type_rewrite)
           .add<StructType>(aggregate_type_rewrite)
@@ -266,8 +265,7 @@ namespace Psi {
     };
 
     AggregateLoweringPass::FunctionalTermRewriter::CallbackMap
-      AggregateLoweringPass::FunctionalTermRewriter::callback_map =
-      AggregateLoweringPass::FunctionalTermRewriter::callback_map_initializer();
+      AggregateLoweringPass::FunctionalTermRewriter::callback_map(AggregateLoweringPass::FunctionalTermRewriter::callback_map_initializer());
 
     struct AggregateLoweringPass::InstructionTermRewriter {
       static Value return_rewrite(FunctionRunner& runner, Return::Ptr term) {
@@ -341,7 +339,7 @@ namespace Psi {
       typedef TermOperationMap<InstructionTerm, Value, FunctionRunner&> CallbackMap;
       static CallbackMap callback_map;
       
-      static CallbackMap callback_map_initializer() {
+      static CallbackMap::Initializer callback_map_initializer() {
         return CallbackMap::initializer()
           .add<Return>(return_rewrite)
           .add<UnconditionalBranch>(br_rewrite)
@@ -354,8 +352,7 @@ namespace Psi {
     };
     
     AggregateLoweringPass::InstructionTermRewriter::CallbackMap
-      AggregateLoweringPass::InstructionTermRewriter::callback_map =
-      AggregateLoweringPass::InstructionTermRewriter::callback_map_initializer();
+      AggregateLoweringPass::InstructionTermRewriter::callback_map(AggregateLoweringPass::InstructionTermRewriter::callback_map_initializer());
       
     AggregateLoweringPass::AggregateLoweringRewriter::AggregateLoweringRewriter(AggregateLoweringPass *pass)
     : m_pass(pass) {
@@ -689,14 +686,16 @@ namespace Psi {
     /**
      * Initialize a global variable build with no elements, zero size and minimum alignment.
      */
-    AggregateLoweringPass::GlobalBuildStatus::GlobalBuildStatus()
-    : elements_size(0), size(0), alignment(1) {
+    AggregateLoweringPass::GlobalBuildStatus::GlobalBuildStatus(Context& context)
+    : elements_size(FunctionalBuilder::size_value(context, 0)),
+    size(FunctionalBuilder::size_value(context, 0)),
+    alignment(FunctionalBuilder::size_value(context, 1)) {
     }
     
     /**
      * Initialize a global variable build with one element, and the specified sizes and alignment.
      */
-    AggregateLoweringPass::GlobalBuildStatus::GlobalBuildStatus(Term *element, unsigned elements_size_, unsigned size_, unsigned alignment_)
+    AggregateLoweringPass::GlobalBuildStatus::GlobalBuildStatus(Term *element, Term *elements_size_, Term *size_, Term *alignment_)
     : elements(1, element), elements_size(elements_size_), size(size_), alignment(alignment_) {
     }
 
@@ -706,28 +705,39 @@ namespace Psi {
      * 
      * \param status This does not alter the size, alignment or elements_size members of
      * \c status. It only affects the \c elements member.
+     * 
+     * \param is_value Whether a value is being built. If not, a type is being built.
      */
-    void AggregateLoweringPass::global_pad_to_size(GlobalBuildStatus& status, unsigned size, unsigned alignment) {
-      std::pair<Term*, unsigned> padding_type = target_callback->type_from_alignment(alignment);
-      unsigned padding = size - status.size;
-      status.elements.insert(status.elements.end(), padding / padding_type.second, padding_type.first);
+    void AggregateLoweringPass::global_pad_to_size(GlobalBuildStatus& status, Term *size, Term *alignment, bool is_value) {
+      std::pair<Term*,Term*> padding_type = target_callback->type_from_alignment(alignment);
+      Term *count = FunctionalBuilder::div(FunctionalBuilder::sub(size, status.size), padding_type.second);
+      if (IntegerValue::Ptr count_value = dyn_cast<IntegerValue>(count)) {
+        boost::optional<unsigned> count_value_int = count_value->value().unsigned_value();
+        if (!count_value_int)
+          throw TvmInternalError("cannot create internal global variable padding due to size overflow");
+        Term *padding_term = is_value ? FunctionalBuilder::undef(padding_type.first) : padding_type.first;
+        status.elements.insert(status.elements.end(), *count_value_int, padding_term);
+      } else {
+        Term *array_ty = FunctionalBuilder::array_type(padding_type.first, count);
+        status.elements.push_back(is_value ? FunctionalBuilder::undef(array_ty) : array_ty);
+      }
     }
     
     /**
      * Append the result of building a part of a global variable to the current
      * status of building it.
      */
-    void AggregateLoweringPass::global_append(GlobalBuildStatus& status, const GlobalBuildStatus& child) {
-      unsigned child_start = (status.size + child.alignment - 1) & ~child.alignment;
+    void AggregateLoweringPass::global_append(GlobalBuildStatus& status, const GlobalBuildStatus& child, bool is_value) {
+      Term *child_start = FunctionalBuilder::align_to(status.size, child.alignment);
       if (!child.elements.empty()) {
-        unsigned first_alignment = target_callback->type_size_alignment(child.elements.front()).alignment;
-        global_pad_to_size(status, child_start, first_alignment);
+        Term *first_alignment = target_callback->type_size_alignment(is_value ? child.elements.front()->type() : child.elements.front()).alignment;
+        global_pad_to_size(status, child_start, first_alignment, is_value);
         status.elements.insert(status.elements.end(), child.elements.begin(), child.elements.end());
+        status.elements_size = FunctionalBuilder::add(child_start, child.elements_size);
       }
 
-      status.size = child_start + child.size;
-      status.elements_size = child_start + child.elements_size;
-      status.alignment = std::max(status.alignment, child.alignment);
+      status.size = FunctionalBuilder::add(child_start, child.size);
+      status.alignment = FunctionalBuilder::max(status.alignment, child.alignment);
     }
 
     /**
@@ -746,9 +756,9 @@ namespace Psi {
       }
 
       if (ArrayValue::Ptr array_val = dyn_cast<ArrayValue>(value)) {
-        GlobalBuildStatus status;
+        GlobalBuildStatus status(context());
         for (unsigned i = 0, e = array_val->length(); i != e; ++i)
-          global_append(status, rewrite_global_type(array_val->value(i)));
+          global_append(status, rewrite_global_type(array_val->value(i)), false);
         
         if (!flatten_globals) {
           Term *struct_ty = FunctionalBuilder::struct_type(context(), status.elements);
@@ -757,9 +767,9 @@ namespace Psi {
         }
         return status;
       } else if (StructValue::Ptr struct_val = dyn_cast<StructValue>(value)) {
-        GlobalBuildStatus status;
+        GlobalBuildStatus status(context());
         for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i)
-          global_append(status, rewrite_global_type(struct_val->member_value(i)));
+          global_append(status, rewrite_global_type(struct_val->member_value(i)), false);
 
         if (!flatten_globals) {
           Term *struct_ty = FunctionalBuilder::struct_type(context(), status.elements);
@@ -769,6 +779,45 @@ namespace Psi {
         return status;
       } else if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(value)) {
         GlobalBuildStatus status = rewrite_global_type(union_val->value());
+        PSI_FAIL("not implemented - change size and alignment");
+        return status;
+      } else {
+        PSI_FAIL("unsupported global element");
+      }
+    }
+
+    AggregateLoweringPass::GlobalBuildStatus AggregateLoweringPass::rewrite_global_value(Term *value) {
+      Type value_ty = global_rewriter().rewrite_type(value->type());
+      if (value_ty.heap_type()) {
+        TypeSizeAlignment size_align = target_callback->type_size_alignment(value_ty.heap_type());
+        Term *rewritten_value = m_global_rewriter.rewrite_value_stack(value);
+        return GlobalBuildStatus(rewritten_value, size_align.size, size_align.size, size_align.alignment);
+      }
+
+      if (ArrayValue::Ptr array_val = dyn_cast<ArrayValue>(value)) {
+        GlobalBuildStatus status(context());
+        for (unsigned i = 0, e = array_val->length(); i != e; ++i)
+          global_append(status, rewrite_global_value(array_val->value(i)), true);
+        
+        if (!flatten_globals) {
+          Term *struct_val = FunctionalBuilder::struct_value(context(), status.elements);
+          status.elements.assign(1, struct_val);
+          status.elements_size = target_callback->type_size_alignment(struct_val->type()).size;
+        }
+        return status;
+      } else if (StructValue::Ptr struct_val = dyn_cast<StructValue>(value)) {
+        GlobalBuildStatus status(context());
+        for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i)
+          global_append(status, rewrite_global_value(struct_val->member_value(i)), true);
+
+        if (!flatten_globals) {
+          Term *struct_val = FunctionalBuilder::struct_value(context(), status.elements);
+          status.elements.assign(1, struct_val);
+          status.elements_size = target_callback->type_size_alignment(struct_val->type()).size;
+        }
+        return status;
+      } else if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(value)) {
+        GlobalBuildStatus status = rewrite_global_value(union_val->value());
         PSI_FAIL("not implemented - change size and alignment");
         return status;
       } else {
@@ -810,7 +859,7 @@ namespace Psi {
         if (GlobalVariableTerm *old_var = dyn_cast<GlobalVariableTerm>(term)) {
           std::vector<Term*> element_types;
           GlobalBuildStatus status = rewrite_global_type(old_var->value());
-          global_pad_to_size(status, status.size, status.alignment);
+          global_pad_to_size(status, status.size, status.alignment, false);
           Term *global_type;
           if (status.elements.empty()) {
             global_type = FunctionalBuilder::empty_type(context());
@@ -821,6 +870,12 @@ namespace Psi {
           }
           GlobalVariableTerm *new_var = target_module()->new_global_variable(old_var->name(), global_type);
           new_var->set_constant(old_var->constant());
+          
+          if (old_var->alignment())
+            new_var->set_alignment(FunctionalBuilder::max(status.alignment, m_global_rewriter.rewrite_value_stack(old_var->alignment())));
+          else
+            new_var->set_alignment(status.alignment);
+
           global_rewriter().m_value_map[old_var] = Value(new_var, true);
           rewrite_globals.push_back(std::make_pair(old_var, new_var));
         } else {
@@ -834,6 +889,20 @@ namespace Psi {
       for (std::vector<std::pair<GlobalVariableTerm*, GlobalVariableTerm*> >::iterator
            i = rewrite_globals.begin(), e = rewrite_globals.end(); i != e; ++i) {
         GlobalVariableTerm *source = i->first, *target = i->second;
+        if (Term *source_value = source->value()) {
+          GlobalBuildStatus status = rewrite_global_value(source_value);
+          global_pad_to_size(status, status.size, status.alignment, true);
+          Term *target_value;
+          if (status.elements.empty()) {
+            target_value = FunctionalBuilder::empty_value(context());
+          } else if (status.elements.size() == 1) {
+            target_value = status.elements.front();
+          } else {
+            target_value = FunctionalBuilder::struct_value(context(), status.elements);
+          }
+          target->set_value(target_value);
+        }
+        
         global_map_put(i->first, i->second);
       }
       

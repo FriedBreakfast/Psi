@@ -58,6 +58,17 @@ namespace Psi {
       CallbackMapType m_callback_map;
       boost::shared_ptr<Callback> m_default_callback;
       
+      struct InitializerData {
+        boost::shared_ptr<const InitializerData> next;
+        const char *operation;
+        boost::shared_ptr<Callback> callback;
+        
+        InitializerData(const boost::shared_ptr<const InitializerData>& next_,
+                        const char *operation_,
+                        const boost::shared_ptr<Callback>& callback_)
+        : next(next_), operation(operation_), callback(callback_) {}
+      };
+      
     public:
       ResultType call(UserParameter parameter, TermType *term) const {
         typename CallbackMapType::const_iterator it = m_callback_map.find(term->operation());
@@ -76,22 +87,20 @@ namespace Psi {
        */
       class Initializer {
         friend class TermOperationMap;
-        const Initializer *m_next;
-        const char *m_operation;
-        boost::shared_ptr<Callback> m_callback;
+        boost::shared_ptr<const InitializerData> m_ptr;
         
         Initializer(const boost::shared_ptr<Callback>& default_callback)
-        : m_callback(default_callback) {
+        : m_ptr(boost::make_shared<InitializerData>(boost::shared_ptr<const InitializerData>(), static_cast<const char*>(0), default_callback)) {
         }
         
-        Initializer(const Initializer* next, const char *operation, const boost::shared_ptr<Callback>& callback)
-          : m_next(next), m_operation(operation), m_callback(callback) {
+        Initializer(const boost::shared_ptr<const InitializerData>& next, const char *operation, const boost::shared_ptr<Callback>& callback)
+        : m_ptr(boost::make_shared<InitializerData>(next, operation, callback)) {
         }
         
       public:
         template<typename TermTagType, typename CallbackType>
         Initializer add(CallbackType callback) {
-          return Initializer(this, TermTagType::operation,
+          return Initializer(m_ptr, TermTagType::operation,
                              boost::make_shared<CallbackImpl<TermTagType, CallbackType> >(callback));
         }
       };
@@ -120,11 +129,11 @@ namespace Psi {
       /**
        * Construct a callback map with a set of callback functions.
        */
-      TermOperationMap(const Initializer& initializer) {
-        const Initializer *init = &initializer;
-        for (; init->m_next; init = init->m_next)
-          m_callback_map.insert(std::make_pair(init->m_operation, init->m_callback));
-        m_default_callback = init->m_callback;
+      explicit TermOperationMap(const Initializer& initializer) {
+        const InitializerData *init = initializer.m_ptr.get();
+        for (; init->next; init = init->next.get())
+          m_callback_map.insert(std::make_pair(init->operation, init->callback));
+        m_default_callback = init->callback;
       }
     };
   }

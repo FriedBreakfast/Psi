@@ -139,6 +139,7 @@ namespace Psi {
         ("fp128", FloatTypeCallback(FloatType::fp128))
         ("fp-x86-80", FloatTypeCallback(FloatType::fp_x86_80))
 	("fp-ppc-128", FloatTypeCallback(FloatType::fp_ppc_128))
+        ("bool", NullaryOpCallback(&FunctionalBuilder::bool_type))
         ("true", BoolValueCallback(true))
         ("false", BoolValueCallback(false))
         ("type", NullaryOpCallback(&FunctionalBuilder::type_type))

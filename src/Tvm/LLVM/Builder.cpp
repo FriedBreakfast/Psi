@@ -143,20 +143,6 @@ namespace Psi {
       }
 
       /**
-       * Get the type used to represent intptr_t.
-       */
-      const llvm::IntegerType* ConstantBuilder::get_intptr_type() {
-        return llvm_target_machine()->getTargetData()->getIntPtrType(llvm_context());
-      }
-
-      /**
-       * Get the number of bits in an intptr_t.
-       */
-      unsigned ConstantBuilder::intptr_type_bits() {
-        return get_intptr_type()->getBitWidth();
-      }
-
-      /**
        * \brief Return the constant integer specified by the given term.
        *
        * This assumes that the conversion can be performed; this is
@@ -168,62 +154,6 @@ namespace Psi {
         llvm::Constant *c = build_constant(term);
         PSI_ASSERT(llvm::isa<llvm::ConstantInt>(c));
         return llvm::cast<llvm::ConstantInt>(c)->getValue();
-      }
-
-      /**
-       * Utility function to get an LLVM float type from a float
-       * width, bypassing the normal build_type mechanism.
-       */
-      const llvm::Type* ConstantBuilder::get_float_type(FloatType::Width width) {
-	switch (width) {
-	case FloatType::fp32:  return llvm::Type::getFloatTy(llvm_context());
-	case FloatType::fp64:  return llvm::Type::getDoubleTy(llvm_context());
-	case FloatType::fp128: return llvm::Type::getFP128Ty(llvm_context());
-	case FloatType::fp_x86_80:   return llvm::Type::getX86_FP80Ty(llvm_context());
-	case FloatType::fp_ppc_128:  return llvm::Type::getPPC_FP128Ty(llvm_context());
-	default: PSI_FAIL("unknown floating point width");
-	}
-      }
-
-      /**
-       * Utility function to get the LLVM type used to represent a
-       * boolean value.
-       */
-      const llvm::IntegerType* ConstantBuilder::get_boolean_type() {
-	return llvm::Type::getInt1Ty(llvm_context());
-      }
-
-      /**
-       * Utility function to get an LLVM integer type from a float
-       * width, bypassing the normal build_type mechanism.
-       */
-      const llvm::IntegerType* ConstantBuilder::get_integer_type(IntegerType::Width width) {
-	switch (width) {
-	case IntegerType::i8:   return llvm::IntegerType::get(llvm_context(), 8);
-	case IntegerType::i16:  return llvm::IntegerType::get(llvm_context(), 16);
-	case IntegerType::i32:  return llvm::IntegerType::get(llvm_context(), 32);
-	case IntegerType::i64:  return llvm::IntegerType::get(llvm_context(), 64);
-	case IntegerType::i128: return llvm::IntegerType::get(llvm_context(), 128);
-	case IntegerType::iptr: return get_intptr_type();
-	default: PSI_FAIL("unknown integer width");
-	}
-      }
-
-      /**
-       * Get the type used to represent one byte, i.e. the units of
-       * size for this system.
-       */
-      const llvm::Type* ConstantBuilder::get_byte_type() {
-	return llvm::Type::getInt8Ty(llvm_context());
-      }
-
-      /**
-       * Utility function to return the LLVM type used to represent
-       * all pointers. This will always be a pointer to the type
-       * returned by get_byte_type.
-       */
-      const llvm::Type* ConstantBuilder::get_pointer_type() {
-	return get_byte_type()->getPointerTo();
       }
 
       struct ModuleBuilder::ConstantBuilderCallback : PtrValidBase<llvm::Constant> {
@@ -293,6 +223,9 @@ namespace Psi {
           default:
             PSI_FAIL("unexpected global term type");
           }
+
+          if (term->alignment())
+            result->setAlignment(build_constant_integer(term->alignment()).getZExtValue());
           
           m_global_terms[term] = result;
           module_result.globals[term] = result;
@@ -312,6 +245,9 @@ namespace Psi {
             if (Term *value = cast<GlobalVariableTerm>(rewritten_term)->value()) {
               llvm::Constant *llvm_value = build_constant(value);
               llvm::cast<llvm::GlobalVariable>(llvm_term)->setInitializer(llvm_value);
+            } else {
+              llvm::GlobalVariable *gv = llvm::cast<llvm::GlobalVariable>(llvm_term);
+              gv->setInitializer(llvm::UndefValue::get(llvm::cast<llvm::PointerType>(gv->getType())->getElementType()));
             }
           }
         }
@@ -344,11 +280,36 @@ namespace Psi {
         }
       }
       
+      const llvm::IntegerType* integer_type(llvm::LLVMContext& context, const llvm::TargetData *target_data, IntegerType::Width width) {
+        unsigned bits;
+        switch (width) {
+        case IntegerType::i8: bits = 8; break;
+        case IntegerType::i16: bits = 16; break;
+        case IntegerType::i32: bits = 32; break;
+        case IntegerType::i64: bits = 64; break;
+        case IntegerType::i128: bits = 128; break;
+        case IntegerType::iptr: return target_data->getIntPtrType(context);
+        default: PSI_FAIL("unknown integer width");
+        }
+        return llvm::Type::getIntNTy(context, bits);
+      }
+      
+      const llvm::Type* float_type(llvm::LLVMContext& context, FloatType::Width width) {
+        switch (width) {
+        case FloatType::fp32: return llvm::Type::getFloatTy(context);
+        case FloatType::fp64: return llvm::Type::getDoubleTy(context);
+        case FloatType::fp128: return llvm::Type::getFP128Ty(context);
+        case FloatType::fp_x86_80: return llvm::Type::getX86_FP80Ty(context);
+        case FloatType::fp_ppc_128: return llvm::Type::getPPC_FP128Ty(context);
+        default: PSI_FAIL("unknown float width"); break;
+        }
+      }
+
       LLVMJit::LLVMJit(const boost::shared_ptr<JitFactory>& jit_factory,
                        const std::string& host_triple,
-		       llvm::TargetMachine *host_machine)
+		       const boost::shared_ptr<llvm::TargetMachine>& host_machine)
         : Jit(jit_factory),
-          m_target_fixes(create_target_fixes(host_triple)),
+          m_target_fixes(create_target_fixes(&m_llvm_context, host_machine, host_triple)),
           m_target_machine(host_machine) {
       }
 
@@ -357,21 +318,21 @@ namespace Psi {
 
       void LLVMJit::add_module(Module *module) {
         std::auto_ptr<llvm::Module> llvm_module(new llvm::Module(module->name(), m_llvm_context));
-        ModuleBuilder builder(&m_llvm_context, m_target_machine, llvm_module.get());
+        ModuleBuilder builder(&m_llvm_context, m_target_machine.get(), llvm_module.get());
         ModuleMapping new_mapping = builder.run(module, m_target_fixes.get());
-
-        if (!m_llvm_engine) {
-          m_llvm_engine.reset(llvm::ExecutionEngine::create(llvm_module.get()));
-        } else {
-          m_llvm_engine->addModule(llvm_module.get());
-        }
-
-        llvm_module.release();
 
         ModuleMapping& mapping = m_modules[module];
         if (mapping.module)
           throw BuildError("module already exists in this JIT");
         mapping = new_mapping;
+
+        if (!m_llvm_engine) {
+          m_llvm_engine.reset(make_engine(llvm_module.get()));
+        } else {
+          m_llvm_engine->addModule(llvm_module.get());
+        }
+
+        llvm_module.release();
       }
       
       void LLVMJit::remove_module(Module *module) {
@@ -427,8 +388,7 @@ namespace Psi {
        * Create the LLVM Jit.
        */
       llvm::ExecutionEngine* LLVMJit::make_engine(llvm::Module *module) {
-        llvm::EngineBuilder builder(module);
-        llvm::ExecutionEngine *engine = builder.create();
+        llvm::ExecutionEngine *engine = llvm::ExecutionEngine::create(module, false, 0, llvm::CodeGenOpt::Default, false);
         PSI_ASSERT_MSG(engine, "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
         
 #ifdef PSI_DEBUG
@@ -465,9 +425,9 @@ extern "C" boost::shared_ptr<Psi::Tvm::Jit> tvm_jit_new(const boost::shared_ptr<
   std::string error_msg;
   const llvm::Target *target = llvm::TargetRegistry::lookupTarget(host, error_msg);
   if (!target)
-    throw Psi::Tvm::LLVM::BuildError("Could not get LLVM JIT target: " + error_msg);
+    throw Psi::Tvm::LLVM::BuildError("Could not get LLVM target: " + error_msg);
 
-  llvm::TargetMachine *tm = target->createTargetMachine(host, "");
+  boost::shared_ptr<llvm::TargetMachine> tm(target->createTargetMachine(host, ""));
   if (!tm)
     throw Psi::Tvm::LLVM::BuildError("Failed to create target machine");
   

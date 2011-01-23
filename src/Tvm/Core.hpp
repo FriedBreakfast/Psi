@@ -332,17 +332,15 @@ namespace Psi {
       const std::string& name() const {return m_name;}
       
       /// \brief Get the minumum alignment of this symbol
-      unsigned alignment() const {return m_alignment;}
+      Term* alignment() const {return get_base_parameter(0);}
       /// \brief Set the minimum alignment of this symbol.
-      void set_alignment(unsigned new_alignment) {m_alignment = new_alignment;}
+      void set_alignment(Term* new_alignment) {set_base_parameter(0, new_alignment);}
 
     private:
       GlobalTerm(const UserInitializer&, Context *, TermType , Term*, const std::string&, Module*);
       std::string m_name;
       Module *m_module;
       boost::intrusive::unordered_set_member_hook<> m_term_set_hook;
-      
-      unsigned m_alignment;
     };
 
 #ifndef PSI_DOXYGEN
@@ -372,7 +370,7 @@ namespace Psi {
 
     public:
       void set_value(Term* value);
-      Term* value() const {return get_base_parameter(0);}
+      Term* value() const {return get_base_parameter(1);}
 
       /**
        * \brief Whether this global is created in a read only section
