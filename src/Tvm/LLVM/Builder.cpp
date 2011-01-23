@@ -251,90 +251,82 @@ namespace Psi {
         }
       };
 
-      struct ModuleBuilder::GlobalBuilderCallback : PtrValidBase<llvm::GlobalValue> {
-        ModuleBuilder *self;
-        GlobalBuilderCallback(ModuleBuilder *self_) : self(self_) {}
+      ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module)
+        : ConstantBuilder(llvm_context, target_machine), m_llvm_module(llvm_module) {
+      }
 
-        llvm::GlobalValue* build(GlobalTerm *term) const {
+      ModuleBuilder::~ModuleBuilder() {
+      }
+
+      ModuleMapping ModuleBuilder::run(Module *module, AggregateLoweringPass::TargetCallback *target_callback) {
+        ModuleMapping module_result;
+        module_result.module = m_llvm_module;
+        
+        AggregateLoweringPass aggregate_lowering_pass(module, target_callback);
+        aggregate_lowering_pass.update();
+        
+        for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {
+          GlobalTerm *term = &*i;
+          GlobalTerm *rewritten_term = aggregate_lowering_pass.target_symbol(term);
           llvm::GlobalValue *result;
-          switch (term->term_type()) {
+          switch (rewritten_term->term_type()) {
           case term_global_variable: {
-            GlobalVariableTerm *global = cast<GlobalVariableTerm>(term);
-            const llvm::Type *llvm_type = self->build_type(global->value_type());
-	    result = new llvm::GlobalVariable(self->llvm_module(), llvm_type,
+            GlobalVariableTerm *global = cast<GlobalVariableTerm>(rewritten_term);
+            const llvm::Type *llvm_type = build_type(global->value_type());
+            result = new llvm::GlobalVariable(*m_llvm_module, llvm_type,
                                               global->constant(), llvm::GlobalValue::ExternalLinkage,
                                               NULL, global->name());
             break;
           }
 
           case term_function: {
-            FunctionTerm *func = cast<FunctionTerm>(term);
+            FunctionTerm *func = cast<FunctionTerm>(rewritten_term);
             PointerType::Ptr type = cast<PointerType>(func->type());
             FunctionTypeTerm* func_type = cast<FunctionTypeTerm>(type->target_type());
-            const llvm::Type *llvm_type = self->build_type(func_type);
+            const llvm::Type *llvm_type = build_type(func_type);
             PSI_ASSERT_MSG(llvm_type, "could not create function because its LLVM type is not known");
             result = llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_type),
                                             llvm::GlobalValue::ExternalLinkage,
-                                            func->name(), &self->llvm_module());
+                                            func->name(), m_llvm_module);
           }
 
           default:
             PSI_FAIL("unexpected global term type");
           }
           
-          result->setAlignment(term->alignment());
-          return result;
+          m_global_terms[term] = result;
+          module_result.globals[term] = result;
         }
-      };
-
-      ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *module)
-        : ConstantBuilder(llvm_context, target_machine), m_module(module) {
+        
+        for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {
+          GlobalTerm *term = &*i;
+          GlobalTerm *rewritten_term = aggregate_lowering_pass.target_symbol(term);
+          PSI_ASSERT(m_global_terms.find(term) != m_global_terms.end());
+          llvm::GlobalValue *llvm_term = m_global_terms.find(term)->second;
+          
+          if (rewritten_term->term_type() == term_function) {
+            FunctionBuilder fb(this, cast<FunctionTerm>(rewritten_term), llvm::cast<llvm::Function>(llvm_term));
+            fb.run();
+          } else {
+            PSI_ASSERT(term->term_type() == term_global_variable);
+            if (Term *value = cast<GlobalVariableTerm>(rewritten_term)->value()) {
+              llvm::Constant *llvm_value = build_constant(value);
+              llvm::cast<llvm::GlobalVariable>(llvm_term)->setInitializer(llvm_value);
+            }
+          }
+        }
+        
+        return module_result;
       }
-
-      ModuleBuilder::~ModuleBuilder() {
-      }
-
-      /**
-       * Set the module created globals will be put into.
-       */
-      void ModuleBuilder::set_module(llvm::Module *module) {
-        m_module = module;
-      }
-
+      
       /**
        * \brief Get the global variable specified by the given term.
        */
       llvm::GlobalValue* ModuleBuilder::build_global(GlobalTerm* term) {
-        PSI_ASSERT((term->term_type() == term_function) || (term->term_type() == term_global_variable));
-
-        std::pair<llvm::GlobalValue*, bool> gv = build_term(m_global_terms, term, GlobalBuilderCallback(this));
-
-        if (gv.second) {
-          if (m_global_build_list.empty()) {
-            m_global_build_list.push_back(std::make_pair(term, gv.first));
-            while (!m_global_build_list.empty()) {
-              const std::pair<Term*, llvm::GlobalValue*>& t = m_global_build_list.front();
-              if (t.first->term_type() == term_function) {
-                IRBuilder irbuilder(llvm_context(), llvm::TargetFolder(llvm_target_machine()->getTargetData()));
-                FunctionBuilder fb(this,
-                                   cast<FunctionTerm>(t.first),
-                                   llvm::cast<llvm::Function>(t.second),
-                                   &irbuilder);
-                fb.run();
-              } else {
-                PSI_ASSERT(t.first->term_type() == term_global_variable);
-		GlobalVariableTerm *global_variable = cast<GlobalVariableTerm>(t.first);
-                if (Term* init_value = global_variable->value())
-                  llvm::cast<llvm::GlobalVariable>(t.second)->setInitializer(build_constant(init_value));
-              }
-              m_global_build_list.pop_front();
-            }
-          } else {
-            m_global_build_list.push_back(std::make_pair(term, gv.first));
-          }
-        }
-
-        return gv.first;
+        std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*>::iterator it = m_global_terms.find(term);
+        if (it == m_global_terms.end())
+          throw BuildError("Cannot find global term");
+        return it->second;
       }
 
       llvm::Constant* ModuleBuilder::build_constant(Term *term) {
@@ -357,28 +349,55 @@ namespace Psi {
 		       llvm::TargetMachine *host_machine)
         : Jit(jit_factory),
           m_target_fixes(create_target_fixes(host_triple)),
-          m_builder(&m_llvm_context, host_machine) {
+          m_target_machine(host_machine) {
       }
 
       LLVMJit::~LLVMJit() {
       }
 
       void LLVMJit::add_module(Module *module) {
+        std::auto_ptr<llvm::Module> llvm_module(new llvm::Module(module->name(), m_llvm_context));
+        ModuleBuilder builder(&m_llvm_context, m_target_machine, llvm_module.get());
+        ModuleMapping new_mapping = builder.run(module, m_target_fixes.get());
+
+        if (!m_llvm_engine) {
+          m_llvm_engine.reset(llvm::ExecutionEngine::create(llvm_module.get()));
+        } else {
+          m_llvm_engine->addModule(llvm_module.get());
+        }
+
+        llvm_module.release();
+
+        ModuleMapping& mapping = m_modules[module];
+        if (mapping.module)
+          throw BuildError("module already exists in this JIT");
+        mapping = new_mapping;
       }
       
       void LLVMJit::remove_module(Module *module) {
+        std::tr1::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
+        if (it == m_modules.end())
+          throw BuildError("module not present");
+        m_llvm_engine->removeModule(it->second.module);
+        delete it->second.module;
+        m_modules.erase(it);
       }
       
-      void LLVMJit::rebuild_module(Module *module, bool incremental) {
+      void LLVMJit::rebuild_module(Module *module, bool) {
+        remove_module(module);
+        add_module(module);
       }
       
       void* LLVMJit::get_symbol(GlobalTerm *global) {
-        std::auto_ptr<llvm::Module> module(new llvm::Module("", m_llvm_context));
-        m_builder.set_module(module.get());
-        llvm::GlobalValue *llvm_global = m_builder.build_global(global);
-        m_builder.set_module(0);
-        m_llvm_engine->addModule(module.release());
-        return m_llvm_engine->getPointerToGlobal(llvm_global);
+        Module *module = global->module();
+        std::tr1::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
+        if (it == m_modules.end())
+          throw BuildError("Module does not appear to be available in this JIT");
+        
+        std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*>::iterator jt = it->second.globals.find(global);
+        PSI_ASSERT(jt != it->second.globals.end());
+        
+        return m_llvm_engine->getPointerToGlobal(jt->second);
       }
 
 #ifdef PSI_DEBUG

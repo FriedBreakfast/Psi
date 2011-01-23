@@ -289,7 +289,7 @@ namespace Psi {
 
     private:
       class Initializer;
-      FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type, const std::string& name);
+      FunctionTerm(const UserInitializer&, Context*, FunctionTypeTerm*, const std::string&, Module*);
       TermNameMap m_name_map;
     };
 

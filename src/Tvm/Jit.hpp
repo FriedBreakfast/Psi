@@ -70,7 +70,8 @@ namespace Psi {
        * 
        * \param incremental Whether to only build new symbols.
        * If this is false, throw away existing values of these
-       * symbols.
+       * symbols. If this flag is true, non-incremental build
+       * may still be used.
        */
       virtual void rebuild_module(Module *module, bool incremental) = 0;
 

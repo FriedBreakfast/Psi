@@ -337,7 +337,7 @@ namespace Psi {
       void set_alignment(unsigned new_alignment) {m_alignment = new_alignment;}
 
     private:
-      GlobalTerm(const UserInitializer&, Context *, TermType , Term* , const std::string&);
+      GlobalTerm(const UserInitializer&, Context *, TermType , Term*, const std::string&, Module*);
       std::string m_name;
       Module *m_module;
       boost::intrusive::unordered_set_member_hook<> m_term_set_hook;
@@ -385,7 +385,7 @@ namespace Psi {
 
     private:
       class Initializer;
-      GlobalVariableTerm(const UserInitializer&, Context*, Term*, const std::string&);
+      GlobalVariableTerm(const UserInitializer&, Context*, Term*, const std::string&, Module*);
 
       bool m_constant;
     };
@@ -411,27 +411,34 @@ namespace Psi {
      */
     class Module : public boost::noncopyable {
     public:
+      struct GlobalTermEquals {bool operator () (const GlobalTerm&, const GlobalTerm&) const;};
       struct GlobalTermHasher {std::size_t operator () (const GlobalTerm&) const;};
       
       typedef boost::intrusive::unordered_set<GlobalTerm,
                                               boost::intrusive::member_hook<GlobalTerm, boost::intrusive::unordered_set_member_hook<>, &GlobalTerm::m_term_set_hook>,
+                                              boost::intrusive::equal<GlobalTermEquals>,
                                               boost::intrusive::hash<GlobalTermHasher>,
                                               boost::intrusive::power_2_buckets<true> > ModuleMemberList;
                                               
     private:
       Context *m_context;
+      std::string m_name;
       static const std::size_t initial_members_buckets = 64;
       UniqueArray<ModuleMemberList::bucket_type> m_members_buckets;
       ModuleMemberList m_members;
       
+      void add_member(GlobalTerm*);
+      
     public:
-      Module(Context*);
+      Module(Context*, const std::string&);
       ~Module();
       
       /// \brief Get the context this module belongs to.
       Context& context() {return *m_context;}
       /// \brief Get the map of members of this module
       ModuleMemberList& members() {return m_members;}
+      /// \brief Get the name of this module
+      const std::string& name() {return m_name;}
       
       GlobalTerm* get_member(const std::string&);
       GlobalVariableTerm* new_global_variable(const std::string&, Term*);

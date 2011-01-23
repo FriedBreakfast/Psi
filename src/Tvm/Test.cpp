@@ -25,7 +25,7 @@ namespace Psi {
   namespace Tvm {
     namespace Test {
       ContextFixture::ContextFixture()
-      : module(&context), m_jit(jit_factory->create_jit()) {
+      : module(&context, "test_module"), m_jit(jit_factory->create_jit()) {
       }
 
       ContextFixture::~ContextFixture() {
@@ -38,6 +38,7 @@ namespace Psi {
         AssemblerResult r = parse_and_build(module, src);
         AssemblerResult::iterator it = r.find(name);
         BOOST_REQUIRE(it != r.end());
+        m_jit->add_module(&module);
         void *result = m_jit->get_symbol(it->second);
         return result;
       }

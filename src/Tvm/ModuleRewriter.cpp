@@ -10,7 +10,8 @@ namespace Psi {
      * create in the same context as the source module.
      */
     ModuleRewriter::ModuleRewriter(Module* source_module, Context *target_context)
-    : m_source_module(source_module), m_target_module(target_context ? target_context : &source_module->context()) {
+    : m_source_module(source_module),
+    m_target_module(target_context ? target_context : &source_module->context(), source_module->name()) {
     }
     
     /**

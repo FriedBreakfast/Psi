@@ -544,8 +544,8 @@ namespace Psi {
       bool m_phantom;
     };
 
-    FunctionTerm::FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type, const std::string& name)
-      : GlobalTerm(ui, context, term_function, type, name) {
+    FunctionTerm::FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type, const std::string& name, Module *module)
+      : GlobalTerm(ui, context, term_function, type, name, module) {
       ScopedArray<Term*> parameters(type->n_parameters());
       for (std::size_t i = 0; i < parameters.size(); ++i) {
 	Term* param_type = type->parameter_type_after(parameters.slice(0, i));
@@ -559,11 +559,12 @@ namespace Psi {
 
     class FunctionTerm::Initializer : public InitializerBase<FunctionTerm> {
     public:
-      Initializer(FunctionTypeTerm* type, const std::string& name) : m_type(type), m_name(name) {
+      Initializer(FunctionTypeTerm* type, const std::string& name, Module *module)
+      : m_type(type), m_name(name), m_module(module) {
       }
 
       FunctionTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) FunctionTerm(ui, context, m_type, m_name);
+	return new (base) FunctionTerm(ui, context, m_type, m_name, m_module);
       }
 
       std::size_t n_uses() const {
@@ -573,13 +574,16 @@ namespace Psi {
     private:
       FunctionTypeTerm* m_type;
       std::string m_name;
+      Module *m_module;
     };
 
     /**
      * \brief Create a new function.
      */
     FunctionTerm* Module::new_function(const std::string& name, FunctionTypeTerm* type) {
-      return context().allocate_term(FunctionTerm::Initializer(type, name));
+      FunctionTerm *result = context().allocate_term(FunctionTerm::Initializer(type, name, this));
+      add_member(result);
+      return result;
     }
 
     /**

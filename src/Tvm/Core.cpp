@@ -127,9 +127,10 @@ namespace Psi {
      * contents; the final type of this variable will in fact be a
      * pointer to this type.
      */
-    GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name)
+    GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name, Module *module)
       : Term(ui, context, term_type, this, PointerType::get(type)),
         m_name(name),
+        m_module(module),
         m_alignment(1) {
       PSI_ASSERT(!type->source());
     }
@@ -143,8 +144,8 @@ namespace Psi {
     }
 
     GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type,
-                                           const std::string& name)
-      : GlobalTerm(ui, context, term_global_variable, type, name),
+                                           const std::string& name, Module *module)
+      : GlobalTerm(ui, context, term_global_variable, type, name, module),
 	m_constant(false) {
     }
 
@@ -163,12 +164,12 @@ namespace Psi {
 
     class GlobalVariableTerm::Initializer : public InitializerBase<GlobalVariableTerm> {
     public:
-      Initializer(Term* type, const std::string& name)
-	: m_type(type), m_name(name) {
+      Initializer(Term* type, const std::string& name, Module *module)
+	: m_type(type), m_name(name), m_module(module) {
       }
 
       GlobalVariableTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) GlobalVariableTerm(ui, context, m_type, m_name);
+	return new (base) GlobalVariableTerm(ui, context, m_type, m_name, m_module);
       }
 
       std::size_t n_uses() const {
@@ -178,6 +179,7 @@ namespace Psi {
     private:
       Term* m_type;
       std::string m_name;
+      Module *m_module;
     };
 
     /**
@@ -187,7 +189,9 @@ namespace Psi {
       if (type->phantom())
         throw TvmUserError("global variable type cannot be phantom");
 
-      return context().allocate_term(GlobalVariableTerm::Initializer(type, name));
+      GlobalVariableTerm *result = context().allocate_term(GlobalVariableTerm::Initializer(type, name, this));
+      add_member(result);
+      return result;
     }
 
     /**
@@ -238,8 +242,18 @@ namespace Psi {
       return boost::hash_value(h.name());
     }
 
-    Module::Module(Context *context)
+    bool Module::GlobalTermEquals::operator () (const GlobalTerm& lhs, const GlobalTerm& rhs) const {
+      return lhs.name() == rhs.name();
+    }
+
+    /**
+     * \brief Module constructor.
+     * 
+     * \param name Name of the module.
+     */
+    Module::Module(Context *context, const std::string& name)
     : m_context(context),
+    m_name(name),
     m_members_buckets(initial_members_buckets),
     m_members(ModuleMemberList::bucket_traits(m_members_buckets.get(), initial_members_buckets)) {
     }
@@ -247,6 +261,11 @@ namespace Psi {
     Module::~Module() {
     }
 
+    void Module::add_member(GlobalTerm *term) {
+      if (!m_members.insert(*term).second)
+        throw TvmUserError("Duplicate module member name");
+    }
+    
     /**
      * Return whether a term is unique, i.e. it is not functional so
      * a copy would be automatically distinct from the original.

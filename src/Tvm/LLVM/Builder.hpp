@@ -46,6 +46,11 @@ namespace Psi {
 	const char *m_str;
 	std::string m_message;
       };
+      
+      struct ModuleMapping {
+        llvm::Module *module;
+        std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*> globals;
+      };
 
       class ConstantBuilder;
       class FunctionBuilder;
@@ -106,25 +111,20 @@ namespace Psi {
 	friend class ConstantValue;
 
       public:
-        ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *module=0);
+        ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module);
         ~ModuleBuilder();
-
-        void set_module(llvm::Module *module);
-
-        llvm::Module& llvm_module() {return *m_module;}
 
         virtual llvm::Constant* build_constant(Term *term);
         llvm::GlobalValue* build_global(GlobalTerm *term);
+        
+        ModuleMapping run(Module*, AggregateLoweringPass::TargetCallback*);
 
       protected:
         struct ConstantBuilderCallback;
         struct GlobalBuilderCallback;
 
-        llvm::Module *m_module;
-
-        /// Global terms which have been encountered but not yet built
-        typedef std::deque<std::pair<GlobalTerm*, llvm::GlobalValue*> > GlobalTermBuildList;
-        GlobalTermBuildList m_global_build_list;
+        Module *m_module;
+        llvm::Module *m_llvm_module;
 
         typedef std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*> GlobalTermMap;
         GlobalTermMap m_global_terms;
@@ -144,11 +144,9 @@ namespace Psi {
 
         ~FunctionBuilder();
 
-        llvm::Module& llvm_module() {return m_global_builder->llvm_module();}
-
         FunctionTerm *function() {return m_function;}
         llvm::Function* llvm_function() {return m_llvm_function;}
-        IRBuilder& irbuilder() {return *m_irbuilder;}
+        IRBuilder& irbuilder() {return m_irbuilder;}
 
         unsigned unknown_alloca_align();
 
@@ -164,11 +162,10 @@ namespace Psi {
       private:
         struct ValueBuilderCallback;
 
-        FunctionBuilder(ModuleBuilder *global_builder, FunctionTerm *function,
-                        llvm::Function *llvm_function, IRBuilder *irbuilder);
+        FunctionBuilder(ModuleBuilder*, FunctionTerm*, llvm::Function*);
 
         ModuleBuilder *m_global_builder;
-        IRBuilder *m_irbuilder;
+        IRBuilder m_irbuilder;
 
         FunctionTerm *m_function;
         llvm::Function *m_llvm_function;
@@ -228,7 +225,8 @@ namespace Psi {
       private:
         llvm::LLVMContext m_llvm_context;
         boost::shared_ptr<AggregateLoweringPass::TargetCallback> m_target_fixes;
-        ModuleBuilder m_builder;
+        llvm::TargetMachine *m_target_machine;
+        std::tr1::unordered_map<Module*, ModuleMapping> m_modules;
 #ifdef PSI_DEBUG
         boost::shared_ptr<llvm::JITEventListener> m_debug_listener;
 #endif

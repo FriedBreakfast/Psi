@@ -96,11 +96,10 @@ namespace Psi {
 
       FunctionBuilder::FunctionBuilder(ModuleBuilder *global_builder,
                                        FunctionTerm *function,
-                                       llvm::Function *llvm_function,
-                                       IRBuilder *irbuilder)
+                                       llvm::Function *llvm_function)
         : ConstantBuilder(*global_builder),
           m_global_builder(global_builder),
-          m_irbuilder(irbuilder),
+          m_irbuilder(global_builder->llvm_context(), llvm::TargetFolder(global_builder->llvm_target_machine()->getTargetData())),
           m_function(function),
           m_llvm_function(llvm_function) {
       }
@@ -185,7 +184,7 @@ namespace Psi {
        * used on the prolog block.
        */
       bool FunctionBuilder::has_outstanding_alloca(llvm::BasicBlock *block) {
-        llvm::Function *llvm_stackrestore = intrinsic_stackrestore(llvm_module());
+        llvm::Function *llvm_stackrestore = intrinsic_stackrestore(*m_llvm_function->getParent());
 
         llvm::CallInst *target_save = NULL;
         // Find last restore instruction in this block
@@ -217,7 +216,7 @@ namespace Psi {
        * Find the first stackrestore instruction in a block.
        */
       llvm::CallInst* FunctionBuilder::first_stack_restore(llvm::BasicBlock *block) {
-        llvm::Function *llvm_stackrestore = intrinsic_stackrestore(llvm_module());
+        llvm::Function *llvm_stackrestore = intrinsic_stackrestore(*m_llvm_function->getParent());
 
         for (llvm::BasicBlock::iterator it = block->begin(); it != block->end(); ++it) {
           if (it->getOpcode() == llvm::Instruction::Call) {
@@ -300,7 +299,7 @@ namespace Psi {
         // is still necessary
         llvm::BasicBlock *prolog_block = &m_llvm_function->getEntryBlock();
         llvm::CallInst *save_insn = llvm::cast<llvm::CallInst>(&*boost::prior(boost::prior(prolog_block->end())));
-        PSI_ASSERT(save_insn->getCalledFunction() == intrinsic_stacksave(llvm_module()));
+        PSI_ASSERT(save_insn->getCalledFunction() == intrinsic_stacksave(*m_llvm_function->getParent()));
         if (save_insn->hasNUses(0))
           save_insn->eraseFromParent();
       }
@@ -327,7 +326,7 @@ namespace Psi {
         // Finish prolog block
         irbuilder().SetInsertPoint(llvm_prolog_block);
         // Save prolog stack and jump into entry
-        stack_pointers[NULL] = irbuilder().CreateCall(intrinsic_stacksave(llvm_module()));
+        stack_pointers[NULL] = irbuilder().CreateCall(intrinsic_stacksave(*m_llvm_function->getParent()));
         PSI_ASSERT(blocks[0].first == entry_block);
         irbuilder().CreateBr(blocks[0].second);
 
@@ -355,7 +354,7 @@ namespace Psi {
           // unbounded stack growth.
           PSI_ASSERT(stack_pointers.find(it->first->dominator()) != stack_pointers.end());
           llvm::Value *dominator_stack_ptr = stack_pointers[it->first->dominator()];
-          irbuilder().CreateCall(intrinsic_stackrestore(llvm_module()), dominator_stack_ptr);
+          irbuilder().CreateCall(intrinsic_stackrestore(*m_llvm_function->getParent()), dominator_stack_ptr);
 
           // Build instructions!
           BlockTerm::InstructionList& insn_list = it->first->instructions();
@@ -378,7 +377,7 @@ namespace Psi {
           // does not terminate the function
           PSI_ASSERT(stack_pointers.find(it->first) == stack_pointers.end());
           if ((it->second->getTerminator()->getNumSuccessors() > 0) && has_outstanding_alloca(it->second)) {
-            stack_pointers[it->first] = irbuilder().CreateCall(intrinsic_stacksave(llvm_module()));
+            stack_pointers[it->first] = irbuilder().CreateCall(intrinsic_stacksave(*m_llvm_function->getParent()));
           } else {
             stack_pointers[it->first] = dominator_stack_ptr;
           }
