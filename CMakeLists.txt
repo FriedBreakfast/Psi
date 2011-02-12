@@ -30,6 +30,12 @@ if(CMAKE_COMPILER_IS_GNUCXX)
   string(REGEX REPLACE "-g.?" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
 endif()
 
+# Have to ensure _GLIBCXX_DEBUG is consistently defined everywhere otherwise the binary inteface may break
+if (LLVM_CXX_FLAGS MATCHES "-D_GLIBCXX_DEBUG")
+  string(REGEX REPLACE "-D_GLIBCXX_DEBUG" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_DEBUG")
+endif()
+
 # Locate Boost
 find_package(Boost 1.36.0 COMPONENTS unit_test_framework)
 if(NOT Boost_FOUND)

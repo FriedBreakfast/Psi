@@ -30,6 +30,10 @@ namespace Psi {
         static llvm::Value* function_specialize_callback(FunctionBuilder& builder, FunctionSpecialize::Ptr term) {
           return builder.build_value(term->function());
         }
+        
+        static llvm::Value* pointer_cast_callback(FunctionBuilder& builder, PointerCast::Ptr term) {
+          return builder.build_value(term->pointer());
+        }
 
         static llvm::Value *metatype_size_callback(FunctionBuilder& builder, MetatypeSize::Ptr term) {
           llvm::Value *value = builder.build_value(term->parameter());
@@ -40,6 +44,18 @@ namespace Psi {
           llvm::Value *value = builder.build_value(term->parameter());
           return builder.irbuilder().CreateExtractValue(value, 1);
         }
+        
+        struct UnaryOp {
+          typedef llvm::Value* (IRBuilder::*CallbackType) (llvm::Value*,const llvm::Twine&);
+          CallbackType callback;
+
+          UnaryOp(CallbackType callback_) : callback(callback_) {}
+
+          llvm::Value* operator () (FunctionBuilder& builder, UnaryOperation::Ptr term) const {
+            llvm::Value* parameter = builder.build_value(term->parameter());
+            return (builder.irbuilder().*callback)(parameter, "");
+          }
+        };
 
         struct BinaryOp {
           typedef llvm::Value* (IRBuilder::*CallbackType) (llvm::Value*,llvm::Value*,const llvm::Twine&);
@@ -57,10 +73,6 @@ namespace Psi {
         struct IntegerBinaryOp {
           typedef llvm::Value* (IRBuilder::*CallbackType) (llvm::Value*,llvm::Value*,const llvm::Twine&);
           CallbackType ui_callback, si_callback;
-          
-          IntegerBinaryOp(CallbackType callback_)
-          : ui_callback(callback_), si_callback(callback_) {
-          }
 
           IntegerBinaryOp(CallbackType ui_callback_, CallbackType si_callback_)
             : ui_callback(ui_callback_), si_callback(si_callback_) {
@@ -87,9 +99,11 @@ namespace Psi {
             .add<ArrayValue>(array_value_callback)
             .add<StructValue>(struct_value_callback)
             .add<FunctionSpecialize>(function_specialize_callback)
-            .add<IntegerAdd>(IntegerBinaryOp(&IRBuilder::CreateAdd))
-            .add<IntegerMultiply>(IntegerBinaryOp(&IRBuilder::CreateMul))
-            .add<IntegerDivide>(IntegerBinaryOp(&IRBuilder::CreateUDiv, &IRBuilder::CreateSDiv));
+            .add<PointerCast>(pointer_cast_callback)
+            .add<IntegerAdd>(BinaryOp(&IRBuilder::CreateAdd))
+            .add<IntegerMultiply>(BinaryOp(&IRBuilder::CreateMul))
+            .add<IntegerDivide>(IntegerBinaryOp(&IRBuilder::CreateUDiv, &IRBuilder::CreateSDiv))
+            .add<IntegerNegative>(UnaryOp(&IRBuilder::CreateNeg));
         }
       };
 

@@ -159,7 +159,7 @@ namespace Psi {
       ScopedArray<Term*> insn_params(parameters.size() + 1);
       insn_params[0] = target;
       for (std::size_t i = 0, e = parameters.size(); i != e; ++i)
-        insn_params[i+1] = parameters[1];
+        insn_params[i+1] = parameters[i];
       return insert_point.create<FunctionCall>(insn_params);
     }
     

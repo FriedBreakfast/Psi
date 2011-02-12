@@ -46,6 +46,7 @@ namespace Psi {
         (source->term_type() == term_global_variable) ||
         (source->term_type() == term_function) ||
         (source->term_type() == term_block) ||
+        (source->term_type() == term_phi) ||
         (source->term_type() == term_instruction) ||
         (source->term_type() == term_function_type_parameter) ||
         (source->term_type() == term_function_parameter));
@@ -84,9 +85,6 @@ namespace Psi {
         throw TvmUserError("term context mismatch");
 
       PSI_ASSERT_MSG(!use_get(n+1), "parameters to existing terms cannot be changed once set");
-      PSI_ASSERT(!t
-                 || (term_type() == term_function)
-                 || source_dominated(t->source(), source()));
 
       use_set(n+1, t);
     }

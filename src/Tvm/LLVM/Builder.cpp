@@ -218,6 +218,7 @@ namespace Psi {
             result = llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_type),
                                             llvm::GlobalValue::ExternalLinkage,
                                             func->name(), m_llvm_module);
+            break;
           }
 
           default:
@@ -327,7 +328,7 @@ namespace Psi {
         mapping = new_mapping;
 
         if (!m_llvm_engine) {
-          m_llvm_engine.reset(make_engine(llvm_module.get()));
+          init_llvm_engine(llvm_module.get());
         } else {
           m_llvm_engine->addModule(llvm_module.get());
         }
@@ -387,9 +388,9 @@ namespace Psi {
       /**
        * Create the LLVM Jit.
        */
-      llvm::ExecutionEngine* LLVMJit::make_engine(llvm::Module *module) {
-        llvm::ExecutionEngine *engine = llvm::ExecutionEngine::create(module, false, 0, llvm::CodeGenOpt::Default, false);
-        PSI_ASSERT_MSG(engine, "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
+      void LLVMJit::init_llvm_engine(llvm::Module *module) {
+        m_llvm_engine.reset(llvm::ExecutionEngine::create(module, false, 0, llvm::CodeGenOpt::Default, false));
+        PSI_ASSERT_MSG(m_llvm_engine, "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
         
 #ifdef PSI_DEBUG
         const char *debug_mode = std::getenv("PSI_LLVM_DEBUG");
@@ -411,8 +412,6 @@ namespace Psi {
           }
         }
 #endif
-        
-        return engine;
       }
     }
   }

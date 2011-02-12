@@ -225,7 +225,7 @@ namespace Psi {
 #endif
         boost::shared_ptr<llvm::ExecutionEngine> m_llvm_engine;
 
-        llvm::ExecutionEngine *make_engine(llvm::Module*);
+        void init_llvm_engine(llvm::Module*);
       };
     }
   }

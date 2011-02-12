@@ -38,6 +38,26 @@ namespace Psi {
         parameters[i] = rewriter(term->parameter(i));
       return term->rewrite(term->context(), parameters);
     }
+    
+    template<typename T>
+    FunctionTypeTerm* rewrite_function_type_term(T& rewriter, FunctionTypeTerm *term) {
+      ScopedArray<FunctionTypeParameterTerm*> parameters(term->n_parameters());
+      for (unsigned i = 0, e = parameters.size(); i != e; ++i) {
+        Term *param_type = rewriter(term->parameter_type(i));
+        parameters[i] = term->context().new_function_type_parameter(param_type);
+      }
+
+      Term* result_type = rewriter(term->result_type());
+      
+      std::size_t n_phantom = term->n_phantom_parameters();
+      std::size_t n_parameters = term->n_parameters();
+
+      return term->context().get_function_type
+        (term->calling_convention(),
+         result_type,
+         parameters.slice(0, n_phantom),
+         parameters.slice(n_phantom, n_parameters - n_phantom));
+    }
 
     /**
      * Rewrite a term in a default way, i.e. calling out to other
@@ -66,7 +86,7 @@ namespace Psi {
 	return rewrite_functional_term(rewriter, cast<FunctionalTerm>(term));
 
       case term_function_type:
-        throw TvmInternalError("function type term rewriting must happen through TermRewriter");
+        return rewrite_function_type_term(rewriter, cast<FunctionTypeTerm>(term));
 
       case term_function_type_parameter:
         throw TvmInternalError("unresolved function parameter encountered during term rewriting");
@@ -75,78 +95,6 @@ namespace Psi {
 	throw TvmInternalError("unknown term type");
       }
     }
-
-    /**
-     * Term rewriter class: this must be used if support for
-     * rewriting function terms is required.
-     */
-    template<typename T>
-    class TermRewriter {
-      typedef std::tr1::unordered_map<std::pair<std::size_t, std::size_t>, FunctionTypeParameterTerm*,
-                                      boost::hash<std::pair<std::size_t, std::size_t> > > FunctionParameterMapType;
-      TermRewriter(const TermRewriter&);
-      T *m_user;
-      std::size_t m_depth;
-      FunctionParameterMapType m_function_parameters;
-
-    public:
-      explicit TermRewriter(T *user) : m_user(user), m_depth(0) {}
-      
-      /**
-       * Return the number of function types that have been entered.
-       */
-      std::size_t function_type_depth() const {
-        return m_depth;
-      }
-
-      Term* operator () (Term* term) {
-        switch (term->term_type()) {
-        case term_function_type: {
-          ++m_depth;
-          FunctionTypeTerm *cast_term = cast<FunctionTypeTerm>(term);
-          
-          ScopedArray<FunctionTypeParameterTerm*> parameters(cast_term->n_parameters());
-          for (unsigned i = 0, e = parameters.size(); i != e; ++i) {
-            Term *param_type = (*m_user)(cast_term->parameter_type(i));
-            parameters[i] = term->context().new_function_type_parameter(param_type);
-            m_function_parameters[std::make_pair(m_depth, i)] = parameters[i];
-          }
-
-          Term* result_type = (*m_user)(cast_term->result_type());
-          
-          for (unsigned i = 0, e = parameters.size(); i != e; ++i)
-            m_function_parameters.erase(std::make_pair(m_depth, i));
-
-          std::size_t n_phantom = cast_term->n_phantom_parameters();
-          std::size_t n_parameters = cast_term->n_parameters();
-
-          --m_depth;
-          return term->context().get_function_type
-            (cast_term->calling_convention(),
-             result_type,
-             parameters.slice(0, n_phantom),
-             parameters.slice(n_phantom, n_parameters - n_phantom));
-        }
-        
-        case term_functional: {
-          if (FunctionTypeResolvedParameter::Ptr parameter = dyn_cast<FunctionTypeResolvedParameter>(term)) {
-            if (parameter->depth() >= m_depth)
-              throw TvmInternalError("unknown function type parameter encountered during term rewriting");
-            std::pair<std::size_t, std::size_t> index(m_depth - parameter->depth(), parameter->index());
-            PSI_ASSERT(m_function_parameters.find(index) != m_function_parameters.end());
-            return m_function_parameters[index];
-          } else {
-            break;
-          }
-        }
-
-        default:
-          break;
-        }
-        
-        return rewrite_term_default(*m_user, term);
-      }
-    };
   }
 }
 

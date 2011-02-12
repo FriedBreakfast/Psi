@@ -44,6 +44,7 @@ namespace Psi {
               FunctionParameterTerm *cast_src = cast<FunctionParameterTerm>(src);
               PSI_ASSERT(!cast_src->phantom() && (cast_src->function() == self->function()));
               new_insert_block = &self->llvm_function()->front();
+              break;
             }
             
             default:
@@ -157,15 +158,11 @@ namespace Psi {
        */
       llvm::BasicBlock* FunctionBuilder::build_function_entry() {
         llvm::BasicBlock *prolog_block = llvm::BasicBlock::Create(llvm_context(), "", llvm_function());
-        irbuilder().SetInsertPoint(prolog_block);
-        llvm::SmallVector<llvm::Value*, 4> parameter_values;
         
-        //target_fixes()->function_parameters_unpack(*this, function(), llvm_function(), parameter_values);
-
-        std::size_t n_phantom = function()->function_type()->n_phantom_parameters();
-        for (std::size_t i = 0, e = parameter_values.size(); i != e; ++i) {
-          FunctionParameterTerm* param = m_function->parameter(i + n_phantom);
-          llvm::Value *value = parameter_values[i];
+        llvm::Function::ArgumentListType::iterator ii = m_llvm_function->getArgumentList().begin(), ie = m_llvm_function->getArgumentList().end();
+        for (std::size_t in = function()->function_type()->n_phantom_parameters(); ii != ie; ++ii, ++in) {
+          FunctionParameterTerm* param = m_function->parameter(in);
+          llvm::Value *value = &*ii;
           value->setName(term_name(param));
           m_value_terms.insert(std::make_pair(param, value));
         }

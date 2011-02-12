@@ -157,7 +157,7 @@ namespace Psi {
       /// \brief Get the block corresponding to a given incoming edge
       BlockTerm *incoming_block(std::size_t n);
       /// \brief Get the value of a given incoming edge
-      Term *incoming_value(std::size_t n) {return get_base_parameter(n*2+1);}
+      Term *incoming_value(std::size_t n) {return get_base_parameter(n*2+2);}
 
     private:
       class Initializer;
@@ -241,10 +241,12 @@ namespace Psi {
       friend class FunctionTerm;
     public:
       FunctionTerm* function();
+      bool parameter_phantom() {return m_phantom;}
 
     private:
       class Initializer;
       FunctionParameterTerm(const UserInitializer&, Context*, FunctionTerm*, Term*, bool);
+      bool m_phantom;
     };
 
 #ifndef PSI_DOXYGEN
@@ -463,11 +465,11 @@ namespace Psi {
   }; PSI_TVM_INSTRUCTION_TYPE_CAST(name)
 
     inline BlockTerm* PhiTerm::block() {
-      return cast<BlockTerm>(source());
+      return cast<BlockTerm>(get_base_parameter(0));
     }
 
     inline BlockTerm* PhiTerm::incoming_block(std::size_t n) {
-      return cast<BlockTerm>(get_base_parameter(n*2));
+      return cast<BlockTerm>(get_base_parameter(n*2+1));
     }
 
     inline BlockTerm* BlockTerm::dominator() {

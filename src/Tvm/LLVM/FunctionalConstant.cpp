@@ -68,6 +68,10 @@ namespace Psi {
           return builder.build_constant(term->function());
         }
 
+        static llvm::Constant* pointer_cast_callback(ConstantBuilder& builder, PointerCast::Ptr term) {
+          return builder.build_constant(term->pointer());
+        }
+
         struct IntegerBinaryOp {
           typedef llvm::APInt (llvm::APInt::*CallbackType) (const llvm::APInt&) const;
           CallbackType ui_callback, si_callback;
@@ -116,6 +120,7 @@ namespace Psi {
             .add<ArrayValue>(array_value_callback)
             .add<StructValue>(struct_value_callback)
             .add<UndefinedValue>(undefined_value_callback)
+            .add<PointerCast>(pointer_cast_callback)
             .add<FunctionSpecialize>(function_specialize_callback)
             .add<IntegerAdd>(IntegerBinaryOp(&llvm::APInt::operator +))
             .add<IntegerMultiply>(IntegerBinaryOp(&llvm::APInt::operator *))

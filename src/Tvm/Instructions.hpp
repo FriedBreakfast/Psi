@@ -45,7 +45,7 @@ namespace Psi {
     /// \brief Get the value of the <tt>n</tt>th parameter used.
     Term* parameter(std::size_t n) const {return get()->parameter(n+1);}
     /// \brief Get the function type of the function being called.
-    FunctionTypeTerm* target_function_type() const {return cast<FunctionTypeTerm>(cast<PointerType>(target())->target_type());}
+    FunctionTypeTerm* target_function_type() const {return cast<FunctionTypeTerm>(cast<PointerType>(target()->type())->target_type());}
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
     static Ptr create(InstructionInsertPoint,Term*,ArrayPtr<Term*const>);
     PSI_TVM_INSTRUCTION_TYPE_END(FunctionCall)

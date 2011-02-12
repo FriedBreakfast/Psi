@@ -515,8 +515,6 @@ namespace Psi {
      * Run this pass on a single function.
      */
     void AggregateLoweringPass::FunctionRunner::run() {
-      InstructionBuilder insn_builder;
-
       /*
        * Check whether any instructions were inserted at the beginning of the
        * function and decide whether a new entry block is necessary in case
@@ -527,8 +525,8 @@ namespace Psi {
       if (new_function()->entry() && !new_function()->entry()->instructions().empty()) {
         prolog_block = new_function()->entry();
         entry_block = new_function()->new_block(prolog_block);
-        insn_builder.set_insert_point(prolog_block);
-        insn_builder.br(entry_block);
+        m_builder.set_insert_point(prolog_block);
+        m_builder.br(entry_block);
       } else {
         prolog_block = 0;
         entry_block = new_function()->entry();
@@ -557,6 +555,7 @@ namespace Psi {
         BlockTerm *new_block = cast<BlockTerm>(m_value_map[*it].value());
         PSI_ASSERT(new_block);
         BlockTerm::InstructionList& insn_list = old_block->instructions();
+        m_builder.set_insert_point(new_block);
         for (BlockTerm::InstructionList::iterator jt = insn_list.begin(); jt != insn_list.end(); ++jt) {
           InstructionTerm *insn = &*jt;
           Value value = InstructionTermRewriter::callback_map.call(*this, insn);
