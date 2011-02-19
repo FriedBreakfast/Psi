@@ -1,6 +1,8 @@
 #include "Functional.hpp"
 #include "Utility.hpp"
 
+#include <iostream>
+
 namespace Psi {
   namespace Tvm {
     FunctionalTerm::FunctionalTerm(const UserInitializer& ui, Context *context, Term* type, Term *source,

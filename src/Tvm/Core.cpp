@@ -105,6 +105,13 @@ namespace Psi {
         return boost::hash_value(this);
     }
     
+    /**
+     * Dump this term to stderr.
+     */
+    void Term::dump() {
+      print_term(std::cerr, this);
+    }
+    
     std::size_t Context::HashTermHasher::operator() (const HashTerm& h) const {
       return h.m_hash;
     }
@@ -159,7 +166,7 @@ namespace Psi {
 
       set_base_parameter(1, value);
     }
-
+    
     class GlobalVariableTerm::Initializer : public InitializerBase<GlobalVariableTerm> {
     public:
       Initializer(Term* type, const std::string& name, Module *module)
@@ -262,6 +269,13 @@ namespace Psi {
     void Module::add_member(GlobalTerm *term) {
       if (!m_members.insert(*term).second)
         throw TvmUserError("Duplicate module member name");
+    }
+    
+    /**
+     * Dump all symbols in this module to stderr.
+     */
+    void Module::dump() {
+      print_module(std::cerr, this);
     }
     
     /**

@@ -244,7 +244,7 @@ namespace Psi {
     BOOST_AUTO_TEST_CASE(AllocaTest) {
       const char *src =
         "%f = function (%cb : (pointer (function cc_c ((pointer i32))>i32))) > i32 {\n"
-        "  %s = alloca i32;\n"
+        "  %s = alloca i32 #up1 #up1;\n"
         "  call %cb %s;\n"
         "  %x = load %s;\n"
         "  return %x;\n"

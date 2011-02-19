@@ -85,6 +85,7 @@ namespace Psi {
           HANDLE_INT(short, i16)
           HANDLE_INT(int,   i32)
           HANDLE_INT(long,  i64)
+          HANDLE_INT(quad,  i128)
           HANDLE_INT(intptr, iptr)
 
 #undef HANDLE_INT

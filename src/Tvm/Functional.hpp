@@ -58,7 +58,7 @@ namespace Psi {
        * (it should also have no additional data associated with it).
        */
       virtual bool is_simple_op() const = 0;
- 
+
     private:
       class Setup;
       FunctionalTerm(const UserInitializer& ui, Context *context, Term* type,
@@ -116,7 +116,7 @@ namespace Psi {
       virtual bool is_simple_op() const {
 	return TermTagType::is_simple_op;
       }
- 
+      
     private:
       FunctionalTermSpecialized(const UserInitializer& ui, Context *context, Term* type,
                                 Term *source, std::size_t hash, const char *operation,

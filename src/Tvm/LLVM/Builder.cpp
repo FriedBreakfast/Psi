@@ -193,6 +193,9 @@ namespace Psi {
         module_result.module = m_llvm_module;
         
         AggregateLoweringPass aggregate_lowering_pass(module, target_callback);
+        aggregate_lowering_pass.remove_all_unions = true;
+        aggregate_lowering_pass.remove_only_unknown = true;
+        aggregate_lowering_pass.remove_stack_arrays = true;
         aggregate_lowering_pass.update();
         
         for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {
@@ -228,15 +231,15 @@ namespace Psi {
           if (term->alignment())
             result->setAlignment(build_constant_integer(term->alignment()).getZExtValue());
           
-          m_global_terms[term] = result;
+          m_global_terms[rewritten_term] = result;
           module_result.globals[term] = result;
         }
         
         for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {
           GlobalTerm *term = &*i;
           GlobalTerm *rewritten_term = aggregate_lowering_pass.target_symbol(term);
-          PSI_ASSERT(m_global_terms.find(term) != m_global_terms.end());
-          llvm::GlobalValue *llvm_term = m_global_terms.find(term)->second;
+          PSI_ASSERT(m_global_terms.find(rewritten_term) != m_global_terms.end());
+          llvm::GlobalValue *llvm_term = m_global_terms.find(rewritten_term)->second;
           
           if (rewritten_term->term_type() == term_function) {
             FunctionBuilder fb(this, cast<FunctionTerm>(rewritten_term), llvm::cast<llvm::Function>(llvm_term));

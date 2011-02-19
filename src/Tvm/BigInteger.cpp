@@ -77,6 +77,49 @@ namespace Psi {
         this->negative(*this);
     }
     
+    /**
+     * Print a large integer.
+     * 
+     * \param os Output stream to print to.
+     * \param is_signed Whether this is a signed or unsigned integer. If it is signed,
+     * a minus sign may be printed.
+     * \param base Base to print in.
+     */
+    void BigInteger::print(std::ostream& os, bool is_signed, unsigned base) const {
+      if (zero()) {
+        os << '0';
+        return;
+      }
+        
+      BigInteger current;
+      if (is_signed && sign_bit()) {
+        current.negative(*this);
+      } else {
+        current = *this;
+      }
+      
+      BigInteger next(bits()), rounded(bits()), remainder(bits());
+      
+      BigInteger base_i(bits(), base);
+      std::vector<char> buffer;
+      while (!current.zero()) {
+        next.divide_unsigned(current, base_i);
+        rounded.multiply(next, base_i);
+        remainder.subtract(current, rounded);
+        unsigned digit = *remainder.unsigned_value();
+        char digit_c;
+        if (digit >= 10)
+          digit_c = 'A' + (digit - 10);
+        else
+          digit_c = '0' + digit;
+        buffer.push_back(digit_c);
+        current = next;
+      }
+      
+      std::reverse(buffer.begin(), buffer.end());
+      os.write(&buffer[0], buffer.size());
+    }
+
     void BigInteger::assign(unsigned value) {
       m_words[0] = value;
       std::fill(m_words.get()+1, m_words.get()+m_words.size(), 0);

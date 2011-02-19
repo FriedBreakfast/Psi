@@ -109,6 +109,8 @@ namespace Psi {
         literal_uint,
         literal_long,
         literal_ulong,
+        literal_quad,
+        literal_uquad,
         literal_intptr,
         literal_uintptr
       };

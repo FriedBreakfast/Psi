@@ -49,6 +49,7 @@ namespace Psi {
       const uint64_t* words() const {return m_words.get();}
       
       void parse(const std::string&, bool=false, unsigned=10);
+      void print(std::ostream&, bool=false, unsigned=10) const ;
       void assign(unsigned);
       void assign(int);
       

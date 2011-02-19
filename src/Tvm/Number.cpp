@@ -87,7 +87,7 @@ namespace Psi {
     FloatType::Ptr FloatType::get(Context& context, Width width) {
       return context.get_functional<FloatType>(ArrayPtr<Term*>(), width);
     }
-
+    
     FunctionalTypeResult FloatValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 1)
         throw TvmUserError("float_v value takes one parameter");

@@ -6,6 +6,16 @@ namespace Psi {
   namespace Tvm {
     namespace LLVM {
       struct FunctionalInstructionBuilder {
+        static llvm::Value *metatype_size_callback(FunctionBuilder& builder, MetatypeSize::Ptr term) {
+          llvm::Value *value = builder.build_value(term->parameter());
+          return builder.irbuilder().CreateExtractValue(value, 0);
+        }
+
+        static llvm::Value *metatype_alignment_callback(FunctionBuilder& builder, MetatypeAlignment::Ptr term) {
+          llvm::Value *value = builder.build_value(term->parameter());
+          return builder.irbuilder().CreateExtractValue(value, 1);
+        }
+
         static llvm::Value* array_value_callback(FunctionBuilder& builder, ArrayValue::Ptr term) {
           const llvm::Type *type = builder.build_type(term->type());
           llvm::Value *array = llvm::UndefValue::get(type);
@@ -32,17 +42,40 @@ namespace Psi {
         }
         
         static llvm::Value* pointer_cast_callback(FunctionBuilder& builder, PointerCast::Ptr term) {
-          return builder.build_value(term->pointer());
+          const llvm::Type *type = builder.build_type(term->target_type());
+          llvm::Value *source = builder.build_value(term->pointer());
+          return builder.irbuilder().CreateBitCast(source, type->getPointerTo());
         }
 
-        static llvm::Value *metatype_size_callback(FunctionBuilder& builder, MetatypeSize::Ptr term) {
-          llvm::Value *value = builder.build_value(term->parameter());
-          return builder.irbuilder().CreateExtractValue(value, 0);
+        static llvm::Value* pointer_offset_callback(FunctionBuilder& builder, PointerOffset::Ptr term) {
+          llvm::Value *ptr = builder.build_value(term->pointer());
+          llvm::Value *offset = builder.build_value(term->offset());
+          return builder.irbuilder().CreateInBoundsGEP(ptr, offset);
         }
-
-        static llvm::Value *metatype_alignment_callback(FunctionBuilder& builder, MetatypeAlignment::Ptr term) {
-          llvm::Value *value = builder.build_value(term->parameter());
-          return builder.irbuilder().CreateExtractValue(value, 1);
+        
+        static llvm::Value* struct_element_callback(FunctionBuilder& builder, StructElement::Ptr term) {
+          llvm::Value *aggregate = builder.build_value(term->aggregate());
+          unsigned index = term->index();
+          return builder.irbuilder().CreateExtractValue(aggregate, index);
+        }
+        
+        static llvm::Value* struct_element_ptr_callback(FunctionBuilder& builder, StructElementPtr::Ptr term) {
+          llvm::Value *aggregate_ptr = builder.build_value(term->aggregate_ptr());
+          return builder.irbuilder().CreateStructGEP(aggregate_ptr, term->index());
+        }
+        
+        static llvm::Value* array_element_ptr_callback(FunctionBuilder& builder, ArrayElementPtr::Ptr term) {
+          llvm::Value *aggregate_ptr = builder.build_value(term->aggregate_ptr());
+          const llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.llvm_context());
+          llvm::Value *indices[2] = {llvm::ConstantInt::get(i32_ty, 0), builder.build_value(term->index())};
+          return builder.irbuilder().CreateInBoundsGEP(aggregate_ptr, indices, indices+2);
+        }
+        
+        static llvm::Value* select_value_callback(FunctionBuilder& builder, SelectValue::Ptr term) {
+          llvm::Value *condition = builder.build_value(term->condition());
+          llvm::Value *true_value = builder.build_value(term->true_value());
+          llvm::Value *false_value = builder.build_value(term->false_value());
+          return builder.irbuilder().CreateSelect(condition, true_value, false_value);
         }
         
         struct UnaryOp {
@@ -81,7 +114,7 @@ namespace Psi {
           llvm::Value* operator () (FunctionBuilder& builder, BinaryOperation::Ptr term) const {
             llvm::Value* lhs = builder.build_value(term->lhs());
             llvm::Value* rhs = builder.build_value(term->rhs());
-            if (cast<IntegerType>(term->type())->is_signed())
+            if (cast<IntegerType>(term->lhs()->type())->is_signed())
               return (builder.irbuilder().*si_callback)(lhs, rhs, "");
             else
               return (builder.irbuilder().*ui_callback)(lhs, rhs, "");
@@ -100,10 +133,25 @@ namespace Psi {
             .add<StructValue>(struct_value_callback)
             .add<FunctionSpecialize>(function_specialize_callback)
             .add<PointerCast>(pointer_cast_callback)
+            .add<PointerOffset>(pointer_offset_callback)
+            .add<StructElement>(struct_element_callback)
+            .add<StructElementPtr>(struct_element_ptr_callback)
+            .add<ArrayElementPtr>(array_element_ptr_callback)
+            .add<SelectValue>(select_value_callback)
             .add<IntegerAdd>(BinaryOp(&IRBuilder::CreateAdd))
             .add<IntegerMultiply>(BinaryOp(&IRBuilder::CreateMul))
             .add<IntegerDivide>(IntegerBinaryOp(&IRBuilder::CreateUDiv, &IRBuilder::CreateSDiv))
-            .add<IntegerNegative>(UnaryOp(&IRBuilder::CreateNeg));
+            .add<IntegerNegative>(UnaryOp(&IRBuilder::CreateNeg))
+            .add<BitAnd>(BinaryOp(&IRBuilder::CreateAnd))
+            .add<BitOr>(BinaryOp(&IRBuilder::CreateOr))
+            .add<BitXor>(BinaryOp(&IRBuilder::CreateXor))
+            .add<BitNot>(UnaryOp(&IRBuilder::CreateNot))
+            .add<IntegerCompareEq>(BinaryOp(&IRBuilder::CreateICmpEQ))
+            .add<IntegerCompareNe>(BinaryOp(&IRBuilder::CreateICmpNE))
+            .add<IntegerCompareGt>(IntegerBinaryOp(&IRBuilder::CreateICmpUGT, &IRBuilder::CreateICmpSGT))
+            .add<IntegerCompareLt>(IntegerBinaryOp(&IRBuilder::CreateICmpULT, &IRBuilder::CreateICmpSLT))
+            .add<IntegerCompareGe>(IntegerBinaryOp(&IRBuilder::CreateICmpUGE, &IRBuilder::CreateICmpSGE))
+            .add<IntegerCompareLe>(IntegerBinaryOp(&IRBuilder::CreateICmpULE, &IRBuilder::CreateICmpSLE));
         }
       };
 

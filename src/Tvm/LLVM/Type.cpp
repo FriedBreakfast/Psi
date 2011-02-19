@@ -20,8 +20,8 @@ namespace Psi {
           return llvm::StructType::get(builder.llvm_context());
         }
         
-        static const llvm::Type* pointer_type_callback(ConstantBuilder& builder, PointerType::Ptr) {
-          return llvm::Type::getInt8PtrTy(builder.llvm_context());
+        static const llvm::Type* pointer_type_callback(ConstantBuilder& builder, PointerType::Ptr term) {
+          return builder.build_type(term->target_type())->getPointerTo();
         }
         
         static const llvm::Type* block_type_callback(ConstantBuilder& builder, BlockType::Ptr) {

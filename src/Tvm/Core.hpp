@@ -188,6 +188,8 @@ namespace Psi {
 
       /** \brief Get the term describing the type of this term. */
       Term* type() const {return static_cast<Term*>(use_get(0));}
+      
+      void dump();
 
     private:
       Term(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type);
@@ -380,7 +382,7 @@ namespace Psi {
       bool constant() const {return m_constant;}
       /// \brief Set whether this global is created in a read only section
       void set_constant(bool is_const) {m_constant = is_const;}
-
+      
     private:
       class Initializer;
       GlobalVariableTerm(const UserInitializer&, Context*, Term*, const std::string&, Module*);
@@ -437,6 +439,8 @@ namespace Psi {
       ModuleMemberList& members() {return m_members;}
       /// \brief Get the name of this module
       const std::string& name() {return m_name;}
+      
+      void dump();
       
       GlobalTerm* get_member(const std::string&);
       GlobalVariableTerm* new_global_variable(const std::string&, Term*);
@@ -519,6 +523,8 @@ namespace Psi {
     bool term_unique(Term* term);
     Term* common_source(Term *t1, Term *t2);
     bool source_dominated(Term *dominator, Term *dominated);
+    void print_module(std::ostream&, Module*);
+    void print_term(std::ostream&, Term*);
   }
 }
 

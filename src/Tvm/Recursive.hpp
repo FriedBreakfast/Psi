@@ -7,8 +7,6 @@ namespace Psi {
   namespace Tvm {
     class RecursiveParameterTerm : public Term {
       friend class Context;
-
-    private:
       class Initializer;
       RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type);
     };

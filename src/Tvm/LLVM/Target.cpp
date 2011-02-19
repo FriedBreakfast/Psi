@@ -149,8 +149,8 @@ namespace Psi {
           result.size = 0;
           result.alignment = 1;
           
-          for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
-            TypeSizeAlignmentLiteral child = type_size_alignment_literal(struct_ty->member_type(i));
+          for (unsigned i = 0, e = union_ty->n_members(); i != e; ++i) {
+            TypeSizeAlignmentLiteral child = type_size_alignment_literal(union_ty->member_type(i));
             result.size = std::max(result.size, child.size);
             result.alignment = std::max(result.alignment, child.alignment);
           }

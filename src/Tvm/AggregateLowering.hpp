@@ -53,8 +53,7 @@ namespace Psi {
         Value() : m_value(0), m_on_stack(false) {}
 
         Value(Term *value, bool on_stack) : m_value(value), m_on_stack(on_stack) {
-          PSI_ASSERT(on_stack ? true :
-            (isa<PointerType>(value->type()) && isa<ByteType>(cast<PointerType>(value->type())->target_type())));
+          PSI_ASSERT(on_stack ? true : isa<PointerType>(value->type()));
         }
 
         /**
@@ -297,9 +296,6 @@ namespace Psi {
        * remove_all_unions affects the behaviour of this option, since
        * if \c remove_all_unions is true \em any type containing a union
        * is considered not fully known.
-       *
-       * Note that operations to compute the size and alignment of types
-       * are always completely rewritten, regardless of this setting.
        */
       bool remove_only_unknown;
 

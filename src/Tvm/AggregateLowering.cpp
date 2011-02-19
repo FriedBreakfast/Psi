@@ -100,13 +100,11 @@ namespace Psi {
     struct AggregateLoweringPass::FunctionalTermRewriter {
       static Value aggregate_type_rewrite(AggregateLoweringRewriter& rewriter, Term *term) {
         Type ty = rewriter.rewrite_type(term);
-        Term *result = ty.heap_type();
-        if (!result) {
-          Term *size = rewriter.rewrite_value_stack(FunctionalBuilder::type_size(term));
-          Term *alignment = rewriter.rewrite_value_stack(FunctionalBuilder::type_alignment(term));
-          result = FunctionalBuilder::type_value(size, alignment);
-        }
-        return Value(result, true);
+        if (ty.heap_type())
+          return Value(ty.heap_type(), true);
+        
+        TypeSizeAlignment size_alignment = rewriter.pass().target_callback->type_size_alignment(term);
+        return Value(FunctionalBuilder::type_value(size_alignment.size, size_alignment.alignment), true);
       }
 
       static Value default_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *term) {
@@ -215,6 +213,25 @@ namespace Psi {
         
         return Value(struct_ptr_offset(rewriter, term->aggregate_type(), struct_ptr, term->index()), true);
       }
+      
+      static Value struct_element_offset_rewrite(AggregateLoweringRewriter& rewriter, StructElementOffset::Ptr term) {
+        StructType::Ptr struct_ty = term->aggregate_type();
+
+        Term *offset = FunctionalBuilder::size_value(rewriter.context(), 0);
+        
+        for (unsigned ii = 0, ie = term->index(); ; ++ii) {
+          Term *member_type = struct_ty->member_type(ii);
+          Term *member_alignment = rewriter.rewrite_value_stack(FunctionalBuilder::type_alignment(member_type));
+          offset = FunctionalBuilder::align_to(offset, member_alignment);
+          if (ii == ie)
+            break;
+
+          Term *member_size = rewriter.rewrite_value_stack(FunctionalBuilder::type_size(member_type));
+          offset = FunctionalBuilder::add(offset, member_size);
+        }
+        
+        return Value(offset, true);
+      }
 
       static Value union_element_rewrite(AggregateLoweringRewriter& rewriter, UnionElement::Ptr term) {
         Value union_val = rewriter.rewrite_value(term->aggregate());
@@ -244,6 +261,24 @@ namespace Psi {
         }
       }
       
+      static Value metatype_size_rewrite(AggregateLoweringRewriter& rewriter, MetatypeSize::Ptr term) {
+        Type ty = rewriter.rewrite_type(term->parameter());
+        if (ty.heap_type())
+          return Value(FunctionalBuilder::type_size(ty.heap_type()), true);
+        
+        MetatypeValue::Ptr meta = cast<MetatypeValue>(rewriter.rewrite_value_stack(term->parameter()));
+        return Value(meta->size(), true);
+      }
+      
+      static Value metatype_alignment_rewrite(AggregateLoweringRewriter& rewriter, MetatypeAlignment::Ptr term) {
+        Type ty = rewriter.rewrite_type(term->parameter());
+        if (ty.heap_type())
+          return Value(FunctionalBuilder::type_alignment(ty.heap_type()), true);
+        
+        MetatypeValue::Ptr meta = cast<MetatypeValue>(rewriter.rewrite_value_stack(term->parameter()));
+        return Value(meta->alignment(), true);
+      }
+
       typedef TermOperationMap<FunctionalTerm, Value, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
       
@@ -260,7 +295,10 @@ namespace Psi {
           .add<UnionElement>(union_element_rewrite)
           .add<ArrayElementPtr>(array_element_ptr_rewrite)
           .add<StructElementPtr>(struct_element_ptr_rewrite)
-          .add<UnionElementPtr>(union_element_ptr_rewrite);
+          .add<UnionElementPtr>(union_element_ptr_rewrite)
+          .add<StructElementOffset>(struct_element_offset_rewrite)
+          .add<MetatypeSize>(metatype_size_rewrite)
+          .add<MetatypeAlignment>(metatype_alignment_rewrite);
       }
     };
 
@@ -778,7 +816,9 @@ namespace Psi {
         return status;
       } else if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(value)) {
         GlobalBuildStatus status = rewrite_global_type(union_val->value());
-        PSI_FAIL("not implemented - change size and alignment");
+        TypeSizeAlignment size_alignment = target_callback->type_size_alignment(union_val->type());
+        status.size = size_alignment.size;
+        status.alignment = size_alignment.alignment;
         return status;
       } else {
         PSI_FAIL("unsupported global element");
@@ -838,6 +878,7 @@ namespace Psi {
     target_callback(target_callback_),
     remove_only_unknown(false),
     remove_all_unions(false),
+    remove_stack_arrays(false),
     flatten_globals(false) {
     }
 

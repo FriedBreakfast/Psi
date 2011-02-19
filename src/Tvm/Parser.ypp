@@ -351,6 +351,7 @@ namespace {
     ('s', literal_short)
     ('i', literal_int)
     ('l', literal_long)
+    ('q', literal_quad)
     ('p', literal_intptr);
 
   const std::tr1::unordered_map<char, LiteralType> unsigned_literals =
@@ -359,6 +360,7 @@ namespace {
     ('s', literal_ushort)
     ('i', literal_uint)
     ('l', literal_ulong)
+    ('q', literal_uquad)
     ('p', literal_uintptr);
 
   /**

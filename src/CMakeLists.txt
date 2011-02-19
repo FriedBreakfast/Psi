@@ -17,6 +17,7 @@ add_library(psi-tvm SHARED
   Tvm/AssemblerOperations.cpp
   Tvm/BigInteger.cpp Tvm/BigInteger.hpp
   Tvm/Core.cpp Tvm/Core.hpp
+  Tvm/Disassembler.cpp
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
   Tvm/FunctionalBuilder.cpp Tvm/FunctionalBuilder.hpp

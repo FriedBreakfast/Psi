@@ -247,7 +247,7 @@ namespace Psi {
 	throw TvmUserError("incorrect number of parameters");
       return ParameterTypeRewriter(parameters)(result_type());
     }
-
+    
     FunctionTypeParameterTerm::FunctionTypeParameterTerm(const UserInitializer& ui, Context *context, Term* type)
       : Term(ui, context, term_function_type_parameter, this, type) {
     }
@@ -283,7 +283,7 @@ namespace Psi {
       for (std::size_t i = 0; i < parameters.size(); ++i)
 	set_base_parameter(i, parameters[i]);
     }
-
+    
     class InstructionTerm::Initializer {
     public:
       typedef InstructionTerm TermType;
@@ -553,7 +553,7 @@ namespace Psi {
       FunctionTerm* m_function;
       BlockTerm* m_dominator;
     };
-
+    
     FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type, bool phantom)
       : Term(ui, context, term_function_parameter, this, type),
       m_phantom(phantom) {
@@ -679,9 +679,6 @@ namespace Psi {
       visited_blocks.insert(entry());
       
       for (std::size_t i = 0; i != blocks.size(); ++i) {
-        if (!blocks[i]->terminated())
-          throw TvmUserError("cannot perform aggregate lowering on function with unterminated blocks");
-
         std::vector<BlockTerm*> successors = blocks[i]->successors();
         for (std::vector<BlockTerm*>::iterator it = successors.begin(); it != successors.end(); ++it) {
           if (visited_blocks.find((*it)->dominator()) != visited_blocks.end()) {

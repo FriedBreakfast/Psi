@@ -522,8 +522,10 @@ namespace Psi {
         if (const_lhs && const_rhs) {
           return const_combiner(const_lhs, const_rhs);
         } else if (const_lhs || const_rhs) {
-          if (!const_lhs)
+          if (!const_lhs) {
             std::swap(const_lhs, const_rhs);
+            std::swap(lhs, rhs);
+          }
           PSI_ASSERT(const_lhs && !const_rhs);
           
           if (typename CommutativeOp::Ptr com_op_rhs = dyn_cast<CommutativeOp>(rhs))
@@ -534,20 +536,19 @@ namespace Psi {
         } else {
           PSI_ASSERT(!const_lhs && !const_rhs);
           typename CommutativeOp::Ptr com_op_lhs = dyn_cast<CommutativeOp>(lhs), com_op_rhs = dyn_cast<CommutativeOp>(rhs);
-          if (com_op_lhs && com_op_rhs) {
-            typename ConstType::Ptr const_lhs_lhs = dyn_cast<ConstType>(com_op_lhs->lhs());
-            typename ConstType::Ptr const_rhs_lhs = dyn_cast<ConstType>(com_op_rhs->lhs());
-            if (const_lhs_lhs && const_rhs_lhs) {
-              return CommutativeOp::get(const_combiner(const_lhs_lhs, const_rhs_lhs),
-                                        CommutativeOp::get(com_op_lhs->rhs(), com_op_rhs->rhs()));
-            } else if (const_lhs_lhs) {
-              return CommutativeOp::get(const_lhs_lhs, CommutativeOp::get(com_op_lhs->rhs(), rhs));
-            } else if (const_rhs_lhs) {
-              return CommutativeOp::get(const_rhs_lhs, CommutativeOp::get(lhs, com_op_rhs->rhs()));
-            }
-          }
+          typename ConstType::Ptr const_lhs_lhs = com_op_lhs ? dyn_cast<ConstType>(com_op_lhs->lhs()) : typename ConstType::Ptr();
+          typename ConstType::Ptr const_rhs_lhs = com_op_rhs ? dyn_cast<ConstType>(com_op_rhs->lhs()) : typename ConstType::Ptr();
           
-          return CommutativeOp::get(lhs, rhs);
+          if (const_lhs_lhs && const_rhs_lhs) {
+            return CommutativeOp::get(const_combiner(const_lhs_lhs, const_rhs_lhs),
+                                      CommutativeOp::get(com_op_lhs->rhs(), com_op_rhs->rhs()));
+          } else if (const_lhs_lhs) {
+            return CommutativeOp::get(const_lhs_lhs, CommutativeOp::get(com_op_lhs->rhs(), rhs));
+          } else if (const_rhs_lhs) {
+            return CommutativeOp::get(const_rhs_lhs, CommutativeOp::get(lhs, com_op_rhs->rhs()));
+          } else {
+            return CommutativeOp::get(lhs, rhs);
+          }
         }
       }
       

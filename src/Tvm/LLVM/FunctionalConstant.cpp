@@ -1,6 +1,7 @@
 #include "Builder.hpp"
 
 #include "../TermOperationMap.hpp"
+#include <../lib/llvm-2.8/include/llvm/Target/TargetData.h>
 
 namespace Psi {
   namespace Tvm {
@@ -69,8 +70,65 @@ namespace Psi {
         }
 
         static llvm::Constant* pointer_cast_callback(ConstantBuilder& builder, PointerCast::Ptr term) {
-          return builder.build_constant(term->pointer());
+          const llvm::Type *type = builder.build_type(term->target_type());
+          llvm::Constant *source = builder.build_constant(term->pointer());
+          return llvm::ConstantExpr::getBitCast(source, type->getPointerTo());
         }
+        
+        static llvm::Constant* pointer_offset_callback(ConstantBuilder& builder, PointerOffset::Ptr term) {
+          llvm::Constant *ptr = builder.build_constant(term->pointer());
+          llvm::Constant *offset = builder.build_constant(term->offset());
+          return llvm::ConstantExpr::getInBoundsGetElementPtr(ptr, &offset, 1);
+        }
+        
+        static llvm::Constant* struct_element_callback(ConstantBuilder& builder, StructElement::Ptr term) {
+          llvm::Constant *aggregate = builder.build_constant(term->aggregate());
+          unsigned index = term->index();
+          return llvm::ConstantExpr::getExtractValue(aggregate, &index, 1);
+        }
+        
+        static llvm::Constant* struct_element_ptr_callback(ConstantBuilder& builder, StructElementPtr::Ptr term) {
+          llvm::Constant *aggregate_ptr = builder.build_constant(term->aggregate_ptr());
+          const llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.llvm_context());
+          llvm::Constant *indices[2] = {llvm::ConstantInt::get(i32_ty, 0), llvm::ConstantInt::get(i32_ty, term->index())};
+          return llvm::ConstantExpr::getInBoundsGetElementPtr(aggregate_ptr, indices, 2);
+        }
+        
+        static llvm::Constant* struct_element_offset_callback(ConstantBuilder& builder, StructElementOffset::Ptr term) {
+          const llvm::StructType *struct_type = llvm::cast<llvm::StructType>(builder.build_type(term->aggregate_type()));
+          const llvm::StructLayout *layout = builder.llvm_target_machine()->getTargetData()->getStructLayout(struct_type);
+          uint64_t value = layout->getElementOffset(term->index());
+          const llvm::Type *size_type = builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context());
+          return llvm::ConstantInt::get(size_type, value);
+        }
+        
+        static llvm::Constant* array_element_ptr_callback(ConstantBuilder& builder, ArrayElementPtr::Ptr term) {
+          llvm::Constant *aggregate_ptr = builder.build_constant(term->aggregate_ptr());
+          const llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.llvm_context());
+          llvm::Constant *indices[2] = {llvm::ConstantInt::get(i32_ty, 0), builder.build_constant(term->index())};
+          return llvm::ConstantExpr::getInBoundsGetElementPtr(aggregate_ptr, indices, 2);
+        }
+        
+        static llvm::Constant* select_value_callback(ConstantBuilder& builder, SelectValue::Ptr term) {
+          llvm::Constant *condition = builder.build_constant(term->condition());
+          llvm::Constant *true_value = builder.build_constant(term->true_value());
+          llvm::Constant *false_value = builder.build_constant(term->false_value());
+          return llvm::ConstantExpr::getSelect(condition, true_value, false_value);
+        }
+        
+        struct IntegerUnaryOp {
+          typedef llvm::APInt (llvm::APInt::*CallbackType) () const;
+          CallbackType callback;
+          
+          IntegerUnaryOp(CallbackType callback_) : callback(callback_) {}
+          
+          llvm::Constant* operator () (ConstantBuilder& builder, UnaryOperation::Ptr term) const {
+            const llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), cast<IntegerType>(term->type())->width());
+            llvm::APInt param = builder.build_constant_integer(term->parameter());
+            llvm::APInt result = (param.*callback)();
+            return llvm::ConstantInt::get(llvm_type, result);
+          }
+        };
 
         struct IntegerBinaryOp {
           typedef llvm::APInt (llvm::APInt::*CallbackType) (const llvm::APInt&) const;
@@ -92,6 +150,28 @@ namespace Psi {
             else
               result = (lhs.*ui_callback)(rhs);
             return llvm::ConstantInt::get(llvm_type, result);
+          }
+        };
+        
+        struct IntegerCompareOp {
+          typedef bool (llvm::APInt::*CallbackType) (const llvm::APInt&) const;
+          CallbackType ui_callback, si_callback;
+
+          IntegerCompareOp(CallbackType callback_)
+            : ui_callback(callback_), si_callback(callback_) {}
+
+          IntegerCompareOp(CallbackType ui_callback_, CallbackType si_callback_)
+            : ui_callback(ui_callback_), si_callback(si_callback_) {}
+
+          llvm::Constant* operator () (ConstantBuilder& builder, BinaryOperation::Ptr term) const {
+            llvm::APInt lhs = builder.build_constant_integer(term->lhs());
+            llvm::APInt rhs = builder.build_constant_integer(term->rhs());
+            bool pred_passed;
+            if (cast<IntegerType>(term->lhs()->type())->is_signed())
+              pred_passed = (lhs.*si_callback)(rhs);
+            else
+              pred_passed = (lhs.*ui_callback)(rhs);
+            return pred_passed ? llvm::ConstantInt::getTrue(builder.llvm_context()) : llvm::ConstantInt::getFalse(builder.llvm_context());
           }
         };
 
@@ -120,11 +200,28 @@ namespace Psi {
             .add<ArrayValue>(array_value_callback)
             .add<StructValue>(struct_value_callback)
             .add<UndefinedValue>(undefined_value_callback)
-            .add<PointerCast>(pointer_cast_callback)
             .add<FunctionSpecialize>(function_specialize_callback)
+            .add<PointerCast>(pointer_cast_callback)
+            .add<PointerOffset>(pointer_offset_callback)
+            .add<StructElement>(struct_element_callback)
+            .add<StructElementPtr>(struct_element_ptr_callback)
+            .add<StructElementOffset>(struct_element_offset_callback)
+            .add<ArrayElementPtr>(array_element_ptr_callback)
+            .add<SelectValue>(select_value_callback)
             .add<IntegerAdd>(IntegerBinaryOp(&llvm::APInt::operator +))
             .add<IntegerMultiply>(IntegerBinaryOp(&llvm::APInt::operator *))
-            .add<IntegerDivide>(IntegerBinaryOp(&llvm::APInt::udiv, &llvm::APInt::sdiv));
+            .add<IntegerDivide>(IntegerBinaryOp(&llvm::APInt::udiv, &llvm::APInt::sdiv))
+            .add<IntegerNegative>(IntegerUnaryOp(&llvm::APInt::operator -))
+            .add<BitAnd>(IntegerBinaryOp(&llvm::APInt::operator &))
+            .add<BitOr>(IntegerBinaryOp(&llvm::APInt::operator |))
+            .add<BitXor>(IntegerBinaryOp(&llvm::APInt::operator ^))
+            .add<BitNot>(IntegerUnaryOp(&llvm::APInt::operator ~))
+            .add<IntegerCompareEq>(IntegerCompareOp(&llvm::APInt::eq))
+            .add<IntegerCompareNe>(IntegerCompareOp(&llvm::APInt::ne))
+            .add<IntegerCompareGt>(IntegerCompareOp(&llvm::APInt::ugt, &llvm::APInt::sgt))
+            .add<IntegerCompareLt>(IntegerCompareOp(&llvm::APInt::ult, &llvm::APInt::slt))
+            .add<IntegerCompareGe>(IntegerCompareOp(&llvm::APInt::uge, &llvm::APInt::sge))
+            .add<IntegerCompareLe>(IntegerCompareOp(&llvm::APInt::ule, &llvm::APInt::sle));
         }
       };
       

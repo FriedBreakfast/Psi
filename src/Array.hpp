@@ -50,7 +50,7 @@ namespace Psi {
     ArrayPtr(const ArrayPtr& src) : ArrayWithLength<T>(src.get(), src.size()) {}
     template<typename U> ArrayPtr(const ArrayWithLength<U>& src) : ArrayWithLength<T>(src.get(), src.size()) {}
     template<typename U, typename Alloc>
-    ArrayPtr(const std::vector<U, Alloc>& src) : ArrayWithLength<T>(&src.front(), src.size()) {}
+    ArrayPtr(const std::vector<U, Alloc>& src) : ArrayWithLength<T>(src.empty() ? NULL : &src.front(), src.size()) {}
     
     ArrayPtr& operator = (const ArrayPtr& src) {
       this->m_ptr = src.m_ptr;
