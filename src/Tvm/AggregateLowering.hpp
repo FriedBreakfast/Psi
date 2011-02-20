@@ -21,20 +21,27 @@ namespace Psi {
     public:
       class Type {
         Term *m_stack_type, *m_heap_type;
+        Term *m_size, *m_alignment;
         
       public:
         /// \brief Constructor for unknown types
-        Type() : m_stack_type(0), m_heap_type(0) {}
+        Type(Term *size, Term *alignment) : m_stack_type(0), m_heap_type(0), m_size(size), m_alignment(alignment) {}
         /// \brief Constructor for types which are the same on the stack and heap
-        explicit Type(Term *type) : m_stack_type(type), m_heap_type(type) {}
+        Type(Term *size, Term *alignment, Term *type) : m_stack_type(type), m_heap_type(type), m_size(size), m_alignment(alignment) {}
         /// \brief Constructor for types which are different on the stack and heap
-        Type(Term *stack_type, Term *heap_type) : m_stack_type(stack_type), m_heap_type(heap_type) {}
+        Type(Term *size, Term *alignment, Term *stack_type, Term *heap_type) : m_stack_type(stack_type), m_heap_type(heap_type), m_size(size), m_alignment(alignment) {}
         
         /// \brief Get the type used to represent this type on the stack
         Term *stack_type() const {return m_stack_type;}
         
         /// \brief Get the type used to represent this type on the heap
         Term *heap_type() const {return m_heap_type;}
+        
+        /// \brief Get the size of this type in a suitable form for later passes
+        Term *size() const {return m_size;}
+        
+        /// \brief Get the alignment of this type in a suitable form for later passes
+        Term *alignment() const {return m_alignment;}
       };
       
       /**
@@ -118,6 +125,22 @@ namespace Psi {
          * if it is a variable it will be created using the alloca instruction.
          */
         virtual Term* store_value(Term *value, Term *alloc_type, Term *alloc_count, Term *alloc_alignment) = 0;
+        
+        /**
+         * \brief \em Store a type value.
+         * 
+         * This stores the value (size and alignment) of a type to memory, also
+         * creating the memory to store the value in. This is distinct from
+         * store_value since \c size and \c alignment are values in the
+         * rewritten, not original, module.
+         * 
+         * \param size Size of the type (this value should belong to the target
+         * context).
+         * 
+         * \param alignment Alignment of the type (this value should belong to
+         * the target context).
+         */
+        virtual Term* store_type(Term *size, Term *alignment) = 0;
 
         Term* rewrite_value_stack(Term*);
         Term* rewrite_value_ptr(Term*);
@@ -150,6 +173,7 @@ namespace Psi {
         virtual Value load_value(Term*, Term*);
         Value load_value(Term*, Term*, bool);
         virtual Term* store_value(Term*, Term*, Term*, Term*);
+        virtual Term* store_type(Term*, Term*);
         Term* store_value(Term*, Term*);
 
         virtual Type rewrite_type(Term*);
@@ -161,6 +185,7 @@ namespace Psi {
         ModuleLevelRewriter(AggregateLoweringPass*);
         virtual Value load_value(Term*, Term*);
         virtual Term* store_value(Term*, Term*, Term*, Term*);
+        virtual Term* store_type(Term*, Term*);
       };
       
       struct TypeSizeAlignment {
@@ -238,11 +263,6 @@ namespace Psi {
         virtual Term* convert_value(Term *value, Term *type) = 0;
 
         /**
-         * \brief Get the size and alignment of a type.
-         */
-        virtual TypeSizeAlignment type_size_alignment(Term *type) = 0;
-
-        /**
          * \brief Get the type with alignment closest to the specified alignment.
          * 
          * \return A type with an alignment is less than or equal to \c aligment.
@@ -250,6 +270,16 @@ namespace Psi {
          * pair is the type, the second member of the pair is the size of the first.
          */
         virtual std::pair<Term*,Term*> type_from_alignment(Term *alignment) = 0;
+        
+        /**
+         * \brief Get the size and alignment of a type.
+         * 
+         * This should only be used for primitive types (note that this includes
+         * pointers). Aggregate types are handled internally by AggregateLoweringPass.
+         * 
+         * \param type A primitive type.
+         */
+        virtual TypeSizeAlignment type_size_alignment(Term *type) = 0;
       };
 
     private:
@@ -260,10 +290,14 @@ namespace Psi {
 
       struct GlobalBuildStatus {
         GlobalBuildStatus(Context&);
-        GlobalBuildStatus(Term*, Term*, Term*, Term*);
+        GlobalBuildStatus(Term*, Term*, Term*, Term*, Term*);
         std::vector<Term*> elements;
         /// \brief Size of the entries in elements as a sequence (not including end padding to reach a multiple of alignment)
         Term* elements_size;
+        /// \brief Actual alignment of the first element in this set
+        Term* first_element_alignment;
+        /// \brief Largest alignment of any elements in this set
+        Term* max_element_alignment;
         /// \brief Desired size of this set of elements.
         Term* size;
         /// \brief Desired alignment of this set of elements.
@@ -274,6 +308,7 @@ namespace Psi {
       GlobalBuildStatus rewrite_global_value(Term*);
       void global_append(GlobalBuildStatus&, const GlobalBuildStatus&, bool);
       void global_pad_to_size(GlobalBuildStatus&, Term*, Term*, bool);
+      void global_group(GlobalBuildStatus&, bool);
       virtual void update_implementation(bool);
 
     public:
@@ -307,6 +342,23 @@ namespace Psi {
        * alloca'd pointer.
        */
       bool remove_stack_arrays;
+      
+      /**
+       * Whether instances of \c sizeof and \c alignof on aggregate types
+       * should be replaced using explicit calculations.
+       * 
+       * For primitive types, the target can alter behaviour by changing
+       * TargetCallback::type_size_alignment.
+       * 
+       * Note that if \c remove_only_unknown is not set all aggregate types are
+       * removed anyway, so the value of this flag is irrelevent.
+       */
+      bool remove_sizeof;
+      
+      /**
+       * Force all pointer arithmetic to take place on byte pointers.
+       */
+      bool pointer_arithmetic_to_bytes;
       
       /**
        * Whether globals should still be represented hierarchically

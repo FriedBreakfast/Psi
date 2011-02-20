@@ -32,11 +32,13 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(ReturnDependent) {
       const char *src =
-        "%f = function(%a:type, %b:%a) > %a {\n"
-        "  return %b;\n"
+        "%f = function(%a:type, %b:pointer %a, %c:pointer %a) > empty {\n"
+        "  %x = load %b;\n"
+        "  store %x %c;\n"
+        "  return empty_v;\n"
         "};\n";
 
-      typedef void (*callback_type) (void*,const void*,const void*);
+      typedef void (*callback_type) (const void*,const void*,void*);
       callback_type callback = reinterpret_cast<callback_type>(jit_single("f", src));
 
       // a decent data size is required - previously a test of less
@@ -48,7 +50,7 @@ namespace Psi {
       char result_data[sizeof(data)];
       // Set to an incorrect value
       std::fill_n(result_data, sizeof(result_data), 'x');
-      callback(result_data, &data_meta, data);
+      callback(&data_meta, data, result_data);
       BOOST_CHECK_EQUAL_COLLECTIONS(result_data, result_data+sizeof(result_data),
 				    data, data+sizeof(data));
     }

@@ -13,22 +13,32 @@ namespace Psi {
   namespace Tvm {
     struct AggregateLoweringPass::TypeTermRewriter {
       static Type array_type_rewrite(AggregateLoweringRewriter& rewriter, ArrayType::Ptr term) {
-        if (!rewriter.pass().remove_only_unknown)
-          return Type();
-
         Term *length = rewriter.rewrite_value_stack(term->length());
         Type element_type = rewriter.rewrite_type(term->element_type());
+        Term *size = FunctionalBuilder::mul(length, element_type.size());
+        Term *alignment = element_type.alignment();
+        
         Term *stack_type = 0, *heap_type = 0;
-        if (element_type.stack_type() && !rewriter.pass().remove_stack_arrays)
-          stack_type = FunctionalBuilder::array_type(element_type.stack_type(), length);
-        if (element_type.heap_type())
-          heap_type = FunctionalBuilder::array_type(element_type.heap_type(), length);
-        return Type(stack_type, heap_type);
+        if (rewriter.pass().remove_only_unknown) {
+          if (element_type.stack_type() && !rewriter.pass().remove_stack_arrays)
+            stack_type = FunctionalBuilder::array_type(element_type.stack_type(), length);
+          
+          if (element_type.heap_type()) {
+            heap_type = FunctionalBuilder::array_type(element_type.heap_type(), length);
+            
+            if (!rewriter.pass().remove_sizeof) {
+              size = FunctionalBuilder::type_size(heap_type);
+              alignment = FunctionalBuilder::type_alignment(heap_type);
+            }
+          }
+        }
+        
+        return Type(size, alignment, stack_type, heap_type);
       }
 
       static Type struct_type_rewrite(AggregateLoweringRewriter& rewriter, StructType::Ptr term) {
-        if (!rewriter.pass().remove_only_unknown)
-          return Type();
+        Term *size = FunctionalBuilder::size_value(rewriter.context(), 0);
+        Term *alignment = FunctionalBuilder::size_value(rewriter.context(), 1);
         
         ScopedArray<Term*> stack_members(term->n_members()), heap_members(term->n_members());
         bool stack_simple = true, heap_simple = true;
@@ -38,17 +48,32 @@ namespace Psi {
           stack_simple = stack_simple && member_type.stack_type();
           heap_members[i] = member_type.heap_type();
           heap_simple = heap_simple && member_type.heap_type();
+          
+          size = FunctionalBuilder::add(FunctionalBuilder::align_to(size, member_type.alignment()), member_type.size());
+          alignment = FunctionalBuilder::max(alignment, member_type.alignment());
         }
         
-        Term *stack_type = stack_simple ? FunctionalBuilder::struct_type(rewriter.context(), stack_members) : 0;
-        Term *heap_type = heap_simple ? FunctionalBuilder::struct_type(rewriter.context(), heap_members) : 0;
+        Term *stack_type = 0, *heap_type = 0;
+        if (rewriter.pass().remove_only_unknown) {
+          if (stack_simple)
+            stack_type = FunctionalBuilder::struct_type(rewriter.context(), stack_members);
+          
+          if (heap_simple) {
+            heap_type = FunctionalBuilder::struct_type(rewriter.context(), heap_members);
+            
+            if (!rewriter.pass().remove_sizeof) {
+              size = FunctionalBuilder::type_size(heap_type);
+              alignment = FunctionalBuilder::type_alignment(heap_type);
+            }
+          }
+        }
         
-        return Type(stack_type, heap_type);
+        return Type(size, alignment, stack_type, heap_type);
       }
 
       static Type union_type_rewrite(AggregateLoweringRewriter& rewriter, UnionType::Ptr term) {
-        if (!rewriter.pass().remove_only_unknown || rewriter.pass().remove_all_unions)
-          return Type();
+        Term *size = FunctionalBuilder::size_value(rewriter.context(), 0);
+        Term *alignment = FunctionalBuilder::size_value(rewriter.context(), 1);
         
         ScopedArray<Term*> stack_members(term->n_members()), heap_members(term->n_members());
         bool stack_simple = true, heap_simple = true;
@@ -58,27 +83,54 @@ namespace Psi {
           stack_simple = stack_simple && member_type.stack_type();
           heap_members[i] = member_type.heap_type();
           heap_simple = heap_simple && member_type.heap_type();
+          
+          size = FunctionalBuilder::max(size, member_type.size());
+          alignment = FunctionalBuilder::max(alignment, member_type.alignment());
         }
         
-        Term *stack_type = stack_simple ? FunctionalBuilder::union_type(rewriter.context(), stack_members) : 0;
-        Term *heap_type = heap_simple ? FunctionalBuilder::union_type(rewriter.context(), heap_members) : 0;
+        Term *stack_type = 0, *heap_type = 0;
+        if (rewriter.pass().remove_only_unknown && !rewriter.pass().remove_all_unions) {
+          if (stack_simple)
+            stack_type = FunctionalBuilder::union_type(rewriter.context(), stack_members);
+          
+          if (heap_simple) {
+            heap_type = FunctionalBuilder::union_type(rewriter.context(), heap_members);
+            
+            if (!rewriter.pass().remove_sizeof) {
+              size = FunctionalBuilder::type_size(heap_type);
+              alignment = FunctionalBuilder::type_alignment(heap_type);
+            }
+          }
+        }
         
-        return Type(stack_type, heap_type);
+        return Type(size, alignment, stack_type, heap_type);
+      }
+      
+      static Type simple_type_helper(AggregateLoweringRewriter& rewriter, Term *rewritten_type) {
+        TypeSizeAlignment size_align = rewriter.pass().target_callback->type_size_alignment(rewritten_type);
+        return Type(size_align.size, size_align.alignment, rewritten_type);
       }
       
       static Type pointer_type_rewrite(AggregateLoweringRewriter& rewriter, PointerType::Ptr) {
-        Term *ptr_type = FunctionalBuilder::byte_pointer_type(rewriter.context());
-        return Type(ptr_type, ptr_type);
+        return simple_type_helper(rewriter, FunctionalBuilder::byte_pointer_type(rewriter.context()));
       }
       
-      static Type unknown_type_rewrite(AggregateLoweringRewriter&, MetatypeValue::Ptr) {
-        return Type();
+      static Type metatype_rewrite(AggregateLoweringRewriter& rewriter, Metatype::Ptr term) {
+        Term *size = FunctionalBuilder::size_type(term->context());
+        Term *metatype_struct = FunctionalBuilder::struct_type(term->context(), StaticArray<Term*,2>(size, size));
+        return rewriter.rewrite_type(metatype_struct);
+      }
+      
+      static Type unknown_type_rewrite(AggregateLoweringRewriter& rewriter, MetatypeValue::Ptr term) {
+        Term *size = rewriter.rewrite_value_stack(term->size());
+        Term *alignment = rewriter.rewrite_value_stack(term->alignment());
+        return Type(size, alignment);
       }
       
       static Type default_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *term) {
         PSI_ASSERT(term->is_type());
         PSI_ASSERT(term->n_parameters() == 0);
-        return Type(term->rewrite(rewriter.context(), StaticArray<Term*,0>()));
+        return simple_type_helper(rewriter, term->rewrite(rewriter.context(), StaticArray<Term*,0>()));
       }
       
       typedef TermOperationMap<FunctionalTerm, Type, AggregateLoweringRewriter&> CallbackMap;
@@ -89,6 +141,7 @@ namespace Psi {
           .add<ArrayType>(array_type_rewrite)
           .add<StructType>(struct_type_rewrite)
           .add<UnionType>(union_type_rewrite)
+          .add<Metatype>(metatype_rewrite)
           .add<MetatypeValue>(unknown_type_rewrite)
           .add<PointerType>(pointer_type_rewrite);
       }
@@ -98,13 +151,14 @@ namespace Psi {
       AggregateLoweringPass::TypeTermRewriter::callback_map(AggregateLoweringPass::TypeTermRewriter::callback_map_initializer());
       
     struct AggregateLoweringPass::FunctionalTermRewriter {
-      static Value aggregate_type_rewrite(AggregateLoweringRewriter& rewriter, Term *term) {
+      static Value type_rewrite(AggregateLoweringRewriter& rewriter, Term *term) {
         Type ty = rewriter.rewrite_type(term);
-        if (ty.heap_type())
-          return Value(ty.heap_type(), true);
-        
-        TypeSizeAlignment size_alignment = rewriter.pass().target_callback->type_size_alignment(term);
-        return Value(FunctionalBuilder::type_value(size_alignment.size, size_alignment.alignment), true);
+        Type metatype = rewriter.rewrite_type(term->type());
+        if (metatype.stack_type()) {
+          return Value(FunctionalBuilder::struct_value(rewriter.context(), StaticArray<Term*,2>(ty.size(), ty.alignment())), true);
+        } else {
+          return Value(rewriter.store_type(ty.size(), ty.alignment()), false);
+        }
       }
 
       static Value default_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *term) {
@@ -114,6 +168,13 @@ namespace Psi {
         for (unsigned i = 0; i != n_parameters; ++i)
           parameters[i] = rewriter.rewrite_value_stack(term->parameter(i));
         return Value(term->rewrite(rewriter.context(), parameters), true);
+      }
+      
+      static Value number_value_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *term) {
+        PSI_ASSERT(term->n_parameters() == 1);
+        Type ty = rewriter.rewrite_type(term->parameter(0));
+        PSI_ASSERT(ty.stack_type());
+        return Value(term->rewrite(rewriter.context(), StaticArray<Term*,1>(ty.stack_type())), true);
       }
       
       static Value aggregate_value_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *term) {
@@ -262,21 +323,32 @@ namespace Psi {
       }
       
       static Value metatype_size_rewrite(AggregateLoweringRewriter& rewriter, MetatypeSize::Ptr term) {
-        Type ty = rewriter.rewrite_type(term->parameter());
-        if (ty.heap_type())
-          return Value(FunctionalBuilder::type_size(ty.heap_type()), true);
-        
-        MetatypeValue::Ptr meta = cast<MetatypeValue>(rewriter.rewrite_value_stack(term->parameter()));
-        return Value(meta->size(), true);
+        return Value(rewriter.rewrite_type(term->parameter()).size(), true);
       }
       
       static Value metatype_alignment_rewrite(AggregateLoweringRewriter& rewriter, MetatypeAlignment::Ptr term) {
-        Type ty = rewriter.rewrite_type(term->parameter());
-        if (ty.heap_type())
-          return Value(FunctionalBuilder::type_alignment(ty.heap_type()), true);
+        return Value(rewriter.rewrite_type(term->parameter()).alignment(), true);
+      }
+      
+      static Value pointer_offset_rewrite(AggregateLoweringRewriter& rewriter, PointerOffset::Ptr term) {
+        Term *base_value = rewriter.rewrite_value_stack(term->pointer());
+        Term *offset = rewriter.rewrite_value_stack(term->offset());
         
-        MetatypeValue::Ptr meta = cast<MetatypeValue>(rewriter.rewrite_value_stack(term->parameter()));
-        return Value(meta->alignment(), true);
+        Type ty = rewriter.rewrite_type(term->type()->target_type());
+        if (ty.heap_type() && !rewriter.pass().pointer_arithmetic_to_bytes) {
+          Term *cast_base = FunctionalBuilder::pointer_cast(base_value, ty.heap_type());
+          Term *ptr = FunctionalBuilder::pointer_offset(cast_base, offset);
+          Term *result = FunctionalBuilder::pointer_cast(ptr, FunctionalBuilder::byte_type(rewriter.context()));
+          return Value(result, true);
+        } else {
+          Term *new_offset = FunctionalBuilder::mul(ty.size(), offset);
+          Term *result = FunctionalBuilder::pointer_offset(base_value, new_offset);
+          return Value(result, true);
+        }
+      }
+      
+      static Value pointer_cast_rewrite(AggregateLoweringRewriter& rewriter, PointerCast::Ptr term) {
+        return rewriter.rewrite_value(term->pointer());
       }
 
       typedef TermOperationMap<FunctionalTerm, Value, AggregateLoweringRewriter&> CallbackMap;
@@ -284,9 +356,16 @@ namespace Psi {
       
       static CallbackMap::Initializer callback_map_initializer() {
         return CallbackMap::initializer(default_rewrite)
-          .add<ArrayType>(aggregate_type_rewrite)
-          .add<StructType>(aggregate_type_rewrite)
-          .add<UnionType>(aggregate_type_rewrite)
+          .add<ArrayType>(type_rewrite)
+          .add<StructType>(type_rewrite)
+          .add<UnionType>(type_rewrite)
+          .add<PointerType>(type_rewrite)
+          .add<IntegerType>(type_rewrite)
+          .add<FloatType>(type_rewrite)
+          .add<EmptyType>(type_rewrite)
+          .add<ByteType>(type_rewrite)
+          .add<IntegerValue>(number_value_rewrite)
+          .add<FloatValue>(number_value_rewrite)
           .add<ArrayValue>(aggregate_value_rewrite)
           .add<StructValue>(aggregate_value_rewrite)
           .add<UnionValue>(aggregate_value_rewrite)
@@ -298,7 +377,9 @@ namespace Psi {
           .add<UnionElementPtr>(union_element_ptr_rewrite)
           .add<StructElementOffset>(struct_element_offset_rewrite)
           .add<MetatypeSize>(metatype_size_rewrite)
-          .add<MetatypeAlignment>(metatype_alignment_rewrite);
+          .add<MetatypeAlignment>(metatype_alignment_rewrite)
+          .add<PointerOffset>(pointer_offset_rewrite)
+          .add<PointerCast>(pointer_cast_rewrite);
       }
     };
 
@@ -408,11 +489,19 @@ namespace Psi {
         return type_it->second;
       
       FunctionalTerm *func_type = dyn_cast<FunctionalTerm>(type);
-      if (!func_type)
-        return Type();
+      if (!func_type) {
+        // The only way a non-functional term makes sense here is from a function parameter,
+        // in which case the size and alignment values should have been created by the entry
+        // sequence.
+        ValueMapType::iterator size_it = m_value_map.find(FunctionalBuilder::type_size(type));
+        ValueMapType::iterator alignment_it = m_value_map.find(FunctionalBuilder::type_alignment(type));
+        if ((size_it == m_value_map.end()) || (alignment_it == m_value_map.end()))
+          throw TvmInternalError("Metatype has been incorrectly handled by function call entry lowering");
+        return Type(size_it->second.value(), alignment_it->second.value());
+      }
       
       Type result = TypeTermRewriter::callback_map.call(*this, func_type);
-      m_type_map[type] = result;
+      m_type_map.insert(std::make_pair(type, result));
       return result;
     }
     
@@ -475,6 +564,27 @@ namespace Psi {
       Term *ptr = builder().alloca_(alloc_type, alloc_count, alloc_alignment);
       store_value(value, ptr);
       return ptr;
+    }
+    
+    Term* AggregateLoweringPass::FunctionRunner::store_type(Term *size, Term *alignment) {
+      Term *ptr;
+      Term *byte_type = FunctionalBuilder::byte_type(context());
+      Term *size_type = FunctionalBuilder::size_type(context());
+      
+      Type metatype = rewrite_type(FunctionalBuilder::type_type(pass().source_module()->context()));
+
+      if (metatype.heap_type()) {
+        ptr = builder().alloca_(metatype.heap_type());
+        ptr = FunctionalBuilder::pointer_cast(ptr, size_type);
+      } else {
+        ptr = builder().alloca_(size_type, 2);
+      }
+      
+      builder().store(size, ptr);
+      Term *alignment_ptr = FunctionalBuilder::pointer_offset(ptr, FunctionalBuilder::size_value(context(), 1));
+      builder().store(alignment, alignment_ptr);
+      
+      return FunctionalBuilder::pointer_cast(ptr, byte_type);
     }
 
     /**
@@ -723,6 +833,10 @@ namespace Psi {
     Term* AggregateLoweringPass::ModuleLevelRewriter::store_value(Term *value, Term *alloc_type, Term *alloc_count, Term *alloc_alignment) {
       PSI_FAIL("not implemented");
     }
+    
+    Term* AggregateLoweringPass::ModuleLevelRewriter::store_type(Term *size, Term *alignment) {
+      PSI_FAIL("not implemented");
+    }
 
     /**
      * Initialize a global variable build with no elements, zero size and minimum alignment.
@@ -736,8 +850,13 @@ namespace Psi {
     /**
      * Initialize a global variable build with one element, and the specified sizes and alignment.
      */
-    AggregateLoweringPass::GlobalBuildStatus::GlobalBuildStatus(Term *element, Term *elements_size_, Term *size_, Term *alignment_)
-    : elements(1, element), elements_size(elements_size_), size(size_), alignment(alignment_) {
+    AggregateLoweringPass::GlobalBuildStatus::GlobalBuildStatus(Term *element, Term *element_size_, Term *element_alignment_, Term *size_, Term *alignment_)
+    : elements(1, element),
+    elements_size(element_size_),
+    first_element_alignment(element_alignment_),
+    max_element_alignment(element_alignment_),
+    size(size_),
+    alignment(alignment_) {
     }
 
     /**
@@ -771,14 +890,36 @@ namespace Psi {
     void AggregateLoweringPass::global_append(GlobalBuildStatus& status, const GlobalBuildStatus& child, bool is_value) {
       Term *child_start = FunctionalBuilder::align_to(status.size, child.alignment);
       if (!child.elements.empty()) {
-        Term *first_alignment = target_callback->type_size_alignment(is_value ? child.elements.front()->type() : child.elements.front()).alignment;
-        global_pad_to_size(status, child_start, first_alignment, is_value);
+        global_pad_to_size(status, child_start, child.first_element_alignment, is_value);
         status.elements.insert(status.elements.end(), child.elements.begin(), child.elements.end());
         status.elements_size = FunctionalBuilder::add(child_start, child.elements_size);
       }
 
       status.size = FunctionalBuilder::add(child_start, child.size);
       status.alignment = FunctionalBuilder::max(status.alignment, child.alignment);
+      status.max_element_alignment = FunctionalBuilder::max(status.max_element_alignment, child.max_element_alignment);
+    }
+    
+    /**
+     * If the appropriate flags are set, rewrite the global build status \c status
+     * from a sequence of elements to a single element which is a struct of the
+     * previous elements.
+     * 
+     * \param is_value If \c status represents a value this should be true, otherwise
+     * \c status represents a type.
+     */
+    void AggregateLoweringPass::global_group(GlobalBuildStatus& status, bool is_value) {
+      if (!flatten_globals)
+        return;
+      
+      Term *new_element;
+      if (is_value)
+        new_element = FunctionalBuilder::struct_value(context(), status.elements);
+      else
+        new_element = FunctionalBuilder::struct_type(context(), status.elements);
+      
+      status.elements.assign(1, new_element);
+      status.first_element_alignment = status.max_element_alignment;
     }
 
     /**
@@ -791,38 +932,25 @@ namespace Psi {
      */
     AggregateLoweringPass::GlobalBuildStatus AggregateLoweringPass::rewrite_global_type(Term *value) {
       Type value_ty = global_rewriter().rewrite_type(value->type());
-      if (value_ty.heap_type()) {
-        TypeSizeAlignment size_align = target_callback->type_size_alignment(value_ty.heap_type());
-        return GlobalBuildStatus(value_ty.heap_type(), size_align.size, size_align.size, size_align.alignment);
-      }
+      if (value_ty.stack_type())
+        return GlobalBuildStatus(value_ty.heap_type(), value_ty.size(), value_ty.alignment(), value_ty.size(), value_ty.alignment());
 
       if (ArrayValue::Ptr array_val = dyn_cast<ArrayValue>(value)) {
         GlobalBuildStatus status(context());
         for (unsigned i = 0, e = array_val->length(); i != e; ++i)
           global_append(status, rewrite_global_type(array_val->value(i)), false);
-        
-        if (!flatten_globals) {
-          Term *struct_ty = FunctionalBuilder::struct_type(context(), status.elements);
-          status.elements.assign(1, struct_ty);
-          status.elements_size = target_callback->type_size_alignment(struct_ty).size;
-        }
+        global_group(status, false);
         return status;
       } else if (StructValue::Ptr struct_val = dyn_cast<StructValue>(value)) {
         GlobalBuildStatus status(context());
         for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i)
           global_append(status, rewrite_global_type(struct_val->member_value(i)), false);
-
-        if (!flatten_globals) {
-          Term *struct_ty = FunctionalBuilder::struct_type(context(), status.elements);
-          status.elements.assign(1, struct_ty);
-          status.elements_size = target_callback->type_size_alignment(struct_ty).size;
-        }
+        global_group(status, false);
         return status;
       } else if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(value)) {
         GlobalBuildStatus status = rewrite_global_type(union_val->value());
-        TypeSizeAlignment size_alignment = target_callback->type_size_alignment(union_val->type());
-        status.size = size_alignment.size;
-        status.alignment = size_alignment.alignment;
+        status.size = value_ty.size();
+        status.alignment = value_ty.alignment();
         return status;
       } else {
         PSI_FAIL("unsupported global element");
@@ -831,37 +959,27 @@ namespace Psi {
 
     AggregateLoweringPass::GlobalBuildStatus AggregateLoweringPass::rewrite_global_value(Term *value) {
       Type value_ty = global_rewriter().rewrite_type(value->type());
-      if (value_ty.heap_type()) {
-        TypeSizeAlignment size_align = target_callback->type_size_alignment(value_ty.heap_type());
+      if (value_ty.stack_type()) {
         Term *rewritten_value = m_global_rewriter.rewrite_value_stack(value);
-        return GlobalBuildStatus(rewritten_value, size_align.size, size_align.size, size_align.alignment);
+        return GlobalBuildStatus(rewritten_value, value_ty.size(), value_ty.alignment(), value_ty.size(), value_ty.alignment());
       }
 
       if (ArrayValue::Ptr array_val = dyn_cast<ArrayValue>(value)) {
         GlobalBuildStatus status(context());
         for (unsigned i = 0, e = array_val->length(); i != e; ++i)
           global_append(status, rewrite_global_value(array_val->value(i)), true);
-        
-        if (!flatten_globals) {
-          Term *struct_val = FunctionalBuilder::struct_value(context(), status.elements);
-          status.elements.assign(1, struct_val);
-          status.elements_size = target_callback->type_size_alignment(struct_val->type()).size;
-        }
+        global_group(status, true);
         return status;
       } else if (StructValue::Ptr struct_val = dyn_cast<StructValue>(value)) {
         GlobalBuildStatus status(context());
         for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i)
           global_append(status, rewrite_global_value(struct_val->member_value(i)), true);
-
-        if (!flatten_globals) {
-          Term *struct_val = FunctionalBuilder::struct_value(context(), status.elements);
-          status.elements.assign(1, struct_val);
-          status.elements_size = target_callback->type_size_alignment(struct_val->type()).size;
-        }
+        global_group(status, true);
         return status;
       } else if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(value)) {
         GlobalBuildStatus status = rewrite_global_value(union_val->value());
-        PSI_FAIL("not implemented - change size and alignment");
+        status.size = value_ty.size();
+        status.alignment = value_ty.alignment();
         return status;
       } else {
         PSI_FAIL("unsupported global element");
@@ -883,6 +1001,8 @@ namespace Psi {
     remove_only_unknown(false),
     remove_all_unions(false),
     remove_stack_arrays(false),
+    remove_sizeof(false),
+    pointer_arithmetic_to_bytes(false),
     flatten_globals(false) {
     }
 
@@ -892,6 +1012,8 @@ namespace Psi {
       
       std::vector<std::pair<GlobalVariableTerm*, GlobalVariableTerm*> > rewrite_globals;
       std::vector<std::pair<FunctionTerm*, boost::shared_ptr<FunctionRunner> > > rewrite_functions;
+      
+      Term *byte_type = FunctionalBuilder::byte_type(context());
         
       for (Module::ModuleMemberList::iterator i = source_module()->members().begin(),
            e = source_module()->members().end(); i != e; ++i) {
@@ -920,12 +1042,14 @@ namespace Psi {
           else
             new_var->set_alignment(status.alignment);
 
-          global_rewriter().m_value_map[old_var] = Value(new_var, true);
+          Term *cast_ptr = FunctionalBuilder::pointer_cast(new_var, byte_type);
+          global_rewriter().m_value_map[old_var] = Value(cast_ptr, true);
           rewrite_globals.push_back(std::make_pair(old_var, new_var));
         } else {
           FunctionTerm *old_function = cast<FunctionTerm>(term);
           boost::shared_ptr<FunctionRunner> runner(new FunctionRunner(this, old_function));
-          global_rewriter().m_value_map[old_function] = Value(runner->new_function(), true);
+          Term *cast_ptr = FunctionalBuilder::pointer_cast(runner->new_function(), byte_type);
+          global_rewriter().m_value_map[old_function] = Value(cast_ptr, true);
           rewrite_functions.push_back(std::make_pair(old_function, runner));
         }
       }

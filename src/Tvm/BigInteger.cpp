@@ -288,6 +288,8 @@ namespace Psi {
       if (self_arg) {
         tmp_words.resize(m_words.size(), 0);
         words = tmp_words;
+      } else {
+        std::fill_n(m_words.get(), m_words.size(), 0);
       }
 
       const unsigned half_word_bits = std::numeric_limits<WordType>::digits / 2;
@@ -327,7 +329,7 @@ namespace Psi {
       
       const unsigned word_bits = std::numeric_limits<WordType>::digits;
       
-      std::fill(m_words.get(), m_words.get() + m_words.size(), 0);
+      std::fill_n(m_words.get(), m_words.size(), 0);
 
       int shift = lhs.log2_unsigned() - rhs.log2_unsigned();
       if (shift < 0)
@@ -336,17 +338,17 @@ namespace Psi {
       unsigned word = shift / word_bits;
       WordType bit = 1 << (shift % word_bits);
       
-      
       rhs.shl(rhs, shift);
       while (true) {
-        if (lhs.cmp_unsigned(rhs) > 0) {
+        if (lhs.cmp_unsigned(rhs) >= 0) {
           lhs.subtract(lhs, rhs);
           m_words[word] |= bit;
         }
         
-        if (--shift == 0)
+        if (shift == 0)
           break;
         
+        --shift;
         rhs.lshr(rhs, 1);
         bit >>= 1;
         if (bit == 0) {

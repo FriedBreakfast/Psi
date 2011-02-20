@@ -131,7 +131,7 @@ namespace Psi {
     Term *pointer() const {return get()->parameter(0);}
     /// \brief Get the offset
     Term *offset() const {return get()->parameter(1);}
-    /// \brief Get the type of this cast, cast to a pointer type.
+    /// \brief Get the type of this pointer, cast to a pointer type.
     PointerType::Ptr type() const {return cast<PointerType>(PtrBaseType::type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
     static Ptr get(Term *pointer, Term *offset);

@@ -196,6 +196,7 @@ namespace Psi {
         aggregate_lowering_pass.remove_all_unions = true;
         aggregate_lowering_pass.remove_only_unknown = true;
         aggregate_lowering_pass.remove_stack_arrays = true;
+        aggregate_lowering_pass.remove_sizeof = true;
         aggregate_lowering_pass.update();
         
         for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {

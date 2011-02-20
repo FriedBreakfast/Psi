@@ -477,6 +477,19 @@ namespace Psi {
         return;
       }
       
+      case term_function_parameter: {
+        FunctionParameterTerm *parameter = cast<FunctionParameterTerm>(term);
+        FunctionTerm *function = parameter->function();
+        for (unsigned ii = 0, ie = function->n_parameters(); ii != ie; ++ii) {
+          if (parameter == function->parameter(ii)) {
+            *m_output << boost::format("[function parameter %d]") % ii;
+            return;
+          }
+        }
+        *m_output << "[invalid function parameter]";
+        return;
+      }
+      
       case term_apply:
         PSI_FAIL("not supported");
         

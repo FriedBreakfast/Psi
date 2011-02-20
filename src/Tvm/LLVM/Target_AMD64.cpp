@@ -178,6 +178,12 @@ namespace Psi {
 	    return primitive_element_info(element, amd64_integer);
           } else if (FloatType::Ptr float_ty = dyn_cast<FloatType>(element)) {
             return primitive_element_info(element, (float_ty->width() != FloatType::fp_x86_80) ? amd64_sse : amd64_x87);
+          } else if (isa<EmptyType>(element)) {
+            return ElementTypeInfo(TargetParameterCategory::simple, amd64_no_class, 0, 1, 0);
+          } else if (isa<Metatype>(element)) {
+            Term *size_type = FunctionalBuilder::size_type(element->context());
+            Term *metatype_struct = FunctionalBuilder::struct_type(element->context(), StaticArray<Term*,2>(size_type, size_type));
+            return get_element_info(rewriter, metatype_struct);
 	  } else {
 	    PSI_ASSERT_MSG(!dyn_cast<FunctionTypeParameterTerm>(element) && !dyn_cast<FunctionParameterTerm>(element),
 			   "low-level parameter type should not depend on function type parameters");

@@ -123,54 +123,27 @@ namespace Psi {
       }
       
       TargetCommon::TypeSizeAlignmentLiteral TargetCommon::type_size_alignment_literal(Term *type) {
-        TypeSizeAlignmentLiteral result;
-        
         if (PointerType::Ptr pointer_ty = dyn_cast<PointerType>(type)) {
+          TypeSizeAlignmentLiteral result;
           result.size = m_target_data->getPointerSize();
           result.alignment = m_target_data->getPointerABIAlignment();
-        } else if (StructType::Ptr struct_ty = dyn_cast<StructType>(type)) {
-          result.size = 0;
-          result.alignment = 1;
-          
-          for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
-            TypeSizeAlignmentLiteral child = type_size_alignment_literal(struct_ty->member_type(i));
-            result.size = ((result.size + child.alignment - 1) & ~(child.alignment - 1)) + child.size;
-            result.alignment = std::max(result.alignment, child.alignment);
-          }
-          
-          result.size = (result.size + result.alignment - 1) & ~(result.alignment - 1);
-        } else if (ArrayType::Ptr array_ty = dyn_cast<ArrayType>(type)) {
-          result = type_size_alignment_literal(array_ty->element_type());
-          boost::optional<unsigned> length = cast<IntegerValue>(array_ty->length())->value().unsigned_value();
-          if (!length)
-            throw BuildError("array length out of range");
-          result.size *= *length;
-        } else if (UnionType::Ptr union_ty = dyn_cast<UnionType>(type)) {
-          result.size = 0;
-          result.alignment = 1;
-          
-          for (unsigned i = 0, e = union_ty->n_members(); i != e; ++i) {
-            TypeSizeAlignmentLiteral child = type_size_alignment_literal(union_ty->member_type(i));
-            result.size = std::max(result.size, child.size);
-            result.alignment = std::max(result.alignment, child.alignment);
-          }
-
-          result.size = (result.size + result.alignment - 1) & ~(result.alignment - 1);
+          return result;
         } else if (isa<BooleanType>(type)) {
-          result = type_size_alignment_simple(llvm::Type::getInt1Ty(context()));
+          return  type_size_alignment_simple(llvm::Type::getInt1Ty(context()));
         } else if (isa<ByteType>(type)) {
-          result = type_size_alignment_simple(llvm::Type::getInt8Ty(context()));
+          return type_size_alignment_simple(llvm::Type::getInt8Ty(context()));
         } else if (IntegerType::Ptr int_ty = dyn_cast<IntegerType>(type)) {
-          result = type_size_alignment_simple(integer_type(context(), m_target_data, int_ty->width()));
+          return type_size_alignment_simple(integer_type(context(), m_target_data, int_ty->width()));
         } else if (FloatType::Ptr float_ty = dyn_cast<FloatType>(type)) {
-          result = type_size_alignment_simple(float_type(context(), float_ty->width()));
-        } else if (isa<Metatype>(type)) {
-          result = type_size_alignment_simple(metatype_type(context(), m_target_data));
+          return type_size_alignment_simple(float_type(context(), float_ty->width()));
+        } else if (isa<EmptyType>(type)) {
+          TypeSizeAlignmentLiteral result;
+          result.size = 0;
+          result.alignment = 1;
+          return result;
         } else {
           throw BuildError("type not recognised by LLVM backend during aggregate lowering");
         }
-        
-        return result;
       }
       
       AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment(Term *type) {
