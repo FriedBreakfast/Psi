@@ -327,11 +327,15 @@ namespace Psi {
       
       const unsigned word_bits = std::numeric_limits<WordType>::digits;
       
+      std::fill(m_words.get(), m_words.get() + m_words.size(), 0);
+
       int shift = lhs.log2_unsigned() - rhs.log2_unsigned();
+      if (shift < 0)
+        return;
+      
       unsigned word = shift / word_bits;
       WordType bit = 1 << (shift % word_bits);
       
-      std::fill(m_words.get(), m_words.get() + m_words.size(), 0);
       
       rhs.shl(rhs, shift);
       while (true) {

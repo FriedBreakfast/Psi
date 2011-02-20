@@ -132,7 +132,7 @@ namespace {
 }
 
 %type<tokens> ID OP
-%type<expressions> NUMBER expression root_expression id_expression op_expression bracket_expression term_list term_list_nonempty function_type
+%type<expressions> NUMBER expression root_expression id_expression op_expression bracket_expression term_list term_list_nonempty function_type statement_expression
 %type<blocks> block_list block_list_nonempty block
 %type<named_expressions> statement_list statement parameter_list parameter_list_nonempty parameter
 %type<globals> root global function constant global_variable
@@ -188,7 +188,7 @@ GLOBAL expression {
 }
 ;
 
-constant: DEFINE expression {
+constant: DEFINE root_expression {
   UniquePtr<Expression> value(list_to_ptr($2));
   $$ = list_one<GlobalElement>(new GlobalDefine(@$, value));
 };
@@ -227,12 +227,12 @@ parameter
 | parameter_list ',' parameter {$$ = list_append($1, $3);}
 ;
 
-parameter: ID ':' expression {
+parameter: ID ':' root_expression {
   UniquePtr<Token> name(list_to_ptr($1));
   UniquePtr<Expression> type(list_to_ptr($3));
   $$ = list_one<NamedExpression>(new NamedExpression(@$, name, type));
 }
-| expression {
+| root_expression {
   UniquePtr<Expression> type(list_to_ptr($1));
   $$ = list_one<NamedExpression>(new NamedExpression(@$, type));
 };
@@ -263,11 +263,11 @@ statement
 ;
 
 statement:
-root_expression ';' {
+statement_expression ';' {
   UniquePtr<Expression> value(list_to_ptr($1));
   $$ = list_one<NamedExpression>(new NamedExpression(@$, value));
 }
-| ID '=' root_expression ';' {
+| ID '=' statement_expression ';' {
   UniquePtr<Token> name(list_to_ptr($1));
   UniquePtr<Expression> value(list_to_ptr($3));
   $$ = list_one<NamedExpression>(new NamedExpression(@$, name, value));
@@ -279,6 +279,14 @@ NUMBER
 | id_expression
 | op_expression
 | '(' root_expression ')' {$$ = $2;}
+;
+
+statement_expression:
+PHI expression ':' phi_node_list {
+  UniquePtr<Expression> type(list_to_ptr($2));
+  $$ = list_one<Expression>(new PhiExpression(@$, type, *$4));
+}
+| root_expression
 ;
 
 root_expression:
@@ -303,10 +311,6 @@ bracket_expression:
 OP term_list {
   UniquePtr<Token> op(list_to_ptr($1));
   $$ = list_one<Expression>(new CallExpression(@$, op, *$2));
-}
-| PHI expression ':' phi_node_list {
-  UniquePtr<Expression> type(list_to_ptr($2));
-  $$ = list_one<Expression>(new PhiExpression(@$, type, *$4));
 }
 | function_type
 ;

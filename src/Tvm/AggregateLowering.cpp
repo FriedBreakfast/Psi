@@ -331,14 +331,17 @@ namespace Psi {
         Type type = runner.rewrite_type(term->stored_type());
         Term *count = runner.rewrite_value_stack(term->count());
         Term *alignment = runner.rewrite_value_stack(term->alignment());
+        Term *stack_ptr;
         if (type.heap_type()) {
-          return Value(runner.builder().alloca_(type.heap_type(), count, alignment), true);
+          stack_ptr = runner.builder().alloca_(type.heap_type(), count, alignment);
         } else {
           Term *type_size = runner.rewrite_value_stack(FunctionalBuilder::type_size(term->stored_type()));
           Term *type_alignment = runner.rewrite_value_stack(FunctionalBuilder::type_alignment(term->stored_type()));
           Term *total_size = FunctionalBuilder::mul(count, type_size);
-          return Value(runner.builder().alloca_(FunctionalBuilder::byte_type(runner.context()), total_size, type_alignment), true);
+          stack_ptr = runner.builder().alloca_(FunctionalBuilder::byte_type(runner.context()), total_size, type_alignment);
         }
+        Term *cast_stack_ptr = FunctionalBuilder::pointer_cast(stack_ptr, FunctionalBuilder::byte_type(runner.context()));
+        return Value(cast_stack_ptr, true);
       }
       
       static Value load_rewrite(FunctionRunner& runner, Load::Ptr term) {
@@ -623,7 +626,8 @@ namespace Psi {
     AggregateLoweringPass::Value AggregateLoweringPass::FunctionRunner::load_value(Term *load_term, Term *ptr, bool copy) {
       Type load_type = rewrite_type(load_term->type());
       if (load_type.stack_type()) {
-        Term *load_insn = builder().load(ptr);
+        Term *cast_ptr = FunctionalBuilder::pointer_cast(ptr, load_type.stack_type());
+        Term *load_insn = builder().load(cast_ptr);
         return (m_value_map[load_term] = Value(load_insn, true));
       }
       

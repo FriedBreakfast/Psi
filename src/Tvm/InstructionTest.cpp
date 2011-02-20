@@ -157,28 +157,47 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(FunctionPointer) {
       const char *src =
-        "%add16 = function (%a:i16,%b:i16) > i16 {\n"
-        "  return (add %a %b);\n"
+        "%pi16 = define pointer i16;\n"
+        "%pi32 = define pointer i32;\n"
+        "\n"
+        "%add16 = function (%a:%pi16,%b:%pi16,%c:%pi16) > empty {\n"
+        "  %av = load %a;\n"
+        "  %bv = load %b;\n"
+        "  store (add %av %bv) %c;\n"
+        "  return empty_v;\n"
         "};\n"
         "\n"
-        "%add32 = function (%a:i32,%b:i32) > i32 {\n"
-        "  return (add %a %b);\n"
+        "%add32 = function (%a:%pi32,%b:%pi32,%c:%pi32) > empty {\n"
+        "  %av = load %a;\n"
+        "  %bv = load %b;\n"
+        "  store (add %av %bv) %c;\n"
+        "  return empty_v;\n"
         "};\n"
         "\n"
-        "%bincb = function (%t:type,%a:%t,%b:%t,%f:(pointer (function (%t,%t) > %t))) > %t {\n"
-        "  %r = call %f %a %b;\n"
-        "  return %r;\n"
+        "%bincb = function (%t:type,%a:pointer %t,%b:pointer %t,%f:pointer (function (pointer %t,pointer %t,pointer %t) > empty),%o:pointer %t) > empty {\n"
+        "  call %f %a %b %o;\n"
+        "  return empty_v;\n"
         "};\n"
         "\n"
-        "%test = function () > bool {\n"
-        "  %rx = call %bincb i32 #i25 #i17 %add32;\n"
-        "  %ry = call %bincb i16 #s44 #s5 %add16;\n"
+        "%test = function (%m : %pi32, %n : %pi16) > bool {\n"
+        "  %x = alloca i32 #up2 #up1;\n"
+        "  store #i25 %x;\n"
+        "  store #i17 (pointer_offset %x #p1);\n"
+        "  call %bincb i32 %x (pointer_offset %x #p1) %add32 %m;\n"
+        "  %y = alloca i16 #up2 #up1;\n"
+        "  store #s44 %y;\n"
+        "  store #s5 (pointer_offset %y #p1);\n"
+        "  call %bincb i16 %y (pointer_offset %y #p1) %add16 %n;\n"
         "  return true;\n"
         "};\n";
 
-      typedef Jit::Boolean (*FuncType) ();
+      typedef Jit::Boolean (*FuncType) (Jit::Int32*,Jit::Int16*);
+      Jit::Int32 i32;
+      Jit::Int16 i16;
       FuncType f = reinterpret_cast<FuncType>(jit_single("test", src));
-      BOOST_CHECK_EQUAL(f(), true);
+      BOOST_CHECK_EQUAL(f(&i32, &i16), true);
+      BOOST_CHECK_EQUAL(i32, 42);
+      BOOST_CHECK_EQUAL(i16, 49);
     }
 
     /*

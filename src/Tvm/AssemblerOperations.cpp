@@ -143,6 +143,8 @@ namespace Psi {
         ("true", BoolValueCallback(true))
         ("false", BoolValueCallback(false))
         ("type", NullaryOpCallback(&FunctionalBuilder::type_type))
+        ("empty", NullaryOpCallback(&FunctionalBuilder::empty_type))
+        ("empty_v", NullaryOpCallback(&FunctionalBuilder::empty_value))
         ("byte", NullaryOpCallback(&FunctionalBuilder::byte_type))
         ("pointer", UnaryOpCallback(&FunctionalBuilder::pointer_type))
         ("add", BinaryOpCallback(&FunctionalBuilder::add))
@@ -161,7 +163,9 @@ namespace Psi {
         ("union_v", BinaryOpCallback(&FunctionalBuilder::union_value))
         ("union_el", BinaryOpCallback(&FunctionalBuilder::union_element))
         ("union_ep", BinaryOpCallback(&FunctionalBuilder::union_element_ptr))
-        ("specialize", TermPlusArrayCallback(&FunctionalBuilder::specialize));
+        ("specialize", TermPlusArrayCallback(&FunctionalBuilder::specialize))
+        ("pointer_cast", BinaryOpCallback(&FunctionalBuilder::pointer_cast))
+        ("pointer_offset", BinaryOpCallback(&FunctionalBuilder::pointer_offset));
 
       template<typename T>
       struct DefaultInstructionCallback {

@@ -3,19 +3,12 @@
 #include "Number.hpp"
 
 #include <boost/make_shared.hpp>
-#include <boost/lexical_cast.hpp>
+#include <boost/format.hpp>
 #include <boost/shared_ptr.hpp>
 
 namespace Psi {
   namespace Tvm {
     class DisassemblerContext {
-      enum DisassemblerMode {
-        mode_module,
-        mode_function,
-        mode_block,
-        mode_term
-      };
-      
       struct TermName {
         std::string name;
         FunctionTerm *context;
@@ -28,13 +21,14 @@ namespace Psi {
         bool operator () (const boost::shared_ptr<TermName>&, const boost::shared_ptr<TermName>&) const;
       };
       
-      DisassemblerMode m_mode;
+      bool m_in_function_mode;
       bool m_function_body;
       std::ostream *m_output;
       
       typedef std::tr1::unordered_map<Term*, boost::shared_ptr<TermName> > TermNameMap;
       TermNameMap m_names;
       std::tr1::unordered_set<Term*> m_visited_terms;
+      std::tr1::unordered_set<Term*> m_defined_terms;
       typedef std::vector<Term*> TermDefinitionList;
       TermDefinitionList m_global_definitions;
       typedef std::tr1::unordered_map<BlockTerm*, TermDefinitionList> LocalTermDefinitionList;
@@ -46,23 +40,23 @@ namespace Psi {
       static boost::shared_ptr<DisassemblerContext::TermName> make_term_name(Term*, FunctionTerm*);
 
       void setup_function(FunctionTerm*);
-      void setup_function_body(FunctionTerm*);
       void setup_block_instructions(BlockTerm*);
       void setup_block_phis(BlockTerm*);
       void setup_term(Term*);
       void setup_term_definition(Term*);
-      std::pair<bool, TermDefinitionList*> setup_term_name(Term *term);
+      void setup_term_name(Term*);
+      TermDefinitionList* term_definition_list(Term*);
       void build_unique_names();
       const std::string& name(Term*);
 
       void print_term(Term*,bool);
-      void print_term_definition(Term*);
+      void print_term_definition(Term*,bool=false);
       void print_functional_term(FunctionalTerm*,bool);
       void print_instruction_term(InstructionTerm*);
       void print_phi_term(PhiTerm*);
       void print_function(FunctionTerm*);
       void print_function_type_term(FunctionTypeTerm*, FunctionTerm* =0);
-      void print_definitions(const TermDefinitionList&, const char *line_prefix="");
+      void print_definitions(const TermDefinitionList&, const char* ="", bool=false);
       void print_block(BlockTerm*, const TermDefinitionList&);
 
     public:
@@ -70,9 +64,7 @@ namespace Psi {
       ~DisassemblerContext();
       
       void run_module(Module*);
-      void run_function(FunctionTerm*);
-      void run_block(BlockTerm*);
-      void run_other(Term*);
+      void run_term(Term*);
     };
 
     DisassemblerContext::TermName::TermName(const std::string& name_, FunctionTerm *context_, bool anonymous_)
@@ -80,7 +72,7 @@ namespace Psi {
     }
     
     DisassemblerContext::DisassemblerContext(std::ostream *output)
-    : m_function_body(false), m_output(output), m_parameter_name_index(0) {
+    : m_in_function_mode(false), m_function_body(false), m_output(output), m_parameter_name_index(0) {
     }
     
     DisassemblerContext::~DisassemblerContext() {
@@ -118,31 +110,31 @@ namespace Psi {
       std::vector<boost::shared_ptr<TermName> > names;
       for (TermNameMap::const_iterator ii = m_names.begin(), ie = m_names.end(); ii != ie; ++ii)
         names.push_back(ii->second);
-      std::sort(names.begin(), names.end(), TermNameSort());
+      std::stable_sort(names.begin(), names.end(), TermNameSort());
       
       std::tr1::unordered_set<std::string> used_names;
       std::tr1::unordered_map<std::string, unsigned> name_indices;
       
-      std::stringstream ss;
+      boost::format name_formatter("%%%s"), number_formatter("%s%s");
       
       for (std::vector<boost::shared_ptr<TermName> >::iterator ii = names.begin(), ie = names.end(); ii != ie; ++ii) {
         TermName& name = **ii;
         std::tr1::unordered_map<std::string, unsigned>::iterator ji = name_indices.insert(std::make_pair(name.name, 0)).first;
-        
+
+        std::string numbered_name;
         while (true) {
-          ss.str("");
-          ss << name.name;
           if (name.anonymous || (ji->second > 0))
-            ss << ji->second;
+            numbered_name = str(number_formatter % name.name % ji->second);
+          else
+            numbered_name = name.name;
           
           ++ji->second;
-          if (used_names.find(ss.str()) == used_names.end())
+          if (used_names.find(numbered_name) == used_names.end())
             break;
         }
         
-        name.name = "%";
-        name.name += ss.str();
-        used_names.insert(ss.str());
+        name.name = str(name_formatter % numbered_name);
+        used_names.insert(numbered_name);
       }
     }
 
@@ -153,17 +145,12 @@ namespace Psi {
     }
 
     void DisassemblerContext::run_module(Module *module) {
-      m_mode = mode_module;
-        
       for (Module::ModuleMemberList::iterator ii = module->members().begin(), ie = module->members().end(); ii != ie; ++ii)
         setup_term_definition(&*ii);
       
       build_unique_names();
       
-      for (TermDefinitionList::iterator ii = m_global_definitions.begin(), ie = m_global_definitions.end(); ii != ie; ++ii) {
-        *m_output << name(*ii) << " = define ";
-        print_term(*ii, false);
-      }
+      print_definitions(m_global_definitions, "", true);
       
       for (Module::ModuleMemberList::iterator ib = module->members().begin(), ii = module->members().begin(), ie = module->members().end(); ii != ie; ++ii) {
         if (ii != ib)
@@ -172,40 +159,52 @@ namespace Psi {
       }
     }
     
-    void DisassemblerContext::run_function(FunctionTerm *function) {
-      m_mode = mode_function;
-      setup_function(function);
-      setup_function_body(function);
-      build_unique_names();
-      print_definitions(m_global_definitions);
-      print_function(function);
-    }
-    
-    void DisassemblerContext::run_block(BlockTerm *block) {
-      m_mode = mode_block;
-      setup_function(block->function());
-      m_function_body = true;
-      setup_block_instructions(block);
-      setup_block_phis(block);
-      m_function_body = false;
-      build_unique_names();
-      print_block(block, m_global_definitions);
-    }
-    
-    void DisassemblerContext::run_other(Term *term) {
-      m_mode = mode_term;
-      setup_term_definition(term);
-      build_unique_names();
-      print_definitions(m_global_definitions);
-      print_term_definition(term);
+    void DisassemblerContext::run_term(Term *term) {
+      switch (term->term_type()) {
+      case term_function: {
+        FunctionTerm *function = cast<FunctionTerm>(term);
+        setup_term_name(function);
+        setup_function(function);
+        build_unique_names();
+        print_definitions(m_global_definitions, "", true);
+        print_term_definition(function);
+        break;
+      }
+      
+      case term_block: {
+        BlockTerm *block = cast<BlockTerm>(term);
+        m_in_function_mode = true;
+        setup_term_name(block);
+        setup_block_instructions(block);
+        setup_block_phis(block);
+        build_unique_names();
+        print_block(block, m_global_definitions);
+        break;
+      }
+      
+      default:
+        m_in_function_mode = true;
+        setup_term_definition(term);
+        build_unique_names();
+        print_definitions(m_global_definitions);
+        
+        switch (term->term_type()) {
+        case term_instruction:
+        case term_phi:
+        case term_function_parameter:
+          print_term_definition(term, true);
+          break;
+          
+        default:
+          break;
+        }
+        break;
+      }
     }
 
     void DisassemblerContext::setup_function(FunctionTerm *function) {
-      for (unsigned ii = 0, ie = function->n_parameters(); ii != ie; ++ii) {
-        Term *param = function->parameter(ii);
-        setup_term(param->type());
-        m_names.insert(std::make_pair(param, make_term_name(param, function)));
-      }
+      for (unsigned ii = 0, ie = function->n_parameters(); ii != ie; ++ii)
+        setup_term_definition(function->parameter(ii));
       
       setup_term(function->result_type());
 
@@ -214,116 +213,138 @@ namespace Psi {
         for (std::vector<BlockTerm*>::iterator ii = blocks.begin(), ie = blocks.end(); ii != ie; ++ii) {
           BlockTerm *block = *ii;
 
-          m_names.insert(std::make_pair(*ii, make_term_name(*ii, function)));
+          setup_term_name(block);
 
           for (BlockTerm::PhiList::iterator ji = block->phi_nodes().begin(), je = block->phi_nodes().end(); ji != je; ++ji)
             m_names.insert(std::make_pair(&*ji, make_term_name(&*ji, function)));
           
           for (BlockTerm::InstructionList::iterator ji = block->instructions().begin(), je = block->instructions().end(); ji != je; ++ji)
             m_names.insert(std::make_pair(&*ji, make_term_name(&*ji, function)));
+
+          for (std::vector<BlockTerm*>::iterator ji = blocks.begin(), je = blocks.end(); ji != je; ++ji) {
+            setup_term_name(*ji);
+            setup_block_instructions(*ji);
+          }
+          
+          for (std::vector<BlockTerm*>::iterator ji = blocks.begin(), je = blocks.end(); ji != je; ++ji) {
+            setup_term_name(*ji);
+            setup_block_phis(*ji);
+          }
         }
       }
     }
     
-    void DisassemblerContext::setup_function_body(FunctionTerm *function) {
-      m_function_body = true;
-      std::vector<BlockTerm*> blocks = function->topsort_blocks();
-      for (std::vector<BlockTerm*>::iterator ii = blocks.begin(), ie = blocks.end(); ii != ie; ++ii)
-        setup_block_instructions(*ii);
-      for (std::vector<BlockTerm*>::iterator ii = blocks.begin(), ie = blocks.end(); ii != ie; ++ii)
-        setup_block_phis(*ii);
-      m_function_body = false;
-    }
-    
     void DisassemblerContext::setup_block_phis(BlockTerm *block) {
-      for (BlockTerm::PhiList::iterator ii = block->phi_nodes().begin(), ie = block->phi_nodes().end(); ii != ie; ++ii) {
-        for (unsigned ji = 0, je = ii->n_incoming(); ji != je; ++ji)
-          setup_term_definition(ii->incoming_value(ji));
-      }
+      for (BlockTerm::PhiList::iterator ii = block->phi_nodes().begin(), ie = block->phi_nodes().end(); ii != ie; ++ii)
+        setup_term_definition(&*ii);
     }
       
     void DisassemblerContext::setup_block_instructions(BlockTerm *block) {
-      for (BlockTerm::InstructionList::iterator ii = block->instructions().begin(), ie = block->instructions().end(); ii != ie; ++ii) {
-        for (unsigned ji = 0, je = ii->n_parameters(); ji != je; ++ji)
-          setup_term_definition(ii->parameter(ji));
-      }
+      for (BlockTerm::InstructionList::iterator ii = block->instructions().begin(), ie = block->instructions().end(); ii != ie; ++ii)
+        setup_term_definition(&*ii);
     }
     
-    std::pair<bool, DisassemblerContext::TermDefinitionList*> DisassemblerContext::setup_term_name(Term *term) {
-      if (!m_visited_terms.insert(term).second)
-        return std::make_pair(false, static_cast<TermDefinitionList*>(0));
+    DisassemblerContext::TermDefinitionList* DisassemblerContext::term_definition_list(Term *term) {
+#ifdef PSI_DEBUG
+      switch (term->term_type()) {
+      case term_global_variable:
+      case term_function:
+      case term_block:
+      case term_phi:
+      case term_function_type_parameter:
+      case term_function_parameter:
+        PSI_FAIL("term type should not go in definition lists");
+        
+      default:
+        break;
+      }
+#endif
 
-      PSI_ASSERT(m_names.find(term) == m_names.end());
-      
       // Should this term be named?
-      bool nameable = true;
       BlockTerm *block = 0;
       FunctionTerm *function = 0;
       if (term->source()) {
         switch (term->source()->term_type()) {
         case term_global_variable:
-        case term_function: break;
+        case term_function:
+          return &m_global_definitions;
+
         case term_block: block = cast<BlockTerm>(term->source()); break;
         case term_phi: block = cast<PhiTerm>(term->source())->block(); break;
         case term_instruction: block = cast<InstructionTerm>(term->source())->block(); break;
-        case term_function_type_parameter: nameable = false; break;
+
+        case term_function_type_parameter: return NULL;
+
         case term_function_parameter:
           function = cast<FunctionParameterTerm>(term->source())->function();
-          if (term->term_type() == term_function_parameter) {
-            nameable = true;
-          } else {
-            block = function->entry();
-            nameable = m_function_body && block;
-          }
+          block = function->entry();
           break;
+
+        default: PSI_FAIL("unexpected source term type");
+        }
+      }
+
+      if (m_in_function_mode || (!block && !function))
+        return &m_global_definitions;
+      
+      if (block)
+        return &m_local_definitions[block];
+      
+      return NULL;
+    }
+    
+    void DisassemblerContext::setup_term_name(Term *term) {
+      // Should this term be named?
+      FunctionTerm *function = 0;
+      if (term->source()) {
+        switch (term->source()->term_type()) {
+        case term_global_variable:
+        case term_function: break;
+        case term_block: function = cast<BlockTerm>(term->source())->function(); break;
+        case term_phi: function = cast<PhiTerm>(term->source())->block()->function(); break;
+        case term_instruction: function = cast<InstructionTerm>(term->source())->block()->function(); break;
+        case term_function_parameter: function = cast<FunctionParameterTerm>(term->source())->function(); break;
+        case term_function_type_parameter: return;
         default: PSI_FAIL("unexpected source term type");
         }
       }
       
-      TermDefinitionList *definition_list = 0;
-      if (nameable) {
-        if (block)
-          function = block->function();
-        
-        m_names.insert(std::make_pair(term, make_term_name(term, function)));
-
-        if (block && (m_mode == mode_module)) {
-          LocalTermDefinitionList::iterator it = m_local_definitions.find(block);
-          PSI_ASSERT(it != m_local_definitions.end());
-          definition_list = &it->second;
-        } else {
-          definition_list = &m_global_definitions;
-        }
-      }
-      
-      return std::make_pair(true, definition_list);
+      m_names.insert(std::make_pair(term, make_term_name(term, function)));
     }
     
     void DisassemblerContext::setup_term_definition(Term* term) {
-      if (!setup_term_name(term).first)
+      if (!m_defined_terms.insert(term).second)
         return;
+      
+      setup_term_name(term);
 
       switch (term->term_type()) {
       case term_global_variable: {
-      GlobalVariableTerm *gvar = cast<GlobalVariableTerm>(term);
+        GlobalVariableTerm *gvar = cast<GlobalVariableTerm>(term);
         setup_term(gvar->value_type());
         if (gvar->value())
           setup_term(gvar->value());
-        return;
+        break;
       }
       
       case term_function: {
         FunctionTerm *function = cast<FunctionTerm>(term);
         setup_function(function);
-        setup_function_body(function);
-        return;
+        break;
+      }
+      
+      case term_function_parameter: {
+        FunctionParameterTerm *param = cast<FunctionParameterTerm>(term);
+        setup_term(param->type());
+        break;
       }
       
       case term_instruction: {
         InstructionTerm *insn = cast<InstructionTerm>(term);
         for (unsigned ii = 0, ie = insn->n_parameters(); ii != ie; ++ii)
           setup_term(insn->parameter(ii));
-        return;
+        m_local_definitions[insn->block()].push_back(insn);
+        break;
       }
       
       case term_phi: {
@@ -332,19 +353,20 @@ namespace Psi {
           setup_term(phi->incoming_block(ii));
           setup_term(phi->incoming_value(ii));
         }
-        return;
+        break;
       }
       
       default:
         setup_term(term);
-        return;
+        break;
       }
     }
     
     void DisassemblerContext::setup_term(Term *term) {
-      std::pair<bool, TermDefinitionList*> name_setup_result = setup_term_name(term);
-      if (!name_setup_result.first)
+      if (!m_visited_terms.insert(term).second)
         return;
+
+      setup_term_name(term);
       
       switch (term->term_type()) {
       case term_apply:
@@ -356,6 +378,9 @@ namespace Psi {
         FunctionalTerm *cast_term = cast<FunctionalTerm>(term);
         for (unsigned ii = 0, ie = cast_term->n_parameters(); ii != ie; ++ii)
           setup_term(cast_term->parameter(ii));
+        
+        if (TermDefinitionList *dl = term_definition_list(term))
+          dl->push_back(term);
         break;
       }
         
@@ -364,27 +389,15 @@ namespace Psi {
         for (unsigned ii = 0, ie = cast_term->n_parameters(); ii != ie; ++ii)
           setup_term(cast_term->parameter_type(ii));
         setup_term(cast_term->result_type());
+
+        if (TermDefinitionList *dl = term_definition_list(term))
+          dl->push_back(term);
         break;
       }
       
-      case term_function_type_parameter:
-      case term_function_parameter:
-      case term_phi:
-      case term_function:
-      case term_block:
-      case term_global_variable:
-        name_setup_result.second = 0;
-        break;
-      
-      case term_instruction:
-        break;
-        
       default:
-        PSI_FAIL("unknown term type");
+        break;
       }
-      
-      if (name_setup_result.second)
-        name_setup_result.second->push_back(term);
     }
     
     void DisassemblerContext::print_term(Term *term, bool bracket) {
@@ -417,19 +430,23 @@ namespace Psi {
       }
     }
     
-    void DisassemblerContext::print_term_definition(Term *term) {
+    void DisassemblerContext::print_term_definition(Term *term, bool global) {
       *m_output << name(term) << " = ";
       
       switch (term->term_type()) {
       case term_functional: {
+        if (global)
+          *m_output << "define ";
         print_functional_term(cast<FunctionalTerm>(term), false);
-        *m_output << '\n';
+        *m_output << ";\n";
         break;
       }
       
       case term_function_type: {
+        if (global)
+          *m_output << "define ";
         print_function_type_term(cast<FunctionTypeTerm>(term));
-        *m_output << '\n';
+        *m_output << ";\n";
         break;
       }
       
@@ -469,7 +486,7 @@ namespace Psi {
     }
    
     void DisassemblerContext::print_function_type_term(FunctionTypeTerm *term, FunctionTerm *use_names) {
-      PSI_ASSERT(term->n_parameters() == use_names->n_parameters());
+      PSI_ASSERT(!use_names || (term->n_parameters() == use_names->n_parameters()));
 
       *m_output << "function (";
       
@@ -477,21 +494,25 @@ namespace Psi {
       unsigned parameter_name_base = m_parameter_name_index;
       m_parameter_name_index += n_parameters;
       
+      boost::format name_formatter("%%%s");
+      
       m_parameter_names.push_back(ParameterNameList::value_type());
       ParameterNameList::value_type& name_list = m_parameter_names.back();
       for (unsigned ii = 0; ii != n_parameters; ++ii) {
         if (ii)
           *m_output << ", ";
-        *m_output << " : ";
-        print_term(term->parameter_type(ii), false);
         
         std::string name;
         if (use_names) {
           name = m_names.find(use_names->parameter(ii))->second->name;
         } else {
-          name = boost::lexical_cast<std::string>(parameter_name_base + ii);
+          name = str(name_formatter % (parameter_name_base + ii));
         }
-        name_list.push_back(boost::lexical_cast<std::string>(parameter_name_base + ii));
+        
+        *m_output << name << " : ";
+        print_term(term->parameter_type(ii), false);
+        
+        name_list.push_back(name);
       }
       
       *m_output << ") > ";
@@ -550,10 +571,13 @@ namespace Psi {
         *m_output << width;
       } else if (FunctionTypeResolvedParameter::Ptr resolved_param = dyn_cast<FunctionTypeResolvedParameter>(term)) {
         ParameterNameList::reverse_iterator it = m_parameter_names.rbegin();
-        PSI_ASSERT(resolved_param->depth() < m_parameter_names.size());
-        std::advance(it, resolved_param->depth());
-        PSI_ASSERT(resolved_param->index() < it->size());
-        *m_output << (*it)[resolved_param->index()];
+        if (resolved_param->depth() < m_parameter_names.size()) {
+          std::advance(it, resolved_param->depth());
+          PSI_ASSERT(resolved_param->index() < it->size());
+          *m_output << (*it)[resolved_param->index()];
+        } else {
+          *m_output << "[unknown parameter]";
+        }
       } else {
         unsigned n_parameters = term->n_parameters();
         if (n_parameters == 0) {
@@ -598,13 +622,12 @@ namespace Psi {
     }
     
     void DisassemblerContext::print_function(FunctionTerm *term) {
-      *m_output << name(term) << " = ";
       print_function_type_term(term->function_type(), term);
       *m_output << " {\n";
       
       std::vector<BlockTerm*> blocks = term->topsort_blocks();
       for (std::vector<BlockTerm*>::iterator ii = blocks.begin(), ie = blocks.end(); ii != ie; ++ii)
-        print_block(*ii, m_local_definitions.find(*ii)->second);
+        print_block(*ii, m_local_definitions[*ii]);
       
       *m_output << "};\n";
     }
@@ -618,10 +641,10 @@ namespace Psi {
       print_definitions(definitions, "  ");
     }
     
-    void DisassemblerContext::print_definitions(const TermDefinitionList& definitions, const char *line_prefix) {
+    void DisassemblerContext::print_definitions(const TermDefinitionList& definitions, const char *line_prefix, bool global) {
       for (TermDefinitionList::const_iterator ii = definitions.begin(), ie = definitions.end(); ii != ie; ++ii) {
         *m_output << line_prefix;
-        print_term_definition(*ii);
+        print_term_definition(*ii, global);
       }
     }
     
@@ -640,13 +663,7 @@ namespace Psi {
      */
     void print_term(std::ostream& os, Term *term) {
       DisassemblerContext context(&os);
-      if (FunctionTerm *function = dyn_cast<FunctionTerm>(term)) {
-        context.run_function(function);
-      } else if (BlockTerm *block = dyn_cast<BlockTerm>(term)) {
-        context.run_block(block);
-      } else {
-        context.run_other(term);
-      }
+      context.run_term(term);
     }
   }
 }
