@@ -841,10 +841,9 @@ namespace Psi {
     /**
      * Initialize a global variable build with no elements, zero size and minimum alignment.
      */
-    AggregateLoweringPass::GlobalBuildStatus::GlobalBuildStatus(Context& context)
-    : elements_size(FunctionalBuilder::size_value(context, 0)),
-    size(FunctionalBuilder::size_value(context, 0)),
-    alignment(FunctionalBuilder::size_value(context, 1)) {
+    AggregateLoweringPass::GlobalBuildStatus::GlobalBuildStatus(Context& context) {
+      first_element_alignment = max_element_alignment = alignment = FunctionalBuilder::size_value(context, 1);
+      elements_size = size = FunctionalBuilder::size_value(context, 0);
     }
     
     /**
