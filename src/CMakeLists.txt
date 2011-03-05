@@ -3,12 +3,7 @@ include_directories(${Boost_INCLUDE_DIRS})
 bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated)
 set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
 
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  add_library(psi-assert SHARED Assert.cpp Assert.hpp)
-  set(PSI_DEBUG_LIBS psi-assert)
-else()
-  set(PSI_DEBUG_LIBS)
-endif()
+add_library(psi-assert SHARED Assert.cpp Assert.hpp)
 
 add_library(psi-tvm SHARED
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
@@ -52,7 +47,7 @@ if(BUILD_TESTING)
   )
 
   set_target_properties(psi-tvm-test PROPERTIES COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
-  target_link_libraries(psi-tvm-test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} psi-tvm)
+  target_link_libraries(psi-tvm-test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} psi-tvm debug psi-assert)
 
   add_test(psi-tvm-test psi-tvm-test)
 endif()
@@ -71,7 +66,7 @@ add_library(psi-llvm MODULE
 )
 
 set_target_properties(psi-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
-target_link_libraries(psi-llvm ${PSI_DEBUG_LIBS} ${LLVM_LIBS})
+target_link_libraries(psi-llvm ${LLVM_LIBS} debug psi-assert)
 
 bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp)
 set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
@@ -82,7 +77,7 @@ add_library(psi SHARED
   ${BISON_Parser_OUTPUTS} Parser.hpp
 )
 
-target_link_libraries(psi psi-tvm)
+target_link_libraries(psi psi-tvm debug psi-assert)
 
 #install(TARGETS psi
 #  LIBRARY DESTINATION lib
