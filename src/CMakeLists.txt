@@ -58,7 +58,6 @@ add_library(psi-llvm MODULE
   Tvm/LLVM/FunctionalConstant.cpp
   Tvm/LLVM/FunctionalInstruction.cpp
   Tvm/LLVM/Instructions.cpp
-  Tvm/LLVM/Primitive.cpp
   Tvm/LLVM/Target.cpp Tvm/LLVM/Target.hpp
   Tvm/LLVM/Target_AMD64.cpp
   Tvm/LLVM/Templates.hpp

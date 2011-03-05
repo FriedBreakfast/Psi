@@ -115,34 +115,6 @@ namespace Psi {
       }
 
       /**
-       * Get the size of a type.
-       */
-      uint64_t ConstantBuilder::type_size(const llvm::Type *ty) {
-        return llvm_target_machine()->getTargetData()->getTypeAllocSize(ty);
-      }
-
-      /**
-       * Get the alignment of a type
-       */
-      unsigned ConstantBuilder::type_alignment(const llvm::Type *ty) {
-        return llvm_target_machine()->getTargetData()->getABITypeAlignment(ty);
-      }
-
-      /**
-       * Get the size of a type from a type term.
-       */
-      uint64_t ConstantBuilder::constant_type_size(Term *type) {
-	return build_constant_integer(MetatypeSize::get(type)).getZExtValue();
-      }
-
-      /**
-       * Get the alignment of a type from a type term.
-       */
-      unsigned ConstantBuilder::constant_type_alignment(Term *type) {
-	return build_constant_integer(MetatypeAlignment::get(type)).getZExtValue();
-      }
-
-      /**
        * \brief Return the constant integer specified by the given term.
        *
        * This assumes that the conversion can be performed; this is
@@ -180,9 +152,71 @@ namespace Psi {
           }
         }
       };
+      
+      namespace {
+        /// \brief Utility function used by intrinsic_memcpy_64 and
+        /// intrinsic_memcpy_32.
+        llvm::Function* intrinsic_memcpy(llvm::Module& m, llvm::TargetMachine *target_machine) {
+          const llvm::IntegerType *size_type = target_machine->getTargetData()->getIntPtrType(m.getContext());
+          const char *name;
+          switch (size_type->getBitWidth()) {
+          case 32: name = "llvm.memcpy.p0i8.p0i8.i32"; break;
+          case 64: name = "llvm.memcpy.p0i8.p0i8.i64"; break;
+          default: PSI_FAIL("unsupported bit width for memcpy parameter");
+          }
+          
+          llvm::Function *f = m.getFunction(name);
+          if (f)
+            return f;
+
+          llvm::LLVMContext& c = m.getContext();
+          std::vector<const llvm::Type*> args;
+          args.push_back(llvm::Type::getInt8PtrTy(c));
+          args.push_back(llvm::Type::getInt8PtrTy(c));
+          args.push_back(size_type);
+          args.push_back(llvm::Type::getInt32Ty(c));
+          args.push_back(llvm::Type::getInt1Ty(c));
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(c), args, false);
+          f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+
+          return f;
+        }
+
+        llvm::Function* intrinsic_stacksave(llvm::Module& m) {
+          const char *name = "llvm.stacksave";
+          llvm::Function *f = m.getFunction(name);
+          if (f)
+            return f;
+
+          llvm::LLVMContext& c = m.getContext();
+          std::vector<const llvm::Type*> args;
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(c), args, false);
+          f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+
+          return f;
+        }
+
+        llvm::Function* intrinsic_stackrestore(llvm::Module& m) {
+          const char *name = "llvm.stackrestore";
+          llvm::Function *f = m.getFunction(name);
+          if (f)
+            return f;
+
+          llvm::LLVMContext& c = m.getContext();
+          std::vector<const llvm::Type*> args;
+          args.push_back(llvm::Type::getInt8PtrTy(c));
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(c), args, false);
+          f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+
+          return f;
+        }
+      }
 
       ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module)
         : ConstantBuilder(llvm_context, target_machine), m_llvm_module(llvm_module) {
+        m_llvm_memcpy = intrinsic_memcpy(*llvm_module, target_machine);
+        m_llvm_stacksave = intrinsic_stacksave(*llvm_module);
+        m_llvm_stackrestore = intrinsic_stackrestore(*llvm_module);
       }
 
       ModuleBuilder::~ModuleBuilder() {

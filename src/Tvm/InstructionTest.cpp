@@ -38,7 +38,7 @@ namespace Psi {
         "  return empty_v;\n"
         "};\n";
 
-      typedef void (*callback_type) (const void*,const void*,void*);
+      typedef void (*callback_type) (Jit::Metatype,const void*,void*);
       callback_type callback = reinterpret_cast<callback_type>(jit_single("f", src));
 
       // a decent data size is required - previously a test of less
@@ -50,7 +50,7 @@ namespace Psi {
       char result_data[sizeof(data)];
       // Set to an incorrect value
       std::fill_n(result_data, sizeof(result_data), 'x');
-      callback(&data_meta, data, result_data);
+      callback(data_meta, data, result_data);
       BOOST_CHECK_EQUAL_COLLECTIONS(result_data, result_data+sizeof(result_data),
 				    data, data+sizeof(data));
     }

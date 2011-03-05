@@ -24,6 +24,7 @@ namespace Psi {
         Term *m_size, *m_alignment;
         
       public:
+        Type() : m_stack_type(0), m_heap_type(0), m_size(0), m_alignment(0) {}
         /// \brief Constructor for unknown types
         Type(Term *size, Term *alignment) : m_stack_type(0), m_heap_type(0), m_size(size), m_alignment(alignment) {}
         /// \brief Constructor for types which are the same on the stack and heap
@@ -42,6 +43,9 @@ namespace Psi {
         
         /// \brief Get the alignment of this type in a suitable form for later passes
         Term *alignment() const {return m_alignment;}
+        
+        /// \brief Check whether this is a valid lowered type.
+        bool valid() const {return m_size && m_alignment;}
       };
       
       /**
@@ -104,8 +108,15 @@ namespace Psi {
         /// \brief Get the (target) context this pass belongs to
         Context& context() {return pass().context();}
 
-        virtual Type rewrite_type(Term*);
-        virtual Value rewrite_value(Term*);
+        /**
+         * Work out the expected form of a type after this pass.
+         */
+        virtual Type rewrite_type(Term *type) = 0;
+        
+        /**
+         * Rewrite a value for later passes.
+         */
+        virtual Value rewrite_value(Term *value) = 0;
         
         /**
          * \brief \em Load a value.
@@ -144,6 +155,8 @@ namespace Psi {
 
         Term* rewrite_value_stack(Term*);
         Term* rewrite_value_ptr(Term*);
+        Value lookup_value(Term*);
+        Term* lookup_value_stack(Term*);
       };
 
       /**
@@ -154,7 +167,7 @@ namespace Psi {
         InstructionBuilder m_builder;
         
         std::vector<BlockTerm*> topsort_blocks();
-
+        
       public:        
         FunctionRunner(AggregateLoweringPass *pass, FunctionTerm *function);
         virtual void run();
@@ -169,6 +182,7 @@ namespace Psi {
         InstructionBuilder& builder() {return m_builder;}
         
         void add_mapping(Term*, Term*, bool);
+        BlockTerm* rewrite_block(BlockTerm*);
         
         virtual Value load_value(Term*, Term*);
         Value load_value(Term*, Term*, bool);
@@ -186,6 +200,8 @@ namespace Psi {
         virtual Value load_value(Term*, Term*);
         virtual Term* store_value(Term*, Term*, Term*, Term*);
         virtual Term* store_type(Term*, Term*);
+        virtual Type rewrite_type(Term*);
+        virtual Value rewrite_value(Term*);
       };
       
       struct TypeSizeAlignment {

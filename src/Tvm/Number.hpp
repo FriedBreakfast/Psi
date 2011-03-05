@@ -64,20 +64,35 @@ namespace Psi {
     /// \brief Whether this integer type is signed.
     bool is_signed() const {return data().is_signed;}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-
+    static unsigned value_bits(IntegerType::Width);
     static Ptr get(Context&, Width, bool);
     PSI_TVM_FUNCTIONAL_TYPE_END(IntegerType)
 
     PSI_TVM_FUNCTIONAL_TYPE(IntegerValue, ConstructorOperation)
-    typedef BigInteger Data;
+    struct Data {
+      IntegerType::Width width;
+      bool is_signed;
+      BigInteger value;
+      
+      bool operator == (const Data& other) const {
+        return (width == other.width) && (is_signed == other.is_signed) && (value == other.value);
+      }
+
+      friend std::size_t hash_value(const Data& self) {
+        std::size_t h = 0;
+        boost::hash_combine(h, self.width);
+        boost::hash_combine(h, self.is_signed);
+        boost::hash_combine(h, self.value);
+        return h;
+      }
+    };
     PSI_TVM_FUNCTIONAL_PTR_HOOK()
     /// \brief Get the value of this constant.
-    const Data& value() const {return data();}
+    const BigInteger& value() const {return data().value;}
     /// \brief Get the type of this term cast to IntegerType::Ptr
     IntegerType::Ptr type() const {return cast<IntegerType>(PtrBaseType::type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static unsigned value_bits(IntegerType::Width);
-    static Ptr get(Term*, const BigInteger&);
+    static Ptr get(Context&, IntegerType::Width, bool, const BigInteger&);
     PSI_TVM_FUNCTIONAL_TYPE_END(IntegerValue)
 
     PSI_TVM_FUNCTIONAL_TYPE(FloatType, TypeOperation)
@@ -104,6 +119,7 @@ namespace Psi {
 
     PSI_TVM_FUNCTIONAL_TYPE(FloatValue, ConstructorOperation)
     struct Data {
+      FloatType::Width width;
       unsigned exponent;
       char mantissa[16];
 
@@ -122,7 +138,7 @@ namespace Psi {
     /// \brief Get the type of this term cast to FloatType::Ptr
     FloatType::Ptr type() const {return cast<FloatType>(PtrBaseType::type());}
     PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static FloatValue::Ptr get(Term*, const Data&);
+    static FloatValue::Ptr get(Context&, FloatType::Width width, const Data&);
     PSI_TVM_FUNCTIONAL_TYPE_END(FloatValue)
 
     PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerAdd, IntegerType)

@@ -44,28 +44,13 @@ namespace Psi {
       return context.get_functional<IntegerType>(ArrayPtr<Term*>(), Data(width, is_signed));
     }
 
-    FunctionalTypeResult IntegerValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 1)
-        throw TvmUserError("int_v value takes one parameter");
-      if (!isa<IntegerType>(parameters[0]))
-        throw TvmUserError("int_v parameter is not an integer type");
-      return FunctionalTypeResult(parameters[0], false);
-    }
-
-    /**
-     * Get an integer value from specific data, produced by one of the
-     * #parse or #convert functions.
-     */
-    IntegerValue::Ptr IntegerValue::get(Term* type, const Data& data) {
-      return type->context().get_functional<IntegerValue>(StaticArray<Term*,1>(type), data);
-    }
     
     /**
      * Get the number of bits used to represent constants of the given width.
      * This will equal the with of the type except for intptr, where it is
      * machine dependent but treated as 64 bits.
      */
-    unsigned IntegerValue::value_bits(IntegerType::Width width) {
+    unsigned IntegerType::value_bits(IntegerType::Width width) {
       switch (width) {
       case IntegerType::i8: return 8;
       case IntegerType::i16: return 16;
@@ -75,6 +60,25 @@ namespace Psi {
       case IntegerType::iptr: return 64;
       default: PSI_FAIL("unexpected integer width");
       }
+    }
+
+    FunctionalTypeResult IntegerValue::type(Context& context, const Data& data, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 0)
+        throw TvmUserError("int_v value takes no parameters");
+      Term *type = IntegerType::get(context, data.width, data.is_signed);
+      return FunctionalTypeResult(type, false);
+    }
+
+    /**
+     * Get an integer value from specific data, produced by one of the
+     * #parse or #convert functions.
+     */
+    IntegerValue::Ptr IntegerValue::get(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value) {
+      Data data;
+      data.width = width;
+      data.is_signed = is_signed;
+      data.value = value;
+      return context.get_functional<IntegerValue>(StaticArray<Term*,0>(), data);
     }
 
     FunctionalTypeResult FloatType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
@@ -96,8 +100,9 @@ namespace Psi {
       return FunctionalTypeResult(parameters[0], false);
     }
 
-    FloatValue::Ptr FloatValue::get(Term* type, const Data& data) {
-      return type->context().get_functional<FloatValue>(StaticArray<Term*,1>(type), data);
+    FloatValue::Ptr FloatValue::get(Context& context, FloatType::Width width, const Data& data) {
+      PSI_FAIL("not implemented");
+      return context.get_functional<FloatValue>(StaticArray<Term*,0>(), data);
     }
 
     namespace {

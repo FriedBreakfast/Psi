@@ -79,11 +79,6 @@ namespace Psi {
 
         const llvm::APInt& build_constant_integer(Term *term);
 
-        uint64_t type_size(const llvm::Type *ty);
-        unsigned type_alignment(const llvm::Type *ty);
-	uint64_t constant_type_size(Term *term);
-	unsigned constant_type_alignment(Term *term);
-
       private:
         struct TypeBuilderCallback;
 
@@ -109,6 +104,10 @@ namespace Psi {
         llvm::GlobalValue* build_global(GlobalTerm *term);
         
         ModuleMapping run(Module*, AggregateLoweringPass::TargetCallback*);
+        
+        llvm::Function* llvm_memcpy() {return m_llvm_memcpy;}
+        llvm::Function* llvm_stacksave() {return m_llvm_stacksave;}
+        llvm::Function* llvm_stackrestore() {return m_llvm_stackrestore;}
 
       protected:
         struct ConstantBuilderCallback;
@@ -124,6 +123,8 @@ namespace Psi {
         ConstantTermMap m_constant_terms;
 
         llvm::Constant* build_constant_internal(FunctionalTerm *term);
+        
+        llvm::Function *m_llvm_memcpy, *m_llvm_stacksave, *m_llvm_stackrestore;
       };
 
       class FunctionBuilder : public ConstantBuilder {
@@ -146,6 +147,10 @@ namespace Psi {
 
         llvm::StringRef term_name(Term *term);
 
+        llvm::Function* llvm_memcpy() {return m_global_builder->llvm_memcpy();}
+        llvm::Function* llvm_stacksave() {return m_global_builder->llvm_stacksave();}
+        llvm::Function* llvm_stackrestore() {return m_global_builder->llvm_stackrestore();}
+        
       private:
         struct ValueBuilderCallback;
 
@@ -172,33 +177,11 @@ namespace Psi {
       };
 
       /**
-       * Functions for getting LLVM intrinsic functions.
-       */
-      ///@{
-      llvm::Function* intrinsic_memcpy_32(llvm::Module& m);
-      llvm::Function* intrinsic_memcpy_64(llvm::Module& m);
-      llvm::Function* intrinsic_stacksave(llvm::Module& m);
-      llvm::Function* intrinsic_stackrestore(llvm::Module& m);
-      ///@}
-      
-      /**
        * Functions for handling simple types.
        */
       ///@{
       const llvm::IntegerType* integer_type(llvm::LLVMContext&, const llvm::TargetData*, IntegerType::Width);
       const llvm::Type* float_type(llvm::LLVMContext&, FloatType::Width);
-      ///@}
-
-      /**
-       * Functions for generating the LLVM type of and LLVM values for
-       * #Metatype.
-       */
-      ///@{
-      const llvm::Type* metatype_type(llvm::LLVMContext&, const llvm::TargetData*);
-      llvm::Constant* metatype_from_constant(ConstantBuilder&, const llvm::APInt& size, const llvm::APInt& align);
-      llvm::Constant* metatype_from_constant(ConstantBuilder&, uint64_t size, uint64_t align);
-      llvm::Constant* metatype_from_type(ConstantBuilder& builder, const llvm::Type* ty);
-      llvm::Value* metatype_from_value(FunctionBuilder&, llvm::Value *size, llvm::Value *align);
       ///@}
 
       llvm::TargetMachine* host_machine();

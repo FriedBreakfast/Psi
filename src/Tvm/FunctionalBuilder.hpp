@@ -91,9 +91,14 @@ namespace Psi {
       static Term* bool_value(Context&, bool);
       static Term* int_type(Context&, IntegerType::Width, bool);
       static Term* size_type(Context&);
-      static Term* int_value(Term*, int);
-      static Term* int_value(Term*, unsigned);
-      static Term* int_value(Term*, const std::string&, bool=false, unsigned=10);
+      static Term* int_value(Context&, IntegerType::Width, bool, int);
+      static Term* int_value(Context&, IntegerType::Width, bool, unsigned);
+      static Term* int_value(Context&, IntegerType::Width, bool, const std::string&, bool=false, unsigned=10);
+      static Term* int_value(Context&, IntegerType::Width, bool, const BigInteger&);
+      static Term* int_value(IntegerType::Ptr, int);
+      static Term* int_value(IntegerType::Ptr, unsigned);
+      static Term* int_value(IntegerType::Ptr, const std::string&, bool=false, unsigned=10);
+      static Term* int_value(IntegerType::Ptr, const BigInteger&);
       static Term* size_value(Context&, unsigned);
       ///@}
       

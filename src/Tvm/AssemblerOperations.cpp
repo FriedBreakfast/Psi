@@ -105,7 +105,7 @@ namespace Psi {
 
         Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
           check_n_terms(name, 0, expression);
-	  return FloatType::get(context.context(), width);
+	  return FunctionalBuilder::float_type(context.context(), width);
         }
       };
 

@@ -24,6 +24,7 @@ namespace Psi {
       
       /// \name Insert point control
       ///@{
+      const InstructionInsertPoint& insert_point() const;
       void set_insert_point(const InstructionInsertPoint&);
       void set_insert_point(BlockTerm *insert_at_end);
       void set_insert_point(InstructionTerm *insert_before);

@@ -115,6 +115,13 @@ namespace Psi {
         return simple_type_helper(rewriter, FunctionalBuilder::byte_pointer_type(rewriter.context()));
       }
       
+      static Type primitive_type_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *type) {
+        PSI_ASSERT(!type->source());
+        PSI_ASSERT(type->n_parameters() == 0);
+        PSI_ASSERT(type->is_type());
+        return simple_type_helper(rewriter, type->rewrite(rewriter.context(), StaticArray<Term*,0>()));
+      }
+      
       static Type metatype_rewrite(AggregateLoweringRewriter& rewriter, Metatype::Ptr term) {
         Term *size = FunctionalBuilder::size_type(term->context());
         Term *metatype_struct = FunctionalBuilder::struct_type(term->context(), StaticArray<Term*,2>(size, size));
@@ -127,17 +134,33 @@ namespace Psi {
         return Type(size, alignment);
       }
       
-      static Type default_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *term) {
-        PSI_ASSERT(term->is_type());
-        PSI_ASSERT(term->n_parameters() == 0);
-        return simple_type_helper(rewriter, term->rewrite(rewriter.context(), StaticArray<Term*,0>()));
+      static Type parameter_type_rewrite(AggregateLoweringRewriter& rewriter, Term *type) {
+        PSI_ASSERT(type->source() && isa<FunctionParameterTerm>(type->source()));
+        Term *size, *alignment;
+        if (rewriter.pass().remove_only_unknown) {
+          Term *rewritten = rewriter.rewrite_value_stack(type);
+          size = FunctionalBuilder::struct_element(rewritten, 0);
+          alignment = FunctionalBuilder::struct_element(rewritten, 1);
+        } else {
+          size = rewriter.lookup_value_stack(FunctionalBuilder::type_size(type));
+          alignment = rewriter.lookup_value_stack(FunctionalBuilder::type_alignment(type));
+        }
+        return Type(size, alignment);
+      }
+      
+      static Type default_type_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *type) {
+        if (type->source()) {
+          return parameter_type_rewrite(rewriter, type);
+        } else {
+          return primitive_type_rewrite(rewriter, type);
+        }
       }
       
       typedef TermOperationMap<FunctionalTerm, Type, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
       
       static CallbackMap::Initializer callback_map_initializer() {
-        return CallbackMap::initializer(default_rewrite)
+        return CallbackMap::initializer(default_type_rewrite)
           .add<ArrayType>(array_type_rewrite)
           .add<StructType>(struct_type_rewrite)
           .add<UnionType>(union_type_rewrite)
@@ -153,8 +176,7 @@ namespace Psi {
     struct AggregateLoweringPass::FunctionalTermRewriter {
       static Value type_rewrite(AggregateLoweringRewriter& rewriter, Term *term) {
         Type ty = rewriter.rewrite_type(term);
-        Type metatype = rewriter.rewrite_type(term->type());
-        if (metatype.stack_type()) {
+        if (rewriter.pass().remove_only_unknown) {
           return Value(FunctionalBuilder::struct_value(rewriter.context(), StaticArray<Term*,2>(ty.size(), ty.alignment())), true);
         } else {
           return Value(rewriter.store_type(ty.size(), ty.alignment()), false);
@@ -168,13 +190,6 @@ namespace Psi {
         for (unsigned i = 0; i != n_parameters; ++i)
           parameters[i] = rewriter.rewrite_value_stack(term->parameter(i));
         return Value(term->rewrite(rewriter.context(), parameters), true);
-      }
-      
-      static Value number_value_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *term) {
-        PSI_ASSERT(term->n_parameters() == 1);
-        Type ty = rewriter.rewrite_type(term->parameter(0));
-        PSI_ASSERT(ty.stack_type());
-        return Value(term->rewrite(rewriter.context(), StaticArray<Term*,1>(ty.stack_type())), true);
       }
       
       static Value aggregate_value_rewrite(AggregateLoweringRewriter& rewriter, FunctionalTerm *term) {
@@ -364,8 +379,7 @@ namespace Psi {
           .add<FloatType>(type_rewrite)
           .add<EmptyType>(type_rewrite)
           .add<ByteType>(type_rewrite)
-          .add<IntegerValue>(number_value_rewrite)
-          .add<FloatValue>(number_value_rewrite)
+          .add<MetatypeValue>(type_rewrite)
           .add<ArrayValue>(aggregate_value_rewrite)
           .add<StructValue>(aggregate_value_rewrite)
           .add<UnionValue>(aggregate_value_rewrite)
@@ -481,46 +495,6 @@ namespace Psi {
     }
 
     /**
-     * Work out the expected form of a type after this pass.
-     */
-    AggregateLoweringPass::Type AggregateLoweringPass::AggregateLoweringRewriter::rewrite_type(Term *type) {
-      TypeMapType::iterator type_it = m_type_map.find(type);
-      if (type_it != m_type_map.end())
-        return type_it->second;
-      
-      FunctionalTerm *func_type = dyn_cast<FunctionalTerm>(type);
-      if (!func_type) {
-        // The only way a non-functional term makes sense here is from a function parameter,
-        // in which case the size and alignment values should have been created by the entry
-        // sequence.
-        ValueMapType::iterator size_it = m_value_map.find(FunctionalBuilder::type_size(type));
-        ValueMapType::iterator alignment_it = m_value_map.find(FunctionalBuilder::type_alignment(type));
-        if ((size_it == m_value_map.end()) || (alignment_it == m_value_map.end()))
-          throw TvmInternalError("Metatype has been incorrectly handled by function call entry lowering");
-        return Type(size_it->second.value(), alignment_it->second.value());
-      }
-      
-      Type result = TypeTermRewriter::callback_map.call(*this, func_type);
-      m_type_map.insert(std::make_pair(type, result));
-      return result;
-    }
-    
-    /**
-     * Rewrite a value for later passes.
-     */
-    AggregateLoweringPass::Value AggregateLoweringPass::AggregateLoweringRewriter::rewrite_value(Term *value) {      
-      ValueMapType::iterator value_it = m_value_map.find(value);
-      if (value_it != m_value_map.end())
-        return value_it->second;
-      
-      FunctionalTerm *func_value = cast<FunctionalTerm>(value);
-      Value result = FunctionalTermRewriter::callback_map.call(*this, func_value);
-      PSI_ASSERT(result.value());
-      m_value_map[value] = result;
-      return result;
-    }
-    
-    /**
      * Utility function which runs rewrite_value and asserts that the resulting
      * value is on the stack and is non-NULL.
      */
@@ -537,6 +511,25 @@ namespace Psi {
     Term* AggregateLoweringPass::AggregateLoweringRewriter::rewrite_value_ptr(Term *value) {
       Value v = rewrite_value(value);
       PSI_ASSERT(!v.on_stack() && v.value());
+      return v.value();
+    }
+    
+    /**
+     * \brief Get a value which must already have been rewritten.
+     */
+    AggregateLoweringPass::Value AggregateLoweringPass::AggregateLoweringRewriter::lookup_value(Term *value) {
+      ValueMapType::iterator it = m_value_map.find(value);
+      PSI_ASSERT(it != m_value_map.end());
+      return it->second;
+    }
+
+    /**
+     * Utility function which runs lookup_value and asserts that the resulting
+     * value is not on the stack and is non-NULL.
+     */
+    Term* AggregateLoweringPass::AggregateLoweringRewriter::lookup_value_stack(Term *value) {
+      Value v = lookup_value(value);
+      PSI_ASSERT(v.on_stack() && v.value());
       return v.value();
     }
     
@@ -558,6 +551,15 @@ namespace Psi {
       PSI_ASSERT(&source->context() == &old_function()->context());
       PSI_ASSERT(&target->context() == &new_function()->context());
       m_value_map[source] = Value(target, on_stack);
+    }
+    
+    /**
+     * \brief Map a block from the old function to the new one.
+     */
+    BlockTerm* AggregateLoweringPass::FunctionRunner::rewrite_block(BlockTerm *block) {
+      ValueMapType::iterator it = m_value_map.find(block);
+      PSI_ASSERT((it != m_value_map.end()) && (it->second.on_stack()));
+      return cast<BlockTerm>(it->second.value());
     }
 
     Term* AggregateLoweringPass::FunctionRunner::store_value(Term *value, Term *alloc_type, Term *alloc_count, Term *alloc_alignment) {
@@ -603,8 +605,6 @@ namespace Psi {
      * \pre \code isa<PointerType>(ptr->type()) \endcode
      */
     Term* AggregateLoweringPass::FunctionRunner::store_value(Term *value, Term *ptr) {
-      PSI_ASSERT(isa<PointerType>(ptr->type()));
-      
       Type value_type = rewrite_type(value->type());
       if (value_type.stack_type()) {
         Term *cast_ptr = FunctionalBuilder::pointer_cast(ptr, value_type.stack_type());
@@ -655,6 +655,7 @@ namespace Psi {
         }
       }
 
+      PSI_ASSERT(ptr->type() == FunctionalBuilder::byte_pointer_type(context()));
       Term *value_ptr = rewrite_value_ptr(value);
       PSI_ASSERT(value_ptr->type() == FunctionalBuilder::byte_pointer_type(context()));
       Term *value_size = rewrite_value_stack(FunctionalBuilder::type_size(value->type()));
@@ -690,12 +691,7 @@ namespace Psi {
       // which has already been handled
       for (std::vector<BlockTerm*>::iterator it = boost::next(sorted_blocks.begin());
            it != sorted_blocks.end(); ++it) {
-        BlockTerm *dominator = prolog_block;
-        ValueMapType::iterator dominator_it = m_value_map.find((*it)->dominator());
-        if (dominator_it != m_value_map.end()) {
-          PSI_ASSERT(dominator_it->second.on_stack());
-          dominator = cast<BlockTerm>(dominator_it->second.value());
-        }
+        BlockTerm *dominator = (*it)->dominator() ? rewrite_block((*it)->dominator()) : prolog_block;
         BlockTerm *new_block = new_function()->new_block(dominator);
         m_value_map.insert(std::make_pair(*it, Value(new_block, true)));
       }
@@ -703,7 +699,7 @@ namespace Psi {
       // Convert instructions!
       for (std::vector<BlockTerm*>::iterator it = sorted_blocks.begin(); it != sorted_blocks.end(); ++it) {
         BlockTerm *old_block = *it;
-        BlockTerm *new_block = cast<BlockTerm>(m_value_map[*it].value());
+        BlockTerm *new_block = rewrite_block(*it);
         PSI_ASSERT(new_block);
         BlockTerm::InstructionList& insn_list = old_block->instructions();
         m_builder.set_insert_point(new_block);
@@ -748,6 +744,12 @@ namespace Psi {
         }
         // struct loads have no value because they should not be accessed directly
         return Value();
+      } else if (isa<Metatype>(load_term->type())) {
+        Term *size_type = FunctionalBuilder::size_type(load_term->context());
+        StructType::Ptr metatype_ty = cast<StructType>(FunctionalBuilder::struct_type(load_term->context(), StaticArray<Term*,2>(size_type, size_type)));
+        load_value(FunctionalBuilder::type_size(load_term), FunctionalTermRewriter::struct_ptr_offset(*this, metatype_ty, ptr, 0), copy);
+        load_value(FunctionalBuilder::type_alignment(load_term), FunctionalTermRewriter::struct_ptr_offset(*this, metatype_ty, ptr, 1), copy);
+        return Value();
       }
       
       // So this type cannot be loaded: memcpy it to the stack
@@ -775,7 +777,8 @@ namespace Psi {
         }
       }
 
-      PSI_ASSERT(ptr->type() == FunctionalBuilder::byte_type(context()));
+      PSI_ASSERT(ptr->type() == FunctionalBuilder::byte_pointer_type(context()));
+
       Term *type_size = rewrite_value_stack(FunctionalBuilder::type_size(load_term->type()));
       Term *type_alignment = rewrite_value_stack(FunctionalBuilder::type_alignment(load_term->type()));
       Term *alloca_insn = builder().alloca_(FunctionalBuilder::byte_type(context()),
@@ -785,15 +788,69 @@ namespace Psi {
     }
     
     AggregateLoweringPass::Type AggregateLoweringPass::FunctionRunner::rewrite_type(Term *type) {
+      // Forward to parent if applicable.
       if (!type->source() || isa<GlobalTerm>(type->source()))
         return pass().global_rewriter().rewrite_type(type);
-      return AggregateLoweringRewriter::rewrite_type(type);
+      
+      TypeMapType::iterator type_it = m_type_map.find(type);
+      if (type_it != m_type_map.end())
+        return type_it->second;
+      
+      Type result;
+      if (FunctionalTerm *func_type = dyn_cast<FunctionalTerm>(type)) {
+        result = TypeTermRewriter::callback_map.call(*this, func_type);
+      } else {
+        result = TypeTermRewriter::parameter_type_rewrite(*this, type);
+      }
+      
+      PSI_ASSERT(result.valid());
+      m_type_map[type] = result;
+      return result;
     }
     
     AggregateLoweringPass::Value AggregateLoweringPass::FunctionRunner::rewrite_value(Term *value) {
+      // Forward to parent if applicable.
       if (!value->source() || isa<GlobalTerm>(value->source()))
         return pass().global_rewriter().rewrite_value(value);
-      return AggregateLoweringRewriter::rewrite_value(value);
+      
+      ValueMapType::iterator value_it = m_value_map.find(value);
+      if (value_it != m_value_map.end()) {
+        // Not all values in the value map are necessarily valid - instructions which do not
+        // produce a value have NULL entries. However, if the value is used, it must be valid.
+        PSI_ASSERT(value_it->second.value());
+        return value_it->second;
+      }
+      
+      // If it isn't in the m_value_map, it must be a functional term since all instructions used
+      // should have been placed in m_value_map already.
+      PSI_ASSERT(isa<FunctionalTerm>(value));
+      
+      BlockTerm *insert_block;
+      switch (value->source()->term_type()) {
+      case term_instruction: insert_block = cast<InstructionTerm>(value->source())->block(); break;
+      case term_phi: insert_block = cast<PhiTerm>(value->source())->block(); break;
+      case term_block: insert_block = cast<BlockTerm>(value->source()); break;
+      case term_function_parameter: insert_block = cast<FunctionParameterTerm>(value->source())->function()->entry(); break;
+      default: PSI_FAIL("unexpected term type");
+      }
+      
+      insert_block = rewrite_block(insert_block);
+
+      InstructionInsertPoint old_insert_point = m_builder.insert_point();
+      /*
+       * The aggregate lowering pass expects instruction insertions to always happen at the end of a block,
+       * since instructions are recreated in order (and instructions created later cannot depend on the
+       * result of earlier ones except through phi nodes which are handled last anyway).
+       */
+      PSI_ASSERT(!old_insert_point.instruction());
+
+      m_builder.set_insert_point(insert_block);
+      Value result = FunctionalTermRewriter::callback_map.call(*this, cast<FunctionalTerm>(value));
+      m_builder.set_insert_point(old_insert_point);
+      
+      PSI_ASSERT(result.value());
+      m_value_map[value] = result;
+      return result;
     }
     
     AggregateLoweringPass::ModuleLevelRewriter::ModuleLevelRewriter(AggregateLoweringPass *pass)
@@ -836,6 +893,28 @@ namespace Psi {
     
     Term* AggregateLoweringPass::ModuleLevelRewriter::store_type(Term *size, Term *alignment) {
       PSI_FAIL("not implemented");
+    }
+    
+    AggregateLoweringPass::Type AggregateLoweringPass::ModuleLevelRewriter::rewrite_type(Term *type) {
+      TypeMapType::iterator type_it = m_type_map.find(type);
+      if (type_it != m_type_map.end())
+        return type_it->second;
+      
+      Type result = TypeTermRewriter::callback_map.call(*this, cast<FunctionalTerm>(type));
+      PSI_ASSERT(result.valid());
+      m_type_map[type] = result;
+      return result;
+    }
+    
+    AggregateLoweringPass::Value AggregateLoweringPass::ModuleLevelRewriter::rewrite_value(Term *value) {
+      ValueMapType::iterator value_it = m_value_map.find(value);
+      if (value_it != m_value_map.end())
+        return value_it->second;
+      
+      Value result = FunctionalTermRewriter::callback_map.call(*this, cast<FunctionalTerm>(value));
+      PSI_ASSERT(result.value());
+      m_value_map[value] = result;
+      return result;
     }
 
     /**

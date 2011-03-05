@@ -1,26 +1,23 @@
 #include "Builder.hpp"
 
 #include "../TermOperationMap.hpp"
-#include <../lib/llvm-2.8/include/llvm/Target/TargetData.h>
+
+#include <llvm/Target/TargetData.h>
 
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
       struct FunctionalConstantBuilder {
-        static llvm::Constant *type_callback(ConstantBuilder& builder, Term *type) {
-          return metatype_from_type(builder, builder.build_type(type));
-        }
-        
         static llvm::Constant *metatype_size_callback(ConstantBuilder& builder, MetatypeSize::Ptr term) {
-          llvm::Constant *value = builder.build_constant(term->parameter());
-          unsigned zero = 0;
-          return llvm::ConstantExpr::getExtractValue(value, &zero, 1);
+          const llvm::Type *type = builder.build_type(term->parameter());
+          uint64_t size = builder.llvm_target_machine()->getTargetData()->getTypeAllocSize(type);
+          return llvm::ConstantInt::get(builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context()), size);
         }
 
         static llvm::Constant *metatype_alignment_callback(ConstantBuilder& builder, MetatypeAlignment::Ptr term) {
-          llvm::Constant *value = builder.build_constant(term->parameter());
-          unsigned one = 1;
-          return llvm::ConstantExpr::getExtractValue(value, &one, 1);
+          const llvm::Type *type = builder.build_type(term->parameter());       
+          uint64_t size = builder.llvm_target_machine()->getTargetData()->getABITypeAlignment(type);
+          return llvm::ConstantInt::get(builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context()), size);
         }
 
         static llvm::Constant* empty_value_callback(ConstantBuilder& builder, EmptyValue::Ptr) {
@@ -181,16 +178,6 @@ namespace Psi {
         
         static CallbackMap::Initializer callback_map_initializer() {
           return CallbackMap::initializer()
-            .add<Metatype>(type_callback)
-            .add<EmptyType>(type_callback)
-            .add<PointerType>(type_callback)
-            .add<BlockType>(type_callback)
-            .add<ByteType>(type_callback)
-            .add<BooleanType>(type_callback)
-            .add<IntegerType>(type_callback)
-            .add<FloatType>(type_callback)
-            .add<ArrayType>(type_callback)
-            .add<StructType>(type_callback)
             .add<MetatypeSize>(metatype_size_callback)
             .add<MetatypeAlignment>(metatype_alignment_callback)
             .add<EmptyValue>(empty_value_callback)

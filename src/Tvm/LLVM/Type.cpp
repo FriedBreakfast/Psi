@@ -4,7 +4,7 @@
 
 #include "../Aggregate.hpp"
 #include "../Number.hpp"
-#include <../lib/llvm-2.8/include/llvm/Target/TargetData.h>
+#include <llvm/Target/TargetData.h>
 
 namespace Psi {
   namespace Tvm {

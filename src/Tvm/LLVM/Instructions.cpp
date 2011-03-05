@@ -8,6 +8,7 @@
 #include <boost/make_shared.hpp>
 
 #include <llvm/Function.h>
+#include <llvm/Target/TargetData.h>
 
 namespace Psi {
   namespace Tvm {
@@ -73,6 +74,34 @@ namespace Psi {
           
           return inst;
         }
+        
+        static llvm::Instruction* memcpy_callback(FunctionBuilder& builder, MemCpy::Ptr term) {
+          llvm::Value *dest = builder.build_value(term->dest());
+          llvm::Value *src = builder.build_value(term->src());
+          llvm::Value *count = builder.build_value(term->count());
+          unsigned alignment = 0;
+          if (llvm::ConstantInt *alignment_expr = llvm::dyn_cast<llvm::ConstantInt>(builder.build_value(term->alignment())))
+            alignment = alignment_expr->getValue().getZExtValue();
+          
+          PSI_ASSERT(dest->getType() == src->getType());
+
+          const llvm::Type *i8ptr = llvm::IntegerType::getInt8PtrTy(builder.llvm_context());
+          if (dest->getType() != i8ptr) {
+            const llvm::TargetData *target_data = builder.llvm_target_machine()->getTargetData();
+            const llvm::Type *element_type = llvm::cast<llvm::PointerType>(dest->getType())->getElementType();
+            llvm::Constant *target_size = llvm::ConstantInt::get(target_data->getIntPtrType(builder.llvm_context()), target_data->getTypeAllocSize(element_type));
+            count = builder.irbuilder().CreateMul(count, target_size);
+            alignment = std::max(alignment, target_data->getABITypeAlignment(element_type));
+            
+            dest = builder.irbuilder().CreateBitCast(dest, i8ptr);
+            src = builder.irbuilder().CreateBitCast(src, i8ptr);
+          }
+          
+          llvm::ConstantInt *alignment_expr = llvm::ConstantInt::get(llvm::IntegerType::getInt32Ty(builder.llvm_context()), alignment);
+          llvm::Value *isvolatile = llvm::ConstantInt::getFalse(builder.llvm_context());
+          
+          return builder.irbuilder().CreateCall5(builder.llvm_memcpy(), dest, src, count, alignment_expr, isvolatile);
+        }
 
         typedef TermOperationMap<InstructionTerm, llvm::Instruction*, FunctionBuilder&> CallbackMap;
         
@@ -86,7 +115,8 @@ namespace Psi {
             .add<FunctionCall>(function_call_callback)
             .add<Load>(load_callback)
             .add<Store>(store_callback)
-            .add<Alloca>(alloca_callback);
+            .add<Alloca>(alloca_callback)
+            .add<MemCpy>(memcpy_callback);
         }
       };
 

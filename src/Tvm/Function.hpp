@@ -377,9 +377,7 @@ namespace Psi {
      * Helper class for inserting instructions into blocks.
      */
     class InstructionInsertPoint {
-      /// \brief Block to insert instructions into
       BlockTerm *m_block;
-      /// \brief Instruction to insert new instructions before
       InstructionTerm *m_instruction;
     public:
       /**
@@ -413,6 +411,15 @@ namespace Psi {
         PSI_ASSERT(m_block);
         return m_block->new_instruction<T>(parameters, m_instruction, data);
       }
+      
+      /// \brief Block to insert instructions into
+      BlockTerm* block() const {return m_block;}
+      /**
+       * \brief Instruction to insert new instructions before
+       * 
+       * If this is NULL, instructions will be inserted at the end of the block.
+       */
+      InstructionTerm* instruction() const {return m_instruction;}
     };
 
     template<typename T>

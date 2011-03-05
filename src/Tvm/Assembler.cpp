@@ -65,21 +65,21 @@ namespace Psi {
         return it->second(it->first, context, expression);
       }
 
-      Term* build_literal_int(Term* type, const Parser::LiteralExpression& expression) {
+      Term* build_literal_int(AssemblerContext& context, IntegerType::Width width, bool is_signed, const Parser::LiteralExpression& expression) {
 	std::string value = expression.value->text;
 	bool negative = (value[0] == '-');
 	if (negative)
 	  value = value.substr(1);
-        return FunctionalBuilder::int_value(type, value, negative);
+        return FunctionalBuilder::int_value(context.context(), width, is_signed, value, negative);
       }
 
       Term* build_literal(AssemblerContext& context, const Parser::LiteralExpression& expression) {
         switch (expression.literal_type) {
 #define HANDLE_INT(lit_name,int_name)                                   \
           case Parser::literal_##lit_name:                              \
-            return build_literal_int(FunctionalBuilder::int_type(context.context(), IntegerType::int_name, true), expression); \
+            return build_literal_int(context, IntegerType::int_name, true, expression); \
         case Parser::literal_u##lit_name:                               \
-            return build_literal_int(FunctionalBuilder::int_type(context.context(), IntegerType::int_name, false), expression);
+            return build_literal_int(context, IntegerType::int_name, false, expression);
 
           HANDLE_INT(byte,  i8)
           HANDLE_INT(short, i16)

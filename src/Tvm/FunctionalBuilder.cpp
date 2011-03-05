@@ -202,7 +202,7 @@ namespace Psi {
      * \param index Index into the array.
      */
     Term* FunctionalBuilder::array_element(Term* array, unsigned index) {
-      return array_element(array, int_value(size_type(array->context()), index));
+      return array_element(array, size_value(array->context(), index));
     }
     
     /**
@@ -286,7 +286,7 @@ namespace Psi {
      * \param index Index of element to get.
      */
     Term* FunctionalBuilder::array_element_ptr(Term *array, unsigned index) {
-      return array_element_ptr(array, int_value(size_type(array->context()), index));
+      return array_element_ptr(array, size_value(array->context(), index));
     }
     
     /**
@@ -431,21 +431,6 @@ namespace Psi {
       return int_type(context, IntegerType::iptr, false);
     }
     
-    namespace {
-      /**
-       * \brief Get the number of bits used to store an integer value of the given type.
-       * 
-       * \see IntegerValue::value_bits
-       */
-      unsigned int_value_bits(Term *type) {
-        if (IntegerType::Ptr int_ty = dyn_cast<IntegerType>(type)) {
-          return IntegerValue::value_bits(int_ty->width());
-        } else {
-          throw TvmUserError("type of integer value is not an integer type");
-        }
-      }
-    }
-    
     /**
      * \brief Get a constant integer value.
      *
@@ -453,17 +438,15 @@ namespace Psi {
      * otherwise just construct a term representing whatever
      * arithmetic would be used to calculate the value.
      * 
-     * \param type Integer type.
-     * 
      * \param value Value of the integer to get.
      */    
-    Term* FunctionalBuilder::int_value(Term *type, int value) {
-      return IntegerValue::get(type, BigInteger(int_value_bits(type), value));
+    Term* FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, int value) {
+      return IntegerValue::get(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value));
     }
 
     /// \copydoc FunctionalBuilder::int_value(Term*,int)
-    Term* FunctionalBuilder::int_value(Term *type, unsigned value) {
-      return IntegerValue::get(type, BigInteger(int_value_bits(type), value));
+    Term* FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, unsigned value) {
+      return IntegerValue::get(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value));
     }
 
     /**
@@ -480,12 +463,41 @@ namespace Psi {
      * 
      * \param base Base to use to parse the string.
      */
-    Term* FunctionalBuilder::int_value(Term* type, const std::string& value, bool negative, unsigned base) {
-      BigInteger bv(int_value_bits(type));
+    Term* FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const std::string& value, bool negative, unsigned base) {
+      BigInteger bv(IntegerType::value_bits(width));
       bv.parse(value, negative, base);
-      return IntegerValue::get(type, bv);
+      return IntegerValue::get(context, width, is_signed, bv);
     }
     
+    /**
+     * \brief Get a constant integer value.
+     * 
+     * \param value Value of the integer to create.
+     */
+    Term* FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value) {
+      return IntegerValue::get(context, width, is_signed, value);
+    }
+    
+    /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,int)
+    Term* FunctionalBuilder::int_value(IntegerType::Ptr type, int value) {
+      return int_value(type->context(), type->width(), type->is_signed(), value);
+    }
+    
+    /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,int)
+    Term* FunctionalBuilder::int_value(IntegerType::Ptr type, unsigned value) {
+      return int_value(type->context(), type->width(), type->is_signed(), value);
+    }
+    
+    /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,const std::string&,bool,unsigned)
+    Term* FunctionalBuilder::int_value(IntegerType::Ptr type, const std::string& value, bool negative, unsigned base) {
+      return int_value(type->context(), type->width(), type->is_signed(), value, negative, base);
+    }
+    
+    /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,const BigInteger&)
+    Term* FunctionalBuilder::int_value(IntegerType::Ptr type, const BigInteger& value) {
+      return IntegerValue::get(type->context(), type->width(), type->is_signed(), value);
+    }
+
     /**
      * Get a uintptr constant containing the given value.
      * 
@@ -497,7 +509,7 @@ namespace Psi {
      * \param value Value to initialize the constant with.
      */
     Term* FunctionalBuilder::size_value(Context& context, unsigned value) {
-      return int_value(size_type(context), value);
+      return int_value(context, IntegerType::iptr, false, value);
     }
     
     namespace {      
@@ -562,7 +574,7 @@ namespace Psi {
         Term* operator () (IntegerValue::Ptr lhs, IntegerValue::Ptr rhs) const {
           BigInteger value;
           (value.*m_callback)(lhs->value(), rhs->value());
-          return IntegerValue::get(lhs->type(), value);
+          return FunctionalBuilder::int_value(lhs->type(), value);
         }
 
       private:
@@ -619,7 +631,7 @@ namespace Psi {
       } else if (IntegerValue::Ptr int_val = dyn_cast<IntegerValue>(parameter)) {
         BigInteger value;
         value.negative(int_val->value());
-        return IntegerValue::get(int_val->type(), value);
+        return int_value(int_val->type(), value);
       } else {
         return IntegerNegative::get(parameter);
       }
@@ -661,7 +673,7 @@ namespace Psi {
       } else if (IntegerValue::Ptr int_val = dyn_cast<IntegerValue>(parameter)) {
         BigInteger value;
         value.bit_not(int_val->value());
-        return IntegerValue::get(int_val->type(), value);
+        return int_value(int_val->type(), value);
       } else {
         return BitNot::get(parameter);
       }

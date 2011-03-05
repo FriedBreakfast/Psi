@@ -21,6 +21,13 @@ namespace Psi {
     InstructionBuilder::InstructionBuilder(const InstructionInsertPoint& ip)
     : m_insert_point(ip) {
     }
+
+    /**
+     * \brief Get the current insertion point.
+     */
+    const Psi::Tvm::InstructionInsertPoint& InstructionBuilder::insert_point() const {
+      return m_insert_point;
+    }
     
     /**
      * Set the insert point.

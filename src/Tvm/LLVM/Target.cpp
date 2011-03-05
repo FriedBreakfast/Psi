@@ -9,7 +9,7 @@
 #include <llvm/Function.h>
 #include <llvm/Target/TargetData.h>
 #include <llvm/ADT/Triple.h>
-#include <../lib/llvm-2.8/include/llvm/Target/TargetRegistry.h>
+#include <llvm/Target/TargetRegistry.h>
 
 namespace Psi {
   namespace Tvm {
