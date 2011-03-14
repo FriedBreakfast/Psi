@@ -165,10 +165,7 @@ namespace Psi {
         ValueTermMap m_value_terms;
 
         void run();
-        llvm::BasicBlock* build_function_entry();
-        void simplify_stack_save_restore();
-        llvm::CallInst* first_stack_restore(llvm::BasicBlock *block);
-        bool has_outstanding_alloca(llvm::BasicBlock *block);
+        void setup_stack_save_restore(const std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >&);
 
         llvm::Instruction* build_value_instruction(InstructionTerm *term);
         llvm::Value* build_value_functional(FunctionalTerm *term);

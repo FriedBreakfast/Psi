@@ -80,7 +80,7 @@ namespace Psi {
   }
 
   bool Use::is_malloc() {
-    PSI_ASSERT(used_head());
+    PSI_ASSERT(user_head());
     return m_target == UserHeadMalloc;
   }
 

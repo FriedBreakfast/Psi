@@ -23,6 +23,24 @@ namespace Psi {
     }
 
     /**
+     * \brief Constructor which sets the insertion point.
+     * 
+     * \param insert_at_end Block to insert instructions at the end of
+     */
+    InstructionBuilder::InstructionBuilder(BlockTerm *insert_at_end)
+    : m_insert_point(insert_at_end) {
+    }
+
+    /**
+     * \brief Constructor which sets the insertion point.
+     * 
+     * \param insert_before Point to create new instructions before.
+     */
+    InstructionBuilder::InstructionBuilder(InstructionTerm *insert_before)
+    : m_insert_point(insert_before) {
+    }
+
+    /**
      * \brief Get the current insertion point.
      */
     const Psi::Tvm::InstructionInsertPoint& InstructionBuilder::insert_point() const {

@@ -135,7 +135,7 @@ namespace Psi {
          * value in. If the value is a constant it will be created as a global;
          * if it is a variable it will be created using the alloca instruction.
          */
-        virtual Term* store_value(Term *value, Term *alloc_type, Term *alloc_count, Term *alloc_alignment) = 0;
+        virtual Term* store_value(Term *value) = 0;
         
         /**
          * \brief \em Store a type value.
@@ -157,6 +157,7 @@ namespace Psi {
         Term* rewrite_value_ptr(Term*);
         Value lookup_value(Term*);
         Term* lookup_value_stack(Term*);
+        Term* lookup_value_ptr(Term*);
       };
 
       /**
@@ -166,7 +167,27 @@ namespace Psi {
         FunctionTerm *m_old_function, *m_new_function;
         InstructionBuilder m_builder;
         
-        std::vector<BlockTerm*> topsort_blocks();
+        struct BlockPhiData {
+          // Phi nodes derived from Phi nodes in the original function
+          std::vector<PhiTerm*> user;
+          // Phi nodes generated as a replacement for alloca
+          std::vector<PhiTerm*> alloca_;
+          // List of used slots
+          std::vector<Term*> used;
+          // List of free slots
+          std::vector<Term*> free_;
+        };
+        
+        typedef std::tr1::unordered_map<BlockTerm*, BlockPhiData> BlockPhiMapType;
+        typedef std::tr1::unordered_map<Term*, BlockPhiMapType> TypePhiMapType;
+        
+        TypePhiMapType m_generated_phi_terms;
+        
+        void create_phi_node(BlockTerm*,Term*);
+        void populate_phi_node(Term*, ArrayPtr<BlockTerm*>, ArrayPtr<Term*>);
+        Term* create_storage(Term*);
+        Term* create_alloca(Term*);
+        void create_phi_alloca_terms(const std::vector<std::pair<BlockTerm*, BlockTerm*> >&);
         
       public:        
         FunctionRunner(AggregateLoweringPass *pass, FunctionTerm *function);
@@ -185,8 +206,7 @@ namespace Psi {
         BlockTerm* rewrite_block(BlockTerm*);
         
         virtual Value load_value(Term*, Term*);
-        Value load_value(Term*, Term*, bool);
-        virtual Term* store_value(Term*, Term*, Term*, Term*);
+        virtual Term* store_value(Term*);
         virtual Term* store_type(Term*, Term*);
         Term* store_value(Term*, Term*);
 
@@ -198,7 +218,7 @@ namespace Psi {
       public:
         ModuleLevelRewriter(AggregateLoweringPass*);
         virtual Value load_value(Term*, Term*);
-        virtual Term* store_value(Term*, Term*, Term*, Term*);
+        virtual Term* store_value(Term*);
         virtual Term* store_type(Term*, Term*);
         virtual Type rewrite_type(Term*);
         virtual Value rewrite_value(Term*);

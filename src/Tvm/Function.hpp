@@ -158,6 +158,7 @@ namespace Psi {
       BlockTerm *incoming_block(std::size_t n);
       /// \brief Get the value of a given incoming edge
       Term *incoming_value(std::size_t n) {return get_base_parameter(n*2+2);}
+      Term *incoming_value_from(BlockTerm*);
 
     private:
       class Initializer;
@@ -220,6 +221,8 @@ namespace Psi {
       bool dominated_by(BlockTerm* block);
       std::vector<BlockTerm*> successors();
       std::vector<BlockTerm*> recursive_successors();
+      
+      static BlockTerm* common_dominator(BlockTerm*,BlockTerm*);
 
     private:
       class Initializer;

@@ -21,13 +21,15 @@ namespace Psi {
     public:
       InstructionBuilder();
       explicit InstructionBuilder(const InstructionInsertPoint&);
+      explicit InstructionBuilder(BlockTerm*);
+      explicit InstructionBuilder(InstructionTerm*);
       
       /// \name Insert point control
       ///@{
       const InstructionInsertPoint& insert_point() const;
       void set_insert_point(const InstructionInsertPoint&);
-      void set_insert_point(BlockTerm *insert_at_end);
-      void set_insert_point(InstructionTerm *insert_before);
+      void set_insert_point(BlockTerm*);
+      void set_insert_point(InstructionTerm*);
       ///@}
       
       /// \name Control flow

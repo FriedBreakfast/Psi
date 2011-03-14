@@ -34,8 +34,8 @@ namespace Psi {
               break;
             }
             
-            case term_block: {
-              FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(cast<BlockTerm>(src));
+            case term_phi: {
+              FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(cast<PhiTerm>(src)->block());
               new_insert_block = llvm::cast<llvm::BasicBlock>(it->second);
               break;
             }
@@ -43,6 +43,11 @@ namespace Psi {
             case term_function_parameter: {
               FunctionParameterTerm *cast_src = cast<FunctionParameterTerm>(src);
               PSI_ASSERT(!cast_src->phantom() && (cast_src->function() == self->function()));
+              new_insert_block = &self->llvm_function()->front();
+              break;
+            }
+            
+            case term_block: {
               new_insert_block = &self->llvm_function()->front();
               break;
             }
@@ -56,11 +61,9 @@ namespace Psi {
             // one, and therefore already have been built, and terminated.
             PSI_ASSERT(new_insert_block->getTerminator());
 
-            // if the block has been completed, it should have a stack
-            // save and jump instruction at the end, and we want to insert
-            // before that.
-            llvm::BasicBlock::iterator pos = new_insert_block->end();
-            --pos; --pos;
+            // if the block has been completed, it should have a jump
+            // instruction at the end, and we want to insert before that.
+            llvm::BasicBlock::iterator pos = boost::prior(new_insert_block->end());
             self->irbuilder().SetInsertPoint(new_insert_block, pos);
           } else {
             old_insert_block = NULL;
@@ -153,12 +156,65 @@ namespace Psi {
       }
 
       /**
-       * Set up function entry. This converts function parameters from
-       * whatever format the calling convention passes them in.
+       * Remove unnecessary stack save and restore instructions.
        */
-      llvm::BasicBlock* FunctionBuilder::build_function_entry() {
-        llvm::BasicBlock *prolog_block = llvm::BasicBlock::Create(llvm_context(), "", llvm_function());
+      void FunctionBuilder::setup_stack_save_restore(const std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >& blocks) {
+        std::vector<BlockTerm*> jump_targets;
+        std::tr1::unordered_map<BlockTerm*, BlockTerm*> stack_dominator;
+        std::tr1::unordered_map<BlockTerm*, llvm::Value*> stack_save_values;
+        std::tr1::unordered_set<BlockTerm*> stack_restore_required;
+
+        stack_dominator[blocks.front().first] = blocks.front().first;
+        for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii)
+          stack_dominator[ii->first] = stack_dominator[ii->first->dominator()];
+
+        // Work out which saves and restores are required
+        for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
+          BlockTerm *stack_restore = stack_dominator[ii->first];
+          bool has_alloca = false;
+          for (BlockTerm::InstructionList::iterator ji = ii->first->instructions().begin(), je = ii->first->instructions().end(); ji != je; ++ji) {
+            if (isa<Alloca>(&*ji)) {
+              has_alloca = true;
+            } else {
+              jump_targets.clear();
+              ji->jump_targets(jump_targets);
+              for (std::vector<BlockTerm*>::iterator ki = jump_targets.begin(), ke = jump_targets.end(); ki != ke; ++ki) {
+                BlockTerm *target_stack_restore = stack_dominator[*ki];
+                if (has_alloca ? (target_stack_restore != ii->first) : (target_stack_restore != stack_restore)) {
+                  stack_save_values[target_stack_restore] = NULL;
+                  stack_restore_required.insert(*ki);
+                }
+              }
+            }
+          }
+        }
         
+        // Insert required saves
+        for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
+          std::tr1::unordered_map<BlockTerm*, llvm::Value*>::iterator ji = stack_save_values.find(ii->first);
+          if (ji != stack_save_values.end()) {
+            irbuilder().SetInsertPoint(ii->second, boost::prior(ii->second->end()));
+            ji->second = irbuilder().CreateCall(llvm_stacksave());
+          }
+        }
+        
+        // Insert required restores
+        for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
+          if (stack_restore_required.find(ii->first) != stack_restore_required.end()) {
+            llvm::BasicBlock::iterator ji = ii->second->begin();
+            while (ji->getOpcode() == llvm::Instruction::PHI) {
+              PSI_ASSERT(ji != ii->second->end());
+              ++ji;
+            }
+            irbuilder().SetInsertPoint(ii->second, ji);
+            BlockTerm *restore = stack_dominator[ii->first];
+            irbuilder().CreateCall(llvm_stackrestore(), stack_save_values[restore]);
+          }
+        }
+      }
+
+      void FunctionBuilder::run() {
+        // Set up parameters
         llvm::Function::ArgumentListType::iterator ii = m_llvm_function->getArgumentList().begin(), ie = m_llvm_function->getArgumentList().end();
         for (std::size_t in = function()->function_type()->n_phantom_parameters(); ii != ie; ++ii, ++in) {
           FunctionParameterTerm* param = m_function->parameter(in);
@@ -167,148 +223,8 @@ namespace Psi {
           m_value_terms.insert(std::make_pair(param, value));
         }
 
-        return prolog_block;
-      }
-
-      /**
-       * Checks whether the given block has any outstanding alloca
-       * instructions, i.e. whether the stack pointer on exit is
-       * different to the stack pointer on entry, apart from the
-       * adjustment to equal the stack pointer of the dominating block.
-       *
-       * Note that this function only works on correctly structured Tvm
-       * blocks where stack save and restore points are paired (except
-       * for the one at block entry); in particular it should not be
-       * used on the prolog block.
-       */
-      bool FunctionBuilder::has_outstanding_alloca(llvm::BasicBlock *block) {
-        llvm::CallInst *target_save = NULL;
-        // Find last restore instruction in this block
-        llvm::BasicBlock::iterator it = block->end();
-        do {
-          --it;
-
-          if (!target_save) {
-            if (it->getOpcode() == llvm::Instruction::Call) {
-              llvm::CallInst *call = llvm::cast<llvm::CallInst>(&*it);
-              if (call->getCalledFunction() == llvm_stackrestore()) {
-                // we have a save instruction to look for. ignore all
-                // calls to alloca between now and then.
-                target_save = llvm::cast<llvm::CallInst>(call->getArgOperand(0));
-              }
-            } else if (it->getOpcode() == llvm::Instruction::Alloca) {
-              return true;
-            }
-          } else if (&*it == target_save) {
-            target_save = NULL;
-          }
-        
-        } while (it != block->begin());
-
-        return false;
-      }
-
-      /**
-       * Find the first stackrestore instruction in a block.
-       */
-      llvm::CallInst* FunctionBuilder::first_stack_restore(llvm::BasicBlock *block) {
-        for (llvm::BasicBlock::iterator it = block->begin(); it != block->end(); ++it) {
-          if (it->getOpcode() == llvm::Instruction::Call) {
-            llvm::CallInst *call = llvm::cast<llvm::CallInst>(&*it);
-            if (call->getCalledFunction() == llvm_stackrestore())
-              return call;
-          }
-        }
-        return NULL;
-      }
-
-      namespace {
-        struct BlockStackInfo {
-          BlockStackInfo(llvm::BasicBlock *block_,
-                         bool outstanding_alloca_,
-                         llvm::BasicBlock *stack_restore_,
-                         llvm::CallInst *stack_restore_insn_)
-            : block(block_),
-              outstanding_alloca(outstanding_alloca_),
-              stack_restore(stack_restore_),
-              stack_restore_insn(stack_restore_insn_) {}
-
-          // block which this structure refers to
-          llvm::BasicBlock *block;
-          // whether this block has an outstanding alloca, i.e., it
-          // adjusts the stack pointer.
-          bool outstanding_alloca;
-          // where this block restores the stack to on entry
-          llvm::BasicBlock *stack_restore;
-          // the instruction which restores the stack on entry
-          llvm::CallInst *stack_restore_insn;
-          // list of predecessor blocks
-          std::vector<BlockStackInfo*> predecessors;
-        };
-      }
-
-      /**
-       * Remove unnecessary stack save and restore instructions.
-       */
-      void FunctionBuilder::simplify_stack_save_restore() {
-        std::tr1::unordered_map<llvm::BasicBlock*, BlockStackInfo> block_info;
-
-        for (llvm::Function::iterator it = boost::next(m_llvm_function->begin()); it != m_llvm_function->end(); ++it) {
-          llvm::BasicBlock *block = &*it;
-          llvm::CallInst *stack_restore = first_stack_restore(block);
-          PSI_ASSERT(stack_restore);
-          llvm::BasicBlock *restore_block = llvm::cast<llvm::Instruction>(stack_restore->getArgOperand(0))->getParent();
-          block_info.insert(std::make_pair(block, BlockStackInfo(block, has_outstanding_alloca(block), restore_block, stack_restore)));
-        }
-
-        for (std::tr1::unordered_map<llvm::BasicBlock*, BlockStackInfo>::iterator it = block_info.begin();
-             it != block_info.end(); ++it) {
-          llvm::TerminatorInst *terminator = it->first->getTerminator();
-          unsigned n_successors = terminator->getNumSuccessors();
-          for (unsigned n = 0; n < n_successors; ++n) {
-            llvm::BasicBlock *successor = terminator->getSuccessor(n);
-            PSI_ASSERT(block_info.find(successor) != block_info.end());
-            BlockStackInfo& successor_info = block_info.find(successor)->second;
-            successor_info.predecessors.push_back(&it->second);
-          }
-        }
-
-        for (std::tr1::unordered_map<llvm::BasicBlock*, BlockStackInfo>::iterator it = block_info.begin();
-             it != block_info.end(); ++it) {
-          for (std::vector<BlockStackInfo*>::iterator jt = it->second.predecessors.begin();
-               jt != it->second.predecessors.end(); ++jt) {
-            if ((*jt)->outstanding_alloca || (it->second.stack_restore != (*jt)->stack_restore))
-              goto cannot_restore_stack;
-          }
-
-          // sp is the same on all incoming edges, so remove the restore instruction
-          it->second.stack_restore_insn->eraseFromParent();
-          continue;
-
-        cannot_restore_stack:
-          continue;
-        }
-
-        // finally, see whether the save instruction in the prolog block
-        // is still necessary
-        llvm::BasicBlock *prolog_block = &m_llvm_function->getEntryBlock();
-        llvm::CallInst *save_insn = llvm::cast<llvm::CallInst>(&*boost::prior(boost::prior(prolog_block->end())));
-        PSI_ASSERT(save_insn->getCalledFunction() == llvm_stacksave());
-        if (save_insn->hasNUses(0))
-          save_insn->eraseFromParent();
-      }
-
-      void FunctionBuilder::run() {
-        std::tr1::unordered_map<BlockTerm*, llvm::Value*> stack_pointers;
-
-        // Set up parameters
-        llvm::BasicBlock *llvm_prolog_block = build_function_entry();
-
-        // Set up basic blocks
-        BlockTerm* entry_block = m_function->entry();
-        std::vector<BlockTerm*> sorted_blocks = m_function->topsort_blocks();
-
         // create llvm blocks
+        std::vector<BlockTerm*> sorted_blocks = m_function->topsort_blocks();
         std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
         for (std::vector<BlockTerm*>::iterator it = sorted_blocks.begin(); it != sorted_blocks.end(); ++it) {
           llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(llvm_context(), term_name(*it), m_llvm_function);
@@ -316,13 +232,6 @@ namespace Psi {
           PSI_ASSERT(insert_result.second);
           blocks.push_back(std::make_pair(*it, llvm_bb));
         }
-
-        // Finish prolog block
-        irbuilder().SetInsertPoint(llvm_prolog_block);
-        // Save prolog stack and jump into entry
-        stack_pointers[NULL] = irbuilder().CreateCall(llvm_stacksave());
-        PSI_ASSERT(blocks[0].first == entry_block);
-        irbuilder().CreateBr(blocks[0].second);
 
         std::tr1::unordered_map<PhiTerm*, llvm::PHINode*> phi_node_map;
 
@@ -342,14 +251,6 @@ namespace Psi {
             m_value_terms.insert(std::make_pair(phi, llvm_phi));
           }
 
-          // Restore stack as it was when dominating block exited, so
-          // any values alloca'd since then are removed. This is
-          // necessary to allow loops which handle unknown types without
-          // unbounded stack growth.
-          PSI_ASSERT(stack_pointers.find(it->first->dominator()) != stack_pointers.end());
-          llvm::Value *dominator_stack_ptr = stack_pointers[it->first->dominator()];
-          irbuilder().CreateCall(llvm_stackrestore(), dominator_stack_ptr);
-
           // Build instructions!
           BlockTerm::InstructionList& insn_list = it->first->instructions();
           for (BlockTerm::InstructionList::iterator jt = insn_list.begin(); jt != insn_list.end(); ++jt) {
@@ -360,24 +261,7 @@ namespace Psi {
 
           if (!it->second->getTerminator())
             throw BuildError("LLVM block was not terminated during function building");
-
-          // Build block epilog: must move the IRBuilder insert point to
-          // before the terminating instruction first.
-          irbuilder().SetInsertPoint(it->second, boost::prior(it->second->end()));
-
-          // Save stack pointer so it can be restored in dominated
-          // blocks. This only needs to be done if the alloca is used
-          // during this block outside of a save/restore, and the block
-          // does not terminate the function
-          PSI_ASSERT(stack_pointers.find(it->first) == stack_pointers.end());
-          if ((it->second->getTerminator()->getNumSuccessors() > 0) && has_outstanding_alloca(it->second)) {
-            stack_pointers[it->first] = irbuilder().CreateCall(llvm_stacksave());
-          } else {
-            stack_pointers[it->first] = dominator_stack_ptr;
-          }
         }
-
-        simplify_stack_save_restore();
 
         // Set up LLVM phi node incoming edges
         for (std::tr1::unordered_map<PhiTerm*, llvm::PHINode*>::iterator it = phi_node_map.begin();
@@ -392,6 +276,8 @@ namespace Psi {
 	    it->second->addIncoming(incoming_value, incoming_block);
           }
         }
+        
+        setup_stack_save_restore(blocks);
       }
 
       /// Returns the maximum alignment for any type supported. This

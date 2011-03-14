@@ -336,6 +336,27 @@ namespace Psi {
     }
 
     /**
+     * \brief Find the latest block which dominates both of the specified blocks.
+     * 
+     * \pre \code first->function() == second->function() \endcode
+     */
+    BlockTerm* BlockTerm::common_dominator(BlockTerm *first, BlockTerm *second) {
+      PSI_ASSERT(first->function() == second->function());
+
+      for (BlockTerm *i = first; i; i = i->dominator()) {
+        if (second->dominated_by(i))
+          return i;
+      }
+      
+      for (BlockTerm *i = second; i; i = i->dominator()) {
+        if (first->dominated_by(i))
+          return i;
+      }
+      
+      return NULL;
+    }
+
+    /**
      * Check if a term (i.e. all variables required by it) are
      * available in this block. If this block has not been added to a
      * function, the \c function parameter will be assigned to the
@@ -393,8 +414,8 @@ namespace Psi {
     }
 
     InstructionTerm* BlockTerm::new_instruction_bare(const InstructionTermSetup& setup, ArrayPtr<Term*const> parameters, InstructionTerm *insert_before) {
-      if (m_terminated)
-        throw TvmUserError("cannot add instruction to already terminated block");
+      if (m_terminated && !insert_before)
+        throw TvmUserError("cannot add instruction at end of already terminated block");
       
       if (insert_before && (insert_before->block() != this))
         throw TvmUserError("instruction specified as insertion point is not part of this block");
@@ -472,9 +493,9 @@ namespace Psi {
       if (value->phantom())
         throw TvmUserError("phi nodes cannot take on phantom values");
 
-      std::size_t free_slots = (n_base_parameters() / 2) - m_n_incoming;
+      std::size_t free_slots = ((n_base_parameters() - 1) / 2) - m_n_incoming;
       if (!free_slots)
-        resize_base_parameters(m_n_incoming * 4);
+        resize_base_parameters(1 + m_n_incoming * 4);
 
       set_base_parameter(m_n_incoming*2+1, block);
       set_base_parameter(m_n_incoming*2+2, value);
@@ -499,13 +520,24 @@ namespace Psi {
       }
 
       std::size_t n_uses() const {
-        return 8;
+        return 9;
       }
 
     private:
       Term* m_type;
       BlockTerm* m_block;
     };
+    
+    /**
+     * \brief Find the value corresponding to a specific incoming block.
+     */
+    Term *PhiTerm::incoming_value_from(BlockTerm *block) {
+      for (unsigned ii = 0, ie = n_incoming(); ii != ie; ++ii) {
+        if (block == incoming_block(ii))
+          return incoming_value(ii);
+      }
+      throw TvmUserError("Incoming block not found in PHI node");
+    }
 
     /**
      * \brief Create a new Phi node.

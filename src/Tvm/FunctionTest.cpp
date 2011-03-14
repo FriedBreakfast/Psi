@@ -72,15 +72,18 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(PhiUnknownTest) {
       const char *src =
-        "%f = function (%a: bool, %b:type, %c: %b, %d: %b) > %b {\n"
+        "%f = function (%a: bool, %b:type, %c: (pointer %b), %d: (pointer %b), %e: (pointer %b)) > empty {\n"
         "  cond_br %a %tc %td;\n"
         "block %tc:\n"
+        "  %ci = load %c;\n"
         "  br %end;\n"
         "block %td:\n"
+        "  %di = load %d;\n"
         "  br %end;\n"
         "block %end:\n"
-        "  %r = phi %b: %tc > %c, %td > %d;\n"
-        "  return %r;\n"
+        "  %r = phi %b: %tc > %ci, %td > %di;\n"
+        "  store %r %e;\n"
+        "  return empty_v;\n"
         "};\n";
 
       const char test1[] = "gqgh9-1h1hu-";
@@ -88,19 +91,16 @@ namespace Psi {
       BOOST_REQUIRE_EQUAL(sizeof(test1), sizeof(test2));
 
       Jit::Metatype mt = {sizeof(test1), 1};
-      typedef Jit::Int32 (*FuncType) (char*, const bool*, const Jit::Metatype*, const char*, const char*);
+      typedef Jit::Int32 (*FuncType) (bool, Jit::Metatype, const char*, const char*, char*);
       FuncType f = reinterpret_cast<FuncType>(jit_single("f", src));
 
-      bool cond;
       char result_area[sizeof(test1)];
 
-      cond = true;
-      f(result_area, &cond, &mt, test1, test2);
+      f(true, mt, test1, test2, result_area);
       BOOST_CHECK_EQUAL_COLLECTIONS(result_area, result_area+sizeof(result_area),
                                     test1, test1+sizeof(test1));
 
-      cond = false;
-      f(result_area, &cond, &mt, test1, test2);
+      f(false, mt, test1, test2, result_area);
       BOOST_CHECK_EQUAL_COLLECTIONS(result_area, result_area+sizeof(result_area),
                                     test2, test2+sizeof(test2));
     }

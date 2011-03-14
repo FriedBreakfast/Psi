@@ -124,6 +124,9 @@ namespace Psi {
         dyn_cast<FunctionTypeTerm>(target_ptr_type->target_type());
       if (!target_function_type)
         throw TvmUserError("function call target is not a function pointer");
+      
+      if (target_function_type->source())
+        throw TvmUserError("cannot call a function which has an abstract type");
 
       std::size_t n_parameters = target_function_type->n_parameters();
       if (parameters.size() != n_parameters + 1)
