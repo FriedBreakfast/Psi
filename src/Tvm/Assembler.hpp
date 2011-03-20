@@ -7,6 +7,7 @@
 
 #include "Core.hpp"
 #include "Parser.hpp"
+#include "InstructionBuilder.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -52,7 +53,7 @@ namespace Psi {
       Term* build_call_expression(AssemblerContext& context, const Parser::Expression& expression);
 
       typedef boost::function<Term*(const std::string&,AssemblerContext&,const Parser::CallExpression&)> FunctionalTermCallback;
-      typedef boost::function<InstructionTerm*(const std::string&,BlockTerm&,AssemblerContext&,const Parser::CallExpression&)> InstructionTermCallback;
+      typedef boost::function<InstructionTerm*(const std::string&,InstructionBuilder&,AssemblerContext&,const Parser::CallExpression&)> InstructionTermCallback;
 
       extern const std::tr1::unordered_map<std::string, FunctionalTermCallback> functional_ops;
       extern const std::tr1::unordered_map<std::string, InstructionTermCallback> instruction_ops;

@@ -164,7 +164,7 @@ namespace Psi {
     }
 
     Term* ApplyTerm::unpack() {
-      throw TvmInternalError("not implemented");
+      PSI_NOT_IMPLEMENTED();
     }
 
     /**

@@ -52,9 +52,9 @@ namespace Psi {
 	return m_str;
       }
 
-      struct ConstantBuilder::TypeBuilderCallback : PtrValidBase<llvm::Type> {
-        ConstantBuilder *self;
-        TypeBuilderCallback(ConstantBuilder *self_) : self(self_) {}
+      struct ModuleBuilder::TypeBuilderCallback : PtrValidBase<llvm::Type> {
+        ModuleBuilder *self;
+        TypeBuilderCallback(ModuleBuilder *self_) : self(self_) {}
 
         const llvm::Type* build(Term* term) const {
           switch(term->term_type()) {
@@ -101,17 +101,6 @@ namespace Psi {
       }
 
       ConstantBuilder::~ConstantBuilder() {
-      }
-
-      /**
-       * \brief Return the type specified by the specified term.
-       *
-       * Note that this is not the LLVM type of the LLVM value of this
-       * term: it is the LLVM type of the LLVM value of terms whose type
-       * is this term.
-       */
-      const llvm::Type* ConstantBuilder::build_type(Term* term) {
-        return build_term(m_type_terms, term, TypeBuilderCallback(this)).first;
       }
 
       /**
@@ -317,6 +306,17 @@ namespace Psi {
         default:
           PSI_FAIL("constant builder encountered unexpected term type");
         }
+      }
+
+      /**
+       * \brief Return the type specified by the specified term.
+       *
+       * Note that this is not the LLVM type of the LLVM value of this
+       * term: it is the LLVM type of the LLVM value of terms whose type
+       * is this term.
+       */
+      const llvm::Type* ModuleBuilder::build_type(Term* term) {
+        return build_term(m_type_terms, term, TypeBuilderCallback(this)).first;
       }
       
       const llvm::IntegerType* integer_type(llvm::LLVMContext& context, const llvm::TargetData *target_data, IntegerType::Width width) {

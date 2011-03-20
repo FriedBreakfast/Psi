@@ -1,6 +1,7 @@
 #include <boost/assign.hpp>
 #include <boost/format.hpp>
 #include <boost/function.hpp>
+#include <boost/lexical_cast.hpp>
 
 #include "Aggregate.hpp"
 #include "Assembler.hpp"
@@ -82,7 +83,18 @@ namespace Psi {
         GetterType getter;
         StructElementCallback(GetterType getter_) : getter(getter_) {}
         Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
-          PSI_FAIL("not implemented");
+          check_n_terms(name, 2, expression);
+          
+          Term *aggregate = build_expression(context, expression.terms.front());
+          const Parser::Expression& index = expression.terms.back();
+          
+          if (index.expression_type != Parser::expression_literal)
+            throw AssemblerError("Second parameter to struct_el is not an integer literal");
+
+          const Parser::LiteralExpression& index_literal = checked_cast<const Parser::LiteralExpression&>(index);
+          unsigned index_int = boost::lexical_cast<unsigned>(index_literal.value->text);
+          
+          return FunctionalBuilder::struct_element(aggregate, index_int);
         }
       };
 
@@ -169,10 +181,39 @@ namespace Psi {
 
       template<typename T>
       struct DefaultInstructionCallback {
-        InstructionTerm* operator () (const std::string&, BlockTerm& block, AssemblerContext& context, const Parser::CallExpression& expression) const {
+        InstructionTerm* operator () (const std::string&, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression) const {
           ScopedArray<Term*> parameters(expression.terms.size());
           default_parameter_setup(parameters, context, expression);
-          return block.template new_instruction<T>(parameters);
+          return builder.insert_point().template create<T>(parameters);
+        }
+      };
+      
+      struct NullaryInstructionCallback {
+        typedef InstructionTerm* (InstructionBuilder::*CreateType) ();
+        CreateType create;
+        NullaryInstructionCallback(CreateType create_) : create(create_) {}
+        InstructionTerm* operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext&, const Parser::CallExpression& expression) const {
+          check_n_terms(name, 0, expression);
+          return (builder.*create)();
+        }
+      };
+      
+      struct LandingPadCallback {
+        InstructionTerm* operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression) const {
+          check_n_terms(name, 1, expression);
+          
+          const Parser::Expression& target = expression.terms.back();
+          
+          if (target.expression_type != Parser::expression_name)
+            throw AssemblerError("Parameter to landing_pad is not a name");
+
+          const Parser::NameExpression& target_name = checked_cast<const Parser::NameExpression&>(target);
+          BlockTerm *block = dyn_cast<BlockTerm>(context.get(target_name.name->text));
+          
+          if (!block || !block->landing_pad())
+            throw AssemblerError("Parameter to landing_pad is not a landing pad");
+
+          return builder.set_landing_pad(block);
         }
       };
 
@@ -186,7 +227,10 @@ namespace Psi {
 	CALLBACK(Return)
 	CALLBACK(Alloca)
 	CALLBACK(Load)
-	CALLBACK(Store);
+	CALLBACK(Store)
+        CALLBACK(Eager)
+        ("set_landing_pad", LandingPadCallback())
+        ("clear_landing_pad", NullaryInstructionCallback(&InstructionBuilder::clear_landing_pad));
 
 #undef CALLBACK
     }

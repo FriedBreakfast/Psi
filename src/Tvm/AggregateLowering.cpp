@@ -1064,8 +1064,8 @@ namespace Psi {
           BlockTerm *source_block = *ji;
           BlockPhiData& source_data = ii->second[source_block];
           
-          std::vector<BlockTerm*> successors = source_block->successors();
-          for (std::vector<BlockTerm*>::iterator ki = successors.begin(), ke = successors.end(); ki != ke; ++ki) {
+          const std::vector<BlockTerm*>& successors = source_block->successors();
+          for (std::vector<BlockTerm*>::const_iterator ki = successors.begin(), ke = successors.end(); ki != ke; ++ki) {
             BlockTerm *target_block = *ki;
             BlockTerm *common_dominator = BlockTerm::common_dominator(source_block, target_block->dominator());
             
@@ -1146,15 +1146,16 @@ namespace Psi {
           PSI_FAIL("unexpected term type in global pointer expression");
         }
       }
-      PSI_FAIL("not implemented");
+      
+      PSI_NOT_IMPLEMENTED();
     }
     
     Term* AggregateLoweringPass::ModuleLevelRewriter::store_value(Term *value) {
-      PSI_FAIL("not implemented");
+      PSI_NOT_IMPLEMENTED();
     }
     
     Term* AggregateLoweringPass::ModuleLevelRewriter::store_type(Term *size, Term *alignment) {
-      PSI_FAIL("not implemented");
+      PSI_NOT_IMPLEMENTED();
     }
     
     AggregateLoweringPass::Type AggregateLoweringPass::ModuleLevelRewriter::rewrite_type(Term *type) {

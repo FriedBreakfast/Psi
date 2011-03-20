@@ -102,8 +102,12 @@ namespace Psi {
           
           return builder.irbuilder().CreateCall5(builder.llvm_memcpy(), dest, src, count, alignment_expr, isvolatile);
         }
+        
+        static llvm::Value* eager_callback(FunctionBuilder& builder, Eager::Ptr term) {
+          return builder.build_value(term->value());
+        }
 
-        typedef TermOperationMap<InstructionTerm, llvm::Instruction*, FunctionBuilder&> CallbackMap;
+        typedef TermOperationMap<InstructionTerm, llvm::Value*, FunctionBuilder&> CallbackMap;
         
         static CallbackMap callback_map;
         
@@ -116,7 +120,8 @@ namespace Psi {
             .add<Load>(load_callback)
             .add<Store>(store_callback)
             .add<Alloca>(alloca_callback)
-            .add<MemCpy>(memcpy_callback);
+            .add<MemCpy>(memcpy_callback)
+            .add<Eager>(eager_callback);
         }
       };
 
@@ -128,7 +133,7 @@ namespace Psi {
        * This handles complex operations on aggregate types; numeric
        * operations are forwarded to build_value_instruction_simple.
        */
-      llvm::Instruction* FunctionBuilder::build_value_instruction(InstructionTerm *term) {
+      llvm::Value* FunctionBuilder::build_value_instruction(InstructionTerm *term) {
         return InstructionBuilder::callback_map.call(*this, term);
       }
     }

@@ -8,6 +8,15 @@ namespace Psi {
   namespace Tvm {
     class BlockTerm;
 
+    struct InstructionTypeResult {
+      InstructionTypeResult(Term *type_) : type(type_), terminator(false) {}
+      template<typename Range> InstructionTypeResult(Term *type_, const Range& successors_)
+      : type(type_), terminator(true), successors(successors_.begin(), successors_.end()) {}
+      Term *type;
+      bool terminator;
+      std::vector<BlockTerm*> successors;
+    };
+
     /**
      * \brief Instruction term. Per-instruction funtionality is
      * created by implementing InstructionTermBackend and wrapping
@@ -22,10 +31,6 @@ namespace Psi {
       BlockTerm* block() {return m_block;}
       std::size_t n_parameters() {return Term::n_base_parameters();}
       Term* parameter(std::size_t n) {return get_base_parameter(n);}
-
-      /// \brief Append any blocks this instruction jumps to to the
-      /// specified vector.
-      virtual void jump_targets(std::vector<BlockTerm*>&) = 0;
 
     private:
       class Initializer;
@@ -52,10 +57,6 @@ namespace Psi {
     public:
       const Data& data() {return CompressedBase<Data>::get();}
 
-      virtual void jump_targets(std::vector<BlockTerm*>& targets) {
-        TermTagType::jump_targets(typename TermTagType::Ptr(typename TermTagType::PtrHook(this)), targets);
-      }
-
     private:
       InstructionTermSpecialized(const UserInitializer& ui, Context *context,
                                  Term* type, const char *operation, ArrayPtr<Term*const> parameters,
@@ -80,7 +81,7 @@ namespace Psi {
                                          const char *operation, ArrayPtr<Term*const> parameters,
                                          BlockTerm *block) const = 0;
 
-      virtual Term* type(FunctionTerm* function, ArrayPtr<Term*const> parameters) const = 0;
+      virtual InstructionTypeResult type(FunctionTerm* function, ArrayPtr<Term*const> parameters) const = 0;
     };
 
     template<typename TermTagType>
@@ -101,7 +102,7 @@ namespace Psi {
           (ui, context, type, operation, parameters, block, *data);
       }
 
-      virtual Term* type(FunctionTerm* function, ArrayPtr<Term*const> parameters) const {
+      virtual InstructionTypeResult type(FunctionTerm* function, ArrayPtr<Term*const> parameters) const {
         return TermTagType::type(function, *data, parameters);
       }
     };
@@ -173,6 +174,30 @@ namespace Psi {
 #endif
 
     /**
+     * \brief List of exception types for catch clauses.
+     * 
+     * This value of this term in a landing pad will indicate which exception was thrown. For
+     * DWARF2 exception handling, the clause list is basically embedded in data alongside the
+     * compiled function and the exception personality routine processes this to get the result
+     * of this term. The Linux exception API/ABI has more flexibility than this, but LLVMs C++
+     * oriented EH instructions don't expose this.
+     */
+    class CatchClauseTerm : public Term {
+      friend class BlockTerm;
+      
+    public:
+      void add_clause(Term*);
+
+    private:
+      class Initializer;
+      CatchClauseTerm(const UserInitializer&, Context*, BlockTerm*);
+    };
+    
+#ifndef PSI_DOXYGEN
+    template<> struct CastImplementation<CatchClauseTerm> : CoreCastImplementation<CatchClauseTerm, term_catch_clause> {};
+#endif
+
+    /**
      * \brief Block (list of instructions) inside a function. The
      * value of this term is the label used to jump to this block.
      */
@@ -216,20 +241,26 @@ namespace Psi {
       FunctionTerm* function();
       /** \brief Get a pointer to the dominating block. */
       BlockTerm* dominator();
+      /** \brief Get this block's catch list (this will be NULL for a regular block). */
+      CatchClauseTerm* catch_clause() {return cast<CatchClauseTerm>(get_base_parameter(2));}
+      /** \brief Whether this block is a landing pad. */
+      bool landing_pad() {return catch_clause();}
 
       bool check_available(Term* term, InstructionTerm *before=0);
       bool dominated_by(BlockTerm* block);
-      std::vector<BlockTerm*> successors();
-      std::vector<BlockTerm*> recursive_successors();
+      
+      /// \brief Get the list of blocks which can be run immediately after this one (excluding exception landing pads)
+      const std::vector<BlockTerm*>& successors() {return m_successors;}
       
       static BlockTerm* common_dominator(BlockTerm*,BlockTerm*);
 
     private:
       class Initializer;
-      BlockTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, BlockTerm* dominator);
+      BlockTerm(const UserInitializer&, Context*, FunctionTerm*, BlockTerm*, bool);
       InstructionList m_instructions;
       PhiList m_phi_nodes;
       bool m_terminated;
+      std::vector<BlockTerm*> m_successors;
 
       InstructionTerm* new_instruction_bare(const InstructionTermSetup& setup, ArrayPtr<Term*const> parameters, InstructionTerm *insert_before);
     };
@@ -255,7 +286,7 @@ namespace Psi {
 #ifndef PSI_DOXYGEN
     template<> struct CastImplementation<FunctionParameterTerm> : CoreCastImplementation<FunctionParameterTerm, term_function_parameter> {};
 #endif
-
+    
     /**
      * \brief %Function.
      */
@@ -287,15 +318,33 @@ namespace Psi {
 
       BlockTerm* new_block();
       BlockTerm* new_block(BlockTerm* dominator);
+      BlockTerm* new_landing_pad();
+      BlockTerm* new_landing_pad(BlockTerm* dominator);
 
       void add_term_name(Term *term, const std::string& name);
       const TermNameMap& term_name_map() {return m_name_map;}
       std::vector<BlockTerm*> topsort_blocks();
+      
+      /**
+       * \brief Get the exception handling personality of this function.
+       * 
+       * The exception handling personality is a string which is interpreted in an
+       * unspecified way by the backend to distinguish different exception handling
+       * styles for different languages.
+       */
+      const std::string& exception_personality() const {return m_exception_personality;}
+      
+      /**
+       * \brief Set the exception handling personality of this function.
+       * \see exception_personality()
+       */
+      void exception_personality(const std::string& v) {m_exception_personality = v;}
 
     private:
       class Initializer;
       FunctionTerm(const UserInitializer&, Context*, FunctionTypeTerm*, const std::string&, Module*);
       TermNameMap m_name_map;
+      std::string m_exception_personality;
     };
 
 #ifndef PSI_DOXYGEN
@@ -410,7 +459,7 @@ namespace Psi {
       static InstructionInsertPoint after_source(Term*);
       
       template<typename T>
-      typename T::Ptr create(ArrayPtr<Term*const> parameters, const typename T::Data& data = typename T::Data()) {
+      typename T::Ptr create(ArrayPtr<Term*const> parameters, const typename T::Data& data = typename T::Data()) const {
         PSI_ASSERT(m_block);
         return m_block->new_instruction<T>(parameters, m_instruction, data);
       }
@@ -445,6 +494,10 @@ namespace Psi {
 
         return T::operation == ft->operation();
       }
+      
+      static Ptr null() {
+        return Ptr();
+      }
     };
 
 #define PSI_TVM_INSTRUCTION_TYPE(name) \
@@ -470,8 +523,7 @@ namespace Psi {
 #endif
 
 #define PSI_TVM_INSTRUCTION_TYPE_END(name)                              \
-    static Term* type(FunctionTerm*, const Data&, ArrayPtr<Term*const>); \
-    static void jump_targets(Ptr, std::vector<BlockTerm*>&);            \
+    static InstructionTypeResult type(FunctionTerm*, const Data&, ArrayPtr<Term*const>); \
   }; PSI_TVM_INSTRUCTION_TYPE_CAST(name)
 
     inline BlockTerm* PhiTerm::block() {

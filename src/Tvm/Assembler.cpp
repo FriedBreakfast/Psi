@@ -142,19 +142,19 @@ namespace Psi {
 	return context.context().get_function_type(function_type.calling_convention, result_type, phantom_parameters, parameters);
       }
 
-      Term* build_instruction_expression(AssemblerContext& context, BlockTerm& block, const Parser::CallExpression& expression) {
+      Term* build_instruction_expression(AssemblerContext& context, InstructionBuilder& builder, const Parser::CallExpression& expression) {
         std::tr1::unordered_map<std::string, InstructionTermCallback>::const_iterator it =
           instruction_ops.find(expression.target->text);
 
         if (it != instruction_ops.end()) {
-          return it->second(it->first, block, context, expression);
+          return it->second(it->first, builder, context, expression);
         } else {
           return build_functional_expression(context, expression);
         }
       }
 
       Term* build_instruction(AssemblerContext& context, std::vector<PhiTerm*>& phi_nodes,
-                              BlockTerm& block, const Parser::Expression& expression) {
+                              InstructionBuilder& builder, const Parser::Expression& expression) {
         switch(expression.expression_type) {
 	case Parser::expression_phi: {
           const Parser::PhiExpression& phi_expr = checked_cast<const Parser::PhiExpression&>(expression);
@@ -168,13 +168,13 @@ namespace Psi {
           }
 
           Term* type = build_expression(context, *phi_expr.type);
-          PhiTerm *phi = block.new_phi(type);
+          PhiTerm *phi = builder.insert_point().block()->new_phi(type);
           phi_nodes.push_back(phi);
           return phi;
         }
 
 	case Parser::expression_call:
-          return build_instruction_expression(context, block, checked_cast<const Parser::CallExpression&>(expression));
+          return build_instruction_expression(context, builder, checked_cast<const Parser::CallExpression&>(expression));
 
         default:
           return build_expression(context, expression);
@@ -229,9 +229,10 @@ namespace Psi {
         for (UniqueList<Parser::Block>::const_iterator it = function_def.blocks.begin();
              it != function_def.blocks.end(); ++it, ++bt) {
           PSI_ASSERT(bt != blocks.end());
+          InstructionBuilder builder(*bt);
           for (UniqueList<Parser::NamedExpression>::const_iterator jt = it->statements.begin();
                jt != it->statements.end(); ++jt) {
-            Term* value = build_instruction(my_context, phi_nodes, **bt, *jt->expression);
+            Term* value = build_instruction(my_context, phi_nodes, builder, *jt->expression);
             if (jt->name) {
               my_context.put(jt->name->text, value);
               function.add_term_name(value, jt->name->text);

@@ -374,45 +374,6 @@ namespace Psi {
       return source_dominated(term->source(), after ? static_cast<Term*>(after) : this);
     }
 
-    /**
-     * \brief Get blocks that can run immediately after this one.
-     */
-    std::vector<BlockTerm*> BlockTerm::successors() {
-      std::vector<BlockTerm*> targets;
-      for (InstructionList::const_iterator it = m_instructions.begin();
-           it != m_instructions.end(); ++it) {
-        m_instructions.back().jump_targets(targets);
-      }
-      return targets;
-    }
-
-    /**
-     * \brief Get blocks that can run between this one and the end of
-     * the function (including this one).
-     */
-    std::vector<BlockTerm*> BlockTerm::recursive_successors() {
-      std::tr1::unordered_set<BlockTerm*> all_blocks;
-      std::vector<BlockTerm*> queue;
-      all_blocks.insert(const_cast<BlockTerm*>(this));
-      queue.push_back(const_cast<BlockTerm*>(this));
-
-      for (std::size_t queue_pos = 0; queue_pos != queue.size(); ++queue_pos) {
-        BlockTerm *bl = queue[queue_pos];
-
-        if (bl->terminated()) {
-          std::vector<BlockTerm*> successors = bl->successors();
-          for (std::vector<BlockTerm*>::iterator it = successors.begin();
-               it != successors.end(); ++it) {
-            std::pair<std::tr1::unordered_set<BlockTerm*>::iterator, bool> r = all_blocks.insert(*it);
-            if (r.second)
-              queue.push_back(*it);
-          }
-        }
-      }
-
-      return queue;
-    }
-
     InstructionTerm* BlockTerm::new_instruction_bare(const InstructionTermSetup& setup, ArrayPtr<Term*const> parameters, InstructionTerm *insert_before) {
       if (m_terminated && !insert_before)
         throw TvmUserError("cannot add instruction at end of already terminated block");
@@ -439,42 +400,25 @@ namespace Psi {
           throw TvmUserError("parameter value is not available in this block");
       }
 
-      Term* type = setup.type(function(), parameters);
-      bool terminator = false;
-      if (!type) {
-        terminator = true;
-        type = EmptyType::get(context());
-      }
-      
-      if (terminator && insert_before)
-        throw TvmUserError("terminating instruction cannot be inserted other than at the end of a block");
+      InstructionTypeResult type = setup.type(function(), parameters);
 
-      InstructionTerm* insn = context().allocate_term(InstructionTerm::Initializer(type, parameters, &setup, this));
-
-      // Any instruction can exit via a jump (this is how exceptions
-      // are handled), so this checks whether the jump targets of an
-      // instruction are valid given the dominator structure specified
-      // by the user.
-
-      std::vector<BlockTerm*> jump_targets;
-      insn->jump_targets(jump_targets);
-
-      // If the current instruction is not the last one in the block,
-      // jump edges are due to exceptions and therefore variables from
-      // the current block are not considered available. Therefore in
-      // this case the block which dominates this block is considered
-      // the incoming edge of the jump.
-      BlockTerm *source_block = terminator ? this : dominator();
-
-      for (std::vector<BlockTerm*>::iterator it = jump_targets.begin();
-           it != jump_targets.end(); ++it) {
-	if (!source_dominated((*it)->dominator(), source_block))
-          throw TvmUserError("instruction jump target dominator block may not have run");
+      if (type.terminator) {
+        if (insert_before)
+          throw TvmUserError("terminating instruction cannot be inserted other than at the end of a block");
+        
+        for (std::vector<BlockTerm*>::const_iterator ii = type.successors.begin(), ie = type.successors.end(); ii != ie; ++ii) {
+          if (!source_dominated((*ii)->dominator(), this))
+            throw TvmUserError("instruction jump target dominator block may not have run");
+        }
       }
 
+      InstructionTerm* insn = context().allocate_term(InstructionTerm::Initializer(type.type, parameters, &setup, this));
       m_instructions.insert(insert_before_it, *insn);
-      if (terminator)
+      
+      if (type.terminator) {
         m_terminated = true;
+        m_successors.swap(type.successors);
+      }
 
       return insn;
     }
@@ -538,6 +482,27 @@ namespace Psi {
       }
       throw TvmUserError("Incoming block not found in PHI node");
     }
+    
+    CatchClauseTerm::CatchClauseTerm(const Psi::UserInitializer& ui, Context *context, BlockTerm *block)
+    : Term(ui, context, term_catch_clause, block, NULL) {
+    }
+    
+    class CatchClauseTerm::Initializer : public InitializerBase<CatchClauseTerm> {
+    public:
+      Initializer(BlockTerm *block) : m_block(block) {
+      }
+
+      CatchClauseTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
+        return new (base) CatchClauseTerm(ui, context, m_block);
+      }
+
+      std::size_t n_uses() const {
+        return 0;
+      }
+      
+    private:
+      BlockTerm *m_block;
+    };
 
     /**
      * \brief Create a new Phi node.
@@ -558,32 +523,38 @@ namespace Psi {
       return phi;
     }
 
-    BlockTerm::BlockTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, BlockTerm* dominator)
+    BlockTerm::BlockTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, BlockTerm* dominator, bool landing_pad)
       : Term(ui, context, term_block, this, BlockType::get(*context)),
         m_terminated(false) {
 
       PSI_ASSERT(function);
       set_base_parameter(0, function);
       set_base_parameter(1, dominator);
+      
+      if (landing_pad) {
+        CatchClauseTerm *catch_clause = context->allocate_term(CatchClauseTerm::Initializer(this));
+        set_base_parameter(2, catch_clause);
+      }
     }
 
     class BlockTerm::Initializer : public InitializerBase<BlockTerm> {
     public:
-      Initializer(FunctionTerm* function, BlockTerm* dominator)
-        : m_function(function), m_dominator(dominator) {
+      Initializer(FunctionTerm* function, BlockTerm* dominator, bool landing_pad)
+        : m_function(function), m_dominator(dominator), m_landing_pad(landing_pad) {
       }
 
       BlockTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-	return new (base) BlockTerm(ui, context, m_function, m_dominator);
+	return new (base) BlockTerm(ui, context, m_function, m_dominator, m_landing_pad);
       }
 
       std::size_t n_uses() const {
-	return 2;
+	return 3;
       }
 
     private:
       FunctionTerm* m_function;
       BlockTerm* m_dominator;
+      bool m_landing_pad;
     };
     
     FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type, bool phantom)
@@ -676,7 +647,7 @@ namespace Psi {
      * are available in this block.
      */
     BlockTerm* FunctionTerm::new_block(BlockTerm* dominator) {
-      return context().allocate_term(BlockTerm::Initializer(this, dominator));
+      return context().allocate_term(BlockTerm::Initializer(this, dominator, false));
     }
 
     /**
@@ -686,6 +657,22 @@ namespace Psi {
      */
     BlockTerm* FunctionTerm::new_block() {
       return new_block(NULL);
+    }
+
+    /**
+     * \brief Create a new landing pad.
+     * 
+     * \param dominator Dominating block.
+     */
+    BlockTerm* FunctionTerm::new_landing_pad(BlockTerm* dominator) {
+      return context().allocate_term(BlockTerm::Initializer(this, dominator, true));
+    }
+    
+    /**
+     * \brief Create a new landing pad which is not dominated by any block.
+     */
+    BlockTerm* FunctionTerm::new_landing_pad() {
+      return new_landing_pad(NULL);
     }
 
     /**

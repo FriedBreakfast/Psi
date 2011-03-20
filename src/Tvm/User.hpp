@@ -20,7 +20,7 @@ namespace Psi {
   class Used;
 
   /**
-   * \brief Internal class for implemented #User and #Used.
+   * \brief Internal class for implementing #User and #Used.
    *
    * Do not use this class directly outside of those two classes.
    */

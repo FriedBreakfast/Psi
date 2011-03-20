@@ -224,5 +224,21 @@ namespace Psi {
       Term *count_term = FunctionalBuilder::size_value(dest->context(), count);
       return memcpy(dest, src, count_term);
     }
+    
+    /**
+     * \brief Create a landing_pad instruction setting the landing pad to a new value.
+     * 
+     * \param landing_pad New landing pad. This block must be a landing pad.
+     */
+    InstructionTerm* InstructionBuilder::set_landing_pad(BlockTerm *landing_pad) {
+      return SetLandingPad::create(m_insert_point, landing_pad);
+    }
+
+    /**
+     * \brief Clear the current landing pad.
+     */
+    InstructionTerm* InstructionBuilder::clear_landing_pad() {
+      return SetLandingPad::create(m_insert_point, NULL);
+    }
   }
 }

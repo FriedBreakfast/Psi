@@ -63,8 +63,7 @@ namespace Psi {
 
             // if the block has been completed, it should have a jump
             // instruction at the end, and we want to insert before that.
-            llvm::BasicBlock::iterator pos = boost::prior(new_insert_block->end());
-            self->irbuilder().SetInsertPoint(new_insert_block, pos);
+            self->irbuilder().SetInsertPoint(new_insert_block, new_insert_block->getTerminator());
           } else {
             old_insert_block = NULL;
           }
@@ -102,26 +101,13 @@ namespace Psi {
       FunctionBuilder::FunctionBuilder(ModuleBuilder *global_builder,
                                        FunctionTerm *function,
                                        llvm::Function *llvm_function)
-        : ConstantBuilder(*global_builder),
-          m_global_builder(global_builder),
+        : m_global_builder(global_builder),
           m_irbuilder(global_builder->llvm_context(), llvm::TargetFolder(global_builder->llvm_target_machine()->getTargetData())),
           m_function(function),
           m_llvm_function(llvm_function) {
       }
 
       FunctionBuilder::~FunctionBuilder() {
-      }
-
-      llvm::Constant* FunctionBuilder::build_constant(Term *term) {
-        return m_global_builder->build_constant(term);
-      }
-
-      const llvm::Type* FunctionBuilder::build_type(Term* term) {
-        if (!term->source() || isa<GlobalTerm>(term->source())) {
-          return m_global_builder->build_type(term);
-        } else {
-          return ConstantBuilder::build_type(term);
-        }
       }
 
       /**
@@ -159,7 +145,6 @@ namespace Psi {
        * Remove unnecessary stack save and restore instructions.
        */
       void FunctionBuilder::setup_stack_save_restore(const std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >& blocks) {
-        std::vector<BlockTerm*> jump_targets;
         std::tr1::unordered_map<BlockTerm*, BlockTerm*> stack_dominator;
         std::tr1::unordered_map<BlockTerm*, llvm::Value*> stack_save_values;
         std::tr1::unordered_set<BlockTerm*> stack_restore_required;
@@ -175,16 +160,23 @@ namespace Psi {
           for (BlockTerm::InstructionList::iterator ji = ii->first->instructions().begin(), je = ii->first->instructions().end(); ji != je; ++ji) {
             if (isa<Alloca>(&*ji)) {
               has_alloca = true;
-            } else {
-              jump_targets.clear();
-              ji->jump_targets(jump_targets);
-              for (std::vector<BlockTerm*>::iterator ki = jump_targets.begin(), ke = jump_targets.end(); ki != ke; ++ki) {
-                BlockTerm *target_stack_restore = stack_dominator[*ki];
-                if (has_alloca ? (target_stack_restore != ii->first) : (target_stack_restore != stack_restore)) {
-                  stack_save_values[target_stack_restore] = NULL;
-                  stack_restore_required.insert(*ki);
-                }
+            } else if (SetLandingPad::Ptr set_landing_pad = dyn_cast<SetLandingPad>(&*ji)) {
+              BlockTerm *target = set_landing_pad->landing_pad();
+              BlockTerm *target_stack_restore = stack_dominator[target];
+              if (has_alloca ? (target_stack_restore != ii->first) : (target_stack_restore != stack_restore)) {
+                stack_save_values[target_stack_restore] = NULL;
+                stack_restore_required.insert(target);
               }
+            } else {
+            }
+          }
+          
+          const std::vector<BlockTerm*>& successors = ii->first->successors();
+          for (std::vector<BlockTerm*>::const_iterator ji = successors.begin(), je = successors.end(); ji != je; ++ji) {
+            BlockTerm *target_stack_restore = stack_dominator[*ji];
+            if (has_alloca ? (target_stack_restore != ii->first) : (target_stack_restore != stack_restore)) {
+              stack_save_values[target_stack_restore] = NULL;
+              stack_restore_required.insert(*ji);
             }
           }
         }
@@ -201,12 +193,7 @@ namespace Psi {
         // Insert required restores
         for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
           if (stack_restore_required.find(ii->first) != stack_restore_required.end()) {
-            llvm::BasicBlock::iterator ji = ii->second->begin();
-            while (ji->getOpcode() == llvm::Instruction::PHI) {
-              PSI_ASSERT(ji != ii->second->end());
-              ++ji;
-            }
-            irbuilder().SetInsertPoint(ii->second, ji);
+            irbuilder().SetInsertPoint(ii->second, ii->second->getFirstNonPHI());
             BlockTerm *restore = stack_dominator[ii->first];
             irbuilder().CreateCall(llvm_stackrestore(), stack_save_values[restore]);
           }

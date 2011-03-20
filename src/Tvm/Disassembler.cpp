@@ -5,6 +5,7 @@
 #include <boost/make_shared.hpp>
 #include <boost/format.hpp>
 #include <boost/shared_ptr.hpp>
+#include "Instructions.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -372,7 +373,7 @@ namespace Psi {
       case term_apply:
       case term_recursive:
       case term_recursive_parameter:
-        PSI_FAIL("not implemented");
+        PSI_NOT_IMPLEMENTED();
         
       case term_functional: {
         FunctionalTerm *cast_term = cast<FunctionalTerm>(term);
@@ -612,13 +613,23 @@ namespace Psi {
     }
     
     void DisassemblerContext::print_instruction_term(InstructionTerm *term) {
-      unsigned n_parameters = term->n_parameters();
-      *m_output << term->operation();
-      for (unsigned ii = 0; ii != n_parameters; ++ii) {
-        *m_output << ' ';
-        print_term(term->parameter(ii), true);
+      if (SetLandingPad::Ptr set_landing_pad = dyn_cast<SetLandingPad>(term)) {
+        if (BlockTerm *landing_pad = set_landing_pad->landing_pad()) {
+          *m_output << "set_landing_pad ";
+          print_term(landing_pad, true);
+          *m_output << ";\n";
+        } else {
+          *m_output << "clear_landing_pad;\n";
+        }
+      } else {
+        unsigned n_parameters = term->n_parameters();
+        *m_output << term->operation();
+        for (unsigned ii = 0; ii != n_parameters; ++ii) {
+          *m_output << ' ';
+          print_term(term->parameter(ii), true);
+        }
+        *m_output << ";\n";
       }
-      *m_output << ";\n";
     }
     
     void DisassemblerContext::print_phi_term(PhiTerm* term) {

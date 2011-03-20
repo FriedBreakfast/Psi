@@ -4,24 +4,21 @@
 #include <iostream>
 
 namespace Psi {
-#ifdef PSI_DEBUG
-  void assert_fail(const char *test, const char *msg) {
-    std::cerr << "Assertion failed: ";
+  void print_fail_message(const char *file, int line, const char *test, const char *msg, const char *category_msg) {
+    std::cerr << file << ':' << line << ": " << category_msg << ": ";
     if (test && msg)
       std::cerr << test << ": " << msg;
     else
       std::cerr << (msg ? msg : test);
     std::cerr << std::endl;
+  }
+  
+  void assert_fail(const char *file, int line, const char *test, const char *msg) {
+    print_fail_message(file, line, test, msg, "assertion failed");
     std::abort();
   }
 
-  void warning_fail(const char *test, const char *msg) {
-    std::cerr << "Warning: ";
-    if (test && msg)
-      std::cerr << test << ": " << msg;
-    else
-      std::cerr << (msg ? msg : test);
-    std::cerr << std::endl;
+  void warning_fail(const char *file, int line, const char *test, const char *msg) {
+    print_fail_message(file, line, test, msg, "warning");
   }
-#endif
 }

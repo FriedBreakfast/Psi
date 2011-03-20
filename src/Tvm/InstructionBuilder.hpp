@@ -52,6 +52,12 @@ namespace Psi {
       InstructionTerm* memcpy(Term*,Term*,Term*);
       InstructionTerm* memcpy(Term*,Term*,unsigned);
       ///@}
+      
+      /// \name Landing pad control
+      ///@{
+      InstructionTerm* set_landing_pad(BlockTerm*);
+      InstructionTerm* clear_landing_pad();
+      ///@}
     };
   }
 }

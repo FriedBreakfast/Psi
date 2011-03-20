@@ -37,7 +37,7 @@ namespace Psi {
         }
 
         static llvm::Constant* float_value_callback(ConstantBuilder& builder, FloatValue::Ptr term) {
-          PSI_FAIL("not implemented");
+          PSI_NOT_IMPLEMENTED();
         }
 
         static llvm::Constant* array_value_callback(ConstantBuilder& builder, ArrayValue::Ptr term) {

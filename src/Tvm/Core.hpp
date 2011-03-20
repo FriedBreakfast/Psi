@@ -73,6 +73,7 @@ namespace Psi {
       term_function_type, ///< FunctionTypeTerm: \copybrief FunctionTypeTerm
       term_function_type_parameter, ///< FunctionTypeParameterTerm: \copybrief FunctionTypeParameterTerm
       term_functional, ///< FunctionalTerm: \copybrief FunctionalTerm
+      term_catch_clause ///< CatchClauseTerm: \copybrief CatchClauseTerm
     };
 
     /**
@@ -128,6 +129,7 @@ namespace Psi {
        * So FunctionTerm can manage FunctionParameterTerm and
        * BlockTerm references.
        */
+#if 0
       friend class FunctionTerm;
       friend class GlobalTerm;
       friend class FunctionParameterTerm;
@@ -141,6 +143,7 @@ namespace Psi {
       friend class RecursiveParameterTerm;
       friend class ApplyTerm;
       friend class FunctionalTerm;
+#endif
 
     public:
       virtual ~Term();
@@ -191,11 +194,9 @@ namespace Psi {
       
       void dump();
 
-    private:
-      Term(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type);
-
       std::size_t hash_value() const;
 
+    private:
       unsigned char m_term_type;
       unsigned char m_category : 2;
       Context *m_context;
@@ -203,6 +204,8 @@ namespace Psi {
       boost::intrusive::list_member_hook<> m_term_list_hook;
 
     protected:
+      Term(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type);
+
       unsigned n_base_parameters() const {
 	return n_uses() - 1;
       }

@@ -124,14 +124,15 @@ namespace Psi {
       };
 
       struct Block : Element, boost::intrusive::list_base_hook<> {
-	Block(const Location& location_, UniqueList<NamedExpression>& statements_);
-	Block(const Location& location_, UniquePtr<Token>& name_, UniquePtr<Token>& dominator_name_,
+	Block(const Location& location_, bool landing_pad_, UniqueList<NamedExpression>& statements_);
+	Block(const Location& location_, bool landing_pad_, UniquePtr<Token>& name_, UniquePtr<Token>& dominator_name_,
               UniqueList<NamedExpression>& statements_);
 	~Block();
 
 	UniquePtr<Token> name;
         UniquePtr<Token> dominator_name;
 	UniqueList<NamedExpression> statements;
+        bool landing_pad;
       };
 
       enum GlobalType {

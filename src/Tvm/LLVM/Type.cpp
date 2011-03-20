@@ -84,7 +84,7 @@ namespace Psi {
        * type. This function handles aggregate types, primitive types
        * are forwarded to build_type_internal_simple.
        */
-      const llvm::Type* ConstantBuilder::build_type_internal(FunctionalTerm *term) {
+      const llvm::Type* ModuleBuilder::build_type_internal(FunctionalTerm *term) {
         return TypeBuilder::callback_map.call(*this, term);
       }
     }

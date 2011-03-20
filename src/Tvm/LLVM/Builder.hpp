@@ -7,11 +7,14 @@
 
 #include <llvm/LLVMContext.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/Support/IRBuilder.h>
 #include <llvm/Support/TargetFolder.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Value.h>
+
+#ifdef PSI_DEBUG
+#include <llvm/ExecutionEngine/JITEventListener.h>
+#endif
 
 #include "../Core.hpp"
 #include "../AggregateLowering.hpp"
@@ -68,7 +71,7 @@ namespace Psi {
         /// \brief Get the llvm::TargetMachine we're building IR for.
         llvm::TargetMachine* llvm_target_machine() {return m_llvm_target_machine;}
 
-        virtual const llvm::Type* build_type(Term *term);
+        virtual const llvm::Type* build_type(Term *term) = 0;
 
         /**
          * \brief Return the constant value specified by the given term.
@@ -80,17 +83,10 @@ namespace Psi {
         const llvm::APInt& build_constant_integer(Term *term);
 
       private:
-        struct TypeBuilderCallback;
-
         ConstantBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine);
 
         llvm::LLVMContext *m_llvm_context;
         llvm::TargetMachine *m_llvm_target_machine;
-
-        typedef std::tr1::unordered_map<Term*, const llvm::Type*> TypeTermMap;
-        TypeTermMap m_type_terms;
-
-        const llvm::Type* build_type_internal(FunctionalTerm *term);
       };
 
       class ModuleBuilder : public ConstantBuilder {
@@ -100,6 +96,7 @@ namespace Psi {
         ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module);
         ~ModuleBuilder();
 
+        virtual const llvm::Type* build_type(Term *term);
         virtual llvm::Constant* build_constant(Term *term);
         llvm::GlobalValue* build_global(GlobalTerm *term);
         
@@ -110,11 +107,17 @@ namespace Psi {
         llvm::Function* llvm_stackrestore() {return m_llvm_stackrestore;}
 
       protected:
+        struct TypeBuilderCallback;
         struct ConstantBuilderCallback;
         struct GlobalBuilderCallback;
 
         Module *m_module;
         llvm::Module *m_llvm_module;
+
+        typedef std::tr1::unordered_map<Term*, const llvm::Type*> TypeTermMap;
+        TypeTermMap m_type_terms;
+
+        const llvm::Type* build_type_internal(FunctionalTerm *term);
 
         typedef std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*> GlobalTermMap;
         GlobalTermMap m_global_terms;
@@ -127,7 +130,7 @@ namespace Psi {
         llvm::Function *m_llvm_memcpy, *m_llvm_stacksave, *m_llvm_stackrestore;
       };
 
-      class FunctionBuilder : public ConstantBuilder {
+      class FunctionBuilder {
         friend class ModuleBuilder;
 
       public:
@@ -135,14 +138,20 @@ namespace Psi {
 
         ~FunctionBuilder();
 
+        /// \brief Get the LLVM context used to create IR.
+        llvm::LLVMContext& llvm_context() {return m_global_builder->llvm_context();}
+
+        /// \brief Get the llvm::TargetMachine we're building IR for.
+        llvm::TargetMachine* llvm_target_machine() {return m_global_builder->llvm_target_machine();}
+
         FunctionTerm *function() {return m_function;}
         llvm::Function* llvm_function() {return m_llvm_function;}
         IRBuilder& irbuilder() {return m_irbuilder;}
 
         unsigned unknown_alloca_align();
 
-        virtual const llvm::Type* build_type(Term *term);
-        virtual llvm::Constant* build_constant(Term *term);
+        const llvm::Type* build_type(Term *term) {return m_global_builder->build_type(term);}
+        llvm::Constant* build_constant(Term *term) {return m_global_builder->build_constant(term);}
         llvm::Value* build_value(Term *term);
 
         llvm::StringRef term_name(Term *term);
@@ -167,7 +176,7 @@ namespace Psi {
         void run();
         void setup_stack_save_restore(const std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >&);
 
-        llvm::Instruction* build_value_instruction(InstructionTerm *term);
+        llvm::Value* build_value_instruction(InstructionTerm *term);
         llvm::Value* build_value_functional(FunctionalTerm *term);
 
 	llvm::PHINode* build_phi_node(Term *type, llvm::Instruction *insert_point);

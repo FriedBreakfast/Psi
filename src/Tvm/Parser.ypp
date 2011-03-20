@@ -47,6 +47,7 @@ namespace {
     boost::shared_ptr<UniqueList<GlobalElement> > globals;
     boost::shared_ptr<UniqueList<NamedGlobalElement> > named_globals;
     boost::shared_ptr<UniqueList<PhiNode> > phi_nodes;
+    bool bool_value;
   };
 
   class ParserInternalArguments : public BisonHelper<YYTYPE_INT16, YYSTYPE, YYLTYPE> {
@@ -110,6 +111,7 @@ namespace {
 %token DEFINE "define"
 %token PHI "phi"
 %token BLOCK "block"
+%token LANDING_PAD "landing_pad"
 %token EXTERN "extern"
 %token CONST "const"
 %token CC_C "cc_c"
@@ -139,6 +141,7 @@ namespace {
 %type<named_globals> global_list global_list_nonempty global_def
 %type<phi_nodes> phi_node phi_node_list
 %type<calling_convention> calling_convention
+%type<bool_value> block_type
 
 %%
 
@@ -201,7 +204,7 @@ function_type {
 | function_type '{' statement_list block_list '}' {
   UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($1)));
   UniqueList<Block> blocks;
-  blocks.push_back(*new Block(@3, *$3));
+  blocks.push_back(*new Block(@3, false, *$3));
   blocks.splice(blocks.end(), *$4);
   $$ = list_one<GlobalElement>(new Function(@$, ft, blocks));
 }
@@ -245,17 +248,19 @@ block
 ;
 
 block:
-BLOCK ID '(' ID ')' ':' statement_list {
+block_type ID '(' ID ')' ':' statement_list {
   UniquePtr<Token> name(list_to_ptr($2));
   UniquePtr<Token> dominator_name(list_to_ptr($4));
-  $$ = list_one<Block>(new Block(@$, name, dominator_name, *$7));
+  $$ = list_one<Block>(new Block(@$, $1, name, dominator_name, *$7));
 }
-| BLOCK ID ':' statement_list {
+| block_type ID ':' statement_list {
   UniquePtr<Token> name(list_to_ptr($2));
   UniquePtr<Token> dominator_name;
-  $$ = list_one<Block>(new Block(@$, name, dominator_name, *$4));
+  $$ = list_one<Block>(new Block(@$, $1, name, dominator_name, *$4));
 }
 ;
+
+block_type: BLOCK {$$=false;} | LANDING_PAD {$$=true;};
 
 statement_list:
 statement
@@ -566,18 +571,20 @@ namespace Psi {
       NamedExpression::~NamedExpression() {
       }
 
-      Block::Block(const Location& location_, UniquePtr<Token>& name_,
+      Block::Block(const Location& location_, bool landing_pad_, UniquePtr<Token>& name_,
                    UniquePtr<Token>& dominator_name_,
                    UniqueList<NamedExpression>& statements_)
-	: Element(location_) {
+	: Element(location_),
+	landing_pad(landing_pad_) {
 	name.swap(name_);
         dominator_name.swap(dominator_name_);
 	statements.swap(statements_);
       }
 
-      Block::Block(const Location& location_,
+      Block::Block(const Location& location_, bool landing_pad_,
                    UniqueList<NamedExpression>& statements_)
-	: Element(location_) {
+	: Element(location_),
+	landing_pad(landing_pad_) {
 	statements.swap(statements_);
       }
 

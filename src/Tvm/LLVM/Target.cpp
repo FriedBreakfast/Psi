@@ -112,7 +112,7 @@ namespace Psi {
       }
       
       Term* TargetCommon::convert_value(Term *value, Term *type) {
-        PSI_FAIL("not implemented");
+        PSI_NOT_IMPLEMENTED();
       }
       
       TargetCommon::TypeSizeAlignmentLiteral TargetCommon::type_size_alignment_simple(const llvm::Type *llvm_type) {

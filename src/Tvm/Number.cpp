@@ -101,7 +101,7 @@ namespace Psi {
     }
 
     FloatValue::Ptr FloatValue::get(Context& context, FloatType::Width width, const Data& data) {
-      PSI_FAIL("not implemented");
+      PSI_NOT_IMPLEMENTED();
       return context.get_functional<FloatValue>(StaticArray<Term*,0>(), data);
     }
 
