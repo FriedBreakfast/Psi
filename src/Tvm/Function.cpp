@@ -1,6 +1,7 @@
 #include "Aggregate.hpp"
 #include "Function.hpp"
 #include "Functional.hpp"
+#include "FunctionalBuilder.hpp"
 #include "Rewrite.hpp"
 #include "Utility.hpp"
 
@@ -271,14 +272,17 @@ namespace Psi {
     FunctionTypeParameterTerm* Context::new_function_type_parameter(Term* type) {
       return allocate_term(FunctionTypeParameterTerm::Initializer(type));
     }
+    
+    BlockMemberTerm::BlockMemberTerm(const Psi::UserInitializer& ui, Context* context, TermType term_type, Term* source, Term* type, BlockTerm* block)
+    : Term(ui, context, term_type, source, type), m_block(block) {
+    }
 
     InstructionTerm::InstructionTerm(const UserInitializer& ui, Context *context,
 				     Term* type, const char *operation,
                                      ArrayPtr<Term*const> parameters,
                                      BlockTerm* block)
-      : Term(ui, context, term_instruction, this, type),
-        m_operation(operation),
-        m_block(block) {
+      : BlockMemberTerm(ui, context, term_instruction, this, type, block),
+        m_operation(operation) {
 
       for (std::size_t i = 0; i < parameters.size(); ++i)
 	set_base_parameter(i, parameters[i]);
@@ -437,19 +441,18 @@ namespace Psi {
       if (value->phantom())
         throw TvmUserError("phi nodes cannot take on phantom values");
 
-      std::size_t free_slots = ((n_base_parameters() - 1) / 2) - m_n_incoming;
+      std::size_t free_slots = (n_base_parameters() / 2) - m_n_incoming;
       if (!free_slots)
-        resize_base_parameters(1 + m_n_incoming * 4);
+        resize_base_parameters(m_n_incoming * 4);
 
-      set_base_parameter(m_n_incoming*2+1, block);
-      set_base_parameter(m_n_incoming*2+2, value);
+      set_base_parameter(m_n_incoming*2, block);
+      set_base_parameter(m_n_incoming*2+1, value);
       m_n_incoming++;
     }
 
     PhiTerm::PhiTerm(const UserInitializer& ui, Context *context, Term* type, BlockTerm *block)
-      : Term(ui, context, term_phi, this, type),
+      : BlockMemberTerm(ui, context, term_phi, this, type, block),
         m_n_incoming(0) {
-      set_base_parameter(0, block);
     }
 
     class PhiTerm::Initializer : public InitializerBase<PhiTerm> {
@@ -464,7 +467,7 @@ namespace Psi {
       }
 
       std::size_t n_uses() const {
-        return 9;
+        return 8;
       }
 
     private:
@@ -484,7 +487,8 @@ namespace Psi {
     }
     
     CatchClauseTerm::CatchClauseTerm(const Psi::UserInitializer& ui, Context *context, BlockTerm *block)
-    : Term(ui, context, term_catch_clause, block, NULL) {
+    : BlockMemberTerm(ui, context, term_catch_clause, this, CatchClauseNameType::get(*context), block) {
+      set_base_parameter(0, block);
     }
     
     class CatchClauseTerm::Initializer : public InitializerBase<CatchClauseTerm> {
@@ -497,12 +501,40 @@ namespace Psi {
       }
 
       std::size_t n_uses() const {
-        return 0;
+        return 1;
       }
       
     private:
       BlockTerm *m_block;
     };
+    
+    const char CatchClauseNameType::operation[] = "catch_type";
+    
+    FunctionalTypeResult CatchClauseNameType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 0)
+        throw TvmUserError("catch_type type takes no parameters");
+      return FunctionalTypeResult(Metatype::get(context), false);
+    }
+
+    CatchClauseNameType::Ptr CatchClauseNameType::get(Context& context) {
+      return context.get_functional<CatchClauseNameType>(ArrayPtr<Term*>());
+    }
+    
+    const char CatchClauseName::operation[] = "catch";
+        
+    FunctionalTypeResult CatchClauseName::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 1)
+        throw TvmUserError("catch term takes one parameter");
+      
+      if (!isa<CatchClauseTerm>(parameters[0]))
+        throw TvmUserError("argument to catch term must be a catch clause");
+      
+      return FunctionalBuilder::catch_type(context);
+    }
+
+    CatchClauseName::Ptr CatchClauseName::get(CatchClauseTerm *catch_clause, unsigned index) {
+      return catch_clause->context().get_functional<CatchClauseName>(StaticArray<Term*,1>(catch_clause), index);
+    }
 
     /**
      * \brief Create a new Phi node.

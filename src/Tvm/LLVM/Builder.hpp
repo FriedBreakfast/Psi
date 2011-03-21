@@ -30,10 +30,6 @@ namespace Psi {
     namespace LLVM {
       typedef llvm::IRBuilder<true, llvm::TargetFolder, llvm::IRBuilderDefaultInserter<true> > IRBuilder;
 
-      class ConstantBuilder;
-      class ModuleBuilder;
-      class FunctionBuilder;
-
       /**
        * Thrown when an error occurs during LLVM construction: many of
        * these use PSI_ASSERT, but this can also be used when the error
@@ -55,64 +51,64 @@ namespace Psi {
         std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*> globals;
       };
 
-      class ConstantBuilder;
-      class FunctionBuilder;
-
-      class ConstantBuilder {
-        friend class ModuleBuilder;
-        friend class FunctionBuilder;
-
+      class TargetCallback {
       public:
-        ~ConstantBuilder();
+        /**
+         * Get a callback class for use by the aggregate lowering pass.
+         */
+        virtual AggregateLoweringPass::TargetCallback* aggregate_lowering_callback() = 0;
+        
+        /**
+         * \brief Set up or get the exception personality routine with the specified name.
+         * 
+         * \param module Module to set up the handler for.
+         * 
+         * \param basename Name of the personality to use. Interpretation of this name is
+         * platform specific.
+         */
+        virtual llvm::Function* exception_personality_routine(llvm::Module *module, const std::string& basename) = 0;
+      };
+
+      class ModuleBuilder {
+      public:
+        ModuleBuilder(llvm::LLVMContext*, llvm::TargetMachine*, llvm::Module*, TargetCallback*);
+        ~ModuleBuilder();
 
         /// \brief Get the LLVM context used to create IR.
         llvm::LLVMContext& llvm_context() {return *m_llvm_context;}
 
         /// \brief Get the llvm::TargetMachine we're building IR for.
         llvm::TargetMachine* llvm_target_machine() {return m_llvm_target_machine;}
-
-        virtual const llvm::Type* build_type(Term *term) = 0;
-
-        /**
-         * \brief Return the constant value specified by the given term.
-         *
-         * \pre <tt>!term->phantom() && term->global()</tt>
-         */
-        virtual llvm::Constant* build_constant(Term *term) = 0;
-
-        const llvm::APInt& build_constant_integer(Term *term);
-
-      private:
-        ConstantBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine);
-
-        llvm::LLVMContext *m_llvm_context;
-        llvm::TargetMachine *m_llvm_target_machine;
-      };
-
-      class ModuleBuilder : public ConstantBuilder {
-	friend class ConstantValue;
-
-      public:
-        ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module);
-        ~ModuleBuilder();
+        
+        TargetCallback *target_callback() {return m_target_callback;}
 
         virtual const llvm::Type* build_type(Term *term);
         virtual llvm::Constant* build_constant(Term *term);
         llvm::GlobalValue* build_global(GlobalTerm *term);
+
+        const llvm::APInt& build_constant_integer(Term *term);
         
-        ModuleMapping run(Module*, AggregateLoweringPass::TargetCallback*);
+        ModuleMapping run(Module*);
+        
+        llvm::Module* llvm_module() {return m_llvm_module;}
         
         llvm::Function* llvm_memcpy() {return m_llvm_memcpy;}
         llvm::Function* llvm_stacksave() {return m_llvm_stacksave;}
         llvm::Function* llvm_stackrestore() {return m_llvm_stackrestore;}
+        llvm::Function* llvm_eh_exception() {return m_llvm_eh_exception;}
+        llvm::Function* llvm_eh_selector() {return m_llvm_eh_selector;}
+        llvm::Function* llvm_eh_typeid_for() {return m_llvm_eh_typeid_for;}
 
       protected:
         struct TypeBuilderCallback;
         struct ConstantBuilderCallback;
         struct GlobalBuilderCallback;
 
+        llvm::LLVMContext *m_llvm_context;
+        llvm::TargetMachine *m_llvm_target_machine;
         Module *m_module;
         llvm::Module *m_llvm_module;
+        TargetCallback *m_target_callback;
 
         typedef std::tr1::unordered_map<Term*, const llvm::Type*> TypeTermMap;
         TypeTermMap m_type_terms;
@@ -127,7 +123,8 @@ namespace Psi {
 
         llvm::Constant* build_constant_internal(FunctionalTerm *term);
         
-        llvm::Function *m_llvm_memcpy, *m_llvm_stacksave, *m_llvm_stackrestore;
+        llvm::Function *m_llvm_memcpy, *m_llvm_stacksave, *m_llvm_stackrestore,
+        *m_llvm_eh_exception, *m_llvm_eh_selector, *m_llvm_eh_typeid_for;
       };
 
       class FunctionBuilder {
@@ -137,12 +134,8 @@ namespace Psi {
         typedef std::tr1::unordered_map<Term*, llvm::Value*> ValueTermMap;
 
         ~FunctionBuilder();
-
-        /// \brief Get the LLVM context used to create IR.
-        llvm::LLVMContext& llvm_context() {return m_global_builder->llvm_context();}
-
-        /// \brief Get the llvm::TargetMachine we're building IR for.
-        llvm::TargetMachine* llvm_target_machine() {return m_global_builder->llvm_target_machine();}
+        
+        ModuleBuilder *module_builder() {return m_module_builder;}
 
         FunctionTerm *function() {return m_function;}
         llvm::Function* llvm_function() {return m_llvm_function;}
@@ -150,22 +143,16 @@ namespace Psi {
 
         unsigned unknown_alloca_align();
 
-        const llvm::Type* build_type(Term *term) {return m_global_builder->build_type(term);}
-        llvm::Constant* build_constant(Term *term) {return m_global_builder->build_constant(term);}
         llvm::Value* build_value(Term *term);
 
         llvm::StringRef term_name(Term *term);
-
-        llvm::Function* llvm_memcpy() {return m_global_builder->llvm_memcpy();}
-        llvm::Function* llvm_stacksave() {return m_global_builder->llvm_stacksave();}
-        llvm::Function* llvm_stackrestore() {return m_global_builder->llvm_stackrestore();}
         
       private:
         struct ValueBuilderCallback;
 
         FunctionBuilder(ModuleBuilder*, FunctionTerm*, llvm::Function*);
 
-        ModuleBuilder *m_global_builder;
+        ModuleBuilder *m_module_builder;
         IRBuilder m_irbuilder;
 
         FunctionTerm *m_function;
@@ -181,7 +168,7 @@ namespace Psi {
 
 	llvm::PHINode* build_phi_node(Term *type, llvm::Instruction *insert_point);
       };
-
+      
       /**
        * Functions for handling simple types.
        */
@@ -192,7 +179,7 @@ namespace Psi {
 
       llvm::TargetMachine* host_machine();
 
-      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&, const std::string&);
+      boost::shared_ptr<TargetCallback> create_target_fixes(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&, const std::string&);
 
       class LLVMJit : public Jit {
       public:
@@ -206,7 +193,7 @@ namespace Psi {
 
       private:
         llvm::LLVMContext m_llvm_context;
-        boost::shared_ptr<AggregateLoweringPass::TargetCallback> m_target_fixes;
+        boost::shared_ptr<TargetCallback> m_target_fixes;
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
         std::tr1::unordered_map<Module*, ModuleMapping> m_modules;
 #ifdef PSI_DEBUG

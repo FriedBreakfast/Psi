@@ -186,8 +186,10 @@ namespace Psi {
         virtual AggregateLoweringPass::TypeSizeAlignment type_size_alignment(Term*);
         virtual std::pair<Term*,Term*> type_from_alignment(Term*);
       };
+      
+      llvm::Function* target_exception_personality_linux(llvm::Module*, const std::string&);
 
-      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes_amd64(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&);
+      boost::shared_ptr<TargetCallback> create_target_fixes_amd64(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&);
     }
   }
 }

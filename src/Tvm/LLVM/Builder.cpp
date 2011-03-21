@@ -93,16 +93,6 @@ namespace Psi {
         }
       };
 
-      ConstantBuilder::ConstantBuilder(llvm::LLVMContext *llvm_context,
-				       llvm::TargetMachine *target_machine)
-        : m_llvm_context(llvm_context),
-	  m_llvm_target_machine(target_machine) {
-        PSI_ASSERT(m_llvm_context);
-      }
-
-      ConstantBuilder::~ConstantBuilder() {
-      }
-
       /**
        * \brief Return the constant integer specified by the given term.
        *
@@ -111,7 +101,7 @@ namespace Psi {
        *
        * \pre <tt>!term->phantom() && term->global()</tt>
        */
-      const llvm::APInt& ConstantBuilder::build_constant_integer(Term *term) {
+      const llvm::APInt& ModuleBuilder::build_constant_integer(Term *term) {
         llvm::Constant *c = build_constant(term);
         PSI_ASSERT(llvm::isa<llvm::ConstantInt>(c));
         return llvm::cast<llvm::ConstantInt>(c)->getValue();
@@ -199,23 +189,60 @@ namespace Psi {
 
           return f;
         }
+        
+        llvm::Function* intrinsic_eh_exception(llvm::Module& m) {
+          const char *name = "llvm.eh.exception";
+          if (llvm::Function *f = m.getFunction(name))
+            return f;
+          
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(m.getContext()), false);
+          return llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+        }
+        
+        llvm::Function* intrinsic_eh_selector(llvm::Module& m) {
+          const char *name = "llvm.eh.selector";
+          if (llvm::Function *f = m.getFunction(name))
+            return f;
+
+          llvm::LLVMContext& c = m.getContext();
+          std::vector<const llvm::Type*> args;
+          args.push_back(llvm::Type::getInt8PtrTy(c));
+          args.push_back(llvm::Type::getInt8PtrTy(c));
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(m.getContext()), args, true);
+          return llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+        }
+        
+        llvm::Function* intrinsic_eh_typeid_for(llvm::Module& m) {
+          const char *name = "llvm.eh.typeid.for";
+          if (llvm::Function *f = m.getFunction(name))
+            return f;
+          
+          llvm::LLVMContext& c = m.getContext();
+          std::vector<const llvm::Type*> args;
+          args.push_back(llvm::Type::getInt8PtrTy(c));
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(m.getContext()), args, false);
+          return llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+        }
       }
 
-      ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module)
-        : ConstantBuilder(llvm_context, target_machine), m_llvm_module(llvm_module) {
+      ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module, TargetCallback *target_callback)
+        : m_llvm_context(llvm_context), m_llvm_target_machine(target_machine), m_llvm_module(llvm_module), m_target_callback(target_callback) {
         m_llvm_memcpy = intrinsic_memcpy(*llvm_module, target_machine);
         m_llvm_stacksave = intrinsic_stacksave(*llvm_module);
         m_llvm_stackrestore = intrinsic_stackrestore(*llvm_module);
+        m_llvm_eh_exception = intrinsic_eh_exception(*llvm_module);
+        m_llvm_eh_selector = intrinsic_eh_selector(*llvm_module);
+        m_llvm_eh_typeid_for = intrinsic_eh_typeid_for(*llvm_module);
       }
 
       ModuleBuilder::~ModuleBuilder() {
       }
 
-      ModuleMapping ModuleBuilder::run(Module *module, AggregateLoweringPass::TargetCallback *target_callback) {
+      ModuleMapping ModuleBuilder::run(Module *module) {
         ModuleMapping module_result;
         module_result.module = m_llvm_module;
         
-        AggregateLoweringPass aggregate_lowering_pass(module, target_callback);
+        AggregateLoweringPass aggregate_lowering_pass(module, target_callback()->aggregate_lowering_callback());
         aggregate_lowering_pass.remove_all_unions = true;
         aggregate_lowering_pass.remove_only_unknown = true;
         aggregate_lowering_pass.remove_stack_arrays = true;
@@ -293,6 +320,11 @@ namespace Psi {
         return it->second;
       }
 
+      /**
+        * \brief Return the constant value specified by the given term.
+        *
+        * \pre <tt>!term->phantom() && term->global()</tt>
+        */
       llvm::Constant* ModuleBuilder::build_constant(Term *term) {
         PSI_ASSERT(!term->phantom() && (!term->source() || isa<GlobalTerm>(term->source())));
 
@@ -357,8 +389,8 @@ namespace Psi {
 
       void LLVMJit::add_module(Module *module) {
         std::auto_ptr<llvm::Module> llvm_module(new llvm::Module(module->name(), m_llvm_context));
-        ModuleBuilder builder(&m_llvm_context, m_target_machine.get(), llvm_module.get());
-        ModuleMapping new_mapping = builder.run(module, m_target_fixes.get());
+        ModuleBuilder builder(&m_llvm_context, m_target_machine.get(), llvm_module.get(), m_target_fixes.get());
+        ModuleMapping new_mapping = builder.run(module);
 
         ModuleMapping& mapping = m_modules[module];
         if (mapping.module)

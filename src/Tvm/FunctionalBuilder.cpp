@@ -862,5 +862,22 @@ namespace Psi {
     Term* FunctionalBuilder::float_type(Context& context, FloatType::Width width) {
       return FloatType::get(context, width);
     }
+    
+    /**
+     * \brief Get the type used to name catch clauses.
+     */
+    Term* FunctionalBuilder::catch_type(Context& context) {
+      return CatchClauseNameType::get(context);
+    }
+
+    /**
+     * \brief Get the name of a catch clause.
+     */
+    Term* FunctionalBuilder::catch_(Term *clause, unsigned index) {
+      CatchClauseTerm *cast_clause = dyn_cast<CatchClauseTerm>(clause);
+      if (!cast_clause)
+        throw TvmUserError("catch clause name parameter is not a catch clause.");
+      return CatchClauseName::get(cast_clause, index);
+    }
   }
 }

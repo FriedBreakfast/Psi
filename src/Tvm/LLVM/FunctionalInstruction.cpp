@@ -17,7 +17,7 @@ namespace Psi {
         }
 
         static llvm::Value* array_value_callback(FunctionBuilder& builder, ArrayValue::Ptr term) {
-          const llvm::Type *type = builder.build_type(term->type());
+          const llvm::Type *type = builder.module_builder()->build_type(term->type());
           llvm::Value *array = llvm::UndefValue::get(type);
           for (unsigned i = 0; i < term->length(); ++i) {
             llvm::Value *element = builder.build_value(term->value(i));
@@ -28,7 +28,7 @@ namespace Psi {
         }
 
         static llvm::Value* struct_value_callback(FunctionBuilder& builder, StructValue::Ptr term) {
-          const llvm::Type *type = builder.build_type(term->type());
+          const llvm::Type *type = builder.module_builder()->build_type(term->type());
           llvm::Value *result = llvm::UndefValue::get(type);
           for (std::size_t i = 0; i < term->n_members(); ++i) {
             llvm::Value *val = builder.build_value(term->member_value(i));
@@ -42,7 +42,7 @@ namespace Psi {
         }
         
         static llvm::Value* pointer_cast_callback(FunctionBuilder& builder, PointerCast::Ptr term) {
-          const llvm::Type *type = builder.build_type(term->target_type());
+          const llvm::Type *type = builder.module_builder()->build_type(term->target_type());
           llvm::Value *source = builder.build_value(term->pointer());
           return builder.irbuilder().CreateBitCast(source, type->getPointerTo());
         }
@@ -66,7 +66,7 @@ namespace Psi {
         
         static llvm::Value* array_element_ptr_callback(FunctionBuilder& builder, ArrayElementPtr::Ptr term) {
           llvm::Value *aggregate_ptr = builder.build_value(term->aggregate_ptr());
-          const llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.llvm_context());
+          const llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.module_builder()->llvm_context());
           llvm::Value *indices[2] = {llvm::ConstantInt::get(i32_ty, 0), builder.build_value(term->index())};
           return builder.irbuilder().CreateInBoundsGEP(aggregate_ptr, indices, indices+2);
         }

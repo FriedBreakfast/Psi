@@ -50,6 +50,23 @@ namespace Psi {
     static Ptr create(InstructionInsertPoint,Term*,ArrayPtr<Term*const>);
     PSI_TVM_INSTRUCTION_TYPE_END(FunctionCall)
 
+    PSI_TVM_INSTRUCTION_TYPE(FunctionInvoke)
+    typedef Empty Data;
+    PSI_TVM_INSTRUCTION_PTR_HOOK()
+    /// \brief Get the normal continuation edge
+    BlockTerm *normal_edge() const {return cast<BlockTerm>(get()->parameter(0));}
+    /// \brief Get the unwind edge
+    BlockTerm *unwind_edge() const {return cast<BlockTerm>(get()->parameter(1));}
+    /// \brief Get the function being called.
+    Term* target() const {return get()->parameter(2);}
+    /// \brief Get the value of the <tt>n</tt>th parameter used.
+    Term* parameter(std::size_t n) const {return get()->parameter(n+3);}
+    /// \brief Get the function type of the function being called.
+    FunctionTypeTerm* target_function_type() const {return cast<FunctionTypeTerm>(cast<PointerType>(target()->type())->target_type());}
+    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
+    static Ptr create(InstructionInsertPoint,BlockTerm*,BlockTerm*,Term*,ArrayPtr<Term*const>);
+    PSI_TVM_INSTRUCTION_TYPE_END(FunctionInvoke)
+
     PSI_TVM_INSTRUCTION_TYPE(Store)
     typedef Empty Data;
     PSI_TVM_INSTRUCTION_PTR_HOOK()
@@ -69,25 +86,6 @@ namespace Psi {
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
     static Ptr create(InstructionInsertPoint,Term*);
     PSI_TVM_INSTRUCTION_TYPE_END(Load)
-    
-    /**
-     * \brief Eager value evaluation.
-     * 
-     * This instruction causes a value (and all of its dependencies)
-     * to be evaluated immediately. This is useful when a dependency
-     * may raise an exception during evaluation, such as a division
-     * operation, as it means the user can guarantee it has been
-     * evaluated and the exception thrown or not thrown by a certain
-     * point.
-     */
-    PSI_TVM_INSTRUCTION_TYPE(Eager)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Get the term being eagerly evaluated
-    Term *value() const {return get()->parameter(0);}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint,Term*);
-    PSI_TVM_INSTRUCTION_TYPE_END(Eager)
 
     /**
      * \brief Stack allocation instruction.
@@ -146,34 +144,6 @@ namespace Psi {
     PSI_TVM_INSTRUCTION_PTR_HOOK_END()
     static Ptr create(InstructionInsertPoint,Term*,Term*,Term*,Term*);
     PSI_TVM_INSTRUCTION_TYPE_END(MemCpy)
-    
-    /**
-     * \brief Landing pad selection.
-     * 
-     * This instruction sets the landing pad from this point onwards in
-     * a block. At the start of a block, the current landing pad is inherited
-     * from the end of the dominating block.
-     */
-    PSI_TVM_INSTRUCTION_TYPE(SetLandingPad)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Landing pad used until the next \c landing_pad instruction
-    BlockTerm *landing_pad() const {return cast<BlockTerm>(get()->parameter(0));}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint,BlockTerm*);
-    PSI_TVM_INSTRUCTION_TYPE_END(SetLandingPad)
-    
-    /**
-     * \brief Exception handler selection,
-     */
-    PSI_TVM_INSTRUCTION_TYPE(ExceptionHandlerSelect)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Get the nth exception category passed to the select function.
-    Term* category(unsigned n) const {return get()->parameter(n);}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint,ArrayPtr<Term*const>);
-    PSI_TVM_INSTRUCTION_TYPE_END(ExceptionHandlerSelect)
   }
 }
 

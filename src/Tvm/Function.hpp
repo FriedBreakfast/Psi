@@ -16,19 +16,53 @@ namespace Psi {
       bool terminator;
       std::vector<BlockTerm*> successors;
     };
+    
+    /**
+     * \brief Base class for terms which belong to a block.
+     */
+    class BlockMemberTerm : public Term {
+    public:
+      /// \brief Get the block this term is part of.
+      BlockTerm* block() {return m_block;}
+
+    protected:
+      BlockMemberTerm(const Psi::UserInitializer& ui, Context* context, TermType term_type, Term* source, Term* type, BlockTerm *block);
+      
+      BlockTerm *m_block;
+    };
+    
+#ifndef PSI_DOXYGEN
+    template<> struct CastImplementation<BlockMemberTerm> {
+      typedef BlockMemberTerm* Ptr;
+      typedef BlockMemberTerm& Reference;
+
+      static Ptr null() {
+        return 0;
+      }
+
+      static Ptr cast(Term *t) {
+        return checked_cast<BlockMemberTerm*>(t);
+      }
+
+      static bool isa(Term* t) {
+        return (t->term_type() == term_instruction) ||
+        (t->term_type() == term_phi) ||
+        (t->term_type() == term_catch_clause);
+      }
+    };
+#endif
 
     /**
      * \brief Instruction term. Per-instruction funtionality is
      * created by implementing InstructionTermBackend and wrapping
      * that in InstructionTerm.
      */
-    class InstructionTerm : public Term {
+    class InstructionTerm : public BlockMemberTerm {
       friend class BlockTerm;
       template<typename> friend class InstructionTermSpecialized;
 
     public:
       const char *operation() {return m_operation;}
-      BlockTerm* block() {return m_block;}
       std::size_t n_parameters() {return Term::n_base_parameters();}
       Term* parameter(std::size_t n) {return get_base_parameter(n);}
 
@@ -41,7 +75,6 @@ namespace Psi {
       const char *m_operation;
       typedef boost::intrusive::list_member_hook<> InstructionListHook;
       InstructionListHook m_instruction_list_hook;
-      BlockTerm *m_block;
     };
 
 #ifndef PSI_DOXYGEN
@@ -146,11 +179,10 @@ namespace Psi {
      *
      * \sa http://en.wikipedia.org/wiki/Static_single_assignment_form
      */
-    class PhiTerm : public Term {
+    class PhiTerm : public BlockMemberTerm {
       friend class BlockTerm;
 
     public:
-      BlockTerm* block();
       void add_incoming(BlockTerm* block, Term* value);
 
       /// \brief Number of incoming edges
@@ -158,7 +190,7 @@ namespace Psi {
       /// \brief Get the block corresponding to a given incoming edge
       BlockTerm *incoming_block(std::size_t n);
       /// \brief Get the value of a given incoming edge
-      Term *incoming_value(std::size_t n) {return get_base_parameter(n*2+2);}
+      Term *incoming_value(std::size_t n) {return get_base_parameter(n*2+1);}
       Term *incoming_value_from(BlockTerm*);
 
     private:
@@ -182,11 +214,13 @@ namespace Psi {
      * of this term. The Linux exception API/ABI has more flexibility than this, but LLVMs C++
      * oriented EH instructions don't expose this.
      */
-    class CatchClauseTerm : public Term {
+    class CatchClauseTerm : public BlockMemberTerm {
       friend class BlockTerm;
       
     public:
+      unsigned n_clauses();
       void add_clause(Term*);
+      Term* clause(unsigned);
 
     private:
       class Initializer;
@@ -196,6 +230,22 @@ namespace Psi {
 #ifndef PSI_DOXYGEN
     template<> struct CastImplementation<CatchClauseTerm> : CoreCastImplementation<CatchClauseTerm, term_catch_clause> {};
 #endif
+    
+    PSI_TVM_FUNCTIONAL_TYPE(CatchClauseNameType, TypeOperation)
+    typedef Empty Data;
+    static Ptr get(Context&);
+    PSI_TVM_FUNCTIONAL_TYPE_END(CatchClauseNameType)
+
+    PSI_TVM_FUNCTIONAL_TYPE(CatchClauseName, FunctionalOperation)
+    typedef unsigned Data;
+    PSI_TVM_FUNCTIONAL_PTR_HOOK()
+    /// \brief Get the catch clause we're getting the name from
+    CatchClauseTerm *catch_clause() const {return cast<CatchClauseTerm>(get()->parameter(0));}
+    /// \brief Get the index into the clause that this term represents.
+    unsigned clause_index() const {return data();}
+    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
+    static Ptr get(CatchClauseTerm*,unsigned);
+    PSI_TVM_FUNCTIONAL_TYPE_END(CatchClauseName)
 
     /**
      * \brief Block (list of instructions) inside a function. The
@@ -526,12 +576,8 @@ namespace Psi {
     static InstructionTypeResult type(FunctionTerm*, const Data&, ArrayPtr<Term*const>); \
   }; PSI_TVM_INSTRUCTION_TYPE_CAST(name)
 
-    inline BlockTerm* PhiTerm::block() {
-      return cast<BlockTerm>(get_base_parameter(0));
-    }
-
     inline BlockTerm* PhiTerm::incoming_block(std::size_t n) {
-      return cast<BlockTerm>(get_base_parameter(n*2+1));
+      return cast<BlockTerm>(get_base_parameter(n*2));
     }
 
     inline BlockTerm* BlockTerm::dominator() {

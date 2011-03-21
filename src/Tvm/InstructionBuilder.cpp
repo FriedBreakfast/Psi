@@ -116,6 +116,17 @@ namespace Psi {
     }
     
     /**
+     * \brief Call a function which may throw an exception.
+     * 
+     * \param target Function to call
+     * 
+     * \param parameters Parameters to the function.
+     */
+    InstructionTerm* InstructionBuilder::invoke(BlockTerm *normal_edge, BlockTerm *unwind_edge, Term* target, ArrayPtr<Term*const> parameters) {
+      return FunctionInvoke::create(m_insert_point, normal_edge, unwind_edge, target, parameters);
+    }
+
+    /**
      * \brief Allocate memory for a variable on the stack.
      * 
      * This version of the function allocates space for one
@@ -223,22 +234,6 @@ namespace Psi {
     InstructionTerm* InstructionBuilder::memcpy(Term *dest, Term *src, unsigned count) {
       Term *count_term = FunctionalBuilder::size_value(dest->context(), count);
       return memcpy(dest, src, count_term);
-    }
-    
-    /**
-     * \brief Create a landing_pad instruction setting the landing pad to a new value.
-     * 
-     * \param landing_pad New landing pad. This block must be a landing pad.
-     */
-    InstructionTerm* InstructionBuilder::set_landing_pad(BlockTerm *landing_pad) {
-      return SetLandingPad::create(m_insert_point, landing_pad);
-    }
-
-    /**
-     * \brief Clear the current landing pad.
-     */
-    InstructionTerm* InstructionBuilder::clear_landing_pad() {
-      return SetLandingPad::create(m_insert_point, NULL);
     }
   }
 }

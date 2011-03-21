@@ -1,4 +1,5 @@
 #include "Aggregate.hpp"
+#include "FunctionalBuilder.hpp"
 #include "Number.hpp"
 
 namespace Psi {
@@ -14,7 +15,7 @@ namespace Psi {
     FunctionalTypeResult BooleanType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("bool type takes no parameters");
-      return FunctionalTypeResult(Metatype::get(context), false);
+      return FunctionalBuilder::type_type(context);
     }
 
     /// \brief Get the boolean type
@@ -25,7 +26,7 @@ namespace Psi {
     FunctionalTypeResult BooleanValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("bool_v value takes no parameters");
-      return FunctionalTypeResult(BooleanType::get(context), false);
+      return FunctionalBuilder::bool_type(context);
     }
 
     /// \brief Get the boolean type
@@ -36,7 +37,7 @@ namespace Psi {
     FunctionalTypeResult IntegerType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("int type takes no parameters");
-      return FunctionalTypeResult(Metatype::get(context), false);
+      return FunctionalBuilder::type_type(context);
     }
 
     /// \brief Get an integer type with the specified width and signedness
@@ -65,8 +66,7 @@ namespace Psi {
     FunctionalTypeResult IntegerValue::type(Context& context, const Data& data, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("int_v value takes no parameters");
-      Term *type = IntegerType::get(context, data.width, data.is_signed);
-      return FunctionalTypeResult(type, false);
+      return FunctionalBuilder::int_type(context, data.width, data.is_signed);
     }
 
     /**
@@ -84,7 +84,7 @@ namespace Psi {
     FunctionalTypeResult FloatType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("float type takes no parameters");
-      return FunctionalTypeResult(Metatype::get(context), false);
+      return FunctionalBuilder::type_type(context);
     }
 
     /// \brief Get a floating point type of the specified width.
@@ -92,12 +92,10 @@ namespace Psi {
       return context.get_functional<FloatType>(ArrayPtr<Term*>(), width);
     }
     
-    FunctionalTypeResult FloatValue::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 1)
-        throw TvmUserError("float_v value takes one parameter");
-      if (!isa<FloatType>(parameters[0]))
-        throw TvmUserError("float_v parameter is not an float type");
-      return FunctionalTypeResult(parameters[0], false);
+    FunctionalTypeResult FloatValue::type(Context& context, const Data& data, ArrayPtr<Term*const> parameters) {
+      if (parameters.size() != 0)
+        throw TvmUserError("float_v value takes no parameters");
+      return FunctionalBuilder::float_type(context, data.width);
     }
 
     FloatValue::Ptr FloatValue::get(Context& context, FloatType::Width width, const Data& data) {

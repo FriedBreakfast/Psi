@@ -70,6 +70,14 @@ target_link_libraries(psi-llvm ${LLVM_LIBS} debug psi-assert)
 bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp)
 set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+list(APPEND PSI_RUNTIME_SOURCES Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
+endif()
+
+add_library(psi-runtime SHARED
+  ${PSI_RUNTIME_SOURCES}
+)
+
 add_library(psi SHARED
   Compiler.hpp
   Utility.cpp Utility.hpp

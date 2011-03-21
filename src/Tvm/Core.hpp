@@ -125,26 +125,6 @@ namespace Psi {
     class Term : User, Used {
       friend class Context;
 
-      /**
-       * So FunctionTerm can manage FunctionParameterTerm and
-       * BlockTerm references.
-       */
-#if 0
-      friend class FunctionTerm;
-      friend class GlobalTerm;
-      friend class FunctionParameterTerm;
-      friend class BlockTerm;
-      friend class FunctionTypeTerm;
-      friend class FunctionTypeParameterTerm;
-      friend class InstructionTerm;
-      friend class PhiTerm;
-      friend class HashTerm;
-      friend class RecursiveTerm;
-      friend class RecursiveParameterTerm;
-      friend class ApplyTerm;
-      friend class FunctionalTerm;
-#endif
-
     public:
       virtual ~Term();
 

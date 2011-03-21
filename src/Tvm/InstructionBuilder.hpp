@@ -38,6 +38,7 @@ namespace Psi {
       InstructionTerm* br(Term*);
       InstructionTerm* cond_br(Term*,Term*,Term*);
       InstructionTerm* call(Term*,ArrayPtr<Term*const>);
+      InstructionTerm* invoke(BlockTerm*,BlockTerm*,Term*,ArrayPtr<Term*const>);
       ///@}
       
       /// \name Memory operations
@@ -51,12 +52,6 @@ namespace Psi {
       InstructionTerm* memcpy(Term*,Term*,Term*,Term*);
       InstructionTerm* memcpy(Term*,Term*,Term*);
       InstructionTerm* memcpy(Term*,Term*,unsigned);
-      ///@}
-      
-      /// \name Landing pad control
-      ///@{
-      InstructionTerm* set_landing_pad(BlockTerm*);
-      InstructionTerm* clear_landing_pad();
       ///@}
     };
   }

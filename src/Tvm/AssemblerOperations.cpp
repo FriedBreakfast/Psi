@@ -197,40 +197,19 @@ namespace Psi {
           return (builder.*create)();
         }
       };
-      
-      struct LandingPadCallback {
-        InstructionTerm* operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression) const {
-          check_n_terms(name, 1, expression);
-          
-          const Parser::Expression& target = expression.terms.back();
-          
-          if (target.expression_type != Parser::expression_name)
-            throw AssemblerError("Parameter to landing_pad is not a name");
-
-          const Parser::NameExpression& target_name = checked_cast<const Parser::NameExpression&>(target);
-          BlockTerm *block = dyn_cast<BlockTerm>(context.get(target_name.name->text));
-          
-          if (!block || !block->landing_pad())
-            throw AssemblerError("Parameter to landing_pad is not a landing pad");
-
-          return builder.set_landing_pad(block);
-        }
-      };
 
 #define CALLBACK(ty) (ty::operation, DefaultInstructionCallback<ty>())
 
       const std::tr1::unordered_map<std::string, InstructionTermCallback> instruction_ops =
         boost::assign::map_list_of<std::string, InstructionTermCallback>
+        CALLBACK(FunctionInvoke)
 	CALLBACK(FunctionCall)
 	CALLBACK(UnconditionalBranch)
 	CALLBACK(ConditionalBranch)
 	CALLBACK(Return)
 	CALLBACK(Alloca)
 	CALLBACK(Load)
-	CALLBACK(Store)
-        CALLBACK(Eager)
-        ("set_landing_pad", LandingPadCallback())
-        ("clear_landing_pad", NullaryInstructionCallback(&InstructionBuilder::clear_landing_pad));
+	CALLBACK(Store);
 
 #undef CALLBACK
     }

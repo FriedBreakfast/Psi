@@ -24,7 +24,7 @@ namespace Psi {
        * Application Binary Interface AMD64 Architecture Processor
        * Supplement</a>
        */
-      class TargetFixes_AMD64 : public TargetCommon {
+      class TargetFixes_AMD64_AggregateLowering : public TargetCommon {
 	/**
 	 * Used to classify how each parameter should be passed (or
 	 * returned).
@@ -231,8 +231,8 @@ namespace Psi {
 	}
 
 	struct FunctionCallCommonCallback : TargetCommon::Callback {
-          TargetFixes_AMD64 *self;
-          FunctionCallCommonCallback(TargetFixes_AMD64 *self_) : self(self_) {}
+          TargetFixes_AMD64_AggregateLowering *self;
+          FunctionCallCommonCallback(TargetFixes_AMD64_AggregateLowering *self_) : self(self_) {}
 
 	  /**
 	   * Special handling is required in the following cases:
@@ -289,11 +289,28 @@ namespace Psi {
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
 
       public:
-	TargetFixes_AMD64(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine)
+	TargetFixes_AMD64_AggregateLowering(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine)
         : TargetCommon(&m_function_call_callback, context, target_machine->getTargetData()),
         m_function_call_callback(this),
         m_target_machine(target_machine) {
 	}
+      };
+      
+      class TargetFixes_AMD64 : public TargetCallback {
+        TargetFixes_AMD64_AggregateLowering m_aggregate_lowering_callback;
+        
+      public:
+        TargetFixes_AMD64(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine)
+        : m_aggregate_lowering_callback(context, target_machine) {
+        }
+
+        virtual AggregateLoweringPass::TargetCallback* aggregate_lowering_callback() {
+          return &m_aggregate_lowering_callback;
+        }
+        
+        virtual llvm::Function* exception_personality_routine(llvm::Module *module, const std::string& basename) {
+          return target_exception_personality_linux(module, basename);
+        }
       };
 
       /**
@@ -301,7 +318,7 @@ namespace Psi {
        *
        * \see TargetFixes_AMD64
        */
-      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes_amd64(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine) {
+      boost::shared_ptr<TargetCallback> create_target_fixes_amd64(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine) {
 	return boost::make_shared<TargetFixes_AMD64>(context, target_machine);
       }
     }

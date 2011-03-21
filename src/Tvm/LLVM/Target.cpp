@@ -2,11 +2,14 @@
 #include "Target.hpp"
 #include "../FunctionalBuilder.hpp"
 
+#include <sstream>
+
 #include <boost/make_shared.hpp>
 #include <boost/optional.hpp>
 #include <boost/ref.hpp>
 
 #include <llvm/Function.h>
+#include <llvm/Module.h>
 #include <llvm/Target/TargetData.h>
 #include <llvm/ADT/Triple.h>
 #include <llvm/Target/TargetRegistry.h>
@@ -393,6 +396,31 @@ namespace Psi {
       };
 
       /**
+       * \brief Exception personality routine set up for Linux with DWARF2 unwinding.
+       */
+      llvm::Function* target_exception_personality_linux(llvm::Module *module, const std::string& basename) {
+        std::ostringstream ss;
+        ss << "__" << basename << "_personality_v0";
+        std::string fullname = ss.str();
+        
+        if (llvm::Function *f = module->getFunction(fullname))
+          return f;
+        
+        llvm::LLVMContext& c = module->getContext();
+        const llvm::Type *i32 = llvm::Type::getInt32Ty(c);
+        const llvm::Type *i8ptr = llvm::Type::getInt8PtrTy(c);
+        std::vector<const llvm::Type*> args;
+        args.push_back(i32);
+        args.push_back(i32);
+        args.push_back(llvm::Type::getInt64Ty(c));
+        args.push_back(i8ptr);
+        args.push_back(i8ptr);
+
+        const llvm::FunctionType *ft = llvm::FunctionType::get(i32, args, false);
+        return llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, fullname, module);
+      }
+      
+      /**
        * Get the machine-specific set of LLVM workarounds for a given
        * machine. If no such workaround are available, this returns a
        * dummy class, but that may well break in some cases.
@@ -400,7 +428,7 @@ namespace Psi {
        * \param triple An LLVM target triple, which will be parsed
        * using the llvm::Triple class.
        */
-      boost::shared_ptr<AggregateLoweringPass::TargetCallback> create_target_fixes(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine, const std::string& triple) {
+      boost::shared_ptr<TargetCallback> create_target_fixes(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine, const std::string& triple) {
 	llvm::Triple parsed_triple(triple);
 
 	switch (parsed_triple.getArch()) {

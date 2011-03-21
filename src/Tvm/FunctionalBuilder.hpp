@@ -140,6 +140,9 @@ namespace Psi {
       
       static Term *select(Term*, Term*, Term*);
       static Term *specialize(Term*, ArrayPtr<Term*const>);
+      
+      static Term* catch_type(Context&);
+      static Term* catch_(Term*,unsigned);
     };
   }
 }

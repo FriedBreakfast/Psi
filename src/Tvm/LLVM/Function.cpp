@@ -3,10 +3,12 @@
 
 #include "../Aggregate.hpp"
 #include "../Recursive.hpp"
+#include "../FunctionalBuilder.hpp"
 
 #include <boost/next_prior.hpp>
 
 #include <llvm/Function.h>
+#include <llvm/Module.h>
 #include <llvm/Target/TargetData.h>
 
 namespace Psi {
@@ -101,7 +103,7 @@ namespace Psi {
       FunctionBuilder::FunctionBuilder(ModuleBuilder *global_builder,
                                        FunctionTerm *function,
                                        llvm::Function *llvm_function)
-        : m_global_builder(global_builder),
+        : m_module_builder(global_builder),
           m_irbuilder(global_builder->llvm_context(), llvm::TargetFolder(global_builder->llvm_target_machine()->getTargetData())),
           m_function(function),
           m_llvm_function(llvm_function) {
@@ -120,7 +122,7 @@ namespace Psi {
         PSI_ASSERT(!term->phantom());
 
         if (!term->source() || isa<GlobalTerm>(term->source()))
-          return build_constant(term);
+          return module_builder()->build_constant(term);
 
         switch (term->term_type()) {
         case term_function_parameter:
@@ -160,14 +162,7 @@ namespace Psi {
           for (BlockTerm::InstructionList::iterator ji = ii->first->instructions().begin(), je = ii->first->instructions().end(); ji != je; ++ji) {
             if (isa<Alloca>(&*ji)) {
               has_alloca = true;
-            } else if (SetLandingPad::Ptr set_landing_pad = dyn_cast<SetLandingPad>(&*ji)) {
-              BlockTerm *target = set_landing_pad->landing_pad();
-              BlockTerm *target_stack_restore = stack_dominator[target];
-              if (has_alloca ? (target_stack_restore != ii->first) : (target_stack_restore != stack_restore)) {
-                stack_save_values[target_stack_restore] = NULL;
-                stack_restore_required.insert(target);
-              }
-            } else {
+              break;
             }
           }
           
@@ -186,7 +181,7 @@ namespace Psi {
           std::tr1::unordered_map<BlockTerm*, llvm::Value*>::iterator ji = stack_save_values.find(ii->first);
           if (ji != stack_save_values.end()) {
             irbuilder().SetInsertPoint(ii->second, boost::prior(ii->second->end()));
-            ji->second = irbuilder().CreateCall(llvm_stacksave());
+            ji->second = irbuilder().CreateCall(module_builder()->llvm_stacksave());
           }
         }
         
@@ -195,7 +190,7 @@ namespace Psi {
           if (stack_restore_required.find(ii->first) != stack_restore_required.end()) {
             irbuilder().SetInsertPoint(ii->second, ii->second->getFirstNonPHI());
             BlockTerm *restore = stack_dominator[ii->first];
-            irbuilder().CreateCall(llvm_stackrestore(), stack_save_values[restore]);
+            irbuilder().CreateCall(module_builder()->llvm_stackrestore(), stack_save_values[restore]);
           }
         }
       }
@@ -214,14 +209,23 @@ namespace Psi {
         std::vector<BlockTerm*> sorted_blocks = m_function->topsort_blocks();
         std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
         for (std::vector<BlockTerm*>::iterator it = sorted_blocks.begin(); it != sorted_blocks.end(); ++it) {
-          llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(llvm_context(), term_name(*it), m_llvm_function);
+          llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(module_builder()->llvm_context(), term_name(*it), m_llvm_function);
           std::pair<ValueTermMap::iterator, bool> insert_result = m_value_terms.insert(std::make_pair(*it, llvm_bb));
           PSI_ASSERT(insert_result.second);
           blocks.push_back(std::make_pair(*it, llvm_bb));
         }
 
         std::tr1::unordered_map<PhiTerm*, llvm::PHINode*> phi_node_map;
-
+        
+        // Set up exception handling personality routine
+        llvm::Constant *eh_personality;
+        if (!m_function->exception_personality().empty()) {
+          eh_personality = module_builder()->target_callback()->exception_personality_routine(module_builder()->llvm_module(), m_function->exception_personality());
+          eh_personality = llvm::ConstantExpr::getBitCast(eh_personality, llvm::Type::getInt8PtrTy(module_builder()->llvm_context()));
+        } else {
+          eh_personality = NULL;
+        }
+        
         // Build basic blocks
         for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
              it != blocks.end(); ++it) {
@@ -232,10 +236,33 @@ namespace Psi {
           BlockTerm::PhiList& phi_list = it->first->phi_nodes();
           for (BlockTerm::PhiList::iterator jt = phi_list.begin(); jt != phi_list.end(); ++jt) {
             PhiTerm *phi = &*jt;
-            const llvm::Type *llvm_ty = build_type(phi->type());
+            const llvm::Type *llvm_ty = module_builder()->build_type(phi->type());
             llvm::PHINode *llvm_phi = irbuilder().CreatePHI(llvm_ty, term_name(phi));
 	    phi_node_map.insert(std::make_pair(phi, llvm_phi));
             m_value_terms.insert(std::make_pair(phi, llvm_phi));
+          }
+          
+          // Check if this is a landing pad - if so, add entry instructions
+          if (CatchClauseTerm *catch_clause = it->first->catch_clause()) {
+            if (!eh_personality)
+              throw BuildError("Landing pad block occurs in function with no exception personality set.");
+
+            llvm::Value *ex = irbuilder().CreateCall(m_module_builder->llvm_eh_exception());
+
+            llvm::SmallVector<llvm::Value*, 6> select_args;
+            select_args.push_back(ex);
+            select_args.push_back(eh_personality);
+            for (unsigned ii = 0, ie = catch_clause->n_clauses(); ii != ie; ++ii)
+              select_args.push_back(build_value(catch_clause->clause(ii)));
+
+            llvm::Value *ex_sel = irbuilder().CreateCall(m_module_builder->llvm_eh_selector(), select_args.begin(), select_args.end());
+            m_value_terms[catch_clause] = ex_sel;
+            
+            // Get the value associated to each entry in the catch clause
+            for (unsigned ii = 0, ie = catch_clause->n_clauses(); ii != ie; ++ii) {
+              llvm::Value *catch_id = irbuilder().CreateCall(m_module_builder->llvm_eh_typeid_for(), select_args[ii+2]);
+              m_value_terms[FunctionalBuilder::catch_(catch_clause, ii)] = catch_id;
+            }
           }
 
           // Build instructions!
