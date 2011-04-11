@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 2.6)
 project(type-test)
 
 include(CTest)
+include(CPack)
 
 # Locate LLVM
 find_program(LLVM_CONFIG NAMES llvm-config)

@@ -1,0 +1,11 @@
+y : function() [
+  print({b});
+  x();
+];
+
+x : function() [
+  print({a});
+  y();
+];
+
+x();

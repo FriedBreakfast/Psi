@@ -1,0 +1,15 @@
+first : function(x) [
+  second(x);
+];
+
+second : function(x) [
+  third : function() [
+    print(fourth());
+  ];
+
+  fourth : function() [x];
+
+  third();
+];
+
+first({Hello World\n});

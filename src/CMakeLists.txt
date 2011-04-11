@@ -78,13 +78,21 @@ add_library(psi-runtime SHARED
   ${PSI_RUNTIME_SOURCES}
 )
 
-add_library(psi SHARED
-  Compiler.hpp
-  Utility.cpp Utility.hpp
+add_library(psi-compiler SHARED
+  CppCompiler.hpp
+  Compiler.cpp Compiler.hpp
+  GarbageCollection.cpp GarbageCollection.hpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
+  Tree.cpp Tree.hpp
+  TreePattern.hpp
+  Utility.cpp Utility.hpp
 )
 
-target_link_libraries(psi psi-tvm debug psi-assert)
+target_link_libraries(psi-compiler psi-tvm debug psi-assert)
+
+add_executable(psi Main.cpp)
+
+target_link_libraries(psi psi-compiler debug psi-assert)
 
 #install(TARGETS psi
 #  LIBRARY DESTINATION lib

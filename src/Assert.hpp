@@ -3,7 +3,7 @@
 
 #include <cstdlib>
 
-#include "Compiler.hpp"
+#include "CppCompiler.hpp"
 
 namespace Psi {
 #ifdef PSI_DEBUG

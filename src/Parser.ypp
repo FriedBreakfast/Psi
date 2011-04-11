@@ -17,7 +17,7 @@
 /**
  * the location type used by the parser and scanner.
  */
-#define YYLTYPE Psi::Parser::Location
+#define YYLTYPE ::Psi::Parser::PhysicalSourceLocation
 
 /**
  * I previously made this zero - it must be at least one because
@@ -51,9 +51,11 @@ using namespace Psi::ParserUtility;
 namespace {
   struct ParserValue {
     const char *cstr;
-    Location text;
-    boost::shared_ptr<UniqueList<Expression> > expressions;
-    boost::shared_ptr<UniqueList<NamedExpression> > named_expressions;
+    PhysicalSourceLocation text;
+    boost::shared_ptr<Expression> expression;
+    boost::shared_ptr<NamedExpression> named_expression;
+    std::vector<boost::shared_ptr<Expression> > expression_list;
+    std::vector<boost::shared_ptr<NamedExpression> > named_expression_list;
   };
 
   struct ParserInternalArguments : BisonHelper<YYTYPE_INT16, YYSTYPE, YYLTYPE> {
@@ -61,8 +63,8 @@ namespace {
       : mode_token(mode_token_), current(begin_), end(end_) {
     }
 
-    UniqueList<Expression> result_expressions;
-    UniqueList<NamedExpression> result_named_expressions;
+    std::vector<boost::shared_ptr<Expression> > result_expressions;
+    std::vector<boost::shared_ptr<NamedExpression> > result_named_expressions;
 
     int mode_token;
     const char *current, *end;
@@ -115,8 +117,8 @@ namespace {
   }
 #endif
 
-  Location combine_loc(const Location& lhs, const Location& rhs) {
-    Location p;
+  PhysicalSourceLocation combine_loc(const PhysicalSourceLocation& lhs, const PhysicalSourceLocation& rhs) {
+    PhysicalSourceLocation p;
     p.first_line = lhs.first_line;
     p.first_column = lhs.first_column;
     p.begin = lhs.begin;
@@ -126,53 +128,46 @@ namespace {
     return p;
   }
 
-  Location end_loc(const Location& base) {
-    Location p;
+  PhysicalSourceLocation end_loc(const PhysicalSourceLocation& base) {
+    PhysicalSourceLocation p;
     p.first_line = p.last_line = base.last_line;
     p.first_column = p.last_column = base.last_column;
     p.begin = p.end = base.end;
     return p;
   }
 
-  Expression* str_expression(const Location& loc, const char *op) {
+  boost::shared_ptr<Expression> str_expression(const PhysicalSourceLocation& loc, const char *op) {
     // this might be dodgy - the number of characters given by
     // line/column numbers does not relate to the number of characters
     // in the "op" string.
 
-    Location text = loc;
+    PhysicalSourceLocation text = loc;
     text.begin = op;
     text.end = op + std::strlen(op);
 
-    return new TokenExpression(loc, TokenExpression::identifier, text);
+    return boost::shared_ptr<Expression>(new TokenExpression(loc, TokenExpression::identifier, text));
   }
 
-  boost::shared_ptr<UniqueList<Expression> > binary_expr(const Location& origin,
-							 const Location& op_loc, const char *op,
-							 boost::shared_ptr<UniqueList<Expression> >& lhs,
-							 boost::shared_ptr<UniqueList<Expression> >& rhs) {
-    PSI_ASSERT(lhs->size() == 1);
-    PSI_ASSERT(rhs->size() == 1);
+  boost::shared_ptr<Expression> binary_expr(const PhysicalSourceLocation& origin,
+                                            const PhysicalSourceLocation& op_loc, const char *op,
+                                            const boost::shared_ptr<Expression>& lhs,
+                                            const boost::shared_ptr<Expression>& rhs) {
+    std::vector<boost::shared_ptr<Expression> > args;
+    args.push_back(str_expression(op_loc, op));
+    args.push_back(lhs);
+    args.push_back(rhs);
 
-    UniqueList<Expression> args;
-    args.push_back(*str_expression(op_loc, op));
-    args.splice(args.end(), *lhs);
-    lhs.reset();
-    args.splice(args.end(), *rhs);
-    rhs.reset();
-
-    return list_one<Expression>(new MacroExpression(origin, args));
+    return boost::shared_ptr<Expression>(new MacroExpression(origin, args));
   }
 
-  boost::shared_ptr<UniqueList<Expression> > unary_expr(const Location& origin,
-							const Location& op_loc, const char *op,
-							boost::shared_ptr<UniqueList<Expression> >& param) {
-    PSI_ASSERT(param->size() == 1);
+  boost::shared_ptr<Expression> unary_expr(const PhysicalSourceLocation& origin,
+                                           const PhysicalSourceLocation& op_loc, const char *op,
+                                           const boost::shared_ptr<Expression>& param) {
+    std::vector<boost::shared_ptr<Expression> > args;
+    args.push_back(str_expression(op_loc, op));
+    args.push_back(param);
 
-    UniqueList<Expression> args;
-    args.push_back(*str_expression(op_loc, op));
-    args.splice(args.end(), *param);
-
-    return list_one<Expression>(new MacroExpression(origin, args));
+    return boost::shared_ptr<Expression>(new MacroExpression(origin, args));
   }
 }
 
@@ -210,8 +205,10 @@ namespace {
 
 %type <text> IDENTIFIER
 %type <cstr> product_operator add_operator compare_operator unary_operator
-%type <expressions> BLOCK expression or_expression and_expression xor_expression product_expression add_expression unary_expression macro_element compare_expression macro_expression compare_expression_build
-%type <named_expressions> statement statement_list argument_list_declare_nonempty argument_list_declare argument_list argument_list_nonempty named_expression
+%type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression unary_expression macro_element compare_expression
+%type <expression_list> compare_expression_build macro_expression
+%type <named_expression> statement named_expression
+%type <named_expression_list> statement_list argument_list_declare_nonempty argument_list_declare argument_list argument_list_nonempty
 
 %parse-param {ParserInternalArguments& arguments}
 %lex-param {ParserInternalArguments& arguments}
@@ -233,48 +230,42 @@ namespace {
 
 %%
 
-root: MODE_STATEMENT_LIST statement_list {arguments.result_named_expressions.swap(*$2);}
-| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare {arguments.result_named_expressions.swap(*$2);}
-| MODE_ARGUMENT_LIST argument_list {arguments.result_named_expressions.swap(*$2);}
+root: MODE_STATEMENT_LIST statement_list {arguments.result_named_expressions = $2;}
+| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare {arguments.result_named_expressions = $2;}
+| MODE_ARGUMENT_LIST argument_list {arguments.result_named_expressions = $2;}
 ;
 
-argument_list: {$$ = list_empty<NamedExpression>();}
+argument_list: {$$.clear();}
 | argument_list_nonempty
 ;
 
 argument_list_nonempty:
-named_expression
-| argument_list_nonempty ',' named_expression {$$ = list_append($1, $3);}
+named_expression {$$.assign(1, $1);}
+| argument_list_nonempty ',' named_expression {$$ = $1; $$.push_back($3);}
 ;
 
-argument_list_declare: /* blank */ {$$ = list_empty<NamedExpression>();}
+argument_list_declare: /* blank */ {$$.clear();}
 | argument_list_declare_nonempty
 ;
 
 argument_list_declare_nonempty:
-named_expression
-| argument_list_declare_nonempty ',' named_expression {$$ = list_append($1, $3);}
+named_expression {$$.assign(1, $1);}
+| argument_list_declare_nonempty ',' named_expression {$$ = $1; $$.push_back($3);}
 ;
 
 statement_list:
-statement
-| statement_list ';' statement {$$ = list_append($1, $3);}
+statement {$$.assign(1, $1);}
+| statement_list ';' statement {$$ = $1; $$.push_back($3);}
 ;
 
 statement:
-{$$ = list_one<NamedExpression>(new NamedExpression(@$));}
+{$$.reset(new NamedExpression(@$));}
 | named_expression
 ;
 
 named_expression:
-expression {
-  UniquePtr<Expression> expr(list_to_ptr($1));
-  $$ = list_one<NamedExpression>(new NamedExpression(@$, expr));
-}
-| IDENTIFIER ':' expression {
-  UniquePtr<Expression> expr(list_to_ptr($3));
-  $$ = list_one<NamedExpression>(new NamedExpression(@$, expr, $1));
-}
+expression {$$.reset(new NamedExpression(@$, $1));}
+| IDENTIFIER ':' expression {$$.reset(new NamedExpression(@$, $3, $1));}
 ;
 
 expression:
@@ -300,22 +291,25 @@ compare_expression
 compare_expression:
 add_expression
 | compare_expression_build {
-  $$ = list_one<Expression>(str_expression(@0, ":cmp"));
-  $$->splice($$->end(), *$1);
+  boost::shared_ptr<Expression> cmp = str_expression(@0, ":cmp");
+  std::vector<boost::shared_ptr<Expression> > elements;
+  elements.push_back(cmp);
+  elements.insert(elements.end(), $1.begin(), $1.end());
+  $$.reset(new MacroExpression(@$, elements));
 }
 ;
 
 compare_expression_build:
 add_expression compare_operator add_expression {
-  $$ = list_empty<Expression>();
-  $$->push_back(*list_to_ptr($1));
-  $$->push_back(*str_expression(@2, $2));
-  $$->push_back(*list_to_ptr($3));
+  $$.clear();
+  $$.push_back($1);
+  $$.push_back(str_expression(@2, $2));
+  $$.push_back($3);
 }
 | compare_expression_build compare_operator add_expression {
-  $$.swap($1); $1.reset();
-  $$->push_back(*str_expression(@2, $2));
-  $$->push_back(*list_to_ptr($3));
+  $$ = $1;
+  $$.push_back(str_expression(@2, $2));
+  $$.push_back($3);
 }
 ;
 
@@ -343,7 +337,7 @@ unary_expression
 product_operator: '*' {$$="*";} | '/' {$$="/";} | '%' {$$="%";};
 
 unary_expression:
-macro_expression {$$ = list_one<Expression>(new MacroExpression(@$, *$1));}
+macro_expression {$$.reset(new MacroExpression(@$, $1));}
 | unary_operator unary_expression {$$ = unary_expr(@$, @1, $1, $2);}
 ;
 
@@ -353,12 +347,12 @@ unary_operator:
 ;
 
 macro_expression:
-macro_element
-| macro_expression macro_element {$$ = list_append($1, $2);}
+macro_element {$$.assign(1, $1);}
+| macro_expression macro_element {$$ = $1; $$.push_back($2);}
 ;
 
 macro_element:
-IDENTIFIER {$$ = list_one<Expression>(new TokenExpression(@$, TokenExpression::identifier, $1));}
+IDENTIFIER {$$.reset(new TokenExpression(@$, TokenExpression::identifier, $1));}
 | BLOCK
 ;
 
@@ -478,10 +472,10 @@ namespace {
         }
 
         if ((bracket_depth == 0) && (square_bracket_depth == 0) && (brace_depth == 0)) {
-          Location value_text(*llocp);
+          PhysicalSourceLocation value_text(*llocp);
           ++value_text.begin;
           --value_text.end;
-	  lvalp->expressions = list_one<Expression>(new TokenExpression(*llocp, block_type, *llocp));
+          lvalp->expression.reset(new TokenExpression(*llocp, block_type, *llocp));
           return BLOCK;
         } else if (self.current == self.end) {
           SCANNER_RETURN(INVALID);
@@ -511,11 +505,11 @@ namespace {
 
 namespace Psi {
   namespace Parser {
-    Element::Element(const Location& location_)
+    Element::Element(const PhysicalSourceLocation& location_)
       : location(location_) {
     }
 
-    Expression::Expression(const Location& location_, ExpressionType expression_type_)
+    Expression::Expression(const PhysicalSourceLocation& location_, ExpressionType expression_type_)
       : Element(location_),
 	expression_type(expression_type_) {
     }
@@ -523,7 +517,7 @@ namespace Psi {
     Expression::~Expression() {
     }
 
-    TokenExpression::TokenExpression(const Location& location_, TokenType token_type_, const Location& text_)
+    TokenExpression::TokenExpression(const PhysicalSourceLocation& location_, TokenType token_type_, const PhysicalSourceLocation& text_)
       : Expression(location_, expression_token),
 	token_type(token_type_),
 	text(text_) {
@@ -532,27 +526,23 @@ namespace Psi {
     TokenExpression::~TokenExpression() {
     }
 
-    MacroExpression::MacroExpression(const Location& location_, UniqueList<Expression>& elements_)
-      : Expression(location_, expression_macro) {
-      elements.swap(elements_);
+    MacroExpression::MacroExpression(const PhysicalSourceLocation& location_, const std::vector<boost::shared_ptr<Expression> >& elements_)
+      : Expression(location_, expression_macro), elements(elements_) {
     }
 
     MacroExpression::~MacroExpression() {
     }
 
-    NamedExpression::NamedExpression(const Location& source_)
+    NamedExpression::NamedExpression(const PhysicalSourceLocation& source_)
       : Element(source_) {
     }
 
-    NamedExpression::NamedExpression(const Location& source_, UniquePtr<Expression>& expression_)
-      : Element(source_) {
-      expression.swap(expression_);
+    NamedExpression::NamedExpression(const PhysicalSourceLocation& source_, const boost::shared_ptr<Expression>& expression_)
+      : Element(source_), expression(expression_) {
     }
 
-    NamedExpression::NamedExpression(const Location& source_, UniquePtr<Expression>& expression_, const Location& name_)
-      : Element(source_),
-	name(name_) {
-      expression.swap(expression_);
+    NamedExpression::NamedExpression(const PhysicalSourceLocation& source_, const boost::shared_ptr<Expression>& expression_, const PhysicalSourceLocation& name_)
+      : Element(source_), name(name_), expression(expression_) {
     }
 
     NamedExpression::~NamedExpression() {
@@ -564,22 +554,22 @@ namespace Psi {
     ParseError::~ParseError() throw() {
     }
 
-    void parse_statement_list(const char *begin, const char *end, UniqueList<NamedExpression>& result) {
+    std::vector<boost::shared_ptr<NamedExpression> > parse_statement_list(const char *begin, const char *end) {
       ParserInternalArguments args(MODE_STATEMENT_LIST, begin, end);
       parse_helper(args);
-      result.swap(args.result_named_expressions);
+      return args.result_named_expressions;
     }
 
-    void parse_argument_list(const char *begin, const char *end, UniqueList<NamedExpression>& result) {
+    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_list(const char *begin, const char *end) {
       ParserInternalArguments args(MODE_ARGUMENT_LIST, begin, end);
       parse_helper(args);
-      result.swap(args.result_named_expressions);
+      return args.result_named_expressions;
     }
 
-    void parse_function_argument_declaration(const char *begin, const char *end, UniqueList<NamedExpression>& result) {
+    std::vector<boost::shared_ptr<NamedExpression> > parse_function_argument_declaration(const char *begin, const char *end) {
       ParserInternalArguments args(MODE_FUNCTION_ARGUMENT_DECLARE, begin, end);
       parse_helper(args);
-      result.swap(args.result_named_expressions);
+      return args.result_named_expressions;
     }
   }
 }

@@ -1,29 +1,22 @@
 #ifndef HPP_PSI_PARSER
 #define HPP_PSI_PARSER
 
-#include "Utility.hpp"
-
 #include <stdexcept>
+#include <vector>
 
 #include <boost/optional.hpp>
 #include <boost/shared_ptr.hpp>
 
+#include "Compiler.hpp"
+
 namespace Psi {
   namespace Parser {
-    struct Location {
-      const char *begin;
-      const char *end;
-
-      int first_line;
-      int first_column;
-      int last_line;
-      int last_column;
-    };
+    using Compiler::PhysicalSourceLocation;
 
     struct Element {
-      Element(const Location& location_);
+      Element(const PhysicalSourceLocation& location_);
 
-      Location location;
+      PhysicalSourceLocation location;
     };
 
     enum ExpressionType {
@@ -31,8 +24,8 @@ namespace Psi {
       expression_macro
     };
 
-    struct Expression : Element, boost::intrusive::list_base_hook<> {
-      Expression(const Location& location_, ExpressionType expression_type_);
+    struct Expression : Element {
+      Expression(const PhysicalSourceLocation& location_, ExpressionType expression_type_);
       virtual ~Expression();
 
       ExpressionType expression_type;
@@ -46,30 +39,30 @@ namespace Psi {
 	bracket
       };
 
-      TokenExpression(const Location& location_, TokenType token_type_, const Location& text_);
+      TokenExpression(const PhysicalSourceLocation& location_, TokenType token_type_, const PhysicalSourceLocation& text_);
       virtual ~TokenExpression();
 
       TokenType token_type;
-      Location text;
+      PhysicalSourceLocation text;
     };
 
     class Expression;
 
     struct MacroExpression : Expression {
-      MacroExpression(const Location& location_, UniqueList<Expression>& elements_);
+      MacroExpression(const PhysicalSourceLocation& location_, const std::vector<boost::shared_ptr<Expression> >& elements_);
       virtual ~MacroExpression();
 
-      UniqueList<Expression> elements;
+      std::vector<boost::shared_ptr<Expression> > elements;
     };
 
-    struct NamedExpression : Element, boost::intrusive::list_base_hook<> {
-      NamedExpression(const Location& source_);
-      NamedExpression(const Location& source_, UniquePtr<Expression>& expression_);
-      NamedExpression(const Location& source_, UniquePtr<Expression>& expression_, const Location& name_);
+    struct NamedExpression : Element {
+      NamedExpression(const PhysicalSourceLocation& source_);
+      NamedExpression(const PhysicalSourceLocation& source_, const boost::shared_ptr<Expression>& expression_);
+      NamedExpression(const PhysicalSourceLocation& source_, const boost::shared_ptr<Expression>& expression_, const PhysicalSourceLocation& name_);
       ~NamedExpression();
 
-      UniquePtr<Expression> expression;
-      boost::optional<Location> name;
+      boost::optional<PhysicalSourceLocation> name;
+      boost::shared_ptr<Expression> expression;
     };
 
     class ParseError : public std::runtime_error {
@@ -81,20 +74,20 @@ namespace Psi {
     /** \brief parse a statement list.
      * \param text Text to parse.
      */
-    void parse_statement_list(const char *begin, const char *end, UniqueList<NamedExpression>& result);
+    std::vector<boost::shared_ptr<NamedExpression> > parse_statement_list(const char *begin, const char *end);
 
     /** \brief parse an argument list.
      * \details an argument list is a list of Expressions forming arguments to a function call.
      * \param text Text to parse.
      */
-    void parse_argument_list(const char *begin, const char *end, UniqueList<NamedExpression>& result);
+    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_list(const char *begin, const char *end);
 
     /** \brief parse a function argument declaration.
      * \details This is a list of argument declarations possibly
      * followed by a return type Expression.
      * \param text Text to parse.
      */
-    void parse_argument_declarations(const char *begin, const char *end, UniqueList<NamedExpression>& result);
+    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_declarations(const char *begin, const char *end);
   }
 }
 
