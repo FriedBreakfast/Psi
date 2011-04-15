@@ -50,27 +50,6 @@ namespace Psi {
       TreePtr<> try_block, finally_block;
     };
 
-    class Statement : public Tree {
-    protected:
-      virtual void gc_visit(GCVisitor&);
-
-    public:
-      virtual ~Statement();
-
-      TreePtr<Statement> next;
-      TreePtr<> value;
-    };
-
-    class Block : public Tree {
-    protected:
-      virtual void gc_visit(GCVisitor&);
-
-    public:
-      virtual ~Block();
-
-      TreePtr<Statement> statements;
-    };
-
 #define PSI_TREE_OPERATION(name,base) \
     class name : public base { \
       friend class Context; \

@@ -102,7 +102,7 @@ namespace Psi {
         return (tree == m_tree) ? previous : Previous();
       }
 
-      const TreePtr<>& build(Context&) const {
+      const TreePtr<>& build(CompileContext&) const {
         return m_tree;
       }
     };
@@ -205,7 +205,7 @@ namespace Psi {
         }
       }
 
-      TreePtr<NodeType> build(Context& context) const {
+      TreePtr<NodeType> build(CompileContext& context) const {
         NodeType *node = new NodeType;
         node->child = m_child.build(context);
         return node;
@@ -235,7 +235,7 @@ namespace Psi {
         }
       }
 
-      TreePtr<> build(Context& context) const {
+      TreePtr<> build(CompileContext& context) const {
         TreePtr<NodeType> node = context.new_tree<NodeType>();
         node->left = m_left.build(context);
         node->right = m_right.build(context);
@@ -263,7 +263,7 @@ namespace Psi {
     }
 
     template<typename Pattern>
-    Tree* tree(Context& context, const Pattern& pattern) {
+    Tree* tree(CompileContext& context, const Pattern& pattern) {
       return pattern.tree(context);
     }
 

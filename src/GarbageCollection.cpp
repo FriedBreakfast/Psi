@@ -19,6 +19,17 @@ namespace Psi {
     }
   };
 
+  GCPool::GCPool() {
+  }
+
+  GCPool::~GCPool() {
+    m_gc_list.clear_and_dispose(boost::checked_deleter<GCBase>());
+  }
+
+  void GCPool::add(GCBase *ptr) {
+    m_gc_list.push_back(*ptr);
+  }
+
   void GCPool::collect() {
     GCListType clear_list;
     clear_list.swap(m_gc_list);

@@ -12,6 +12,7 @@
 #include <boost/scoped_array.hpp>
 
 #include "Parser.hpp"
+#include "Compiler.hpp"
 
 namespace {
   std::string find_program_name(const char *path) {
@@ -44,11 +45,26 @@ int main(int argc, char *argv[]) {
   source_file.seekg(0);
   source_file.read(source_text.get(), source_length);
   source_file.close();
+
+  using namespace Psi::Compiler;
+  PhysicalSourceLocation text;
+  text.origin = PhysicalSourceOrigin::filename(argv[1]);
+  text.begin = source_text.get();
+  text.end = source_text.get() + source_length;
+  text.first_line = text.first_column = 1;
+  text.last_line = text.last_column = 0;
   
-  std::vector<boost::shared_ptr<Psi::Parser::NamedExpression> > statements =
-    Psi::Parser::parse_statement_list(source_text.get(), source_text.get() + source_length);
-  
-  std::cout << boost::format("Number of statements: %s\n") % statements.size();
+  std::vector<boost::shared_ptr<Psi::Parser::NamedExpression> > statements = Psi::Parser::parse_statement_list(text);
+
+  CompileContext compile_context(&std::cerr, &std::cerr);
+  boost::shared_ptr<LogicalSourceLocation> my_root_location = root_location();
+  boost::shared_ptr<EvaluateContext> root_evaluate_context(new EvaluateContextDictionary);
+
+  try {
+    compile_statement_list(statements, compile_context, root_evaluate_context, my_root_location);
+  } catch (CompileException&) {
+    return EXIT_FAILURE;
+  }
 
   return EXIT_SUCCESS;
 }

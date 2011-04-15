@@ -53,6 +53,8 @@ namespace Psi {
   public:
     typedef boost::intrusive::list<GCBase, boost::intrusive::constant_time_size<false> > GCListType;
 
+    GCPool();
+    ~GCPool();
     void add(GCBase*);
     void collect();
 

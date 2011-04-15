@@ -71,23 +71,9 @@ namespace Psi {
       virtual ~ParseError() throw();
     };
 
-    /** \brief parse a statement list.
-     * \param text Text to parse.
-     */
-    std::vector<boost::shared_ptr<NamedExpression> > parse_statement_list(const char *begin, const char *end);
-
-    /** \brief parse an argument list.
-     * \details an argument list is a list of Expressions forming arguments to a function call.
-     * \param text Text to parse.
-     */
-    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_list(const char *begin, const char *end);
-
-    /** \brief parse a function argument declaration.
-     * \details This is a list of argument declarations possibly
-     * followed by a return type Expression.
-     * \param text Text to parse.
-     */
-    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_declarations(const char *begin, const char *end);
+    std::vector<boost::shared_ptr<NamedExpression> > parse_statement_list(const PhysicalSourceLocation&);
+    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_list(const PhysicalSourceLocation&);
+    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_declarations(const PhysicalSourceLocation&);
   }
 }
 

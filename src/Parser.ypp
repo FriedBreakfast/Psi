@@ -59,14 +59,15 @@ namespace {
   };
 
   struct ParserInternalArguments : BisonHelper<YYTYPE_INT16, YYSTYPE, YYLTYPE> {
-    ParserInternalArguments(int mode_token_, const char *begin_, const char *end_)
-      : mode_token(mode_token_), current(begin_), end(end_) {
+    ParserInternalArguments(int mode_token_, const PhysicalSourceLocation& text_)
+      : mode_token(mode_token_), text(text_), current(text_.begin), end(text_.end) {
     }
 
     std::vector<boost::shared_ptr<Expression> > result_expressions;
     std::vector<boost::shared_ptr<NamedExpression> > result_named_expressions;
 
     int mode_token;
+    PhysicalSourceLocation text;
     const char *current, *end;
 
     std::string error_message;
@@ -95,30 +96,10 @@ namespace {
 
   int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self);
 
-#if 0
-  /**
-   * Convert a constant string to a #PhysicalSourceLocation.
-   */
-  PhysicalSourceLocation str_loc(const char *s) {
-    PhysicalSourceLocation p;
-    p.text = const_text_ptr;
-    p.first_line = p.last_line = 1;
-    p.first_column = p.last_column = 1;
-    p.begin = p.end = s;
-
-    for (; *p.end != '\0'; ++p.end, ++p.last_column) {
-      if (*p.end == '\n') {
-	p.last_line++;
-	p.last_column = 1;
-      }
-    }
-
-    return p;
-  }
-#endif
-
   PhysicalSourceLocation combine_loc(const PhysicalSourceLocation& lhs, const PhysicalSourceLocation& rhs) {
+    PSI_ASSERT(lhs.origin == rhs.origin);
     PhysicalSourceLocation p;
+    p.origin = lhs.origin;
     p.first_line = lhs.first_line;
     p.first_column = lhs.first_column;
     p.begin = lhs.begin;
@@ -130,6 +111,7 @@ namespace {
 
   PhysicalSourceLocation end_loc(const PhysicalSourceLocation& base) {
     PhysicalSourceLocation p;
+    p.origin = base.origin;
     p.first_line = p.last_line = base.last_line;
     p.first_column = p.last_column = base.last_column;
     p.begin = p.end = base.end;
@@ -221,11 +203,10 @@ namespace {
   }
 #endif
 
+  @$.origin = arguments.text.origin;
   @$.begin = @$.end = arguments.current;
-  @$.first_line = 1;
-  @$.first_column = 1;
-  @$.last_line = 1;
-  @$.last_column = 1;
+  @$.first_line = @$.last_line = arguments.text.first_line;
+  @$.first_column = @$.last_column = arguments.text.first_column;
 }
 
 %%
@@ -554,20 +535,32 @@ namespace Psi {
     ParseError::~ParseError() throw() {
     }
 
-    std::vector<boost::shared_ptr<NamedExpression> > parse_statement_list(const char *begin, const char *end) {
-      ParserInternalArguments args(MODE_STATEMENT_LIST, begin, end);
+    /** \brief parse a statement list.
+     * \param text Text to parse.
+     */
+    std::vector<boost::shared_ptr<NamedExpression> > parse_statement_list(const PhysicalSourceLocation& text) {
+      ParserInternalArguments args(MODE_STATEMENT_LIST, text);
       parse_helper(args);
       return args.result_named_expressions;
     }
 
-    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_list(const char *begin, const char *end) {
-      ParserInternalArguments args(MODE_ARGUMENT_LIST, begin, end);
+    /** \brief parse an argument list.
+     * \details an argument list is a list of Expressions forming arguments to a function call.
+     * \param text Text to parse.
+     */
+    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_list(const PhysicalSourceLocation& text) {
+      ParserInternalArguments args(MODE_ARGUMENT_LIST, text);
       parse_helper(args);
       return args.result_named_expressions;
     }
 
-    std::vector<boost::shared_ptr<NamedExpression> > parse_function_argument_declaration(const char *begin, const char *end) {
-      ParserInternalArguments args(MODE_FUNCTION_ARGUMENT_DECLARE, begin, end);
+    /** \brief parse a function argument declaration.
+     * \details This is a list of argument declarations possibly
+     * followed by a return type Expression.
+     * \param text Text to parse.
+     */
+    std::vector<boost::shared_ptr<NamedExpression> > parse_function_argument_declaration(const PhysicalSourceLocation& text) {
+      ParserInternalArguments args(MODE_FUNCTION_ARGUMENT_DECLARE, text);
       parse_helper(args);
       return args.result_named_expressions;
     }
