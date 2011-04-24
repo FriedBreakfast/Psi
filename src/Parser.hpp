@@ -73,7 +73,13 @@ namespace Psi {
 
     std::vector<boost::shared_ptr<NamedExpression> > parse_statement_list(const PhysicalSourceLocation&);
     std::vector<boost::shared_ptr<NamedExpression> > parse_argument_list(const PhysicalSourceLocation&);
-    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_declarations(const PhysicalSourceLocation&);
+
+    struct ArgumentDeclarations {
+      std::vector<boost::shared_ptr<NamedExpression> > arguments;
+      boost::shared_ptr<Expression> return_type;
+    };
+
+    ArgumentDeclarations parse_function_argument_declarations(const PhysicalSourceLocation&);
   }
 }
 

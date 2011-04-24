@@ -12,32 +12,77 @@ namespace Psi {
   namespace Compiler {
     class StructType : public Type {
     public:
+      StructType(CompileContext&);
       virtual ~StructType();
     };
 
     class UnionType : public Type {
     public:
+      UnionType(CompileContext&);
       virtual ~UnionType();
     };
 
     class UnaryOperation : public Tree {
     protected:
+      UnaryOperation(CompileContext&);
       virtual void gc_visit(GCVisitor&);
 
     public:
       virtual ~UnaryOperation();
 
-      TreePtr<> child;
+      GCPtr<Tree> child;
     };
 
     class BinaryOperation : public Tree {
     protected:
+      BinaryOperation(CompileContext&);
       virtual void gc_visit(GCVisitor&);
 
     public:
       virtual ~BinaryOperation();
 
-      TreePtr<> left, right;
+      GCPtr<Tree> left, right;
+    };
+
+    class FunctionTypeArgument : public Tree {
+    protected:
+      virtual void gc_visit(GCVisitor&);
+
+    public:
+      FunctionTypeArgument(CompileContext&);
+      virtual ~FunctionTypeArgument();
+    };
+
+    class FunctionType : public Type {
+    protected:
+      virtual void gc_visit(GCVisitor&);
+
+    public:
+      FunctionType(CompileContext&);
+      virtual ~FunctionType();
+
+      std::vector<GCPtr<FunctionTypeArgument> > arguments;
+    };
+
+    class FunctionArgument : public Tree {
+    protected:
+      virtual void gc_visit(GCVisitor&);
+
+    public:
+      FunctionArgument(CompileContext&);
+      virtual ~FunctionArgument();
+    };
+
+    class Function : public Tree {
+    protected:
+      virtual void gc_visit(GCVisitor&);
+
+    public:
+      Function(CompileContext&);
+      virtual ~Function();
+
+      std::vector<GCPtr<FunctionArgument> > arguments;
+      GCPtr<Tree>  body;
     };
 
     class TryFinally : public Tree {
@@ -45,16 +90,16 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
+      TryFinally(CompileContext&);
       virtual ~TryFinally();
 
-      TreePtr<> try_block, finally_block;
+      GCPtr<Tree> try_block, finally_block;
     };
 
 #define PSI_TREE_OPERATION(name,base) \
     class name : public base { \
-      friend class Context; \
-      name(); \
-    protected: \
+    public: \
+      name(CompileContext&); \
       virtual ~name(); \
     };
 

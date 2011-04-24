@@ -3,9 +3,13 @@
 
 #include "Assert.hpp"
 
-#include <boost/noncopyable.hpp>
+#include <boost/utility/enable_if.hpp>
 #include <boost/intrusive_ptr.hpp>
 #include <boost/intrusive/list.hpp>
+#include <boost/noncopyable.hpp>
+#include <boost/range/begin.hpp>
+#include <boost/range/end.hpp>
+#include <boost/range/iterator.hpp>
 
 namespace Psi {
   template<typename T>
@@ -14,7 +18,17 @@ namespace Psi {
   public:
     GCPtr() {}
     explicit GCPtr(T *ptr) : BaseType(ptr) {}
+    template<typename U> GCPtr(const GCPtr<U>& src) : BaseType(src.get()) {}
+    template<typename U> GCPtr& operator = (const GCPtr<U>& src) {this->reset(src.get()); return *this;}
   };
+
+  /**
+   * \brief Dynamic cast wrapper for GCPtr.
+   */
+  template<typename T, typename U>
+  GCPtr<T> dynamic_pointer_cast(const GCPtr<U>& ptr) {
+    return GCPtr<T>(dynamic_cast<T*>(ptr.get()));
+  }
 
   class GCPool;
   class GCVisitor;
@@ -100,22 +114,32 @@ namespace Psi {
 
     GCVisitor(Mode, GCPool::GCListType* =0);
 
+    template<typename T>
+    void mod_impl(T& x) {
+      gc_visit(x, *this);
+    }
+
+    template<typename T>
+    void mod_impl(GCPtr<T>& ptr) {
+      visit_ptr(ptr);
+    }
+
   public:
     template<typename T>
     void visit_ptr(GCPtr<T>& ptr) {
       if (!visit_ptr_internal(ptr.get()))
         ptr.reset();
     }
-    
-    template<typename T>
-    GCVisitor& operator % (GCPtr<T>& ptr) {
-      visit_ptr(ptr);
-      return *this;
-    }
 
     template<typename T>
+    void visit_range(T& range) {
+      for (typename boost::range_iterator<T>::type ii = boost::begin(range), ie = boost::end(range); ii != ie; ++ii)
+        mod_impl(*ii);
+    }
+    
+    template<typename T>
     GCVisitor& operator % (T& x) {
-      gc_visit(x, *this);
+      mod_impl(x);
       return *this;
     }
   };

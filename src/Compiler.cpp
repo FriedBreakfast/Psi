@@ -8,52 +8,63 @@
 
 namespace Psi {
   namespace Compiler {
-    FutureBase::FutureBase(CompileContext *context, const SourceLocation& location)
-    : m_state(state_constructed), m_context(context), m_location(location) {
+    Future::Future(CompileContext& context, const SourceLocation& location)
+    : m_state(state_constructed), m_context(&context), m_location(location) {
+      context.m_gc_pool.add(this);
     }
 
-    void FutureBase::call_void() {
-      switch (m_state) {
-      case state_constructed: run(); break;
-      case state_ready: break;
-      case state_running:
-      case state_finished: throw_circular_exception(); break;
-      default: PSI_FAIL("unknown future state");
-      }
+    Future::~Future() {
     }
 
-    void FutureBase::dependency_call() {
+    void Future::gc_destroy() {
+      delete this;
+    }
+
+    void Future::call() {
       switch (m_state) {
-      case state_constructed: run(); break;
-      case state_ready:
+      case state_constructed: run_wrapper(); break;
+      case state_running: throw_circular_exception();
       case state_finished: break;
-      case state_running: throw_circular_exception(); break;
+      case state_failed: throw_failed_exception();
       default: PSI_FAIL("unknown future state");
       }
     }
 
-    void FutureBase::run() {
+    void Future::dependency_call() {
+      switch (m_state) {
+      case state_constructed: run_wrapper(); break;
+      case state_running:
+      case state_finished: break;
+      case state_failed: throw_failed_exception();
+      default: PSI_FAIL("unknown future state");
+      }
+    }
+
+    void Future::run_wrapper() {
       try {
         m_state = state_running;
-        std::vector<boost::shared_ptr<FutureBase> > dependencies = run_callback();
+        run();
         m_state = state_finished;
-
-        for (std::vector<boost::shared_ptr<FutureBase> >::iterator ii = dependencies.begin(), ie = dependencies.end(); ii != ie; ++ii)
-          (*ii)->dependency_call();
-
-        m_state = state_ready;
       } catch (...) {
         m_state = state_failed;
         throw_failed_exception();
       }
     }
 
-    void FutureBase::throw_circular_exception() {
+    void Future::throw_circular_exception() {
       m_context->error_throw(m_location, "Circular dependency during code evaluation");
     }
     
-    void FutureBase::throw_failed_exception() {
+    void Future::throw_failed_exception() {
       throw CompileException();
+    }
+
+    EvaluateContext::EvaluateContext(CompileContext& compile_context) {
+      compile_context.m_gc_pool.add(this);
+    }
+    
+    void EvaluateContext::gc_destroy() {
+      delete this;
     }
 
     class PhysicalSourceOriginFilename : public PhysicalSourceOrigin {
@@ -132,9 +143,8 @@ namespace Psi {
       }
 
       virtual std::string full_name() const {
-        std::string parent_name = m_parent->full_name();
-        if (!parent_name.empty()) {
-          return parent_name + '.' + m_name;
+        if (m_parent) {
+          return m_parent->full_name() + '.' + m_name;
         } else {
           return m_name;
         }
@@ -153,6 +163,43 @@ namespace Psi {
         return boost::shared_ptr<LogicalSourceLocation>(new NamedLogicalSourceLocation("(anonymous)", parent));
     }
 
+    class EvaluateContextDictionary : public EvaluateContext {
+    public:
+      typedef std::tr1::unordered_map<std::string, GCPtr<Tree> > NameMapType;
+      NameMapType m_entries;
+      GCPtr<EvaluateContext> m_next;
+
+      virtual void gc_visit(GCVisitor& visitor) {
+        visitor % m_next;
+        for (NameMapType::iterator ii = m_entries.begin(), ie = m_entries.end(); ii != ie; ++ii)
+          visitor.visit_ptr(ii->second);
+      }
+
+    public:
+      EvaluateContextDictionary(CompileContext& compile_context, const std::tr1::unordered_map<std::string, GCPtr<Tree> >& entries, const GCPtr<EvaluateContext>& next)
+      : EvaluateContext(compile_context), m_entries(entries), m_next(next) {
+      }
+      
+      virtual LookupResult<GCPtr<Tree> > lookup(const std::string& name) {
+        NameMapType::const_iterator it = m_entries.find(name);
+        if (it != m_entries.end()) {
+          return LookupResult<GCPtr<Tree> >::make_match(it->second);
+        } else if (m_next) {
+          return m_next->lookup(name);
+        } else {
+          return LookupResult<GCPtr<Tree> >::make_none();
+        }
+      }
+    };
+
+    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const std::tr1::unordered_map<std::string, GCPtr<Tree> >& entries, const GCPtr<EvaluateContext>& next) {
+      return GCPtr<EvaluateContext>(new EvaluateContextDictionary(compile_context, entries, next));
+    }
+    
+    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const std::tr1::unordered_map<std::string, GCPtr<Tree> >& entries) {
+      return evaluate_context_dictionary(compile_context, entries, GCPtr<EvaluateContext>());
+    }
+    
     /**
      * \brief Compile an expression.
      *
@@ -162,11 +209,11 @@ namespace Psi {
      * \param source Logical (i.e. namespace etc.) location of the expression, for symbol naming and debugging.
      * \param anonymize_location Whether to generate a new, anonymous location as a child of the current location.
      */
-    DependentValue<TreePtr<> > compile_expression(const boost::shared_ptr<Parser::Expression>& expression,
-                                                  CompileContext& compile_context,
-                                                  const boost::shared_ptr<EvaluateContext>& evaluate_context,
-                                                  const boost::shared_ptr<LogicalSourceLocation>& source,
-                                                  bool anonymize_location) {
+    GCPtr<Tree> compile_expression(const boost::shared_ptr<Parser::Expression>& expression,
+                                   CompileContext& compile_context,
+                                   const GCPtr<EvaluateContext>& evaluate_context,
+                                   const boost::shared_ptr<LogicalSourceLocation>& source,
+                                   bool anonymize_location) {
 
       SourceLocation location(expression->location, source);
       boost::shared_ptr<LogicalSourceLocation> first_source = anonymize_location ? anonymous_child_location(source) : source;
@@ -175,13 +222,13 @@ namespace Psi {
       case Parser::expression_macro: {
         const Parser::MacroExpression& macro_expression = checked_cast<Parser::MacroExpression&>(*expression);
 
-        DependentValue<TreePtr<> > first = compile_expression(macro_expression.elements.front(), compile_context, evaluate_context, first_source, false);
+        GCPtr<Tree> first = compile_expression(macro_expression.elements.front(), compile_context, evaluate_context, first_source, false);
         std::vector<boost::shared_ptr<Parser::Expression> > rest(boost::next(macro_expression.elements.begin()), macro_expression.elements.end());
-        LookupResult<Macro::EvaluateCallback> first_lookup = first.value->type->macro->evaluate_lookup(rest);
+        LookupResult<Macro::EvaluateCallback> first_lookup = first->type->macro->evaluate_lookup(rest);
 
         switch (first_lookup.type()) {
-        case lookup_result_match: compile_context.error_throw(location, boost::format("Evaluate not supported by %s") % first.value->type->macro->name());
-        case lookup_result_conflict: compile_context.error_throw(location, boost::format("Evaluate not supported by %s") % first.value->type->macro->name());
+        case lookup_result_match: compile_context.error_throw(location, boost::format("Evaluate not supported by %s") % first->type->macro->name());
+        case lookup_result_conflict: compile_context.error_throw(location, boost::format("Evaluate not supported by %s") % first->type->macro->name());
         default: break;
         }
 
@@ -191,23 +238,19 @@ namespace Psi {
       case Parser::expression_token: {
         const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*expression);
 
-        const char *bracket_operation_bracket = ":bracket";
-        const char *bracket_operation_brace = ":brace";
-        const char *bracket_operation_square_bracket = ":squareBracket";
-
         switch (token_expression.token_type) {
         case Parser::TokenExpression::bracket:
         case Parser::TokenExpression::brace:
         case Parser::TokenExpression::square_bracket: {
           const char *bracket_operation, *bracket_str;
           switch (token_expression.token_type) {
-          case Parser::TokenExpression::bracket: bracket_operation = bracket_operation_bracket; bracket_str = "(...)"; break;
-          case Parser::TokenExpression::brace: bracket_operation = bracket_operation_brace; bracket_str = "{...}"; break;
-          case Parser::TokenExpression::square_bracket: bracket_operation = bracket_operation_square_bracket; bracket_str = "[...]"; break;
+          case Parser::TokenExpression::bracket: bracket_operation = ":bracket"; bracket_str = "(...)"; break;
+          case Parser::TokenExpression::brace: bracket_operation = ":brace"; bracket_str = "{...}"; break;
+          case Parser::TokenExpression::square_bracket: bracket_operation = ":squareBracket"; bracket_str = "[...]"; break;
           default: PSI_FAIL("unreachable");
           }
 
-          LookupResult<DependentValue<TreePtr<> > > first = evaluate_context->lookup(bracket_operation);
+          LookupResult<GCPtr<Tree> > first = evaluate_context->lookup(bracket_operation);
           switch (first.type()) {
           case lookup_result_none:
             compile_context.error_throw(location, boost::format("Context does not support evaluating %s brackets (%s operator missing)") % bracket_str % bracket_operation);
@@ -217,7 +260,7 @@ namespace Psi {
           }
 
           std::vector<boost::shared_ptr<Parser::Expression> > expression_list(1, expression);
-          LookupResult<Macro::EvaluateCallback> first_lookup = first.value().value->type->macro->evaluate_lookup(expression_list);
+          LookupResult<Macro::EvaluateCallback> first_lookup = first.value()->type->macro->evaluate_lookup(expression_list);
 
           switch (first_lookup.type()) {
           case lookup_result_none:
@@ -232,7 +275,7 @@ namespace Psi {
 
         case Parser::TokenExpression::identifier: {
           std::string name(token_expression.text.begin, token_expression.text.end);
-          LookupResult<DependentValue<TreePtr<> > > result = evaluate_context->lookup(name);
+          LookupResult<GCPtr<Tree> > result = evaluate_context->lookup(name);
 
           switch (result.type()) {
           case lookup_result_none: compile_context.error_throw(location, boost::format("Name not found: %s") % name);
@@ -253,74 +296,138 @@ namespace Psi {
       }
     }
 
-    class EvaluateContextSequence : public EvaluateContext {
-      std::vector<boost::shared_ptr<EvaluateContext> > m_children;
+    class StatementListCompiler : public Future {
+      struct Parameters {
+        GCPtr<Statement> statement;
+        boost::shared_ptr<Parser::Expression> expression;
+        boost::shared_ptr<LogicalSourceLocation> logical_location;
+        bool anonymize_location;
+      };
 
-    public:
-      EvaluateContextSequence(const boost::shared_ptr<EvaluateContext>& first, const boost::shared_ptr<EvaluateContext>& second) {
-        m_children.push_back(first);
-        m_children.push_back(second);
-      }
+      std::vector<Parameters> m_parameters;
+      GCPtr<Block> m_block;
+      GCPtr<EvaluateContext> m_evaluate_context;
       
-      virtual LookupResult<DependentValue<TreePtr<> > > lookup(const std::string& name) {
-        for (std::vector<boost::shared_ptr<EvaluateContext> >::const_iterator ii = m_children.begin(), ie = m_children.end(); ii != ie; ++ii) {
-          LookupResult<DependentValue<TreePtr<> > > result = (*ii)->lookup(name);
-          if (result.type() != lookup_result_none)
-            return result;
+      void run() {
+        // Build statements
+        for (unsigned ii = 0, ie = m_parameters.size(); ii != ie; ++ii)
+          build_one(ii);
+
+        // Link statements together
+        GCPtr<Statement> *next_statement_ptr = &m_block->statements;
+        for (std::vector<Parameters>::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
+          *next_statement_ptr = ii->statement;
+          next_statement_ptr = &ii->statement->next;
         }
 
-        return LookupResult<DependentValue<TreePtr<> > >::make_none();
+        // help the gc
+        m_block.reset();
+        m_evaluate_context.reset();
+      }
+
+      virtual void gc_visit(GCVisitor& visitor) {
+        visitor % m_block % m_evaluate_context;
+        for (std::vector<Parameters>::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii)
+          visitor % ii->statement;
+      }
+
+    public:
+      StatementListCompiler(CompileContext& compile_context, const SourceLocation& location)
+      : Future(compile_context, location) {
+      }
+      
+      GCPtr<Statement> build_one(unsigned index) {
+        Parameters& params = m_parameters[index];
+        if (!params.statement) {
+          GCPtr<Tree> expr = compile_expression(params.expression, context(), m_evaluate_context, params.logical_location, params.anonymize_location);
+          params.statement.reset(new Statement(context()));
+          params.statement->value = expr;
+          params.statement->dependency = expr->dependency;
+          params.statement->type = expr->type;
+
+          params.logical_location.reset();
+          params.expression.reset();
+        }
+
+        return params.statement;
+      }
+
+      static GCPtr<Block> make(const std::vector<boost::shared_ptr<Parser::NamedExpression> >&, CompileContext&, const GCPtr<EvaluateContext>&, const SourceLocation&);
+    };
+
+    class StatementListEvaluateContext : public EvaluateContext {
+      typedef std::tr1::unordered_map<std::string, unsigned> NameMapType;
+      GCPtr<EvaluateContext> m_next;
+      GCPtr<StatementListCompiler> m_compiler;
+      NameMapType m_names;
+
+      virtual void gc_visit(GCVisitor& visitor) {
+        visitor % m_next % m_compiler;
+      }
+
+    public:
+      StatementListEvaluateContext(CompileContext& compile_context,
+                                   const GCPtr<EvaluateContext>& next,
+                                   const GCPtr<StatementListCompiler>& compiler,
+                                   std::tr1::unordered_map<std::string, unsigned>& names)
+      : EvaluateContext(compile_context), m_next(next), m_compiler(compiler) {
+        m_names.swap(names);
+      }
+
+      virtual LookupResult<GCPtr<Tree> > lookup(const std::string& name) {
+        NameMapType::const_iterator it = m_names.find(name);
+        if (it != m_names.end()) {
+          return LookupResult<GCPtr<Tree> >::make_match(m_compiler->build_one(it->second));
+        } else if (m_next) {
+          return m_next->lookup(name);
+        } else {
+          return LookupResult<GCPtr<Tree> >::make_none();
+        }
       }
     };
 
-    DependentValue<TreePtr<Block> > compile_statement_list(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements,
-                                                           CompileContext& compile_context,
-                                                           const boost::shared_ptr<EvaluateContext>& evaluate_context,
-                                                           const boost::shared_ptr<LogicalSourceLocation>& source) {
-      boost::shared_ptr<EvaluateContextDictionary> local_evaluate_context(new EvaluateContextDictionary());
-      boost::shared_ptr<EvaluateContext> child_evaluate_context(new EvaluateContextSequence(local_evaluate_context, evaluate_context));
+    GCPtr<Block> StatementListCompiler::make(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements,
+                                             CompileContext& compile_context,
+                                             const GCPtr<EvaluateContext>& evaluate_context,
+                                             const SourceLocation& location) {
+      std::tr1::unordered_map<std::string, unsigned> names;
 
-      std::vector<std::pair<TreePtr<Statement>, boost::shared_ptr<Future<DependentValue<TreePtr<> > > > > > statement_trees;
+      GCPtr<StatementListCompiler> compiler(new StatementListCompiler(compile_context, location));
 
-      for (std::vector<boost::shared_ptr<Parser::NamedExpression> >::const_iterator ii = statements.begin(), ie = statements.end(); ii != ie; ++ii) {
+      for (std::vector<boost::shared_ptr<Parser::NamedExpression> >::const_iterator ii = statements.begin(), ib = statements.begin(), ie = statements.end(); ii != ie; ++ii) {
         const Parser::NamedExpression& named_expr = **ii;
         if (named_expr.expression) {
-          std::string expr_name;
-          bool anonymize_location;
+          Parameters parameters;
+          parameters.expression = named_expr.expression;
+          
           boost::shared_ptr<LogicalSourceLocation> statement_location;
           if (named_expr.name) {
-            expr_name.assign(named_expr.name->begin, named_expr.name->end);
-            anonymize_location = true;
-            statement_location = named_child_location(source, expr_name);
+            std::string expr_name(named_expr.name->begin, named_expr.name->end);
+            names.insert(std::make_pair(expr_name, ii - ib));
+            parameters.anonymize_location = true;
+            parameters.logical_location = named_child_location(location.logical, expr_name);
           } else {
-            anonymize_location = false;
-            statement_location = anonymous_child_location(source);
+            parameters.anonymize_location = false;
+            parameters.logical_location = anonymous_child_location(location.logical);
           }
-          SourceLocation statement_location_full(named_expr.location, statement_location);
 
-          boost::shared_ptr<Future<DependentValue<TreePtr<> > > > expression_future =
-            Future<DependentValue<TreePtr<> > >::make(&compile_context, statement_location_full,
-                                                      boost::bind(compile_expression, named_expr.expression, boost::ref(compile_context), child_evaluate_context, statement_location, anonymize_location));
-          if (named_expr.name)
-            local_evaluate_context->names.insert(std::make_pair(expr_name, expression_future));
-          TreePtr<Statement> statement_tree = compile_context.new_tree<Statement>();
-          statement_trees.push_back(std::make_pair(statement_tree, expression_future));
+          compiler->m_parameters.push_back(parameters);
         }
       }
 
-      TreePtr<Block> block = compile_context.new_tree<Block>();
-      TreePtr<Statement> *next_statement_ptr = &block->statements;
+      GCPtr<Block> block(new Block(compile_context));
+      block->dependency = compiler;
+      compiler->m_block = block;
+      compiler->m_evaluate_context.reset(new StatementListEvaluateContext(compile_context, evaluate_context, compiler, names));
 
-      std::vector<boost::shared_ptr<FutureBase> > dependencies;
-      for (std::vector<std::pair<TreePtr<Statement>, boost::shared_ptr<Future<DependentValue<TreePtr<> > > > > >::const_iterator ii = statement_trees.begin(), ie = statement_trees.end(); ii != ie; ++ii) {
-        const DependentValue<TreePtr<> >& expr = ii->second->call();
-        ii->first->value = expr.value;
-        dependencies.insert(dependencies.end(), expr.dependencies.begin(), expr.dependencies.end());
-        *next_statement_ptr = ii->first;
-        next_statement_ptr = &ii->first->next;
-      }
+      return block;
+    }
 
-      return DependentValue<TreePtr<Block> >(block, dependencies);
+    GCPtr<Block> compile_statement_list(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements,
+                                        CompileContext& compile_context,
+                                        const GCPtr<EvaluateContext>& evaluate_context,
+                                        const SourceLocation& location) {
+      return StatementListCompiler::make(statements, compile_context, evaluate_context, location);
     }
   }
 }

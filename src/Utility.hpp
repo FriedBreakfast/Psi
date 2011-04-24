@@ -10,6 +10,7 @@
 #include <boost/checked_delete.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/intrusive/list.hpp>
+#include <boost/shared_ptr.hpp>
 
 #include "Assert.hpp"
 #include "Array.hpp"
@@ -142,6 +143,15 @@ namespace Psi {
   template<typename T, typename U>
   T checked_cast(U* src) {
     return checked_cast_impl<T,U*>::cast(src);
+  }
+
+  /**
+   * checked_pointer_cast implementation for boost::shared_ptr.
+   */
+  template<typename T, typename U>
+  boost::shared_ptr<T> checked_pointer_cast(const boost::shared_ptr<U>& ptr) {
+    PSI_ASSERT(ptr.get() == dynamic_cast<T*>(ptr.get()));
+    return boost::static_pointer_cast<T>(ptr);
   }
 
   /**

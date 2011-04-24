@@ -86,10 +86,10 @@ namespace Psi {
      * \brief A simple matcher which matches by pointer equality to an existing Tree.
      */
     class TreeMatch {
-      TreePtr<> m_tree;
+      GCPtr<Tree> m_tree;
 
     public:
-      explicit TreeMatch(const TreePtr<>& tree)
+      explicit TreeMatch(const GCPtr<Tree>& tree)
       : m_tree(tree) {
       }
 
@@ -102,7 +102,7 @@ namespace Psi {
         return (tree == m_tree) ? previous : Previous();
       }
 
-      const TreePtr<>& build(CompileContext&) const {
+      const GCPtr<Tree>& build(CompileContext&) const {
         return m_tree;
       }
     };
@@ -132,7 +132,7 @@ namespace Psi {
       return matcher;
     }
 
-    TreeMatch as_matcher(const TreePtr<>& tree) {
+    TreeMatch as_matcher(const GCPtr<Tree>& tree) {
       return TreeMatch(tree);
     }
 
@@ -205,8 +205,8 @@ namespace Psi {
         }
       }
 
-      TreePtr<NodeType> build(CompileContext& context) const {
-        NodeType *node = new NodeType;
+      GCPtr<NodeType> build(CompileContext& context) const {
+        GCPtr<NodeType> node(new NodeType(context));
         node->child = m_child.build(context);
         return node;
       }
@@ -235,8 +235,8 @@ namespace Psi {
         }
       }
 
-      TreePtr<> build(CompileContext& context) const {
-        TreePtr<NodeType> node = context.new_tree<NodeType>();
+      GCPtr<NodeType> build(CompileContext& context) const {
+        GCPtr<NodeType> node(new NodeType(context));
         node->left = m_left.build(context);
         node->right = m_right.build(context);
         return node;

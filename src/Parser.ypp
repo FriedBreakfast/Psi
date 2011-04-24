@@ -64,6 +64,7 @@ namespace {
     }
 
     std::vector<boost::shared_ptr<Expression> > result_expressions;
+    boost::shared_ptr<Expression> result_return_type;
     std::vector<boost::shared_ptr<NamedExpression> > result_named_expressions;
 
     int mode_token;
@@ -187,7 +188,7 @@ namespace {
 
 %type <text> IDENTIFIER
 %type <cstr> product_operator add_operator compare_operator unary_operator
-%type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression unary_expression macro_element compare_expression
+%type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression unary_expression macro_element compare_expression return_type_declare
 %type <expression_list> compare_expression_build macro_expression
 %type <named_expression> statement named_expression
 %type <named_expression_list> statement_list argument_list_declare_nonempty argument_list_declare argument_list argument_list_nonempty
@@ -212,7 +213,7 @@ namespace {
 %%
 
 root: MODE_STATEMENT_LIST statement_list {arguments.result_named_expressions = $2;}
-| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare {arguments.result_named_expressions = $2;}
+| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare {arguments.result_named_expressions = $2; arguments.result_return_type = $3;}
 | MODE_ARGUMENT_LIST argument_list {arguments.result_named_expressions = $2;}
 ;
 
@@ -223,6 +224,10 @@ argument_list: {$$.clear();}
 argument_list_nonempty:
 named_expression {$$.assign(1, $1);}
 | argument_list_nonempty ',' named_expression {$$ = $1; $$.push_back($3);}
+;
+
+return_type_declare: /* blank */ {$$.reset();}
+| OPERATOR_ARROW expression {$$ = $2;}
 ;
 
 argument_list_declare: /* blank */ {$$.clear();}
@@ -559,10 +564,13 @@ namespace Psi {
      * followed by a return type Expression.
      * \param text Text to parse.
      */
-    std::vector<boost::shared_ptr<NamedExpression> > parse_function_argument_declaration(const PhysicalSourceLocation& text) {
+    ArgumentDeclarations parse_function_argument_declarations(const PhysicalSourceLocation& text) {
       ParserInternalArguments args(MODE_FUNCTION_ARGUMENT_DECLARE, text);
       parse_helper(args);
-      return args.result_named_expressions;
+      ArgumentDeclarations result;
+      result.arguments = args.result_named_expressions;
+      result.return_type = args.result_return_type;
+      return result;
     }
   }
 }

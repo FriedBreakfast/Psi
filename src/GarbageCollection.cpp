@@ -69,4 +69,7 @@ namespace Psi {
 
   GCBase::~GCBase() {
   }
+
+  void GCBase::gc_visit(GCVisitor&) {
+  }
 }

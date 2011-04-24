@@ -46,7 +46,9 @@ int main(int argc, char *argv[]) {
   source_file.read(source_text.get(), source_length);
   source_file.close();
 
+  using namespace Psi;
   using namespace Psi::Compiler;
+
   PhysicalSourceLocation text;
   text.origin = PhysicalSourceOrigin::filename(argv[1]);
   text.begin = source_text.get();
@@ -54,14 +56,18 @@ int main(int argc, char *argv[]) {
   text.first_line = text.first_column = 1;
   text.last_line = text.last_column = 0;
   
-  std::vector<boost::shared_ptr<Psi::Parser::NamedExpression> > statements = Psi::Parser::parse_statement_list(text);
+  std::vector<boost::shared_ptr<Parser::NamedExpression> > statements = Parser::parse_statement_list(text);
 
   CompileContext compile_context(&std::cerr, &std::cerr);
   boost::shared_ptr<LogicalSourceLocation> my_root_location = root_location();
-  boost::shared_ptr<EvaluateContext> root_evaluate_context(new EvaluateContextDictionary);
+  
+  std::tr1::unordered_map<std::string, GCPtr<Tree> > global_names;
+  global_names["function"];
+
+  GCPtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, global_names);
 
   try {
-    compile_statement_list(statements, compile_context, root_evaluate_context, my_root_location);
+    compile_statement_list(statements, compile_context, root_evaluate_context, SourceLocation(text, my_root_location));
   } catch (CompileException&) {
     return EXIT_FAILURE;
   }

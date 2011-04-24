@@ -8,6 +8,7 @@
 
 #include <boost/function.hpp>
 #include <boost/optional.hpp>
+#include <boost/shared_ptr.hpp>
 
 #include "CppCompiler.hpp"
 #include "GarbageCollection.hpp"
@@ -21,7 +22,7 @@ namespace Psi {
   namespace Compiler {
     class CompileException : public std::exception {
       friend class CompileContext;
-      friend class FutureBase;
+      friend class Future;
 
       CompileException();
 
@@ -63,20 +64,11 @@ namespace Psi {
       : physical(physical_), logical(logical_) {}
     };
 
-    class Tree;
-
-    template<typename T=Tree>
-    class TreePtr : public GCPtr<T> {
-    public:
-      TreePtr() : GCPtr<T>() {}
-      explicit TreePtr(T *ptr) : GCPtr<T>(ptr) {}
-
-      friend void gc_visit(TreePtr<T>& ptr, GCVisitor& visitor) {
-        visitor.visit_ptr(ptr);
-      }
-    };
-
     class CompileContext {
+      friend class Future;
+      friend class Tree;
+      friend class EvaluateContext;
+
       GCPool m_gc_pool;
       std::ostream *m_error_stream, *m_warning_stream;
       bool m_error_occurred;
@@ -91,13 +83,6 @@ namespace Psi {
     public:
       CompileContext(std::ostream *error_stream, std::ostream *warning_stream);
       ~CompileContext();
-
-      template<typename T>
-      TreePtr<T> new_tree() {
-        T *ptr = new T();
-        m_gc_pool.add(ptr);
-        return TreePtr<T>(ptr);
-      }
 
       /// \brief Returns true if an error has occurred during compilation.
       bool error_occurred() const {return m_error_occurred;}
@@ -134,96 +119,38 @@ namespace Psi {
       static LookupResult<T> make_match(const T& value) {return LookupResult<T>(lookup_result_match, value);}
     };
 
-    class FutureBase {
-    public:
+    class Future : public GCBase {
+    private:
       enum State {
         state_constructed,
         state_running,
         state_finished,
-        state_ready,
-        state_failed,
-        state_failed_circular
+        state_failed
       };
-
-    protected:
-      FutureBase(CompileContext *context, const SourceLocation& location);
-      void call_void();
-
-    private:
-      void dependency_call();
-      void throw_circular_exception() PSI_ATTRIBUTE((PSI_NORETURN));
-      void throw_failed_exception() PSI_ATTRIBUTE((PSI_NORETURN));
-      void run();
-      virtual std::vector<boost::shared_ptr<FutureBase> > run_callback() = 0;
 
       State m_state;
       CompileContext *m_context;
       SourceLocation m_location;
-    };
 
-    template<typename T>
-    struct DependentValue {
-      DependentValue<T>() {}
-      DependentValue<T>(const T& value_) : value(value_) {}
-      DependentValue<T>(const T& value_, std::vector<boost::shared_ptr<FutureBase> > dependencies_)
-      : value(value_), dependencies(dependencies_) {}
-      
-      T value;
-      std::vector<boost::shared_ptr<FutureBase> > dependencies;
-    };
+      virtual void run() = 0;
+      virtual void gc_destroy();
+      void run_wrapper();
 
-    template<typename T>
-    class Future : public FutureBase {
-      boost::optional<T> m_value;
-      boost::function<DependentValue<T>()> m_callback;
-
-      virtual std::vector<boost::shared_ptr<FutureBase> > run_callback() {
-        DependentValue<T> result = m_callback();
-        m_callback.clear();
-        m_value = result.value;
-        return result.dependencies;
-      }
-
-      Future(CompileContext *context, const SourceLocation& location, const boost::function<DependentValue<T>()>& callback)
-      : FutureBase(context, location), m_callback(callback) {
-      }
+      void throw_circular_exception() PSI_ATTRIBUTE((PSI_NORETURN));
+      void throw_failed_exception() PSI_ATTRIBUTE((PSI_NORETURN));
 
     public:
-      const T& call() {
-        call_void();
-        return *m_value;
-      }
+      Future(CompileContext& context, const SourceLocation& location);
+      virtual ~Future();
 
-      static boost::shared_ptr<Future<T> > make(CompileContext *context, const SourceLocation& location, const boost::function<DependentValue<T>()>& callback) {
-        return boost::shared_ptr<Future<T> >(new Future(context, location, callback));
-      }
+      CompileContext& context() {return *m_context;}
+      const SourceLocation& location() const {return m_location;}
+
+      void call();
+      void dependency_call();
     };
 
-    class EvaluateContext {
-    public:
-      virtual LookupResult<DependentValue<TreePtr<> > > lookup(const std::string& name) = 0;
-    };
-
-    class Macro {
-    public:
-      virtual ~Macro();
-      virtual std::string name() = 0;
-
-      typedef boost::function<DependentValue<TreePtr<> >(const DependentValue<TreePtr<> >&,
-                                                         const std::vector<boost::shared_ptr<Parser::Expression> >&,
-                                                         CompileContext&,
-                                                         const boost::shared_ptr<EvaluateContext>&,
-                                                         const SourceLocation&)> EvaluateCallback;
-      virtual LookupResult<EvaluateCallback> evaluate_lookup(const std::vector<boost::shared_ptr<Parser::Expression> >& elements) = 0;
-
-      typedef boost::function<DependentValue<TreePtr<> >(const DependentValue<TreePtr<> >&,
-                                                         const boost::shared_ptr<Parser::Expression>&,
-                                                         CompileContext&,
-                                                         const boost::shared_ptr<EvaluateContext>&,
-                                                         const SourceLocation&)> DotCallback;
-      virtual LookupResult<DotCallback> dot_lookup() = 0;
-    };
-
+    class EvaluateContext;
     class Type;
 
     class Tree : public GCBase {
@@ -232,16 +159,41 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
-      virtual ~Tree();
+      Tree(CompileContext&);
+      virtual ~Tree() = 0;
 
-      TreePtr<Type> type;
+      GCPtr<Future> dependency;
+      GCPtr<Type> type;
+    };
+
+    class Macro {
+    public:
+      virtual ~Macro();
+      virtual std::string name() = 0;
+
+      typedef boost::function<GCPtr<Tree>(const GCPtr<Tree>&,
+                                          const std::vector<boost::shared_ptr<Parser::Expression> >&,
+                                          CompileContext&,
+                                          const GCPtr<EvaluateContext>&,
+                                          const SourceLocation&)> EvaluateCallback;
+      virtual LookupResult<EvaluateCallback> evaluate_lookup(const std::vector<boost::shared_ptr<Parser::Expression> >& elements) = 0;
+
+      typedef boost::function<GCPtr<Tree>(const GCPtr<Tree>&,
+                                          const boost::shared_ptr<Parser::Expression>&,
+                                          CompileContext&,
+                                          const GCPtr<EvaluateContext>&,
+                                          const SourceLocation&)> DotCallback;
+      virtual LookupResult<DotCallback> dot_lookup() = 0;
     };
 
     /**
      * \brief Base class for type trees.
      */
     class Type : public Tree {
+    protected:
+      Type(CompileContext&);
     public:
+      virtual ~Type();
       boost::shared_ptr<Macro> macro;
     };
 
@@ -253,10 +205,11 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
+      Statement(CompileContext&);
       virtual ~Statement();
 
-      TreePtr<Statement> next;
-      TreePtr<> value;
+      GCPtr<Statement> next;
+      GCPtr<Tree> value;
     };
 
     /**
@@ -267,32 +220,32 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
+      Block(CompileContext&);
       virtual ~Block();
 
-      TreePtr<Statement> statements;
+      GCPtr<Statement> statements;
     };
 
-    class EvaluateContextDictionary : public EvaluateContext {
+    /**
+     * \brief Context used to look up names.
+     */
+    class EvaluateContext : public GCBase {
+    protected:
+      EvaluateContext(CompileContext&);
+      virtual void gc_destroy();
+
     public:
-      typedef std::tr1::unordered_map<std::string, boost::shared_ptr<Future<DependentValue<TreePtr<> > > > > NameMapType;
-
-      NameMapType names;
-
-      virtual LookupResult<DependentValue<TreePtr<> > > lookup(const std::string& name) {
-        NameMapType::const_iterator it = names.find(name);
-        if (it != names.end()) {
-          return LookupResult<DependentValue<TreePtr<> > >::make_match(it->second->call());
-        } else {
-          return LookupResult<DependentValue<TreePtr<> > >::make_none();
-        }
-      }
+      virtual LookupResult<GCPtr<Tree> > lookup(const std::string& name) = 0;
     };
 
     boost::shared_ptr<LogicalSourceLocation> root_location();
     boost::shared_ptr<LogicalSourceLocation> named_child_location(const boost::shared_ptr<LogicalSourceLocation>&, const std::string&);
     boost::shared_ptr<LogicalSourceLocation> anonymous_child_location(const boost::shared_ptr<LogicalSourceLocation>&);
-    DependentValue<TreePtr<> > compile_expression(const boost::shared_ptr<Parser::Expression>&, CompileContext&, const boost::shared_ptr<EvaluateContext>&, const boost::shared_ptr<LogicalSourceLocation>&, bool=true);
-    DependentValue<TreePtr<Block> > compile_statement_list(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements, CompileContext&, const boost::shared_ptr<EvaluateContext>&, const boost::shared_ptr<LogicalSourceLocation>&);
+    GCPtr<Tree> compile_expression(const boost::shared_ptr<Parser::Expression>&, CompileContext&, const GCPtr<EvaluateContext>&, const boost::shared_ptr<LogicalSourceLocation>&, bool=true);
+    GCPtr<Block> compile_statement_list(const std::vector<boost::shared_ptr<Parser::NamedExpression> >&, CompileContext&, const GCPtr<EvaluateContext>&, const SourceLocation&);
+
+    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const std::tr1::unordered_map<std::string, GCPtr<Tree> >&);
+    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const std::tr1::unordered_map<std::string, GCPtr<Tree> >&, const GCPtr<EvaluateContext>&);
   }
 }
 
