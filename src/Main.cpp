@@ -58,16 +58,18 @@ int main(int argc, char *argv[]) {
   
   std::vector<boost::shared_ptr<Parser::NamedExpression> > statements = Parser::parse_statement_list(text);
 
-  CompileContext compile_context(&std::cerr, &std::cerr);
+  CompileContext compile_context(&std::cerr);
   boost::shared_ptr<LogicalSourceLocation> my_root_location = root_location();
   
-  std::tr1::unordered_map<std::string, GCPtr<Tree> > global_names;
-  global_names["function"];
+  std::map<std::string, GCPtr<Tree> > global_names;
+  global_names["function"] = function_definition_object(compile_context);
 
   GCPtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, global_names);
 
+  GCPtr<Tree> compiled_statements;
   try {
-    compile_statement_list(statements, compile_context, root_evaluate_context, SourceLocation(text, my_root_location));
+    compiled_statements = compile_statement_list(statements, compile_context, root_evaluate_context, SourceLocation(text, my_root_location));
+    compiled_statements->dependency->call();
   } catch (CompileException&) {
     return EXIT_FAILURE;
   }

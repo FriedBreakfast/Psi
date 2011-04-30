@@ -21,7 +21,8 @@ namespace Psi {
 
     enum ExpressionType {
       expression_token,
-      expression_macro
+      expression_macro,
+      expression_dot
     };
 
     struct Expression : Element {
@@ -63,6 +64,13 @@ namespace Psi {
 
       boost::optional<PhysicalSourceLocation> name;
       boost::shared_ptr<Expression> expression;
+    };
+
+    struct DotExpression : Expression {
+      DotExpression(const PhysicalSourceLocation& source_, const boost::shared_ptr<Expression>& left_, const boost::shared_ptr<Expression>& right_);
+      ~DotExpression();
+
+      boost::shared_ptr<Expression> left, right;
     };
 
     class ParseError : public std::runtime_error {

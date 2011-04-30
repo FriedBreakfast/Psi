@@ -3,6 +3,31 @@
 #include <boost/checked_delete.hpp>
 
 namespace Psi {
+  GCPool::GCPool() {
+  }
+
+  struct GCPoolReleaseDisposer {
+    void operator () (GCBase *p) const {
+      intrusive_ptr_release(p);
+    }
+  };
+
+  GCPool::~GCPool() {
+    // Must create a reference to every object so they don't get deleted when other pointers are cleared
+    for (GCListType::iterator ii = m_gc_list.begin(), ie = m_gc_list.end(); ii != ie; ++ii)
+      intrusive_ptr_add_ref(&*ii);
+
+    GCVisitor clear_visitor(GCVisitor::mode_clear);
+    for (GCListType::iterator ii = m_gc_list.begin(), ie = m_gc_list.end(); ii != ie; ++ii)
+      ii->gc_visit(clear_visitor);
+
+    m_gc_list.clear_and_dispose(GCPoolReleaseDisposer());
+  }
+
+  void GCPool::add(GCBase *ptr) {
+    m_gc_list.push_back(*ptr);
+  }
+
   struct GCPool::NonZeroRefCount {
     bool operator () (const GCBase& p) const {
       return p.m_gc_ref_count != 0;
@@ -18,17 +43,6 @@ namespace Psi {
       list->push_back(*p);
     }
   };
-
-  GCPool::GCPool() {
-  }
-
-  GCPool::~GCPool() {
-    m_gc_list.clear_and_dispose(boost::checked_deleter<GCBase>());
-  }
-
-  void GCPool::add(GCBase *ptr) {
-    m_gc_list.push_back(*ptr);
-  }
 
   void GCPool::collect() {
     GCListType clear_list;
@@ -64,7 +78,7 @@ namespace Psi {
   : m_mode(mode), m_gc_list(gc_list) {
   }
 
-  GCBase::GCBase() {
+  GCBase::GCBase() : m_gc_ref_count(0) {
   }
 
   GCBase::~GCBase() {

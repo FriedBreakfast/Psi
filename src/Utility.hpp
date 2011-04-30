@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 
-#include <tr1/functional>
-
 #include <boost/checked_delete.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/intrusive/list.hpp>

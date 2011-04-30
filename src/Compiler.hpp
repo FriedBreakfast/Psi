@@ -1,10 +1,10 @@
 #ifndef HPP_PSI_COMPILER
 #define HPP_PSI_COMPILER
 
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
-#include <tr1/unordered_map>
 
 #include <boost/function.hpp>
 #include <boost/optional.hpp>
@@ -64,13 +64,14 @@ namespace Psi {
       : physical(physical_), logical(logical_) {}
     };
 
+    class Tree;
+    class Type;
+
     class CompileContext {
-      friend class Future;
-      friend class Tree;
-      friend class EvaluateContext;
+      friend class CompileObject;
 
       GCPool m_gc_pool;
-      std::ostream *m_error_stream, *m_warning_stream;
+      std::ostream *m_error_stream;
       bool m_error_occurred;
 
       template<typename T>
@@ -81,19 +82,40 @@ namespace Psi {
       }
 
     public:
-      CompileContext(std::ostream *error_stream, std::ostream *warning_stream);
+      CompileContext(std::ostream *error_stream);
       ~CompileContext();
+
+      enum ErrorFlags {
+        error_warning=1,
+        error_internal=2
+      };
 
       /// \brief Returns true if an error has occurred during compilation.
       bool error_occurred() const {return m_error_occurred;}
 
-      void error(const SourceLocation&, const std::string&);
-      void error_throw(const SourceLocation&, const std::string&) PSI_ATTRIBUTE((PSI_NORETURN));
-      void warning(const SourceLocation&, const std::string&);
+      void error(const SourceLocation&, const std::string&, unsigned=0);
+      void error_throw(const SourceLocation&, const std::string&, unsigned=0) PSI_ATTRIBUTE((PSI_NORETURN));
 
-      template<typename T> void error(const SourceLocation& loc, const T& message) {error(loc, to_str(message));}
-      template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message) {error_throw(loc, to_str(message));}
-      template<typename T> void warning(const SourceLocation& loc, const T& message) {warning(loc, to_str(message));}
+      template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, to_str(message), flags);}
+      template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, to_str(message), flags);}
+
+    private:
+      GCPtr<Type> m_empty_type;
+
+    public:
+      GCPtr<Type> empty_type() {return m_empty_type;}
+    };
+
+    class CompileObject : public GCBase {
+      CompileContext *m_compile_context;
+      virtual void gc_destroy();
+
+    public:
+      CompileObject(CompileContext&);
+      virtual ~CompileObject() = 0;
+
+      /// \brief Return the compilation context this object belongs to.
+      CompileContext& compile_context() const {return *m_compile_context;}
     };
 
     enum LookupResultType {
@@ -119,7 +141,7 @@ namespace Psi {
       static LookupResult<T> make_match(const T& value) {return LookupResult<T>(lookup_result_match, value);}
     };
 
-    class Future : public GCBase {
+    class Future : public CompileObject {
     private:
       enum State {
         state_constructed,
@@ -129,11 +151,9 @@ namespace Psi {
       };
 
       State m_state;
-      CompileContext *m_context;
       SourceLocation m_location;
 
       virtual void run() = 0;
-      virtual void gc_destroy();
       void run_wrapper();
 
       void throw_circular_exception() PSI_ATTRIBUTE((PSI_NORETURN));
@@ -143,7 +163,6 @@ namespace Psi {
       Future(CompileContext& context, const SourceLocation& location);
       virtual ~Future();
 
-      CompileContext& context() {return *m_context;}
       const SourceLocation& location() const {return m_location;}
 
       void call();
@@ -151,39 +170,53 @@ namespace Psi {
     };
 
     class EvaluateContext;
-    class Type;
 
-    class Tree : public GCBase {
+    class Tree : public CompileObject {
     protected:
-      virtual void gc_destroy();
       virtual void gc_visit(GCVisitor&);
+      virtual GCPtr<Tree> rewrite_hook(const SourceLocation& location, const std::map<GCPtr<Tree>, GCPtr<Tree> >& substitutions);
 
     public:
       Tree(CompileContext&);
       virtual ~Tree() = 0;
 
+      GCPtr<Tree> rewrite(const SourceLocation&, const std::map<GCPtr<Tree>, GCPtr<Tree> >&);
+
       GCPtr<Future> dependency;
       GCPtr<Type> type;
     };
 
-    class Macro {
+    class EvaluateCallback : public CompileObject {
     public:
+      EvaluateCallback(CompileContext&);
+      virtual ~EvaluateCallback();
+      
+      virtual GCPtr<Tree> evaluate_callback(const GCPtr<Tree>&,
+                                            const std::vector<boost::shared_ptr<Parser::Expression> >&,
+                                            CompileContext&,
+                                            const GCPtr<EvaluateContext>&,
+                                            const SourceLocation&) = 0;
+    };
+
+    class DotCallback : public CompileObject {
+    public:
+      DotCallback(CompileContext&);
+      virtual ~DotCallback();
+      
+      virtual GCPtr<Tree> dot_callback(const GCPtr<Tree>&,
+                                       const boost::shared_ptr<Parser::Expression>&,
+                                       CompileContext&,
+                                       const GCPtr<EvaluateContext>&,
+                                       const SourceLocation&) = 0;
+    };
+
+    class Macro : public CompileObject {
+    public:
+      Macro(CompileContext& compile_context) : CompileObject(compile_context) {}
       virtual ~Macro();
       virtual std::string name() = 0;
-
-      typedef boost::function<GCPtr<Tree>(const GCPtr<Tree>&,
-                                          const std::vector<boost::shared_ptr<Parser::Expression> >&,
-                                          CompileContext&,
-                                          const GCPtr<EvaluateContext>&,
-                                          const SourceLocation&)> EvaluateCallback;
-      virtual LookupResult<EvaluateCallback> evaluate_lookup(const std::vector<boost::shared_ptr<Parser::Expression> >& elements) = 0;
-
-      typedef boost::function<GCPtr<Tree>(const GCPtr<Tree>&,
-                                          const boost::shared_ptr<Parser::Expression>&,
-                                          CompileContext&,
-                                          const GCPtr<EvaluateContext>&,
-                                          const SourceLocation&)> DotCallback;
-      virtual LookupResult<DotCallback> dot_lookup() = 0;
+      virtual LookupResult<GCPtr<EvaluateCallback> > evaluate_lookup(const std::vector<boost::shared_ptr<Parser::Expression> >& elements) = 0;
+      virtual LookupResult<GCPtr<DotCallback> > dot_lookup(const boost::shared_ptr<Parser::Expression>& member) = 0;
     };
 
     /**
@@ -192,9 +225,10 @@ namespace Psi {
     class Type : public Tree {
     protected:
       Type(CompileContext&);
+      virtual void gc_visit(GCVisitor&);
     public:
       virtual ~Type();
-      boost::shared_ptr<Macro> macro;
+      GCPtr<Macro> macro;
     };
 
     /**
@@ -229,10 +263,9 @@ namespace Psi {
     /**
      * \brief Context used to look up names.
      */
-    class EvaluateContext : public GCBase {
+    class EvaluateContext : public CompileObject {
     protected:
       EvaluateContext(CompileContext&);
-      virtual void gc_destroy();
 
     public:
       virtual LookupResult<GCPtr<Tree> > lookup(const std::string& name) = 0;
@@ -244,8 +277,15 @@ namespace Psi {
     GCPtr<Tree> compile_expression(const boost::shared_ptr<Parser::Expression>&, CompileContext&, const GCPtr<EvaluateContext>&, const boost::shared_ptr<LogicalSourceLocation>&, bool=true);
     GCPtr<Block> compile_statement_list(const std::vector<boost::shared_ptr<Parser::NamedExpression> >&, CompileContext&, const GCPtr<EvaluateContext>&, const SourceLocation&);
 
-    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const std::tr1::unordered_map<std::string, GCPtr<Tree> >&);
-    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const std::tr1::unordered_map<std::string, GCPtr<Tree> >&, const GCPtr<EvaluateContext>&);
+    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const std::map<std::string, GCPtr<Tree> >&);
+    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const std::map<std::string, GCPtr<Tree> >&, const GCPtr<EvaluateContext>&);
+    
+    GCPtr<Macro> make_interface(CompileContext&, const std::string&, const GCPtr<EvaluateCallback>&, const std::map<std::string, GCPtr<DotCallback> >&);
+    GCPtr<Macro> make_interface(CompileContext&, const std::string&, const GCPtr<EvaluateCallback>&);
+    GCPtr<Macro> make_interface(CompileContext&, const std::string&, const std::map<std::string, GCPtr<DotCallback> >&);
+    GCPtr<Macro> make_interface(CompileContext&, const std::string&);
+
+    GCPtr<Tree> function_definition_object(CompileContext&);
   }
 }
 

@@ -17,7 +17,7 @@ namespace Psi {
     typedef boost::intrusive_ptr<T> BaseType;
   public:
     GCPtr() {}
-    explicit GCPtr(T *ptr) : BaseType(ptr) {}
+    GCPtr(T *ptr) : BaseType(ptr) {}
     template<typename U> GCPtr(const GCPtr<U>& src) : BaseType(src.get()) {}
     template<typename U> GCPtr& operator = (const GCPtr<U>& src) {this->reset(src.get()); return *this;}
   };
@@ -102,10 +102,10 @@ namespace Psi {
           m_gc_list->push_back(*ptr);
         }
         ++ptr->m_gc_ref_count;
-        return false;
+        return true;
 
       case mode_clear:
-        return true;
+        return false;
 
       default:
         PSI_FAIL("invalid mode flag");

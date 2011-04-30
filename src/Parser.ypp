@@ -188,8 +188,9 @@ namespace {
 
 %type <text> IDENTIFIER
 %type <cstr> product_operator add_operator compare_operator unary_operator
-%type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression unary_expression macro_element compare_expression return_type_declare
-%type <expression_list> compare_expression_build macro_expression
+%type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression
+%type <expression> unary_expression compare_expression return_type_declare macro_expression macro_not_list token_expression
+%type <expression_list> compare_expression_build macro_list
 %type <named_expression> statement named_expression
 %type <named_expression_list> statement_list argument_list_declare_nonempty argument_list_declare argument_list argument_list_nonempty
 
@@ -256,28 +257,28 @@ expression {$$.reset(new NamedExpression(@$, $1));}
 
 expression:
 or_expression
-| expression '=' or_expression {$$ = binary_expr(@$, @2, "=", $1, $3);};
+| expression '=' or_expression {$$ = binary_expr(@$, @2, "__assign__", $1, $3);};
 ;
 
 or_expression:
 xor_expression
-| or_expression '|' xor_expression {$$ = binary_expr(@$, @2, "|", $1, $3);}
+| or_expression '|' xor_expression {$$ = binary_expr(@$, @2, "__or__", $1, $3);}
 ;
 
 xor_expression:
 and_expression
-| xor_expression '^' and_expression {$$ = binary_expr(@$, @2, "^", $1, $3);}
+| xor_expression '^' and_expression {$$ = binary_expr(@$, @2, "__xor__", $1, $3);}
 ;
 
 and_expression:
 compare_expression
-| and_expression '&' compare_expression {$$ = binary_expr(@$, @2, "&", $1, $3);}
+| and_expression '&' compare_expression {$$ = binary_expr(@$, @2, "__and__", $1, $3);}
 ;
 
 compare_expression:
 add_expression
 | compare_expression_build {
-  boost::shared_ptr<Expression> cmp = str_expression(@0, ":cmp");
+  boost::shared_ptr<Expression> cmp = str_expression(@0, "__cmp__");
   std::vector<boost::shared_ptr<Expression> > elements;
   elements.push_back(cmp);
   elements.insert(elements.end(), $1.begin(), $1.end());
@@ -300,12 +301,12 @@ add_expression compare_operator add_expression {
 ;
 
 compare_operator:
-COMPARE_EQUAL {$$ = "==";}
-| COMPARE_UNEQUAL {$$ = "!=";}
-| COMPARE_GREATER_EQUAL {$$ = ">=";}
-| COMPARE_LESS_EQUAL {$$ = "<=";}
-| '<' {$$ = "<";}
-| '>' {$$ = ">";}
+COMPARE_EQUAL {$$ = "__eq__";}
+| COMPARE_UNEQUAL {$$ = "__ne__";}
+| COMPARE_GREATER_EQUAL {$$ = "__ge__";}
+| COMPARE_LESS_EQUAL {$$ = "__le__";}
+| '<' {$$ = "__lt__";}
+| '>' {$$ = "__gt__";}
 ;
 
 add_expression:
@@ -313,31 +314,42 @@ product_expression
 | add_expression add_operator product_expression {$$ = binary_expr(@$, @2, $2, $1, $3);}
 ;
 
-add_operator: '+' {$$="+";} | '-' {$$="-2";};
+add_operator: '+' {$$="__add__";} | '-' {$$="__sub__";};
 
 product_expression:
 unary_expression
 | product_expression product_operator unary_expression {$$ = binary_expr(@$, @2, $2, $1, $3);}
 ;
 
-product_operator: '*' {$$="*";} | '/' {$$="/";} | '%' {$$="%";};
+product_operator: '*' {$$="__mul__";} | '/' {$$="__div__";} | '%' {$$="__mod__";};
 
 unary_expression:
-macro_expression {$$.reset(new MacroExpression(@$, $1));}
+macro_expression
 | unary_operator unary_expression {$$ = unary_expr(@$, @1, $1, $2);}
 ;
 
 unary_operator:
-'-' {$$ = "-1";}
-| '!' {$$ = "!";}
+'-' {$$ = "__neg__";}
+| '!' {$$ = "__invert__";}
 ;
 
 macro_expression:
-macro_element {$$.assign(1, $1);}
-| macro_expression macro_element {$$ = $1; $$.push_back($2);}
+macro_not_list
+| macro_list {$$.reset(new MacroExpression(@$, $1));}
 ;
 
-macro_element:
+macro_not_list:
+token_expression
+| macro_expression '.' token_expression {$$.reset(new DotExpression(@$, $1, $3));}
+| macro_expression '#' {$$ = $1;}
+;
+
+macro_list:
+macro_not_list token_expression {$$.clear(); $$.push_back($1); $$.push_back($2);}
+| macro_list token_expression {$$ = $1; $$.push_back($2);}
+;
+
+token_expression:
 IDENTIFIER {$$.reset(new TokenExpression(@$, TokenExpression::identifier, $1));}
 | BLOCK
 ;
@@ -379,6 +391,7 @@ namespace {
 
 #define SCANNER_RETURN(val) do {lvalp->text = *llocp; return (val);} while(0)
 #define SCANNER_ACCEPT() (++self.current, ++llocp->end, ++llocp->last_column)
+#define SCANNER_NEWLINE() (++llocp->last_line, llocp->last_column = 1)
 
     c = *self.current;
 
@@ -432,7 +445,11 @@ namespace {
         if (c == '\\') {
           if (self.current == self.end)
             SCANNER_RETURN(INVALID);
+          if (*self.current == '\n')
+            SCANNER_NEWLINE();
           SCANNER_ACCEPT();
+        } else if (c == '\n') {
+          SCANNER_NEWLINE();
         } else if (c == '{') {
           ++brace_depth;
         } else if (c == '}') {
@@ -461,7 +478,7 @@ namespace {
           PhysicalSourceLocation value_text(*llocp);
           ++value_text.begin;
           --value_text.end;
-          lvalp->expression.reset(new TokenExpression(*llocp, block_type, *llocp));
+          lvalp->expression.reset(new TokenExpression(*llocp, block_type, value_text));
           return BLOCK;
         } else if (self.current == self.end) {
           SCANNER_RETURN(INVALID);
@@ -472,10 +489,10 @@ namespace {
       goto next_char;
     } else if (c == '\n') {
       SCANNER_ACCEPT();
-      llocp->last_line++;
-      llocp->last_column = 1;
+      SCANNER_NEWLINE();
       goto next_char;
     } else {
+      SCANNER_ACCEPT();
       return c;
     }
 
@@ -517,6 +534,13 @@ namespace Psi {
     }
 
     MacroExpression::~MacroExpression() {
+    }
+
+    DotExpression::DotExpression(const PhysicalSourceLocation& location_, const boost::shared_ptr<Expression>& left_, const boost::shared_ptr<Expression>& right_)
+      : Expression(location_, expression_dot), left(left_), right(right_) {
+    }
+
+    DotExpression::~DotExpression() {
     }
 
     NamedExpression::NamedExpression(const PhysicalSourceLocation& source_)
