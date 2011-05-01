@@ -178,7 +178,7 @@ namespace Psi {
       for (std::map<std::string, unsigned>::iterator ii = common.named_arguments.begin(), ie = common.named_arguments.end(); ii != ie; ++ii)
         argument_values[ii->first] = function->arguments[ii->second];
 
-      GCPtr<EvaluateContext> body_context = evaluate_context_dictionary(compile_context, argument_values);
+      GCPtr<EvaluateContext> body_context = evaluate_context_dictionary(compile_context, argument_values, evaluate_context);
 
       function->dependency.reset(new FunctionBodyCompiler(compile_context, location, body_context, function, body));
 

@@ -380,7 +380,15 @@ namespace Psi {
     }
 
     class StatementListCompiler : public Future {
+      enum BuildState {
+        build_not_started,
+        build_running,
+        build_done,
+        build_failed
+      };
+      
       struct Parameters {
+        BuildState state;
         GCPtr<Statement> statement;
         boost::shared_ptr<Parser::Expression> expression;
         boost::shared_ptr<LogicalSourceLocation> logical_location;
@@ -392,9 +400,16 @@ namespace Psi {
       GCPtr<EvaluateContext> m_evaluate_context;
       
       void run() {
+        bool failed = false;
+        
         // Build statements
-        for (unsigned ii = 0, ie = m_parameters.size(); ii != ie; ++ii)
-          build_one(ii);
+        for (unsigned ii = 0, ie = m_parameters.size(); ii != ie; ++ii) {
+          try {
+            build_one(ii);
+          } catch (CompileException&) {
+            failed = true;
+          }
+        }
 
         // Link statements together
         GCPtr<Statement> *next_statement_ptr = &m_block->statements;
@@ -403,9 +418,22 @@ namespace Psi {
           next_statement_ptr = &ii->statement->next;
         }
 
+        // Run dependent code
+        for (std::vector<Parameters>::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
+          try {
+            if (ii->statement && ii->statement->dependency)
+              ii->statement->dependency->dependency_call();
+          } catch (CompileException&) {
+            failed = true;
+          }
+        }
+
         // help the gc
         m_block.reset();
         m_evaluate_context.reset();
+
+        if (failed)
+          throw CompileException();
       }
 
       virtual void gc_visit(GCVisitor& visitor) {
@@ -422,21 +450,41 @@ namespace Psi {
       
       GCPtr<Statement> build_one(unsigned index) {
         Parameters& params = m_parameters[index];
-        if (!params.statement) {
-          params.statement.reset(new Statement(compile_context()));
-          GCPtr<Tree> expr = compile_expression(params.expression, compile_context(), m_evaluate_context, params.logical_location, params.anonymize_location);
-          params.statement->value = expr;
-          params.statement->dependency = expr->dependency;
-          params.statement->type = expr->type;
+        switch (params.state) {
+        case build_not_started: {
+          boost::shared_ptr<Parser::Expression> expression;
+          boost::shared_ptr<LogicalSourceLocation> logical_location;
+          
+          expression.swap(params.expression);
+          logical_location.swap(params.logical_location);
 
-          params.logical_location.reset();
-          params.expression.reset();
-        } else {
-          if (!params.statement->value)
-            compile_context().error_throw(SourceLocation(params.expression->location, params.logical_location), "Circular dependency during block compilation");
+          params.state = build_running;
+          try {
+            params.statement.reset(new Statement(compile_context()));
+            GCPtr<Tree> expr = compile_expression(expression, compile_context(), m_evaluate_context, logical_location, params.anonymize_location);
+            params.statement->value = expr;
+            params.statement->dependency = expr->dependency;
+            params.statement->type = expr->type;
+          } catch (...) {
+            params.state = build_failed;
+            throw;
+          }
+          params.state = build_done;
+
+          return params.statement;
         }
 
-        return params.statement;
+        case build_running:
+          compile_context().error_throw(SourceLocation(params.expression->location, params.logical_location), "Circular dependency during block compilation");
+
+        case build_done:
+          return params.statement;
+
+        case build_failed:
+          throw CompileException();
+
+        default: PSI_FAIL("unreachable");
+        }
       }
 
       static GCPtr<Block> make(const std::vector<boost::shared_ptr<Parser::NamedExpression> >&, CompileContext&, const GCPtr<EvaluateContext>&, const SourceLocation&);
@@ -485,6 +533,7 @@ namespace Psi {
         const Parser::NamedExpression& named_expr = **ii;
         if (named_expr.expression) {
           Parameters parameters;
+          parameters.state = build_not_started;
           parameters.expression = named_expr.expression;
           
           boost::shared_ptr<LogicalSourceLocation> statement_location;

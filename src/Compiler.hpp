@@ -21,12 +21,8 @@ namespace Psi {
   
   namespace Compiler {
     class CompileException : public std::exception {
-      friend class CompileContext;
-      friend class Future;
-
-      CompileException();
-
     public:
+      CompileException();
       virtual ~CompileException() throw();
       virtual const char *what() const throw();
     };
