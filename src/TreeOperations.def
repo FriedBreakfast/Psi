@@ -1,5 +1,0 @@
-PSI_TREE_OPERATION(AddOperation, BinaryOperation)
-PSI_TREE_OPERATION(SubtractOperation, BinaryOperation)
-PSI_TREE_OPERATION(MultiplyOperation, BinaryOperation)
-PSI_TREE_OPERATION(DivideOperation, BinaryOperation)
-PSI_TREE_OPERATION(RemainderOperation, BinaryOperation)

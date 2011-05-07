@@ -243,6 +243,7 @@ namespace Psi {
       }
     };
 
+#if 0
 #define PSI_BINARY_OPERATION(name,op) \
     template<typename Left, typename Right> \
     BinaryOperationPattern<op, typename MatcherType<Left>::Type, typename MatcherType<Right>::Type> name(const Left& left, const Right& right) { \
@@ -255,7 +256,8 @@ namespace Psi {
     PSI_BINARY_OPERATION(divide, DivideOperation)
     PSI_BINARY_OPERATION(remainder, RemainderOperation)
 
-#undef PSI_BINARY_OPERATION
+#undef PSI_BINARY_OPERATION#
+#endif
 
     template<typename Pattern>
     typename Pattern::template MatchType<MatchBase>::Type match(Tree *tree, const Pattern& pattern) {

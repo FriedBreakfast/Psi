@@ -1,6 +1,7 @@
 #include "Compiler.hpp"
 #include "Parser.hpp"
 #include "Utility.hpp"
+#include "Tree.hpp"
 
 namespace Psi {
   namespace Compiler {

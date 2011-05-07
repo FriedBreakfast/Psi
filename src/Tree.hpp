@@ -10,6 +10,75 @@
 
 namespace Psi {
   namespace Compiler {
+    /**
+     * \brief Base class for all types used to represent code and data.
+     */
+    class Tree : public CompileObject {
+      bool m_canonical_computed;
+      TreePtr<> m_canonical_form;
+
+      void compute_canonical_form();
+      
+    protected:
+      virtual void gc_visit(GCVisitor&);
+      virtual TreePtr<> rewrite_hook(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions);
+
+    public:
+      Tree(CompileContext&);
+      virtual ~Tree() = 0;
+
+      TreePtr<> rewrite(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
+
+      TreePtr<> canonical() {
+        if (!m_canonical_computed)
+          compute_canonical_form();
+        return m_canonical_form;
+      }
+
+      GCPtr<Future> dependency;
+      TreePtr<Type> type;
+    };
+
+    /**
+     * \brief Base class for type trees.
+     */
+    class Type : public Tree {
+    protected:
+      Type(CompileContext&);
+      virtual void gc_visit(GCVisitor&);
+    public:
+      virtual ~Type();
+    };
+
+    /**
+     * \brief Tree for a statement, which should be part of a block.
+     */
+    class Statement : public Tree {
+    protected:
+      virtual void gc_visit(GCVisitor&);
+
+    public:
+      Statement(CompileContext&);
+      virtual ~Statement();
+
+      TreePtr<Statement> next;
+      TreePtr<> value;
+    };
+
+    /**
+     * \brief Tree for a block of code.
+     */
+    class Block : public Tree {
+    protected:
+      virtual void gc_visit(GCVisitor&);
+
+    public:
+      Block(CompileContext&);
+      virtual ~Block();
+
+      TreePtr<Statement> statements;
+    };
+
     class StructType : public Type {
     public:
       StructType(CompileContext&);
@@ -41,7 +110,7 @@ namespace Psi {
      */
     class EmptyValue : public Tree {
     public:
-      EmptyValue(const GCPtr<EmptyType>&);
+      EmptyValue(const TreePtr<EmptyType>&);
       virtual ~EmptyValue();
     };
 
@@ -51,13 +120,13 @@ namespace Psi {
       UnaryOperation(const UnaryOperation&);
       virtual void gc_visit(GCVisitor&);
       typedef UnaryOperation RewriteDuplicateType;
-      virtual GCPtr<UnaryOperation> rewrite_duplicate_hook() = 0;
+      virtual TreePtr<UnaryOperation> rewrite_duplicate_hook() = 0;
 
     public:
       virtual ~UnaryOperation();
-      virtual GCPtr<Tree> rewrite_hook(const SourceLocation&, const std::map<GCPtr<Tree>, GCPtr<Tree> >&);
+      virtual TreePtr<> rewrite_hook(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
 
-      GCPtr<Tree> child;
+      TreePtr<> child;
     };
 
     class BinaryOperation : public Tree {
@@ -66,13 +135,13 @@ namespace Psi {
       BinaryOperation(const BinaryOperation&);
       virtual void gc_visit(GCVisitor&);
       typedef BinaryOperation RewriteDuplicateType;
-      virtual GCPtr<BinaryOperation> rewrite_duplicate_hook() = 0;
+      virtual TreePtr<BinaryOperation> rewrite_duplicate_hook() = 0;
 
     public:
       virtual ~BinaryOperation();
-      virtual GCPtr<Tree> rewrite_hook(const SourceLocation&, const std::map<GCPtr<Tree>, GCPtr<Tree> >&);
+      virtual TreePtr<> rewrite_hook(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
 
-      GCPtr<Tree> left, right;
+      TreePtr<> left, right;
     };
 
     class FunctionTypeArgument : public Tree {
@@ -91,13 +160,13 @@ namespace Psi {
     public:
       FunctionType(CompileContext&);
       virtual ~FunctionType();
-      virtual GCPtr<Tree> rewrite_hook(const SourceLocation&, const std::map<GCPtr<Tree>, GCPtr<Tree> >&);
+      virtual TreePtr<> rewrite_hook(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
 
-      GCPtr<Type> argument_type_after(const SourceLocation&, const std::vector<GCPtr<Tree> >&);
-      GCPtr<Type> result_type_after(const SourceLocation&, const std::vector<GCPtr<Tree> >&);
+      TreePtr<Type> argument_type_after(const SourceLocation&, const std::vector<TreePtr<> >&);
+      TreePtr<Type> result_type_after(const SourceLocation&, const std::vector<TreePtr<> >&);
 
-      std::vector<GCPtr<FunctionTypeArgument> > arguments;
-      GCPtr<Type> result_type;
+      std::vector<TreePtr<FunctionTypeArgument> > arguments;
+      TreePtr<Type> result_type;
     };
 
     class FunctionArgument : public Tree {
@@ -117,9 +186,9 @@ namespace Psi {
       Function(CompileContext&);
       virtual ~Function();
 
-      std::vector<GCPtr<FunctionArgument> > arguments;
-      GCPtr<Tree> result_type;
-      GCPtr<Tree> body;
+      std::vector<TreePtr<FunctionArgument> > arguments;
+      TreePtr<> result_type;
+      TreePtr<> body;
     };
 
     class TryFinally : public Tree {
@@ -130,19 +199,8 @@ namespace Psi {
       TryFinally(CompileContext&);
       virtual ~TryFinally();
 
-      GCPtr<Tree> try_block, finally_block;
+      TreePtr<> try_block, finally_block;
     };
-
-#define PSI_TREE_OPERATION(name,base) \
-    class name : public base { \
-      virtual GCPtr<base::RewriteDuplicateType> rewrite_duplicate_hook(); \
-    public: \
-      name(CompileContext&); \
-      virtual ~name(); \
-    };
-
-#include "TreeOperations.def"
-#undef PSI_TREE_OPERATION
   }
 }
 

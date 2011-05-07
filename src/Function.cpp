@@ -22,7 +22,7 @@ namespace Psi {
     class EvaluateContextOneName : public EvaluateContext {
       GCPtr<EvaluateContext> m_next;
       std::string m_name;
-      GCPtr<Tree> m_value;
+      TreePtr<> m_value;
 
       virtual void gc_visit(GCVisitor& visitor) {
         EvaluateContext::gc_visit(visitor);
@@ -30,17 +30,17 @@ namespace Psi {
       }
 
     public:
-      EvaluateContextOneName(CompileContext& compile_context, const GCPtr<EvaluateContext>& next, const std::string& name, const GCPtr<Tree>& value)
+      EvaluateContextOneName(CompileContext& compile_context, const GCPtr<EvaluateContext>& next, const std::string& name, const TreePtr<>& value)
       : EvaluateContext(compile_context), m_next(next), m_name(name), m_value(value) {
       }
 
-      virtual LookupResult<GCPtr<Tree> > lookup(const std::string& name) {
+      virtual LookupResult<TreePtr<> > lookup(const std::string& name) {
         if (name == m_name) {
-          return LookupResult<GCPtr<Tree> >::make_match(m_value);
+          return LookupResult<TreePtr<> >::make_match(m_value);
         } else if (m_next) {
           return m_next->lookup(name);
         } else {
-          return LookupResult<GCPtr<Tree> >::make_none();
+          return LookupResult<TreePtr<> >::make_none();
         }
       }
     };
@@ -57,7 +57,7 @@ namespace Psi {
 
       virtual void run() {
         std::vector<boost::shared_ptr<Parser::NamedExpression> > statements = Parser::parse_statement_list(m_body->text);
-        GCPtr<Tree> body_tree = compile_statement_list(statements, compile_context(), m_body_context, location());
+        TreePtr<> body_tree = compile_statement_list(statements, compile_context(), m_body_context, location());
         m_function->body = body_tree;
 
         body_tree->dependency->dependency_call();
@@ -79,7 +79,7 @@ namespace Psi {
     };
 
     struct CompileFunctionCommonResult {
-      GCPtr<FunctionType> type;
+      TreePtr<FunctionType> type;
       std::map<std::string, unsigned> named_arguments;
     };
 
@@ -109,12 +109,12 @@ namespace Psi {
           argument_location = anonymous_child_location(location.logical);
         }
 
-        GCPtr<Tree> argument_type = compile_expression(named_expr.expression, compile_context, argument_context, argument_location, anonymize_location);
-        GCPtr<Type> cast_argument_type = dynamic_pointer_cast<Type>(argument_type);
+        TreePtr<> argument_type = compile_expression(named_expr.expression, compile_context, argument_context, argument_location, anonymize_location);
+        TreePtr<Type> cast_argument_type = dynamic_pointer_cast<Type>(argument_type);
         if (!cast_argument_type)
           compile_context.error_throw(SourceLocation(named_expr.location, argument_location), "Function argument type expression does not evaluate to a type");
         
-        GCPtr<FunctionTypeArgument> argument_value(new FunctionTypeArgument(compile_context));
+        TreePtr<FunctionTypeArgument> argument_value(new FunctionTypeArgument(compile_context));
         argument_value->type = cast_argument_type;
         result.type->arguments.push_back(argument_value);
 
@@ -125,8 +125,8 @@ namespace Psi {
       }
 
       if (parsed_arguments.return_type) {
-        GCPtr<Tree> result_type = compile_expression(parsed_arguments.return_type, compile_context, argument_context, location.logical);
-        GCPtr<Type> cast_result_type = dynamic_pointer_cast<Type>(result_type);
+        TreePtr<> result_type = compile_expression(parsed_arguments.return_type, compile_context, argument_context, location.logical);
+        TreePtr<Type> cast_result_type = dynamic_pointer_cast<Type>(result_type);
         if (!cast_result_type)
           compile_context.error_throw(location, "Function result type expression does not evaluate to a type");
         result.type->result_type = cast_result_type;
@@ -137,11 +137,11 @@ namespace Psi {
       return result;
     }
 
-    GCPtr<Tree> compile_function_definition(const GCPtr<Tree>&,
-                                            const std::vector<boost::shared_ptr<Parser::Expression> >& arguments,
-                                            CompileContext& compile_context,
-                                            const GCPtr<EvaluateContext>& evaluate_context,
-                                            const SourceLocation& location) {
+    TreePtr<> compile_function_definition(const TreePtr<>&,
+                                          const std::vector<boost::shared_ptr<Parser::Expression> >& arguments,
+                                          CompileContext& compile_context,
+                                          const GCPtr<EvaluateContext>& evaluate_context,
+                                          const SourceLocation& location) {
       if (arguments.size() != 2)
         compile_context.error_throw(location, boost::format("function macro expects two arguments, got %s") % arguments.size());
 
@@ -155,26 +155,26 @@ namespace Psi {
 
       CompileFunctionCommonResult common = compile_function_common(parameters->text, compile_context, evaluate_context, location);
 
-      GCPtr<Function> function(new Function(compile_context));
+      TreePtr<Function> function(new Function(compile_context));
       function->type = common.type;
       function->arguments.reserve(common.type->arguments.size());
 
-      std::map<GCPtr<Tree>, GCPtr<Tree> > argument_substitutions;
-      for (std::vector<GCPtr<FunctionTypeArgument> >::iterator ii = common.type->arguments.begin(), ie = common.type->arguments.end(); ii != ie; ++ii) {
-        GCPtr<FunctionArgument> arg(new FunctionArgument(compile_context));
-        GCPtr<Tree> type = (*ii)->type->rewrite(location, argument_substitutions);
+      std::map<TreePtr<>, TreePtr<> > argument_substitutions;
+      for (std::vector<TreePtr<FunctionTypeArgument> >::iterator ii = common.type->arguments.begin(), ie = common.type->arguments.end(); ii != ie; ++ii) {
+        TreePtr<FunctionArgument> arg(new FunctionArgument(compile_context));
+        TreePtr<> type = (*ii)->type->rewrite(location, argument_substitutions);
         arg->type = dynamic_pointer_cast<Type>(type);
         if (!arg->type)
           compile_context.error_throw(location, "Rewritten function argument type is not a type");
         function->arguments.push_back(arg);
         argument_substitutions[*ii] = arg;
       }
-      GCPtr<Tree> result_type = common.type->result_type->rewrite(location, argument_substitutions);
+      TreePtr<> result_type = common.type->result_type->rewrite(location, argument_substitutions);
       function->result_type = dynamic_pointer_cast<Type>(result_type);
       if (!function->result_type)
         compile_context.error_throw(location, "Rewritten function result type is not a type");
 
-      std::map<std::string, GCPtr<Tree> > argument_values;
+      std::map<std::string, TreePtr<> > argument_values;
       for (std::map<std::string, unsigned>::iterator ii = common.named_arguments.begin(), ie = common.named_arguments.end(); ii != ie; ++ii)
         argument_values[ii->first] = function->arguments[ii->second];
 
@@ -197,11 +197,11 @@ namespace Psi {
       FunctionDefineCallback(CompileContext& compile_context) : EvaluateCallback(compile_context) {
       }
       
-      virtual GCPtr<Tree> evaluate_callback(const GCPtr<Tree>& value,
-                                            const std::vector<boost::shared_ptr<Parser::Expression> >& arguments,
-                                            CompileContext& compile_context,
-                                            const GCPtr<EvaluateContext>& evaluate_context,
-                                            const SourceLocation& location) {
+      virtual TreePtr<> evaluate_callback(const TreePtr<>& value,
+                                          const std::vector<boost::shared_ptr<Parser::Expression> >& arguments,
+                                          CompileContext& compile_context,
+                                          const GCPtr<EvaluateContext>& evaluate_context,
+                                          const SourceLocation& location) {
         return compile_function_definition(value, arguments, compile_context, evaluate_context, location);
       }
     };
@@ -209,11 +209,11 @@ namespace Psi {
     /**
      * \brief Create a callback to the function definition function.
      */
-    GCPtr<Tree> function_definition_object(CompileContext& compile_context) {
+    TreePtr<> function_definition_object(CompileContext& compile_context) {
       GCPtr<EvaluateCallback> callback(new FunctionDefineCallback(compile_context));
-      GCPtr<EmptyType> type(new EmptyType(compile_context));
+      TreePtr<EmptyType> type(new EmptyType(compile_context));
       type->macro = make_interface(compile_context, "function", callback);
-      return GCPtr<Tree>(new EmptyValue(type));
+      return TreePtr<>(new EmptyValue(type));
     }
   }
 }

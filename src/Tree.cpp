@@ -4,18 +4,20 @@
 
 namespace Psi {
   namespace Compiler {
-    Tree::Tree(CompileContext& compile_context) : CompileObject(compile_context) {
+    Tree::Tree(CompileContext& compile_context)
+    : CompileObject(compile_context),
+    m_canonical_computed(false) {
     }
 
     Tree::~Tree() {
     }
 
     void Tree::gc_visit(GCVisitor& visitor) {
-      visitor % dependency % type;
+      visitor % dependency % type % m_canonical_form;
     }
 
-    GCPtr<Tree> Tree::rewrite_hook(const SourceLocation&, const std::map<GCPtr<Tree>, GCPtr<Tree> >&) {
-      return GCPtr<Tree>(this);
+    TreePtr<> Tree::rewrite_hook(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&) {
+      return TreePtr<>(this);
     }
 
     /**
@@ -24,12 +26,12 @@ namespace Psi {
       * \param location Location to use for error reporting.
       * \param substitutions Substitutions to make.
       */
-    GCPtr<Tree> Tree::rewrite(const SourceLocation& location, const std::map<GCPtr<Tree>, GCPtr<Tree> >& substitutions) {
+    TreePtr<> Tree::rewrite(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions) {
       if (!this)
-        return GCPtr<Tree>();
+        return TreePtr<>();
 
-      GCPtr<Tree> this_gc(this);
-      std::map<GCPtr<Tree>, GCPtr<Tree> >::const_iterator i = substitutions.find(this_gc);
+      TreePtr<> this_gc(this);
+      std::map<TreePtr<>, TreePtr<> >::const_iterator i = substitutions.find(this_gc);
       if (i != substitutions.end())
         return i->second;
       else
@@ -53,7 +55,7 @@ namespace Psi {
     EmptyType::~EmptyType() {
     }
 
-    EmptyValue::EmptyValue(const GCPtr<EmptyType>& type) : Tree(type->compile_context()) {
+    EmptyValue::EmptyValue(const TreePtr<EmptyType>& type) : Tree(type->compile_context()) {
       this->type = type;
     }
 
@@ -76,12 +78,12 @@ namespace Psi {
       visitor % child;
     }
 
-    GCPtr<Tree> UnaryOperation::rewrite_hook(const SourceLocation& location, const std::map<GCPtr<Tree>, GCPtr<Tree> >& substitutions) {
-      GCPtr<Tree> rw_child = child->rewrite(location, substitutions);
+    TreePtr<> UnaryOperation::rewrite_hook(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions) {
+      TreePtr<> rw_child = child->rewrite(location, substitutions);
       if (rw_child == child)
         return this;
 
-      GCPtr<UnaryOperation> rw_self = rewrite_duplicate_hook();
+      TreePtr<UnaryOperation> rw_self = rewrite_duplicate_hook();
       rw_self->child = rw_child;
       return rw_self;
     }
@@ -102,13 +104,13 @@ namespace Psi {
       visitor % left % right;
     }
 
-    GCPtr<Tree> BinaryOperation::rewrite_hook(const SourceLocation& location, const std::map<GCPtr<Tree>, GCPtr<Tree> >& substitutions) {
-      GCPtr<Tree> rw_left = left->rewrite(location, substitutions);
-      GCPtr<Tree> rw_right = right->rewrite(location, substitutions);
+    TreePtr<> BinaryOperation::rewrite_hook(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions) {
+      TreePtr<> rw_left = left->rewrite(location, substitutions);
+      TreePtr<> rw_right = right->rewrite(location, substitutions);
       if ((left != rw_left) || (right != rw_right))
         return this;
 
-      GCPtr<BinaryOperation> rw_self = rewrite_duplicate_hook();
+      TreePtr<BinaryOperation> rw_self = rewrite_duplicate_hook();
       rw_self->left = rw_left;
       rw_self->right = rw_right;
       return rw_self;
@@ -126,35 +128,35 @@ namespace Psi {
       visitor.visit_range(arguments);
     }
 
-    GCPtr<Tree> FunctionType::rewrite_hook(const SourceLocation& location, const std::map<GCPtr<Tree>, GCPtr<Tree> >& substitutions) {
+    TreePtr<> FunctionType::rewrite_hook(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions) {
       PSI_FAIL("need to sort out function type equivalence checking");
       
-      for (std::vector<GCPtr<FunctionTypeArgument> >::iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
-        GCPtr<Tree> rw_type = (*ii)->type->rewrite(location, substitutions);
+      for (std::vector<TreePtr<FunctionTypeArgument> >::iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
+        TreePtr<> rw_type = (*ii)->type->rewrite(location, substitutions);
         if (rw_type != (*ii)->type)
           goto rewrite_required;
       }
-      return GCPtr<Tree>(this);
+      return TreePtr<>(this);
 
     rewrite_required:
-      GCPtr<FunctionType> rw_self(new FunctionType(compile_context()));
+      TreePtr<FunctionType> rw_self(new FunctionType(compile_context()));
       rw_self->arguments.reserve(arguments.size());
 
-      std::map<GCPtr<Tree>, GCPtr<Tree> > child_substitutions(substitutions);
-      std::vector<GCPtr<FunctionTypeArgument> > rw_arguments;
-      for (std::vector<GCPtr<FunctionTypeArgument> >::iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
-        GCPtr<Tree> rw_type = (*ii)->type->rewrite(location, child_substitutions);
-        GCPtr<Type> rw_cast_type = dynamic_pointer_cast<Type>(rw_type);
+      std::map<TreePtr<>, TreePtr<> > child_substitutions(substitutions);
+      std::vector<TreePtr<FunctionTypeArgument> > rw_arguments;
+      for (std::vector<TreePtr<FunctionTypeArgument> >::iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
+        TreePtr<> rw_type = (*ii)->type->rewrite(location, child_substitutions);
+        TreePtr<Type> rw_cast_type = dynamic_pointer_cast<Type>(rw_type);
         if (!rw_cast_type)
           compile_context().error_throw(location, "Rewritten function argument type is not a type");
 
-        GCPtr<FunctionTypeArgument> rw_arg(new FunctionTypeArgument(compile_context()));
+        TreePtr<FunctionTypeArgument> rw_arg(new FunctionTypeArgument(compile_context()));
         rw_arg->type = rw_cast_type;
         rw_self->arguments.push_back(rw_arg);
         child_substitutions[*ii] = rw_arg;
       }
 
-      GCPtr<Tree> rw_result = result_type->type->rewrite(location, child_substitutions);
+      TreePtr<> rw_result = result_type->type->rewrite(location, child_substitutions);
       rw_self->result_type = dynamic_pointer_cast<Type>(rw_result);
       if (!rw_self->result_type)
         compile_context().error_throw(location, "Rewritten function result type is not a type");
@@ -162,32 +164,32 @@ namespace Psi {
       return rw_self;
     }
 
-    GCPtr<Type> FunctionType::argument_type_after(const SourceLocation& location, const std::vector<GCPtr<Tree> >& previous) {
+    TreePtr<Type> FunctionType::argument_type_after(const SourceLocation& location, const std::vector<TreePtr<> >& previous) {
       if (previous.size() >= arguments.size())
         compile_context().error_throw(location, "Too many arguments passed to function");
       
-      std::map<GCPtr<Tree>, GCPtr<Tree> > substitutions;
+      std::map<TreePtr<>, TreePtr<> > substitutions;
       for (unsigned ii = 0, ie = previous.size(); ii != ie; ++ii)
         substitutions[arguments[ii]] = previous[ii];
 
-      GCPtr<Tree> type = arguments[previous.size()]->type->rewrite(location, substitutions);
-      GCPtr<Type> cast_type = dynamic_pointer_cast<Type>(type);
+      TreePtr<> type = arguments[previous.size()]->type->rewrite(location, substitutions);
+      TreePtr<Type> cast_type = dynamic_pointer_cast<Type>(type);
       if (!cast_type)
         compile_context().error_throw(location, "Rewritten function argument type is not a type");
 
       return cast_type;
     }
     
-    GCPtr<Type> FunctionType::result_type_after(const SourceLocation& location, const std::vector<GCPtr<Tree> >& previous) {
+    TreePtr<Type> FunctionType::result_type_after(const SourceLocation& location, const std::vector<TreePtr<> >& previous) {
       if (previous.size() != arguments.size())
         compile_context().error_throw(location, "Incorrect number of arguments passed to function");
 
-      std::map<GCPtr<Tree>, GCPtr<Tree> > substitutions;
+      std::map<TreePtr<>, TreePtr<> > substitutions;
       for (unsigned ii = 0, ie = previous.size(); ii != ie; ++ii)
         substitutions[arguments[ii]] = previous[ii];
 
-      GCPtr<Tree> type = result_type->rewrite(location, substitutions);
-      GCPtr<Type> cast_type = dynamic_pointer_cast<Type>(type);
+      TreePtr<> type = result_type->rewrite(location, substitutions);
+      TreePtr<Type> cast_type = dynamic_pointer_cast<Type>(type);
       if (!cast_type)
         compile_context().error_throw(location, "Rewritten function result type is not a type");
 
@@ -259,19 +261,5 @@ namespace Psi {
       Tree::gc_visit(visitor);
       visitor % next % value;
     }
-
-#define PSI_TREE_OPERATION(name,base) \
-    name::name(CompileContext& context) : base(context) { \
-    } \
-    \
-    name::~name() { \
-    } \
-    \
-    GCPtr<base::RewriteDuplicateType> name::rewrite_duplicate_hook() { \
-      return new name(*this); \
-    }
-
-#include "TreeOperations.def"
-#undef PSI_TREE_OPERATION
   }
 }

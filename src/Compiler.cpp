@@ -66,9 +66,6 @@ namespace Psi {
       throw CompileException();
     }
 
-    EvaluateContext::EvaluateContext(CompileContext& compile_context) : CompileObject(compile_context) {
-    }
-    
     class PhysicalSourceOriginFilename : public PhysicalSourceOrigin {
       std::string m_name;
 
@@ -98,7 +95,6 @@ namespace Psi {
     : m_error_stream(error_stream), m_error_occurred(false) {
 
       m_empty_type.reset(new EmptyType(*this));
-      m_empty_type->macro = make_interface(*this, "Empty");
     }
 
     CompileContext::~CompileContext() {
@@ -127,13 +123,7 @@ namespace Psi {
     LogicalSourceLocation::~LogicalSourceLocation() {
     }
 
-    EvaluateCallback::EvaluateCallback(CompileContext& compile_context) : CompileObject(compile_context) {
-    }
-    
     EvaluateCallback::~EvaluateCallback() {
-    }
-
-    DotCallback::DotCallback(CompileContext& compile_context) : CompileObject(compile_context) {
     }
 
     DotCallback::~DotCallback() {
@@ -191,7 +181,7 @@ namespace Psi {
 
     class EvaluateContextDictionary : public EvaluateContext {
     public:
-      typedef std::map<std::string, GCPtr<Tree> > NameMapType;
+      typedef std::map<std::string, TreePtr<> > NameMapType;
       NameMapType m_entries;
       GCPtr<EvaluateContext> m_next;
 
@@ -202,27 +192,27 @@ namespace Psi {
       }
 
     public:
-      EvaluateContextDictionary(CompileContext& compile_context, const std::map<std::string, GCPtr<Tree> >& entries, const GCPtr<EvaluateContext>& next)
+      EvaluateContextDictionary(CompileContext& compile_context, const std::map<std::string, TreePtr<> >& entries, const GCPtr<EvaluateContext>& next)
       : EvaluateContext(compile_context), m_entries(entries), m_next(next) {
       }
       
-      virtual LookupResult<GCPtr<Tree> > lookup(const std::string& name) {
+      virtual LookupResult<TreePtr<> > lookup(const std::string& name) {
         NameMapType::const_iterator it = m_entries.find(name);
         if (it != m_entries.end()) {
-          return LookupResult<GCPtr<Tree> >::make_match(it->second);
+          return LookupResult<TreePtr<> >::make_match(it->second);
         } else if (m_next) {
           return m_next->lookup(name);
         } else {
-          return LookupResult<GCPtr<Tree> >::make_none();
+          return LookupResult<TreePtr<> >::make_none();
         }
       }
     };
 
-    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const std::map<std::string, GCPtr<Tree> >& entries, const GCPtr<EvaluateContext>& next) {
+    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const std::map<std::string, TreePtr<> >& entries, const GCPtr<EvaluateContext>& next) {
       return GCPtr<EvaluateContext>(new EvaluateContextDictionary(compile_context, entries, next));
     }
     
-    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const std::map<std::string, GCPtr<Tree> >& entries) {
+    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const std::map<std::string, TreePtr<> >& entries) {
       return evaluate_context_dictionary(compile_context, entries, GCPtr<EvaluateContext>());
     }
 
@@ -251,11 +241,11 @@ namespace Psi {
      * \param source Logical (i.e. namespace etc.) location of the expression, for symbol naming and debugging.
      * \param anonymize_location Whether to generate a new, anonymous location as a child of the current location.
      */
-    GCPtr<Tree> compile_expression(const boost::shared_ptr<Parser::Expression>& expression,
-                                   CompileContext& compile_context,
-                                   const GCPtr<EvaluateContext>& evaluate_context,
-                                   const boost::shared_ptr<LogicalSourceLocation>& source,
-                                   bool anonymize_location) {
+    TreePtr<> compile_expression(const boost::shared_ptr<Parser::Expression>& expression,
+                                 CompileContext& compile_context,
+                                 const GCPtr<EvaluateContext>& evaluate_context,
+                                 const boost::shared_ptr<LogicalSourceLocation>& source,
+                                 bool anonymize_location) {
 
       SourceLocation location(expression->location, source);
       boost::shared_ptr<LogicalSourceLocation> child_source = anonymize_location ? anonymous_child_location(source) : source;
@@ -264,7 +254,7 @@ namespace Psi {
       case Parser::expression_macro: {
         const Parser::MacroExpression& macro_expression = checked_cast<Parser::MacroExpression&>(*expression);
 
-        GCPtr<Tree> first = compile_expression(macro_expression.elements.front(), compile_context, evaluate_context, child_source, false);
+        TreePtr<> first = compile_expression(macro_expression.elements.front(), compile_context, evaluate_context, child_source, false);
         std::vector<boost::shared_ptr<Parser::Expression> > rest(boost::next(macro_expression.elements.begin()), macro_expression.elements.end());
 
         if (!first->type)
@@ -301,7 +291,7 @@ namespace Psi {
           default: PSI_FAIL("unreachable");
           }
 
-          LookupResult<GCPtr<Tree> > first = evaluate_context->lookup(bracket_operation);
+          LookupResult<TreePtr<> > first = evaluate_context->lookup(bracket_operation);
           switch (first.type()) {
           case lookup_result_none:
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator missing") % bracket_str % bracket_operation);
@@ -337,7 +327,7 @@ namespace Psi {
 
         case Parser::TokenExpression::identifier: {
           std::string name(token_expression.text.begin, token_expression.text.end);
-          LookupResult<GCPtr<Tree> > result = evaluate_context->lookup(name);
+          LookupResult<TreePtr<> > result = evaluate_context->lookup(name);
 
           switch (result.type()) {
           case lookup_result_none: compile_context.error_throw(location, boost::format("Name not found: %s") % name);
@@ -389,14 +379,14 @@ namespace Psi {
       
       struct Parameters {
         BuildState state;
-        GCPtr<Statement> statement;
+        TreePtr<Statement> statement;
         boost::shared_ptr<Parser::Expression> expression;
         boost::shared_ptr<LogicalSourceLocation> logical_location;
         bool anonymize_location;
       };
 
       std::vector<Parameters> m_parameters;
-      GCPtr<Block> m_block;
+      TreePtr<Block> m_block;
       GCPtr<EvaluateContext> m_evaluate_context;
       
       void run() {
@@ -412,7 +402,7 @@ namespace Psi {
         }
 
         // Link statements together
-        GCPtr<Statement> *next_statement_ptr = &m_block->statements;
+        TreePtr<Statement> *next_statement_ptr = &m_block->statements;
         for (std::vector<Parameters>::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
           *next_statement_ptr = ii->statement;
           next_statement_ptr = &ii->statement->next;
@@ -448,7 +438,7 @@ namespace Psi {
       : Future(compile_context, location) {
       }
       
-      GCPtr<Statement> build_one(unsigned index) {
+      TreePtr<Statement> build_one(unsigned index) {
         Parameters& params = m_parameters[index];
         switch (params.state) {
         case build_not_started: {
@@ -461,7 +451,7 @@ namespace Psi {
           params.state = build_running;
           try {
             params.statement.reset(new Statement(compile_context()));
-            GCPtr<Tree> expr = compile_expression(expression, compile_context(), m_evaluate_context, logical_location, params.anonymize_location);
+            TreePtr<> expr = compile_expression(expression, compile_context(), m_evaluate_context, logical_location, params.anonymize_location);
             params.statement->value = expr;
             params.statement->dependency = expr->dependency;
             params.statement->type = expr->type;
@@ -487,7 +477,7 @@ namespace Psi {
         }
       }
 
-      static GCPtr<Block> make(const std::vector<boost::shared_ptr<Parser::NamedExpression> >&, CompileContext&, const GCPtr<EvaluateContext>&, const SourceLocation&);
+      static TreePtr<Block> make(const std::vector<boost::shared_ptr<Parser::NamedExpression> >&, CompileContext&, const GCPtr<EvaluateContext>&, const SourceLocation&);
     };
 
     class StatementListEvaluateContext : public EvaluateContext {
@@ -509,22 +499,22 @@ namespace Psi {
         m_names.swap(names);
       }
 
-      virtual LookupResult<GCPtr<Tree> > lookup(const std::string& name) {
+      virtual LookupResult<TreePtr<> > lookup(const std::string& name) {
         NameMapType::const_iterator it = m_names.find(name);
         if (it != m_names.end()) {
-          return LookupResult<GCPtr<Tree> >::make_match(m_compiler->build_one(it->second));
+          return LookupResult<TreePtr<> >::make_match(m_compiler->build_one(it->second));
         } else if (m_next) {
           return m_next->lookup(name);
         } else {
-          return LookupResult<GCPtr<Tree> >::make_none();
+          return LookupResult<TreePtr<> >::make_none();
         }
       }
     };
 
-    GCPtr<Block> StatementListCompiler::make(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements,
-                                             CompileContext& compile_context,
-                                             const GCPtr<EvaluateContext>& evaluate_context,
-                                             const SourceLocation& location) {
+    TreePtr<Block> StatementListCompiler::make(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements,
+                                               CompileContext& compile_context,
+                                               const GCPtr<EvaluateContext>& evaluate_context,
+                                               const SourceLocation& location) {
       std::map<std::string, unsigned> names;
 
       GCPtr<StatementListCompiler> compiler(new StatementListCompiler(compile_context, location));
@@ -551,7 +541,7 @@ namespace Psi {
         }
       }
 
-      GCPtr<Block> block(new Block(compile_context));
+      TreePtr<Block> block(new Block(compile_context));
       block->dependency = compiler;
       compiler->m_block = block;
       compiler->m_evaluate_context.reset(new StatementListEvaluateContext(compile_context, evaluate_context, compiler, names));
@@ -559,10 +549,10 @@ namespace Psi {
       return block;
     }
 
-    GCPtr<Block> compile_statement_list(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements,
-                                        CompileContext& compile_context,
-                                        const GCPtr<EvaluateContext>& evaluate_context,
-                                        const SourceLocation& location) {
+    TreePtr<Block> compile_statement_list(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements,
+                                          CompileContext& compile_context,
+                                          const GCPtr<EvaluateContext>& evaluate_context,
+                                          const SourceLocation& location) {
       return StatementListCompiler::make(statements, compile_context, evaluate_context, location);
     }
   }
