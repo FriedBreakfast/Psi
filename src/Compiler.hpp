@@ -187,36 +187,106 @@ namespace Psi {
 
     class EvaluateContext;
 
-    class EvaluateCallback : public CompileObject {
+#if 0
+    class EvaluateContext {
+      boost::shared_ptr<EvaluateContext> m_parent;
+
     public:
-      EvaluateCallback(CompileContext&);
-      virtual ~EvaluateCallback();
+      EvaluateContext(boost::shared_ptr<EvaluateContext>&);
+    };
+#endif
+
+    class CompileInterfaceRef {
+      void *m_interface;
+      TreePtr<> m_data;
       
-      virtual TreePtr<> evaluate_callback(const TreePtr<>&,
-                                          const std::vector<boost::shared_ptr<Parser::Expression> >&,
-                                          CompileContext&,
-                                          const GCPtr<EvaluateContext>&,
-                                          const SourceLocation&) = 0;
+    public:
+      CompileInterfaceRef(const TreePtr<>&);
+
+      void* interface() const {return m_interface;}
     };
 
-    class DotCallback : public CompileObject {
-    public:
-      virtual ~DotCallback();
-      
-      virtual TreePtr<> dot_callback(const TreePtr<>&,
-                                     const boost::shared_ptr<Parser::Expression>&,
-                                     CompileContext&,
-                                     const GCPtr<EvaluateContext>&,
-                                     const SourceLocation&) = 0;
+    /**
+     * \brief Low-level macro interface.
+     */
+    struct MacroInterface {
+      TreePtr<> (*evaluate) (MacroInterface*,
+                             const TreePtr<>&,
+                             const TreePtr<>&,
+                             const std::vector<boost::shared_ptr<Parser::Expression> >&,
+                             CompileContext&,
+                             const GCPtr<EvaluateContext>&,
+                             const SourceLocation&);
+      TreePtr<> (*dot) (MacroInterface*,
+                        const TreePtr<>&,
+                        const TreePtr<>&,
+                        const boost::shared_ptr<Parser::Expression>&,
+                        CompileContext&,
+                        const GCPtr<EvaluateContext>&,
+                        const SourceLocation&);
     };
 
-    class Macro : public CompileObject {
+    /**
+     * \brief Wrapper to simplify implementing Macros in C++.
+     */
+    template<typename Callback>
+    struct MacroInterfaceWrapper {
+      static TreePtr<> evaluate (MacroInterface*,
+                                 const TreePtr<>& macro_data,
+                                 const TreePtr<>& value,
+                                 const std::vector<boost::shared_ptr<Parser::Expression> >& parameters,
+                                 CompileContext& compile_context,
+                                 const GCPtr<EvaluateContext>& evaluate_context,
+                                 const SourceLocation& location) {
+        return Callback::evaluate(macro_data, value, parameters, compile_context, evaluate_context, location);
+      }
+
+      static TreePtr<> dot (MacroInterface*,
+                            const TreePtr<>& macro_data,
+                            const TreePtr<>& value,
+                            const boost::shared_ptr<Parser::Expression>& parameter,
+                            CompileContext& compile_context,
+                            const GCPtr<EvaluateContext>& evaluate_context,
+                            const SourceLocation& location) {
+        return Callback::evaluate(macro_data, value, parameter, compile_context, evaluate_context, location);
+      }
+    };
+
+    /**
+     * MacroInterface factory function. Uses MacroInterfaceWrapper to create C
+     * callable functions.
+     */
+    template<typename Callback>
+    MacroInteface make_macro_interface() {
+      MacroInterface mi;
+      mi.evaluate = &MacroInterfaceWrapper<Callback>::evaluate;
+      mi.dot = &MacroInterfaceWrapper<Callback>::dot;
+      return mi;
+    }
+
+    /**
+     * \brief C++ wrapper around the Macro type.
+     */
+    class MacroRef {
+      MacroInterface *m_interface;
+      TreePtr<> m_data;
+      
     public:
-      Macro(CompileContext&);
-      virtual ~Macro();
-      virtual std::string name() = 0;
-      virtual LookupResult<GCPtr<EvaluateCallback> > evaluate_lookup(const std::vector<boost::shared_ptr<Parser::Expression> >& elements) = 0;
-      virtual LookupResult<GCPtr<DotCallback> > dot_lookup(const boost::shared_ptr<Parser::Expression>& member) = 0;
+      TreePtr<> evaluate(const TreePtr<>& value,
+                         const std::vector<boost::shared_ptr<Parser::Expression> >& parameters,
+                         CompileContext& compile_context,
+                         const GCPtr<EvaluateContext>& evaluate_context,
+                         const SourceLocation& location) {
+        return m_interface->evaluate(m_interface, m_data, value, parameters, compile_context, evaluate_context, location);
+      }
+
+      TreePtr<> dot(const TreePtr<>& value,
+                    const boost::shared_ptr<Parser::Expression>& parameter,
+                    CompileContext& compile_context,
+                    const GCPtr<EvaluateContext>& evaluate_context,
+                    const SourceLocation& location) {
+        return m_interface->dot(m_interface, m_data, value, parameter, compile_context, evaluate_context, location);
+      }
     };
 
     /**

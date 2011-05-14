@@ -8,6 +8,7 @@
 #include <boost/shared_ptr.hpp>
 
 #include "Compiler.hpp"
+#include "Runtime.hpp"
 
 namespace Psi {
   namespace Parser {
@@ -50,27 +51,27 @@ namespace Psi {
     class Expression;
 
     struct MacroExpression : Expression {
-      MacroExpression(const PhysicalSourceLocation& location_, const std::vector<boost::shared_ptr<Expression> >& elements_);
+      MacroExpression(const PhysicalSourceLocation& location_, const std::vector<SharedPtr<Expression> >& elements_);
       virtual ~MacroExpression();
 
-      std::vector<boost::shared_ptr<Expression> > elements;
+      std::vector<SharedPtr<Expression> > elements;
     };
 
     struct NamedExpression : Element {
       NamedExpression(const PhysicalSourceLocation& source_);
-      NamedExpression(const PhysicalSourceLocation& source_, const boost::shared_ptr<Expression>& expression_);
-      NamedExpression(const PhysicalSourceLocation& source_, const boost::shared_ptr<Expression>& expression_, const PhysicalSourceLocation& name_);
+      NamedExpression(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& expression_);
+      NamedExpression(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& expression_, const PhysicalSourceLocation& name_);
       ~NamedExpression();
 
       boost::optional<PhysicalSourceLocation> name;
-      boost::shared_ptr<Expression> expression;
+      SharedPtr<Expression> expression;
     };
 
     struct DotExpression : Expression {
-      DotExpression(const PhysicalSourceLocation& source_, const boost::shared_ptr<Expression>& left_, const boost::shared_ptr<Expression>& right_);
+      DotExpression(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& left_, const SharedPtr<Expression>& right_);
       ~DotExpression();
 
-      boost::shared_ptr<Expression> left, right;
+      SharedPtr<Expression> left, right;
     };
 
     class ParseError : public std::runtime_error {
@@ -79,12 +80,12 @@ namespace Psi {
       virtual ~ParseError() throw();
     };
 
-    std::vector<boost::shared_ptr<NamedExpression> > parse_statement_list(const PhysicalSourceLocation&);
-    std::vector<boost::shared_ptr<NamedExpression> > parse_argument_list(const PhysicalSourceLocation&);
+    std::vector<SharedPtr<NamedExpression> > parse_statement_list(const PhysicalSourceLocation&);
+    std::vector<SharedPtr<NamedExpression> > parse_argument_list(const PhysicalSourceLocation&);
 
     struct ArgumentDeclarations {
-      std::vector<boost::shared_ptr<NamedExpression> > arguments;
-      boost::shared_ptr<Expression> return_type;
+      std::vector<SharedPtr<NamedExpression> > arguments;
+      SharedPtr<Expression> return_type;
     };
 
     ArgumentDeclarations parse_function_argument_declarations(const PhysicalSourceLocation&);

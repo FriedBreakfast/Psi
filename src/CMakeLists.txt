@@ -85,6 +85,7 @@ add_library(psi-compiler SHARED
   Interface.cpp
   GarbageCollection.cpp GarbageCollection.hpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
+  Runtime.hpp
   Tree.cpp Tree.hpp
   TreePattern.hpp
   Utility.cpp Utility.hpp
