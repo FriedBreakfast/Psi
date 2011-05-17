@@ -10,34 +10,79 @@
 
 namespace Psi {
   namespace Compiler {
+    struct TreeDependency;
+    
+    struct TreeDependencyVtable {
+      void (*gc_visit) (TreeDependency*,GCVisitor*);
+      void (*run) (TreeDependency*);
+      void (*destroy) (TreeDependency*);
+    };
+    
+    struct TreeDependency {
+      TreeDependencyVtable *vptr;
+    };
+    
     /**
      * \brief Base class for all types used to represent code and data.
      */
-    class Tree : public CompileObject {
-      bool m_canonical_computed;
-      TreePtr<> m_canonical_form;
-
-      void compute_canonical_form();
+    class Tree : public GCBase {
+      enum CompletionState {
+        completion_constructed,
+        completion_running,
+        completion_finished,
+        completion_failed
+      };
+      
+      CompileContext *m_compile_context;
+      SourceLocation m_location;
+      TreePtr<Type> m_type;
+      CompletionState m_completion_state;
+      TreeDependency *m_dependency;
+      void complete_main();
       
     protected:
       virtual void gc_visit(GCVisitor&);
+      virtual void gc_destroy();
       virtual TreePtr<> rewrite_hook(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions);
 
     public:
-      Tree(CompileContext&);
+      Tree(CompileContext&, const SourceLocation& location, const TreePtr<Type>&, TreeDependency*);
       virtual ~Tree() = 0;
 
+      /// \brief Return the compilation context this tree belongs to.
+      CompileContext& compile_context() const {return *m_compile_context;}
+      /// \brief Get the location associated with this tree
+      const SourceLocation& location() const {return m_location;}
+      /// \brief Get the type of this tree
+      const TreePtr<Type>& type() const {return m_type;}
+      void complete(const SourceLocation&);
+      void dependency_complete(const SourceLocation&);
       TreePtr<> rewrite(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
-
-      TreePtr<> canonical() {
-        if (!m_canonical_computed)
-          compute_canonical_form();
-        return m_canonical_form;
-      }
-
-      GCPtr<Future> dependency;
-      TreePtr<Type> type;
     };
+    
+    class GlobalTree : public Tree {
+    };
+    
+    class ExternalGlobalTree : public Tree {
+    public:
+      String symbol_name;
+    };
+    
+    class Interface : public Tree {
+    };
+    
+    class CompileImplementation : public Tree {
+    public:
+      TreePtr<> vtable;
+      TreePtr<> data;
+    };
+    
+    template<typename T>
+    T wrapped_compile_interface_lookup(const TreePtr<Interface>& interface, const std::vector<TreePtr<> >& arguments, CompileContext& compile_context, const SourceLocation& location) {
+      TreePtr<CompileImplementation> impl = compile_interface_lookup(interface, arguments, compile_context, location);
+      typename T::InterfaceType *callback_ptr = static_cast<typename T::InterfaceType*>(compile_context.jit_compile(impl->vtable));
+      return T(callback_ptr, impl->data);
+    }
 
     /**
      * \brief Base class for type trees.

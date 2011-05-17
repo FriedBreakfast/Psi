@@ -85,11 +85,18 @@ add_library(psi-compiler SHARED
   Interface.cpp
   GarbageCollection.cpp GarbageCollection.hpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
-  Runtime.hpp
+  Platform.cpp Platform.hpp
+  Runtime.cpp Runtime.hpp
   Tree.cpp Tree.hpp
   TreePattern.hpp
   Utility.cpp Utility.hpp
 )
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+list(APPEND PSI_COMPILER_SOURCES PlatformLinux.cpp)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+list(APPEND PSI_COMPILER_SOURCES PlatformWindows.cpp)
+endif()
 
 target_link_libraries(psi-compiler psi-tvm debug psi-assert)
 

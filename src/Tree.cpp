@@ -4,20 +4,72 @@
 
 namespace Psi {
   namespace Compiler {
-    Tree::Tree(CompileContext& compile_context)
-    : CompileObject(compile_context),
-    m_canonical_computed(false) {
+    Tree::Tree(CompileContext& compile_context, const SourceLocation& location, const TreePtr<Type>& type, const TreeDependency *dependency)
+    : m_compile_context(&compile_context),
+    m_location(location),
+    m_type(type),
+    m_completion_state(completion_constructed),
+    m_dependency(dependency) {
+      compile_context.m_gc_pool.add(this);
+      
+      if (!m_dependency)
+        m_completion_state = completion_finished;
     }
 
     Tree::~Tree() {
     }
 
     void Tree::gc_visit(GCVisitor& visitor) {
-      visitor % dependency % type % m_canonical_form;
+      visitor % m_type;
+      if (m_dependency)
+        m_dependency->vptr->gc_visit(m_dependency, &visitor);
+    }
+
+    void Tree::gc_destroy() {
+      delete this;
     }
 
     TreePtr<> Tree::rewrite_hook(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&) {
       return TreePtr<>(this);
+    }
+    
+    void Tree::complete() {
+      switch (m_completion_state) {
+      case completion_constructed: complete_main(); break;
+      case completion_running: compile_context().error_throw(m_location, "Circular dependency during code evaluation");
+      case completion_finished: break;
+      case completion_failed: throw CompileException();
+      default: PSI_FAIL("unknown future state");
+      }
+    }
+
+    void Tree::dependency_complete() {
+      switch (m_completion_state) {
+      case completion_constructed: complete_main(); break;
+      case completion_running:
+      case completion_finished: break;
+      case completion_failed: throw CompileException();
+      default: PSI_FAIL("unknown future state");
+      }
+    }
+    
+    void Tree::complete_main() {
+      try {
+        m_completion_state = completion_running;
+        m_dependency->vptr->run(m_dependency);
+        m_completion_state = completion_finished;
+      } catch (...) {
+        m_completion_state = completion_failed;
+        m_dependency->vptr->destroy(m_dependency);
+        m_dependency = 0;
+        throw CompileException();
+      }
+      
+      m_dependency->vptr->destroy(m_dependency);
+      m_dependency = 0;
+    }
+
+    void Tree::throw_circular_exception() {
     }
 
     /**

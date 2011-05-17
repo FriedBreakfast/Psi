@@ -1,9 +1,11 @@
 #ifndef HPP_PSI_RUNTIME
 #define HPP_PSI_RUNTIME
 
-#include <cstdlib>
 #include <utility>
 #include <algorithm>
+
+#include "Assert.hpp"
+#include "CppCompiler.hpp"
 
 /**
  * \file
@@ -14,6 +16,9 @@
  */
 
 namespace Psi {
+  void* checked_alloc(std::size_t n);
+  void checked_free(std::size_t n, void *ptr);
+  
   template<typename T>
   struct MoveRef {
     T *x;
@@ -26,6 +31,8 @@ namespace Psi {
   MoveRef<T> move_ref(T& x) {
     return MoveRef<T>(x);
   }
+  
+  struct SharedPtrOwner;
   
   struct SharedPtrOwnerVTable {
     void (*destroy) (SharedPtrOwner*);
@@ -175,6 +182,125 @@ namespace Psi {
     std::size_t length;
     char *data;
   };
+  
+  class String {
+    String_C m_c;
+    
+  public:
+    String();
+    String(const String&);
+    String(MoveRef<String>);
+    String(const char*);
+    String(const char*, std::size_t);
+    ~String();
+    
+    String& operator = (const String&);
+    String& operator = (MoveRef<String>);
+    String& operator = (const char*);
+
+    bool operator == (const String&) const;
+    bool operator != (const String&) const;
+    bool operator < (const String&) const;
+    
+    void clear();
+    const char *c_str() const {return m_c.data;}
+  };
+  
+  template<typename T>
+  struct Maybe_C {
+    bool full;
+    char data[sizeof(T)] PSI_ATTRIBUTE((PSI_ALIGNED(PSI_ALIGNOF(T))));
+  };
+  
+  template<typename T>
+  class Maybe {
+    Maybe_C<T> m_c;
+    
+    T* unchecked_get() {return static_cast<T*>(m_c.data);}
+    const T* unchecked_get() const {return static_cast<const T*>(m_c.data);}
+    
+  public:
+    Maybe() {
+      m_c.full = false;
+    }
+    
+    Maybe(const T& value) {
+      m_c.full = true;
+      new (m_c.data) T (value);
+    }
+    
+    Maybe(MoveRef<T> value) {
+      m_c.full = true;
+      new (m_c.data) T (value);
+    }
+    
+    
+    Maybe(const Maybe<T>& other) {
+      if (other) {
+        m_c.full = true;
+        new (m_c.data) T (*other);
+      } else {
+        m_c.full = false;
+      }
+    }
+    
+    Maybe(MoveRef<Maybe<T> > other) {
+      if (*other) {
+        m_c.full = true;
+        new (m_c.data) T (MoveRef<T>(**other));
+        other->clear();
+      } else {
+        m_c.full = false;
+      }
+    }
+    
+    ~Maybe() {
+      if (m_c.full)
+        get()->~T();
+    }
+    
+    bool empty() const {return !m_c.full;}
+    T* get() {return m_c.full ? unchecked_get() : 0;}
+    const T* get() const {return m_c.full ? unchecked_get() : 0;}
+    
+    T* operator -> () {PSI_ASSERT(!empty()); return unchecked_get();}
+    const T* operator -> () const {PSI_ASSERT(!empty()); return unchecked_get();}
+    T& operator * () {PSI_ASSERT(!empty()); return *unchecked_get();}
+    const T& operator * () const {PSI_ASSERT(!empty()); return *unchecked_get();}
+
+    void clear() {
+      if (m_c.full) {
+        delete unchecked_get()->~T();
+        m_c.full = false;
+      }
+    }
+    
+    Maybe& operator = (const Maybe<T>& other) {
+      if (other)
+        operator = (*other);
+    }
+    
+    Maybe& operator = (MoveRef<Maybe<T> > other) {
+      if (other) {
+        operator = (MoveRef<T>(**other));
+        other->clear();
+      }
+    }
+
+    Maybe& operator = (const T& src) {
+      if (m_c.m_full)
+        *unchecked_get() = src;
+      else
+        new (m_c.data) T (src);
+    }
+    
+    Maybe& operator = (MoveRef<T> src) {
+      if (m_c.full)
+        *unchecked_get() = src;
+      else
+        new (m_c.data) T (src);
+    }
+  };
 
   /**
    * \brief Array list C layout.
@@ -202,13 +328,15 @@ namespace Psi {
       m_c.end = 0;
       m_c.limit = 0;
     }
-
+    
   public:
     typedef std::size_t size_type;
+    typedef std::ptrdiff_t difference_type;
     typedef T value_type;
     typedef T& reference;
     typedef const T& const_reference;
     typedef T* iterator;
+    typedef const T* const_iterator;
 
     ArrayList() {
       init();
@@ -225,17 +353,42 @@ namespace Psi {
         std::free(m_c.begin);
       }
     }
+    
+    ArrayList(const ArrayList<T>& src) {
+      init();
+      reserve(src.size());
+      iterator j = begin();
+      for (iterator ii = src.begin(), ie = src.end(); ii != ie; ++ii)
+        new (*j++) T (*ii);
+      m_c.end = j;
+    }
 
     ArrayList(MoveRef<ArrayList<T> > src) {
       m_c = src.m_c;
       src.init();
     }
+    
+    template<typename It>
+    ArrayList(const It& first, const It& last) {
+      init();
+      insert(end(), first, last);
+    }
+    
+    ArrayList(size_type n, const T& x=T()) {
+      init();
+      reserve(n);
+      for (size_type i = 0; i != n; ++i)
+        push_back(x);
+    }
 
-    ArrayList(bool, size_type capacity) {
-      m_c.begin = m_c.end = std::malloc(capacity * sizeof(T));
+  private:
+    struct CapacityLabel {};
+    ArrayList(CapacityLabel, size_type capacity) {
+      m_c.begin = m_c.end = checked_alloc(capacity * sizeof(T));
       m_c.limit = static_cast<T*>(m_c.begin) + capacity;
     }
 
+  public:
     iterator begin() {return static_cast<T*>(m_c.begin);}
     iterator end() {return static_cast<T*>(m_c.end);}
     const_iterator begin() const {return static_cast<const T*>(m_c.begin);}
@@ -263,16 +416,24 @@ namespace Psi {
       return begin() + off;
     }
 
-    void insert(iterator i, const_reference x) {
+    iterator insert(iterator i, const_reference x) {
       iterator j = prepare_insert(i, 1);
       *j = x;
       return j;
     }
 
-    void insert_move(iterator i, MoveRef<T> x) {
+    iterator insert(iterator i, MoveRef<T> x) {
       iterator j = prepare_insert(i, 1);
       *j = x;
       return j;
+    }
+    
+    template<typename It>
+    iterator insert(iterator i, const It& b, const It& e) {
+      for (It j = b; j != e; ++j) {
+        i = insert(i, *j);
+        ++i;
+      }
     }
 
     iterator erase(iterator first, iterator last) {
@@ -291,8 +452,8 @@ namespace Psi {
 
     void reserve(size_type n) {
       if (n > capacity()) {
-        size_type new_capacity = std::max(4, std::max(capacity() * 2, n));
-        ArrayList other(false, new_capacity);
+        size_type new_capacity = std::max(size_type(4), std::max(capacity() * size_type(2), n));
+        ArrayList other(CapacityLabel(), new_capacity);
         other.swap(*this);
       }
     }
@@ -304,11 +465,11 @@ namespace Psi {
     }
 
     void clear() {
-      T *end = m_c.end;
+      T *p = end();
       do {
-        --end;
-        end->~T();
-      } while (end != m_c.begin);
+        --p;
+        p->~T();
+      } while (p != m_c.begin);
       m_c.end = m_c.begin;
     }
 
@@ -318,6 +479,9 @@ namespace Psi {
     void swap(ArrayList<T>& other) {
       std::swap(m_c, other.m_c);
     }
+    
+    T& front() {return *begin();}
+    const T& front() const {return *begin();}
   };
 }
 

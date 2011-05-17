@@ -2,7 +2,6 @@
 #define HPP_PSI_PARSER
 
 #include <stdexcept>
-#include <vector>
 
 #include <boost/optional.hpp>
 #include <boost/shared_ptr.hpp>
@@ -51,10 +50,10 @@ namespace Psi {
     class Expression;
 
     struct MacroExpression : Expression {
-      MacroExpression(const PhysicalSourceLocation& location_, const std::vector<SharedPtr<Expression> >& elements_);
+      MacroExpression(const PhysicalSourceLocation& location_, const ArrayList<SharedPtr<Expression> >& elements_);
       virtual ~MacroExpression();
 
-      std::vector<SharedPtr<Expression> > elements;
+      ArrayList<SharedPtr<Expression> > elements;
     };
 
     struct NamedExpression : Element {
@@ -80,11 +79,11 @@ namespace Psi {
       virtual ~ParseError() throw();
     };
 
-    std::vector<SharedPtr<NamedExpression> > parse_statement_list(const PhysicalSourceLocation&);
-    std::vector<SharedPtr<NamedExpression> > parse_argument_list(const PhysicalSourceLocation&);
+    ArrayList<SharedPtr<NamedExpression> > parse_statement_list(const PhysicalSourceLocation&);
+    ArrayList<SharedPtr<NamedExpression> > parse_argument_list(const PhysicalSourceLocation&);
 
     struct ArgumentDeclarations {
-      std::vector<SharedPtr<NamedExpression> > arguments;
+      ArrayList<SharedPtr<NamedExpression> > arguments;
       SharedPtr<Expression> return_type;
     };
 

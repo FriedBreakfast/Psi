@@ -5,82 +5,10 @@
 #include "Compiler.hpp"
 #include "Tree.hpp"
 #include "TreePattern.hpp"
+#include "Platform.hpp"
 
 namespace Psi {
   namespace Compiler {
-    CompileObject::CompileObject(CompileContext& compile_context)
-    : m_compile_context(&compile_context) {
-      compile_context.m_gc_pool.add(this);
-    }
-
-    CompileObject::~CompileObject() {
-    }
-
-    void CompileObject::gc_destroy() {
-      delete this;
-    }
-
-    Future::Future(CompileContext& context, const SourceLocation& location)
-    : CompileObject(context), m_state(state_constructed), m_location(location) {
-    }
-
-    Future::~Future() {
-    }
-
-    void Future::call() {
-      switch (m_state) {
-      case state_constructed: run_wrapper(); break;
-      case state_running: throw_circular_exception();
-      case state_finished: break;
-      case state_failed: throw_failed_exception();
-      default: PSI_FAIL("unknown future state");
-      }
-    }
-
-    void Future::dependency_call() {
-      switch (m_state) {
-      case state_constructed: run_wrapper(); break;
-      case state_running:
-      case state_finished: break;
-      case state_failed: throw_failed_exception();
-      default: PSI_FAIL("unknown future state");
-      }
-    }
-
-    void Future::run_wrapper() {
-      try {
-        m_state = state_running;
-        run();
-        m_state = state_finished;
-      } catch (...) {
-        m_state = state_failed;
-        throw_failed_exception();
-      }
-    }
-
-    void Future::throw_circular_exception() {
-      compile_context().error_throw(m_location, "Circular dependency during code evaluation");
-    }
-    
-    void Future::throw_failed_exception() {
-      throw CompileException();
-    }
-
-    class PhysicalSourceOriginFilename : public PhysicalSourceOrigin {
-      std::string m_name;
-
-    public:
-      PhysicalSourceOriginFilename(const std::string& name) : m_name(name) {}
-
-      virtual std::string name() {
-        return m_name;
-      }
-    };
-
-    boost::shared_ptr<PhysicalSourceOrigin> PhysicalSourceOrigin::filename(const std::string& name) {
-      return boost::shared_ptr<PhysicalSourceOrigin>(new PhysicalSourceOriginFilename(name));
-    }
-
     CompileException::CompileException() {
     }
 
@@ -108,8 +36,8 @@ namespace Psi {
       default: type = "error"; m_error_occurred = true; break;
       }
       
-      *m_error_stream << boost::format("%s:%s: in '%s'\n") % loc.physical.origin->name() % loc.physical.first_line % loc.logical->full_name();
-      *m_error_stream << boost::format("%s:%s: %s:%s\n") % loc.physical.origin->name() % loc.physical.first_line % type % message;
+      *m_error_stream << boost::format("%s:%s: in '%s'\n") % *loc.physical.url % loc.physical.first_line % logical_location_name(loc.logical);
+      *m_error_stream << boost::format("%s:%s: %s:%s\n") % *loc.physical.url % loc.physical.first_line % type % message;
     }
 
     void CompileContext::error_throw(const SourceLocation& loc, const std::string& message, unsigned flags) {
@@ -117,103 +45,63 @@ namespace Psi {
       throw CompileException();
     }
 
-    Macro::~Macro() {
-    }
-
-    LogicalSourceLocation::~LogicalSourceLocation() {
-    }
-
-    EvaluateCallback::~EvaluateCallback() {
-    }
-
-    DotCallback::~DotCallback() {
-    }
-
-    class RootLogicalSourceLocation : public LogicalSourceLocation {
-    public:
-      virtual boost::shared_ptr<LogicalSourceLocation> parent() const {
-        return boost::shared_ptr<LogicalSourceLocation>();
+    /**
+     * \brief Create a tree for a global from the address of that global.
+     * 
+     */
+    TreePtr<GlobalTree> tree_from_address(CompileContext& compile_context, const SourceLocation& location, const TreePtr<Type>& type, void *ptr) {
+      void *base;
+      String name;
+      try {
+        name = Platform::address_to_symbol(ptr, &base);
+      } catch (Platform::PlatformError& e) {
+        compile_context.error_throw(location, boost::format("Internal error: failed to get symbol name from addres: %s") % e.what());
       }
+      if (base != ptr)
+        compile_context.error_throw(location, "Internal error: address used to retrieve symbol did not match symbol base");
 
-      virtual std::string full_name() const {
-        return "";
-      }
-    };
-
-    class NamedLogicalSourceLocation : public LogicalSourceLocation {
-      std::string m_name;
-      boost::shared_ptr<LogicalSourceLocation> m_parent;
-
-    public:
-      NamedLogicalSourceLocation(const std::string& name, const boost::shared_ptr<LogicalSourceLocation>& parent)
-      : m_name(name), m_parent(parent) {
-      }
-      
-      virtual boost::shared_ptr<LogicalSourceLocation> parent() const {
-        return m_parent;
-      }
-
-      virtual std::string full_name() const {
-        if (m_parent) {
-          std::string parent_name = m_parent->full_name();
-          if (!parent_name.empty()) {
-            parent_name += '.';
-            parent_name += m_name;
-            return parent_name;
-          }
-        }
-
-        return m_name;
-      }
-    };
-
-    boost::shared_ptr<LogicalSourceLocation> root_location() {
-      return boost::shared_ptr<LogicalSourceLocation>(new RootLogicalSourceLocation());
+      TreePtr<ExternalGlobalTree> result(new GlobalTree(type));
+      result->symbol_name = name;
+      return result;
     }
-
-    boost::shared_ptr<LogicalSourceLocation> named_child_location(const boost::shared_ptr<LogicalSourceLocation>& parent, const std::string& name) {
-        return boost::shared_ptr<LogicalSourceLocation>(new NamedLogicalSourceLocation(name, parent));
-    }
-
-    boost::shared_ptr<LogicalSourceLocation> anonymous_child_location(const boost::shared_ptr<LogicalSourceLocation>& parent) {
-        return boost::shared_ptr<LogicalSourceLocation>(new NamedLogicalSourceLocation("(anonymous)", parent));
-    }
-
-    class EvaluateContextDictionary : public EvaluateContext {
-    public:
-      typedef std::map<std::string, TreePtr<> > NameMapType;
-      NameMapType m_entries;
-      GCPtr<EvaluateContext> m_next;
-
+    
+    class EvaluateContextDictionaryTree : public Tree {
       virtual void gc_visit(GCVisitor& visitor) {
-        visitor % m_next;
-        for (NameMapType::iterator ii = m_entries.begin(), ie = m_entries.end(); ii != ie; ++ii)
+        for (NameMapType::iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
           visitor.visit_ptr(ii->second);
       }
 
     public:
-      EvaluateContextDictionary(CompileContext& compile_context, const std::map<std::string, TreePtr<> >& entries, const GCPtr<EvaluateContext>& next)
-      : EvaluateContext(compile_context), m_entries(entries), m_next(next) {
-      }
-      
-      virtual LookupResult<TreePtr<> > lookup(const std::string& name) {
-        NameMapType::const_iterator it = m_entries.find(name);
-        if (it != m_entries.end()) {
+      typedef std::map<String, TreePtr<> > NameMapType;
+      NameMapType entries;
+    };
+    
+    class EvaluateContextDictionary {
+    public:
+      TreePtr<> lookup(const TreePtr<>& data, const String& name) {
+        TreePtr<EvaluateContextDictionaryTree> cast_data = checked_pointer_cast<EvaluateContextDictionaryTree>(data);
+        EvaluateContextDictionaryTree::NameMapType::const_iterator it = cast_data->entries.find(name);
+        if (it != cast_data->entries.end()) {
           return LookupResult<TreePtr<> >::make_match(it->second);
-        } else if (m_next) {
-          return m_next->lookup(name);
         } else {
           return LookupResult<TreePtr<> >::make_none();
         }
       }
+      
+      static EvaluateContextWrapper<EvaluateContextDictionary> vtable;
     };
+    
+    EvaluteContextWrapper<EvaluateContextDictionary> EvaluateContextDictionary::vtable;
 
-    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const std::map<std::string, TreePtr<> >& entries, const GCPtr<EvaluateContext>& next) {
-      return GCPtr<EvaluateContext>(new EvaluateContextDictionary(compile_context, entries, next));
+    EvaluateContextRef evaluate_context_dictionary(CompileContext& compile_context, const std::map<String, TreePtr<> >& entries) {
+      TreePtr<CompileImplementation> impl(new CompileImplementation());
+      impl->vtable = tree_from_address(TreePtr<Type>(), &EvaluateContextDictionary::vtable);
+      impl->data.reset(new EvaluateContextDictionaryTree(entries));
+      return EvaluateContextRef(impl);
     }
     
-    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const std::map<std::string, TreePtr<> >& entries) {
-      return evaluate_context_dictionary(compile_context, entries, GCPtr<EvaluateContext>());
+    EvaluateContextRef evaluate_context_dictionary(CompileContext& compile_context, const std::map<String, TreePtr<> >& entries, const GCPtr<EvaluateContext>& next) {
+      return GCPtr<EvaluateContext>(new EvaluateContextDictionary(compile_context, entries, next));
     }
 
     /**
@@ -241,21 +129,19 @@ namespace Psi {
      * \param source Logical (i.e. namespace etc.) location of the expression, for symbol naming and debugging.
      * \param anonymize_location Whether to generate a new, anonymous location as a child of the current location.
      */
-    TreePtr<> compile_expression(const boost::shared_ptr<Parser::Expression>& expression,
+    TreePtr<> compile_expression(const SharedPtr<Parser::Expression>& expression,
                                  CompileContext& compile_context,
                                  const GCPtr<EvaluateContext>& evaluate_context,
-                                 const boost::shared_ptr<LogicalSourceLocation>& source,
-                                 bool anonymize_location) {
+                                 const SharedPtr<LogicalSourceLocation>& source) {
 
       SourceLocation location(expression->location, source);
-      boost::shared_ptr<LogicalSourceLocation> child_source = anonymize_location ? anonymous_child_location(source) : source;
 
       switch (expression->expression_type) {
       case Parser::expression_macro: {
         const Parser::MacroExpression& macro_expression = checked_cast<Parser::MacroExpression&>(*expression);
 
-        TreePtr<> first = compile_expression(macro_expression.elements.front(), compile_context, evaluate_context, child_source, false);
-        std::vector<boost::shared_ptr<Parser::Expression> > rest(boost::next(macro_expression.elements.begin()), macro_expression.elements.end());
+        TreePtr<> first = compile_expression(macro_expression.elements.front(), compile_context, evaluate_context, source);
+        ArrayList<SharedPtr<Parser::Expression> > rest(boost::next(macro_expression.elements.begin()), macro_expression.elements.end());
 
         if (!first->type)
           compile_context.error_throw(location, "Term does not have a type", CompileContext::error_internal);
@@ -308,7 +194,7 @@ namespace Psi {
           if (!first.value()->type->macro)
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator's type does not have an associated macro") % bracket_str % bracket_operation, CompileContext::error_internal);
 
-          std::vector<boost::shared_ptr<Parser::Expression> > expression_list(1, expression);
+          ArrayList<SharedPtr<Parser::Expression> > expression_list(1, expression);
           LookupResult<GCPtr<EvaluateCallback> > first_lookup = first.value()->type->macro->evaluate_lookup(expression_list);
 
           switch (first_lookup.type()) {
@@ -349,7 +235,7 @@ namespace Psi {
       case Parser::expression_dot: {
         const Parser::DotExpression& dot_expression = checked_cast<Parser::DotExpression&>(*expression);
 
-        GCPtr<Tree> left = compile_expression(dot_expression.left, compile_context, evaluate_context, child_source);
+        GCPtr<Tree> left = compile_expression(dot_expression.left, compile_context, evaluate_context, source);
         LookupResult<GCPtr<DotCallback> > result = left->type->macro->dot_lookup(dot_expression.right);
 
         switch (result.type()) {
