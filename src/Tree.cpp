@@ -4,19 +4,21 @@
 
 namespace Psi {
   namespace Compiler {
-    Tree::Tree(CompileContext& compile_context, const SourceLocation& location, const TreePtr<Type>& type, const TreeDependency *dependency)
+    Tree::Tree(CompileContext& compile_context, const SourceLocation& location, const TreePtr<Type>& type, const DependencyPtr& dependency)
     : m_compile_context(&compile_context),
     m_location(location),
     m_type(type),
     m_completion_state(completion_constructed),
-    m_dependency(dependency) {
+    m_dependency(0) {
       compile_context.m_gc_pool.add(this);
-      
+      m_dependency = dependency.release();
       if (!m_dependency)
         m_completion_state = completion_finished;
     }
 
     Tree::~Tree() {
+      if (m_dependency)
+        m_dependency->vptr->destroy(m_dependency);
     }
 
     void Tree::gc_visit(GCVisitor& visitor) {
@@ -54,19 +56,19 @@ namespace Psi {
     }
     
     void Tree::complete_main() {
+      TreePtr<CompileImplementation> dependency;
+      dependency.swap(m_dependency);
+      PSI_ASSERT(dependency);
+      
+      DependencyVtable *vptr = static_cast<DependencyVtable*>(compile_context().jit_compile(dependency->vtable));
       try {
         m_completion_state = completion_running;
-        m_dependency->vptr->run(m_dependency);
+        vptr->run(vptr, dependency.get(), this);
         m_completion_state = completion_finished;
       } catch (...) {
         m_completion_state = completion_failed;
-        m_dependency->vptr->destroy(m_dependency);
-        m_dependency = 0;
         throw CompileException();
       }
-      
-      m_dependency->vptr->destroy(m_dependency);
-      m_dependency = 0;
     }
 
     void Tree::throw_circular_exception() {

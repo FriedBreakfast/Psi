@@ -3,6 +3,8 @@
 
 #include <stdexcept>
 
+#include "Runtime.hpp"
+
 namespace Psi {
   namespace Platform {
     /**

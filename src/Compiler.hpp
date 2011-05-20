@@ -14,6 +14,7 @@
 #include "CppCompiler.hpp"
 #include "GarbageCollection.hpp"
 #include "Runtime.hpp"
+#include "Utility.hpp"
 
 namespace Psi {
   namespace Parser {
@@ -30,7 +31,7 @@ namespace Psi {
     };
 
     struct PhysicalSourceLocation {
-      SharedPtr<std::string> url;
+      SharedPtr<String> url;
 
       const char *begin, *end;
 
@@ -42,10 +43,10 @@ namespace Psi {
     
     struct LogicalSourceLocation {
       SharedPtr<LogicalSourceLocation> parent;
-      std::string name;
+      String name;
     };
     
-    std::string logical_location_name(const SharedPtr<LogicalSourceLocation>& location);
+    String logical_location_name(const SharedPtr<LogicalSourceLocation>& location);
 
     struct SourceLocation {
       PhysicalSourceLocation physical;
@@ -57,6 +58,10 @@ namespace Psi {
 
     class Tree;
     class Type;
+    class Interface;
+    class CompileImplementation;
+    class Block;
+    class GlobalTree;
 
     template<typename T=Tree>
     class TreePtr : public GCPtr<T> {
@@ -124,42 +129,41 @@ namespace Psi {
       template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, to_str(message), flags);}
       template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, to_str(message), flags);}
 
+      TreePtr<GlobalTree> tree_from_address(const SourceLocation&, const TreePtr<Type>&, void*);
+      
+      const TreePtr<Interface>& macro_interface();
+      const TreePtr<CompileImplementation>& statement_dependency();
+
     private:
       TreePtr<Type> m_empty_type;
 
     public:
       TreePtr<Type> empty_type() {return m_empty_type;}
     };
-
-    enum LookupResultType {
-      lookup_result_match, ///< \brief Match found
-      lookup_result_none, ///< \brief No match found
-      lookup_result_conflict ///< \brief Multiple ambiguous matches found
-    };
-
-    template<typename T>
-    class LookupResult {
-    private:
-      LookupResultType m_type;
-      boost::optional<T> m_value;
-
-      LookupResult(LookupResultType type) : m_type(type) {}
-      LookupResult(LookupResultType type, const T& value) : m_type(type), m_value(value) {}
-
-    public:
-      LookupResultType type() const {return m_type;}
-      const T& value() const {return *m_value;}
-
-      static LookupResult<T> make_none() {return LookupResult<T>(lookup_result_none);}
-      static LookupResult<T> make_match(const T& value) {return LookupResult<T>(lookup_result_match, value);}
-    };
     
     template<typename T>
-    struct CompileInterface {
+    class CompileImplementationRef {
+      typedef void (CompileImplementationRef::*safe_bool_type) () const;
+      void safe_bool_true() const {}
+
+    public:
       typedef T VtableType;
       T *vptr;
-      TreePtr<> data;
+      TreePtr<CompileImplementation> data;
+
+      CompileImplementationRef() : vptr(NULL) {}
+
+      operator safe_bool_type () const {return vptr ? safe_bool_true : NULL;}
+      bool operator ! () const {return !vptr;}
     };
+
+    template<typename T>
+    T make_compile_interface(typename T::VtableType *vptr, const TreePtr<>& data) {
+      T x;
+      x.vptr = vptr;
+      x.data = data;
+      return x;
+    }
     
     class EvaluateContextRef;
     class MacroRef;
@@ -168,41 +172,42 @@ namespace Psi {
      * \brief Low-level macro interface.
      */
     struct MacroVtable {
-      Tree* (*evaluate) (MacroVtable*, Tree*, Tree*, const ArrayList<SharedPtr<Parser::Expression> >*, CompileContext*, const EvaluateContextRef*, const SourceLocation*);
-      Tree* (*dot) (MacroVtable*, Tree*, Tree*, const SharedPtr<Parser::Expression>*, CompileContext*, const EvaluateContextRef*, const SourceLocation*);
+      Tree* (*evaluate) (MacroVtable*, CompileImplementation*, Tree*, const ArrayList<SharedPtr<Parser::Expression> >*, CompileContext*, CompileImplementation*, const SourceLocation*);
+      Tree* (*dot) (MacroVtable*, CompileImplementation*, Tree*, const SharedPtr<Parser::Expression>*, CompileContext*, CompileImplementation*, const SourceLocation*);
     };
 
     struct EvaluateContextVtable {
-      Tree* (*lookup) (EvaluateContextVtable*, Tree*, String*);
+      void (*lookup) (LookupResult<TreePtr<> >*, EvaluateContextVtable*, CompileImplementation*, const String*);
     };
 
     /**
      * \brief C++ wrapper around the Macro type.
      */
-    class MacroRef : public CompileInterface<MacroVtable> {
-    public:
+    struct MacroRef : CompileImplementationRef<MacroVtable> {
       TreePtr<> evaluate(const TreePtr<>& value,
                          const ArrayList<SharedPtr<Parser::Expression> >& parameters,
                          CompileContext& compile_context,
-                         const EvaluateContextRef& evaluate_context,
+                         const TreePtr<CompileImplementation>& evaluate_context,
                          const SourceLocation& location) const {
-        return vptr->evaluate(vptr, data.get(), value.get(), &parameters, &compile_context, &evaluate_context, &location);
+        return TreePtr<>(vptr->evaluate(vptr, data.get(), value.get(), &parameters, &compile_context, evaluate_context.get(), &location));
       }
 
       TreePtr<> dot(const TreePtr<>& value,
                     const SharedPtr<Parser::Expression>& parameter,
                     CompileContext& compile_context,
-                    const EvaluateContextRef& evaluate_context,
+                    const TreePtr<CompileImplementation>& evaluate_context,
                     const SourceLocation& location) const {
-        return vptr->dot(vptr, data.get(), value.get(), &parameter, &compile_context, &evaluate_context, &location);
+        return TreePtr<>(vptr->dot(vptr, data.get(), value.get(), &parameter, &compile_context, evaluate_context.get(), &location));
       }
     };
     
-    class EvaluateContextRef : public CompileInterface<EvaluateContextVtable> {
-    public:
-      TreePtr<> lookup(const std::string& name) const {
-        String name_s(name.c_str(), name.length());
-        return TreePtr<>(vptr->lookup(vptr, data.get(), &name_s));
+    struct EvaluateContextRef : public CompileImplementationRef<EvaluateContextVtable> {
+      LookupResult<TreePtr<> > lookup(const String& name) const {
+        AlignedStorageFor<LookupResult<TreePtr<> > > result;
+        vptr->lookup(result.ptr(), vptr, data.get(), &name);
+        LookupResult<TreePtr<> > result_copy(move_ref(*result.ptr()));
+        result.ptr()->~LookupResult();
+        return result_copy;
       }
     };
 
@@ -247,11 +252,13 @@ namespace Psi {
     /**
      * \brief Wrapper to simplify implementing EvaluateContext in C++.
      */
-    template<typename Callback>
+    template<typename Callback, typename TreeType>
     class EvaluateContextWrapper : public EvaluateContextVtable {
     private:
-      static Tree* lookup_impl(EvaluateContextVtable *self, Tree *macro_data, String *name) {
-        return static_cast<EvaluateContextWrapper*>(self)->m_callback.lookup(TreePtr<>(macro_data), *name).release();
+      static void lookup_impl(LookupResult<TreePtr<> > *result, EvaluateContextVtable *self, CompileImplementation *data, const String *name) {
+        TreePtr<TreeType> cast_data(checked_cast<TreeType*>(data));
+        LookupResult<TreePtr<> > my_result = static_cast<EvaluateContextWrapper*>(self)->m_callback.lookup(cast_data, *name);
+        new (result) LookupResult<TreePtr<> >(move_ref(my_result));
       }
       
       void init() {
@@ -265,27 +272,70 @@ namespace Psi {
       EvaluateContextWrapper(const Callback& callback) : m_callback(callback) {init();}
     };
 
-    class Tree;
-    class Interface;
-    class CompileImplementation;
-    class Block;
-    class GlobalTree;
+    struct Dependency;
+    
+    struct DependencyVtable {
+      void (*run) (Dependency*, Tree*);
+      void (*gc_visit) (Dependency*, GCVisitor*);
+      void (*destroy) (Dependency*);
+    };
 
-    TreePtr<> compile_expression(const boost::shared_ptr<Parser::Expression>&, CompileContext&, const EvaluateContextRef&, const boost::shared_ptr<LogicalSourceLocation>&);
-    TreePtr<Block> compile_statement_list(const std::vector<boost::shared_ptr<Parser::NamedExpression> >&, CompileContext&, const EvaluateContextRef&, const SourceLocation&);
+    struct Dependency {
+      DependencyVtable *vptr;
+    };
 
-#if 0
-    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const std::map<std::string, TreePtr<> >&);
-    GCPtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const std::map<std::string, TreePtr<> >&, const GCPtr<EvaluateContext>&);
+    /**
+     * \brief Base class to simplify implementing Dependency in C++.
+     */
+    template<typename Derived, typename TreeType>
+    class DependencyBase : public Dependency {
+      static void run_impl(Dependency *self, Tree *target) {
+        TreePtr<TreeType> cast_target(checked_cast<TreeType*>(target));
+        static_cast<Derived*>(self)->run(cast_target);
+      }
 
-    GCPtr<Macro> make_interface(CompileContext&, const std::string&, const GCPtr<EvaluateCallback>&, const std::map<std::string, GCPtr<DotCallback> >&);
-    GCPtr<Macro> make_interface(CompileContext&, const std::string&, const GCPtr<EvaluateCallback>&);
-    GCPtr<Macro> make_interface(CompileContext&, const std::string&, const std::map<std::string, GCPtr<DotCallback> >&);
-    GCPtr<Macro> make_interface(CompileContext&, const std::string&);
-#endif
+      static void gc_visit_impl(Dependency *self, GCVisitor *visitor) {
+        static_cast<Derived*>(self)->gc_visit(*visitor);
+      }
 
-    TreePtr<> interface_lookup(const TreePtr<Interface>&, const std::vector<TreePtr<> >&, CompileContext&, const SourceLocation&);
-    TreePtr<CompileImplementation> compile_interface_lookup(const TreePtr<Interface>&, const std::vector<TreePtr<> >&, CompileContext&, const SourceLocation&);
+      static void destroy_impl(Dependency *self) {
+        delete static_cast<Derived*>(self);
+      }
+
+      static DependencyVtable m_vtable;
+      
+    public:
+      DependencyBase() {
+        this->vptr = &m_vtable;
+      }
+    };
+
+    template<typename Derived, typename TreeType>
+    DependencyVtable DependencyBase<Derived, TreeType>::m_vtable = {
+      &DependencyBase<Derived, TreeType>::run_impl,
+      &DependencyBase<Derived, TreeType>::gc_visit_impl,
+      &DependencyBase<Derived, TreeType>::destroy_impl
+    };
+
+    class DependencyPtr {
+      Dependency *m_ptr;
+
+    public:
+      DependencyPtr() : m_ptr(0) {}
+      DependencyPtr(Dependency *ptr) : m_ptr(ptr) {}
+      ~DependencyPtr() {if (m_ptr) m_ptr->vptr->destroy(m_ptr);}
+      Dependency *release() {Dependency *p = m_ptr; m_ptr = NULL; return p;}
+    };
+
+    TreePtr<> compile_expression(const SharedPtr<Parser::Expression>&, CompileContext&, const TreePtr<CompileImplementation>&, const SharedPtr<LogicalSourceLocation>&);
+    TreePtr<Block> compile_statement_list(const ArrayList<SharedPtr<Parser::NamedExpression> >&, CompileContext&, const TreePtr<CompileImplementation>&, const SourceLocation&);
+    SharedPtr<LogicalSourceLocation> make_logical_location(const SharedPtr<LogicalSourceLocation>&, const String&);
+
+    TreePtr<CompileImplementation> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<> >&, const TreePtr<CompileImplementation>&);
+    TreePtr<CompileImplementation> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<> >&);
+
+    TreePtr<> interface_lookup(const TreePtr<Interface>&, const ArrayList<TreePtr<> >&, CompileContext&, const SourceLocation&);
+    TreePtr<> interface_lookup(const TreePtr<Interface>&, const TreePtr<>&, CompileContext&, const SourceLocation&);
     TreePtr<> function_definition_object(CompileContext&);
     
     TreePtr<GlobalTree> tree_from_address(CompileContext&, const SourceLocation&, const TreePtr<Type>&, void*);

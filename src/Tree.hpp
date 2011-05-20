@@ -10,17 +10,7 @@
 
 namespace Psi {
   namespace Compiler {
-    struct TreeDependency;
-    
-    struct TreeDependencyVtable {
-      void (*gc_visit) (TreeDependency*,GCVisitor*);
-      void (*run) (TreeDependency*);
-      void (*destroy) (TreeDependency*);
-    };
-    
-    struct TreeDependency {
-      TreeDependencyVtable *vptr;
-    };
+    class CompileImplementation;
     
     /**
      * \brief Base class for all types used to represent code and data.
@@ -37,7 +27,7 @@ namespace Psi {
       SourceLocation m_location;
       TreePtr<Type> m_type;
       CompletionState m_completion_state;
-      TreeDependency *m_dependency;
+      Dependency* m_dependency;
       void complete_main();
       
     protected:
@@ -46,7 +36,10 @@ namespace Psi {
       virtual TreePtr<> rewrite_hook(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions);
 
     public:
-      Tree(CompileContext&, const SourceLocation& location, const TreePtr<Type>&, TreeDependency*);
+      Tree(CompileContext&, const SourceLocation&, DependencyPtr&);
+      Tree(const TreePtr<Type>&, const SourceLocation&, DependencyPtr&);
+      Tree(CompileContext&, const SourceLocation&);
+      Tree(const TreePtr<Type>&, const SourceLocation&);
       virtual ~Tree() = 0;
 
       /// \brief Return the compilation context this tree belongs to.
@@ -55,33 +48,56 @@ namespace Psi {
       const SourceLocation& location() const {return m_location;}
       /// \brief Get the type of this tree
       const TreePtr<Type>& type() const {return m_type;}
-      void complete(const SourceLocation&);
-      void dependency_complete(const SourceLocation&);
+      void complete();
+      void dependency_complete();
       TreePtr<> rewrite(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
     };
-    
+
     class GlobalTree : public Tree {
+      friend class CompileContext;
+      void *m_jit_ptr;
+    public:
+      GlobalTree(const TreePtr<Type>&, const SourceLocation&);
+      GlobalTree(const TreePtr<Type>&, const SourceLocation&, DependencyPtr&);
     };
     
-    class ExternalGlobalTree : public Tree {
-    public:
+    struct ExternalGlobalTree : GlobalTree {
+      ExternalGlobalTree(const TreePtr<Type>&, const SourceLocation&);
+      ExternalGlobalTree(const TreePtr<Type>&, const SourceLocation&, DependencyPtr&);
       String symbol_name;
     };
     
-    class Interface : public Tree {
-    };
-    
     class CompileImplementation : public Tree {
+      virtual void gc_visit(GCVisitor&);
     public:
+      CompileImplementation(CompileContext&, const SourceLocation&);
+      CompileImplementation(CompileContext&, const SourceLocation&, DependencyPtr&);
       TreePtr<> vtable;
-      TreePtr<> data;
     };
-    
-    template<typename T>
-    T wrapped_compile_interface_lookup(const TreePtr<Interface>& interface, const std::vector<TreePtr<> >& arguments, CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<CompileImplementation> impl = compile_interface_lookup(interface, arguments, compile_context, location);
-      typename T::InterfaceType *callback_ptr = static_cast<typename T::InterfaceType*>(compile_context.jit_compile(impl->vtable));
-      return T(callback_ptr, impl->data);
+
+    template<typename Wrapper>
+    Wrapper compile_implementation_wrap(const TreePtr<CompileImplementation>& impl) {
+      if (!impl)
+        return Wrapper();
+      Wrapper wrapper;
+      wrapper.vptr = static_cast<typename Wrapper::VtableType*>(impl->compile_context().jit_compile(wrapper.data));
+      wrapper.data = impl;
+      return wrapper;
+    }
+
+    template<typename Wrapper>
+    Wrapper compile_implementation_wrap(const TreePtr<>& impl, const SourceLocation& location) {
+      if (!impl)
+        return Wrapper();
+      TreePtr<CompileImplementation> cast_impl = dynamic_pointer_cast<CompileImplementation>(impl);
+      if (!cast_impl)
+        impl->compile_context().error_throw(location, "Could not cast");
+      return compile_implementation_wrap<Wrapper>(cast_impl);
+    }
+
+    template<typename Wrapper>
+    Wrapper compile_implementation_lookup(const TreePtr<Interface>& interface, const TreePtr<>& parameter, CompileContext& compile_context, const SourceLocation& location) {
+      return compile_implementation_wrap<Wrapper>(interface_lookup(interface, parameter, compile_context, location), location);
     }
 
     /**
@@ -103,10 +119,9 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
-      Statement(CompileContext&);
+      Statement(const TreePtr<>&);
       virtual ~Statement();
 
-      TreePtr<Statement> next;
       TreePtr<> value;
     };
 
@@ -118,10 +133,11 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
-      Block(CompileContext&);
+      Block(const TreePtr<Type>&, const SourceLocation&);
+      Block(const TreePtr<Type>&, const SourceLocation&, DependencyPtr&);
       virtual ~Block();
 
-      TreePtr<Statement> statements;
+      std::vector<TreePtr<Statement> > statements;
     };
 
     class StructType : public Type {
@@ -194,7 +210,7 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
-      FunctionTypeArgument(CompileContext&);
+      FunctionTypeArgument(const TreePtr<Type>&, const SourceLocation&);
       virtual ~FunctionTypeArgument();
     };
 
@@ -203,7 +219,8 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
-      FunctionType(CompileContext&);
+      FunctionType(CompileContext&, const SourceLocation&);
+      FunctionType(CompileContext&, const SourceLocation&, DependencyPtr&);
       virtual ~FunctionType();
       virtual TreePtr<> rewrite_hook(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
 
@@ -219,7 +236,7 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
-      FunctionArgument(CompileContext&);
+      FunctionArgument(const TreePtr<Type>&, const SourceLocation&);
       virtual ~FunctionArgument();
     };
 
@@ -228,7 +245,8 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
-      Function(CompileContext&);
+      Function(const TreePtr<FunctionType>&, const SourceLocation&);
+      Function(const TreePtr<FunctionType>&, const SourceLocation&, DependencyPtr&);
       virtual ~Function();
 
       std::vector<TreePtr<FunctionArgument> > arguments;

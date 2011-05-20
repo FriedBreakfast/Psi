@@ -3,6 +3,8 @@
 
 #include <utility>
 #include <algorithm>
+#include <iosfwd>
+#include <boost/aligned_storage.hpp>
 
 #include "Assert.hpp"
 #include "CppCompiler.hpp"
@@ -18,19 +20,41 @@
 namespace Psi {
   void* checked_alloc(std::size_t n);
   void checked_free(std::size_t n, void *ptr);
+
+  template<typename T>
+  struct MoveRefImpl {
+    T *ptr;
+    MoveRefImpl(T& x) : ptr(&x) {}
+    operator const T& () {return *ptr;}
+  };
   
   template<typename T>
   struct MoveRef {
-    T *x;
-    MoveRef(T& x_) : x(&x_) {}
-    T* operator -> () {return x;}
-    operator const T& () {return *x;}
+    typedef MoveRefImpl<T> type;
   };
 
   template<typename T>
-  MoveRef<T> move_ref(T& x) {
-    return MoveRef<T>(x);
+  MoveRefImpl<T> move_ref(T& x) {
+    return MoveRefImpl<T>(x);
   }
+
+  template<typename T>
+  MoveRefImpl<T> move_ref(MoveRefImpl<T> x) {
+    return x;
+  }
+
+  template<typename T>
+  T& move_deref(MoveRefImpl<T> x) {
+    return *x.ptr;
+  }
+
+  template<typename T>
+  struct AlignedStorageFor {
+    typedef typename boost::aligned_storage<sizeof(T), boost::alignment_of<T>::value>::type type;
+    type data;
+    T *ptr() {return static_cast<T*>(static_cast<void*>(&data));}
+    const T *ptr() const {return static_cast<const T*>(static_cast<const void*>(&data));}
+  };
   
   struct SharedPtrOwner;
   
@@ -59,7 +83,7 @@ namespace Psi {
 
   template<typename U>
   void shared_ptr_delete(SharedPtrOwner *owner) {
-    SharedPtrOwnerImpl<U> *self = static_cast<SharedPtrOwnerImpl<U> >(owner);
+    SharedPtrOwnerImpl<U> *self = static_cast<SharedPtrOwnerImpl<U>*>(owner);
     delete self->ptr;
     delete self;
   }
@@ -81,7 +105,11 @@ namespace Psi {
         ++owner->use_count;
     }
 
+    typedef void (SharedPtr::*safe_bool_type) () const;
+    void safe_bool_true() const {}
+
   public:
+    template<typename> friend class SharedPtr;
     typedef T value_type;
 
     SharedPtr() {
@@ -117,12 +145,26 @@ namespace Psi {
     }
 
     template<typename U>
-    SharedPtr(MoveRef<SharedPtr<U> > src) {
-      T *ptr = src->get();
+    SharedPtr(typename MoveRef<SharedPtr<U> >::type move_src) {
+      SharedPtr<U>& src = move_deref(move_src);
+      m_c.ptr = src.get();
+      m_c.owner = src.m_c.owner;
+      src.m_c.ptr = 0;
+      src.m_c.owner = 0;
+    }
+
+    template<typename U>
+    SharedPtr(const SharedPtr<U>& src, T *ptr) {
+      init(ptr, src.m_c.owner);
+    }
+
+    template<typename U>
+    SharedPtr(typename MoveRef<SharedPtr<U> >::type move_src, T *ptr) {
+      SharedPtr<U>& src = move_deref(move_src);
       m_c.ptr = ptr;
-      m_c.owner = src->m_c.owner;
-      src->m_c.ptr = 0;
-      src->m_c.owner = 0;
+      m_c.owner = src.m_c.owner;
+      src.m_c.ptr = 0;
+      src.m_c.owner = 0;
     }
 
     ~SharedPtr() {
@@ -148,8 +190,8 @@ namespace Psi {
     }
 
     template<typename U>
-    SharedPtr& operator = (MoveRef<SharedPtr<U> > src) {
-      SharedPtr<T>(src).swap(*this);
+    SharedPtr& operator = (typename MoveRef<SharedPtr<U> >::type src) {
+      SharedPtr<T>(move_ref(src)).swap(*this);
       return *this;
     }
 
@@ -161,6 +203,9 @@ namespace Psi {
     void reset(U *ptr) {
       SharedPtr<T>(ptr).swap(*this);
     }
+
+    bool operator ! () const {return !get();}
+    operator safe_bool_type () const {return get() ? &SharedPtr::safe_bool_true : 0;}
   };
 
   template<typename T, typename U>
@@ -178,6 +223,12 @@ namespace Psi {
     return lhs.get() < rhs.get();
   }
 
+  template<typename T, typename U>
+  SharedPtr<T> checked_pointer_cast(const SharedPtr<U>& src) {
+    PSI_ASSERT(dynamic_cast<T*>(src.get()) == src.get());
+    return SharedPtr<T>(src, static_cast<T*>(src.get()));
+  }
+
   struct String_C {
     std::size_t length;
     char *data;
@@ -185,17 +236,20 @@ namespace Psi {
   
   class String {
     String_C m_c;
+
+    void init(const char*, std::size_t);
     
   public:
     String();
     String(const String&);
-    String(MoveRef<String>);
+    String(MoveRef<String>::type);
     String(const char*);
+    String(const char*, const char*);
     String(const char*, std::size_t);
     ~String();
     
     String& operator = (const String&);
-    String& operator = (MoveRef<String>);
+    String& operator = (MoveRef<String>::type);
     String& operator = (const char*);
 
     bool operator == (const String&) const;
@@ -205,19 +259,21 @@ namespace Psi {
     void clear();
     const char *c_str() const {return m_c.data;}
   };
+
+  std::ostream& operator << (std::ostream&, const String&);
   
   template<typename T>
   struct Maybe_C {
     bool full;
-    char data[sizeof(T)] PSI_ATTRIBUTE((PSI_ALIGNED(PSI_ALIGNOF(T))));
+    AlignedStorageFor<T> data;
   };
   
   template<typename T>
   class Maybe {
     Maybe_C<T> m_c;
     
-    T* unchecked_get() {return static_cast<T*>(m_c.data);}
-    const T* unchecked_get() const {return static_cast<const T*>(m_c.data);}
+    T* unchecked_get() {return m_c.data.ptr();}
+    const T* unchecked_get() const {return m_c.data.ptr();}
     
   public:
     Maybe() {
@@ -229,9 +285,9 @@ namespace Psi {
       new (m_c.data) T (value);
     }
     
-    Maybe(MoveRef<T> value) {
+    Maybe(typename MoveRef<T>::type value) {
       m_c.full = true;
-      new (m_c.data) T (value);
+      new (m_c.data) T (move_ref(value));
     }
     
     
@@ -244,11 +300,12 @@ namespace Psi {
       }
     }
     
-    Maybe(MoveRef<Maybe<T> > other) {
-      if (*other) {
+    Maybe(typename MoveRef<Maybe<T> >::type move_other) {
+      Maybe<T>& other = move_deref(move_other);
+      if (other) {
         m_c.full = true;
-        new (m_c.data) T (MoveRef<T>(**other));
-        other->clear();
+        new (m_c.data) T (move_ref(*other));
+        other.clear();
       } else {
         m_c.full = false;
       }
@@ -280,9 +337,10 @@ namespace Psi {
         operator = (*other);
     }
     
-    Maybe& operator = (MoveRef<Maybe<T> > other) {
+    Maybe& operator = (typename MoveRef<Maybe<T> >::type move_other) {
+      Maybe<T>& other = move_deref(move_other);
       if (other) {
-        operator = (MoveRef<T>(**other));
+        operator = (move_ref(*other));
         other->clear();
       }
     }
@@ -294,13 +352,96 @@ namespace Psi {
         new (m_c.data) T (src);
     }
     
-    Maybe& operator = (MoveRef<T> src) {
+    Maybe& operator = (typename MoveRef<T>::type src) {
       if (m_c.full)
-        *unchecked_get() = src;
+        *unchecked_get() = move_ref(src);
       else
-        new (m_c.data) T (src);
+        new (m_c.data) T (move_ref(src));
     }
   };
+
+  enum LookupResultType {
+    lookup_result_type_match, ///< \brief Match found
+    lookup_result_type_none, ///< \brief No match found
+    lookup_result_type_conflict ///< \brief Multiple ambiguous matches found
+  };
+
+  template<typename T>
+  struct LookupResult_C {
+    LookupResultType type;
+    AlignedStorageFor<T> data;
+  };
+
+  struct LookupResultNoneHelper {};
+  typedef int LookupResultNoneHelper::*LookupResultNone;
+  struct LookupResultConflictHelper {};
+  typedef int LookupResultConflictHelper::*LookupResultConflict;
+
+  LookupResultNone lookup_result_none = 0;
+  LookupResultConflict lookup_result_conflict = 0;
+
+  template<typename T>
+  class LookupResult {
+    LookupResult_C<T> m_c;
+
+  public:
+    LookupResult(LookupResultNone) {
+      m_c.type = lookup_result_type_none;
+    }
+    
+    LookupResult(LookupResultConflict) {
+      m_c.type = lookup_result_type_conflict;
+    }
+    
+    LookupResult(const T& value) {
+      m_c.type = lookup_result_type_match;
+      new (m_c.data.ptr()) T(value);
+    }
+    
+    LookupResult(typename MoveRef<T>::type value) {
+      m_c.type = lookup_result_type_match;
+      new (m_c.data.ptr()) T(move_ref(value));
+    }
+
+    template<typename U>
+    LookupResult(const LookupResult<U>& src) {
+      m_c.type = src.type();
+      if (m_c.type == lookup_result_type_match)
+        new (m_c.data.ptr()) T(src.value());
+    }
+
+    template<typename U>
+    LookupResult(MoveRef<LookupResult<U> > move_src) {
+      LookupResult<U>& src = move_deref(move_src);
+      m_c.type = src.type();
+      if (m_c.type == lookup_result_type_match)
+        new (m_c.data.ptr()) T(move_ref(src.value()));
+    }
+
+    ~LookupResult() {
+      if (m_c.type == lookup_result_type_match)
+        delete m_c.data.ptr();
+    }
+
+    LookupResultType type() const {
+      return m_c.type;
+    }
+
+    const T& value() const {
+      PSI_ASSERT(type() == lookup_result_type_match);
+      return *m_c.data.ptr();
+    }
+  };
+
+  template<typename T>
+  LookupResult<T> lookup_result_match(const T& value) {
+    return LookupResult<T>(value);
+  }
+
+  template<typename T>
+  LookupResult<T> lookup_result_match(typename MoveRef<T>::type value) {
+    return LookupResult<T>(move_ref(value));
+  }
 
   /**
    * \brief Array list C layout.
@@ -358,12 +499,13 @@ namespace Psi {
       init();
       reserve(src.size());
       iterator j = begin();
-      for (iterator ii = src.begin(), ie = src.end(); ii != ie; ++ii)
-        new (*j++) T (*ii);
+      for (const_iterator ii = src.begin(), ie = src.end(); ii != ie; ++ii, ++j)
+        new (j) T (*ii);
       m_c.end = j;
     }
 
-    ArrayList(MoveRef<ArrayList<T> > src) {
+    ArrayList(typename MoveRef<ArrayList<T> >::type move_src) {
+      ArrayList<T>& src = move_deref(move_src);
       m_c = src.m_c;
       src.init();
     }
@@ -422,18 +564,20 @@ namespace Psi {
       return j;
     }
 
-    iterator insert(iterator i, MoveRef<T> x) {
+    iterator insert(iterator i, typename MoveRef<T>::type x) {
       iterator j = prepare_insert(i, 1);
-      *j = x;
+      *j = move_ref(x);
       return j;
     }
     
     template<typename It>
     iterator insert(iterator i, const It& b, const It& e) {
+      size_type dist = b - begin();
       for (It j = b; j != e; ++j) {
         i = insert(i, *j);
         ++i;
       }
+      return begin() + dist;
     }
 
     iterator erase(iterator first, iterator last) {
@@ -474,7 +618,7 @@ namespace Psi {
     }
 
     void push_back(const_reference x) {insert(end(), x);}
-    void push_back(MoveRef<T> x) {insert(end(), x);}
+    void push_back(typename MoveRef<T>::type x) {insert(end(), move_ref(x));}
 
     void swap(ArrayList<T>& other) {
       std::swap(m_c, other.m_c);

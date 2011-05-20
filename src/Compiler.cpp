@@ -49,59 +49,71 @@ namespace Psi {
      * \brief Create a tree for a global from the address of that global.
      * 
      */
-    TreePtr<GlobalTree> tree_from_address(CompileContext& compile_context, const SourceLocation& location, const TreePtr<Type>& type, void *ptr) {
+    TreePtr<GlobalTree> CompileContext::tree_from_address(const SourceLocation& location, const TreePtr<Type>& type, void *ptr) {
       void *base;
       String name;
       try {
         name = Platform::address_to_symbol(ptr, &base);
       } catch (Platform::PlatformError& e) {
-        compile_context.error_throw(location, boost::format("Internal error: failed to get symbol name from addres: %s") % e.what());
+        error_throw(location, boost::format("Internal error: failed to get symbol name from addres: %s") % e.what());
       }
       if (base != ptr)
-        compile_context.error_throw(location, "Internal error: address used to retrieve symbol did not match symbol base");
+        error_throw(location, "Internal error: address used to retrieve symbol did not match symbol base");
 
-      TreePtr<ExternalGlobalTree> result(new GlobalTree(type));
+      TreePtr<ExternalGlobalTree> result(new ExternalGlobalTree(type, location));
       result->symbol_name = name;
+      result->m_jit_ptr = base;
       return result;
     }
     
-    class EvaluateContextDictionaryTree : public Tree {
+    class EvaluateContextDictionary : public CompileImplementation {
       virtual void gc_visit(GCVisitor& visitor) {
         for (NameMapType::iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
           visitor.visit_ptr(ii->second);
       }
 
+      struct Callback {
+        LookupResult<TreePtr<> > lookup(const TreePtr<EvaluateContextDictionary>& data, const String& name) {
+          NameMapType::const_iterator it = data->entries.find(name);
+          if (it != data->entries.end()) {
+            return lookup_result_match(it->second);
+          } else if (data->next) {
+            return compile_implementation_wrap<EvaluateContextRef>(data->next).lookup(name);
+          } else {
+            return lookup_result_none;
+          }
+        }
+      };
+
+      static EvaluateContextWrapper<Callback, EvaluateContextDictionary> m_vtable;
+
     public:
       typedef std::map<String, TreePtr<> > NameMapType;
       NameMapType entries;
-    };
-    
-    class EvaluateContextDictionary {
-    public:
-      TreePtr<> lookup(const TreePtr<>& data, const String& name) {
-        TreePtr<EvaluateContextDictionaryTree> cast_data = checked_pointer_cast<EvaluateContextDictionaryTree>(data);
-        EvaluateContextDictionaryTree::NameMapType::const_iterator it = cast_data->entries.find(name);
-        if (it != cast_data->entries.end()) {
-          return LookupResult<TreePtr<> >::make_match(it->second);
-        } else {
-          return LookupResult<TreePtr<> >::make_none();
-        }
-      }
-      
-      static EvaluateContextWrapper<EvaluateContextDictionary> vtable;
-    };
-    
-    EvaluteContextWrapper<EvaluateContextDictionary> EvaluateContextDictionary::vtable;
+      TreePtr<CompileImplementation> next;
 
-    EvaluateContextRef evaluate_context_dictionary(CompileContext& compile_context, const std::map<String, TreePtr<> >& entries) {
-      TreePtr<CompileImplementation> impl(new CompileImplementation());
-      impl->vtable = tree_from_address(TreePtr<Type>(), &EvaluateContextDictionary::vtable);
-      impl->data.reset(new EvaluateContextDictionaryTree(entries));
-      return EvaluateContextRef(impl);
-    }
+      EvaluateContextDictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<> >&, const TreePtr<CompileImplementation>&);
+    };
     
-    EvaluateContextRef evaluate_context_dictionary(CompileContext& compile_context, const std::map<String, TreePtr<> >& entries, const GCPtr<EvaluateContext>& next) {
-      return GCPtr<EvaluateContext>(new EvaluateContextDictionary(compile_context, entries, next));
+    EvaluateContextWrapper<EvaluateContextDictionary::Callback, EvaluateContextDictionary> EvaluateContextDictionary::m_vtable;
+
+    EvaluateContextDictionary::EvaluateContextDictionary(CompileContext& compile_context, const SourceLocation& location, const std::map<String, TreePtr<> >& entries_, const TreePtr<CompileImplementation>& next_)
+    : CompileImplementation(compile_context, location), entries(entries_), next(next_) {
+      vtable = compile_context.tree_from_address(location, TreePtr<Type>(), &m_vtable);
+    }
+
+    /**
+     * \brief Create an evaluation context based on a dictionary.
+     */
+    TreePtr<CompileImplementation> evaluate_context_dictionary(CompileContext& compile_context, const SourceLocation& location, const std::map<String, TreePtr<> >& entries, const TreePtr<CompileImplementation>& next) {
+      return TreePtr<CompileImplementation>(new EvaluateContextDictionary(compile_context, location, entries, next));
+    }
+
+    /**
+     * \brief Create an evaluation context based on a dictionary.
+     */
+    TreePtr<CompileImplementation> evaluate_context_dictionary(CompileContext& compile_context, const SourceLocation& location, const std::map<String, TreePtr<> >& entries) {
+      return evaluate_context_dictionary(compile_context, location, entries, TreePtr<CompileImplementation>());
     }
 
     /**
@@ -111,7 +123,7 @@ namespace Psi {
       PhysicalSourceLocation m_location;
 
     public:
-      ExpressionString(const boost::shared_ptr<Parser::Expression>& expr) : m_location(expr->location) {
+      ExpressionString(const SharedPtr<Parser::Expression>& expr) : m_location(expr->location) {
       }
       
       friend std::ostream& operator << (std::ostream& os, const ExpressionString& self) {
@@ -131,7 +143,7 @@ namespace Psi {
      */
     TreePtr<> compile_expression(const SharedPtr<Parser::Expression>& expression,
                                  CompileContext& compile_context,
-                                 const GCPtr<EvaluateContext>& evaluate_context,
+                                 const TreePtr<CompileImplementation>& evaluate_context,
                                  const SharedPtr<LogicalSourceLocation>& source) {
 
       SourceLocation location(expression->location, source);
@@ -143,23 +155,13 @@ namespace Psi {
         TreePtr<> first = compile_expression(macro_expression.elements.front(), compile_context, evaluate_context, source);
         ArrayList<SharedPtr<Parser::Expression> > rest(boost::next(macro_expression.elements.begin()), macro_expression.elements.end());
 
-        if (!first->type)
+        if (!first->type())
           compile_context.error_throw(location, "Term does not have a type", CompileContext::error_internal);
-        if (!first->type->macro)
+        MacroRef first_macro = compile_implementation_lookup<MacroRef>(compile_context.macro_interface(), first->type(), compile_context, location);
+        if (!first_macro)
           compile_context.error_throw(location, "Type does not have an associated macro", CompileContext::error_internal);
-        
-        LookupResult<GCPtr<EvaluateCallback> > first_lookup = first->type->macro->evaluate_lookup(rest);
 
-        switch (first_lookup.type()) {
-        case lookup_result_none: compile_context.error_throw(location, boost::format("No matching evaluation function for arguments to '%s'") % first->type->macro->name());
-        case lookup_result_conflict: compile_context.error_throw(location, boost::format("Conflicting matching evaluation functions for arguments to '%s'") % first->type->macro->name());
-        default: break;
-        }
-
-        if (!first_lookup.value())
-            compile_context.error_throw(location, boost::format("Evaluate callback returned by '%s' was NULL") % first->type->macro->name(), CompileContext::error_internal);
-
-        return first_lookup.value()->evaluate_callback(first, rest, compile_context, evaluate_context, location);
+        return first_macro.evaluate(first, rest, compile_context, evaluate_context, location);
       }
 
       case Parser::expression_token: {
@@ -177,11 +179,11 @@ namespace Psi {
           default: PSI_FAIL("unreachable");
           }
 
-          LookupResult<TreePtr<> > first = evaluate_context->lookup(bracket_operation);
+          LookupResult<TreePtr<> > first = compile_implementation_wrap<EvaluateContextRef>(evaluate_context, location).lookup(bracket_operation);
           switch (first.type()) {
-          case lookup_result_none:
+          case lookup_result_type_none:
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator missing") % bracket_str % bracket_operation);
-          case lookup_result_conflict:
+          case lookup_result_type_conflict:
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator lookup ambiguous") % bracket_str % bracket_operation);
           default: break;
           }
@@ -189,35 +191,23 @@ namespace Psi {
           if (!first.value())
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: successful lookup of '%s' returned NULL value") % bracket_str % bracket_operation, CompileContext::error_internal);
 
-          if (!first.value()->type)
+          if (!first.value()->type())
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator does not have a type") % bracket_str % bracket_operation, CompileContext::error_internal);
-          if (!first.value()->type->macro)
+          MacroRef first_macro = compile_implementation_lookup<MacroRef>(compile_context.macro_interface(), first.value()->type(), compile_context, location);
+          if (!first_macro)
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator's type does not have an associated macro") % bracket_str % bracket_operation, CompileContext::error_internal);
 
           ArrayList<SharedPtr<Parser::Expression> > expression_list(1, expression);
-          LookupResult<GCPtr<EvaluateCallback> > first_lookup = first.value()->type->macro->evaluate_lookup(expression_list);
-
-          switch (first_lookup.type()) {
-          case lookup_result_none:
-            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator did not accept bracket contents") % bracket_str % bracket_operation);
-          case lookup_result_conflict:
-            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator bracket failed to accept bracket contents because they are ambiguous") % bracket_str % bracket_operation);
-          default: break;
-          }
-
-          if (!first_lookup.value())
-            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: successfully matched evaluate callback on '%s' is NULL") % bracket_str % bracket_operation, CompileContext::error_internal);
-
-          return first_lookup.value()->evaluate_callback(first.value(), expression_list, compile_context, evaluate_context, location);
+          return first_macro.evaluate(first.value(), expression_list, compile_context, evaluate_context, location);
         }
 
         case Parser::TokenExpression::identifier: {
-          std::string name(token_expression.text.begin, token_expression.text.end);
-          LookupResult<TreePtr<> > result = evaluate_context->lookup(name);
+          String name(token_expression.text.begin, token_expression.text.end);
+          LookupResult<TreePtr<> > result = compile_implementation_wrap<EvaluateContextRef>(evaluate_context, location).lookup(name);
 
           switch (result.type()) {
-          case lookup_result_none: compile_context.error_throw(location, boost::format("Name not found: %s") % name);
-          case lookup_result_conflict: compile_context.error_throw(location, boost::format("Conflict on lookup of: %s") % name);
+          case lookup_result_type_none: compile_context.error_throw(location, boost::format("Name not found: %s") % name);
+          case lookup_result_type_conflict: compile_context.error_throw(location, boost::format("Conflict on lookup of: %s") % name);
           default: break;
           }
 
@@ -235,19 +225,14 @@ namespace Psi {
       case Parser::expression_dot: {
         const Parser::DotExpression& dot_expression = checked_cast<Parser::DotExpression&>(*expression);
 
-        GCPtr<Tree> left = compile_expression(dot_expression.left, compile_context, evaluate_context, source);
-        LookupResult<GCPtr<DotCallback> > result = left->type->macro->dot_lookup(dot_expression.right);
+        TreePtr<> left = compile_expression(dot_expression.left, compile_context, evaluate_context, source);
+        if (!left->type())
+          compile_context.error_throw(location, "Term does not have a type", CompileContext::error_internal);
+        MacroRef left_macro = compile_implementation_lookup<MacroRef>(compile_context.macro_interface(), left->type(), compile_context, location);
+        if (!left_macro)
+          compile_context.error_throw(location, "Type does not have an associated macro", CompileContext::error_internal);
 
-        switch (result.type()) {
-        case lookup_result_none: compile_context.error_throw(location, boost::format("Name not found: %s") % ExpressionString(dot_expression.right));
-        case lookup_result_conflict: compile_context.error_throw(location, boost::format("Conflict on lookup of: %s") % ExpressionString(dot_expression.right));
-        default: break;
-        }
-
-        if (!result.value())
-          compile_context.error_throw(location, boost::format("Successful member lookup of '%s' returned NULL value") % ExpressionString(dot_expression.right), CompileContext::error_internal);
-
-        return result.value()->dot_callback(left, dot_expression.right, compile_context, evaluate_context, location);
+        return left_macro.dot(left, dot_expression.right, compile_context, evaluate_context, location);
       }
 
       default:
@@ -255,191 +240,136 @@ namespace Psi {
       }
     }
 
-    class StatementListCompiler : public Future {
-      enum BuildState {
-        build_not_started,
-        build_running,
-        build_done,
-        build_failed
-      };
-      
-      struct Parameters {
-        BuildState state;
-        TreePtr<Statement> statement;
-        boost::shared_ptr<Parser::Expression> expression;
-        boost::shared_ptr<LogicalSourceLocation> logical_location;
-        bool anonymize_location;
-      };
-
-      std::vector<Parameters> m_parameters;
-      TreePtr<Block> m_block;
-      GCPtr<EvaluateContext> m_evaluate_context;
-      
-      void run() {
-        bool failed = false;
-        
-        // Build statements
-        for (unsigned ii = 0, ie = m_parameters.size(); ii != ie; ++ii) {
-          try {
-            build_one(ii);
-          } catch (CompileException&) {
-            failed = true;
-          }
-        }
-
-        // Link statements together
-        TreePtr<Statement> *next_statement_ptr = &m_block->statements;
-        for (std::vector<Parameters>::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
-          *next_statement_ptr = ii->statement;
-          next_statement_ptr = &ii->statement->next;
-        }
-
-        // Run dependent code
-        for (std::vector<Parameters>::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
-          try {
-            if (ii->statement && ii->statement->dependency)
-              ii->statement->dependency->dependency_call();
-          } catch (CompileException&) {
-            failed = true;
-          }
-        }
-
-        // help the gc
-        m_block.reset();
-        m_evaluate_context.reset();
-
-        if (failed)
-          throw CompileException();
-      }
-
+    class StatementListEntry : public Tree {
       virtual void gc_visit(GCVisitor& visitor) {
-        Future::gc_visit(visitor);
-        visitor % m_block % m_evaluate_context;
-        for (std::vector<Parameters>::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii)
-          visitor % ii->statement;
+        visitor % statement;
       }
 
     public:
-      StatementListCompiler(CompileContext& compile_context, const SourceLocation& location)
-      : Future(compile_context, location) {
-      }
-      
-      TreePtr<Statement> build_one(unsigned index) {
-        Parameters& params = m_parameters[index];
-        switch (params.state) {
-        case build_not_started: {
-          boost::shared_ptr<Parser::Expression> expression;
-          boost::shared_ptr<LogicalSourceLocation> logical_location;
-          
-          expression.swap(params.expression);
-          logical_location.swap(params.logical_location);
+      StatementListEntry(CompileContext& compile_context, const SourceLocation& location, DependencyPtr& dependency)
+      : Tree(compile_context, location, dependency) {}
 
-          params.state = build_running;
-          try {
-            params.statement.reset(new Statement(compile_context()));
-            TreePtr<> expr = compile_expression(expression, compile_context(), m_evaluate_context, logical_location, params.anonymize_location);
-            params.statement->value = expr;
-            params.statement->dependency = expr->dependency;
-            params.statement->type = expr->type;
-          } catch (...) {
-            params.state = build_failed;
-            throw;
-          }
-          params.state = build_done;
-
-          return params.statement;
-        }
-
-        case build_running:
-          compile_context().error_throw(SourceLocation(params.expression->location, params.logical_location), "Circular dependency during block compilation");
-
-        case build_done:
-          return params.statement;
-
-        case build_failed:
-          throw CompileException();
-
-        default: PSI_FAIL("unreachable");
-        }
-      }
-
-      static TreePtr<Block> make(const std::vector<boost::shared_ptr<Parser::NamedExpression> >&, CompileContext&, const GCPtr<EvaluateContext>&, const SourceLocation&);
+      TreePtr<Statement> statement;
     };
 
-    class StatementListEvaluateContext : public EvaluateContext {
-      typedef std::map<std::string, unsigned> NameMapType;
-      GCPtr<EvaluateContext> m_next;
-      GCPtr<StatementListCompiler> m_compiler;
-      NameMapType m_names;
-
-      virtual void gc_visit(GCVisitor& visitor) {
-        visitor % m_next % m_compiler;
-      }
+    class StatementCompiler : public DependencyBase<StatementCompiler, StatementListEntry> {
+      SharedPtr<Parser::Expression> m_expression;
+      SharedPtr<LogicalSourceLocation> m_logical_location;
+      TreePtr<CompileImplementation> m_evaluate_context;
 
     public:
-      StatementListEvaluateContext(CompileContext& compile_context,
-                                   const GCPtr<EvaluateContext>& next,
-                                   const GCPtr<StatementListCompiler>& compiler,
-                                   std::map<std::string, unsigned>& names)
-      : EvaluateContext(compile_context), m_next(next), m_compiler(compiler) {
-        m_names.swap(names);
+      StatementCompiler(const SharedPtr<Parser::Expression>& expression, const SharedPtr<LogicalSourceLocation>& logical_location, const TreePtr<CompileImplementation>& evaluate_context)
+      : m_expression(expression), m_logical_location(logical_location), m_evaluate_context(evaluate_context) {
+      }
+      
+      void gc_visit(GCVisitor& visitor) {
+        visitor % m_evaluate_context;
       }
 
-      virtual LookupResult<TreePtr<> > lookup(const std::string& name) {
-        NameMapType::const_iterator it = m_names.find(name);
-        if (it != m_names.end()) {
-          return LookupResult<TreePtr<> >::make_match(m_compiler->build_one(it->second));
-        } else if (m_next) {
-          return m_next->lookup(name);
-        } else {
-          return LookupResult<TreePtr<> >::make_none();
+      void run(const TreePtr<StatementListEntry>& entry) {
+        TreePtr<> expr = compile_expression(m_expression, entry->compile_context(), m_evaluate_context, m_logical_location);
+        entry->statement.reset(new Statement(expr));
+      }
+    };
+
+    class StatementListCompiler : public DependencyBase<StatementListCompiler, Block> {
+      std::vector<TreePtr<StatementListEntry> > m_statements;
+
+    public:
+      StatementListCompiler(const std::vector<TreePtr<StatementListEntry> >& statements)
+      : m_statements(statements) {
+      }
+
+      void gc_visit(GCVisitor& visitor) {
+        for (std::vector<TreePtr<StatementListEntry> >::iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii)
+          visitor % *ii;
+      }
+
+      void run(const TreePtr<Block>& block) {
+        for (std::vector<TreePtr<StatementListEntry> >::iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii) {
+          (*ii)->complete();
+          block->statements.push_back((*ii)->statement);
         }
       }
     };
 
-    TreePtr<Block> StatementListCompiler::make(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements,
-                                               CompileContext& compile_context,
-                                               const GCPtr<EvaluateContext>& evaluate_context,
-                                               const SourceLocation& location) {
-      std::map<std::string, unsigned> names;
+    class StatementListContext : public CompileImplementation {
+      virtual void gc_visit(GCVisitor& visitor) {
+        Tree::gc_visit(visitor);
+        visitor % next;
+        for (NameMapType::iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
+          visitor % ii->second;
+      }
 
-      GCPtr<StatementListCompiler> compiler(new StatementListCompiler(compile_context, location));
-
-      for (std::vector<boost::shared_ptr<Parser::NamedExpression> >::const_iterator ii = statements.begin(), ib = statements.begin(), ie = statements.end(); ii != ie; ++ii) {
-        const Parser::NamedExpression& named_expr = **ii;
-        if (named_expr.expression) {
-          Parameters parameters;
-          parameters.state = build_not_started;
-          parameters.expression = named_expr.expression;
-          
-          boost::shared_ptr<LogicalSourceLocation> statement_location;
-          if (named_expr.name) {
-            std::string expr_name(named_expr.name->begin, named_expr.name->end);
-            names.insert(std::make_pair(expr_name, ii - ib));
-            parameters.anonymize_location = true;
-            parameters.logical_location = named_child_location(location.logical, expr_name);
+      struct Callback {
+        LookupResult<TreePtr<> > lookup(const TreePtr<StatementListContext>& data, const String& name) {
+          StatementListContext::NameMapType::const_iterator it = data->entries.find(name);
+          if (it != data->entries.end()) {
+            it->second->complete();
+            return lookup_result_match(it->second->statement);
+          } else if (data->next) {
+            return compile_implementation_wrap<EvaluateContextRef>(data->next).lookup(name);
           } else {
-            parameters.anonymize_location = false;
-            parameters.logical_location = anonymous_child_location(location.logical);
+            return lookup_result_none;
           }
-
-          compiler->m_parameters.push_back(parameters);
         }
+      };
+
+      static EvaluateContextWrapper<Callback, StatementListContext> m_vtable;
+
+    public:
+      typedef std::map<String, TreePtr<StatementListEntry> > NameMapType;
+      NameMapType entries;
+      TreePtr<CompileImplementation> next;
+
+      StatementListContext(CompileContext& compile_context,
+                           const SourceLocation& location,
+                           const TreePtr<CompileImplementation>& next_)
+      : CompileImplementation(compile_context, location), next(next_) {
       }
+    };
 
-      TreePtr<Block> block(new Block(compile_context));
-      block->dependency = compiler;
-      compiler->m_block = block;
-      compiler->m_evaluate_context.reset(new StatementListEvaluateContext(compile_context, evaluate_context, compiler, names));
+    EvaluateContextWrapper<StatementListContext::Callback, StatementListContext> StatementListContext::m_vtable;
 
-      return block;
+    SharedPtr<LogicalSourceLocation> make_logical_location(const SharedPtr<LogicalSourceLocation>& parent, const String& name) {
+      SharedPtr<LogicalSourceLocation> result(new LogicalSourceLocation);
+      result->parent = parent;
+      result->name = name;
+      return result;
     }
 
     TreePtr<Block> compile_statement_list(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements,
                                           CompileContext& compile_context,
-                                          const GCPtr<EvaluateContext>& evaluate_context,
+                                          const TreePtr<CompileImplementation>& evaluate_context,
                                           const SourceLocation& location) {
-      return StatementListCompiler::make(statements, compile_context, evaluate_context, location);
+      TreePtr<StatementListContext> context_tree(new StatementListContext(compile_context, location, evaluate_context));
+      std::vector<TreePtr<StatementListEntry> > compiler_trees;
+
+      bool use_last = false;
+      for (std::vector<boost::shared_ptr<Parser::NamedExpression> >::const_iterator ii = statements.begin(), ib = statements.begin(), ie = statements.end(); ii != ie; ++ii) {
+        const Parser::NamedExpression& named_expr = **ii;
+        if ((use_last = named_expr.expression.get())) {
+          String expr_name = named_expr.name ? String(named_expr.name->begin, named_expr.name->end) : String();
+          SourceLocation statement_location(named_expr.location, make_logical_location(location.logical, expr_name));
+          DependencyPtr statement_compiler(new StatementCompiler(named_expr.expression, statement_location.logical, context_tree));
+          TreePtr<StatementListEntry> statement_tree(new StatementListEntry(compile_context, statement_location, statement_compiler));
+          compiler_trees.push_back(statement_tree);
+          
+          if (named_expr.name)
+            context_tree->entries[expr_name] = statement_tree;
+        }
+      }
+
+      TreePtr<Type> block_type;
+      if (use_last) {
+      } else {
+        PSI_FAIL("not implemented");
+      }
+
+      DependencyPtr list_compiler(new StatementListCompiler(compiler_trees));
+      TreePtr<Block> block(new Block(block_type, location, list_compiler));
+
+      return block;
     }
   }
 }

@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+#include <iostream>
 
 namespace Psi {
   void* checked_alloc(std::size_t n) {
@@ -16,46 +17,53 @@ namespace Psi {
     std::free(ptr);
   }
 
+  namespace {
+    char null_str[] = "";
+  }
+
   String::String() {
     m_c.length = 0;
-    m_c.data = "\0";
+    m_c.data = null_str;
   }
 
   String::String(const String& src) {
-    m_c.length = src.length;
+    m_c.length = src.m_c.length;
     if (m_c.length) {
-      m_c.data = checked_alloc(m_c.length + 1);
+      m_c.data = static_cast<char*>(checked_alloc(m_c.length + 1));
       std::memcpy(m_c.data, src.m_c.data, m_c.length+1);
     } else {
-      m_c.data = "\0";
+      m_c.data = null_str;
     }
   }
 
-  String::String(MoveRef<String> src) {
-    m_c = src->m_c;
-    src->m_c.length = 0;
-    src->m_c.data = "\0";
+  String::String(typename MoveRef<String>::type move_src) {
+    String& src = move_deref(move_src);
+    m_c = src.m_c;
+    src.m_c.length = 0;
+    src.m_c.data = null_str;
   }
 
-  String::String(const char *s) {
-    m_c.length = std::strlen(s);
-    if (m_c.length) {
-      m_c.data = checked_alloc(m_c.length+1);
-      std::memcpy(m_c.data, s, m_c.length+1);
-    } else {
-      m_c.data = "\0";
-    }
-  }
-
-  String::String(const char *s, std::size_t n) {
+  void String::init(const char *s, std::size_t n) {
     m_c.length = n;
     if (m_c.length) {
-      m_c.data = checked_alloc(m_c.length+1);
+      m_c.data = static_cast<char*>(checked_alloc(m_c.length+1));
       std::memcpy(m_c.data, s, m_c.length);
       m_c.data[m_c.length] = '\0';
     } else {
-      m_c.data = "\0";
+      m_c.data = null_str;
     }
+  }
+
+  String::String(const char *s) {
+    init(s, std::strlen(s));
+  }
+
+  String::String(const char *begin, const char *end) {
+    init(begin, end - begin);
+  }
+
+  String::String(const char *s, std::size_t n) {
+    init(s, n);
   }
 
   String::~String() {
@@ -64,29 +72,30 @@ namespace Psi {
   
   String& String::operator = (const String& src) {
     String copy(src);
-    operator = (MoveRef<String>(copy));
+    operator = (move_ref(copy));
     return *this;
   }
 
-  String& String::operator = (MoveRef<String> src) {
+  String& String::operator = (typename MoveRef<String>::type move_src) {
     clear();
-    m_c = src->m_c;
-    src->m_c.length = 0;
-    src->m_c.data = "\0";
+    String& src = move_deref(move_src);
+    m_c = src.m_c;
+    src.m_c.length = 0;
+    src.m_c.data = null_str;
     return *this;
   }
   
   String& String::operator = (const char *s) {
     String copy(s);
-    operator = (MoveRef<String>(copy));
+    operator = (move_ref(copy));
     return *this;
   }
   
   void String::clear() {
     if (m_c.length) {
-      checked_free(m_c.data);
+      checked_free(m_c.length + 1, m_c.data);
       m_c.length = 0;
-      m_c.data = "\0";
+      m_c.data = null_str;
     }
   }
 
@@ -109,5 +118,10 @@ namespace Psi {
       return true;
     else
       return false;
+  }
+
+  std::ostream& operator << (std::ostream& os, const String& str) {
+    os << str.c_str();
+    return os;
   }
 }
