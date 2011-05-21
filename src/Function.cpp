@@ -80,7 +80,7 @@ namespace Psi {
       std::map<String, unsigned> named_arguments;
     };
 
-    CompileFunctionCommonResult compile_function_common(const PhysicalSourceLocation& arguments,
+    CompileFunctionCommonResult compile_function_common(const Parser::ParserLocation& arguments,
                                                         CompileContext& compile_context,
                                                         const TreePtr<CompileImplementation>& evaluate_context,
                                                         const SourceLocation& location) {
@@ -95,7 +95,7 @@ namespace Psi {
         PSI_ASSERT(named_expr.expression);
 
         String expr_name = named_expr.name ? String(named_expr.name->begin, named_expr.name->end) : String();
-        SourceLocation argument_location(named_expr.location, make_logical_location(location.logical, expr_name));
+        SourceLocation argument_location(named_expr.location.location, make_logical_location(location.logical, expr_name));
 
         TreePtr<> argument_type = compile_expression(named_expr.expression, argument_context, argument_location.logical);
         TreePtr<Type> cast_argument_type = dynamic_pointer_cast<Type>(argument_type);

@@ -50,25 +50,32 @@ int main(int argc, char *argv[]) {
   using namespace Psi;
   using namespace Psi::Compiler;
 
-  PhysicalSourceLocation text;
-  text.url = argv[1];
-  text.begin = source_text.get();
-  text.end = source_text.get() + source_length;
-  text.first_line = text.first_column = 1;
-  text.last_line = text.last_column = 0;
+  PhysicalSourceLocation core_physical_location;
+  core_physical_location.file.reset(new SourceFile());
+  core_physical_location.first_line = core_physical_location.first_column = 0;
+  core_physical_location.last_line = core_physical_location.last_column = 0;
+  SourceLocation core_location(core_physical_location, make_logical_location(SharedPtr<LogicalSourceLocation>(), "psi"));
+
+  Parser::ParserLocation file_text;
+  file_text.location.file.reset(new SourceFile());
+  file_text.location.file->url = argv[1];
+  file_text.location.first_line = file_text.location.first_column = 1;
+  file_text.location.last_line = file_text.location.last_column = 0;
+  file_text.begin = source_text.get();
+  file_text.end = source_text.get() + source_length;
   
-  ArrayList<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(text);
+  ArrayList<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(file_text);
 
   CompileContext compile_context(&std::cerr);
   
   std::map<String, TreePtr<> > global_names;
   global_names["function"] = function_definition_object(compile_context);
 
-  TreePtr<CompileImplementation> root_evaluate_context = evaluate_context_dictionary(compile_context, global_names);
+  TreePtr<CompileImplementation> root_evaluate_context = evaluate_context_dictionary(compile_context, core_location, global_names);
 
   GCPtr<Tree> compiled_statements;
   try {
-    compiled_statements = compile_statement_list(statements, root_evaluate_context, SourceLocation(text, SharedPtr<LogicalSourceLocation>()));
+    compiled_statements = compile_statement_list(statements, root_evaluate_context, SourceLocation(file_text.location, SharedPtr<LogicalSourceLocation>()));
     compiled_statements->complete();
   } catch (CompileException&) {
     return EXIT_FAILURE;

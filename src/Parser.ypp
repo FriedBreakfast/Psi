@@ -17,7 +17,7 @@
 /**
  * the location type used by the parser and scanner.
  */
-#define YYLTYPE ::Psi::Parser::PhysicalSourceLocation
+#define YYLTYPE ::Psi::Parser::ParserLocation
 
 /**
  * I previously made this zero - it must be at least one because
@@ -50,7 +50,7 @@ using namespace Psi::Parser;
 namespace {
   struct ParserValue {
     const char *cstr;
-    PhysicalSourceLocation text;
+    ParserLocation text;
     SharedPtr<Expression> expression;
     SharedPtr<NamedExpression> named_expression;
     ArrayList<SharedPtr<Expression> > expression_list;
@@ -58,7 +58,7 @@ namespace {
   };
 
   struct ParserInternalArguments : BisonHelper<YYTYPE_INT16, YYSTYPE, YYLTYPE> {
-    ParserInternalArguments(int mode_token_, const PhysicalSourceLocation& text_)
+    ParserInternalArguments(int mode_token_, const ParserLocation& text_)
       : mode_token(mode_token_), text(text_), current(text_.begin), end(text_.end) {
     }
 
@@ -67,7 +67,7 @@ namespace {
     ArrayList<SharedPtr<NamedExpression> > result_named_expressions;
 
     int mode_token;
-    PhysicalSourceLocation text;
+    ParserLocation text;
     const char *current, *end;
 
     std::string error_message;
@@ -96,42 +96,38 @@ namespace {
 
   int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self);
 
-  PhysicalSourceLocation combine_loc(const PhysicalSourceLocation& lhs, const PhysicalSourceLocation& rhs) {
-    PSI_ASSERT(lhs.url == rhs.url);
-    PhysicalSourceLocation p;
-    p.url = lhs.url;
-    p.first_line = lhs.first_line;
-    p.first_column = lhs.first_column;
+  ParserLocation combine_loc(const ParserLocation& lhs, const ParserLocation& rhs) {
+    PSI_ASSERT(lhs.location.file == rhs.location.file);
+    ParserLocation p;
+    p.location.file = lhs.location.file;
+    p.location.first_line = lhs.location.first_line;
+    p.location.first_column = lhs.location.first_column;
     p.begin = lhs.begin;
-    p.last_line = rhs.last_line;
-    p.last_column = rhs.last_column;
+    p.location.last_line = rhs.location.last_line;
+    p.location.last_column = rhs.location.last_column;
     p.end = rhs.end;
     return p;
   }
 
-  PhysicalSourceLocation end_loc(const PhysicalSourceLocation& base) {
-    PhysicalSourceLocation p;
-    p.url = base.url;
-    p.first_line = p.last_line = base.last_line;
-    p.first_column = p.last_column = base.last_column;
+  ParserLocation end_loc(const ParserLocation& base) {
+    ParserLocation p;
+    p.location.file = base.location.file;
+    p.location.first_line = p.location.last_line = base.location.last_line;
+    p.location.first_column = p.location.last_column = base.location.last_column;
     p.begin = p.end = base.end;
     return p;
   }
 
-  SharedPtr<Expression> str_expression(const PhysicalSourceLocation& loc, const char *op) {
-    // this might be dodgy - the number of characters given by
-    // line/column numbers does not relate to the number of characters
-    // in the "op" string.
-
-    PhysicalSourceLocation text = loc;
+  SharedPtr<Expression> str_expression(const ParserLocation& loc, const char *op) {
+    ParserLocation text = loc;
     text.begin = op;
     text.end = op + std::strlen(op);
 
     return SharedPtr<Expression>(new TokenExpression(loc, TokenExpression::identifier, text));
   }
 
-  SharedPtr<Expression> binary_expr(const PhysicalSourceLocation& origin,
-                                    const PhysicalSourceLocation& op_loc, const char *op,
+  SharedPtr<Expression> binary_expr(const ParserLocation& origin,
+                                    const ParserLocation& op_loc, const char *op,
                                     const SharedPtr<Expression>& lhs,
                                     const SharedPtr<Expression>& rhs) {
     ArrayList<SharedPtr<Expression> > args;
@@ -142,8 +138,8 @@ namespace {
     return SharedPtr<Expression>(new MacroExpression(origin, args));
   }
 
-  SharedPtr<Expression> unary_expr(const PhysicalSourceLocation& origin,
-                                   const PhysicalSourceLocation& op_loc, const char *op,
+  SharedPtr<Expression> unary_expr(const ParserLocation& origin,
+                                   const ParserLocation& op_loc, const char *op,
                                    const SharedPtr<Expression>& param) {
     ArrayList<SharedPtr<Expression> > args;
     args.push_back(str_expression(op_loc, op));
@@ -204,10 +200,10 @@ namespace {
   }
 #endif
 
-  @$.url = arguments.text.url;
+  @$.location.file = arguments.text.location.file;
+  @$.location.first_line = @$.location.last_line = arguments.text.location.first_line;
+  @$.location.first_column = @$.location.last_column = arguments.text.location.first_column;
   @$.begin = @$.end = arguments.current;
-  @$.first_line = @$.last_line = arguments.text.first_line;
-  @$.first_column = @$.last_column = arguments.text.first_column;
 }
 
 %%
@@ -381,16 +377,16 @@ namespace {
 
   next_char:
     llocp->begin = llocp->end;
-    llocp->first_line = llocp->last_line;
-    llocp->first_column = llocp->last_column;
+    llocp->location.first_line = llocp->location.last_line;
+    llocp->location.first_column = llocp->location.last_column;
     PSI_ASSERT(llocp->begin == self.current);
 
     if (self.current == self.end)
       return 0;
 
 #define SCANNER_RETURN(val) do {lvalp->text = *llocp; return (val);} while(0)
-#define SCANNER_ACCEPT() (++self.current, ++llocp->end, ++llocp->last_column)
-#define SCANNER_NEWLINE() (++llocp->last_line, llocp->last_column = 1)
+#define SCANNER_ACCEPT() (++self.current, ++llocp->end, ++llocp->location.last_column)
+#define SCANNER_NEWLINE() (++llocp->location.last_line, llocp->location.last_column = 1)
 
     c = *self.current;
 
@@ -474,9 +470,11 @@ namespace {
         }
 
         if ((bracket_depth == 0) && (square_bracket_depth == 0) && (brace_depth == 0)) {
-          PhysicalSourceLocation value_text(*llocp);
+          ParserLocation value_text(*llocp);
           ++value_text.begin;
+          ++value_text.location.first_column;
           --value_text.end;
+          --value_text.location.last_column;
           lvalp->expression.reset(new TokenExpression(*llocp, block_type, value_text));
           return BLOCK;
         } else if (self.current == self.end) {
@@ -507,11 +505,11 @@ namespace {
 
 namespace Psi {
   namespace Parser {
-    Element::Element(const PhysicalSourceLocation& location_)
+    Element::Element(const ParserLocation& location_)
       : location(location_) {
     }
 
-    Expression::Expression(const PhysicalSourceLocation& location_, ExpressionType expression_type_)
+    Expression::Expression(const ParserLocation& location_, ExpressionType expression_type_)
       : Element(location_),
 	expression_type(expression_type_) {
     }
@@ -519,7 +517,7 @@ namespace Psi {
     Expression::~Expression() {
     }
 
-    TokenExpression::TokenExpression(const PhysicalSourceLocation& location_, TokenType token_type_, const PhysicalSourceLocation& text_)
+    TokenExpression::TokenExpression(const ParserLocation& location_, TokenType token_type_, const ParserLocation& text_)
       : Expression(location_, expression_token),
 	token_type(token_type_),
 	text(text_) {
@@ -528,29 +526,29 @@ namespace Psi {
     TokenExpression::~TokenExpression() {
     }
 
-    MacroExpression::MacroExpression(const PhysicalSourceLocation& location_, const ArrayList<SharedPtr<Expression> >& elements_)
+    MacroExpression::MacroExpression(const ParserLocation& location_, const ArrayList<SharedPtr<Expression> >& elements_)
       : Expression(location_, expression_macro), elements(elements_) {
     }
 
     MacroExpression::~MacroExpression() {
     }
 
-    DotExpression::DotExpression(const PhysicalSourceLocation& location_, const SharedPtr<Expression>& left_, const SharedPtr<Expression>& right_)
+    DotExpression::DotExpression(const ParserLocation& location_, const SharedPtr<Expression>& left_, const SharedPtr<Expression>& right_)
       : Expression(location_, expression_dot), left(left_), right(right_) {
     }
 
     DotExpression::~DotExpression() {
     }
 
-    NamedExpression::NamedExpression(const PhysicalSourceLocation& source_)
+    NamedExpression::NamedExpression(const ParserLocation& source_)
       : Element(source_) {
     }
 
-    NamedExpression::NamedExpression(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& expression_)
+    NamedExpression::NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_)
       : Element(source_), expression(expression_) {
     }
 
-    NamedExpression::NamedExpression(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& expression_, const PhysicalSourceLocation& name_)
+    NamedExpression::NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const ParserLocation& name_)
       : Element(source_), name(name_), expression(expression_) {
     }
 
@@ -566,7 +564,7 @@ namespace Psi {
     /** \brief parse a statement list.
      * \param text Text to parse.
      */
-    ArrayList<SharedPtr<NamedExpression> > parse_statement_list(const PhysicalSourceLocation& text) {
+    ArrayList<SharedPtr<NamedExpression> > parse_statement_list(const ParserLocation& text) {
       ParserInternalArguments args(MODE_STATEMENT_LIST, text);
       parse_helper(args);
       return args.result_named_expressions;
@@ -576,7 +574,7 @@ namespace Psi {
      * \details an argument list is a list of Expressions forming arguments to a function call.
      * \param text Text to parse.
      */
-    ArrayList<SharedPtr<NamedExpression> > parse_argument_list(const PhysicalSourceLocation& text) {
+    ArrayList<SharedPtr<NamedExpression> > parse_argument_list(const ParserLocation& text) {
       ParserInternalArguments args(MODE_ARGUMENT_LIST, text);
       parse_helper(args);
       return args.result_named_expressions;
@@ -587,7 +585,7 @@ namespace Psi {
      * followed by a return type Expression.
      * \param text Text to parse.
      */
-    ArgumentDeclarations parse_function_argument_declarations(const PhysicalSourceLocation& text) {
+    ArgumentDeclarations parse_function_argument_declarations(const ParserLocation& text) {
       ParserInternalArguments args(MODE_FUNCTION_ARGUMENT_DECLARE, text);
       parse_helper(args);
       ArgumentDeclarations result;

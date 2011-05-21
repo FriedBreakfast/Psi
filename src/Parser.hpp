@@ -11,12 +11,15 @@
 
 namespace Psi {
   namespace Parser {
-    using Compiler::PhysicalSourceLocation;
+    struct ParserLocation {
+      Compiler::PhysicalSourceLocation location;
+      const char *begin, *end;
+    };
 
     struct Element {
-      Element(const PhysicalSourceLocation& location_);
+      Element(const ParserLocation& location_);
 
-      PhysicalSourceLocation location;
+      ParserLocation location;
     };
 
     enum ExpressionType {
@@ -26,7 +29,7 @@ namespace Psi {
     };
 
     struct Expression : Element {
-      Expression(const PhysicalSourceLocation& location_, ExpressionType expression_type_);
+      Expression(const ParserLocation& location_, ExpressionType expression_type_);
       virtual ~Expression();
 
       ExpressionType expression_type;
@@ -40,34 +43,34 @@ namespace Psi {
 	bracket
       };
 
-      TokenExpression(const PhysicalSourceLocation& location_, TokenType token_type_, const PhysicalSourceLocation& text_);
+      TokenExpression(const ParserLocation& location_, TokenType token_type_, const ParserLocation& text_);
       virtual ~TokenExpression();
 
       TokenType token_type;
-      PhysicalSourceLocation text;
+      ParserLocation text;
     };
 
     class Expression;
 
     struct MacroExpression : Expression {
-      MacroExpression(const PhysicalSourceLocation& location_, const ArrayList<SharedPtr<Expression> >& elements_);
+      MacroExpression(const ParserLocation& location_, const ArrayList<SharedPtr<Expression> >& elements_);
       virtual ~MacroExpression();
 
       ArrayList<SharedPtr<Expression> > elements;
     };
 
     struct NamedExpression : Element {
-      NamedExpression(const PhysicalSourceLocation& source_);
-      NamedExpression(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& expression_);
-      NamedExpression(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& expression_, const PhysicalSourceLocation& name_);
+      NamedExpression(const ParserLocation& source_);
+      NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_);
+      NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const ParserLocation& name_);
       ~NamedExpression();
 
-      boost::optional<PhysicalSourceLocation> name;
+      boost::optional<ParserLocation> name;
       SharedPtr<Expression> expression;
     };
 
     struct DotExpression : Expression {
-      DotExpression(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& left_, const SharedPtr<Expression>& right_);
+      DotExpression(const ParserLocation& source_, const SharedPtr<Expression>& left_, const SharedPtr<Expression>& right_);
       ~DotExpression();
 
       SharedPtr<Expression> left, right;
@@ -79,15 +82,15 @@ namespace Psi {
       virtual ~ParseError() throw();
     };
 
-    ArrayList<SharedPtr<NamedExpression> > parse_statement_list(const PhysicalSourceLocation&);
-    ArrayList<SharedPtr<NamedExpression> > parse_argument_list(const PhysicalSourceLocation&);
+    ArrayList<SharedPtr<NamedExpression> > parse_statement_list(const ParserLocation&);
+    ArrayList<SharedPtr<NamedExpression> > parse_argument_list(const ParserLocation&);
 
     struct ArgumentDeclarations {
       ArrayList<SharedPtr<NamedExpression> > arguments;
       SharedPtr<Expression> return_type;
     };
 
-    ArgumentDeclarations parse_function_argument_declarations(const PhysicalSourceLocation&);
+    ArgumentDeclarations parse_function_argument_declarations(const ParserLocation&);
   }
 }
 

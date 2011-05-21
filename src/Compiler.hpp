@@ -30,17 +30,18 @@ namespace Psi {
       virtual const char *what() const throw();
     };
 
+    struct SourceFile {
+      String url;
+    };
+
     struct PhysicalSourceLocation {
-      SharedPtr<String> url;
-
-      const char *begin, *end;
-
+      SharedPtr<SourceFile> file;
       int first_line;
       int first_column;
       int last_line;
       int last_column;
     };
-    
+
     struct LogicalSourceLocation {
       SharedPtr<LogicalSourceLocation> parent;
       String name;

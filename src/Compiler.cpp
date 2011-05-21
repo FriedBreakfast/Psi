@@ -35,8 +35,8 @@ namespace Psi {
       default: type = "error"; m_error_occurred = true; break;
       }
       
-      *m_error_stream << boost::format("%s:%s: in '%s'\n") % *loc.physical.url % loc.physical.first_line % logical_location_name(loc.logical);
-      *m_error_stream << boost::format("%s:%s: %s:%s\n") % *loc.physical.url % loc.physical.first_line % type % message;
+      *m_error_stream << boost::format("%s:%s: in '%s'\n") % loc.physical.file->url % loc.physical.first_line % logical_location_name(loc.logical);
+      *m_error_stream << boost::format("%s:%s: %s:%s\n") % loc.physical.file->url % loc.physical.first_line % type % message;
     }
 
     void CompileContext::error_throw(const SourceLocation& loc, const std::string& message, unsigned flags) {
@@ -119,14 +119,17 @@ namespace Psi {
      * \brief OutputStreamable class which can be used to turn an expression into a simple string.
      */
     class ExpressionString {
-      PhysicalSourceLocation m_location;
+      const char *m_begin;
+      std::size_t m_count;
 
     public:
-      ExpressionString(const SharedPtr<Parser::Expression>& expr) : m_location(expr->location) {
+      ExpressionString(SharedPtr<Parser::Expression>& expr) {
+        m_begin = expr->location.begin;
+        m_count = expr->location.end - expr->location.begin;
       }
       
       friend std::ostream& operator << (std::ostream& os, const ExpressionString& self) {
-        os.write(self.m_location.begin, self.m_location.end - self.m_location.begin);
+        os.write(self.m_begin, self.m_count);
         return os;
       }
     };
@@ -143,7 +146,7 @@ namespace Psi {
                                  const SharedPtr<LogicalSourceLocation>& source) {
 
       CompileContext& compile_context = evaluate_context->compile_context();
-      SourceLocation location(expression->location, source);
+      SourceLocation location(expression->location.location, source);
 
       switch (expression->expression_type) {
       case Parser::expression_macro: {
@@ -265,7 +268,7 @@ namespace Psi {
 
       void run(const TreePtr<StatementListEntry>& entry) {
         TreePtr<> expr = compile_expression(m_expression, m_evaluate_context, m_logical_location);
-        entry->statement.reset(new Statement(expr, SourceLocation(m_expression->location, m_logical_location)));
+        entry->statement.reset(new Statement(expr, SourceLocation(m_expression->location.location, m_logical_location)));
       }
     };
 
@@ -347,7 +350,7 @@ namespace Psi {
         const Parser::NamedExpression& named_expr = **ii;
         if ((use_last = named_expr.expression.get())) {
           String expr_name = named_expr.name ? String(named_expr.name->begin, named_expr.name->end) : String();
-          SourceLocation statement_location(named_expr.location, make_logical_location(location.logical, expr_name));
+          SourceLocation statement_location(named_expr.location.location, make_logical_location(location.logical, expr_name));
           DependencyPtr statement_compiler(new StatementCompiler(named_expr.expression, statement_location.logical, context_tree));
           TreePtr<StatementListEntry> statement_tree(new StatementListEntry(compile_context, statement_location, move_ref(statement_compiler)));
           compiler_trees.push_back(statement_tree);
