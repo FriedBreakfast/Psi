@@ -110,7 +110,6 @@ namespace Psi {
   }
 
   bool String::operator < (const String& rhs) const {
-    std::size_t n = std::min(m_c.length, rhs.m_c.length);
     int o = std::memcmp(m_c.data, rhs.m_c.data, std::min(m_c.length, rhs.m_c.length));
     if (o < 0)
       return true;

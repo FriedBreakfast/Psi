@@ -142,10 +142,10 @@ namespace Psi {
 
       CompileFunctionCommonResult common = compile_function_common(parameters->text, compile_context, evaluate_context, location);
 
-      std::vector<TreePtr<FunctionArgument> > argument_trees;
+      ArrayList<TreePtr<FunctionArgument> > argument_trees;
       std::map<TreePtr<>, TreePtr<> > argument_substitutions;
 
-      for (std::vector<TreePtr<FunctionTypeArgument> >::iterator ii = common.type->arguments.begin(), ie = common.type->arguments.end(); ii != ie; ++ii) {
+      for (ArrayList<TreePtr<FunctionTypeArgument> >::iterator ii = common.type->arguments.begin(), ie = common.type->arguments.end(); ii != ie; ++ii) {
         TreePtr<> arg_type = (*ii)->type()->rewrite(location, argument_substitutions);
         TreePtr<Type> cast_arg_type = dynamic_pointer_cast<Type>(arg_type);
         if (!cast_arg_type)
@@ -165,7 +165,7 @@ namespace Psi {
 
       TreePtr<CompileImplementation> body_context = evaluate_context_dictionary(compile_context, location, argument_values, evaluate_context);
       DependencyPtr body_compiler(new FunctionBodyCompiler(body_context, body));
-      TreePtr<Function> function(new Function(common.type, location, body_compiler));
+      TreePtr<Function> function(new Function(common.type, location, move_ref(body_compiler)));
       function->result_type = cast_result_type;
       function->arguments.swap(argument_trees);
 

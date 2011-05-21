@@ -32,7 +32,7 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
-      Statement(const TreePtr<>&);
+      Statement(const TreePtr<>&, const SourceLocation&);
       virtual ~Statement();
 
       TreePtr<> value;
@@ -47,10 +47,10 @@ namespace Psi {
 
     public:
       Block(const TreePtr<Type>&, const SourceLocation&);
-      Block(const TreePtr<Type>&, const SourceLocation&, DependencyPtr&);
+      Block(const TreePtr<Type>&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
       virtual ~Block();
 
-      std::vector<TreePtr<Statement> > statements;
+      ArrayList<TreePtr<Statement> > statements;
     };
 
     class StructType : public Type {
@@ -63,59 +63,6 @@ namespace Psi {
     public:
       UnionType(CompileContext&);
       virtual ~UnionType();
-    };
-
-    /**
-     * \brief A type for values containing no data.
-     *
-     * This is not \em the empty type exactly, since macros may give different behaviour
-     * to distinct instances of empty type objects.
-     */
-    class EmptyType : public Type {
-    public:
-      EmptyType(CompileContext&);
-      virtual ~EmptyType();
-    };
-
-    /**
-     * \brief A value containing no data.
-     *
-     * This is not necessarily a value of \em the empty type, see EmptyType for details.
-     */
-    class EmptyValue : public Tree {
-    public:
-      EmptyValue(const TreePtr<EmptyType>&);
-      virtual ~EmptyValue();
-    };
-
-    class UnaryOperation : public Tree {
-    protected:
-      UnaryOperation(CompileContext&);
-      UnaryOperation(const UnaryOperation&);
-      virtual void gc_visit(GCVisitor&);
-      typedef UnaryOperation RewriteDuplicateType;
-      virtual TreePtr<UnaryOperation> rewrite_duplicate_hook() = 0;
-
-    public:
-      virtual ~UnaryOperation();
-      virtual TreePtr<> rewrite_hook(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
-
-      TreePtr<> child;
-    };
-
-    class BinaryOperation : public Tree {
-    protected:
-      BinaryOperation(CompileContext&);
-      BinaryOperation(const BinaryOperation&);
-      virtual void gc_visit(GCVisitor&);
-      typedef BinaryOperation RewriteDuplicateType;
-      virtual TreePtr<BinaryOperation> rewrite_duplicate_hook() = 0;
-
-    public:
-      virtual ~BinaryOperation();
-      virtual TreePtr<> rewrite_hook(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
-
-      TreePtr<> left, right;
     };
 
     class FunctionTypeArgument : public Tree {
@@ -133,21 +80,18 @@ namespace Psi {
 
     public:
       FunctionType(CompileContext&, const SourceLocation&);
-      FunctionType(CompileContext&, const SourceLocation&, DependencyPtr&);
+      FunctionType(CompileContext&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
       virtual ~FunctionType();
       virtual TreePtr<> rewrite_hook(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
 
-      TreePtr<Type> argument_type_after(const SourceLocation&, const std::vector<TreePtr<> >&);
-      TreePtr<Type> result_type_after(const SourceLocation&, const std::vector<TreePtr<> >&);
+      TreePtr<Type> argument_type_after(const SourceLocation&, const ArrayList<TreePtr<> >&);
+      TreePtr<Type> result_type_after(const SourceLocation&, const ArrayList<TreePtr<> >&);
 
-      std::vector<TreePtr<FunctionTypeArgument> > arguments;
+      ArrayList<TreePtr<FunctionTypeArgument> > arguments;
       TreePtr<Type> result_type;
     };
 
     class FunctionArgument : public Tree {
-    protected:
-      virtual void gc_visit(GCVisitor&);
-
     public:
       FunctionArgument(const TreePtr<Type>&, const SourceLocation&);
       virtual ~FunctionArgument();
@@ -159,10 +103,10 @@ namespace Psi {
 
     public:
       Function(const TreePtr<FunctionType>&, const SourceLocation&);
-      Function(const TreePtr<FunctionType>&, const SourceLocation&, DependencyPtr&);
+      Function(const TreePtr<FunctionType>&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
       virtual ~Function();
 
-      std::vector<TreePtr<FunctionArgument> > arguments;
+      ArrayList<TreePtr<FunctionArgument> > arguments;
       TreePtr<> result_type;
       TreePtr<> body;
     };
@@ -172,7 +116,8 @@ namespace Psi {
       virtual void gc_visit(GCVisitor&);
 
     public:
-      TryFinally(CompileContext&);
+      TryFinally(const TreePtr<Type>&, const SourceLocation&);
+      TryFinally(const TreePtr<Type>&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
       virtual ~TryFinally();
 
       TreePtr<> try_block, finally_block;

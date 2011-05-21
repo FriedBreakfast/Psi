@@ -121,74 +121,12 @@ namespace Psi {
     Type::~Type() {
     }
 
-    EmptyType::EmptyType(CompileContext& compile_context) : Type(compile_context) {
+    FunctionType::FunctionType(CompileContext& context, const SourceLocation& location, typename MoveRef<DependencyPtr>::type dependency)
+    : Type(context, location, dependency) {
     }
 
-    EmptyType::~EmptyType() {
-    }
-
-    EmptyValue::EmptyValue(const TreePtr<EmptyType>& type) : Tree(type->compile_context()) {
-      this->type = type;
-    }
-
-    EmptyValue::~EmptyValue() {
-    }
-
-    UnaryOperation::UnaryOperation(CompileContext& context) : Tree(context) {
-    }
-
-    UnaryOperation::UnaryOperation(const UnaryOperation& src)
-    : Tree(src.compile_context()), child(src.child) {
-      type = src.type;
-    }
-
-    UnaryOperation::~UnaryOperation() {
-    }
-
-    void UnaryOperation::gc_visit(GCVisitor& visitor) {
-      Tree::gc_visit(visitor);
-      visitor % child;
-    }
-
-    TreePtr<> UnaryOperation::rewrite_hook(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions) {
-      TreePtr<> rw_child = child->rewrite(location, substitutions);
-      if (rw_child == child)
-        return this;
-
-      TreePtr<UnaryOperation> rw_self = rewrite_duplicate_hook();
-      rw_self->child = rw_child;
-      return rw_self;
-    }
-
-    BinaryOperation::BinaryOperation(CompileContext& context) : Tree(context) {
-    }
-
-    BinaryOperation::BinaryOperation(const BinaryOperation& src)
-    : Tree(src.compile_context()), left(src.left), right(src.right) {
-      type = src.type;
-    }
-
-    BinaryOperation::~BinaryOperation() {
-    }
-
-    void BinaryOperation::gc_visit(GCVisitor& visitor) {
-      Tree::gc_visit(visitor);
-      visitor % left % right;
-    }
-
-    TreePtr<> BinaryOperation::rewrite_hook(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions) {
-      TreePtr<> rw_left = left->rewrite(location, substitutions);
-      TreePtr<> rw_right = right->rewrite(location, substitutions);
-      if ((left != rw_left) || (right != rw_right))
-        return this;
-
-      TreePtr<BinaryOperation> rw_self = rewrite_duplicate_hook();
-      rw_self->left = rw_left;
-      rw_self->right = rw_right;
-      return rw_self;
-    }
-
-    FunctionType::FunctionType(CompileContext& context) : Type(context) {
+    FunctionType::FunctionType(CompileContext& context, const SourceLocation& location)
+    : Type(context, location) {
     }
 
     FunctionType::~FunctionType() {
@@ -203,40 +141,39 @@ namespace Psi {
     TreePtr<> FunctionType::rewrite_hook(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions) {
       PSI_FAIL("need to sort out function type equivalence checking");
       
-      for (std::vector<TreePtr<FunctionTypeArgument> >::iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
-        TreePtr<> rw_type = (*ii)->type->rewrite(location, substitutions);
-        if (rw_type != (*ii)->type)
+      for (ArrayList<TreePtr<FunctionTypeArgument> >::iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
+        TreePtr<> rw_type = (*ii)->type()->rewrite(location, substitutions);
+        if (rw_type != (*ii)->type())
           goto rewrite_required;
       }
       return TreePtr<>(this);
 
     rewrite_required:
-      TreePtr<FunctionType> rw_self(new FunctionType(compile_context()));
-      rw_self->arguments.reserve(arguments.size());
-
       std::map<TreePtr<>, TreePtr<> > child_substitutions(substitutions);
-      std::vector<TreePtr<FunctionTypeArgument> > rw_arguments;
-      for (std::vector<TreePtr<FunctionTypeArgument> >::iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
-        TreePtr<> rw_type = (*ii)->type->rewrite(location, child_substitutions);
+      ArrayList<TreePtr<FunctionTypeArgument> > rw_arguments;
+      for (ArrayList<TreePtr<FunctionTypeArgument> >::iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
+        TreePtr<> rw_type = (*ii)->type()->rewrite(location, child_substitutions);
         TreePtr<Type> rw_cast_type = dynamic_pointer_cast<Type>(rw_type);
         if (!rw_cast_type)
           compile_context().error_throw(location, "Rewritten function argument type is not a type");
 
-        TreePtr<FunctionTypeArgument> rw_arg(new FunctionTypeArgument(compile_context()));
-        rw_arg->type = rw_cast_type;
-        rw_self->arguments.push_back(rw_arg);
+        TreePtr<FunctionTypeArgument> rw_arg(new FunctionTypeArgument(rw_cast_type, this->location()));
+        rw_arguments.push_back(rw_arg);
         child_substitutions[*ii] = rw_arg;
       }
 
-      TreePtr<> rw_result = result_type->type->rewrite(location, child_substitutions);
-      rw_self->result_type = dynamic_pointer_cast<Type>(rw_result);
-      if (!rw_self->result_type)
+      TreePtr<> rw_result = result_type->type()->rewrite(location, child_substitutions);
+      TreePtr<Type> cast_rw_result = dynamic_pointer_cast<Type>(rw_result);
+      if (!cast_rw_result)
         compile_context().error_throw(location, "Rewritten function result type is not a type");
+
+      TreePtr<FunctionType> rw_self(new FunctionType(compile_context(), this->location()));
+      rw_self->arguments.swap(rw_arguments);
 
       return rw_self;
     }
 
-    TreePtr<Type> FunctionType::argument_type_after(const SourceLocation& location, const std::vector<TreePtr<> >& previous) {
+    TreePtr<Type> FunctionType::argument_type_after(const SourceLocation& location, const ArrayList<TreePtr<> >& previous) {
       if (previous.size() >= arguments.size())
         compile_context().error_throw(location, "Too many arguments passed to function");
       
@@ -244,7 +181,7 @@ namespace Psi {
       for (unsigned ii = 0, ie = previous.size(); ii != ie; ++ii)
         substitutions[arguments[ii]] = previous[ii];
 
-      TreePtr<> type = arguments[previous.size()]->type->rewrite(location, substitutions);
+      TreePtr<> type = arguments[previous.size()]->type()->rewrite(location, substitutions);
       TreePtr<Type> cast_type = dynamic_pointer_cast<Type>(type);
       if (!cast_type)
         compile_context().error_throw(location, "Rewritten function argument type is not a type");
@@ -252,7 +189,7 @@ namespace Psi {
       return cast_type;
     }
     
-    TreePtr<Type> FunctionType::result_type_after(const SourceLocation& location, const std::vector<TreePtr<> >& previous) {
+    TreePtr<Type> FunctionType::result_type_after(const SourceLocation& location, const ArrayList<TreePtr<> >& previous) {
       if (previous.size() != arguments.size())
         compile_context().error_throw(location, "Incorrect number of arguments passed to function");
 
@@ -268,7 +205,8 @@ namespace Psi {
       return cast_type;
     }
 
-    FunctionTypeArgument::FunctionTypeArgument(CompileContext& context) : Tree(context) {
+    FunctionTypeArgument::FunctionTypeArgument(const TreePtr<Type>& type, const SourceLocation& location)
+    : Tree(type, location) {
     }
 
     FunctionTypeArgument::~FunctionTypeArgument() {
@@ -278,7 +216,12 @@ namespace Psi {
       Tree::gc_visit(visitor);
     }
 
-    Function::Function(CompileContext& context) : Tree(context) {
+    Function::Function(const TreePtr<FunctionType>& type, const SourceLocation& location)
+    : Tree(type, location) {
+    }
+
+    Function::Function(const TreePtr<FunctionType>& type, const SourceLocation& location, typename MoveRef<DependencyPtr>::type dependency)
+    : Tree(type, location, move_ref(dependency)) {
     }
 
     Function::~Function() {
@@ -290,18 +233,19 @@ namespace Psi {
       visitor % body;
     }
 
-    FunctionArgument::FunctionArgument(CompileContext& context) : Tree(context) {
+    FunctionArgument::FunctionArgument(const TreePtr<Type>& type, const SourceLocation& location)
+    : Tree(type, location) {
     }
 
     FunctionArgument::~FunctionArgument() {
     }
 
-    void FunctionArgument::gc_visit(GCVisitor& visitor) {
-      Tree::gc_visit(visitor);
-      visitor % type;
+    TryFinally::TryFinally(const TreePtr<Type>& type, const SourceLocation& location)
+    : Tree(type, location) {
     }
 
-    TryFinally::TryFinally(CompileContext& context) : Tree(context) {
+    TryFinally::TryFinally(const TreePtr<Type>& type, const SourceLocation& location, typename MoveRef<DependencyPtr>::type dependency)
+    : Tree(type, location, dependency) {
     }
 
     TryFinally::~TryFinally() {
@@ -312,7 +256,12 @@ namespace Psi {
       visitor % try_block % finally_block;
     }
 
-    Block::Block(CompileContext& context) : Tree(context) {
+    Block::Block(const TreePtr<Type>& type, const SourceLocation& location)
+    : Tree(type, location) {
+    }
+
+    Block::Block(const TreePtr<Type>& type, const SourceLocation& location, typename MoveRef<DependencyPtr>::type dependency)
+    : Tree(type, location, dependency) {
     }
 
     Block::~Block() {
@@ -320,10 +269,12 @@ namespace Psi {
 
     void Block::gc_visit(GCVisitor& visitor) {
       Tree::gc_visit(visitor);
-      visitor % statements;
+      for (ArrayList<TreePtr<Statement> >::iterator ii = statements.begin(), ie = statements.end(); ii != ie; ++ii)
+        visitor % *ii;
     }
 
-    Statement::Statement(CompileContext& context) : Tree(context) {
+    Statement::Statement(const TreePtr<>& value_, const SourceLocation& location)
+    : Tree(value_->type(), location), value(value_) {
     }
 
     Statement::~Statement() {
@@ -331,7 +282,7 @@ namespace Psi {
 
     void Statement::gc_visit(GCVisitor& visitor) {
       Tree::gc_visit(visitor);
-      visitor % next % value;
+      visitor % value;
     }
   }
 }

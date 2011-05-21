@@ -13,6 +13,7 @@
 
 #include "Parser.hpp"
 #include "Compiler.hpp"
+#include "Tree.hpp"
 
 namespace {
   std::string find_program_name(const char *path) {
@@ -50,26 +51,25 @@ int main(int argc, char *argv[]) {
   using namespace Psi::Compiler;
 
   PhysicalSourceLocation text;
-  text.origin = PhysicalSourceOrigin::filename(argv[1]);
+  text.url = argv[1];
   text.begin = source_text.get();
   text.end = source_text.get() + source_length;
   text.first_line = text.first_column = 1;
   text.last_line = text.last_column = 0;
   
-  std::vector<boost::shared_ptr<Parser::NamedExpression> > statements = Parser::parse_statement_list(text);
+  ArrayList<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(text);
 
   CompileContext compile_context(&std::cerr);
-  boost::shared_ptr<LogicalSourceLocation> my_root_location = root_location();
   
-  std::map<std::string, GCPtr<Tree> > global_names;
+  std::map<String, TreePtr<> > global_names;
   global_names["function"] = function_definition_object(compile_context);
 
-  GCPtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, global_names);
+  TreePtr<CompileImplementation> root_evaluate_context = evaluate_context_dictionary(compile_context, global_names);
 
   GCPtr<Tree> compiled_statements;
   try {
-    compiled_statements = compile_statement_list(statements, compile_context, root_evaluate_context, SourceLocation(text, my_root_location));
-    compiled_statements->dependency->call();
+    compiled_statements = compile_statement_list(statements, root_evaluate_context, SourceLocation(text, SharedPtr<LogicalSourceLocation>()));
+    compiled_statements->complete();
   } catch (CompileException&) {
     return EXIT_FAILURE;
   }

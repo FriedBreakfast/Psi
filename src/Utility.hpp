@@ -16,7 +16,7 @@ namespace Psi {
   template<typename T>
   class PointerBase {
     typedef void (PointerBase::*safe_bool_type) () const;
-    void safe_bool_true() const;
+    void safe_bool_true() const {}
     
   protected:
     T *m_ptr;

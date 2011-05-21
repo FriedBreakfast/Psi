@@ -381,8 +381,8 @@ namespace Psi {
   struct LookupResultConflictHelper {};
   typedef int LookupResultConflictHelper::*LookupResultConflict;
 
-  LookupResultNone lookup_result_none = 0;
-  LookupResultConflict lookup_result_conflict = 0;
+  const LookupResultNone lookup_result_none = 0;
+  const LookupResultConflict lookup_result_conflict = 0;
 
   template<typename T>
   class LookupResult {
@@ -541,6 +541,9 @@ namespace Psi {
     const_iterator end() const {return static_cast<const T*>(m_c.end);}
     size_type size() const {return end() - begin();}
     size_type capacity() const {return static_cast<const T*>(m_c.limit) - begin();}
+
+    reference operator [] (size_type n) {return *(begin() + n);}
+    const_reference operator [] (size_type n) const {return *(begin() + n);}
 
     /**
      * \brief Ensure enough capacity to add n elements.

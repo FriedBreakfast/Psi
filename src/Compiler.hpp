@@ -250,14 +250,9 @@ namespace Psi {
 
       TreePtr<GlobalTree> tree_from_address(const SourceLocation&, const TreePtr<Type>&, void*);
       
-      const TreePtr<Interface>& macro_interface();
       const TreePtr<CompileImplementation>& statement_dependency();
-
-    private:
-      TreePtr<Type> m_empty_type;
-
-    public:
-      TreePtr<Type> empty_type() {return m_empty_type;}
+      const TreePtr<Interface>& macro_interface();
+      const TreePtr<Type>& empty_type();
     };
     
     template<typename T>

@@ -22,8 +22,6 @@ namespace Psi {
 
     CompileContext::CompileContext(std::ostream *error_stream)
     : m_error_stream(error_stream), m_error_occurred(false) {
-
-      m_empty_type.reset(new EmptyType(*this));
     }
 
     CompileContext::~CompileContext() {
@@ -267,7 +265,7 @@ namespace Psi {
 
       void run(const TreePtr<StatementListEntry>& entry) {
         TreePtr<> expr = compile_expression(m_expression, m_evaluate_context, m_logical_location);
-        entry->statement.reset(new Statement(expr));
+        entry->statement.reset(new Statement(expr, SourceLocation(m_expression->location, m_logical_location)));
       }
     };
 
@@ -366,7 +364,7 @@ namespace Psi {
       }
 
       DependencyPtr list_compiler(new StatementListCompiler(compiler_trees));
-      TreePtr<Block> block(new Block(block_type, location, list_compiler));
+      TreePtr<Block> block(new Block(block_type, location, move_ref(list_compiler)));
 
       return block;
     }
