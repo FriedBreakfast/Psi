@@ -6,6 +6,7 @@
 #include "Tree.hpp"
 #include "TreePattern.hpp"
 #include "Platform.hpp"
+#include "Parser.hpp"
 
 namespace Psi {
   namespace Compiler {
@@ -136,32 +137,30 @@ namespace Psi {
      * \brief Compile an expression.
      *
      * \param expression Expression, usually as produced by the parser.
-     * \param compile_context Compilation context.
      * \param evaluate_context Context in which to lookup names.
      * \param source Logical (i.e. namespace etc.) location of the expression, for symbol naming and debugging.
-     * \param anonymize_location Whether to generate a new, anonymous location as a child of the current location.
      */
     TreePtr<> compile_expression(const SharedPtr<Parser::Expression>& expression,
-                                 CompileContext& compile_context,
                                  const TreePtr<CompileImplementation>& evaluate_context,
                                  const SharedPtr<LogicalSourceLocation>& source) {
 
+      CompileContext& compile_context = evaluate_context->compile_context();
       SourceLocation location(expression->location, source);
 
       switch (expression->expression_type) {
       case Parser::expression_macro: {
         const Parser::MacroExpression& macro_expression = checked_cast<Parser::MacroExpression&>(*expression);
 
-        TreePtr<> first = compile_expression(macro_expression.elements.front(), compile_context, evaluate_context, source);
+        TreePtr<> first = compile_expression(macro_expression.elements.front(), evaluate_context, source);
         ArrayList<SharedPtr<Parser::Expression> > rest(boost::next(macro_expression.elements.begin()), macro_expression.elements.end());
 
         if (!first->type())
           compile_context.error_throw(location, "Term does not have a type", CompileContext::error_internal);
-        MacroRef first_macro = compile_implementation_lookup<MacroRef>(compile_context.macro_interface(), first->type(), compile_context, location);
+        MacroRef first_macro = compile_implementation_lookup<MacroRef>(compile_context.macro_interface(), first->type(), location);
         if (!first_macro)
           compile_context.error_throw(location, "Type does not have an associated macro", CompileContext::error_internal);
 
-        return first_macro.evaluate(first, rest, compile_context, evaluate_context, location);
+        return first_macro.evaluate(first, rest, evaluate_context, location);
       }
 
       case Parser::expression_token: {
@@ -193,12 +192,12 @@ namespace Psi {
 
           if (!first.value()->type())
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator does not have a type") % bracket_str % bracket_operation, CompileContext::error_internal);
-          MacroRef first_macro = compile_implementation_lookup<MacroRef>(compile_context.macro_interface(), first.value()->type(), compile_context, location);
+          MacroRef first_macro = compile_implementation_lookup<MacroRef>(compile_context.macro_interface(), first.value()->type(), location);
           if (!first_macro)
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator's type does not have an associated macro") % bracket_str % bracket_operation, CompileContext::error_internal);
 
           ArrayList<SharedPtr<Parser::Expression> > expression_list(1, expression);
-          return first_macro.evaluate(first.value(), expression_list, compile_context, evaluate_context, location);
+          return first_macro.evaluate(first.value(), expression_list, evaluate_context, location);
         }
 
         case Parser::TokenExpression::identifier: {
@@ -225,14 +224,14 @@ namespace Psi {
       case Parser::expression_dot: {
         const Parser::DotExpression& dot_expression = checked_cast<Parser::DotExpression&>(*expression);
 
-        TreePtr<> left = compile_expression(dot_expression.left, compile_context, evaluate_context, source);
+        TreePtr<> left = compile_expression(dot_expression.left, evaluate_context, source);
         if (!left->type())
           compile_context.error_throw(location, "Term does not have a type", CompileContext::error_internal);
-        MacroRef left_macro = compile_implementation_lookup<MacroRef>(compile_context.macro_interface(), left->type(), compile_context, location);
+        MacroRef left_macro = compile_implementation_lookup<MacroRef>(compile_context.macro_interface(), left->type(), location);
         if (!left_macro)
           compile_context.error_throw(location, "Type does not have an associated macro", CompileContext::error_internal);
 
-        return left_macro.dot(left, dot_expression.right, compile_context, evaluate_context, location);
+        return left_macro.dot(left, dot_expression.right, evaluate_context, location);
       }
 
       default:
@@ -246,8 +245,8 @@ namespace Psi {
       }
 
     public:
-      StatementListEntry(CompileContext& compile_context, const SourceLocation& location, DependencyPtr& dependency)
-      : Tree(compile_context, location, dependency) {}
+      StatementListEntry(CompileContext& compile_context, const SourceLocation& location, typename MoveRef<DependencyPtr>::type dependency)
+      : Tree(compile_context, location, move_ref(dependency)) {}
 
       TreePtr<Statement> statement;
     };
@@ -267,7 +266,7 @@ namespace Psi {
       }
 
       void run(const TreePtr<StatementListEntry>& entry) {
-        TreePtr<> expr = compile_expression(m_expression, entry->compile_context(), m_evaluate_context, m_logical_location);
+        TreePtr<> expr = compile_expression(m_expression, m_evaluate_context, m_logical_location);
         entry->statement.reset(new Statement(expr));
       }
     };
@@ -339,9 +338,9 @@ namespace Psi {
     }
 
     TreePtr<Block> compile_statement_list(const std::vector<boost::shared_ptr<Parser::NamedExpression> >& statements,
-                                          CompileContext& compile_context,
                                           const TreePtr<CompileImplementation>& evaluate_context,
                                           const SourceLocation& location) {
+      CompileContext& compile_context = evaluate_context->compile_context();
       TreePtr<StatementListContext> context_tree(new StatementListContext(compile_context, location, evaluate_context));
       std::vector<TreePtr<StatementListEntry> > compiler_trees;
 
@@ -352,7 +351,7 @@ namespace Psi {
           String expr_name = named_expr.name ? String(named_expr.name->begin, named_expr.name->end) : String();
           SourceLocation statement_location(named_expr.location, make_logical_location(location.logical, expr_name));
           DependencyPtr statement_compiler(new StatementCompiler(named_expr.expression, statement_location.logical, context_tree));
-          TreePtr<StatementListEntry> statement_tree(new StatementListEntry(compile_context, statement_location, statement_compiler));
+          TreePtr<StatementListEntry> statement_tree(new StatementListEntry(compile_context, statement_location, move_ref(statement_compiler)));
           compiler_trees.push_back(statement_tree);
           
           if (named_expr.name)

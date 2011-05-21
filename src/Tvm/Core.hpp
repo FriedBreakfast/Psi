@@ -24,6 +24,67 @@ namespace Psi {
    * lower level, more akin to assembler.
    */
   namespace Tvm {
+    /**
+     * \brief Base class for types which should never be constructed.
+     */
+    class NonConstructible {
+    private:
+      NonConstructible();
+    };
+
+    /**
+     * An adapter class used to make a static class look like a
+     * pointer. The star and arrow operators return a pointer to an
+     * internal structure which provides custom adapter functions.
+     *
+     * \tparam T Wrapper type. This should have a member \c GetType
+     * which is the type returned by the get function (without the
+     * pointer). This type should be copy-constructible.
+     */
+    template<typename T>
+    class PtrAdapter {
+      template<typename> friend class PtrAdapter;
+      typedef void (PtrAdapter::*SafeBoolType)() const;
+      void safe_bool_true() const {}
+    public:
+      typedef PtrAdapter<T> ThisType;
+      typedef T WrapperType;
+      typedef typename T::GetType GetType;
+
+      PtrAdapter() {}
+      PtrAdapter(const WrapperType& wrapper) : m_wrapper(wrapper) {}
+      template<typename U> PtrAdapter(const PtrAdapter<U>& src) : m_wrapper(src.m_wrapper) {}
+
+      GetType* get() const {return m_wrapper.get();}
+      const WrapperType& operator * () const {return m_wrapper;}
+      const WrapperType* operator -> () const {return &m_wrapper;}
+
+      bool operator ! () const {return !get();}
+      bool operator == (const GetType *ptr) const {return ptr == get();}
+      bool operator != (const GetType *ptr) const {return ptr != get();}
+      bool operator < (const GetType *ptr) const {return ptr < get();}
+      bool operator == (const ThisType& ptr) const {return get() == ptr.get();}
+      bool operator != (const ThisType& ptr) const {return get() != ptr.get();}
+      bool operator < (const ThisType& ptr) const {return get() < ptr.get();}
+
+    private:
+      WrapperType m_wrapper;
+    };
+
+    /**
+     * Derived from PtrAdapter - also includes an implicit cast to
+     * pointer operation.
+     */
+    template<typename T>
+    class PtrDecayAdapter : public PtrAdapter<T> {
+    public:
+      PtrDecayAdapter() {}
+      PtrDecayAdapter(const T& wrapper) : PtrAdapter<T>(wrapper) {}
+      template<typename U> PtrDecayAdapter(const PtrAdapter<U>& src) : PtrAdapter<T>(src) {}
+
+      operator typename T::GetType* () const {return this->get();}
+    };
+
     class Context;
     class Module;
     class Term;

@@ -4,27 +4,41 @@
 
 namespace Psi {
   namespace Compiler {
-    Tree::Tree(CompileContext& compile_context, const SourceLocation& location, const TreePtr<Type>& type, const DependencyPtr& dependency)
+    Tree::Tree(CompileContext& compile_context, const SourceLocation& location, typename MoveRef<DependencyPtr>::type dependency)
     : m_compile_context(&compile_context),
     m_location(location),
+    m_dependency(move_ref(dependency)) {
+      m_completion_state = m_dependency ? completion_constructed : completion_finished;
+    }
+
+    Tree::Tree(const TreePtr<Type>& type, const SourceLocation& location, typename MoveRef<DependencyPtr>::type dependency)
+    : m_compile_context(&type->compile_context()),
+    m_location(location),
     m_type(type),
-    m_completion_state(completion_constructed),
-    m_dependency(0) {
-      compile_context.m_gc_pool.add(this);
-      m_dependency = dependency.release();
-      if (!m_dependency)
-        m_completion_state = completion_finished;
+    m_dependency(move_ref(dependency)) {
+      m_completion_state = m_dependency ? completion_constructed : completion_finished;
+    }
+
+    Tree::Tree(CompileContext& compile_context, const SourceLocation& location)
+    : m_compile_context(&compile_context),
+    m_location(location),
+    m_completion_state(completion_finished) {
+    }
+    
+    Tree::Tree(const TreePtr<Type>& type, const SourceLocation& location)
+    : m_compile_context(&type->compile_context()),
+    m_location(location),
+    m_type(type),
+    m_completion_state(completion_finished) {
     }
 
     Tree::~Tree() {
-      if (m_dependency)
-        m_dependency->vptr->destroy(m_dependency);
     }
 
     void Tree::gc_visit(GCVisitor& visitor) {
       visitor % m_type;
       if (m_dependency)
-        m_dependency->vptr->gc_visit(m_dependency, &visitor);
+        m_dependency->vptr->gc_visit(m_dependency.get(), &visitor);
     }
 
     void Tree::gc_destroy() {
@@ -56,14 +70,13 @@ namespace Psi {
     }
     
     void Tree::complete_main() {
-      TreePtr<CompileImplementation> dependency;
+      DependencyPtr dependency;
       dependency.swap(m_dependency);
       PSI_ASSERT(dependency);
       
-      DependencyVtable *vptr = static_cast<DependencyVtable*>(compile_context().jit_compile(dependency->vtable));
       try {
         m_completion_state = completion_running;
-        vptr->run(vptr, dependency.get(), this);
+        dependency->vptr->run(dependency.get(), this);
         m_completion_state = completion_finished;
       } catch (...) {
         m_completion_state = completion_failed;
@@ -71,15 +84,12 @@ namespace Psi {
       }
     }
 
-    void Tree::throw_circular_exception() {
-    }
-
     /**
-      * \brief Rewrite a term, substituting new trees for existing ones.
-      *
-      * \param location Location to use for error reporting.
-      * \param substitutions Substitutions to make.
-      */
+     * \brief Rewrite a term, substituting new trees for existing ones.
+     *
+     * \param location Location to use for error reporting.
+     * \param substitutions Substitutions to make.
+     */
     TreePtr<> Tree::rewrite(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions) {
       if (!this)
         return TreePtr<>();
@@ -92,15 +102,23 @@ namespace Psi {
         return rewrite_hook(location, substitutions);
     }
 
-    Type::Type(CompileContext& context) : Tree(context) {
+    Type::Type(CompileContext& compile_context, const SourceLocation& location, typename MoveRef<DependencyPtr>::type dependency)
+    : Tree(compile_context, location, move_ref(dependency)) {
+    }
+    
+    Type::Type(const TreePtr<Type>& type, const SourceLocation& location, typename MoveRef<DependencyPtr>::type dependency)
+    : Tree(type, location, move_ref(dependency)) {
+    }
+    
+    Type::Type(CompileContext& compile_context, const SourceLocation& location)
+    : Tree(compile_context, location) {
+    }
+    
+    Type::Type(const TreePtr<Type>& type, const SourceLocation& location)
+    : Tree(type, location) {
     }
 
     Type::~Type() {
-    }
-
-    void Type::gc_visit(GCVisitor& visitor) {
-      Tree::gc_visit(visitor);
-      visitor % type;
     }
 
     EmptyType::EmptyType(CompileContext& compile_context) : Type(compile_context) {

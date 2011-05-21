@@ -513,7 +513,7 @@ namespace Psi {
     FunctionalTypeResult CatchClauseNameType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
       if (parameters.size() != 0)
         throw TvmUserError("catch_type type takes no parameters");
-      return FunctionalTypeResult(Metatype::get(context), false);
+      return FunctionalTypeResult(Metatype::get(context));
     }
 
     CatchClauseNameType::Ptr CatchClauseNameType::get(Context& context) {

@@ -7,101 +7,46 @@
 
 #include <boost/checked_delete.hpp>
 #include <boost/functional/hash.hpp>
-#include <boost/intrusive/list.hpp>
 #include <boost/shared_ptr.hpp>
 
 #include "Assert.hpp"
 #include "Array.hpp"
 
 namespace Psi {
-  /**
-   * \brief Base class for types which should never be constructed.
-   */
-  class NonConstructible {
-  private:
-    NonConstructible();
+  template<typename T>
+  class PointerBase {
+    typedef void (PointerBase::*safe_bool_type) () const;
+    void safe_bool_true() const;
+    
+  protected:
+    T *m_ptr;
+
+    PointerBase() : m_ptr(0) {}
+    PointerBase(T *p) : m_ptr(p) {}
+
+  public:
+    T* get() const {return m_ptr;}
+    T* operator -> () const {return get();}
+    T& operator * () const {return *get();}
+    operator safe_bool_type () const {return get() ? &PointerBase::safe_bool_true : 0;}
+    bool operator ! () const {return !get();}
   };
 
-  /**
-   * \brief Gets a pointer to a containing class from a pointer to a
-   * member.
-   *
-   * Obviously, this requires that the pointer to the member was
-   * obtained from the containing class in order for the result to be
-   * valid.
-   */
   template<typename T, typename U>
-  T* reverse_member_lookup(U *member, U T::*member_ptr) {
-    std::ptrdiff_t diff = reinterpret_cast<char*>(&(static_cast<T*>(NULL)->*member_ptr)) - static_cast<char*>(NULL);
-    T *ptr = reinterpret_cast<T*>(reinterpret_cast<char*>(member) - diff);
-    PSI_ASSERT(&(ptr->*member_ptr) == member);
-    return ptr;
+  bool operator == (const PointerBase<T>& lhs, const PointerBase<U>& rhs) {
+    return lhs.get() == rhs.get();
   }
 
-  template<typename ForwardIterator, typename Compare>
-  bool is_sorted(ForwardIterator first, ForwardIterator last, Compare cmp) {
-    if (first == last)
-      return true;
+  template<typename T, typename U>
+  bool operator != (const PointerBase<T>& lhs, const PointerBase<U>& rhs) {
+    return lhs.get() != rhs.get();
+  }
 
-    ForwardIterator next = first;
-    for (++next; next != last; first = next, ++next) {
-      if (!cmp(*first, *next))
-        return false;
-    }
+  template<typename T, typename U>
+  bool operator < (const PointerBase<T>& lhs, const PointerBase<U>& rhs) {
+    return lhs.get() < rhs.get();
+  }
   
-    return true;
-  }
-
-  template<typename ForwardIterator, typename Compare>
-  bool is_sorted(ForwardIterator first, ForwardIterator last) {
-    return is_sorted(first, last, std::less<typename ForwardIterator::value_type>());
-  }
-
-  template<typename T>
-  class UniquePtr {
-    typedef void (UniquePtr::*SafeBoolType)() const;
-    void safe_bool_true() const {}
-  public:
-    explicit UniquePtr(T *p=0) : m_p(p) {}
-    ~UniquePtr() {delete m_p;}
-
-    void reset(T *p=0) {
-      delete m_p;
-      m_p = p;
-    }
-
-    T* release() {
-      T *p = m_p;
-      m_p = 0;
-      return p;
-    }
-
-    T* operator -> () const {return m_p;}
-    T& operator * () const {return *m_p;}
-    T* get() const {return m_p;}
-    operator SafeBoolType () const {return m_p ? &UniquePtr::safe_bool_true : 0;}
-
-    void swap(UniquePtr& o) {std::swap(m_p, o.m_p);}
-
-  private:
-    UniquePtr(const UniquePtr&);
-    T *m_p;
-  };
-
-  template<typename T> void swap(UniquePtr<T>& a, UniquePtr<T>& b) {a.swap(b);}
-
-  /**
-   * Version of boost::intrusive::list which deletes all owned objects
-   * on destruction.
-   */
-  template<typename T>
-  class UniqueList : public boost::intrusive::list<T> {
-  public:
-    ~UniqueList() {
-      this->clear_and_dispose(boost::checked_deleter<T>());
-    }
-  };
-
   template<typename T, typename U>
   struct checked_cast_impl;
 
@@ -163,59 +108,6 @@ namespace Psi {
 #ifdef PSI_DEBUG
     virtual ~CheckedCastBase();
 #endif
-  };
-
-  /**
-   * An adapter class used to make a static class look like a
-   * pointer. The star and arrow operators return a pointer to an
-   * internal structure which provides custom adapter functions.
-   *
-   * \tparam T Wrapper type. This should have a member \c GetType
-   * which is the type returned by the get function (without the
-   * pointer). This type should be copy-constructible.
-   */
-  template<typename T>
-  class PtrAdapter {
-    template<typename> friend class PtrAdapter;
-    typedef void (PtrAdapter::*SafeBoolType)() const;
-    void safe_bool_true() const {}
-  public:
-    typedef PtrAdapter<T> ThisType;
-    typedef T WrapperType;
-    typedef typename T::GetType GetType;
-
-    PtrAdapter() {}
-    PtrAdapter(const WrapperType& wrapper) : m_wrapper(wrapper) {}
-    template<typename U> PtrAdapter(const PtrAdapter<U>& src) : m_wrapper(src.m_wrapper) {}
-
-    GetType* get() const {return m_wrapper.get();}
-    const WrapperType& operator * () const {return m_wrapper;}
-    const WrapperType* operator -> () const {return &m_wrapper;}
-
-    bool operator ! () const {return !get();}
-    bool operator == (const GetType *ptr) const {return ptr == get();}
-    bool operator != (const GetType *ptr) const {return ptr != get();}
-    bool operator < (const GetType *ptr) const {return ptr < get();}
-    bool operator == (const ThisType& ptr) const {return get() == ptr.get();}
-    bool operator != (const ThisType& ptr) const {return get() != ptr.get();}
-    bool operator < (const ThisType& ptr) const {return get() < ptr.get();}
-
-  private:
-    WrapperType m_wrapper;
-  };
-
-  /**
-   * Derived from PtrAdapter - also includes an implicit cast to
-   * pointer operation.
-   */
-  template<typename T>
-  class PtrDecayAdapter : public PtrAdapter<T> {
-  public:
-    PtrDecayAdapter() {}
-    PtrDecayAdapter(const T& wrapper) : PtrAdapter<T>(wrapper) {}
-    template<typename U> PtrDecayAdapter(const PtrAdapter<U>& src) : PtrAdapter<T>(src) {}
-
-    operator typename T::GetType* () const {return this->get();}
   };
 
   /**

@@ -24,7 +24,7 @@ namespace Psi {
   template<typename T>
   struct MoveRefImpl {
     T *ptr;
-    MoveRefImpl(T& x) : ptr(&x) {}
+    explicit MoveRefImpl(T& x) : ptr(&x) {}
     operator const T& () {return *ptr;}
   };
   
@@ -202,6 +202,10 @@ namespace Psi {
     template<typename U>
     void reset(U *ptr) {
       SharedPtr<T>(ptr).swap(*this);
+    }
+
+    void reset() {
+      SharedPtr<T>().swap(*this);
     }
 
     bool operator ! () const {return !get();}
@@ -578,6 +582,12 @@ namespace Psi {
         ++i;
       }
       return begin() + dist;
+    }
+
+    void assign(size_type n, const T& x) {
+      clear();
+      for (size_type i = 0; i != n; ++i)
+        push_back(x);
     }
 
     iterator erase(iterator first, iterator last) {

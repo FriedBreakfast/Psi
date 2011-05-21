@@ -1,5 +1,5 @@
 #ifndef HPP_PSI_GARBAGE_COLLECTOR
-#define HPP_PSI_GARBAGE_COLLECTON
+#define HPP_PSI_GARBAGE_COLLECTOR
 
 #include "Assert.hpp"
 
@@ -18,6 +18,7 @@ namespace Psi {
   public:
     GCPtr() {}
     GCPtr(T *ptr) : BaseType(ptr) {}
+    GCPtr(T *ptr, bool add_ref) : BaseType(ptr, add_ref) {}
     template<typename U> GCPtr(const GCPtr<U>& src) : BaseType(src.get()) {}
     template<typename U> GCPtr& operator = (const GCPtr<U>& src) {this->reset(src.get()); return *this;}
   };

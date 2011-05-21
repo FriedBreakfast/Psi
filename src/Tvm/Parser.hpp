@@ -4,7 +4,7 @@
 #include <string>
 
 #include "Core.hpp"
-#include "../Utility.hpp"
+#include "ParserUtility.hpp"
 
 namespace Psi {
   namespace Tvm {

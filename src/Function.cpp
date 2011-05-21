@@ -21,7 +21,7 @@ namespace Psi {
 
     class EvaluateContextOneName : public CompileImplementation {
       virtual void gc_visit(GCVisitor& visitor) {
-        visitor % name % next;
+        visitor % next;
       }
 
       struct Callback {
@@ -52,7 +52,7 @@ namespace Psi {
 
     EvaluateContextWrapper<EvaluateContextOneName::Callback, EvaluateContextOneName> EvaluateContextOneName::m_vtable;
 
-    class FunctionBodyCompiler : public DependencyBase<FunctionBodyCompiler, Tree> {
+    class FunctionBodyCompiler : public DependencyBase<FunctionBodyCompiler, Function> {
       TreePtr<CompileImplementation> m_body_context;
       SharedPtr<Parser::TokenExpression> m_body;
 
@@ -69,7 +69,7 @@ namespace Psi {
 
       void run(const TreePtr<Function>& function) {
         ArrayList<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(m_body->text);
-        TreePtr<> body_tree = compile_statement_list(statements, function->compile_context(), m_body_context, function->location());
+        TreePtr<> body_tree = compile_statement_list(statements, m_body_context, function->location());
         function->body = body_tree;
         body_tree->dependency_complete();
       }
@@ -97,7 +97,7 @@ namespace Psi {
         String expr_name = named_expr.name ? String(named_expr.name->begin, named_expr.name->end) : String();
         SourceLocation argument_location(named_expr.location, make_logical_location(location.logical, expr_name));
 
-        TreePtr<> argument_type = compile_expression(named_expr.expression, compile_context, argument_context, argument_location.logical);
+        TreePtr<> argument_type = compile_expression(named_expr.expression, argument_context, argument_location.logical);
         TreePtr<Type> cast_argument_type = dynamic_pointer_cast<Type>(argument_type);
         if (!cast_argument_type)
           compile_context.error_throw(argument_location, "Function argument type expression does not evaluate to a type");
@@ -112,7 +112,7 @@ namespace Psi {
       }
 
       if (parsed_arguments.return_type) {
-        TreePtr<> result_type = compile_expression(parsed_arguments.return_type, compile_context, argument_context, location.logical);
+        TreePtr<> result_type = compile_expression(parsed_arguments.return_type, argument_context, location.logical);
         TreePtr<Type> cast_result_type = dynamic_pointer_cast<Type>(result_type);
         if (!cast_result_type)
           compile_context.error_throw(location, "Function result type expression does not evaluate to a type");
@@ -142,34 +142,37 @@ namespace Psi {
 
       CompileFunctionCommonResult common = compile_function_common(parameters->text, compile_context, evaluate_context, location);
 
-      TreePtr<Function> function(new Function(common.type, location));
-      function->arguments.reserve(common.type->arguments.size());
-
+      std::vector<TreePtr<FunctionArgument> > argument_trees;
       std::map<TreePtr<>, TreePtr<> > argument_substitutions;
+
       for (std::vector<TreePtr<FunctionTypeArgument> >::iterator ii = common.type->arguments.begin(), ie = common.type->arguments.end(); ii != ie; ++ii) {
         TreePtr<> arg_type = (*ii)->type()->rewrite(location, argument_substitutions);
         TreePtr<Type> cast_arg_type = dynamic_pointer_cast<Type>(arg_type);
         if (!cast_arg_type)
           compile_context.error_throw(location, "Rewritten function argument type is not a type");
         TreePtr<FunctionArgument> arg(new FunctionArgument(cast_arg_type, (*ii)->location()));
-        function->arguments.push_back(arg);
+        argument_trees.push_back(arg);
         argument_substitutions[*ii] = arg;
       }
       TreePtr<> result_type = common.type->result_type->rewrite(location, argument_substitutions);
-      function->result_type = dynamic_pointer_cast<Type>(result_type);
-      if (!function->result_type)
+      TreePtr<Type> cast_result_type = dynamic_pointer_cast<Type>(result_type);
+      if (!cast_result_type)
         compile_context.error_throw(location, "Rewritten function result type is not a type");
 
       std::map<String, TreePtr<> > argument_values;
       for (std::map<String, unsigned>::iterator ii = common.named_arguments.begin(), ie = common.named_arguments.end(); ii != ie; ++ii)
-        argument_values[ii->first] = function->arguments[ii->second];
+        argument_values[ii->first] = argument_trees[ii->second];
 
       TreePtr<CompileImplementation> body_context = evaluate_context_dictionary(compile_context, location, argument_values, evaluate_context);
-      DependencyPtr body_compiler(new FunctionBodyCompiler(compile_context, location, body_context, function, body));
+      DependencyPtr body_compiler(new FunctionBodyCompiler(body_context, body));
+      TreePtr<Function> function(new Function(common.type, location, body_compiler));
+      function->result_type = cast_result_type;
+      function->arguments.swap(argument_trees);
 
       return function;
     }
 
+#if 0
     /**
      * \brief Callback to use for constructing interfaces which define functions.
      */
@@ -200,5 +203,6 @@ namespace Psi {
       type->macro = make_interface(compile_context, "function", callback);
       return TreePtr<>(new EmptyValue(type));
     }
+#endif
   }
 }

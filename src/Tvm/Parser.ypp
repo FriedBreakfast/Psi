@@ -33,9 +33,9 @@
 #define YYSTACK_USE_ALLOCA 1
 
 using namespace Psi;
-using namespace Psi::ParserUtility;
 using namespace Psi::Tvm;
 using namespace Psi::Tvm::Parser;
+using namespace Psi::Tvm::ParserUtility;
 
 namespace {
   struct Value {
