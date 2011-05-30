@@ -2,9 +2,12 @@
 #define HPP_PSI_CPP_COMPILER
 
 #ifdef __GNUC__
+#define PSI_STD std
+#define PSI_STDINC ""
 #define PSI_ALIGNOF(x) __alignof__(x)
 #define PSI_ATTRIBUTE(x) __attribute__(x)
 #define PSI_ALIGNED(x) aligned(x)
+#define PSI_ALIGNED_MAX aligned(__BIGGEST_ALIGNMENT__)
 #define PSI_NORETURN noreturn
 #if (__GNUC__ >= 4) && (__GNUC_MINOR__ >= 5)
 #define PSI_UNREACHABLE() __builtin_unreachable()

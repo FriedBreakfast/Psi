@@ -5,7 +5,6 @@
 #include <boost/function.hpp>
 #include <boost/shared_ptr.hpp>
 
-#include "GarbageCollection.hpp"
 #include "Compiler.hpp"
 
 namespace Psi {
@@ -15,42 +14,40 @@ namespace Psi {
       void *m_jit_ptr;
     public:
       GlobalTree(const TreePtr<Type>&, const SourceLocation&);
-      GlobalTree(const TreePtr<Type>&, const SourceLocation&, DependencyPtr&);
+
+      template<typename Visitor> static void visit_impl(GlobalTree&, Visitor&);
     };
     
     struct ExternalGlobalTree : GlobalTree {
       ExternalGlobalTree(const TreePtr<Type>&, const SourceLocation&);
-      ExternalGlobalTree(const TreePtr<Type>&, const SourceLocation&, DependencyPtr&);
       String symbol_name;
     };
     
     /**
      * \brief Tree for a statement, which should be part of a block.
      */
-    class Statement : public Tree {
-    protected:
-      virtual void gc_visit(GCVisitor&);
-
+    class Statement : public Expression {
     public:
-      Statement(const TreePtr<>&, const SourceLocation&);
+      Statement(CompileContext&, const SourceLocation&);
       virtual ~Statement();
 
       TreePtr<> value;
+
+      template<typename Visitor> static void visit_impl(Statement&, Visitor&);
+      void complete_statement();
     };
 
     /**
      * \brief Tree for a block of code.
      */
     class Block : public Tree {
-    protected:
-      virtual void gc_visit(GCVisitor&);
-
     public:
       Block(const TreePtr<Type>&, const SourceLocation&);
-      Block(const TreePtr<Type>&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
       virtual ~Block();
 
-      ArrayList<TreePtr<Statement> > statements;
+      PSI_STD::vector<TreePtr<Statement> > statements;
+
+      template<typename Visitor> static void visit_impl(Block&, Visitor&);
     };
 
     class StructType : public Type {
@@ -65,62 +62,54 @@ namespace Psi {
       virtual ~UnionType();
     };
 
-    class FunctionTypeArgument : public Tree {
-    protected:
-      virtual void gc_visit(GCVisitor&);
-
+    class FunctionTypeArgument : public Value {
     public:
       FunctionTypeArgument(const TreePtr<Type>&, const SourceLocation&);
       virtual ~FunctionTypeArgument();
     };
 
     class FunctionType : public Type {
-    protected:
-      virtual void gc_visit(GCVisitor&);
-
     public:
       FunctionType(CompileContext&, const SourceLocation&);
-      FunctionType(CompileContext&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
       virtual ~FunctionType();
-      virtual TreePtr<> rewrite_hook(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
+      virtual TreePtr<> rewrite_hook(const SourceLocation&, const Map<TreePtr<>, TreePtr<> >&);
 
-      TreePtr<Type> argument_type_after(const SourceLocation&, const ArrayList<TreePtr<> >&);
-      TreePtr<Type> result_type_after(const SourceLocation&, const ArrayList<TreePtr<> >&);
+      TreePtr<Type> argument_type_after(const SourceLocation&, const List<TreePtr<> >&);
+      TreePtr<Type> result_type_after(const SourceLocation&, const List<TreePtr<> >&);
 
-      ArrayList<TreePtr<FunctionTypeArgument> > arguments;
+      PSI_STD::vector<TreePtr<FunctionTypeArgument> > arguments;
       TreePtr<Type> result_type;
+
+      template<typename Visitor> static void visit_impl(FunctionType&, Visitor&);
     };
 
-    class FunctionArgument : public Tree {
+    class FunctionArgument : public Value {
     public:
       FunctionArgument(const TreePtr<Type>&, const SourceLocation&);
       virtual ~FunctionArgument();
     };
 
     class Function : public Tree {
-    protected:
-      virtual void gc_visit(GCVisitor&);
-
     public:
       Function(const TreePtr<FunctionType>&, const SourceLocation&);
-      Function(const TreePtr<FunctionType>&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
+      Function(const TreePtr<FunctionType>&, const SourceLocation&, DependencyPtr&);
       virtual ~Function();
 
-      ArrayList<TreePtr<FunctionArgument> > arguments;
+      PSI_STD::vector<TreePtr<FunctionArgument> > arguments;
       TreePtr<> result_type;
       TreePtr<> body;
+
+      template<typename Visitor> static void visit_impl(Function&, Visitor&);
     };
 
     class TryFinally : public Tree {
-    protected:
-      virtual void gc_visit(GCVisitor&);
-
     public:
       TryFinally(const TreePtr<Type>&, const SourceLocation&);
-      TryFinally(const TreePtr<Type>&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
       virtual ~TryFinally();
 
       TreePtr<> try_block, finally_block;
+
+      template<typename Visitor> static void visit_impl(TryFinally&, Visitor&);
     };
   }
 }

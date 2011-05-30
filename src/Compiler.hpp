@@ -60,81 +60,81 @@ namespace Psi {
     class CompileContext;
 
     template<typename T=Tree>
-    class TreePtr : public GCPtr<T> {
-      typedef GCPtr<T> BaseType;
+    class TreePtr : public PointerBase<T> {
     public:
       TreePtr() {}
-      TreePtr(T *ptr) : BaseType(ptr) {}
-      TreePtr(T *ptr, bool add_ref) : BaseType(ptr, add_ref) {}
-      template<typename U> TreePtr(const TreePtr<U>& src) : BaseType(src.get()) {}
+      explicit TreePtr(T *ptr) {this->reset(ptr, true);}
+      TreePtr(T *ptr, bool add_ref) {this->reset(ptr, add_ref);}
+      TreePtr(const TreePtr& src) : PointerBase<T>() {this->reset(src.get());}
+      template<typename U> TreePtr(const TreePtr<U>& src) : PointerBase<T>() {this->reset(src.get());}
+      TreePtr& operator = (const TreePtr& src) {this->reset(src.get()); return *this;}
       template<typename U> TreePtr& operator = (const TreePtr<U>& src) {this->reset(src.get()); return *this;}
 
-      friend void gc_visit(TreePtr<T>& ptr, GCVisitor& visitor) {
-        visitor.visit_ptr(ptr);
+      void swap(TreePtr<T>& other) {
+        std::swap(this->m_ptr, other.m_ptr);
       }
-      
+
       T* release() {
-        T *ptr = this->get();
-        intrusive_ptr_add_ref(ptr);
-        this->reset();
+        T *ptr = this->m_ptr;
+        this->m_ptr = 0;
         return ptr;
       }
+
+      void reset(T* =0, bool=true);
     };
 
-    template<typename T, typename U>
-    TreePtr<T> dynamic_pointer_cast(const TreePtr<U>& ptr) {
-      return TreePtr<T>(dynamic_cast<T*>(ptr.get()));
-    }
-    
-    template<typename T, typename U>
-    TreePtr<T> checked_pointer_cast(const TreePtr<U>& ptr) {
-      PSI_ASSERT(dynamic_cast<T*>(ptr.get()) == ptr.get());
-      return TreePtr<T>(static_cast<T*>(ptr.get()));
-    }
+    /**
+     * \brief Single inheritance dispatch table base.
+     */
+    struct SIVtable {
+      const SIVtable *super;
+      const char *classname;
+      bool abstract;
+    };
+
+#define PSI_COMPILER_SI(classname,super) {reinterpret_cast<const SIVtable*>(super),classname,false}
+#define PSI_COMPILER_ABSTRACT(classname,super) {reinterpret_cast<const SIVtable*>(super),classname,true}
+
+    /**
+     * \brief Single inheritance base.
+     */
+    class SIBase {
+      friend bool si_is_a(SIBase*, const SIVtable*);
+      
+    protected:
+      const SIVtable *m_vptr;
+    };
+
+    bool si_is_a(SIBase*, const SIVtable*);
+
+    class VisitorPlaceholder {
+    public:
+      template<typename T>
+      VisitorPlaceholder& operator () (const char */*name*/, T& /*member*/) {
+        return *this;
+      }
+    };
 
     struct Dependency;
 
     struct DependencyVtable {
       void (*run) (Dependency*, Tree*);
-      void (*gc_visit) (Dependency*, GCVisitor*);
+      void (*gc_visit) (Dependency*);
       void (*destroy) (Dependency*);
     };
 
-    struct Dependency {
-      DependencyVtable *vptr;
-    };
-
-    /**
-     * \brief Base class to simplify implementing Dependency in C++.
-     */
-    template<typename Derived, typename TreeType>
-    class DependencyBase : public Dependency {
-      static void run_impl(Dependency *self, Tree *target) {
-        TreePtr<TreeType> cast_target(checked_cast<TreeType*>(target));
-        static_cast<Derived*>(self)->run(cast_target);
-      }
-
-      static void gc_visit_impl(Dependency *self, GCVisitor *visitor) {
-        static_cast<Derived*>(self)->gc_visit(*visitor);
-      }
-
-      static void destroy_impl(Dependency *self) {
-        delete static_cast<Derived*>(self);
-      }
-
-      static DependencyVtable m_vtable;
+    class Dependency {
+    protected:
+      const DependencyVtable *m_vptr;
 
     public:
-      DependencyBase() {
-        this->vptr = &m_vtable;
+      void run(Tree *tree) {
+        m_vptr->run(this, tree);
       }
-    };
 
-    template<typename Derived, typename TreeType>
-    DependencyVtable DependencyBase<Derived, TreeType>::m_vtable = {
-      &DependencyBase<Derived, TreeType>::run_impl,
-      &DependencyBase<Derived, TreeType>::gc_visit_impl,
-      &DependencyBase<Derived, TreeType>::destroy_impl
+      void destroy() {
+        m_vptr->destroy(this);
+      }
     };
 
     class DependencyPtr : public PointerBase<Dependency> {
@@ -143,74 +143,265 @@ namespace Psi {
     public:
       DependencyPtr() {}
       DependencyPtr(Dependency *ptr) : PointerBase<Dependency>(ptr) {}
-      DependencyPtr(typename MoveRef<DependencyPtr>::type ptr) {std::swap(m_ptr, move_deref(ptr).m_ptr);}
       ~DependencyPtr() {clear();}
-      void clear() {if (m_ptr) {m_ptr->vptr->destroy(m_ptr); m_ptr = 0;}}
+      void clear() {if (m_ptr) {m_ptr->destroy(); m_ptr = 0;}}
       void swap(DependencyPtr& src) {std::swap(m_ptr, src.m_ptr);}
     };
 
-    /**
-     * \brief Base class for all types used to represent code and data.
-     */
-    class Tree : public GCBase {
-      enum CompletionState {
+    class CompletionState : boost::noncopyable {
+      enum State {
         completion_constructed,
         completion_running,
         completion_finished,
         completion_failed
       };
 
-      CompileContext *m_compile_context;
-      SourceLocation m_location;
-      TreePtr<Type> m_type;
-      CompletionState m_completion_state;
-      DependencyPtr m_dependency;
-      void complete_main();
+      char m_state;
+      
+      template<typename A, typename B>
+      void complete_main(const A& body, const B& cleanup) {
+        try {
+          m_state = completion_running;
+          body();
+          m_state = completion_finished;
+        } catch (...) {
+          m_state = completion_failed;
+          cleanup();
+          throw CompileException();
+        }
+        cleanup();
+      }
 
-    protected:
-      virtual void gc_visit(GCVisitor&);
-      virtual void gc_destroy();
-      virtual TreePtr<> rewrite_hook(const SourceLocation& location, const std::map<TreePtr<>, TreePtr<> >& substitutions);
+      struct EmptyCallback {void operator () () const {}};
 
     public:
-      Tree(CompileContext&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
-      Tree(const TreePtr<Type>&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
+      CompletionState() : m_state(completion_constructed) {}
+
+      template<typename A, typename B>
+      void complete(CompileContext&, const SourceLocation&, bool, const A&, const B&);
+
+      template<typename A>
+      void complete(CompileContext& compile_context, const SourceLocation& location, bool dependency, const A& body) {
+        complete(compile_context, location, dependency, body, EmptyCallback());
+      }
+    };
+
+    struct TreeVtable {
+      SIVtable base;
+      void (*destroy) (Tree*);
+      void (*gc_increment) (Tree*);
+      void (*gc_decrement) (Tree*);
+      void (*gc_clear) (Tree*);
+      void (*complete_callback) (Tree*);
+    };
+
+    class Tree : public SIBase {
+      template<typename> friend class TreePtr;
+
+      std::size_t m_reference_count;
+      CompileContext *m_compile_context;
+      SourceLocation m_location;
+      CompletionState m_completion_state;
+
+      const TreeVtable* derived_vptr() {return reinterpret_cast<const TreeVtable*>(m_vptr);}
+    public:
+      static const TreeVtable vtable;
+
       Tree(CompileContext&, const SourceLocation&);
-      Tree(const TreePtr<Type>&, const SourceLocation&);
-      virtual ~Tree() = 0;
+      
+      void destroy() {derived_vptr()->destroy(this);}
+      void gc_increment() {derived_vptr()->gc_increment(this);}
+      void gc_decrement() {derived_vptr()->gc_decrement(this);}
+      void gc_clear() {derived_vptr()->gc_clear(this);}
 
       /// \brief Return the compilation context this tree belongs to.
       CompileContext& compile_context() const {return *m_compile_context;}
       /// \brief Get the location associated with this tree
       const SourceLocation& location() const {return m_location;}
-      /// \brief Get the type of this tree
-      const TreePtr<Type>& type() const {return m_type;}
-      void complete();
-      void dependency_complete();
-      TreePtr<> rewrite(const SourceLocation&, const std::map<TreePtr<>, TreePtr<> >&);
+
+      void complete(bool=false);
+
+      template<typename Visitor> static void visit_impl(Tree&, Visitor&);
+      static void complete_callback_impl(Tree&);
+    };
+
+    template<typename T>
+    T* tree_cast(Tree *ptr) {
+      PSI_ASSERT(si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)));
+      return static_cast<T*>(ptr);
+    }
+
+    template<typename T>
+    T* dyn_tree_cast(Tree *ptr) {
+      return si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)) ? static_cast<T*>(ptr) : 0;
+    }
+
+    template<typename T, typename U>
+    TreePtr<T> treeptr_cast(const TreePtr<U>& ptr) {
+      return TreePtr<T>(tree_cast<T>(ptr.get()));
+    }
+
+    template<typename T, typename U>
+    TreePtr<T> dyn_treeptr_cast(const TreePtr<U>& ptr) {
+      return TreePtr<T>(dyn_tree_cast<T>(ptr.get()));
+    }
+
+    template<typename Derived, typename Impl=Derived>
+    struct TreeWrapper {
+      static void destroy(Tree *self) {
+        delete static_cast<Derived*>(self);
+      }
+
+      static void gc_increment(Tree *self) {
+        VisitorPlaceholder p;
+        Impl::visit_impl(*static_cast<Derived*>(self), p);
+      }
+
+      static void gc_decrement(Tree *self) {
+        VisitorPlaceholder p;
+        Impl::visit_impl(*static_cast<Derived*>(self), p);
+      }
+
+      static void gc_clear(Tree *self) {
+        VisitorPlaceholder p;
+        Impl::visit_impl(*static_cast<Derived*>(self), p);
+      }
+
+      static void complete_callback(Tree *self) {
+        Impl::complete_callback_impl(*static_cast<Derived*>(self));
+      }
+    };
+
+#define PSI_COMPILER_TREE(derived,name,super) { \
+    PSI_COMPILER_SI(name,super), \
+    &TreeWrapper<derived>::destroy, \
+    &TreeWrapper<derived>::gc_increment, \
+    &TreeWrapper<derived>::gc_decrement, \
+    &TreeWrapper<derived>::gc_clear, \
+    &TreeWrapper<derived>::complete_callback \
+  }
+
+    template<typename T>
+    void TreePtr<T>::reset(T *ptr, bool add_ref) {
+      if (this->m_ptr) {
+        if (--this->m_ptr->m_reference_count)
+          this->m_ptr->destroy();
+        this->m_ptr = 0;
+      }
+
+      if (ptr) {
+        this->m_ptr = ptr;
+        if (add_ref)
+          ++this->m_ptr->m_reference_count;
+      }
+    }
+
+    /**
+     * \brief Base class to simplify implementing Dependency in C++.
+     */
+    template<typename Derived, typename TreeType>
+    struct DependencyWrapper : NonConstructible {
+      static void run(Dependency *self, Tree *target) {
+        Derived::run_impl(*static_cast<Derived*>(self), TreePtr<TreeType>(tree_cast<TreeType>(target)));
+      }
+
+      static void gc_visit(Dependency *self) {
+        VisitorPlaceholder p;
+        Derived::visit_impl(*static_cast<Derived*>(self), p);
+      }
+
+      static void destroy(Dependency *self) {
+        delete static_cast<Derived*>(self);
+      }
+    };
+
+#define PSI_DEPENDENCY(derived,tree) { \
+    &DependencyWrapper<derived, tree>::run, \
+    &DependencyWrapper<derived, tree>::gc_visit, \
+    &DependencyWrapper<derived, tree>::destroy \
+  }
+
+    class Expression;
+
+    struct ExpressionVtable {
+      TreeVtable base;
+      void (*match) (Expression*,Expression*);
+      void (*rewrite) (Expression*);
     };
 
     /**
-     * \brief Base class for type trees.
+     * \brief A tree which can participate in pattern matching.
+     *
+     * This can then be used to find interfaces.
      */
-    class Type : public Tree {
-    protected:
-      Type(CompileContext&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
-      Type(const TreePtr<Type>&, const SourceLocation&, typename MoveRef<DependencyPtr>::type);
-      Type(CompileContext&, const SourceLocation&);
-      Type(const TreePtr<Type>&, const SourceLocation&);
+    class Expression : public Tree {
+      TreePtr<Expression> m_meta;
+      
     public:
-      virtual ~Type();
+      static const SIVtable vtable;
+      
+      Expression(CompileContext&, const SourceLocation&);
+
+      const TreePtr<Expression>& meta() const {return m_meta;}
     };
 
-    class CompileImplementation : public Tree {
-    protected:
-      virtual void gc_visit(GCVisitor&);
-    public:
-      CompileImplementation(CompileContext&, const SourceLocation&);
-      CompileImplementation(CompileContext&, const SourceLocation&, DependencyPtr&);
-      TreePtr<> vtable;
+    template<typename Derived>
+    struct ExpressionWrapper : NonConstructible {
+      static void match(Expression *left, Expression *right) {
+        Derived::match_impl(*treeptr_cast<Derived*>(left), *treeptr_cast<Derived*>(right));
+      }
+
+      static void rewrite(Expression *self) {
+        Derived::rewrite_impl(*treeptr_cast<Derived*>(self));
+      }
     };
+
+#define PSI_COMPILER_EXPRESSION(derived,name,super) { \
+    PSI_COMPILER_TREE(derived,name,super), \
+    &ExpressionWrapper<derived>::match \
+  }
+
+    class Type;
+
+    struct ValueVtable {
+      ExpressionVtable base;
+    };
+
+    class Value : public Expression {
+      TreePtr<Type> m_type;
+
+    public:
+      static const SIVtable vtable;
+
+      /// \brief Get the type of this tree
+      const TreePtr<Type>& type() const {return m_type;}
+      
+      template<typename Visitor> static void visit_impl(Value&, Visitor&);
+    };
+
+#define PSI_COMPILER_VALUE(derived,name,super) { \
+    PSI_COMPILER_PATTERN_TREE(derived,name,super,) \
+  }
+
+    struct TypeVtable {
+      ExpressionVtable base;
+      Type* (*rewrite) (Type*, const SourceLocation*, const Map<TreePtr<Type>, TreePtr<Type> >* substitutions);
+    };
+
+    class Type : public Expression {
+      const TypeVtable* derived_vptr() {return reinterpret_cast<const TypeVtable*>(m_vptr);}
+    public:
+      static const SIVtable vtable;
+
+      Type(CompileContext&, const SourceLocation&);
+
+      TreePtr<Type> rewrite(const SourceLocation&, const Map<TreePtr<Type>, TreePtr<Type> >&);
+    };
+
+#define PSI_COMPILER_TYPE(derived,name,super) { \
+    PSI_COMPILER_PATTERN_TREE(derived,name,super), \
+    &TypeWrapper<derived>::rewrite \
+  }
 
     class GlobalTree;
     class Interface;
@@ -218,7 +409,6 @@ namespace Psi {
     class CompileContext {
       friend class Tree;
 
-      GCPool m_gc_pool;
       std::ostream *m_error_stream;
       bool m_error_occurred;
 
@@ -241,308 +431,231 @@ namespace Psi {
       /// \brief Returns true if an error has occurred during compilation.
       bool error_occurred() const {return m_error_occurred;}
       
-      void* jit_compile(const TreePtr<>&);
-
       void error(const SourceLocation&, const std::string&, unsigned=0);
       void error_throw(const SourceLocation&, const std::string&, unsigned=0) PSI_ATTRIBUTE((PSI_NORETURN));
 
       template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, to_str(message), flags);}
       template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, to_str(message), flags);}
 
+      void* jit_compile(const TreePtr<GlobalTree>&);
+
       TreePtr<GlobalTree> tree_from_address(const SourceLocation&, const TreePtr<Type>&, void*);
       
-      const TreePtr<CompileImplementation>& statement_dependency();
       const TreePtr<Interface>& macro_interface();
       const TreePtr<Type>& empty_type();
     };
-    
-    template<typename T>
-    class CompileImplementationRef {
-      typedef void (CompileImplementationRef::*safe_bool_type) () const;
-      void safe_bool_true() const {}
 
-    public:
-      typedef T VtableType;
-      T *vptr;
-      TreePtr<CompileImplementation> data;
+    template<typename A, typename B>
+    void CompletionState::complete(CompileContext& compile_context, const SourceLocation& location, bool dependency, const A& body, const B& cleanup) {
+      switch (m_state) {
+      case completion_constructed: complete_main(body, cleanup); break;
+      case completion_running:
+        if (!dependency)
+          compile_context.error_throw(location, "Circular dependency during code evaluation");
+        break;
 
-      CompileImplementationRef() : vptr(NULL) {}
-
-      operator safe_bool_type () const {return vptr ? safe_bool_true : NULL;}
-      bool operator ! () const {return !vptr;}
-    };
-
-    template<typename T>
-    T make_compile_interface(typename T::VtableType *vptr, const TreePtr<>& data) {
-      T x;
-      x.vptr = vptr;
-      x.data = data;
-      return x;
+      case completion_finished: break;
+      case completion_failed: throw CompileException();
+      default: PSI_FAIL("unknown future state");
+      }
     }
-    
-    class EvaluateContextRef;
-    class MacroRef;
 
+    class Macro;
+    class EvaluateContext;
+    
     /**
      * \brief Low-level macro interface.
      *
-     * \see MacroRef
+     * \see Macro
      * \see MacroWrapper
      */
     struct MacroVtable {
-      Tree* (*evaluate) (MacroVtable*, CompileImplementation*, Tree*, const ArrayList<SharedPtr<Parser::Expression> >*, CompileImplementation*, const SourceLocation*);
-      Tree* (*dot) (MacroVtable*, CompileImplementation*, Tree*, const SharedPtr<Parser::Expression>*,  CompileImplementation*, const SourceLocation*);
+      TreeVtable base;
+      Expression* (*evaluate) (Macro*, Expression*, const void*, void*, EvaluateContext*, const SourceLocation*);
+      Expression* (*dot) (Macro*, Expression*, const SharedPtr<Parser::Expression>*,  EvaluateContext*, const SourceLocation*);
     };
 
-    /**
-     * \brief C++ wrapper around the MacroVtable type.
-     */
-    struct MacroRef : CompileImplementationRef<MacroVtable> {
-      TreePtr<> evaluate(const TreePtr<>& value,
-                         const ArrayList<SharedPtr<Parser::Expression> >& parameters,
-                         const TreePtr<CompileImplementation>& evaluate_context,
-                         const SourceLocation& location) const {
-        return TreePtr<>(vptr->evaluate(vptr, data.get(), value.get(), &parameters, evaluate_context.get(), &location), false);
+    class Macro : public Tree {
+      const MacroVtable *derived_vptr() {return reinterpret_cast<const MacroVtable*>(m_vptr);}
+    public:
+      static const MacroVtable vtable;
+
+      Macro(CompileContext&, const SourceLocation&);
+
+      TreePtr<Expression> evaluate(const TreePtr<Expression>& value,
+                                   const List<SharedPtr<Parser::Expression> >& parameters,
+                                   const TreePtr<EvaluateContext>& evaluate_context,
+                                   const SourceLocation& location) {
+        return TreePtr<Expression>(derived_vptr()->evaluate(this, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
       }
 
-      TreePtr<> dot(const TreePtr<>& value,
-                    const SharedPtr<Parser::Expression>& parameter,
-                    const TreePtr<CompileImplementation>& evaluate_context,
-                    const SourceLocation& location) const {
-        return TreePtr<>(vptr->dot(vptr, data.get(), value.get(), &parameter, evaluate_context.get(), &location), false);
+      TreePtr<Expression> dot(const TreePtr<Expression>& value,
+                              const SharedPtr<Parser::Expression>& parameter,
+                              const TreePtr<EvaluateContext>& evaluate_context,
+                              const SourceLocation& location) {
+        return TreePtr<Expression>(derived_vptr()->dot(this, value.get(), &parameter, evaluate_context.get(), &location), false);
       }
     };
-    
+
     /**
      * \brief Wrapper to simplify implementing MacroVtable in C++.
      */
-    template<typename Callback, typename TreeType>
-    class MacroWrapper : public MacroVtable {
-      static Tree* evaluate_impl (MacroVtable *self,
-                                  CompileImplementation *macro_data,
-                                  Tree *value,
-                                  const ArrayList<SharedPtr<Parser::Expression> > *parameters,
-                                  CompileImplementation *evaluate_context,
+    template<typename Derived, typename Impl=Derived>
+    struct MacroWrapper : NonConstructible {
+      static Expression* evaluate(Macro *self,
+                                  Expression *value,
+                                  const void *parameters_vtable,
+                                  void *parameters_object,
+                                  EvaluateContext *evaluate_context,
                                   const SourceLocation *location) {
-        return static_cast<MacroWrapper*>(self)->m_callback.evaluate
-        (TreePtr<TreeType>(checked_cast<TreeType*>(macro_data)),
-         TreePtr<>(value),
-         *parameters,
-         TreePtr<CompileImplementation>(evaluate_context),
-         *location).release();
+        return Impl::evaluate_impl(*static_cast<Derived*>(self), TreePtr<Expression>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), TreePtr<EvaluateContext>(evaluate_context), *location).release();
       }
 
-      static Tree* dot_impl (MacroVtable *self,
-                             CompileImplementation *macro_data,
-                             Tree *value,
+      static Expression* dot(Macro *self,
+                             Expression *value,
                              const SharedPtr<Parser::Expression> *parameter,
-                             CompileImplementation *evaluate_context,
+                             EvaluateContext *evaluate_context,
                              const SourceLocation *location) {
-        return static_cast<MacroWrapper*>(self)->m_callback.dot
-        (TreePtr<TreeType>(checked_cast<TreeType*>(macro_data)),
-         TreePtr<>(value),
-         *parameter,
-         TreePtr<CompileImplementation>(evaluate_context),
-         *location).release();
+        return Impl::dot_impl(*static_cast<Derived*>(self), TreePtr<Expression>(value), *parameter, TreePtr<EvaluateContext>(evaluate_context), *location).release();
       }
-      
-      void init() {
-        this->evaluate = &MacroWrapper::evaluate_impl;
-        this->dot = &MacroWrapper::dot_impl;
-      }
-      
-      Callback m_callback;
-      
-    public:
-      MacroWrapper() {init();}
-      MacroWrapper(const Callback& callback) : m_callback(callback) {init();}
     };
 
+#define PSI_COMPILER_MACRO(derived,name,super) { \
+    PSI_COMPILER_TREE(derived,name,super), \
+    &MacroWrapper<derived>::evaluate, \
+    &MacroWrapper<derived>::dot \
+  }
+
     /**
-     * \see EvaluateContextRef
-     * \see EvaluateContextWrapper
+     * \see EvaluateContext
      */
     struct EvaluateContextVtable {
-      void (*lookup) (LookupResult<TreePtr<> >*, EvaluateContextVtable*, CompileImplementation*, const String*);
+      TreeVtable base;
+      void (*lookup) (LookupResult<TreePtr<Expression> >*, EvaluateContext*, const String*);
     };
 
-    /**
-     * \brief Wrapper to simplify using EvaluateContextVtable in C++.
-     */
-    struct EvaluateContextRef : CompileImplementationRef<EvaluateContextVtable> {
-      LookupResult<TreePtr<> > lookup(const String& name) const {
-        AlignedStorageFor<LookupResult<TreePtr<> > > result;
-        vptr->lookup(result.ptr(), vptr, data.get(), &name);
-        LookupResult<TreePtr<> > result_copy(move_ref(*result.ptr()));
-        result.ptr()->~LookupResult();
-        return result_copy;
+    class EvaluateContext : public Tree {
+      const EvaluateContextVtable* derived_vptr() {return reinterpret_cast<const EvaluateContextVtable*>(m_vptr);}
+    public:
+      static const EvaluateContextVtable vtable;
+
+      EvaluateContext(CompileContext&, const SourceLocation&);
+      EvaluateContext();
+
+      LookupResult<TreePtr<Expression> > lookup(const String& name) {
+        ResultStorage<LookupResult<TreePtr<Expression> > > result;
+        derived_vptr()->lookup(result.ptr(), this, &name);
+        return result.done();
       }
     };
 
     /**
      * \brief Wrapper to simplify implementing EvaluateContextVtable in C++.
      */
-    template<typename Callback, typename TreeType>
-    class EvaluateContextWrapper : public EvaluateContextVtable {
-      static void lookup_impl(LookupResult<TreePtr<> > *result, EvaluateContextVtable *self, CompileImplementation *data, const String *name) {
-        TreePtr<TreeType> cast_data(checked_cast<TreeType*>(data));
-        LookupResult<TreePtr<> > my_result = static_cast<EvaluateContextWrapper*>(self)->m_callback.lookup(cast_data, *name);
-        new (result) LookupResult<TreePtr<> >(move_ref(my_result));
+    template<typename Derived, typename Impl=Derived>
+    struct EvaluateContextWrapper : NonConstructible {
+      static void lookup(LookupResult<TreePtr<Expression> > *result, EvaluateContext *self, const String *name) {
+        new (result) LookupResult<TreePtr<Expression> >(Impl::lookup_impl(*static_cast<Derived*>(self), *name));
       }
-      
-      void init() {
-        this->lookup = &EvaluateContextWrapper::lookup_impl;
-      }
-      
-      Callback m_callback;
-      
-    public:
-      EvaluateContextWrapper() {init();}
-      EvaluateContextWrapper(const Callback& callback) : m_callback(callback) {init();}
     };
 
+#define PSI_COMPILER_EVALUATE_CONTEXT(derived,name,super) { \
+    PSI_COMPILER_TREE(derived,name,super), \
+    &EvaluateContextWrapper<derived>::lookup \
+  }
+
+    class MacroEvaluateCallback;
+
     /**
-     * \see MacroEvaluateCallbackRef
-     * \see MacroEvaluateCallbackVtable
+     * \see MacroEvaluateCallback
      */
     struct MacroEvaluateCallbackVtable {
-      Tree* (*evaluate) (MacroEvaluateCallbackVtable*, CompileImplementation*, Tree*, const ArrayList<SharedPtr<Parser::Expression> >*, CompileImplementation*, const SourceLocation*);
+      TreeVtable base;
+      Expression* (*evaluate) (MacroEvaluateCallback*, Expression*, const void*, void*, EvaluateContext*, const SourceLocation*);
     };
 
-    /**
-     * \brief Wrapper class to ease using MacroEvaluateCallbackVtable from C++.
-     */
-    struct MacroEvaluateCallbackRef : CompileImplementationRef<MacroEvaluateCallbackVtable> {
-      TreePtr<> evaluate(const TreePtr<>& value,
-                         const ArrayList<SharedPtr<Parser::Expression> >& parameters,
-                         const TreePtr<CompileImplementation>& evaluate_context,
-                         const SourceLocation& location) {
-        return TreePtr<>(vptr->evaluate(vptr, data.get(), value.get(), &parameters, evaluate_context.get(), &location), false);
-      }
-    };
-
-    /**
-     * \brief Wrapper class to ease implementing MacroEvaluateCallbackVtable in C++.
-     */
-    template<typename Callback, typename TreeType>
-    class MacroEvaluateCallbackWrapper : public MacroEvaluateCallbackVtable {
-      static Tree* evaluate_impl(MacroEvaluateCallbackVtable *self,
-                                 CompileImplementation *macro_data,
-                                 Tree *value,
-                                 const ArrayList<SharedPtr<Parser::Expression> > *parameters,
-                                 CompileImplementation *evaluate_context,
-                                 const SourceLocation *location) {
-        return static_cast<MacroEvaluateCallbackWrapper*>(self)->m_callback.evaluate
-        (TreePtr<TreeType>(checked_cast<TreeType*>(macro_data)),
-         TreePtr<>(value),
-         *parameters,
-         TreePtr<CompileImplementation>(evaluate_context),
-         *location).release();
-      }
-
-      void init() {
-        this->evaluate = &MacroEvaluateCallbackWrapper::evaluate_impl;
-      }
-
-      Callback m_callback;
-
+    class MacroEvaluateCallback : public Tree {
+      const MacroEvaluateCallbackVtable* derived_vptr() {return reinterpret_cast<const MacroEvaluateCallbackVtable*>(m_vptr);}
     public:
-      MacroEvaluateCallbackWrapper() {init();}
-      MacroEvaluateCallbackWrapper(const Callback& callback) : m_callback(callback) {init();}
+      static const MacroEvaluateCallbackVtable vtable;
+
+      TreePtr<Expression> evaluate(const TreePtr<Expression>& value, const List<SharedPtr<Parser::Expression> >& parameters, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location) {
+        return TreePtr<Expression>(derived_vptr()->evaluate(this, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
+      }
     };
 
+    template<typename Derived, typename Impl=Derived>
+    struct MacroEvaluateCallbackWrapper : NonConstructible {
+      static Expression* evaluate(MacroEvaluateCallback *self, Expression *value, ListVtable *parameters_vtable, ListObject *parameters_object, EvaluateContext *evaluate_context, const SourceLocation *location) {
+        return Impl::evaluate(*static_cast<Derived*>(self), TreePtr<Expression>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), TreePtr<EvaluateContext>(evaluate_context), *location).release();
+      }
+    };
+
+#define PSI_MACRO_EVALUATE_CALLBACK_WRAPPER(derived,name,super) { \
+    PSI_COMPILER_TREE(derived,name,super) \
+    &MacroEvaluateCallbackWrapper<derived>::evaluate \
+  }
+
+    class MacroDotCallback;
+
     /**
-     * \see MacroEvaluateCallbackRef
-     * \see MacroEvaluateCallbackWrapper
+     * \see MacroEvaluateCallback
      */
     struct MacroDotCallbackVtable {
-      Tree* (*dot) (MacroDotCallbackVtable*, CompileImplementation*, Tree*, CompileImplementation*, const SourceLocation*);
+      TreeVtable base;
+      Expression* (*dot) (MacroDotCallback*, Expression*, EvaluateContext*, const SourceLocation*);
     };
 
     /**
      * \brief Wrapper class to ease using MacroEvaluateCallbackVtable from C++.
      */
-    struct MacroDotCallbackRef : CompileImplementationRef<MacroDotCallbackVtable> {
-      TreePtr<> dot(const TreePtr<>& value,
-                    const TreePtr<CompileImplementation>& evaluate_context,
-                    const SourceLocation& location) {
-        return TreePtr<>(vptr->dot(vptr, data.get(), value.get(), evaluate_context.get(), &location), false);
+    class MacroDotCallback : public Tree {
+      const MacroDotCallbackVtable* derived_vptr() {return reinterpret_cast<const MacroDotCallbackVtable*>(m_vptr);}
+    public:
+      static const MacroDotCallbackVtable vtable;
+
+      TreePtr<Expression> dot(const TreePtr<Expression>& value,
+                              const TreePtr<EvaluateContext>& evaluate_context,
+                              const SourceLocation& location) {
+        return TreePtr<Expression>(derived_vptr()->dot(this, value.get(), evaluate_context.get(), &location), false);
       }
     };
 
     /**
      * \brief Wrapper class to ease implementing MacroEvaluateCallbackVtable in C++.
      */
-    template<typename Callback, typename TreeType>
-    class MacroDotCallbackWrapper : public MacroDotCallbackVtable {
-      static Tree* dot_impl(MacroEvaluateCallbackVtable *self,
-                            CompileImplementation *macro_data,
-                            Tree *value,
-                            CompileImplementation *evaluate_context,
-                            const SourceLocation *location) {
-        return static_cast<MacroDotCallbackWrapper*>(self)->m_callback.dot
-        (TreePtr<TreeType>(checked_cast<TreeType*>(macro_data)),
-         TreePtr<>(value),
-         TreePtr<CompileImplementation>(evaluate_context),
-         *location).release();
+    template<typename Derived, typename Impl=Derived>
+    struct MacroDotCallbackWrapper : NonConstructible {
+      static Tree* dot(MacroDotCallback *self, Tree *value, EvaluateContext *evaluate_context, const SourceLocation *location) {
+        return Impl::dot(*static_cast<Derived*>(self), TreePtr<>(value), TreePtr<EvaluateContext>(evaluate_context), *location).release();
       }
-
-      void init() {
-        this->dot = &MacroDotCallbackWrapper::dot_impl;
-      }
-
-      Callback m_callback;
-
-    public:
-      MacroDotCallbackWrapper() {init();}
-      MacroDotCallbackWrapper(const Callback& callback) : m_callback(callback) {init();}
     };
+
+#define PSI_MACRO_DOT_CALLBACK_WRAPPER(derived,name,super) { \
+    PSI_COMPILER_TREE(derived,name,super) \
+    &MacroDotCallbackWrapper<derived>::dot \
+  }
 
     class Block;
 
-    TreePtr<> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<CompileImplementation>&, const SharedPtr<LogicalSourceLocation>&);
-    TreePtr<Block> compile_statement_list(const ArrayList<SharedPtr<Parser::NamedExpression> >&, const TreePtr<CompileImplementation>&, const SourceLocation&);
+    TreePtr<Expression> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const SharedPtr<LogicalSourceLocation>&);
+    TreePtr<Block> compile_statement_list(const List<SharedPtr<Parser::NamedExpression> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
     SharedPtr<LogicalSourceLocation> make_logical_location(const SharedPtr<LogicalSourceLocation>&, const String&);
     String logical_location_name(const SharedPtr<LogicalSourceLocation>& location);
 
-    TreePtr<CompileImplementation> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<> >&, const TreePtr<CompileImplementation>&);
-    TreePtr<CompileImplementation> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<> >&);
+    TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Expression> >&, const TreePtr<EvaluateContext>&);
+    TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Expression> >&);
 
-    TreePtr<> interface_lookup(const TreePtr<Interface>&, const ArrayList<TreePtr<> >&, const SourceLocation&);
-    TreePtr<> interface_lookup(const TreePtr<Interface>&, const TreePtr<>&, const SourceLocation&);
+    TreePtr<> interface_lookup(const TreePtr<Interface>&, const List<TreePtr<> >&, const SourceLocation&);
+    TreePtr<> interface_lookup(const TreePtr<Interface>&, const TreePtr<>&, const SourceLocation&);    
     TreePtr<> function_definition_object(CompileContext&);
     
     TreePtr<GlobalTree> tree_from_address(CompileContext&, const SourceLocation&, const TreePtr<Type>&, void*);
 
-    template<typename Wrapper>
-    Wrapper compile_implementation_wrap(const TreePtr<CompileImplementation>& impl) {
-      if (!impl)
-        return Wrapper();
-      Wrapper wrapper;
-      wrapper.vptr = static_cast<typename Wrapper::VtableType*>(impl->compile_context().jit_compile(wrapper.data));
-      wrapper.data = impl;
-      return wrapper;
-    }
-
-    template<typename Wrapper>
-    Wrapper compile_implementation_wrap(const TreePtr<>& impl, const SourceLocation& location) {
-      if (!impl)
-        return Wrapper();
-      TreePtr<CompileImplementation> cast_impl = dynamic_pointer_cast<CompileImplementation>(impl);
-      if (!cast_impl)
-        impl->compile_context().error_throw(location, "Could not cast");
-      return compile_implementation_wrap<Wrapper>(cast_impl);
-    }
-
-    template<typename Wrapper>
-    Wrapper compile_implementation_lookup(const TreePtr<Interface>& interface, const TreePtr<>& parameter, const SourceLocation& location) {
-      return compile_implementation_wrap<Wrapper>(interface_lookup(interface, parameter, location), location);
-    }
-
-    TreePtr<CompileImplementation> make_interface(CompileContext&, const SourceLocation&, const String&, const TreePtr<CompileImplementation>&, const std::map<String, TreePtr<CompileImplementation> >&);
-    TreePtr<CompileImplementation> make_interface(CompileContext&, const SourceLocation&, const String&, const TreePtr<CompileImplementation>&);
-    TreePtr<CompileImplementation> make_interface(CompileContext&, const SourceLocation&, const String&, const std::map<String, TreePtr<CompileImplementation> >&);
-    TreePtr<CompileImplementation> make_interface(CompileContext&, const SourceLocation&, const String&);
+    TreePtr<Macro> make_interface(CompileContext&, const SourceLocation&, const String&, const TreePtr<MacroEvaluateCallback>&, const std::map<String, TreePtr<MacroDotCallback> >&);
+    TreePtr<Macro> make_interface(CompileContext&, const SourceLocation&, const String&, const TreePtr<MacroEvaluateCallback>&);
+    TreePtr<Macro> make_interface(CompileContext&, const SourceLocation&, const String&, const std::map<String, TreePtr<MacroDotCallback> >&);
+    TreePtr<Macro> make_interface(CompileContext&, const SourceLocation&, const String&);
   }
 }
 

@@ -7,95 +7,100 @@
 
 namespace Psi {
   namespace Compiler {
-    class InterfaceMacro : public CompileImplementation {
-      virtual void gc_visit(GCVisitor& visitor) {
-        CompileImplementation::gc_visit(visitor);
-        visitor % evaluate;
-        for (NameMapType::iterator ii = members.begin(), ie = members.end(); ii != ie; ++ii)
-          visitor.visit_ptr(ii->second);
-      }
-
-      struct Callback {
-        TreePtr<> evaluate(const TreePtr<InterfaceMacro>& interface,
-                           const TreePtr<>& value,
-                           const ArrayList<SharedPtr<Parser::Expression> >& parameters,
-                           const TreePtr<CompileImplementation>& evaluate_context,
-                           const SourceLocation& location) {
-          if (interface->evaluate) {
-            return compile_implementation_wrap<MacroEvaluateCallbackRef>(interface->evaluate).evaluate(value, parameters, evaluate_context, location);
-          } else {
-            interface->compile_context().error_throw(location, boost::format("Macro '%s' does not support evaluation") % interface->name);
-          }
-        }
-
-        TreePtr<> dot(const TreePtr<InterfaceMacro>& interface,
-                      const TreePtr<>& value,
-                      const SharedPtr<Parser::Expression>& parameter,
-                      const TreePtr<CompileImplementation>& evaluate_context,
-                      const SourceLocation& location) {
-          if (parameter->expression_type != Parser::expression_token)
-            interface->compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % interface->name);
-
-          const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*parameter);
-          String member_name(token_expression.text.begin, token_expression.text.end);
-          NameMapType::const_iterator it = interface->members.find(member_name);
-
-          if (it == interface->members.end())
-            interface->compile_context().error_throw(location, boost::format("'%s' has no member named '%s'") % interface->name % member_name);
-
-          return compile_implementation_wrap<MacroDotCallbackRef>(it->second).dot(value, evaluate_context, location);
-        }
-      };
-
-      static MacroWrapper<Callback, InterfaceMacro> m_vtable;
+    class InterfaceMacro : public Macro {
+      typedef std::map<String, TreePtr<MacroDotCallback> > NameMapType;
+      String m_name;
+      TreePtr<MacroEvaluateCallback> m_evaluate;
+      NameMapType m_members;
 
     public:
-      typedef std::map<String, TreePtr<CompileImplementation> > NameMapType;
-      TreePtr<CompileImplementation> evaluate;
-      NameMapType members;
-      String name;
+      static const MacroVtable vtable;
 
-      InterfaceMacro(CompileContext& compile_context, const SourceLocation& location)
-      : CompileImplementation(compile_context, location) {
-        vtable = compile_context.tree_from_address(location, TreePtr<Type>(), &m_vtable);
+      InterfaceMacro(CompileContext& compile_context,
+                     const SourceLocation& location,
+                     const String& name,
+                     const TreePtr<MacroEvaluateCallback>& evaluate,
+                     const NameMapType& members)
+      : Macro(compile_context, location),
+      m_name(name),
+      m_evaluate(evaluate),
+      m_members(members) {
+        m_vptr = reinterpret_cast<const SIVtable*>(&vtable);
+      }
+
+      template<typename Visitor>
+      static void visit_impl(InterfaceMacro& self, Visitor& visitor) {
+        PSI_FAIL("not implemented");
+        Macro::visit_impl(self, visitor);
+        visitor
+        ("name", self.m_name)
+        ("evaluate", self.m_evaluate)
+        ("members", self.m_members);
+      }
+      
+      static TreePtr<Expression> evaluate_impl(InterfaceMacro& self,
+                                               const TreePtr<Expression>& value,
+                                               const List<SharedPtr<Parser::Expression> >& parameters,
+                                               const TreePtr<EvaluateContext>& evaluate_context,
+                                               const SourceLocation& location) {
+        if (self.m_evaluate) {
+          return self.m_evaluate->evaluate(value, parameters, evaluate_context, location);
+        } else {
+          self.compile_context().error_throw(location, boost::format("Macro '%s' does not support evaluation") % self.m_name);
+        }
+      }
+
+      static TreePtr<Expression> dot_impl(InterfaceMacro& self,
+                                          const TreePtr<Expression>& value,
+                                          const SharedPtr<Parser::Expression>& parameter,
+                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                          const SourceLocation& location) {
+        if (parameter->expression_type != Parser::expression_token)
+          self.compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % self.m_name);
+
+        const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*parameter);
+        String member_name(token_expression.text.begin, token_expression.text.end);
+        NameMapType::const_iterator it = self.m_members.find(member_name);
+
+        if (it == self.m_members.end())
+          self.compile_context().error_throw(location, boost::format("'%s' has no member named '%s'") % self.m_name % member_name);
+
+        return it->second->dot(value, evaluate_context, location);
       }
     };
 
-    MacroWrapper<InterfaceMacro::Callback, InterfaceMacro> InterfaceMacro::m_vtable;
+    const MacroVtable InterfaceMacro::vtable =
+    PSI_COMPILER_MACRO(InterfaceMacro, "psi.compiler.InterfaceMacro", &Macro::vtable);
 
     /**
      * \brief Create an interface macro.
      */
-    TreePtr<CompileImplementation> make_interface(CompileContext& compile_context,
-                                                  const SourceLocation& location,
-                                                  const String& name,
-                                                  const TreePtr<CompileImplementation>& evaluate,
-                                                  const std::map<String, TreePtr<CompileImplementation> >& members) {
-      TreePtr<InterfaceMacro> result(new InterfaceMacro(compile_context, location));
-      result->evaluate = evaluate;
-      result->members = members;
-      result->name = name;
-      return result;
+    TreePtr<Macro> make_interface(CompileContext& compile_context,
+                                  const SourceLocation& location,
+                                  const String& name,
+                                  const TreePtr<MacroEvaluateCallback>& evaluate,
+                                  const std::map<String, TreePtr<MacroDotCallback> >& members) {
+      return TreePtr<Macro>(new InterfaceMacro(compile_context, location, name, evaluate, members));
     }
 
-    TreePtr<CompileImplementation> make_interface(CompileContext& compile_context,
-                                                  const SourceLocation& location,
-                                                  const String& name,
-                                                  const TreePtr<CompileImplementation>& evaluate) {
-      return make_interface(compile_context, location, name, evaluate, std::map<String, TreePtr<CompileImplementation> >());
+    TreePtr<Macro> make_interface(CompileContext& compile_context,
+                                  const SourceLocation& location,
+                                  const String& name,
+                                  const TreePtr<MacroEvaluateCallback>& evaluate) {
+      return make_interface(compile_context, location, name, evaluate, std::map<String, TreePtr<MacroDotCallback> >());
     }
 
-    TreePtr<CompileImplementation> make_interface(CompileContext& compile_context,
-                                                  const SourceLocation& location,
-                                                  const String& name,
-                                                  const std::map<String, TreePtr<CompileImplementation> >& members) {
-      return make_interface(compile_context, location, name, TreePtr<CompileImplementation>(), members);
+    TreePtr<Macro> make_interface(CompileContext& compile_context,
+                                  const SourceLocation& location,
+                                  const String& name,
+                                  const std::map<String, TreePtr<MacroDotCallback> >& members) {
+      return make_interface(compile_context, location, name, TreePtr<MacroEvaluateCallback>(), members);
     }
 
-    TreePtr<CompileImplementation> make_interface(CompileContext& compile_context,
-                                                  const SourceLocation& location,
-                                                  const String& name) {
-      return make_interface(compile_context, location, name, TreePtr<CompileImplementation>(), std::map<String, TreePtr<CompileImplementation> >());
+    TreePtr<Macro> make_interface(CompileContext& compile_context,
+                                  const SourceLocation& location,
+                                  const String& name) {
+      return make_interface(compile_context, location, name, TreePtr<MacroEvaluateCallback>(), std::map<String, TreePtr<MacroDotCallback> >());
     }
   }
 }

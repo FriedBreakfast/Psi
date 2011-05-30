@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <boost/checked_delete.hpp>
+#include <boost/aligned_storage.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/shared_ptr.hpp>
 
@@ -13,10 +13,43 @@
 #include "Array.hpp"
 
 namespace Psi {
+  /**
+   * \brief Base class for types which should never be constructed.
+   */
+  class NonConstructible {
+    NonConstructible();
+  };
+  
+  template<typename T>
+  struct AlignedStorageFor {
+    typedef typename boost::aligned_storage<sizeof(T), boost::alignment_of<T>::value>::type type;
+    type data;
+    T *ptr() {return static_cast<T*>(static_cast<void*>(&data));}
+    const T *ptr() const {return static_cast<const T*>(static_cast<const void*>(&data));}
+  };
+
+  /**
+   * \brief Used to wrap C functions where a C++ class is constructed into a passed pointer.
+   */
+  template<typename T>
+  class ResultStorage : boost::noncopyable {
+    bool m_constructed;
+    AlignedStorageFor<T> m_data;
+
+  public:
+    ResultStorage() : m_constructed(false) {}
+    ~ResultStorage() {if (m_constructed) m_data.ptr()->~T();}
+    T *ptr() {return m_data.ptr();}
+    T& done() {m_constructed = true; return *m_data.ptr();}
+  };
+
   template<typename T>
   class PointerBase {
     typedef void (PointerBase::*safe_bool_type) () const;
     void safe_bool_true() const {}
+
+    PointerBase(const PointerBase&);
+    PointerBase& operator = (const PointerBase&);
     
   protected:
     T *m_ptr;
@@ -47,6 +80,30 @@ namespace Psi {
     return lhs.get() < rhs.get();
   }
   
+  template<typename T>
+  class UniquePtr : public PointerBase<T> {
+    void clear() {
+      if (this->m_ptr)
+        delete this->m_ptr;
+    }
+
+  public:
+    template<typename> friend class UniquePtr;
+
+    UniquePtr() {}
+    explicit UniquePtr(T *ptr) : PointerBase<T>(ptr) {}
+    ~UniquePtr() {clear();}
+
+    void reset(T *ptr=0) {
+      clear();
+      this->m_ptr = ptr;
+    }
+
+    void swap(UniquePtr<T>& src) {
+      std::swap(this->m_ptr, src.m_ptr);
+    }
+  };
+
   template<typename T, typename U>
   struct checked_cast_impl;
 
@@ -108,62 +165,6 @@ namespace Psi {
 #ifdef PSI_DEBUG
     virtual ~CheckedCastBase();
 #endif
-  };
-
-  /**
-   * A simple empty type, implementing equality comparison and
-   * hashing.
-   */
-  struct Empty {
-    bool operator == (const Empty&) const {return true;}
-    friend std::size_t hash_value(const Empty&) {return 0;}
-  };
-  
-  /**
-   * Base class which can be used to store empty types
-   * cheaply. Currently this is implemented by specializing for Empty.
-   */
-  template<typename T>
-  class CompressedBase {
-  public:
-    CompressedBase(const T& t) : m_value(t) {}
-    T& get() {return m_value;}
-    const T& get() const {return m_value;}
-
-  private:
-    T m_value;
-  };
-
-  template<>
-  class CompressedBase<Empty> : Empty {
-  public:
-    CompressedBase(const Empty&) {}
-    Empty& get() {return *this;}
-    const Empty& get() const {return *this;}
-  };
-
-  /**
-   * Wraps a primitive type to ensure it is initialized.
-   */
-  template<typename T>
-  class PrimitiveWrapper {
-  public:
-    PrimitiveWrapper(T value) : m_value(value) {}
-
-    T value() const {
-      return m_value;
-    }
-
-    bool operator == (const PrimitiveWrapper<T>& other) const {
-      return m_value == other.m_value;
-    }
-
-    friend std::size_t hash_value(const PrimitiveWrapper<T>& self) {
-      return boost::hash_value(self.m_value);
-    }
-
-  private:
-    T m_value;
   };
 }
 

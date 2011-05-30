@@ -1,5 +1,6 @@
 #include <dlfcn.h>
 
+#include "Platform.hpp"
 #include "Runtime.hpp"
 
 namespace Psi {

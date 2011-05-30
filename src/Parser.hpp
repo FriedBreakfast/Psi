@@ -53,10 +53,10 @@ namespace Psi {
     class Expression;
 
     struct MacroExpression : Expression {
-      MacroExpression(const ParserLocation& location_, const ArrayList<SharedPtr<Expression> >& elements_);
+      MacroExpression(const ParserLocation& location_, const PSI_STD::vector<SharedPtr<Expression> >& elements_);
       virtual ~MacroExpression();
 
-      ArrayList<SharedPtr<Expression> > elements;
+      PSI_STD::vector<SharedPtr<Expression> > elements;
     };
 
     struct NamedExpression : Element {
@@ -82,11 +82,11 @@ namespace Psi {
       virtual ~ParseError() throw();
     };
 
-    ArrayList<SharedPtr<NamedExpression> > parse_statement_list(const ParserLocation&);
-    ArrayList<SharedPtr<NamedExpression> > parse_argument_list(const ParserLocation&);
+    PSI_STD::vector<SharedPtr<NamedExpression> > parse_statement_list(const ParserLocation&);
+    PSI_STD::vector<SharedPtr<NamedExpression> > parse_argument_list(const ParserLocation&);
 
     struct ArgumentDeclarations {
-      ArrayList<SharedPtr<NamedExpression> > arguments;
+      PSI_STD::vector<SharedPtr<NamedExpression> > arguments;
       SharedPtr<Expression> return_type;
     };
 

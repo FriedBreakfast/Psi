@@ -6,8 +6,12 @@
 #include <iosfwd>
 #include <boost/aligned_storage.hpp>
 
+#include <vector>
+#include <map>
+
 #include "Assert.hpp"
 #include "CppCompiler.hpp"
+#include "Utility.hpp"
 
 /**
  * \file
@@ -21,41 +25,35 @@ namespace Psi {
   void* checked_alloc(std::size_t n);
   void checked_free(std::size_t n, void *ptr);
 
-  template<typename T>
-  struct MoveRefImpl {
-    T *ptr;
-    explicit MoveRefImpl(T& x) : ptr(&x) {}
-    operator const T& () {return *ptr;}
+  template<std::size_t N>
+  class StackBuffer : boost::noncopyable {
+    char m_buffer[N] PSI_ATTRIBUTE((PSI_ALIGNED_MAX));
+    void *m_ptr;
+    std::size_t m_size;
+
+  public:
+    StackBuffer(std::size_t m) : m_size(m) {
+      if (m <= N)
+        m_ptr = &m_buffer;
+      else
+        m_ptr = checked_alloc(m);
+    }
+
+    ~StackBuffer() {
+      if (m_size > N)
+        checked_free(m_size, m_ptr);
+    }
+
+    void* get() {return m_ptr;}
   };
-  
-  template<typename T>
-  struct MoveRef {
-    typedef MoveRefImpl<T> type;
+
+  typedef char PsiBool;
+
+  enum PsiBoolValues {
+    psi_false = 0,
+    psi_true = 1
   };
 
-  template<typename T>
-  MoveRefImpl<T> move_ref(T& x) {
-    return MoveRefImpl<T>(x);
-  }
-
-  template<typename T>
-  MoveRefImpl<T> move_ref(MoveRefImpl<T> x) {
-    return x;
-  }
-
-  template<typename T>
-  T& move_deref(MoveRefImpl<T> x) {
-    return *x.ptr;
-  }
-
-  template<typename T>
-  struct AlignedStorageFor {
-    typedef typename boost::aligned_storage<sizeof(T), boost::alignment_of<T>::value>::type type;
-    type data;
-    T *ptr() {return static_cast<T*>(static_cast<void*>(&data));}
-    const T *ptr() const {return static_cast<const T*>(static_cast<const void*>(&data));}
-  };
-  
   struct SharedPtrOwner;
   
   struct SharedPtrOwnerVTable {
@@ -145,26 +143,8 @@ namespace Psi {
     }
 
     template<typename U>
-    SharedPtr(typename MoveRef<SharedPtr<U> >::type move_src) {
-      SharedPtr<U>& src = move_deref(move_src);
-      m_c.ptr = src.get();
-      m_c.owner = src.m_c.owner;
-      src.m_c.ptr = 0;
-      src.m_c.owner = 0;
-    }
-
-    template<typename U>
     SharedPtr(const SharedPtr<U>& src, T *ptr) {
       init(ptr, src.m_c.owner);
-    }
-
-    template<typename U>
-    SharedPtr(typename MoveRef<SharedPtr<U> >::type move_src, T *ptr) {
-      SharedPtr<U>& src = move_deref(move_src);
-      m_c.ptr = ptr;
-      m_c.owner = src.m_c.owner;
-      src.m_c.ptr = 0;
-      src.m_c.owner = 0;
     }
 
     ~SharedPtr() {
@@ -186,12 +166,6 @@ namespace Psi {
     template<typename U>
     SharedPtr& operator = (const SharedPtr<U>& src) {
       SharedPtr<T>(src).swap(*this);
-      return *this;
-    }
-
-    template<typename U>
-    SharedPtr& operator = (typename MoveRef<SharedPtr<U> >::type src) {
-      SharedPtr<T>(move_ref(src)).swap(*this);
       return *this;
     }
 
@@ -246,29 +220,29 @@ namespace Psi {
   public:
     String();
     String(const String&);
-    String(MoveRef<String>::type);
     String(const char*);
     String(const char*, const char*);
     String(const char*, std::size_t);
     ~String();
     
     String& operator = (const String&);
-    String& operator = (MoveRef<String>::type);
     String& operator = (const char*);
 
     bool operator == (const String&) const;
     bool operator != (const String&) const;
     bool operator < (const String&) const;
-    
+
     void clear();
     const char *c_str() const {return m_c.data;}
+    bool empty() const {return !m_c.length;}
+    void swap(String&);
   };
 
   std::ostream& operator << (std::ostream&, const String&);
   
   template<typename T>
   struct Maybe_C {
-    bool full;
+    PsiBool full;
     AlignedStorageFor<T> data;
   };
   
@@ -281,37 +255,20 @@ namespace Psi {
     
   public:
     Maybe() {
-      m_c.full = false;
+      m_c.full = psi_false;
     }
     
     Maybe(const T& value) {
-      m_c.full = true;
+      m_c.full = psi_true;
       new (m_c.data) T (value);
     }
     
-    Maybe(typename MoveRef<T>::type value) {
-      m_c.full = true;
-      new (m_c.data) T (move_ref(value));
-    }
-    
-    
     Maybe(const Maybe<T>& other) {
       if (other) {
-        m_c.full = true;
+        m_c.full = psi_true;
         new (m_c.data) T (*other);
       } else {
-        m_c.full = false;
-      }
-    }
-    
-    Maybe(typename MoveRef<Maybe<T> >::type move_other) {
-      Maybe<T>& other = move_deref(move_other);
-      if (other) {
-        m_c.full = true;
-        new (m_c.data) T (move_ref(*other));
-        other.clear();
-      } else {
-        m_c.full = false;
+        m_c.full = psi_false;
       }
     }
     
@@ -332,7 +289,7 @@ namespace Psi {
     void clear() {
       if (m_c.full) {
         delete unchecked_get()->~T();
-        m_c.full = false;
+        m_c.full = psi_false;
       }
     }
     
@@ -341,26 +298,11 @@ namespace Psi {
         operator = (*other);
     }
     
-    Maybe& operator = (typename MoveRef<Maybe<T> >::type move_other) {
-      Maybe<T>& other = move_deref(move_other);
-      if (other) {
-        operator = (move_ref(*other));
-        other->clear();
-      }
-    }
-
     Maybe& operator = (const T& src) {
       if (m_c.m_full)
         *unchecked_get() = src;
       else
         new (m_c.data) T (src);
-    }
-    
-    Maybe& operator = (typename MoveRef<T>::type src) {
-      if (m_c.full)
-        *unchecked_get() = move_ref(src);
-      else
-        new (m_c.data) T (move_ref(src));
     }
   };
 
@@ -402,24 +344,11 @@ namespace Psi {
       new (m_c.data.ptr()) T(value);
     }
     
-    LookupResult(typename MoveRef<T>::type value) {
-      m_c.type = lookup_result_type_match;
-      new (m_c.data.ptr()) T(move_ref(value));
-    }
-
     template<typename U>
     LookupResult(const LookupResult<U>& src) {
       m_c.type = src.type();
       if (m_c.type == lookup_result_type_match)
         new (m_c.data.ptr()) T(src.value());
-    }
-
-    template<typename U>
-    LookupResult(MoveRef<LookupResult<U> > move_src) {
-      LookupResult<U>& src = move_deref(move_src);
-      m_c.type = src.type();
-      if (m_c.type == lookup_result_type_match)
-        new (m_c.data.ptr()) T(move_ref(src.value()));
     }
 
     ~LookupResult() {
@@ -442,203 +371,193 @@ namespace Psi {
     return LookupResult<T>(value);
   }
 
-  template<typename T>
-  LookupResult<T> lookup_result_match(typename MoveRef<T>::type value) {
-    return LookupResult<T>(move_ref(value));
-  }
+  class InterfaceBase : boost::noncopyable {
+  protected:
+    const void *m_vptr;
+    void *m_self;
 
-  /**
-   * \brief Array list C layout.
-   */
-  struct ArrayList_C {
-    void *begin;
-    void *end;
-    void *limit;
+  public:
+    InterfaceBase(const void *vptr, void *self) : m_vptr(vptr), m_self(self) {}
+    const void *vptr() const {return m_vptr;}
+    void *object() const {return m_self;}
   };
 
-  /**
-   * \brief Array list.
-   *
-   * This is not expected to cover all features that are supported by Psi's
-   * ArrayList type. This can be used to create ArrayLists in C++, but should
-   * not be used to modify existing array lists since the memory allocation
-   * strategy used here is fixed.
-   */
+  struct BaseVtable {
+    std::size_t size;
+    std::size_t alignment;
+    void (*move) (const void*, void*, void*);
+    void (*destroy) (const void*, void*);
+  };
+
+  struct IteratorObject;
+
+  struct IteratorVtable {
+    BaseVtable super;
+    void* (*current) (const void*, void*);
+    PsiBool (*next) (const void*, void*);
+  };
+
   template<typename T>
-  class ArrayList {
-    ArrayList_C m_c;
-
-    void init() {
-      m_c.begin = 0;
-      m_c.end = 0;
-      m_c.limit = 0;
-    }
-    
+  class Iterator : public InterfaceBase {
   public:
-    typedef std::size_t size_type;
-    typedef std::ptrdiff_t difference_type;
-    typedef T value_type;
-    typedef T& reference;
-    typedef const T& const_reference;
-    typedef T* iterator;
-    typedef const T* const_iterator;
+    Iterator(const void *vptr, void *self) : InterfaceBase(vptr, self) {}
+    const IteratorVtable *vptr() const {return static_cast<const IteratorVtable*>(this->m_vptr);}
+    bool next() const {return vptr()->next(vptr(), this->m_self);}
+    T& current() const {return *static_cast<T*>(vptr()->current(vptr(), this->m_self));}
+  };
 
-    ArrayList() {
-      init();
-    }
+  struct ListObject;
 
-    ArrayList(size_type n) {
-      init();
-      resize(n);
-    }
+  /**
+   * \brief vtable for list types.
+   */
+  struct ListVtable {
+    IteratorVtable iterator_vtable;
+    void (*append) (const void*, void*,void*);
+    void (*iterator) (const void*, void*, void*);
+  };
 
-    ~ArrayList() {
-      if (m_c.begin) {
-        clear();
-        std::free(m_c.begin);
-      }
-    }
+  template<typename T>
+  struct ContainerListFunctions : NonConstructible {
+    typedef T ContainerType;
+    typedef typename T::iterator ContainerIteratorType;
+    typedef typename ContainerType::value_type ValueType;
     
-    ArrayList(const ArrayList<T>& src) {
-      init();
-      reserve(src.size());
-      iterator j = begin();
-      for (const_iterator ii = src.begin(), ie = src.end(); ii != ie; ++ii, ++j)
-        new (j) T (*ii);
-      m_c.end = j;
+    static const ListVtable vtable;
+
+    struct ListIterator {
+      ContainerIteratorType current, end;
+      ListIterator(ContainerType& container) : current(container.begin()), end(container.end()) {}
+    };
+
+    static void append(const void*, void *self, void *value) {
+      ContainerType *cast_self = static_cast<ContainerType*>(self);
+      ValueType *cast_value = static_cast<ValueType*>(value);
+      cast_self->push_back(cast_value);
     }
 
-    ArrayList(typename MoveRef<ArrayList<T> >::type move_src) {
-      ArrayList<T>& src = move_deref(move_src);
-      m_c = src.m_c;
-      src.init();
-    }
-    
-    template<typename It>
-    ArrayList(const It& first, const It& last) {
-      init();
-      insert(end(), first, last);
-    }
-    
-    ArrayList(size_type n, const T& x=T()) {
-      init();
-      reserve(n);
-      for (size_type i = 0; i != n; ++i)
-        push_back(x);
+    static void iterator(const void*, void *iterator, void *self) {
+      ContainerType *cast_self = static_cast<ContainerType*>(self);
+      new (iterator) ListIterator(*cast_self);
     }
 
-  private:
-    struct CapacityLabel {};
-    ArrayList(CapacityLabel, size_type capacity) {
-      m_c.begin = m_c.end = checked_alloc(capacity * sizeof(T));
-      m_c.limit = static_cast<T*>(m_c.begin) + capacity;
+    static void iterator_vtable_move(const void*, void *dest, void *src) {
+      ListIterator *cast_dest = static_cast<ListIterator*>(dest);
+      ListIterator *cast_src = static_cast<ListIterator*>(src);
+      std::swap(*cast_dest, *cast_src);
     }
+
+    static void iterator_vtable_destroy(const void*, void *self) {
+      ListIterator *cast_self = static_cast<ListIterator*>(self);
+      cast_self->~ListIterator();
+    }
+
+    static void* iterator_vtable_current(const void*, void *self) {
+      ListIterator *cast_self = static_cast<ListIterator*>(self);
+      return &*cast_self->current;
+    }
+
+    static PsiBool iterator_vtable_next(const void*, void *self) {
+      ListIterator *cast_self = static_cast<ListIterator*>(self);
+      ++cast_self->current;
+      return cast_self->current != cast_self->end;
+    }
+  };
+
+  template<typename T> const ListVtable ContainerListFunctions<T>::vtable = {
+    {
+      {
+        sizeof(ContainerListFunctions<T>::ListIterator),
+        PSI_ALIGNOF(ContainerListFunctions<T>::ListIterator),
+        &ContainerListFunctions<T>::iterator_vtable_move,
+        &ContainerListFunctions<T>::iterator_vtable_destroy
+      },
+      &ContainerListFunctions<T>::iterator_vtable_current,
+      &ContainerListFunctions<T>::iterator_vtable_next
+    },
+    &ContainerListFunctions<T>::append,
+    &ContainerListFunctions<T>::iterator
+  };
+
+  template<typename T>
+  class List : public InterfaceBase {
+  public:
+    List(const void *vptr, void *self) : InterfaceBase(vptr, self) {}
+    List(std::vector<T>& src) : InterfaceBase(vptr_for(src), object_for(src)) {}
+
+    const ListVtable *vptr() const {return static_cast<const ListVtable*>(this->m_vptr);}
+
+    void append(const T& data) const {T copy(data); vptr()->append(vptr(), this->m_self, &copy);}
+    void append_move(T& data) const {vptr()->append(vptr(), this->m_self, &data);}
+
+    static const void* vptr_for(List& self) {return self.m_vptr;}
+    static void* object_for(List& self) {return self.m_self;}
+    static const void* vptr_for(std::vector<T>&) {return &ContainerListFunctions<std::vector<T> >::vtable;}
+    static void* object_for(std::vector<T>& vec) {return &vec;}
+  };
+
+  template<typename T>
+  class LocalIterator : public Iterator<T> {
+    StackBuffer<32> m_data;
 
   public:
-    iterator begin() {return static_cast<T*>(m_c.begin);}
-    iterator end() {return static_cast<T*>(m_c.end);}
-    const_iterator begin() const {return static_cast<const T*>(m_c.begin);}
-    const_iterator end() const {return static_cast<const T*>(m_c.end);}
-    size_type size() const {return end() - begin();}
-    size_type capacity() const {return static_cast<const T*>(m_c.limit) - begin();}
-
-    reference operator [] (size_type n) {return *(begin() + n);}
-    const_reference operator [] (size_type n) const {return *(begin() + n);}
-
-    /**
-     * \brief Ensure enough capacity to add n elements.
-     */
-    void ensure_capacity(size_type n) {
-      reserve(size() + n);
+    LocalIterator(List<T>& list)
+    : Iterator<T>(list.vptr(), 0), m_data(list.vptr()->iterator_vtable.super.size) {
+      this->m_self = m_data.get();
+      list.vptr()->iterator(list.vptr(), list.object(), m_data.get());
     }
 
-    /**
-     * \brief Prepare to insert n elements at position i.
-     */
-    iterator prepare_insert(iterator i, size_type n) {
-      size_type off = i - begin();
-      ensure_capacity(n);
-      for (T *pi = end() + n, *pe = end(); pi != pe; --pi)
-        new (pi - 1) T(move_ref(*(pi - n - 1)));
-      for (T *pi = end(), *pe = begin() + off + n; pi != pe; --pi)
-        *(pi - 1) = move_ref(*(pi - n - 1));
-      return begin() + off;
+    ~LocalIterator() {
+      this->vptr()->super.destroy(this->vptr(), this->object());
     }
+  };
 
-    iterator insert(iterator i, const_reference x) {
-      iterator j = prepare_insert(i, 1);
-      *j = x;
-      return j;
-    }
+  struct MapObject;
 
-    iterator insert(iterator i, typename MoveRef<T>::type x) {
-      iterator j = prepare_insert(i, 1);
-      *j = move_ref(x);
-      return j;
-    }
+  /**
+   * \brief vtable for map types.
+   */
+  struct MapVtable {
+    void (*put) (const void*,void*,const void*,const void*);
+  };
+
+  template<typename T>
+  struct ContainerMapFunctions {
+    typedef T ContainerType;
+    typedef typename T::key_type KeyType;
+    typedef typename T::mapped_type DataType;
     
-    template<typename It>
-    iterator insert(iterator i, const It& b, const It& e) {
-      size_type dist = b - begin();
-      for (It j = b; j != e; ++j) {
-        i = insert(i, *j);
-        ++i;
-      }
-      return begin() + dist;
+    static const MapVtable vtable;
+
+    static void put(const void*, void *self, const void *key, const void *value) {
+      ContainerType *cast_self = static_cast<ContainerType*>(self);
+      const KeyType *cast_key = static_cast<const KeyType*>(key);
+      const DataType *cast_value = static_cast<const DataType*>(value);
+      cast_self->insert(std::make_pair(*cast_key, *cast_value));
     }
 
-    void assign(size_type n, const T& x) {
-      clear();
-      for (size_type i = 0; i != n; ++i)
-        push_back(x);
-    }
-
-    iterator erase(iterator first, iterator last) {
-      size_type delta = last - first;
-      for (T *pi = first, *pe = end() - delta; pi != pe; ++pi)
-        *pi = move_ref(*(pi + delta));
-      for (T *pi = end() - delta, *pe = end(); pi != pe; ++pi)
-        pi->~T();
-      m_c.end = end() - delta;
-      return first;
-    }
-
-    iterator erase(iterator i) {
-      return erase(i, i+1);
-    }
-
-    void reserve(size_type n) {
-      if (n > capacity()) {
-        size_type new_capacity = std::max(size_type(4), std::max(capacity() * size_type(2), n));
-        ArrayList other(CapacityLabel(), new_capacity);
-        other.swap(*this);
+    static void get(const void*, void *self, const void *key) {
+      ContainerType *cast_self = static_cast<ContainerType*>(self);
+      const KeyType *cast_key = static_cast<const KeyType*>(key);
+      typename ContainerType::iterator it = cast_self->bind(*cast_key);
+      if (it != cast_self->end()) {
+      } else {
       }
     }
+  };
 
-    void resize(size_type n, const T& x=T()) {
-      reserve(n);
-      while (size() < n)
-        push_back(x);
-    }
+  template<typename T> const MapVtable ContainerMapFunctions<T>::vtable = {
+    &ContainerMapFunctions<T>::put
+  };
 
-    void clear() {
-      T *p = end();
-      do {
-        --p;
-        p->~T();
-      } while (p != m_c.begin);
-      m_c.end = m_c.begin;
-    }
+  template<typename Key, typename Value>
+  class Map : public InterfaceBase {
+  public:
+    Map(MapVtable *vptr, MapObject *self) : InterfaceBase(vptr, self) {}
+    Map(std::map<Key, Value>& src) : InterfaceBase(vptr_for(src), object_for(src)) {}
 
-    void push_back(const_reference x) {insert(end(), x);}
-    void push_back(typename MoveRef<T>::type x) {insert(end(), move_ref(x));}
-
-    void swap(ArrayList<T>& other) {
-      std::swap(m_c, other.m_c);
-    }
-    
-    T& front() {return *begin();}
-    const T& front() const {return *begin();}
+    static const void* vptr_for(std::map<Key, Value>&) {return &ContainerMapFunctions<std::map<Key, Value> >::vtable;}
+    static void* object_for(std::map<Key, Value>& obj) {return &obj;}
   };
 }
 

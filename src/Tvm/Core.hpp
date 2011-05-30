@@ -25,11 +25,59 @@ namespace Psi {
    */
   namespace Tvm {
     /**
-     * \brief Base class for types which should never be constructed.
-     */
-    class NonConstructible {
+    * A simple empty type, implementing equality comparison and
+    * hashing.
+    */
+    struct Empty {
+      bool operator == (const Empty&) const {return true;}
+      friend std::size_t hash_value(const Empty&) {return 0;}
+    };
+
+    /**
+    * Base class which can be used to store empty types
+    * cheaply. Currently this is implemented by specializing for Empty.
+    */
+    template<typename T>
+    class CompressedBase {
+    public:
+      CompressedBase(const T& t) : m_value(t) {}
+      T& get() {return m_value;}
+      const T& get() const {return m_value;}
+
     private:
-      NonConstructible();
+      T m_value;
+    };
+
+    template<>
+    class CompressedBase<Empty> : Empty {
+    public:
+      CompressedBase(const Empty&) {}
+      Empty& get() {return *this;}
+      const Empty& get() const {return *this;}
+    };
+
+    /**
+    * Wraps a primitive type to ensure it is initialized.
+    */
+    template<typename T>
+    class PrimitiveWrapper {
+    public:
+      PrimitiveWrapper(T value) : m_value(value) {}
+
+      T value() const {
+        return m_value;
+      }
+
+      bool operator == (const PrimitiveWrapper<T>& other) const {
+        return m_value == other.m_value;
+      }
+
+      friend std::size_t hash_value(const PrimitiveWrapper<T>& self) {
+        return boost::hash_value(self.m_value);
+      }
+
+    private:
+      T m_value;
     };
 
     /**

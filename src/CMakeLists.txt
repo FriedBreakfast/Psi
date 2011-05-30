@@ -70,8 +70,11 @@ target_link_libraries(psi-llvm ${LLVM_LIBS} debug psi-assert)
 bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp)
 set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(UNIX)
 list(APPEND PSI_RUNTIME_SOURCES Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
+list(APPEND PSI_COMPILER_SOURCES PlatformLinux.cpp)
+elseif(WIN32)
+list(APPEND PSI_COMPILER_SOURCES PlatformWindows.cpp)
 endif()
 
 add_library(psi-runtime SHARED
@@ -83,20 +86,15 @@ add_library(psi-compiler SHARED
   Compiler.cpp Compiler.hpp
   Function.cpp
   Interface.cpp
-  GarbageCollection.cpp GarbageCollection.hpp
+  GarbageCollection.hpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
   Platform.cpp Platform.hpp
   Runtime.cpp Runtime.hpp
   Tree.cpp Tree.hpp
   TreePattern.hpp
   Utility.cpp Utility.hpp
+  ${PSI_COMPILER_SOURCES}
 )
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-list(APPEND PSI_COMPILER_SOURCES PlatformLinux.cpp)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-list(APPEND PSI_COMPILER_SOURCES PlatformWindows.cpp)
-endif()
 
 target_link_libraries(psi-compiler psi-tvm debug psi-assert)
 

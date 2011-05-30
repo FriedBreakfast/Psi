@@ -3,147 +3,70 @@
 
 #include "Assert.hpp"
 
-#include <boost/utility/enable_if.hpp>
-#include <boost/intrusive_ptr.hpp>
-#include <boost/intrusive/list.hpp>
-#include <boost/noncopyable.hpp>
-#include <boost/range/begin.hpp>
-#include <boost/range/end.hpp>
-#include <boost/range/iterator.hpp>
-
 namespace Psi {
-  template<typename T>
-  class GCPtr : public boost::intrusive_ptr<T> {
-    typedef boost::intrusive_ptr<T> BaseType;
-  public:
-    GCPtr() {}
-    GCPtr(T *ptr) : BaseType(ptr) {}
-    GCPtr(T *ptr, bool add_ref) : BaseType(ptr, add_ref) {}
-    template<typename U> GCPtr(const GCPtr<U>& src) : BaseType(src.get()) {}
-    template<typename U> GCPtr& operator = (const GCPtr<U>& src) {this->reset(src.get()); return *this;}
+  class GCVisitorIncrement {
+  };
+
+  class GCVisitorDecrement {
   };
 
   /**
-   * \brief Dynamic cast wrapper for GCPtr.
+   * \brief Garbage collect a set of objects.
+   *
+   * \param accessor Accessor to the objects.
+   *
+   * This must have the following functions:
+   *
+   * <dl>
+   * <dt><tt>template&lt;typename Visitor&gt; void visit(T*, Visitor&)</tt></dt><dd></dd>
+   * <dt><tt>T*& next(T*)</tt></dt><dd>Get the next object in the list</dd>
+   * <dt><tt>T*& prev(T*)</tt></dt><dd>Get the previous object in the list</dd>
+   * <dt><tt>void destroy(T*)</tt></dt><dd>Destroy an object. This should not release any references held by the object.</dd></dt>
+   * </dl>
    */
   template<typename T, typename U>
-  GCPtr<T> dynamic_pointer_cast(const GCPtr<U>& ptr) {
-    return GCPtr<T>(dynamic_cast<T*>(ptr.get()));
-  }
+  T* garbage_collect(T* objects, const U& accessor) {
+    GCVisitorDecrement dec_visitor;
+    for (T *i = objects; i; i = accessor.next(i))
+      accessor.visit(i, dec_visitor);
 
-  class GCPool;
-  class GCVisitor;
-
-  /**
-   * \brief Base class for garbage collected types.
-   */
-  class GCBase : public boost::intrusive::list_base_hook<boost::intrusive::link_mode<boost::intrusive::auto_unlink> > {
-    friend class GCPool;
-    friend class GCVisitor;
-
-    std::size_t m_gc_ref_count;
-    
-    GCBase(const GCBase&);
-    GCBase& operator = (const GCBase&);
-
-  protected:
-    virtual void gc_visit(GCVisitor&) = 0;
-    virtual void gc_destroy() = 0;
-
-  public:
-    GCBase();
-    virtual ~GCBase();
-
-    friend void intrusive_ptr_add_ref(GCBase *ptr) {
-      ++ptr->m_gc_ref_count;
-    }
-
-    friend void intrusive_ptr_release(GCBase *ptr) {
-      if (!--ptr->m_gc_ref_count)
-        ptr->gc_destroy();
-    }
-  };
-
-  class GCPool {
-  public:
-    typedef boost::intrusive::list<GCBase, boost::intrusive::constant_time_size<false> > GCListType;
-
-    GCPool();
-    ~GCPool();
-    void add(GCBase*);
-    void collect();
-
-  private:
-    struct NonZeroRefCount;
-    struct InsertDisposer;
-    GCListType m_gc_list;
-  };
-
-  class GCVisitor : public boost::noncopyable {
-    friend class GCPool;
-
-    enum Mode {
-      mode_decrement,
-      mode_increment,
-      mode_clear
-    };
-
-    Mode m_mode;
-    GCPool::GCListType *m_gc_list;
-
-    bool visit_ptr_internal(GCBase *ptr) const {
-      switch (m_mode) {
-      case mode_decrement:
-        --ptr->m_gc_ref_count;
-        return true;
-
-      case mode_increment:
-        if (!ptr->m_gc_ref_count) {
-          ptr->unlink();
-          m_gc_list->push_back(*ptr);
-        }
-        ++ptr->m_gc_ref_count;
-        return true;
-
-      case mode_clear:
-        return false;
-
-      default:
-        PSI_FAIL("invalid mode flag");
+    T *reachable_list = 0, *unreachable_list = 0;
+    for (T *cur = objects, *next; cur; cur = next) {
+      next = accessor.next(objects);
+      if (accessor.refcount(cur)) {
+        accessor.next(cur) = reachable_list;
+        reachable_list = cur;
+      } else {
+        accessor.next(cur) = unreachable_list;
+        if (unreachable_list)
+          accessor.prev(unreachable_list) = cur;
+        unreachable_list = cur;
       }
     }
 
-    GCVisitor(Mode, GCPool::GCListType* =0);
+    if (unreachable_list)
+      accessor.prev(unreachable_list) = 0;
 
-    template<typename T>
-    void mod_impl(T& x) {
-      gc_visit(x, *this);
-    }
+    T *result_list = 0;
+    GCVisitorIncrement inc_visitor(&reachable_list);
+    while (reachable_list) {
+      T *ptr = reachable_list;
+      reachable_list = accessor.next(reachable_list);
+      accessor.visit(ptr, inc_visitor);
 
-    template<typename T>
-    void mod_impl(GCPtr<T>& ptr) {
-      visit_ptr(ptr);
-    }
-
-  public:
-    template<typename T>
-    void visit_ptr(GCPtr<T>& ptr) {
-      if (!visit_ptr_internal(ptr.get()))
-        ptr.reset();
+      accessor.next(ptr) = result_list;
+      if (result_list)
+        accessor.prev(result_list) = ptr;
+      result_list = ptr;
     }
 
-    template<typename T>
-    void visit_range(T& range) {
-      for (typename boost::range_iterator<T>::type ii = boost::begin(range), ie = boost::end(range); ii != ie; ++ii)
-        mod_impl(*ii);
+    // Increment the reference counts on nodes to be deleted so that the reference counting
+    // mechanism doesn't perform the deletion
+    for (T *cur = unreachable_list, *next; cur; cur = next) {
+      next = accessor.next(cur);
+      accessor.destroy(cur);
     }
-    
-    template<typename T>
-    GCVisitor& operator % (T& x) {
-      mod_impl(x);
-      return *this;
-    }
-  };
+  }
 }
 
 #endif

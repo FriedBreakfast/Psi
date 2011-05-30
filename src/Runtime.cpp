@@ -36,13 +36,6 @@ namespace Psi {
     }
   }
 
-  String::String(typename MoveRef<String>::type move_src) {
-    String& src = move_deref(move_src);
-    m_c = src.m_c;
-    src.m_c.length = 0;
-    src.m_c.data = null_str;
-  }
-
   void String::init(const char *s, std::size_t n) {
     m_c.length = n;
     if (m_c.length) {
@@ -71,23 +64,12 @@ namespace Psi {
   }
   
   String& String::operator = (const String& src) {
-    String copy(src);
-    operator = (move_ref(copy));
+    String(src).swap(*this);
     return *this;
   }
 
-  String& String::operator = (typename MoveRef<String>::type move_src) {
-    clear();
-    String& src = move_deref(move_src);
-    m_c = src.m_c;
-    src.m_c.length = 0;
-    src.m_c.data = null_str;
-    return *this;
-  }
-  
   String& String::operator = (const char *s) {
-    String copy(s);
-    operator = (move_ref(copy));
+    String(s).swap(*this);
     return *this;
   }
   
@@ -97,6 +79,10 @@ namespace Psi {
       m_c.length = 0;
       m_c.data = null_str;
     }
+  }
+
+  void String::swap(String& other) {
+    std::swap(m_c, other.m_c);
   }
 
   bool String::operator == (const String& rhs) const {
