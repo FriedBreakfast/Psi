@@ -62,10 +62,7 @@ namespace Psi {
       virtual ~UnionType();
     };
 
-    class FunctionTypeArgument : public Value {
-    public:
-      FunctionTypeArgument(const TreePtr<Type>&, const SourceLocation&);
-      virtual ~FunctionTypeArgument();
+    class FunctionTypeTemplateArgument : public Type {
     };
 
     class FunctionType : public Type {
@@ -77,10 +74,14 @@ namespace Psi {
       TreePtr<Type> argument_type_after(const SourceLocation&, const List<TreePtr<> >&);
       TreePtr<Type> result_type_after(const SourceLocation&, const List<TreePtr<> >&);
 
-      PSI_STD::vector<TreePtr<FunctionTypeArgument> > arguments;
+      PSI_STD::vector<TreePtr<FunctionTypeTemplateArgument> > template_arguments;
+      PSI_STD::vector<TreePtr<Type> > arguments;
       TreePtr<Type> result_type;
 
       template<typename Visitor> static void visit_impl(FunctionType&, Visitor&);
+    };
+
+    class FunctionTemplateArgument : public Type {
     };
 
     class FunctionArgument : public Value {
@@ -95,6 +96,7 @@ namespace Psi {
       Function(const TreePtr<FunctionType>&, const SourceLocation&, DependencyPtr&);
       virtual ~Function();
 
+      PSI_STD::vector<TreePtr<FunctionTemplateArgument> > template_arguments;
       PSI_STD::vector<TreePtr<FunctionArgument> > arguments;
       TreePtr<> result_type;
       TreePtr<> body;

@@ -93,6 +93,22 @@ namespace Psi {
       std::map<String, unsigned> named_arguments;
     };
 
+    enum ArgumentType {
+      argument_positional,
+      argument_keyword,
+      argument_keyword_default,
+      argument_keyword_implicit
+    };
+
+    struct ArgumentPassingInfo {
+      PSI_STD::vector<TreePtr<FunctionTemplateArgument> > template_arguments;
+      /// \brief Whether this is a keyword argument
+      PsiBool keyword;
+      PSI_STD::vector<int> interfaces;
+      /// \brief Argument type. May be NULL if this is a template- or interface-only argument.
+      TreePtr<Type> argument_type;
+    };
+
     CompileFunctionCommonResult compile_function_common(const Parser::ParserLocation& arguments,
                                                         CompileContext& compile_context,
                                                         const TreePtr<EvaluateContext>& evaluate_context,
@@ -155,15 +171,12 @@ namespace Psi {
 
       CompileFunctionCommonResult common = compile_function_common(parameters->text, compile_context, evaluate_context, location);
 
-      std::vector<TreePtr<FunctionArgument> > argument_trees;
-      std::map<TreePtr<Type>, TreePtr<Type> > argument_substitutions;
+      PSI_STD::vector<TreePtr<FunctionTemplateArgument> > template_argument_trees;
+      PSI_STD::map<TreePtr<Type>, TreePtr<Type> > argument_substitutions;
 
-      for (std::vector<TreePtr<FunctionTypeArgument> >::iterator ii = common.type->arguments.begin(), ie = common.type->arguments.end(); ii != ie; ++ii) {
-        TreePtr<> arg_type = (*ii)->type()->rewrite(location, Map<TreePtr<Type>, TreePtr<Type> >(argument_substitutions));
-        TreePtr<Type> cast_arg_type = dyn_treeptr_cast<Type>(arg_type);
-        if (!cast_arg_type)
-          compile_context.error_throw(location, "Rewritten function argument type is not a type");
-        TreePtr<FunctionArgument> arg(new FunctionArgument(cast_arg_type, (*ii)->location()));
+      for (PSI_STD::vector<TreePtr<FunctionTypeTemplateArgument> >::iterator ii = common.type->template_arguments.begin(), ie = common.type->arguments.end(); ii != ie; ++ii) {
+        TreePtr<Type> arg_type = (*ii)->rewrite(location, Map<TreePtr<Type>, TreePtr<Type> >(argument_substitutions));
+        TreePtr<FunctionArgument> arg(new FunctionArgument(arg_type, (*ii)->location()));
         argument_trees.push_back(arg);
         argument_substitutions[*ii] = arg;
       }

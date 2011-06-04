@@ -53,8 +53,8 @@ namespace {
     ParserLocation text;
     SharedPtr<Expression> expression;
     SharedPtr<NamedExpression> named_expression;
-    ArrayList<SharedPtr<Expression> > expression_list;
-    ArrayList<SharedPtr<NamedExpression> > named_expression_list;
+    PSI_STD::vector<SharedPtr<Expression> > expression_list;
+    PSI_STD::vector<SharedPtr<NamedExpression> > named_expression_list;
   };
 
   struct ParserInternalArguments : BisonHelper<YYTYPE_INT16, YYSTYPE, YYLTYPE> {
@@ -62,9 +62,9 @@ namespace {
       : mode_token(mode_token_), text(text_), current(text_.begin), end(text_.end) {
     }
 
-    ArrayList<SharedPtr<Expression> > result_expressions;
+    PSI_STD::vector<SharedPtr<Expression> > result_expressions;
     SharedPtr<Expression> result_return_type;
-    ArrayList<SharedPtr<NamedExpression> > result_named_expressions;
+    PSI_STD::vector<SharedPtr<NamedExpression> > result_named_expressions;
 
     int mode_token;
     ParserLocation text;
@@ -130,7 +130,7 @@ namespace {
                                     const ParserLocation& op_loc, const char *op,
                                     const SharedPtr<Expression>& lhs,
                                     const SharedPtr<Expression>& rhs) {
-    ArrayList<SharedPtr<Expression> > args;
+    PSI_STD::vector<SharedPtr<Expression> > args;
     args.push_back(str_expression(op_loc, op));
     args.push_back(lhs);
     args.push_back(rhs);
@@ -141,7 +141,7 @@ namespace {
   SharedPtr<Expression> unary_expr(const ParserLocation& origin,
                                    const ParserLocation& op_loc, const char *op,
                                    const SharedPtr<Expression>& param) {
-    ArrayList<SharedPtr<Expression> > args;
+    PSI_STD::vector<SharedPtr<Expression> > args;
     args.push_back(str_expression(op_loc, op));
     args.push_back(param);
 
@@ -174,6 +174,7 @@ namespace {
 %token COMPARE_LESS_EQUAL "<="
 %token COMPARE_GREATER_EQUAL ">="
 %token OPERATOR_ARROW "->"
+%token OPERATOR_DOUBLE_ARROW "=>"
 %token UNKNOWN "unknown"
 %token BLOCK
 
@@ -274,7 +275,7 @@ compare_expression:
 add_expression
 | compare_expression_build {
   SharedPtr<Expression> cmp = str_expression(@0, "__cmp__");
-  ArrayList<SharedPtr<Expression> > elements;
+  PSI_STD::vector<SharedPtr<Expression> > elements;
   elements.push_back(cmp);
   elements.insert(elements.end(), $1.begin(), $1.end());
   $$.reset(new MacroExpression(@$, elements));
@@ -398,26 +399,38 @@ namespace {
     } else if (std::strchr("<>=!", c)) {
       /* Multi-char comparison operators */
       SCANNER_ACCEPT();
-      if ((self.current != self.end) && (*self.current == '=')) {
-        SCANNER_ACCEPT();
-        switch(c) {
-        case '>': SCANNER_RETURN(COMPARE_GREATER_EQUAL);
-        case '<': SCANNER_RETURN(COMPARE_LESS_EQUAL);
-        case '=': SCANNER_RETURN(COMPARE_EQUAL);
-        case '!': SCANNER_RETURN(COMPARE_UNEQUAL);
-        default: std::abort();
+      if (self.current != self.end) {
+        switch (*self.current) {
+        case '=':
+          switch(c) {
+          case '>': SCANNER_RETURN(COMPARE_GREATER_EQUAL);
+          case '<': SCANNER_RETURN(COMPARE_LESS_EQUAL);
+          case '=': SCANNER_RETURN(COMPARE_EQUAL);
+          case '!': SCANNER_RETURN(COMPARE_UNEQUAL);
+          default: PSI_UNREACHABLE();
+          }
+
+        case '>':
+          if (c == '=') {
+            SCANNER_ACCEPT();
+            SCANNER_RETURN(OPERATOR_DOUBLE_ARROW);
+          }
+          break;
+
+        default:
+          break;
         }
-      } else {
-        return c;
       }
+
+      SCANNER_RETURN(c);
     } else if (c == '-') {
       /* Arrow operator "->" */
       SCANNER_ACCEPT();
       if ((self.current != self.end) && (*self.current == '>')) {
         SCANNER_ACCEPT();
-        return OPERATOR_ARROW;
+        SCANNER_RETURN(OPERATOR_ARROW);
       } else {
-        return '-';
+        SCANNER_RETURN('-');
       }
     } else if (std::strchr(".:;,+*/%^&|", c)) {
       SCANNER_ACCEPT();
@@ -490,7 +503,7 @@ namespace {
       goto next_char;
     } else {
       SCANNER_ACCEPT();
-      return c;
+      SCANNER_RETURN(c);
     }
 
 #undef SCANNER_ADVANCE
@@ -526,7 +539,7 @@ namespace Psi {
     TokenExpression::~TokenExpression() {
     }
 
-    MacroExpression::MacroExpression(const ParserLocation& location_, const ArrayList<SharedPtr<Expression> >& elements_)
+    MacroExpression::MacroExpression(const ParserLocation& location_, const PSI_STD::vector<SharedPtr<Expression> >& elements_)
       : Expression(location_, expression_macro), elements(elements_) {
     }
 
@@ -564,7 +577,7 @@ namespace Psi {
     /** \brief parse a statement list.
      * \param text Text to parse.
      */
-    ArrayList<SharedPtr<NamedExpression> > parse_statement_list(const ParserLocation& text) {
+    PSI_STD::vector<SharedPtr<NamedExpression> > parse_statement_list(const ParserLocation& text) {
       ParserInternalArguments args(MODE_STATEMENT_LIST, text);
       parse_helper(args);
       return args.result_named_expressions;
@@ -574,7 +587,7 @@ namespace Psi {
      * \details an argument list is a list of Expressions forming arguments to a function call.
      * \param text Text to parse.
      */
-    ArrayList<SharedPtr<NamedExpression> > parse_argument_list(const ParserLocation& text) {
+    PSI_STD::vector<SharedPtr<NamedExpression> > parse_argument_list(const ParserLocation& text) {
       ParserInternalArguments args(MODE_ARGUMENT_LIST, text);
       parse_helper(args);
       return args.result_named_expressions;

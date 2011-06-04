@@ -11,31 +11,6 @@
 
 namespace Psi {
   namespace Tvm {
-    template<typename T>
-    class UniquePtr : public PointerBase<T> {
-    public:
-      explicit UniquePtr(T *p=0) : PointerBase<T>(p) {}
-      ~UniquePtr() {delete this->m_ptr;}
-
-      void reset(T *p=0) {
-        delete this->m_ptr;
-        this->m_ptr = p;
-      }
-
-      T* release() {
-        T *p = this->m_ptr;
-        this->m_ptr = 0;
-        return p;
-      }
-
-      void swap(UniquePtr& o) {std::swap(this->m_ptr, o.m_ptr);}
-
-    private:
-      UniquePtr(const UniquePtr&);
-    };
-
-    template<typename T> void swap(UniquePtr<T>& a, UniquePtr<T>& b) {a.swap(b);}
-
     /**
      * Version of boost::intrusive::list which deletes all owned objects
      * on destruction.

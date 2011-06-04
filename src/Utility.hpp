@@ -99,6 +99,12 @@ namespace Psi {
       this->m_ptr = ptr;
     }
 
+    T* release() {
+      T *p = this->m_ptr;
+      this->m_ptr = 0;
+      return p;
+    }
+
     void swap(UniquePtr<T>& src) {
       std::swap(this->m_ptr, src.m_ptr);
     }
