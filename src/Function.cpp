@@ -55,7 +55,7 @@ namespace Psi {
     };
 
     const EvaluateContextVtable EvaluateContextOneName::vtable =
-    PSI_COMPILER_EVALUATE_CONTEXT(EvaluateContextOneName, "psi.compiler.EvaluateContextOneName", &EvaluateContext::vtable);
+    PSI_COMPILER_EVALUATE_CONTEXT(EvaluateContextOneName, "psi.compiler.EvaluateContextOneName", EvaluateContext);
 
     class FunctionBodyCompiler : public Dependency {
       TreePtr<EvaluateContext> m_body_context;
@@ -88,26 +88,123 @@ namespace Psi {
 
     const DependencyVtable FunctionBodyCompiler::m_vtable = PSI_DEPENDENCY(FunctionBodyCompiler, Function);
 
+    class ArgumentHandler;
+
+    struct ArgumentPassingInfo {
+      enum Category {
+        category_type,
+        category_interface,
+        category_value
+      };
+
+      char category;
+      
+      PSI_STD::vector<TreePtr<FunctionTemplateArgument> > template_arguments;
+      PSI_STD::vector<int> interfaces;
+      /// \brief Whether this is a keyword argument.
+      PsiBool keyword;
+      /// \brief Handler used to interpret the argument.
+      TreePtr<ArgumentHandler> handler;
+      /// \brief Argument type. May be NULL if this is a template- or interface-only argument.
+      TreePtr<Type> argument_type;
+    };
+
+    class ArgumentPassingInfoCallback;
+    
+    struct ArgumentPassingInfoCallbackVtable {
+      void (*argument_passing_info) (ArgumentPassingInfo*, ArgumentPassingInfoCallback*);
+    };
+
+    class ArgumentPassingInfoCallback : public Tree {
+      const ArgumentPassingInfoCallbackVtable* derived_vptr() {return reinterpret_cast<const ArgumentPassingInfoCallbackVtable*>(m_vptr);}
+
+    public:
+      ArgumentPassingInfo argument_passing_info() {
+        ResultStorage<ArgumentPassingInfo> result;
+        derived_vptr()->argument_passing_info(result.ptr(), this);
+        return result.done();
+      }
+    };
+
+    struct ArgumentHandlerVtable {
+      TreeVtable base;
+      void (*argument_default) (ArgumentHandler*);
+      void (*argument_handler) (ArgumentHandler*);
+    };
+
+    class ArgumentHandler : public Tree {
+      const ArgumentHandlerVtable *derived_vptr() {return reinterpret_cast<const ArgumentHandlerVtable*>(m_vptr);}
+      
+    public:
+      void argument_default() {
+        return derived_vptr()->argument_default(this);
+      }
+
+      void argument_handler() {
+        return derived_vptr()->argument_handler(this);
+      }
+    };
+
+    template<typename Derived>
+    struct ArgumentHandlerWrapper : NonConstructible {
+      static void argument_default(ArgumentHandler *self) {
+        Derived::argument_default_impl(*static_cast<Derived*>(self));
+      }
+
+      static void argument_handler(ArgumentHandler *self) {
+        Derived::argument_handler_impl(*static_cast<Derived*>(self));
+      }
+    };
+
+#define PSI_COMPILER_ARGUMENT_HANDLER(derived,name,super) { \
+    PSI_COMPILER_TREE(derived,name,super), \
+    &ArgumentHandlerWrapper<derived>::argument_default, \
+    &ArgumentHandlerWrapper<derived>::argument_handler \
+  }
+
+    struct FunctionArgumentInfo {
+      /// \brief Argument handler
+      TreePtr<ArgumentHandler> handler;
+      /// \brief C function argument this corresponds to.
+      int index;
+    };
+
+    struct FunctionInfo {
+      /// \brief C type.
+      TreePtr<FunctionType> type;
+      /// \brief Handlers for setting up positional arguments at the call site.
+      PSI_STD::vector<FunctionArgumentInfo> positional_arguments;
+      /// \brief Handlers for setting up keyword arguments at the call site.
+      PSI_STD::map<String, FunctionArgumentInfo> named_arguments;
+      /// \brief Arguments which are passed by default (i.e. are entirely dependent on previous arguments and other context).
+      PSI_STD::vector<FunctionArgumentInfo> automatic_arguments;
+    };
+    
     struct CompileFunctionCommonResult {
+      bool failed;
       TreePtr<FunctionType> type;
       std::map<String, unsigned> named_arguments;
     };
 
-    enum ArgumentType {
-      argument_positional,
-      argument_keyword,
-      argument_keyword_default,
-      argument_keyword_implicit
+    /**
+     * \brief Argument interpreting context value.
+     *
+     * This is used when a value argument is references in the definition of
+     * a later argument. Obviously the value itself is not available, but some
+     * type information may be useable. In this case, some sort of value term
+     * must be available, and this is the tree type used.
+     */
+    class ArgumentContextValue : public Value {
+    public:
+      static const ValueVtable vtable;
+      
+      ArgumentContextValue(const TreePtr<Type>& type, const SourceLocation& location)
+      : Value(type, location) {
+      }
     };
 
-    struct ArgumentPassingInfo {
-      PSI_STD::vector<TreePtr<FunctionTemplateArgument> > template_arguments;
-      /// \brief Whether this is a keyword argument
-      PsiBool keyword;
-      PSI_STD::vector<int> interfaces;
-      /// \brief Argument type. May be NULL if this is a template- or interface-only argument.
-      TreePtr<Type> argument_type;
-    };
+    const ValueVtable ArgumentContextValue::vtable =
+    PSI_COMPILER_VALUE(ArgumentContextValue, "psi.compiler.ArgumentContextValue", Value);
 
     CompileFunctionCommonResult compile_function_common(const Parser::ParserLocation& arguments,
                                                         CompileContext& compile_context,
@@ -116,6 +213,7 @@ namespace Psi {
       Parser::ArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(arguments);
 
       CompileFunctionCommonResult result;
+      result.failed = false;
       result.type.reset(new FunctionType(compile_context, location));
 
       TreePtr<EvaluateContext> argument_context = evaluate_context;
@@ -126,16 +224,49 @@ namespace Psi {
         String expr_name = named_expr.name ? String(named_expr.name->begin, named_expr.name->end) : String();
         SourceLocation argument_location(named_expr.location.location, make_logical_location(location.logical, expr_name));
 
-        TreePtr<> argument_type = compile_expression(named_expr.expression, argument_context, argument_location.logical);
-        TreePtr<Type> cast_argument_type = dyn_treeptr_cast<Type>(argument_type);
-        if (!cast_argument_type)
-          compile_context.error_throw(argument_location, "Function argument type expression does not evaluate to a type");
-        
-        TreePtr<FunctionTypeArgument> argument_value(new FunctionTypeArgument(cast_argument_type, argument_location));
-        result.type->arguments.push_back(argument_value);
+        TreePtr<Expression> argument_expr = compile_expression(named_expr.expression, argument_context, argument_location.logical);
+        TreePtr<ArgumentPassingInfoCallback> passing_info_callback = interface_lookup_as<ArgumentPassingInfoCallback>(compile_context.argument_passing_info_interface(), argument_expr, location);
 
+        ArgumentPassingInfo passing_info = passing_info_callback->argument_passing_info();
+        result.type->template_arguments.insert(result.type->template_arguments.end(), passing_info.template_arguments.begin(), passing_info.template_arguments.end());
+
+        if (passing_info.argument_type)
+          result.type->arguments.push_back(passing_info.argument_type);
+        
         if (named_expr.name) {
-          argument_context.reset(new EvaluateContextOneName(compile_context, argument_location, expr_name, argument_value, argument_context));
+          TreePtr<Expression> argument_value;
+          switch (passing_info.category) {
+          case ArgumentPassingInfo::category_type:
+            if (passing_info.template_arguments.size() != 1) {
+              compile_context.error(argument_location, "Argument wants to pass multiple types in a single type parameter", CompileContext::error_internal);
+              result.failed = true;
+            } else {
+              argument_value = passing_info.template_arguments.front();
+            }
+            break;
+            
+          case ArgumentPassingInfo::category_value:
+            if (!passing_info.argument_type) {
+              compile_context.error(argument_location, "Value parameter does not have a type", CompileContext::error_internal);
+              result.failed = true;
+            } else {
+              argument_value.reset(new ArgumentContextValue(passing_info.argument_type, argument_location));
+            }
+            break;
+            
+          case ArgumentPassingInfo::category_interface:
+            compile_context.error(argument_location, "Interface parameter cannot be named", CompileContext::error_internal);
+            result.failed = true;
+            break;
+
+          default:
+            compile_context.error(argument_location, boost::format("Unknown argument passing category %s") % passing_info.category, CompileContext::error_internal);
+            result.failed = true;
+            break;
+          }
+
+          if (argument_value)
+            argument_context.reset(new EvaluateContextOneName(compile_context, argument_location, expr_name, argument_value, argument_context));
           result.named_arguments[expr_name] = ii - ib;
         }
       }

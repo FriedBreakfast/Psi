@@ -17,6 +17,19 @@ namespace Psi {
 
       return false;
     }
+
+    /**
+     * \brief Checks the result of an interface lookup is non-NULL and of the correct type.
+     */
+    void interface_cast_check(const TreePtr<Interface>& interface, const TreePtr<>& result, const SourceLocation& location, const TreeVtable* cast_type) {
+      CompileContext& compile_context = interface->compile_context();
+
+      if (!result)
+        compile_context.error_throw(location, boost::format("'%s' interface not available") % interface->name());
+
+      if (!si_is_a(result.get(), &cast_type->base))
+        compile_context.error_throw(location, boost::format("'%s' interface has the wrong type") % interface->name(), CompileContext::error_internal);
+    }
     
     CompileException::CompileException() {
     }
@@ -120,7 +133,7 @@ namespace Psi {
     };
 
     const EvaluateContextVtable EvaluateContextDictionary::vtable =
-    PSI_COMPILER_EVALUATE_CONTEXT(EvaluateContextDictionary, "psi.compiler.EvaluateContextDictionary", &EvaluateContext::vtable);
+    PSI_COMPILER_EVALUATE_CONTEXT(EvaluateContextDictionary, "psi.compiler.EvaluateContextDictionary", EvaluateContext);
 
     /**
      * \brief Create an evaluation context based on a dictionary.
@@ -161,15 +174,7 @@ namespace Psi {
       if (!expr->meta())
         compile_context.error_throw(location, "Expression does not have a metatype", CompileContext::error_internal);
 
-      TreePtr<> first_macro = interface_lookup(compile_context.macro_interface(), expr->meta(), location);
-      if (!first_macro)
-        compile_context.error_throw(location, "Type does not have an associated macro", CompileContext::error_internal);
-
-      TreePtr<Macro> cast_first_macro = dyn_treeptr_cast<Macro>(first_macro);
-      if (!cast_first_macro)
-        compile_context.error_throw(location, "Interface value is of the wrong type", CompileContext::error_internal);
-
-      return cast_first_macro;
+      return interface_lookup_as<Macro>(compile_context.macro_interface(), expr->meta(), location);
     }
     
     /**

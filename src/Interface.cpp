@@ -70,7 +70,7 @@ namespace Psi {
     };
 
     const MacroVtable InterfaceMacro::vtable =
-    PSI_COMPILER_MACRO(InterfaceMacro, "psi.compiler.InterfaceMacro", &Macro::vtable);
+    PSI_COMPILER_MACRO(InterfaceMacro, "psi.compiler.InterfaceMacro", Macro);
 
     /**
      * \brief Create an interface macro.

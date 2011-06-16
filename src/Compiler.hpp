@@ -246,7 +246,7 @@ namespace Psi {
       return TreePtr<T>(dyn_tree_cast<T>(ptr.get()));
     }
 
-    template<typename Derived, typename Impl=Derived>
+    template<typename Derived>
     struct TreeWrapper {
       static void destroy(Tree *self) {
         delete static_cast<Derived*>(self);
@@ -254,26 +254,26 @@ namespace Psi {
 
       static void gc_increment(Tree *self) {
         VisitorPlaceholder p;
-        Impl::visit_impl(*static_cast<Derived*>(self), p);
+        Derived::visit_impl(*static_cast<Derived*>(self), p);
       }
 
       static void gc_decrement(Tree *self) {
         VisitorPlaceholder p;
-        Impl::visit_impl(*static_cast<Derived*>(self), p);
+        Derived::visit_impl(*static_cast<Derived*>(self), p);
       }
 
       static void gc_clear(Tree *self) {
         VisitorPlaceholder p;
-        Impl::visit_impl(*static_cast<Derived*>(self), p);
+        Derived::visit_impl(*static_cast<Derived*>(self), p);
       }
 
       static void complete_callback(Tree *self) {
-        Impl::complete_callback_impl(*static_cast<Derived*>(self));
+        Derived::complete_callback_impl(*static_cast<Derived*>(self));
       }
     };
 
 #define PSI_COMPILER_TREE(derived,name,super) { \
-    PSI_COMPILER_SI(name,super), \
+    PSI_COMPILER_SI(name,&super::vtable), \
     &TreeWrapper<derived>::destroy, \
     &TreeWrapper<derived>::gc_increment, \
     &TreeWrapper<derived>::gc_decrement, \
@@ -358,7 +358,8 @@ namespace Psi {
 
 #define PSI_COMPILER_EXPRESSION(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
-    &ExpressionWrapper<derived>::match \
+    &ExpressionWrapper<derived>::match, \
+    &ExpressionWrapper<derived>::rewrite \
   }
 
     class Type;
@@ -373,6 +374,8 @@ namespace Psi {
     public:
       static const SIVtable vtable;
 
+      Value(const TreePtr<Type>&, const SourceLocation&);
+
       /// \brief Get the type of this tree
       const TreePtr<Type>& type() const {return m_type;}
       
@@ -380,7 +383,7 @@ namespace Psi {
     };
 
 #define PSI_COMPILER_VALUE(derived,name,super) { \
-    PSI_COMPILER_PATTERN_TREE(derived,name,super,) \
+    PSI_COMPILER_EXPRESSION(derived,name,super) \
   }
 
     struct TypeVtable {
@@ -399,7 +402,7 @@ namespace Psi {
     };
 
 #define PSI_COMPILER_TYPE(derived,name,super) { \
-    PSI_COMPILER_PATTERN_TREE(derived,name,super), \
+    PSI_COMPILER_EXPRESSION(derived,name,super), \
     &TypeWrapper<derived>::rewrite \
   }
 
@@ -442,6 +445,7 @@ namespace Psi {
       TreePtr<GlobalTree> tree_from_address(const SourceLocation&, const TreePtr<Type>&, void*);
       
       const TreePtr<Interface>& macro_interface();
+      const TreePtr<Interface>& argument_passing_info_interface();
       const TreePtr<Type>& empty_type();
     };
 
@@ -636,6 +640,20 @@ namespace Psi {
     &MacroDotCallbackWrapper<derived>::dot \
   }
 
+    struct InterfaceVtable {
+      void (*name) (String*, Interface*);
+    };
+
+    class Interface : public Tree {
+      const InterfaceVtable* derived_vptr() {return reinterpret_cast<const InterfaceVtable*>(m_vptr);}
+    public:
+      String name() {
+        ResultStorage<String> result;
+        derived_vptr()->name(result.ptr(), this);
+        return result.done();
+      }
+    };
+
     class Block;
 
     TreePtr<Expression> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const SharedPtr<LogicalSourceLocation>&);
@@ -647,7 +665,23 @@ namespace Psi {
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Expression> >&);
 
     TreePtr<> interface_lookup(const TreePtr<Interface>&, const List<TreePtr<> >&, const SourceLocation&);
-    TreePtr<> interface_lookup(const TreePtr<Interface>&, const TreePtr<>&, const SourceLocation&);    
+    TreePtr<> interface_lookup(const TreePtr<Interface>&, const TreePtr<>&, const SourceLocation&);
+    void interface_cast_check(const TreePtr<Interface>&, const TreePtr<>&, const SourceLocation&, const TreeVtable*);
+
+    template<typename T>
+    TreePtr<T> interface_lookup_as(const TreePtr<Interface>& interface, const TreePtr<>& parameter, const SourceLocation& location) {
+      TreePtr<> result = interface_lookup(interface, parameter, location);
+      interface_cast_check(interface, result, location, reinterpret_cast<const TreeVtable*>(&T::vtable));
+      return treeptr_cast<T>(result);
+    }
+
+    template<typename T>
+    TreePtr<T> interface_lookup_as(const TreePtr<Interface>& interface, const List<TreePtr<> >& parameters, const SourceLocation& location) {
+      TreePtr<> result = interface_lookup(interface, parameters, location);
+      interface_cast_check(interface, result, location, reinterpret_cast<const TreeVtable*>(&T::vtable));
+      return treeptr_cast<T>(result);
+    }
+    
     TreePtr<> function_definition_object(CompileContext&);
     
     TreePtr<GlobalTree> tree_from_address(CompileContext&, const SourceLocation&, const TreePtr<Type>&, void*);
