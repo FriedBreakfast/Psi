@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iosfwd>
 #include <boost/aligned_storage.hpp>
+#include <boost/static_assert.hpp>
 
 #include <vector>
 #include <map>
@@ -48,6 +49,7 @@ namespace Psi {
   };
 
   typedef char PsiBool;
+  typedef std::size_t PsiSize;
 
   enum PsiBoolValues {
     psi_false = 0,
@@ -62,7 +64,7 @@ namespace Psi {
   
   struct SharedPtrOwner {
     SharedPtrOwnerVTable *vptr;
-    std::size_t use_count;
+    PsiSize use_count;
   };
   
   /**
@@ -208,21 +210,21 @@ namespace Psi {
   }
 
   struct String_C {
-    std::size_t length;
+    PsiSize length;
     char *data;
   };
   
   class String {
     String_C m_c;
 
-    void init(const char*, std::size_t);
+    void init(const char*, PsiSize);
     
   public:
     String();
     String(const String&);
     String(const char*);
     String(const char*, const char*);
-    String(const char*, std::size_t);
+    String(const char*, PsiSize);
     ~String();
     
     String& operator = (const String&);
@@ -371,7 +373,7 @@ namespace Psi {
     return LookupResult<T>(value);
   }
 
-  class InterfaceBase : boost::noncopyable {
+  class InterfaceBase {
   protected:
     const void *m_vptr;
     void *m_self;
@@ -383,11 +385,31 @@ namespace Psi {
   };
 
   struct BaseVtable {
-    std::size_t size;
-    std::size_t alignment;
+    PsiSize size;
+    PsiSize alignment;
     void (*move) (const void*, void*, void*);
     void (*destroy) (const void*, void*);
   };
+
+  template<typename Impl>
+  struct BaseWrapper : NonConstructible {
+    typedef typename Impl::ObjectType ObjectType;
+
+    static void move(const void*, void *dest, void *src) {
+      Impl::move_impl(*static_cast<ObjectType*>(dest), *static_cast<ObjectType*>(src));
+    }
+
+    static void destroy(const void*, void* self) {
+      Impl::destroy_impl(*static_cast<ObjectType*>(self));
+    }
+  };
+
+#define PSI_BASE(impl) { \
+  sizeof(typename impl::ObjectType), \
+  PSI_ALIGNOF(typename impl::ObjectType), \
+  &BaseWrapper<impl>::move, \
+  &BaseWrapper<impl>::destroy \
+}
 
   struct IteratorObject;
 
@@ -406,6 +428,25 @@ namespace Psi {
     T& current() const {return *static_cast<T*>(vptr()->current(vptr(), this->m_self));}
   };
 
+  template<typename Impl>
+  struct IteratorWrapper : NonConstructible {
+    typedef typename Impl::ObjectType ObjectType;
+
+    static void* current(const void*, void *self) {
+      return &Impl::current_impl(*static_cast<ObjectType*>(self));
+    }
+
+    static PsiBool next(const void*, void *self) {
+      return Impl::next_impl(*static_cast<ObjectType*>(self));
+    }
+  };
+
+#define PSI_ITERATOR(impl) { \
+  PSI_BASE(impl), \
+  &IteratorWrapper<impl>::current, \
+  &IteratorWrapper<impl>::next \
+  }
+
   struct ListObject;
 
   /**
@@ -413,98 +454,129 @@ namespace Psi {
    */
   struct ListVtable {
     IteratorVtable iterator_vtable;
-    void (*append) (const void*, void*,void*);
     void (*iterator) (const void*, void*, void*);
-  };
-
-  template<typename T>
-  struct ContainerListFunctions : NonConstructible {
-    typedef T ContainerType;
-    typedef typename T::iterator ContainerIteratorType;
-    typedef typename ContainerType::value_type ValueType;
-    
-    static const ListVtable vtable;
-
-    struct ListIterator {
-      ContainerIteratorType current, end;
-      ListIterator(ContainerType& container) : current(container.begin()), end(container.end()) {}
-    };
-
-    static void append(const void*, void *self, void *value) {
-      ContainerType *cast_self = static_cast<ContainerType*>(self);
-      ValueType *cast_value = static_cast<ValueType*>(value);
-      cast_self->push_back(cast_value);
-    }
-
-    static void iterator(const void*, void *iterator, void *self) {
-      ContainerType *cast_self = static_cast<ContainerType*>(self);
-      new (iterator) ListIterator(*cast_self);
-    }
-
-    static void iterator_vtable_move(const void*, void *dest, void *src) {
-      ListIterator *cast_dest = static_cast<ListIterator*>(dest);
-      ListIterator *cast_src = static_cast<ListIterator*>(src);
-      std::swap(*cast_dest, *cast_src);
-    }
-
-    static void iterator_vtable_destroy(const void*, void *self) {
-      ListIterator *cast_self = static_cast<ListIterator*>(self);
-      cast_self->~ListIterator();
-    }
-
-    static void* iterator_vtable_current(const void*, void *self) {
-      ListIterator *cast_self = static_cast<ListIterator*>(self);
-      return &*cast_self->current;
-    }
-
-    static PsiBool iterator_vtable_next(const void*, void *self) {
-      ListIterator *cast_self = static_cast<ListIterator*>(self);
-      ++cast_self->current;
-      return cast_self->current != cast_self->end;
-    }
-  };
-
-  template<typename T> const ListVtable ContainerListFunctions<T>::vtable = {
-    {
-      {
-        sizeof(ContainerListFunctions<T>::ListIterator),
-        PSI_ALIGNOF(ContainerListFunctions<T>::ListIterator),
-        &ContainerListFunctions<T>::iterator_vtable_move,
-        &ContainerListFunctions<T>::iterator_vtable_destroy
-      },
-      &ContainerListFunctions<T>::iterator_vtable_current,
-      &ContainerListFunctions<T>::iterator_vtable_next
-    },
-    &ContainerListFunctions<T>::append,
-    &ContainerListFunctions<T>::iterator
+    PsiSize (*size) (const void*, void*);
+    void* (*get) (const void*, void*, PsiSize);
   };
 
   template<typename T>
   class List : public InterfaceBase {
   public:
+    typedef T IteratorValueType;
+
     List(const void *vptr, void *self) : InterfaceBase(vptr, self) {}
-    List(std::vector<T>& src) : InterfaceBase(vptr_for(src), object_for(src)) {}
 
     const ListVtable *vptr() const {return static_cast<const ListVtable*>(this->m_vptr);}
 
-    void append(const T& data) const {T copy(data); vptr()->append(vptr(), this->m_self, &copy);}
-    void append_move(T& data) const {vptr()->append(vptr(), this->m_self, &data);}
+    PsiSize size() const {return vptr()->size(vptr(), this->m_self);}
 
-    static const void* vptr_for(List& self) {return self.m_vptr;}
-    static void* object_for(List& self) {return self.m_self;}
-    static const void* vptr_for(std::vector<T>&) {return &ContainerListFunctions<std::vector<T> >::vtable;}
-    static void* object_for(std::vector<T>& vec) {return &vec;}
+    T& operator [] (PsiSize n) const {return *static_cast<T*>(vptr()->get(vptr(), this->m_self, n));}
+
+    friend const IteratorVtable* iterator_vptr(const List& self) {
+      return &self.vptr()->iterator_vtable;
+    }
+
+    friend void iterator_init(void *dest, const List& self) {
+      self.vptr()->iterator(self.vptr(), dest, self.object());
+    }
   };
+
+  template<typename Impl>
+  struct ListWrapper : NonConstructible {
+    typedef typename Impl::ObjectType ObjectType;
+
+    static void iterator(const void*, void *dest, void *self) {
+      Impl::iterator_impl(dest, *static_cast<ObjectType*>(self));
+    }
+
+    static PsiSize size(const void*, void *self) {
+      return Impl::size_impl(*static_cast<ObjectType*>(self));
+    }
+
+    static void* get(const void*, void *self, PsiSize index) {
+      return &Impl::get_impl(*static_cast<ObjectType*>(self), index);
+    }
+  };
+
+#define PSI_LIST(impl) { \
+  PSI_ITERATOR(impl::IteratorImpl), \
+  &ListWrapper<impl>::iterator, \
+  &ListWrapper<impl>::size, \
+  &ListWrapper<impl>::get \
+}
+  
+  template<typename T>
+  struct ContainerListFunctions : NonConstructible {
+    typedef T ContainerType;
+    typedef typename ContainerType::value_type ValueType;
+    typedef ContainerType ObjectType;
+    
+    static const ListVtable vtable;
+
+    struct Iterator {
+      typename ContainerType::iterator current, end;
+      Iterator(ContainerType& container) : current(container.begin()), end(container.end()) {}
+    };
+
+    struct IteratorImpl {
+      typedef Iterator ObjectType;
+
+      static void move_impl(Iterator& dest, Iterator& src) {
+        std::swap(dest, src);
+      }
+
+      static void destroy_impl(Iterator& self) {
+        self.~Iterator();
+      }
+
+      static ValueType& current_impl(Iterator& self) {
+        return *self.current;
+      }
+
+      static bool next_impl(Iterator& self) {
+        return ++self.current != self.end;
+      }
+    };
+
+    static void iterator_impl(void *dest, ContainerType& self) {
+      new (dest) Iterator(self);
+    }
+
+    static PsiSize size_impl(ContainerType& self) {
+      return self.size();
+    }
+
+    static ValueType& get_impl(ContainerType& self, PsiSize n) {
+      return self[n];
+    }
+  };
+
+  template<typename T> const ListVtable ContainerListFunctions<T>::vtable = PSI_LIST(ContainerListFunctions<T>);
+
+  template<typename T>
+  List<typename T::value_type> list_from_stl(T& list) {
+    return List<typename T::value_type>(&ContainerListFunctions<T>::vtable, &list);
+  }
 
   template<typename T>
   class LocalIterator : public Iterator<T> {
     StackBuffer<32> m_data;
 
   public:
-    LocalIterator(List<T>& list)
-    : Iterator<T>(list.vptr(), 0), m_data(list.vptr()->iterator_vtable.super.size) {
+    template<typename U>
+    LocalIterator(const U& list)
+    : Iterator<T>(iterator_vptr(list), 0), m_data(iterator_vptr(list)->super.size) {
+      BOOST_STATIC_ASSERT((boost::is_same<T, typename U::IteratorValueType>::value));
       this->m_self = m_data.get();
-      list.vptr()->iterator(list.vptr(), list.object(), m_data.get());
+      iterator_init(m_data.get(), list);
+    }
+
+    template<typename U>
+    LocalIterator(U& list)
+    : Iterator<T>(iterator_vptr(list), 0), m_data(iterator_vptr(list)->super.size) {
+      BOOST_STATIC_ASSERT((boost::is_same<T, typename U::IteratorValueType>::value));
+      this->m_self = m_data.get();
+      iterator_init(m_data.get(), list);
     }
 
     ~LocalIterator() {
@@ -518,7 +590,7 @@ namespace Psi {
    * \brief vtable for map types.
    */
   struct MapVtable {
-    void (*put) (const void*,void*,const void*,const void*);
+    void* (*get) (const void*,void*,const void*);
   };
 
   template<typename T>
@@ -529,35 +601,41 @@ namespace Psi {
     
     static const MapVtable vtable;
 
-    static void put(const void*, void *self, const void *key, const void *value) {
+    static void* get(const void*, void *self, const void *key) {
       ContainerType *cast_self = static_cast<ContainerType*>(self);
       const KeyType *cast_key = static_cast<const KeyType*>(key);
-      const DataType *cast_value = static_cast<const DataType*>(value);
-      cast_self->insert(std::make_pair(*cast_key, *cast_value));
-    }
-
-    static void get(const void*, void *self, const void *key) {
-      ContainerType *cast_self = static_cast<ContainerType*>(self);
-      const KeyType *cast_key = static_cast<const KeyType*>(key);
-      typename ContainerType::iterator it = cast_self->bind(*cast_key);
-      if (it != cast_self->end()) {
-      } else {
-      }
+      typename ContainerType::iterator it = cast_self->find(*cast_key);
+      return it != cast_self->end() ? &it->second : NULL;
     }
   };
 
   template<typename T> const MapVtable ContainerMapFunctions<T>::vtable = {
-    &ContainerMapFunctions<T>::put
+    &ContainerMapFunctions<T>::get
   };
+
+  template<typename T, typename Key, typename Value>
+  struct MapWrapper : NonConstructible {
+    static void* get(const void*, void *self, const void *key) {
+      return T::get_impl(*static_cast<T*>(self), *static_cast<const Key*>(key));
+    }
+  };
+
+#define PSI_MAP(Ty,Key,Value) { \
+    &MapWrapper<Ty,Key,Value>::get \
+  }
 
   template<typename Key, typename Value>
   class Map : public InterfaceBase {
   public:
-    Map(MapVtable *vptr, MapObject *self) : InterfaceBase(vptr, self) {}
+    Map(const void *vptr, void *self) : InterfaceBase(vptr, self) {}
     Map(std::map<Key, Value>& src) : InterfaceBase(vptr_for(src), object_for(src)) {}
 
     static const void* vptr_for(std::map<Key, Value>&) {return &ContainerMapFunctions<std::map<Key, Value> >::vtable;}
     static void* object_for(std::map<Key, Value>& obj) {return &obj;}
+    
+    const MapVtable *vptr() const {return static_cast<const MapVtable*>(this->m_vptr);}
+
+    Value* get(const Key& key) const {return static_cast<Value*>(vptr()->get(vptr(), this->m_self, &key));}
   };
 }
 

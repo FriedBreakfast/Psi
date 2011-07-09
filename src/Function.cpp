@@ -21,14 +21,14 @@ namespace Psi {
 
     class EvaluateContextOneName : public EvaluateContext {
       String m_name;
-      TreePtr<> m_value;
+      TreePtr<Term> m_value;
       TreePtr<EvaluateContext> m_next;
 
     public:
       static const EvaluateContextVtable vtable;
 
       EvaluateContextOneName(CompileContext& compile_context, const SourceLocation& location,
-                             const String& name, const TreePtr<>& value, const TreePtr<EvaluateContext>& next)
+                             const String& name, const TreePtr<Term>& value, const TreePtr<EvaluateContext>& next)
       : EvaluateContext(compile_context, location),
       m_name(name), m_value(value), m_next(next) {
         m_vptr = reinterpret_cast<const SIVtable*>(&vtable);
@@ -43,7 +43,7 @@ namespace Psi {
         ("next", self.m_next);
       }
 
-      static LookupResult<TreePtr<> > lookup_impl(EvaluateContextOneName& self, const String& name) {
+      static LookupResult<TreePtr<Term> > lookup_impl(EvaluateContextOneName& self, const String& name) {
         if (name == self.m_name) {
           return lookup_result_match(self.m_value);
         } else if (self.m_next) {
@@ -61,13 +61,13 @@ namespace Psi {
       TreePtr<EvaluateContext> m_body_context;
       SharedPtr<Parser::TokenExpression> m_body;
 
-      static const DependencyVtable m_vtable;
-
     public:
+      static const DependencyVtable vtable;
+
       FunctionBodyCompiler(const TreePtr<EvaluateContext>& body_context,
                            const SharedPtr<Parser::TokenExpression>& body)
       : m_body_context(body_context), m_body(body) {
-        m_vptr = &m_vtable;
+        PSI_COMPILER_DEPENDENCY_INIT();
       }
 
       template<typename Visitor>
@@ -80,33 +80,49 @@ namespace Psi {
 
       static void run_impl(FunctionBodyCompiler& self, const TreePtr<Function>& function) {
         std::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(self.m_body->text);
-        TreePtr<> body_tree = compile_statement_list(statements, self.m_body_context, function->location());
+        TreePtr<Term> body_tree = compile_statement_list(list_from_stl(statements), self.m_body_context, function->location());
         function->body = body_tree;
         body_tree->complete(true);
       }
     };
 
-    const DependencyVtable FunctionBodyCompiler::m_vtable = PSI_DEPENDENCY(FunctionBodyCompiler, Function);
+    const DependencyVtable FunctionBodyCompiler::vtable = PSI_COMPILER_DEPENDENCY(FunctionBodyCompiler, "psi.compiler.FunctionBodyCompiler", Function);
 
     class ArgumentHandler;
 
+    /**
+     * \brief An argument passed by matching patterns against the types of other arguments.
+     */
+    struct PatternArgument {
+      /// \brief Whether any data is actually passed for this argument.
+      PsiBool ghost;
+      TreePtr<FunctionTypeArgument> value;
+    };
+
+    /**
+     * \brief Arguments which are located using the interface mechanism, and appear as
+     * available interfaces inside the function.
+     */
+    struct InterfaceArgument {
+      TreePtr<Term> type;
+    };
+
     struct ArgumentPassingInfo {
       enum Category {
-        category_type,
-        category_interface,
-        category_value
+        category_positional,
+        category_keyword,
+        category_automatic
       };
 
       char category;
-      
-      PSI_STD::vector<TreePtr<FunctionTemplateArgument> > template_arguments;
-      PSI_STD::vector<int> interfaces;
-      /// \brief Whether this is a keyword argument.
-      PsiBool keyword;
+      String keyword;
+
+      PSI_STD::vector<PatternArgument> pattern_arguments;      
+      PSI_STD::vector<InterfaceArgument> interface_arguments;
+      /// \brief Type of this function argument.
+      TreePtr<Term> type;
       /// \brief Handler used to interpret the argument.
       TreePtr<ArgumentHandler> handler;
-      /// \brief Argument type. May be NULL if this is a template- or interface-only argument.
-      TreePtr<Type> argument_type;
     };
 
     class ArgumentPassingInfoCallback;
@@ -175,45 +191,20 @@ namespace Psi {
       /// \brief Handlers for setting up positional arguments at the call site.
       PSI_STD::vector<FunctionArgumentInfo> positional_arguments;
       /// \brief Handlers for setting up keyword arguments at the call site.
-      PSI_STD::map<String, FunctionArgumentInfo> named_arguments;
+      PSI_STD::map<String, FunctionArgumentInfo> keyword_arguments;
       /// \brief Arguments which are passed by default (i.e. are entirely dependent on previous arguments and other context).
       PSI_STD::vector<FunctionArgumentInfo> automatic_arguments;
-    };
-    
-    struct CompileFunctionCommonResult {
-      bool failed;
-      TreePtr<FunctionType> type;
-      std::map<String, unsigned> named_arguments;
+
+      PSI_STD::map<String, unsigned> argument_names;
     };
 
-    /**
-     * \brief Argument interpreting context value.
-     *
-     * This is used when a value argument is references in the definition of
-     * a later argument. Obviously the value itself is not available, but some
-     * type information may be useable. In this case, some sort of value term
-     * must be available, and this is the tree type used.
-     */
-    class ArgumentContextValue : public Value {
-    public:
-      static const ValueVtable vtable;
-      
-      ArgumentContextValue(const TreePtr<Type>& type, const SourceLocation& location)
-      : Value(type, location) {
-      }
-    };
-
-    const ValueVtable ArgumentContextValue::vtable =
-    PSI_COMPILER_VALUE(ArgumentContextValue, "psi.compiler.ArgumentContextValue", Value);
-
-    CompileFunctionCommonResult compile_function_common(const Parser::ParserLocation& arguments,
-                                                        CompileContext& compile_context,
-                                                        const TreePtr<EvaluateContext>& evaluate_context,
-                                                        const SourceLocation& location) {
+    FunctionInfo compile_function_common(const Parser::ParserLocation& arguments,
+                                         CompileContext& compile_context,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
       Parser::ArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(arguments);
 
-      CompileFunctionCommonResult result;
-      result.failed = false;
+      FunctionInfo result;
       result.type.reset(new FunctionType(compile_context, location));
 
       TreePtr<EvaluateContext> argument_context = evaluate_context;
@@ -224,50 +215,58 @@ namespace Psi {
         String expr_name = named_expr.name ? String(named_expr.name->begin, named_expr.name->end) : String();
         SourceLocation argument_location(named_expr.location.location, make_logical_location(location.logical, expr_name));
 
-        TreePtr<Expression> argument_expr = compile_expression(named_expr.expression, argument_context, argument_location.logical);
+        TreePtr<Term> argument_expr = compile_expression(named_expr.expression, argument_context, argument_location.logical);
         TreePtr<ArgumentPassingInfoCallback> passing_info_callback = interface_lookup_as<ArgumentPassingInfoCallback>(compile_context.argument_passing_info_interface(), argument_expr, location);
 
         ArgumentPassingInfo passing_info = passing_info_callback->argument_passing_info();
-        result.type->template_arguments.insert(result.type->template_arguments.end(), passing_info.template_arguments.begin(), passing_info.template_arguments.end());
 
-        if (passing_info.argument_type)
-          result.type->arguments.push_back(passing_info.argument_type);
+        for (PSI_STD::vector<PatternArgument>::iterator ii = passing_info.pattern_arguments.begin(), ie = passing_info.pattern_arguments.end(); ii != ie; ++ii) {
+          result.type->arguments.push_back(ii->value);
+          ii->value->set_parent(result.type);
+        }
+
+        for (PSI_STD::vector<InterfaceArgument>::iterator ii = passing_info.interface_arguments.begin(), ie = passing_info.interface_arguments.end(); ii != ie; ++ii) {
+          TreePtr<FunctionTypeArgument> arg(new FunctionTypeArgument(ii->type, argument_location));
+          result.type->arguments.push_back(arg);
+          arg->set_parent(result.type);
+        }
+        
+        TreePtr<FunctionTypeArgument> argument(new FunctionTypeArgument(passing_info.type, argument_location));
+        argument->set_parent(result.type);
+        result.type->arguments.push_back(argument);
+
+        FunctionArgumentInfo argument_info;
+        argument_info.index = result.type->arguments.size() - 1;
+        argument_info.handler = passing_info.handler;
+
+        switch (passing_info.category) {
+        case ArgumentPassingInfo::category_positional:
+          result.positional_arguments.push_back(argument_info);
+          break;
+          
+        case ArgumentPassingInfo::category_keyword: {
+          String keyword;
+          if (!passing_info.keyword.empty())
+            keyword = passing_info.keyword;
+          else if (named_expr.name)
+            keyword = expr_name;
+          else
+            compile_context.error_throw(argument_location, "No name given for keyword argument");
+          result.keyword_arguments[keyword] = argument_info;
+          break;
+        }
+          
+        case ArgumentPassingInfo::category_automatic:
+          result.automatic_arguments.push_back(argument_info);
+          break;
+
+        default:
+          compile_context.error_throw(argument_location, "Invalid argument passing category", CompileContext::error_internal);
+        }
         
         if (named_expr.name) {
-          TreePtr<Expression> argument_value;
-          switch (passing_info.category) {
-          case ArgumentPassingInfo::category_type:
-            if (passing_info.template_arguments.size() != 1) {
-              compile_context.error(argument_location, "Argument wants to pass multiple types in a single type parameter", CompileContext::error_internal);
-              result.failed = true;
-            } else {
-              argument_value = passing_info.template_arguments.front();
-            }
-            break;
-            
-          case ArgumentPassingInfo::category_value:
-            if (!passing_info.argument_type) {
-              compile_context.error(argument_location, "Value parameter does not have a type", CompileContext::error_internal);
-              result.failed = true;
-            } else {
-              argument_value.reset(new ArgumentContextValue(passing_info.argument_type, argument_location));
-            }
-            break;
-            
-          case ArgumentPassingInfo::category_interface:
-            compile_context.error(argument_location, "Interface parameter cannot be named", CompileContext::error_internal);
-            result.failed = true;
-            break;
-
-          default:
-            compile_context.error(argument_location, boost::format("Unknown argument passing category %s") % passing_info.category, CompileContext::error_internal);
-            result.failed = true;
-            break;
-          }
-
-          if (argument_value)
-            argument_context.reset(new EvaluateContextOneName(compile_context, argument_location, expr_name, argument_value, argument_context));
-          result.named_arguments[expr_name] = ii - ib;
+          argument_context.reset(new EvaluateContextOneName(compile_context, argument_location, expr_name, argument, argument_context));
+          result.argument_names[expr_name] = argument_info.index;
         }
       }
 
@@ -284,11 +283,11 @@ namespace Psi {
       return result;
     }
 
-    TreePtr<> compile_function_definition(const TreePtr<>&,
-                                          const std::vector<SharedPtr<Parser::Expression> >& arguments,
-                                          CompileContext& compile_context,
-                                          const TreePtr<EvaluateContext>& evaluate_context,
-                                          const SourceLocation& location) {
+    TreePtr<Term> compile_function_definition(const List<SharedPtr<Parser::Expression> >& arguments,
+                                              const TreePtr<EvaluateContext>& evaluate_context,
+                                              const SourceLocation& location) {
+      CompileContext& compile_context = evaluate_context->compile_context();
+
       if (arguments.size() != 2)
         compile_context.error_throw(location, boost::format("function macro expects two arguments, got %s") % arguments.size());
 
@@ -300,24 +299,25 @@ namespace Psi {
       if (!(body = expression_as_token_type(arguments[1], Parser::TokenExpression::square_bracket)))
         compile_context.error_throw(location, "Second (body) parameter to function definition is not a [...]");
 
-      CompileFunctionCommonResult common = compile_function_common(parameters->text, compile_context, evaluate_context, location);
+      FunctionInfo common = compile_function_common(parameters->text, compile_context, evaluate_context, location);
 
-      PSI_STD::vector<TreePtr<FunctionTemplateArgument> > template_argument_trees;
-      PSI_STD::map<TreePtr<Type>, TreePtr<Type> > argument_substitutions;
+      PSI_STD::map<TreePtr<Term>, TreePtr<Term> > argument_substitutions;
+      PSI_STD::vector<TreePtr<FunctionArgument> > argument_trees;
 
-      for (PSI_STD::vector<TreePtr<FunctionTypeTemplateArgument> >::iterator ii = common.type->template_arguments.begin(), ie = common.type->arguments.end(); ii != ie; ++ii) {
-        TreePtr<Type> arg_type = (*ii)->rewrite(location, Map<TreePtr<Type>, TreePtr<Type> >(argument_substitutions));
+      for (PSI_STD::vector<TreePtr<FunctionTypeArgument> >::iterator ii = common.type->arguments.begin(), ie = common.type->arguments.end(); ii != ie; ++ii) {
+        TreePtr<Term> arg_type = (*ii)->type()->rewrite((*ii)->location(), Map<TreePtr<Term>, TreePtr<Term> >(argument_substitutions));
         TreePtr<FunctionArgument> arg(new FunctionArgument(arg_type, (*ii)->location()));
-        argument_trees.push_back(arg);
         argument_substitutions[*ii] = arg;
+        argument_trees.push_back(arg);
       }
+      
       TreePtr<> result_type = common.type->result_type->rewrite(location, argument_substitutions);
       TreePtr<Type> cast_result_type = dyn_treeptr_cast<Type>(result_type);
       if (!cast_result_type)
         compile_context.error_throw(location, "Rewritten function result type is not a type");
 
-      std::map<String, TreePtr<Expression> > argument_values;
-      for (std::map<String, unsigned>::iterator ii = common.named_arguments.begin(), ie = common.named_arguments.end(); ii != ie; ++ii)
+      PSI_STD::map<String, TreePtr<Term> > argument_values;
+      for (PSI_STD::map<String, unsigned>::iterator ii = common.argument_names.begin(), ie = common.argument_names.end(); ii != ie; ++ii)
         argument_values[ii->first] = argument_trees[ii->second];
 
       TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(compile_context, location, argument_values, evaluate_context);
@@ -329,37 +329,41 @@ namespace Psi {
       return function;
     }
 
-#if 0
     /**
      * \brief Callback to use for constructing interfaces which define functions.
      */
-    class FunctionDefineCallback : public EvaluateCallback {
-      virtual void gc_visit(GCVisitor& visitor) {
-        EvaluateCallback::gc_visit(visitor);
-      }
-
+    class FunctionDefineCallback : public MacroEvaluateCallback {
     public:
-      FunctionDefineCallback(CompileContext& compile_context) : EvaluateCallback(compile_context) {
+      static const MacroEvaluateCallbackVtable vtable;
+      
+      FunctionDefineCallback(CompileContext& compile_context, const SourceLocation& location)
+      : MacroEvaluateCallback(compile_context, location) {
+        PSI_COMPILER_TREE_INIT();
       }
       
-      virtual TreePtr<> evaluate_callback(const TreePtr<>& value,
-                                          const std::vector<SharedPtr<Parser::Expression> >& arguments,
-                                          CompileContext& compile_context,
-                                          const GCPtr<EvaluateContext>& evaluate_context,
-                                          const SourceLocation& location) {
-        return compile_function_definition(value, arguments, compile_context, evaluate_context, location);
+      static TreePtr<Term> evaluate_impl(FunctionDefineCallback&,
+                                         const TreePtr<Term>&,
+                                         const List<SharedPtr<Parser::Expression> >& arguments,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
+        return compile_function_definition(arguments, evaluate_context, location);
       }
     };
+
+    const MacroEvaluateCallbackVtable FunctionDefineCallback::vtable =
+    PSI_COMPILER_MACRO_EVALUATE_CALLBACK(FunctionDefineCallback, "psi.compiler.FunctionDefineCallback", MacroEvaluateCallback);
 
     /**
      * \brief Create a callback to the function definition function.
      */
-    TreePtr<> function_definition_object(CompileContext& compile_context) {
-      GCPtr<EvaluateCallback> callback(new FunctionDefineCallback(compile_context));
-      TreePtr<EmptyType> type(new EmptyType(compile_context));
-      type->macro = make_interface(compile_context, "function", callback);
-      return TreePtr<>(new EmptyValue(type));
+    TreePtr<Term> function_definition_object(CompileContext& compile_context, const SourceLocation& location) {
+      TreePtr<MacroEvaluateCallback> callback(new FunctionDefineCallback(compile_context, location));
+      TreePtr<Macro> macro = make_macro(compile_context, location, "function", callback);
+      
+      TreePtr<Term> term = make_macro_term();
+      attach_compile_implementation(compile_context.macro_interface(), treeptr_cast<ImplementationTerm>(term->type()), macro, location);
+      
+      return term;
     }
-#endif
   }
 }

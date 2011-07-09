@@ -64,18 +64,18 @@ int main(int argc, char *argv[]) {
   file_text.begin = source_text.get();
   file_text.end = source_text.get() + source_length;
   
-  ArrayList<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(file_text);
+  PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(file_text);
 
   CompileContext compile_context(&std::cerr);
   
-  std::map<String, TreePtr<> > global_names;
-  global_names["function"] = function_definition_object(compile_context);
+  PSI_STD::map<String, TreePtr<Term> > global_names;
+  global_names["function"] = function_definition_object(compile_context, core_location);
 
-  TreePtr<CompileImplementation> root_evaluate_context = evaluate_context_dictionary(compile_context, core_location, global_names);
+  TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, core_location, global_names);
 
-  GCPtr<Tree> compiled_statements;
+  TreePtr<> compiled_statements;
   try {
-    compiled_statements = compile_statement_list(statements, root_evaluate_context, SourceLocation(file_text.location, SharedPtr<LogicalSourceLocation>()));
+    compiled_statements = compile_statement_list(list_from_stl(statements), root_evaluate_context, SourceLocation(file_text.location, SharedPtr<LogicalSourceLocation>()));
     compiled_statements->complete();
   } catch (CompileException&) {
     return EXIT_FAILURE;

@@ -9,7 +9,36 @@
 
 namespace Psi {
   namespace Compiler {
-    class GlobalTree : public Tree {
+    class Parameter : public Term {
+    public:
+      /// Parameter depth (number of enclosing parameter scopes between this parameter and its own scope).
+      unsigned depth;
+      /// Index of this parameter in its scope.
+      unsigned index;
+    };
+    
+    class Implementation : public Tree {
+    public:
+      Implementation(CompileContext&, const SourceLocation&);
+
+      TreePtr<Interface> interface;
+      TreePtr<> value;
+      /// \brief Pattern match variable types.
+      PSI_STD::vector<TreePtr<Term> > wildcard_types;
+      /// \brief Parameters to the interface type
+      PSI_STD::vector<TreePtr<Term> > interface_parameters;
+    };
+
+    /**
+     * \brief Base type for terms which carry interface implementations.
+     */
+    class ImplementationTerm : public Term {
+    public:
+      ImplementationTerm(const TreePtr<Term>&, const SourceLocation&);
+      PSI_STD::vector<TreePtr<Implementation> > implementations;
+    };
+    
+    class GlobalTree : public Term {
       friend class CompileContext;
       void *m_jit_ptr;
     public:
@@ -22,96 +51,117 @@ namespace Psi {
       ExternalGlobalTree(const TreePtr<Type>&, const SourceLocation&);
       String symbol_name;
     };
-    
-    /**
-     * \brief Tree for a statement, which should be part of a block.
-     */
-    class Statement : public Expression {
-    public:
-      Statement(CompileContext&, const SourceLocation&);
-      virtual ~Statement();
-
-      TreePtr<> value;
-
-      template<typename Visitor> static void visit_impl(Statement&, Visitor&);
-      void complete_statement();
-    };
 
     /**
      * \brief Tree for a block of code.
      */
-    class Block : public Tree {
+    class Block : public Term {
     public:
-      Block(const TreePtr<Type>&, const SourceLocation&);
-      virtual ~Block();
+      Block(const TreePtr<Term>&, const SourceLocation&);
 
-      PSI_STD::vector<TreePtr<Statement> > statements;
+      PSI_STD::vector<TreePtr<Term> > statements;
+      TreePtr<Term> result;
+      DependencyPtr dependency;
 
-      template<typename Visitor> static void visit_impl(Block&, Visitor&);
+      template<typename Visitor> static void visit_impl(Block& self, Visitor& visitor) {
+        Term::visit_impl(self, visitor);
+        visitor("statements", self.statements);
+        visitor("result", self.result);
+        visitor("dependency", self.dependency);
+      }
     };
 
+    /**
+     * \brief Named, recursive type.
+     *
+     * This class allows the creation of types which contain references
+     * to themselves. In order for these to work these types are by
+     * definition unique, however template parameters are also available.
+     */
+    class RecursiveType : public ImplementationTerm {
+    public:
+      RecursiveType(CompileContext&);
+    };
+
+    /**
+     * \brief Structure type.
+     *
+     * Stores a list of other types.
+     */
     class StructType : public Type {
     public:
       StructType(CompileContext&);
-      virtual ~StructType();
     };
 
+    /**
+     * \brief Union type.
+     *
+     * Stores one out of a list of other fields. This does not know which field
+     * is actually held; that information must be kept elsewhere.
+     */
     class UnionType : public Type {
     public:
       UnionType(CompileContext&);
-      virtual ~UnionType();
     };
 
-    class FunctionTypeTemplateArgument : public Type {
+    class FunctionTypeArgument : public Term {
+    public:
+      FunctionTypeArgument(const TreePtr<Term>&, const SourceLocation&);
     };
 
     class FunctionType : public Type {
     public:
       FunctionType(CompileContext&, const SourceLocation&);
-      virtual ~FunctionType();
-      virtual TreePtr<> rewrite_hook(const SourceLocation&, const Map<TreePtr<>, TreePtr<> >&);
+      TreePtr<Term> rewrite_impl(const SourceLocation&, const Map<TreePtr<Term>, TreePtr<Term> >&);
 
-      TreePtr<Type> argument_type_after(const SourceLocation&, const List<TreePtr<> >&);
-      TreePtr<Type> result_type_after(const SourceLocation&, const List<TreePtr<> >&);
+      TreePtr<Term> argument_type_after(const SourceLocation&, const List<TreePtr<Term> >&);
+      TreePtr<Term> result_type_after(const SourceLocation&, const List<TreePtr<Term> >&);
 
-      PSI_STD::vector<TreePtr<FunctionTypeTemplateArgument> > template_arguments;
-      PSI_STD::vector<TreePtr<Type> > arguments;
-      TreePtr<Type> result_type;
+      PSI_STD::vector<TreePtr<FunctionTypeArgument> > arguments;
+      TreePtr<Term> result_type;
 
       template<typename Visitor> static void visit_impl(FunctionType&, Visitor&);
     };
 
-    class FunctionTemplateArgument : public Type {
+    class FunctionArgument : public Term {
+    public:
+      FunctionArgument(const TreePtr<Term>&, const SourceLocation&);
     };
 
-    class FunctionArgument : public Value {
+    class Function : public Term {
+      DependencyPtr m_dependency;
+      
     public:
-      FunctionArgument(const TreePtr<Type>&, const SourceLocation&);
-      virtual ~FunctionArgument();
-    };
-
-    class Function : public Tree {
-    public:
+      static const TermVtable vtable;
+      
       Function(const TreePtr<FunctionType>&, const SourceLocation&);
       Function(const TreePtr<FunctionType>&, const SourceLocation&, DependencyPtr&);
-      virtual ~Function();
 
-      PSI_STD::vector<TreePtr<FunctionTemplateArgument> > template_arguments;
       PSI_STD::vector<TreePtr<FunctionArgument> > arguments;
       TreePtr<> result_type;
       TreePtr<> body;
 
-      template<typename Visitor> static void visit_impl(Function&, Visitor&);
+      template<typename Visitor> static void visit_impl(Function& self, Visitor& visitor) {
+        Term::visit_impl(self, visitor);
+        visitor("arguments", self.arguments);
+        visitor("result_type", self.result_type);
+        visitor("body", self.body);
+      }
+      
+      static void complete_callback_impl(Function&);
     };
 
-    class TryFinally : public Tree {
+    class TryFinally : public Term {
     public:
-      TryFinally(const TreePtr<Type>&, const SourceLocation&);
-      virtual ~TryFinally();
+      TryFinally(const TreePtr<Term>&, const SourceLocation&);
 
-      TreePtr<> try_block, finally_block;
+      TreePtr<Term> try_expr, finally_expr;
 
-      template<typename Visitor> static void visit_impl(TryFinally&, Visitor&);
+      template<typename Visitor> static void visit_impl(TryFinally& self, Visitor& visitor) {
+        Term::visit_impl(self, visitor);
+        visitor("try_expr", self.try_expr);
+        visitor("finally_expr", self.finally_expr);
+      }
     };
   }
 }
