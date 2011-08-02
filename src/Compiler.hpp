@@ -10,6 +10,7 @@
 #include <boost/function.hpp>
 #include <boost/optional.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/unordered_set.hpp>
 
 #include "CppCompiler.hpp"
 #include "GarbageCollection.hpp"
@@ -353,6 +354,7 @@ namespace Psi {
       static const SIVtable vtable;
 
       Term(const TreePtr<Term>&, const SourceLocation&);
+      ~Term();
 
       /// \brief Get the type of this tree
       const TreePtr<Term>& type() const {return m_type;}
@@ -441,10 +443,28 @@ namespace Psi {
 
       template<typename T>
       static std::string to_str(const T& t) {
-        std::stringstream ss;
+        std::ostringstream ss;
         ss << t;
         return ss.str();
       }
+
+      struct TermPointerHash {
+        std::size_t operator () (Term *t) const {
+        }
+      };
+
+      struct TermPointerEquals {
+        bool operator () (Term *lhs, Term *rhs) const {
+          if (lhs->derived_vptr() != rhs->derived_vptr())
+            return false;
+
+          return lhs->derived_vptr()->equals(lhs, rhs);
+        }
+      };
+
+      friend Term::~Term();
+      typedef boost::unordered_set<Term*, TermPointerHash, TermPointerEquals> TermMapType;
+      TermMapType m_terms;
 
       TreePtr<Interface> m_macro_interface;
       TreePtr<Interface> m_argument_passing_interface;
@@ -459,6 +479,28 @@ namespace Psi {
         error_warning=1,
         error_internal=2
       };
+
+      /**
+       * \brief Get a hashable term.
+       *
+       * First, see if a term has a hashtable equivalent. If so, return that. Otherwise,
+       * duplicate the term onto the heap, insert it into the hashtable and return the
+       * copy.
+       *
+       * This should only be called from static get methods of specialized terms. These terms
+       * be befriend Context in order for this method to work. The Term destructor itself
+       * handles removing terms from the hashtable.
+       */
+      template<typename T>
+      TreePtr<T> get_term(const T& src) {
+        typename TermMapType::iterator it = m_terms.find(&src);
+        if (it != m_terms.end())
+          return *it;
+
+        TreePtr<T> copy(new T(src));
+        m_terms.insert(copy.get());
+        return copy;
+      }
 
       /// \brief Returns true if an error has occurred during compilation.
       bool error_occurred() const {return m_error_occurred;}
@@ -729,7 +771,7 @@ namespace Psi {
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const String&, const std::map<String, TreePtr<MacroDotCallback> >&);
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const String&);
     void attach_compile_implementation(const TreePtr<Interface>&, const TreePtr<ImplementationTerm>&, const TreePtr<>&, const SourceLocation&);
-    TreePtr<Term> make_macro_term();
+    TreePtr<Term> make_macro_term(CompileContext&, const SourceLocation&);
   }
 }
 

@@ -37,15 +37,8 @@ if (LLVM_CXX_FLAGS MATCHES "-D_GLIBCXX_DEBUG")
 endif()
 
 # Locate Boost
-find_package(Boost 1.36.0 COMPONENTS unit_test_framework)
-if(NOT Boost_FOUND)
-  message(SEND_ERROR "Boost not found")
-endif()
-
-find_package(BISON)
-if(NOT BISON_FOUND)
-  message(SEND_ERROR "Bison not found")
-endif()
+find_package(Boost 1.36.0 REQUIRED unit_test_framework)
+find_package(BISON REQUIRED)
 
 find_package(Doxygen)
 if(DOXYGEN_FOUND)

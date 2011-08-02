@@ -80,7 +80,44 @@ namespace Psi {
      */
     class RecursiveType : public ImplementationTerm {
     public:
-      RecursiveType(CompileContext&);
+      RecursiveType(CompileContext&, const SourceLocation&);
+
+      /// \brief
+      PSI_STD::vector<TreePtr<> > parameters;
+      /// \brief Single member of this type.
+      TreePtr<Term> member;
+    };
+
+    /**
+     * \brief Value of type RecursiveType.
+     */
+    class RecursiveValue : public Term {
+      TreePtr<Term> m_member;
+      RecursiveValue(const TreePtr<RecursiveType>&, const TreePtr<Term>&, const SourceLocation&);
+    public:
+      static TreePtr<Term> get(const TreePtr<RecursiveType>&, const TreePtr<Term>&, const SourceLocation&);
+    };
+
+    /**
+     * \brief Empty type.
+     *
+     * Unions and structures with no members can be replaced by this type.
+     */
+    class EmptyType : public Type {
+      EmptyType(CompileContext&, const SourceLocation&);
+    public:
+      static TreePtr<Term> get(CompileContext&);
+    };
+
+    /**
+     * \brief Empty value.
+     *
+     * Value of type EmptyType.
+     */
+    class EmptyValue : public Term {
+      EmptyValue(CompileContext&, const SourceLocation&);
+    public:
+      static TreePtr<Term> get(CompileContext&);
     };
 
     /**
@@ -89,8 +126,9 @@ namespace Psi {
      * Stores a list of other types.
      */
     class StructType : public Type {
-    public:
       StructType(CompileContext&);
+    public:
+      static TreePtr<Term>& get(CompileContext&, const PSI_STD::vector<TreePtr<Term> >&);
     };
 
     /**
@@ -100,8 +138,9 @@ namespace Psi {
      * is actually held; that information must be kept elsewhere.
      */
     class UnionType : public Type {
-    public:
       UnionType(CompileContext&);
+    public:
+      static TreePtr<Term>& get(CompileContext&, const PSI_STD::vector<TreePtr<Term> >&);
     };
 
     class FunctionTypeArgument : public Term {

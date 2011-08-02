@@ -28,6 +28,10 @@ namespace Psi {
     m_type(type) {
     }
 
+    Term::~Term() {
+      compile_context().m_terms.erase(this);
+    }
+
     /**
      * \brief Rewrite a term, substituting new trees for existing ones.
      *
@@ -245,6 +249,19 @@ namespace Psi {
     
     ImplementationTerm::ImplementationTerm(const TreePtr<Term>& type, const SourceLocation& location)
     : Term(type, location) {
+    }
+
+    RecursiveType::RecursiveType(CompileContext& compile_context, const SourceLocation& location)
+    : ImplementationTerm(compile_context.metatype(), location) {
+    }
+    
+    RecursiveValue::RecursiveValue(const TreePtr<RecursiveType>& type, const TreePtr<Term>& member, const SourceLocation& location)
+    : Term(type, location),
+    m_member(member) {
+    }
+    
+    TreePtr<Term> RecursiveValue::get(const TreePtr<RecursiveType>&, const TreePtr<Term>&, const SourceLocation&) {
+      PSI_FAIL("not implemented");
     }
   }
 }

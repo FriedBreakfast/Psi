@@ -360,7 +360,7 @@ namespace Psi {
       TreePtr<MacroEvaluateCallback> callback(new FunctionDefineCallback(compile_context, location));
       TreePtr<Macro> macro = make_macro(compile_context, location, "function", callback);
       
-      TreePtr<Term> term = make_macro_term();
+      TreePtr<Term> term = make_macro_term(compile_context, location);
       attach_compile_implementation(compile_context.macro_interface(), treeptr_cast<ImplementationTerm>(term->type()), macro, location);
       
       return term;

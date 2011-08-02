@@ -118,8 +118,10 @@ namespace Psi {
      * The type of this term will be an instance of RecursiveType. The term itself
      * will carry no data.
      */
-    TreePtr<Term> make_macro_term() {
-      PSI_FAIL("not implemented");
+    TreePtr<Term> make_macro_term(CompileContext& compile_context, const SourceLocation& location) {
+      TreePtr<RecursiveType> type(new RecursiveType(compile_context, location));
+      type->member = EmptyType::get(compile_context);
+      return RecursiveValue::get(type, EmptyValue::get(compile_context), location);
     }
 
     /**
