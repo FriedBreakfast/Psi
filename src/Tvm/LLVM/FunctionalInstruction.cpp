@@ -120,6 +120,15 @@ namespace Psi {
               return (builder.irbuilder().*ui_callback)(lhs, rhs, "");
           }
         };
+
+	static llvm::Value *integer_divide_callback(FunctionBuilder& builder, IntegerDivide::Ptr term) {
+            llvm::Value* lhs = builder.build_value(term->lhs());
+            llvm::Value* rhs = builder.build_value(term->rhs());
+            if (term->type()->is_signed())
+              return builder.irbuilder().CreateSDiv(lhs, rhs, "");
+            else
+              return builder.irbuilder().CreateUDiv(lhs, rhs, "");
+	}
         
         typedef TermOperationMap<FunctionalTerm, llvm::Value*, FunctionBuilder&> CallbackMap;
         
@@ -138,10 +147,10 @@ namespace Psi {
             .add<StructElementPtr>(struct_element_ptr_callback)
             .add<ArrayElementPtr>(array_element_ptr_callback)
             .add<SelectValue>(select_value_callback)
-            .add<IntegerAdd>(BinaryOp(&IRBuilder::CreateAdd))
-            .add<IntegerMultiply>(BinaryOp(&IRBuilder::CreateMul))
-            .add<IntegerDivide>(IntegerBinaryOp(&IRBuilder::CreateUDiv, &IRBuilder::CreateSDiv))
-            .add<IntegerNegative>(UnaryOp(&IRBuilder::CreateNeg))
+            .add<IntegerAdd>(IntegerBinaryOp(&IRBuilder::CreateNUWAdd, &IRBuilder::CreateNSWAdd))
+            .add<IntegerMultiply>(IntegerBinaryOp(&IRBuilder::CreateNUWMul, &IRBuilder::CreateNSWMul))
+            .add<IntegerDivide>(integer_divide_callback)
+            .add<IntegerNegative>(UnaryOp(&IRBuilder::CreateNSWNeg))
             .add<BitAnd>(BinaryOp(&IRBuilder::CreateAnd))
             .add<BitOr>(BinaryOp(&IRBuilder::CreateOr))
             .add<BitXor>(BinaryOp(&IRBuilder::CreateXor))

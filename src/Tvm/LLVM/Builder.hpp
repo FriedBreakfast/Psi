@@ -1,6 +1,7 @@
 #ifndef HPP_PSI_TVM_LLVM_BUILDER
 #define HPP_PSI_TVM_LLVM_BUILDER
 
+#include <limits>
 #include <deque>
 #include <exception>
 #include <tr1/unordered_map>

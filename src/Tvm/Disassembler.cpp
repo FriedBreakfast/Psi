@@ -1,11 +1,13 @@
 #include "Functional.hpp"
 #include "Function.hpp"
 #include "Number.hpp"
+#include "Instructions.hpp"
+
+#include <list>
 
 #include <boost/make_shared.hpp>
 #include <boost/format.hpp>
 #include <boost/shared_ptr.hpp>
-#include "Instructions.hpp"
 
 namespace Psi {
   namespace Tvm {

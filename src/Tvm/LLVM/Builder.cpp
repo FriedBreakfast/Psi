@@ -13,7 +13,7 @@
 #include <llvm/Module.h>
 #include <llvm/Support/IRBuilder.h>
 #include <llvm/Support/raw_os_ostream.h>
-#include <llvm/System/Host.h>
+#include <llvm/Support/Host.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/Target/TargetData.h>
 #include <llvm/Target/TargetMachine.h>

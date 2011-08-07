@@ -8,6 +8,8 @@
 
 #include <boost/next_prior.hpp>
 #include <set>
+#include <map>
+#include <utility>
 
 namespace Psi {
   namespace Tvm {

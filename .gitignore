@@ -6,3 +6,8 @@ Makefile
 .kdev4
 /*.kdev4
 *~
+/GPATH
+/GTAGS
+/GRTAGS
+/GSYMS
+
