@@ -36,7 +36,7 @@ namespace Psi {
 
       template<typename Visitor>
       static void visit_impl(EvaluateContextOneName& self, Visitor& visitor) {
-        PSI_FAIL("not implemented");
+	EvaluateContext::visit_impl(self, visitor);
         visitor
         ("name", self.m_name)
         ("value", self.m_value)
@@ -72,7 +72,7 @@ namespace Psi {
 
       template<typename Visitor>
       static void visit_impl(FunctionBodyCompiler& self, Visitor& visitor) {
-        PSI_FAIL("not implemented");
+	Dependency::visit_impl(self, visitor);
         visitor
         ("body_context", self.m_body_context)
         ("body", self.m_body);
@@ -222,17 +222,14 @@ namespace Psi {
 
         for (PSI_STD::vector<PatternArgument>::iterator ii = passing_info.pattern_arguments.begin(), ie = passing_info.pattern_arguments.end(); ii != ie; ++ii) {
           result.type->arguments.push_back(ii->value);
-          ii->value->set_parent(result.type);
         }
 
         for (PSI_STD::vector<InterfaceArgument>::iterator ii = passing_info.interface_arguments.begin(), ie = passing_info.interface_arguments.end(); ii != ie; ++ii) {
           TreePtr<FunctionTypeArgument> arg(new FunctionTypeArgument(ii->type, argument_location));
           result.type->arguments.push_back(arg);
-          arg->set_parent(result.type);
         }
         
         TreePtr<FunctionTypeArgument> argument(new FunctionTypeArgument(passing_info.type, argument_location));
-        argument->set_parent(result.type);
         result.type->arguments.push_back(argument);
 
         FunctionArgumentInfo argument_info;

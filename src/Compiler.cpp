@@ -1,5 +1,6 @@
 #include <boost/array.hpp>
 #include <boost/bind.hpp>
+#include <boost/foreach.hpp>
 #include <boost/format.hpp>
 #include <boost/next_prior.hpp>
 
@@ -59,7 +60,7 @@ namespace Psi {
       return TreePtr<>();
     }
     
-    TreePtr<> interface_lookup(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const SourceLocation& location) {
+    TreePtr<> interface_lookup(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const SourceLocation&) {
       // Walk the various parameters and look for matching interface implementations
       for (LocalIterator<TreePtr<Term> > p(parameters); p.next();) {
         TreePtr<> result = interface_lookup_search(interface, parameters, p.current());
@@ -88,9 +89,42 @@ namespace Psi {
 
     CompileContext::CompileContext(std::ostream *error_stream)
     : m_error_stream(error_stream), m_error_occurred(false) {
+      PhysicalSourceLocation core_physical_location;
+      core_physical_location.file.reset(new SourceFile());
+      core_physical_location.first_line = core_physical_location.first_column = 0;
+      core_physical_location.last_line = core_physical_location.last_column = 0;
+      SourceLocation core_location(core_physical_location, make_logical_location(SharedPtr<LogicalSourceLocation>(), "psi"));
+
+      m_metatype.reset(new Metatype(*this, core_location));
+      m_empty_type.reset(new EmptyType(*this, core_location));
+      m_macro_interface.reset(new Interface(*this, "psi.compiler.Macro", core_location));
+      m_argument_passing_interface.reset(new Interface(*this, "psi.compiler.ArgumentPasser", core_location));
     }
 
+    struct CompileContext::TreeDisposer {
+      void operator () (Tree *t) {
+	if (!--t->m_reference_count)
+	  t->destroy();
+	else
+	  PSI_WARNING_FAIL("Dangling pointers to Tree during context destruction");
+      }
+    };
+
     CompileContext::~CompileContext() {
+      m_metatype.reset();
+      m_empty_type.reset();
+      m_macro_interface.reset();
+      m_argument_passing_interface.reset();
+
+      // Add extra reference to each Tree
+      BOOST_FOREACH(Tree& t, m_gc_list)
+	++t.m_reference_count;
+
+      // Clear cross references in each Tree
+      BOOST_FOREACH(Tree& t, m_gc_list)
+	t.gc_clear();
+
+      m_gc_list.clear_and_dispose(TreeDisposer());
     }
 
     void CompileContext::error(const SourceLocation& loc, const std::string& message, unsigned flags) {
@@ -113,7 +147,7 @@ namespace Psi {
     /**
      * \brief JIT compile a global symbol.
      */
-    void* CompileContext::jit_compile(const TreePtr<GlobalTree>& global) {
+    void* CompileContext::jit_compile(const TreePtr<Global>& global) {
       if (!global->m_jit_ptr) {
         PSI_FAIL("not implemented");
       }
@@ -124,7 +158,7 @@ namespace Psi {
     /**
      * \brief Create a tree for a global from the address of that global.
      */
-    TreePtr<GlobalTree> CompileContext::tree_from_address(const SourceLocation& location, const TreePtr<Type>& type, void *ptr) {
+    TreePtr<Global> CompileContext::tree_from_address(const SourceLocation& location, const TreePtr<Type>& type, void *ptr) {
       void *base;
       String name;
       try {
@@ -135,14 +169,14 @@ namespace Psi {
       if (base != ptr)
         error_throw(location, "Internal error: address used to retrieve symbol did not match symbol base");
 
-      TreePtr<ExternalGlobalTree> result(new ExternalGlobalTree(type, location));
-      result->symbol_name = name;
+      TreePtr<ExternalGlobal> result(new ExternalGlobal(type, location));
+      result->symbol = name;
       result->m_jit_ptr = base;
       return result;
     }
     
     class EvaluateContextDictionary : public EvaluateContext {
-      typedef std::map<String, TreePtr<Term> > NameMapType;
+      typedef PSI_STD::map<String, TreePtr<Term> > NameMapType;
       NameMapType m_entries;
       TreePtr<EvaluateContext> m_next;
 
@@ -159,7 +193,6 @@ namespace Psi {
 
       template<typename Visitor>
       static void visit_impl(EvaluateContextDictionary& self, Visitor& visitor) {
-        PSI_FAIL("not implemented");
         visitor
         ("entries", self.m_entries)
         ("next", self.m_next);
@@ -318,6 +351,9 @@ namespace Psi {
     }
 
     String logical_location_name(const SharedPtr<LogicalSourceLocation>& location) {
+      if (!location)
+	return "(root namespace)";
+
       std::stringstream ss;
       if (!location->name.empty())
         ss << location->name;
@@ -336,9 +372,9 @@ namespace Psi {
     }
 
     class StatementListEntry : public Tree {
-      TreePtr<Term> m_value;
+      TreePtr<Statement> m_value;
       SharedPtr<Parser::Expression> m_expression;
-      SharedPtr<LogicalSourceLocation> m_logical_location;
+      SourceLocation m_location;
       TreePtr<EvaluateContext> m_evaluate_context;
 
     public:
@@ -349,7 +385,7 @@ namespace Psi {
         const TreePtr<EvaluateContext>& evaluate_context)
       : Tree(compile_context, location),
       m_expression(expression),
-      m_logical_location(location.logical),
+      m_location(location),
       m_evaluate_context(evaluate_context) {
         PSI_COMPILER_TREE_INIT();
       }
@@ -363,18 +399,20 @@ namespace Psi {
       static void complete_callback_impl(StatementListEntry& self) {
         self.complete_statement();
         self.m_expression.reset();
-        self.m_logical_location.reset();
+        self.m_location.logical.reset();
         self.m_evaluate_context.reset();
         self.m_value->complete(true);
       }
 
-      const TreePtr<Term>& value() const {
+      const TreePtr<Statement>& value() const {
         return m_value;
       }
 
       void complete_statement() {
-        if (!m_value)
-          m_value = compile_expression(m_expression, m_evaluate_context, m_logical_location);
+        if (!m_value) {
+	  TreePtr<Term> expr = compile_expression(m_expression, m_evaluate_context, m_location.logical);
+	  m_value.reset(new Statement(expr, m_location));
+	}
       }
     };
 
@@ -400,7 +438,6 @@ namespace Psi {
       static void run_impl(StatementListCompiler& self, const TreePtr<Block>& block) {
         for (std::vector<TreePtr<StatementListEntry> >::iterator ii = self.m_statements.begin(), ie = self.m_statements.end(); ii != ie; ++ii) {
           (*ii)->complete(true);
-          (*ii)->value()->set_parent(block);
           block->statements.push_back((*ii)->value());
         }
       }

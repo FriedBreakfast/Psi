@@ -7,10 +7,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include <boost/function.hpp>
-#include <boost/optional.hpp>
-#include <boost/shared_ptr.hpp>
-#include <boost/unordered_set.hpp>
+#include <boost/intrusive/list.hpp>
 
 #include "CppCompiler.hpp"
 #include "GarbageCollection.hpp"
@@ -103,12 +100,19 @@ namespace Psi {
      */
     class SIBase {
       friend bool si_is_a(SIBase*, const SIVtable*);
+      friend const SIVtable* si_vptr(SIBase*);
       
     protected:
       const SIVtable *m_vptr;
     };
 
+    inline const SIVtable* si_vptr(SIBase *self) {return self->m_vptr;}
     bool si_is_a(SIBase*, const SIVtable*);
+
+    template<typename T>
+    const typename T::VtableType* derived_vptr(T *ptr) {
+      return reinterpret_cast<const typename T::VtableType*>(si_vptr(ptr));
+    }
 
     class VisitorPlaceholder {
     public:
@@ -123,21 +127,32 @@ namespace Psi {
     struct DependencyVtable {
       SIVtable base;
       void (*run) (Dependency*, Tree*);
-      void (*gc_visit) (Dependency*);
+      void (*gc_increment) (Dependency*);
+      void (*gc_decrement) (Dependency*);
       void (*destroy) (Dependency*);
     };
 
     class Dependency : public SIBase {
-      const DependencyVtable* derived_vptr() const {return reinterpret_cast<const DependencyVtable*>(m_vptr);}
-
     public:
+      typedef DependencyVtable VtableType;
+
       void run(Tree *tree) {
-        derived_vptr()->run(this, tree);
+        derived_vptr(this)->run(this, tree);
+      }
+
+      void gc_increment() {
+	derived_vptr(this)->gc_increment(this);
+      }
+
+      void gc_decrement() {
+	derived_vptr(this)->gc_decrement(this);
       }
 
       void destroy() {
-        derived_vptr()->destroy(this);
+        derived_vptr(this)->destroy(this);
       }
+
+      template<typename Visitor> static void visit_impl(Dependency&, Visitor&) {}
     };
 
     class DependencyPtr : public PointerBase<Dependency> {
@@ -199,24 +214,30 @@ namespace Psi {
       void (*complete_callback) (Tree*);
     };
 
-    class Tree : public SIBase {
+    class Tree : public SIBase, public boost::intrusive::list_base_hook<> {
+      friend class CompileContext;
       template<typename> friend class TreePtr;
+      friend class GCVisitorIncrement;
+      friend class GCVisitorDecrement;
+      friend class GCVisitorClear;
 
       std::size_t m_reference_count;
+
       CompileContext *m_compile_context;
       SourceLocation m_location;
       CompletionState m_completion_state;
 
-      const TreeVtable* derived_vptr() {return reinterpret_cast<const TreeVtable*>(m_vptr);}
+      void destroy() {derived_vptr(this)->destroy(this);}
+      void gc_increment() {derived_vptr(this)->gc_increment(this);}
+      void gc_decrement() {derived_vptr(this)->gc_decrement(this);}
+      void gc_clear() {derived_vptr(this)->gc_clear(this);}
+
     public:
       static const SIVtable vtable;
+      typedef TreeVtable VtableType;
 
       Tree(CompileContext&, const SourceLocation&);
-      
-      void destroy() {derived_vptr()->destroy(this);}
-      void gc_increment() {derived_vptr()->gc_increment(this);}
-      void gc_decrement() {derived_vptr()->gc_decrement(this);}
-      void gc_clear() {derived_vptr()->gc_clear(this);}
+      ~Tree();
 
       /// \brief Return the compilation context this tree belongs to.
       CompileContext& compile_context() const {return *m_compile_context;}
@@ -250,6 +271,111 @@ namespace Psi {
       return TreePtr<T>(dyn_tree_cast<T>(ptr.get()));
     }
 
+    /**
+     * \brief Base classes for gargabe collection phase
+     * implementations.
+     */
+    template<typename Derived>
+    class GCVisitorBase {
+      Derived& derived() {
+	return *static_cast<Derived*>(this);
+      }
+
+    public:
+      template<typename T>
+      void visit_collection (T& collection) {
+	for (typename T::iterator ii = collection.begin(), ie = collection.end(); ii != ie; ++ii)
+	  operator () (NULL, *ii);
+      }
+
+      template<typename T>
+      Derived& operator () (const char*, PSI_STD::vector<T>& obj) {
+	derived().visit_collection(obj);
+	return derived();
+      }
+
+      template<typename T, typename U>
+      Derived& operator () (const char*, PSI_STD::map<T, U>& obj) {
+	derived().visit_collection(obj);
+	return derived();
+      }
+
+      template<typename T, typename U>
+      Derived& operator () (const char*, PSI_STD::pair<T, U>& obj) {
+	operator () (NULL, obj.first);
+	operator () (NULL, obj.second);
+	return derived();
+      }
+
+      Derived& operator () (const char*, String&) {return derived();}
+      Derived& operator () (const char*, const String&) {return derived();}
+      template<typename T> Derived& operator () (const char*, const SharedPtr<T>&) {return derived();}
+      Derived& operator () (const char*, const TreeVtable*) {return derived();}
+
+      template<typename T>
+      Derived& operator () (const char*, TreePtr<T>& ptr) {
+	derived().visit_tree_ptr(ptr);
+	return derived();
+      }
+
+      Derived& operator () (const char*, DependencyPtr& ptr) {
+	derived().visit_dependency_ptr(ptr);
+	return derived();
+      }
+    };
+
+    /**
+     * \brief Implements the increment phase of the garbage collector.
+     */
+    class GCVisitorIncrement : public GCVisitorBase<GCVisitorIncrement> {
+    public:
+      template<typename T>
+      void visit_tree_ptr(TreePtr<T>& ptr) {
+	if (ptr)
+	  ++ptr->m_reference_count;
+      }
+
+      void visit_dependency_ptr(DependencyPtr& ptr) {
+	ptr->gc_increment();
+      }
+    };
+
+    /**
+     * \brief Implements the increment phase of the garbage collector.
+     */
+    class GCVisitorDecrement : public GCVisitorBase<GCVisitorDecrement> {
+    public:
+      template<typename T>
+      void visit_tree_ptr(TreePtr<T>& ptr) {
+	if (ptr)
+	  --ptr->m_reference_count;
+      }
+
+      void visit_dependency_ptr(DependencyPtr& ptr) {
+	ptr->gc_decrement();
+      }
+    };
+
+    /**
+     * \brief Implements the increment phase of the garbage collector.
+     */
+    class GCVisitorClear : public GCVisitorBase<GCVisitorClear> {
+    public:
+      template<typename T>
+      void visit_collection(T& collection) {
+	collection.clear();
+      }
+
+      template<typename T>
+      void visit_tree_ptr(TreePtr<T>& ptr) {
+	ptr.reset();
+      }
+
+      void visit_dependency_ptr(DependencyPtr& ptr) {
+	ptr.clear();
+      }
+    };
+
     template<typename Derived>
     struct TreeWrapper {
       static void destroy(Tree *self) {
@@ -257,17 +383,17 @@ namespace Psi {
       }
 
       static void gc_increment(Tree *self) {
-        VisitorPlaceholder p;
+	GCVisitorIncrement p;
         Derived::visit_impl(*static_cast<Derived*>(self), p);
       }
 
       static void gc_decrement(Tree *self) {
-        VisitorPlaceholder p;
+	GCVisitorDecrement p;
         Derived::visit_impl(*static_cast<Derived*>(self), p);
       }
 
       static void gc_clear(Tree *self) {
-        VisitorPlaceholder p;
+	GCVisitorClear p;
         Derived::visit_impl(*static_cast<Derived*>(self), p);
       }
 
@@ -285,22 +411,20 @@ namespace Psi {
     &TreeWrapper<derived>::complete_callback \
   }
 
-#define PSI_COMPILER_TREE_INIT() PSI_COMPILER_SI_INIT(&vtable)
+#define PSI_COMPILER_TREE_INIT() (PSI_REQUIRE_CONVERTIBLE(&vtable, const VtableType*), PSI_COMPILER_SI_INIT(&vtable))
 #define PSI_COMPILER_TREE_ABSTRACT(name,super) PSI_COMPILER_SI_ABSTRACT(name,&super::vtable)
 
     template<typename T>
     void TreePtr<T>::reset(T *ptr, bool add_ref) {
+      if (ptr && add_ref)
+	++ptr->m_reference_count;
+
       if (this->m_ptr) {
-        if (--this->m_ptr->m_reference_count)
+        if (!--this->m_ptr->m_reference_count)
           this->m_ptr->destroy();
-        this->m_ptr = 0;
       }
 
-      if (ptr) {
-        this->m_ptr = ptr;
-        if (add_ref)
-          ++this->m_ptr->m_reference_count;
-      }
+      this->m_ptr = ptr;
     }
 
     /**
@@ -312,8 +436,13 @@ namespace Psi {
         Derived::run_impl(*static_cast<Derived*>(self), TreePtr<TreeType>(tree_cast<TreeType>(target)));
       }
 
-      static void gc_visit(Dependency *self) {
-        VisitorPlaceholder p;
+      static void gc_increment(Dependency *self) {
+        GCVisitorIncrement p;
+        Derived::visit_impl(*static_cast<Derived*>(self), p);
+      }
+
+      static void gc_decrement(Dependency *self) {
+        GCVisitorDecrement p;
         Derived::visit_impl(*static_cast<Derived*>(self), p);
       }
 
@@ -325,7 +454,8 @@ namespace Psi {
 #define PSI_COMPILER_DEPENDENCY(derived,name,tree) { \
     PSI_COMPILER_SI(name,NULL), \
     &DependencyWrapper<derived, tree>::run, \
-    &DependencyWrapper<derived, tree>::gc_visit, \
+    &DependencyWrapper<derived, tree>::gc_increment, \
+    &DependencyWrapper<derived, tree>::gc_decrement, \
     &DependencyWrapper<derived, tree>::destroy \
   }
 
@@ -342,13 +472,14 @@ namespace Psi {
     };
 
     class Term : public Tree {
+      friend class Metatype;
+      Term(CompileContext&, const SourceLocation&);
+
     protected:
       TreePtr<Term> m_type;
-      Term *m_parent;
-
-      const TermVtable* derived_vptr() {return reinterpret_cast<const TermVtable*>(m_vptr);}
 
     public:
+      typedef TermVtable VtableType;
       typedef TreePtr<Term> IteratorValueType;
       
       static const SIVtable vtable;
@@ -363,19 +494,19 @@ namespace Psi {
       bool match(const TreePtr<Term>&, const List<TreePtr<Term> >&);
       bool match(const TreePtr<Term>&, const List<TreePtr<Term> >&, unsigned);
 
-      void set_parent(const TreePtr<Term>& parent) {
-        PSI_FAIL("not implemented");
-      }
-
       friend const IteratorVtable* iterator_vptr(Term& self) {
-        return &self.derived_vptr()->iterator_vtable;
+        return &derived_vptr(&self)->iterator_vtable;
       }
 
       friend void iterator_init(void *dest, Term& self) {
-        self.derived_vptr()->iterate(dest, &self);
+        derived_vptr(&self)->iterate(dest, &self);
       }
 
-      template<typename Visitor> static void visit_impl(Term&, Visitor&) {}
+      template<typename Visitor> static void visit_impl(Term& self, Visitor& visitor) {
+	Tree::visit_impl(self, visitor);
+	visitor("type", self.m_type);
+      }
+
       static bool match_impl(Term&, Term&, const List<TreePtr<Term> >&, unsigned);
       static TreePtr<Term> rewrite_impl(Term&, const SourceLocation&, const Map<TreePtr<Term>, TreePtr<Term> >&);
 
@@ -426,17 +557,17 @@ namespace Psi {
     class Type : public Term {
     public:
       static const SIVtable vtable;
-
-      Type(const TreePtr<Term>&, const SourceLocation&);
+      Type(CompileContext&, const SourceLocation&);
     };
 
 #define PSI_COMPILER_TYPE(derived,name,super) PSI_COMPILER_TERM(derived,name,super)
 
-    class GlobalTree;
+    class Global;
     class Interface;
 
     class CompileContext {
       friend class Tree;
+      struct TreeDisposer;
 
       std::ostream *m_error_stream;
       bool m_error_occurred;
@@ -448,28 +579,12 @@ namespace Psi {
         return ss.str();
       }
 
-      struct TermPointerHash {
-        std::size_t operator () (Term *t) const {
-        }
-      };
-
-      struct TermPointerEquals {
-        bool operator () (Term *lhs, Term *rhs) const {
-          if (lhs->derived_vptr() != rhs->derived_vptr())
-            return false;
-
-          return lhs->derived_vptr()->equals(lhs, rhs);
-        }
-      };
-
-      friend Term::~Term();
-      typedef boost::unordered_set<Term*, TermPointerHash, TermPointerEquals> TermMapType;
-      TermMapType m_terms;
+      boost::intrusive::list<Tree, boost::intrusive::constant_time_size<false> > m_gc_list;
 
       TreePtr<Interface> m_macro_interface;
       TreePtr<Interface> m_argument_passing_interface;
       TreePtr<Type> m_empty_type;
-      TreePtr<Type> m_metatype;
+      TreePtr<Term> m_metatype;
 
     public:
       CompileContext(std::ostream *error_stream);
@@ -480,28 +595,6 @@ namespace Psi {
         error_internal=2
       };
 
-      /**
-       * \brief Get a hashable term.
-       *
-       * First, see if a term has a hashtable equivalent. If so, return that. Otherwise,
-       * duplicate the term onto the heap, insert it into the hashtable and return the
-       * copy.
-       *
-       * This should only be called from static get methods of specialized terms. These terms
-       * be befriend Context in order for this method to work. The Term destructor itself
-       * handles removing terms from the hashtable.
-       */
-      template<typename T>
-      TreePtr<T> get_term(const T& src) {
-        typename TermMapType::iterator it = m_terms.find(&src);
-        if (it != m_terms.end())
-          return *it;
-
-        TreePtr<T> copy(new T(src));
-        m_terms.insert(copy.get());
-        return copy;
-      }
-
       /// \brief Returns true if an error has occurred during compilation.
       bool error_occurred() const {return m_error_occurred;}
       
@@ -511,9 +604,9 @@ namespace Psi {
       template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, to_str(message), flags);}
       template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, to_str(message), flags);}
 
-      void* jit_compile(const TreePtr<GlobalTree>&);
+      void* jit_compile(const TreePtr<Global>&);
 
-      TreePtr<GlobalTree> tree_from_address(const SourceLocation&, const TreePtr<Type>&, void*);
+      TreePtr<Global> tree_from_address(const SourceLocation&, const TreePtr<Type>&, void*);
 
       /// \brief Get the Macro interface.
       const TreePtr<Interface>& macro_interface() {return m_macro_interface;}
@@ -522,7 +615,7 @@ namespace Psi {
       /// \brief Get the empty type.
       const TreePtr<Type>& empty_type() {return m_empty_type;}
       /// \brief Get the type of types.
-      const TreePtr<Type>& metatype() {return m_metatype;}
+      const TreePtr<Term>& metatype() {return m_metatype;}
     };
 
     template<typename A, typename B>
@@ -557,8 +650,8 @@ namespace Psi {
     };
 
     class Macro : public Tree {
-      const MacroVtable *derived_vptr() {return reinterpret_cast<const MacroVtable*>(m_vptr);}
     public:
+      typedef MacroVtable VtableType;
       static const SIVtable vtable;
 
       Macro(CompileContext& compile_context, const SourceLocation& location)
@@ -569,14 +662,14 @@ namespace Psi {
                              const List<SharedPtr<Parser::Expression> >& parameters,
                              const TreePtr<EvaluateContext>& evaluate_context,
                              const SourceLocation& location) {
-        return TreePtr<Term>(derived_vptr()->evaluate(this, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
+        return TreePtr<Term>(derived_vptr(this)->evaluate(this, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
       }
 
       TreePtr<Term> dot(const TreePtr<Term>& value,
                         const SharedPtr<Parser::Expression>& parameter,
                         const TreePtr<EvaluateContext>& evaluate_context,
                         const SourceLocation& location) {
-        return TreePtr<Term>(derived_vptr()->dot(this, value.get(), &parameter, evaluate_context.get(), &location), false);
+        return TreePtr<Term>(derived_vptr(this)->dot(this, value.get(), &parameter, evaluate_context.get(), &location), false);
       }
     };
 
@@ -618,8 +711,8 @@ namespace Psi {
     };
 
     class EvaluateContext : public Tree {
-      const EvaluateContextVtable* derived_vptr() {return reinterpret_cast<const EvaluateContextVtable*>(m_vptr);}
     public:
+      typedef EvaluateContextVtable VtableType;
       static const SIVtable vtable;
 
       EvaluateContext(CompileContext& compile_context, const SourceLocation& location)
@@ -628,7 +721,7 @@ namespace Psi {
 
       LookupResult<TreePtr<Term> > lookup(const String& name) {
         ResultStorage<LookupResult<TreePtr<Term> > > result;
-        derived_vptr()->lookup(result.ptr(), this, &name);
+        derived_vptr(this)->lookup(result.ptr(), this, &name);
         return result.done();
       }
     };
@@ -659,8 +752,8 @@ namespace Psi {
     };
 
     class MacroEvaluateCallback : public Tree {
-      const MacroEvaluateCallbackVtable* derived_vptr() {return reinterpret_cast<const MacroEvaluateCallbackVtable*>(m_vptr);}
     public:
+      typedef MacroEvaluateCallbackVtable VtableType;
       static const SIVtable vtable;
 
       MacroEvaluateCallback(CompileContext& compile_context, const SourceLocation& location)
@@ -668,7 +761,7 @@ namespace Psi {
       }
 
       TreePtr<Term> evaluate(const TreePtr<Term>& value, const List<SharedPtr<Parser::Expression> >& parameters, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location) {
-        return TreePtr<Term>(derived_vptr()->evaluate(this, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
+        return TreePtr<Term>(derived_vptr(this)->evaluate(this, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
       }
     };
 
@@ -698,14 +791,14 @@ namespace Psi {
      * \brief Wrapper class to ease using MacroEvaluateCallbackVtable from C++.
      */
     class MacroDotCallback : public Tree {
-      const MacroDotCallbackVtable* derived_vptr() {return reinterpret_cast<const MacroDotCallbackVtable*>(m_vptr);}
     public:
-      static const MacroDotCallbackVtable vtable;
+      typedef MacroDotCallbackVtable VtableType;
+      static const SIVtable vtable;
 
       TreePtr<Term> dot(const TreePtr<Term>& value,
                         const TreePtr<EvaluateContext>& evaluate_context,
                         const SourceLocation& location) {
-        return TreePtr<Term>(derived_vptr()->dot(this, value.get(), evaluate_context.get(), &location), false);
+        return TreePtr<Term>(derived_vptr(this)->dot(this, value.get(), evaluate_context.get(), &location), false);
       }
     };
 
@@ -726,12 +819,24 @@ namespace Psi {
 
     class Interface : public Tree {
     public:
+      static const TreeVtable vtable;
+      Interface(CompileContext&, const String&, const SourceLocation&);
+
       /// \brief Name of this interfce.
       String name;
       /// \brief If the target of this interface is a compile-time type, this value gives the type of tree we're looking for.
       TreeVtable *compile_time_type;
       /// \brief If the target of this interface is a run-time value, this gives the type of that value.
       TreePtr<Term> run_time_type;
+
+      template<typename Visitor>
+      static void visit_impl(Interface& self, Visitor& visitor) {
+	Tree::visit_impl(self, visitor);
+	visitor
+	  ("name", self.name)
+	  ("compile_time_type", self.compile_time_type)
+	  ("run_time_type", self.run_time_type);
+      }
     };
 
     class Block;
@@ -763,8 +868,6 @@ namespace Psi {
     }
     
     TreePtr<Term> function_definition_object(CompileContext&, const SourceLocation&);
-    
-    TreePtr<GlobalTree> tree_from_address(CompileContext&, const SourceLocation&, const TreePtr<Type>&, void*);
 
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const String&, const TreePtr<MacroEvaluateCallback>&, const std::map<String, TreePtr<MacroDotCallback> >&);
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const String&, const TreePtr<MacroEvaluateCallback>&);

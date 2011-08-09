@@ -1,0 +1,7 @@
+#ifndef H_PSI_CONFIG
+#define H_PSI_CONFIG
+
+#cmakedefine PSI_ENABLE_VALGRIND
+#cmakedefine PSI_DEBUG
+
+#endif

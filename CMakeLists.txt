@@ -3,6 +3,9 @@ project(type-test)
 
 include(CPack)
 
+set(PSI_DEBUG 0 CACHE BOOL "Enable debug checks")
+set(PSI_ENABLE_VALGRIND 0 CACHE BOOL "Enable Valgrind support")
+
 # Locate LLVM
 find_program(LLVM_CONFIG NAMES llvm-config)
 
@@ -14,12 +17,9 @@ execute_process(COMMAND ${LLVM_CONFIG} --cxxflags OUTPUT_VARIABLE LLVM_CXX_FLAGS
 execute_process(COMMAND ${LLVM_CONFIG} --ldflags OUTPUT_VARIABLE LLVM_LDFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(COMMAND ${LLVM_CONFIG} --libs OUTPUT_VARIABLE LLVM_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-set(CMAKE_CXX_FLAGS_DEBUG "-DPSI_DEBUG=1")
-
 # Set up useful GCC flags
 if(CMAKE_COMPILER_IS_GNUCXX)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3")
   # I need exception handling; not sure whether this will cause problems later though
   string(REGEX REPLACE "-fno-exceptions" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
   # This should show up as a link time error if there is a problem

@@ -1,6 +1,8 @@
 #ifndef HPP_PSI_TVM_CORE
 #define HPP_PSI_TVM_CORE
 
+#include "Config.h"
+
 #include <exception>
 #include <vector>
 #include <stdint.h>
@@ -570,7 +572,7 @@ namespace Psi {
 
       TermListType m_all_terms;
 
-#if PSI_DEBUG
+#ifdef PSI_DEBUG
       void dump_hash_terms();
       void print_hash_terms(std::ostream& output);
 #endif

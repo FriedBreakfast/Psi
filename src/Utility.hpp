@@ -172,6 +172,18 @@ namespace Psi {
     virtual ~CheckedCastBase();
 #endif
   };
+
+  /**
+   * \brief Does nothing.
+   *
+   * This can be used to require the existence of a conversion to type T.
+   */
+  template<typename T> void no_op(const T&) {}
+
+  /**
+   * \brief Check value is convertible to type.
+   */
+#define PSI_REQUIRE_CONVERTIBLE(value,type) (false ? no_op<type>(value) : void())
 }
 
 #endif

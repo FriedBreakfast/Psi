@@ -25,12 +25,11 @@ namespace Psi {
       m_name(name),
       m_evaluate(evaluate),
       m_members(members) {
-        m_vptr = reinterpret_cast<const SIVtable*>(&vtable);
+	PSI_COMPILER_TREE_INIT();
       }
 
       template<typename Visitor>
       static void visit_impl(NamedMemberMacro& self, Visitor& visitor) {
-        PSI_FAIL("not implemented");
         Macro::visit_impl(self, visitor);
         visitor
         ("name", self.m_name)
@@ -120,8 +119,8 @@ namespace Psi {
      */
     TreePtr<Term> make_macro_term(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<RecursiveType> type(new RecursiveType(compile_context, location));
-      type->member = EmptyType::get(compile_context);
-      return RecursiveValue::get(type, EmptyValue::get(compile_context), location);
+      type->member = compile_context.empty_type();
+      return NullValue::get(type, location);
     }
 
     /**

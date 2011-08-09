@@ -226,7 +226,7 @@ namespace Psi {
       PSI_WARNING(m_hash_terms.empty());
     }
 
-#if PSI_DEBUG
+#ifdef PSI_DEBUG
     /**
      * Dump the contents of hash_terms to the specified stream.
      */

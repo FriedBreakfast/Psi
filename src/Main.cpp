@@ -2,6 +2,8 @@
  * Main function and associated routines for the interpreter (well, dynamic compiler really).
  */
 
+#include "Config.h"
+
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>

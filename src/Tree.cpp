@@ -12,15 +12,40 @@ namespace Psi {
     const SIVtable EvaluateContext::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.EvaluateContext", Tree);
     const SIVtable Macro::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Macro", Tree);
     const SIVtable MacroEvaluateCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.MacroEvaluateCallback", Tree);
+
+    const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", Tree);
+    const TreeVtable Implementation::vtable = PSI_COMPILER_TREE(Implementation, "psi.compiler.Implementation", Tree);
+
+    const TermVtable FunctionType::vtable = PSI_COMPILER_TERM(FunctionType, "psi.compiler.FunctionType", Type);
+    const TermVtable FunctionTypeArgument::vtable = PSI_COMPILER_TERM(FunctionTypeArgument, "psi.compiler.FunctionTypeArgument", Term);
+    const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", Term);
+    const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", Term);
+    const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
+
+    const TermVtable Metatype::vtable = PSI_COMPILER_TERM(Metatype, "psi.compiler.Metatype", Term);
+    const TermVtable EmptyType::vtable = PSI_COMPILER_TERM(EmptyType, "psi.compiler.EmptyType", Type);
+    const TermVtable NullValue::vtable = PSI_COMPILER_TERM(NullValue, "psi.compiler.NullValue", Term);
+
+    const TermVtable RecursiveType::vtable = PSI_COMPILER_TERM(RecursiveType, "psi.compiler.RecursiveType", Term);
+    const TermVtable RecursiveValue::vtable = PSI_COMPILER_TERM(RecursiveValue, "psi.compiler.RecursiveValue", Term);
+
+    const TermVtable ExternalGlobal::vtable = PSI_COMPILER_TERM(ExternalGlobal, "psi.compiler.ExternalGlobal", Global);
     
     Tree::Tree(CompileContext& compile_context, const SourceLocation& location)
-    : m_compile_context(&compile_context),
-    m_location(location) {
+      : m_reference_count(0),
+	m_compile_context(&compile_context),
+	m_location(location) {
+      m_compile_context->m_gc_list.push_back(*this);
+    }
+
+    Tree::~Tree() {
+      if (is_linked())
+	m_compile_context->m_gc_list.erase(m_compile_context->m_gc_list.iterator_to(*this));
     }
     
     void Tree::complete(bool dependency) {
       m_completion_state.complete(compile_context(), m_location, dependency,
-                                  boost::bind(derived_vptr()->complete_callback, this));
+                                  boost::bind(derived_vptr(this)->complete_callback, this));
     }
 
     Term::Term(const TreePtr<Term>& type, const SourceLocation& location)
@@ -28,8 +53,11 @@ namespace Psi {
     m_type(type) {
     }
 
+    Term::Term(CompileContext& compile_context, const SourceLocation& location)
+      : Tree(compile_context, location) {
+    }
+
     Term::~Term() {
-      compile_context().m_terms.erase(this);
     }
 
     /**
@@ -46,7 +74,7 @@ namespace Psi {
       if (replacement)
         return *replacement;
       else
-        return TreePtr<Term>(derived_vptr()->rewrite(this, &location, substitutions.vptr(), substitutions.object()), false);
+        return TreePtr<Term>(derived_vptr(this)->rewrite(this, &location, substitutions.vptr(), substitutions.object()), false);
     }
 
     /**
@@ -83,7 +111,7 @@ namespace Psi {
 
       if (m_vptr == value->m_vptr) {
         // Trees are required to have the same static type to work with pattern matching.
-        return derived_vptr()->match(this, value.get(), wildcards.vptr(), wildcards.object(), depth);
+        return derived_vptr(this)->match(this, value.get(), wildcards.vptr(), wildcards.object(), depth);
       } else {
         return false;
       }
@@ -102,32 +130,27 @@ namespace Psi {
       return TreePtr<Term>(&self);
     }
 
-    Type::Type(const TreePtr<Term>& type, const SourceLocation& location)
+    Type::Type(CompileContext& compile_context, const SourceLocation& location)
+      : Term(compile_context.metatype(), location) {
+    }
+
+    Global::Global(const TreePtr<Type>& type, const SourceLocation& location)
     : Term(type, location) {
     }
 
-    GlobalTree::GlobalTree(const TreePtr<Type>& type, const SourceLocation& location)
-    : Term(type, location) {
-    }
-
-    ExternalGlobalTree::ExternalGlobalTree(const TreePtr<Type>& type, const SourceLocation& location)
-    : GlobalTree(type, location) {
+    ExternalGlobal::ExternalGlobal(const TreePtr<Type>& type, const SourceLocation& location)
+    : Global(type, location) {
+      PSI_COMPILER_TREE_INIT();
     }
 
     FunctionTypeArgument::FunctionTypeArgument(const TreePtr<Term>& type, const SourceLocation& location)
     : Term(type, location) {
+      PSI_COMPILER_TREE_INIT();
     }
     
     FunctionType::FunctionType(CompileContext& context, const SourceLocation& location)
-    : Type(context.metatype(), location) {
-    }
-
-    template<typename Visitor>
-    void FunctionType::visit_impl(FunctionType& self, Visitor& visitor) {
-      Type::visit_impl(self, visitor);
-      visitor
-      ("arguments", self.arguments)
-      ("result_type", self.result_type);
+    : Type(context, location) {
+      PSI_COMPILER_TREE_INIT();
     }
 
     template<typename Key, typename Value>
@@ -157,28 +180,28 @@ namespace Psi {
     template<typename Key, typename Value>
     const MapVtable ForwardMap<Key, Value>::vtable = PSI_MAP(ForwardMap, Key, Value);
 
-    TreePtr<Term> FunctionType::rewrite_impl(const SourceLocation& location, const Map<TreePtr<Term>, TreePtr<Term> >& substitutions) {
+    TreePtr<Term> FunctionType::rewrite_impl(FunctionType& self, const SourceLocation& location, const Map<TreePtr<Term>, TreePtr<Term> >& substitutions) {
       PSI_FAIL("need to sort out function type equivalence checking");
       
-      for (PSI_STD::vector<TreePtr<FunctionTypeArgument> >::iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
+      for (PSI_STD::vector<TreePtr<FunctionTypeArgument> >::iterator ii = self.arguments.begin(), ie = self.arguments.end(); ii != ie; ++ii) {
         TreePtr<Term> rw_type = (*ii)->rewrite(location, substitutions);
         if (rw_type != (*ii))
           goto rewrite_required;
       }
-      return TreePtr<Term>(this);
+      return TreePtr<Term>(&self);
 
     rewrite_required:
-      TreePtr<FunctionType> rw_self(new FunctionType(compile_context(), this->location()));
+      TreePtr<FunctionType> rw_self(new FunctionType(self.compile_context(), self.location()));
 
       ForwardMap<TreePtr<Term>, TreePtr<Term> > child_substitutions(substitutions);
-      for (PSI_STD::vector<TreePtr<FunctionTypeArgument> >::iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
+      for (PSI_STD::vector<TreePtr<FunctionTypeArgument> >::iterator ii = self.arguments.begin(), ie = self.arguments.end(); ii != ie; ++ii) {
         TreePtr<Term> rw_type = (*ii)->type()->rewrite(location, child_substitutions.object());
         TreePtr<FunctionTypeArgument> rw_arg(new FunctionTypeArgument(rw_type, location));
         child_substitutions.own[*ii] = rw_arg;
         rw_self->arguments.push_back(rw_arg);
       }
 
-      rw_self->result_type = result_type->rewrite(location, child_substitutions.object());
+      rw_self->result_type = self.result_type->rewrite(location, child_substitutions.object());
 
       return rw_self;
     }
@@ -215,10 +238,9 @@ namespace Psi {
       return cast_type;
     }
 
-    const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", Term);
-
     Function::Function(const TreePtr<FunctionType>& type, const SourceLocation& location)
     : Term(type, location) {
+      PSI_COMPILER_TREE_INIT();
     }
 
     Function::Function(const TreePtr<FunctionType>& type, const SourceLocation& location, DependencyPtr& dependency)
@@ -239,25 +261,63 @@ namespace Psi {
     : Term(type, location) {
     }
 
+    Statement::Statement(const TreePtr<Term>& value_, const SourceLocation& location)
+      : Term(value_->type(), location), value(value_) {
+      PSI_COMPILER_TREE_INIT();
+    }
+
     Block::Block(const TreePtr<Term>& type, const SourceLocation& location)
     : Term(type, location) {
+      PSI_COMPILER_TREE_INIT();
+    }
+
+    Interface::Interface(CompileContext& compile_context, const String& name_, const SourceLocation& location)
+      : Tree(compile_context, location),
+	name(name_) {
+      PSI_COMPILER_TREE_INIT();
     }
 
     Implementation::Implementation(CompileContext& compile_context, const SourceLocation& location)
     : Tree(compile_context, location) {
+      PSI_COMPILER_TREE_INIT();
     }
     
     ImplementationTerm::ImplementationTerm(const TreePtr<Term>& type, const SourceLocation& location)
     : Term(type, location) {
     }
 
+    Metatype::Metatype(CompileContext& compile_context, const SourceLocation& location)
+      : Term(compile_context, location) {
+      PSI_COMPILER_TREE_INIT();
+    }
+
+    EmptyType::EmptyType(CompileContext& compile_context, const SourceLocation& location)
+      : Type(compile_context, location) {
+      PSI_COMPILER_TREE_INIT();
+    }
+
+    TreePtr<Term> EmptyType::value(CompileContext& compile_context, const SourceLocation& location) {
+      return NullValue::get(compile_context.empty_type(), location);
+    }
+
+    NullValue::NullValue(const TreePtr<Term>& type, const SourceLocation& location)
+      : Term(type, location) {
+      PSI_COMPILER_TREE_INIT();
+    }
+
+    TreePtr<Term> NullValue::get(const TreePtr<Term>& type, const SourceLocation& location) {
+      return TreePtr<Term>(new NullValue(type, location));
+    }
+
     RecursiveType::RecursiveType(CompileContext& compile_context, const SourceLocation& location)
     : ImplementationTerm(compile_context.metatype(), location) {
+      PSI_COMPILER_TREE_INIT();
     }
     
     RecursiveValue::RecursiveValue(const TreePtr<RecursiveType>& type, const TreePtr<Term>& member, const SourceLocation& location)
     : Term(type, location),
     m_member(member) {
+      PSI_COMPILER_TREE_INIT();
     }
     
     TreePtr<Term> RecursiveValue::get(const TreePtr<RecursiveType>&, const TreePtr<Term>&, const SourceLocation&) {
