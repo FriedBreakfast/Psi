@@ -13,22 +13,28 @@ namespace Psi {
     const SIVtable Macro::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Macro", Tree);
     const SIVtable MacroEvaluateCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.MacroEvaluateCallback", Tree);
 
+    const TermVtable Parameter::vtable = PSI_COMPILER_TERM(Parameter, "psi.compiler.Parameter", Term);
     const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", Tree);
     const TreeVtable Implementation::vtable = PSI_COMPILER_TREE(Implementation, "psi.compiler.Implementation", Tree);
+    const SIVtable ImplementationTerm::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ImplementationTerm", Term);
 
     const TermVtable FunctionType::vtable = PSI_COMPILER_TERM(FunctionType, "psi.compiler.FunctionType", Type);
     const TermVtable FunctionTypeArgument::vtable = PSI_COMPILER_TERM(FunctionTypeArgument, "psi.compiler.FunctionTypeArgument", Term);
     const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", Term);
+    const TermVtable FunctionArgument::vtable = PSI_COMPILER_TERM(FunctionArgument, "psi.compiler.FunctionArgument", Term);
+
     const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", Term);
     const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
+    const TermVtable TryFinally::vtable = PSI_COMPILER_TERM(TryFinally, "psi.compiler.TryFinally", Term);
 
     const TermVtable Metatype::vtable = PSI_COMPILER_TERM(Metatype, "psi.compiler.Metatype", Term);
     const TermVtable EmptyType::vtable = PSI_COMPILER_TERM(EmptyType, "psi.compiler.EmptyType", Type);
     const TermVtable NullValue::vtable = PSI_COMPILER_TERM(NullValue, "psi.compiler.NullValue", Term);
 
-    const TermVtable RecursiveType::vtable = PSI_COMPILER_TERM(RecursiveType, "psi.compiler.RecursiveType", Term);
+    const TermVtable RecursiveType::vtable = PSI_COMPILER_TERM(RecursiveType, "psi.compiler.RecursiveType", ImplementationTerm);
     const TermVtable RecursiveValue::vtable = PSI_COMPILER_TERM(RecursiveValue, "psi.compiler.RecursiveValue", Term);
 
+    const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
     const TermVtable ExternalGlobal::vtable = PSI_COMPILER_TERM(ExternalGlobal, "psi.compiler.ExternalGlobal", Global);
     
     Tree::Tree(CompileContext& compile_context, const SourceLocation& location)
@@ -245,6 +251,7 @@ namespace Psi {
 
     Function::Function(const TreePtr<FunctionType>& type, const SourceLocation& location, DependencyPtr& dependency)
     : Term(type, location) {
+      PSI_COMPILER_TREE_INIT();
       m_dependency.swap(dependency);
     }
 
@@ -255,10 +262,12 @@ namespace Psi {
 
     FunctionArgument::FunctionArgument(const TreePtr<Term>& type, const SourceLocation& location)
     : Term(type, location) {
+      PSI_COMPILER_TREE_INIT();
     }
 
     TryFinally::TryFinally(const TreePtr<Term>& type, const SourceLocation& location)
     : Term(type, location) {
+      PSI_COMPILER_TREE_INIT();
     }
 
     Statement::Statement(const TreePtr<Term>& value_, const SourceLocation& location)

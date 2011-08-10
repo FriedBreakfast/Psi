@@ -89,6 +89,7 @@ add_library(psi-compiler SHARED
   Function.cpp
   Interface.cpp
   GarbageCollection.hpp
+  Macros.cpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
   Platform.cpp Platform.hpp
   Runtime.cpp Runtime.hpp

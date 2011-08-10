@@ -467,8 +467,7 @@ namespace Psi {
       static void visit_impl(StatementListContext& self, Visitor& visitor) {
         EvaluateContext::visit_impl(self, visitor);
         visitor("next", self.m_next);
-        for (NameMapType::iterator ii = self.entries.begin(), ie = self.entries.end(); ii != ie; ++ii)
-          visitor("", ii->second);
+	visitor("entries", self.entries);
       }
 
       static LookupResult<TreePtr<Term> > lookup_impl(const StatementListContext& self, const String& name) {

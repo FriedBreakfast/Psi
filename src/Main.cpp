@@ -16,6 +16,7 @@
 #include "Parser.hpp"
 #include "Compiler.hpp"
 #include "Tree.hpp"
+#include "Macros.hpp"
 
 namespace {
   std::string find_program_name(const char *path) {
@@ -72,6 +73,7 @@ int main(int argc, char *argv[]) {
   
   PSI_STD::map<String, TreePtr<Term> > global_names;
   global_names["function"] = function_definition_object(compile_context, core_location);
+  global_names["__none__"] = none_macro(compile_context, core_location);
 
   TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, core_location, global_names);
 

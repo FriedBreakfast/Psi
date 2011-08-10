@@ -345,6 +345,12 @@ namespace Psi {
       m_c.type = lookup_result_type_match;
       new (m_c.data.ptr()) T(value);
     }
+
+    LookupResult(const LookupResult& src) {
+      m_c.type = src.type();
+      if (m_c.type == lookup_result_type_match)
+        new (m_c.data.ptr()) T(src.value());
+    }
     
     template<typename U>
     LookupResult(const LookupResult<U>& src) {
@@ -354,8 +360,7 @@ namespace Psi {
     }
 
     ~LookupResult() {
-      if (m_c.type == lookup_result_type_match)
-        delete m_c.data.ptr();
+      clear();
     }
 
     LookupResultType type() const {
@@ -365,6 +370,20 @@ namespace Psi {
     const T& value() const {
       PSI_ASSERT(type() == lookup_result_type_match);
       return *m_c.data.ptr();
+    }
+
+    void clear() {
+      if (m_c.type == lookup_result_type_match)
+        m_c.data.ptr()->~T();
+      m_c.type = lookup_result_type_none;
+    }
+
+    LookupResult& operator = (const LookupResult& src) {
+      clear();
+      m_c.type = src.m_c.type;
+      if (m_c.type == lookup_result_type_match)
+        new (m_c.data.ptr()) T(src.value());
+      return *this;
     }
   };
 

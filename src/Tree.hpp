@@ -11,6 +11,8 @@ namespace Psi {
   namespace Compiler {
     class Parameter : public Term {
     public:
+      static const TermVtable vtable;
+
       /// Parameter depth (number of enclosing parameter scopes between this parameter and its own scope).
       unsigned depth;
       /// Index of this parameter in its scope.
@@ -54,6 +56,8 @@ namespace Psi {
      */
     class ImplementationTerm : public Term {
     public:
+      static const SIVtable vtable;
+
       ImplementationTerm(const TreePtr<Term>&, const SourceLocation&);
       PSI_STD::vector<TreePtr<Implementation> > implementations;
 
@@ -69,6 +73,7 @@ namespace Psi {
       friend class CompileContext;
       void *m_jit_ptr;
     public:
+      static const SIVtable vtable;
       Global(const TreePtr<Type>&, const SourceLocation&);
     };
     
@@ -153,6 +158,8 @@ namespace Psi {
     };
 
     class SpecializedRecursiveType : public Term {
+    public:
+      static const TermVtable vtable;
     };
 
     /**
@@ -260,6 +267,7 @@ namespace Psi {
 
     class FunctionArgument : public Term {
     public:
+      static const TermVtable vtable;
       FunctionArgument(const TreePtr<Term>&, const SourceLocation&);
     };
 
@@ -289,6 +297,7 @@ namespace Psi {
 
     class TryFinally : public Term {
     public:
+      static const TermVtable vtable;
       TryFinally(const TreePtr<Term>&, const SourceLocation&);
 
       TreePtr<Term> try_expr, finally_expr;

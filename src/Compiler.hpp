@@ -156,11 +156,9 @@ namespace Psi {
     };
 
     class DependencyPtr : public PointerBase<Dependency> {
-      Dependency *m_ptr;
-
     public:
       DependencyPtr() {}
-      DependencyPtr(Dependency *ptr) : PointerBase<Dependency>(ptr) {}
+      explicit DependencyPtr(Dependency *ptr) : PointerBase<Dependency>(ptr) {}
       ~DependencyPtr() {clear();}
       void clear() {if (m_ptr) {m_ptr->destroy(); m_ptr = 0;}}
       void swap(DependencyPtr& src) {std::swap(m_ptr, src.m_ptr);}
@@ -311,6 +309,7 @@ namespace Psi {
       Derived& operator () (const char*, const String&) {return derived();}
       template<typename T> Derived& operator () (const char*, const SharedPtr<T>&) {return derived();}
       Derived& operator () (const char*, const TreeVtable*) {return derived();}
+      Derived& operator () (const char*, unsigned) {return derived();}
 
       template<typename T>
       Derived& operator () (const char*, TreePtr<T>& ptr) {
