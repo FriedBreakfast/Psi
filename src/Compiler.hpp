@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <boost/intrusive/list.hpp>
+#include <boost/intrusive/avl_set.hpp>
 
 #include "CppCompiler.hpp"
 #include "GarbageCollection.hpp"
@@ -40,17 +41,68 @@ namespace Psi {
       int last_column;
     };
 
-    struct LogicalSourceLocation {
-      SharedPtr<LogicalSourceLocation> parent;
-      String name;
+    class LogicalSourceLocation;
+    typedef IntrusivePointer<LogicalSourceLocation> LogicalSourceLocationPtr;
+
+    class LogicalSourceLocation : public boost::intrusive::avl_set_base_hook<> {
+      struct Key {
+	unsigned index;
+	String name;
+
+	bool operator < (const Key&) const;
+      };
+
+      struct Compare {bool operator () (const LogicalSourceLocation&, const LogicalSourceLocation&) const;};
+      struct KeyCompare;
+
+      std::size_t m_reference_count;
+      Key m_key;
+      LogicalSourceLocationPtr m_parent;
+      typedef boost::intrusive::avl_set<LogicalSourceLocation, boost::intrusive::constant_time_size<false>, boost::intrusive::compare<Compare> > ChildMapType;
+      ChildMapType m_children;
+
+      LogicalSourceLocation(const Key&, const LogicalSourceLocationPtr&);
+
+    public:
+      ~LogicalSourceLocation();
+
+      /// \brief Whether this location is anonymous within its parent.
+      bool anonymous() {return m_key.index != 0;}
+      /// \brief The identifying index of this location if it is anonymous.
+      unsigned index() {return m_key.index;}
+      /// \brief The name of this location within its parent if it is not anonymous.
+      const String& name() {return m_key.name;}
+      /// \brief Get the parent node of this location
+      const LogicalSourceLocationPtr& parent() {return m_parent;}
+
+      static LogicalSourceLocationPtr new_root_location();
+      LogicalSourceLocationPtr named_child(const String& name);
+      LogicalSourceLocationPtr new_anonymous_child();
+
+      friend void intrusive_ptr_add_ref(LogicalSourceLocation *self) {
+	++self->m_reference_count;
+      }
+
+      friend void intrusive_ptr_release(LogicalSourceLocation *self) {
+	if (!--self->m_reference_count)
+	  delete self;
+      }
     };
 
     struct SourceLocation {
       PhysicalSourceLocation physical;
-      SharedPtr<LogicalSourceLocation> logical;
+      LogicalSourceLocationPtr logical;
 
-      SourceLocation(const PhysicalSourceLocation& physical_,  const SharedPtr<LogicalSourceLocation>& logical_)
+      SourceLocation(const PhysicalSourceLocation& physical_,  const LogicalSourceLocationPtr& logical_)
       : physical(physical_), logical(logical_) {}
+
+      SourceLocation relocate(const PhysicalSourceLocation& new_physical) const {
+	return SourceLocation(new_physical, logical);
+      }
+
+      SourceLocation named_child(const String& name) const {
+	return SourceLocation(physical, logical->named_child(name));
+      }
     };
 
     class Tree;
@@ -58,28 +110,13 @@ namespace Psi {
     class CompileContext;
 
     template<typename T=Tree>
-    class TreePtr : public PointerBase<T> {
+    class TreePtr : public IntrusivePointer<T> {
     public:
-      ~TreePtr() {this->reset();}
       TreePtr() {}
-      explicit TreePtr(T *ptr) {this->reset(ptr, true);}
-      TreePtr(T *ptr, bool add_ref) {this->reset(ptr, add_ref);}
-      TreePtr(const TreePtr& src) : PointerBase<T>() {this->reset(src.get());}
-      template<typename U> TreePtr(const TreePtr<U>& src) : PointerBase<T>() {this->reset(src.get());}
-      TreePtr& operator = (const TreePtr& src) {this->reset(src.get()); return *this;}
+      explicit TreePtr(T *ptr) : IntrusivePointer<T>(ptr) {}
+      TreePtr(T *ptr, bool add_ref) : IntrusivePointer<T>(ptr, add_ref) {}
+      template<typename U> TreePtr(const TreePtr<U>& src) : IntrusivePointer<T>(src) {}
       template<typename U> TreePtr& operator = (const TreePtr<U>& src) {this->reset(src.get()); return *this;}
-
-      void swap(TreePtr<T>& other) {
-        std::swap(this->m_ptr, other.m_ptr);
-      }
-
-      T* release() {
-        T *ptr = this->m_ptr;
-        this->m_ptr = 0;
-        return ptr;
-      }
-
-      void reset(T* =0, bool=true);
     };
 
     /**
@@ -248,6 +285,15 @@ namespace Psi {
       template<typename Visitor> static void visit_impl(Tree&, Visitor&) {}
       static void complete_callback_impl(Tree&) {}
       static void complete_cleanup_impl(Tree&) {}
+
+      friend void intrusive_ptr_add_ref(Tree *self) {
+	++self->m_reference_count;
+      }
+
+      friend void intrusive_ptr_release(Tree *self) {
+	if (!--self->m_reference_count)
+	  self->destroy();
+      }
     };
 
     template<typename T>
@@ -413,25 +459,12 @@ namespace Psi {
     &TreeWrapper<derived>::gc_increment, \
     &TreeWrapper<derived>::gc_decrement, \
     &TreeWrapper<derived>::gc_clear, \
-      &TreeWrapper<derived>::complete_callback, \
+    &TreeWrapper<derived>::complete_callback, \
     &TreeWrapper<derived>::complete_cleanup \
   }
 
 #define PSI_COMPILER_TREE_INIT() (PSI_REQUIRE_CONVERTIBLE(&vtable, const VtableType*), PSI_COMPILER_SI_INIT(&vtable))
 #define PSI_COMPILER_TREE_ABSTRACT(name,super) PSI_COMPILER_SI_ABSTRACT(name,&super::vtable)
-
-    template<typename T>
-    void TreePtr<T>::reset(T *ptr, bool add_ref) {
-      if (ptr && add_ref)
-	++ptr->m_reference_count;
-
-      if (this->m_ptr) {
-        if (!--this->m_ptr->m_reference_count)
-          this->m_ptr->destroy();
-      }
-
-      this->m_ptr = ptr;
-    }
 
     /**
      * \brief Base class to simplify implementing Dependency in C++.
@@ -517,13 +550,13 @@ namespace Psi {
       static TreePtr<Term> rewrite_impl(Term&, const SourceLocation&, const Map<TreePtr<Term>, TreePtr<Term> >&);
 
       class IteratorType {
-        unsigned m_state;
-        TreePtr<Term> m_self;
+	bool m_done;
+        TreePtr<Term> m_type;
         
       public:
-        IteratorType(const TreePtr<Term>& self) : m_state(0), m_self(self) {}
-        TreePtr<Term>& current() {return m_self->m_type;}
-        bool next() {++m_state; return m_state < 2;}
+        IteratorType(const TreePtr<Term>& self) : m_done(!self->m_type), m_type(self->m_type) {}
+        TreePtr<Term>& current() {return m_type;}
+        bool next() {if (m_done) {return false;} else {m_done = true; return true;}}
         void move_from(IteratorType& src) {std::swap(*this, src);}
       };
     };
@@ -587,6 +620,8 @@ namespace Psi {
 
       boost::intrusive::list<Tree, boost::intrusive::constant_time_size<false> > m_gc_list;
 
+      SourceLocation m_root_location;
+
       TreePtr<Interface> m_macro_interface;
       TreePtr<Interface> m_argument_passing_interface;
       TreePtr<Type> m_empty_type;
@@ -613,6 +648,8 @@ namespace Psi {
       void* jit_compile(const TreePtr<Global>&);
 
       TreePtr<Global> tree_from_address(const SourceLocation&, const TreePtr<Type>&, void*);
+
+      const SourceLocation& root_location() {return m_root_location;}
 
       /// \brief Get the Macro interface.
       const TreePtr<Interface>& macro_interface() {return m_macro_interface;}
@@ -847,10 +884,9 @@ namespace Psi {
 
     class Block;
 
-    TreePtr<Term> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const SharedPtr<LogicalSourceLocation>&);
+    TreePtr<Term> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
     TreePtr<Block> compile_statement_list(const List<SharedPtr<Parser::NamedExpression> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
-    SharedPtr<LogicalSourceLocation> make_logical_location(const SharedPtr<LogicalSourceLocation>&, const String&);
-    String logical_location_name(const SharedPtr<LogicalSourceLocation>& location);
+    String logical_location_name(const LogicalSourceLocationPtr& location);
 
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);

@@ -212,8 +212,15 @@ namespace Psi {
         const Parser::NamedExpression& named_expr = **ii;
         PSI_ASSERT(named_expr.expression);
 
-        String expr_name = named_expr.name ? String(named_expr.name->begin, named_expr.name->end) : String();
-        SourceLocation argument_location(named_expr.location.location, make_logical_location(location.logical, expr_name));
+	String expr_name;
+	LogicalSourceLocationPtr logical_location;
+	if (named_expr.name) {
+	  expr_name = String(named_expr.name->begin, named_expr.name->end);
+	  logical_location = location.logical->named_child(expr_name);
+	} else {
+	  logical_location = location.logical->new_anonymous_child();
+	}
+	SourceLocation argument_location(named_expr.location.location, logical_location );
 
         TreePtr<Term> argument_expr = compile_expression(named_expr.expression, argument_context, argument_location.logical);
         TreePtr<ArgumentPassingInfoCallback> passing_info_callback = interface_lookup_as<ArgumentPassingInfoCallback>(compile_context.argument_passing_info_interface(), argument_expr, location);

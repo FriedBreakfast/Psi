@@ -11,6 +11,87 @@
 
 namespace Psi {
   namespace Compiler {
+    bool LogicalSourceLocation::Key::operator < (const Key& other) const {
+      if (index) {
+	if (other.index)
+	  return index < other.index;
+	else
+	  return false;
+      } else {
+	if (other.index)
+	  return true;
+	else
+	  return name < other.name;
+      }
+    } 
+
+    bool LogicalSourceLocation::Compare::operator () (const LogicalSourceLocation& lhs, const LogicalSourceLocation& rhs) const {
+      return lhs.m_key < rhs.m_key;
+    }
+
+    struct LogicalSourceLocation::KeyCompare {
+      bool operator () (const Key& key, const LogicalSourceLocation& node) const {
+	return key < node.m_key;
+      }
+
+      bool operator () (const LogicalSourceLocation& node, const Key& key) const {
+	return node.m_key < key;
+      }
+    };
+
+    LogicalSourceLocation::LogicalSourceLocation(const Key& key, const LogicalSourceLocationPtr& parent)
+      : m_reference_count(0), m_key(key), m_parent(parent) {
+    }
+
+    LogicalSourceLocation::~LogicalSourceLocation() {
+      if (m_parent)
+	m_parent->m_children.erase(m_parent->m_children.iterator_to(*this));
+    }
+
+    /**
+     * \brief Create a location with no parent. This should only be used by CompileContext.
+     */
+    LogicalSourceLocationPtr LogicalSourceLocation::new_root_location() {
+      Key key;
+      key.index = 0;
+      return LogicalSourceLocationPtr(new LogicalSourceLocation(key, LogicalSourceLocationPtr()));
+    }
+
+    /**
+     * \brief Create a new named child of this location.
+     */
+    LogicalSourceLocationPtr LogicalSourceLocation::named_child(const String& name) {
+      Key key;
+      key.index = 0;
+      key.name = name;
+      ChildMapType::insert_commit_data commit_data;
+      std::pair<ChildMapType::iterator, bool> result = m_children.insert_check(key, KeyCompare(), commit_data);
+
+      if (!result.second)
+	return LogicalSourceLocationPtr(&*result.first);
+
+      LogicalSourceLocationPtr node(new LogicalSourceLocation(key, LogicalSourceLocationPtr(this)));
+      m_children.insert_commit(*node, commit_data);
+      return node;
+    }
+
+    LogicalSourceLocationPtr LogicalSourceLocation::new_anonymous_child() {
+      unsigned index = 1;
+      ChildMapType::iterator end = m_children.end();
+      if (!m_children.empty()) {
+	ChildMapType::iterator last = end;
+	--last;
+	if (last->anonymous())
+	  index = last->index() + 1;
+      }
+
+      Key key;
+      key.index = index;
+      LogicalSourceLocationPtr node(new LogicalSourceLocation(key, LogicalSourceLocationPtr(this)));
+      m_children.insert(end, *node);
+      return node;
+    }
+
     bool si_is_a(SIBase *object, const SIVtable *cls) {
       for (const SIVtable *super = object->m_vptr; super; super = super->super) {
         if (super == cls)
@@ -33,6 +114,9 @@ namespace Psi {
         compile_context.error_throw(location, boost::format("'%s' interface has the wrong type") % interface->name, CompileContext::error_internal);
     }
 
+    /**
+     * \brief Walk a tree looking for an interface implementation.
+     */
     TreePtr<> interface_lookup_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const TreePtr<Term>& term) {
       for (LocalIterator<TreePtr<Term> > p(*term); p.next();) {
         TreePtr<Term>& current = p.current();
@@ -59,7 +143,13 @@ namespace Psi {
 
       return TreePtr<>();
     }
-    
+
+    /**
+     * \brief Locate an interface implementation for a given set of parameters.
+     *
+     * \param interface Interface to look up implementation for.
+     * \param parameters Parameters to the interface.
+     */    
     TreePtr<> interface_lookup(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const SourceLocation&) {
       // Walk the various parameters and look for matching interface implementations
       for (LocalIterator<TreePtr<Term> > p(parameters); p.next();) {
@@ -88,17 +178,20 @@ namespace Psi {
     }
 
     CompileContext::CompileContext(std::ostream *error_stream)
-    : m_error_stream(error_stream), m_error_occurred(false) {
+      : m_error_stream(error_stream), m_error_occurred(false),
+	m_root_location(PhysicalSourceLocation(), LogicalSourceLocation::new_root_location()) {
       PhysicalSourceLocation core_physical_location;
-      core_physical_location.file.reset(new SourceFile());
-      core_physical_location.first_line = core_physical_location.first_column = 0;
-      core_physical_location.last_line = core_physical_location.last_column = 0;
-      SourceLocation core_location(core_physical_location, make_logical_location(SharedPtr<LogicalSourceLocation>(), "psi"));
+      m_root_location.physical.file.reset(new SourceFile());
+      m_root_location.physical.first_line = m_root_location.physical.first_column = 0;
+      m_root_location.physical.last_line = m_root_location.physical.last_column = 0;
 
-      m_metatype.reset(new Metatype(*this, core_location));
-      m_empty_type.reset(new EmptyType(*this, core_location));
-      m_macro_interface.reset(new Interface(*this, "psi.compiler.Macro", core_location));
-      m_argument_passing_interface.reset(new Interface(*this, "psi.compiler.ArgumentPasser", core_location));
+      SourceLocation psi_location = m_root_location.named_child("psi");
+      SourceLocation psi_compiler_location = psi_location.named_child("compiler");
+
+      m_metatype.reset(new Metatype(*this, psi_location));
+      m_empty_type.reset(new EmptyType(*this, psi_location));
+      m_macro_interface.reset(new Interface(*this, "psi.compiler.Macro", psi_compiler_location));
+      m_argument_passing_interface.reset(new Interface(*this, "psi.compiler.ArgumentPasser", psi_compiler_location));
     }
 
     struct CompileContext::TreeDisposer {
@@ -264,7 +357,7 @@ namespace Psi {
      */
     TreePtr<Term> compile_expression(const SharedPtr<Parser::Expression>& expression,
                                      const TreePtr<EvaluateContext>& evaluate_context,
-                                     const SharedPtr<LogicalSourceLocation>& source) {
+                                     const LogicalSourceLocationPtr& source) {
 
       CompileContext& compile_context = evaluate_context->compile_context();
       SourceLocation location(expression->location.location, source);
@@ -273,7 +366,7 @@ namespace Psi {
       case Parser::expression_macro: {
         const Parser::MacroExpression& macro_expression = checked_cast<Parser::MacroExpression&>(*expression);
 
-        TreePtr<Term> first = compile_expression(macro_expression.elements.front(), evaluate_context, source);
+        TreePtr<Term> first = compile_expression(macro_expression.elements.front(), evaluate_context, source->new_anonymous_child());
         PSI_STD::vector<SharedPtr<Parser::Expression> > rest(boost::next(macro_expression.elements.begin()), macro_expression.elements.end());
 
         return expression_macro(first, location)->evaluate(first, list_from_stl(rest), evaluate_context, location);
@@ -343,30 +436,36 @@ namespace Psi {
       }
     }
 
-    SharedPtr<LogicalSourceLocation> make_logical_location(const SharedPtr<LogicalSourceLocation>& parent, const String& name) {
-      SharedPtr<LogicalSourceLocation> result(new LogicalSourceLocation);
-      result->parent = parent;
-      result->name = name;
-      return result;
-    }
-
-    String logical_location_name(const SharedPtr<LogicalSourceLocation>& location) {
+    String logical_location_name(const LogicalSourceLocationPtr& location) {
       if (!location)
 	return "(root namespace)";
 
-      std::stringstream ss;
-      if (!location->name.empty())
-        ss << location->name;
-      else
-        ss << "(anonymous)";
+      std::vector<LogicalSourceLocation*> nodes;
+      bool last_anonymous = false;
 
-      for (LogicalSourceLocation *l = location->parent.get(); l; l = location->parent.get()) {
-        ss << '.';
-        if (!l->name.empty())
-          ss << l->name;
-        else
-          ss << "(anonymous)";
+      for (LogicalSourceLocation *l = location.get(); l->parent(); l = l->parent().get()) {
+        if (!l->anonymous()) {
+	  nodes.push_back(l);
+	  last_anonymous = false;
+        } else {
+	  if (!last_anonymous)
+	    nodes.push_back(l);
+	  last_anonymous = true;
+	}
       }
+
+      std::stringstream ss;
+      for (std::vector<LogicalSourceLocation*>::reverse_iterator ib = nodes.rbegin(),
+	     ii = nodes.rbegin(), ie = nodes.rend(); ii != ie; ++ii) {
+	if (ii != ib)
+	  ss << '.';
+
+	if ((*ii)->anonymous())
+	  ss << "(anonymous)";
+	else
+	  ss << (*ii)->name();
+      }
+
       const std::string& sss = ss.str();
       return String(sss.c_str(), sss.length());
     }
@@ -504,8 +603,15 @@ namespace Psi {
       for (LocalIterator<SharedPtr<Parser::NamedExpression> > ii(statements); ii.next();) {
         const Parser::NamedExpression& named_expr = *ii.current();
         if (named_expr.expression.get()) {
-          String expr_name = named_expr.name ? String(named_expr.name->begin, named_expr.name->end) : String();
-          SourceLocation statement_location(named_expr.location.location, make_logical_location(location.logical, expr_name));
+          String expr_name;
+	  LogicalSourceLocationPtr logical_location;
+	  if (named_expr.name) {
+	    expr_name = String(named_expr.name->begin, named_expr.name->end);
+	    logical_location = location.logical->named_child(expr_name);
+	  } else {
+	    logical_location = location.logical->new_anonymous_child();
+	  }
+          SourceLocation statement_location(named_expr.location.location, logical_location);
           last_statement.reset(new StatementListEntry(compile_context, statement_location, named_expr.expression, context_tree));
           entries.push_back(last_statement);
           

@@ -53,11 +53,9 @@ int main(int argc, char *argv[]) {
   using namespace Psi;
   using namespace Psi::Compiler;
 
-  PhysicalSourceLocation core_physical_location;
-  core_physical_location.file.reset(new SourceFile());
-  core_physical_location.first_line = core_physical_location.first_column = 0;
-  core_physical_location.last_line = core_physical_location.last_column = 0;
-  SourceLocation core_location(core_physical_location, make_logical_location(SharedPtr<LogicalSourceLocation>(), "psi"));
+  CompileContext compile_context(&std::cerr);
+  
+  SourceLocation psi_location = compile_context.root_location().named_child("psi");
 
   Parser::ParserLocation file_text;
   file_text.location.file.reset(new SourceFile());
@@ -69,17 +67,15 @@ int main(int argc, char *argv[]) {
   
   PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(file_text);
 
-  CompileContext compile_context(&std::cerr);
-  
   PSI_STD::map<String, TreePtr<Term> > global_names;
-  global_names["function"] = function_definition_object(compile_context, core_location);
-  global_names["__none__"] = none_macro(compile_context, core_location);
+  global_names["function"] = function_definition_object(compile_context, psi_location);
+  global_names["__none__"] = none_macro(compile_context, psi_location);
 
-  TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, core_location, global_names);
+  TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, psi_location, global_names);
 
   TreePtr<> compiled_statements;
   try {
-    compiled_statements = compile_statement_list(list_from_stl(statements), root_evaluate_context, SourceLocation(file_text.location, SharedPtr<LogicalSourceLocation>()));
+    compiled_statements = compile_statement_list(list_from_stl(statements), root_evaluate_context, compile_context.root_location().relocate(file_text.location));
     compiled_statements->complete();
   } catch (CompileException&) {
     return EXIT_FAILURE;

@@ -79,6 +79,38 @@ namespace Psi {
   bool operator < (const PointerBase<T>& lhs, const PointerBase<U>& rhs) {
     return lhs.get() < rhs.get();
   }
+
+  template<typename T>
+  class IntrusivePointer : public PointerBase<T> {
+  public:
+    IntrusivePointer() {}
+    explicit IntrusivePointer(T *ptr) {reset(ptr);}
+    IntrusivePointer(T *ptr, bool add_ref) {reset(ptr, add_ref);}
+    IntrusivePointer(const IntrusivePointer& src) : PointerBase<T>() {reset(src.get());}
+    template<typename U> IntrusivePointer(const IntrusivePointer<U>& src) {reset(src.get());}
+    ~IntrusivePointer() {reset();}
+
+    T* release() {
+      T *ptr = this->m_ptr;
+      this->m_ptr = 0;
+      return ptr;
+    }
+
+    void reset(T *ptr=0, bool add_ref=true) {
+      if (ptr && add_ref)
+	intrusive_ptr_add_ref(ptr);
+
+      if (this->m_ptr)
+	intrusive_ptr_release(this->m_ptr);
+
+      this->m_ptr = ptr;
+    }
+
+    IntrusivePointer& operator = (const IntrusivePointer& src) {
+      reset(src.get());
+      return *this;
+    }
+  };
   
   template<typename T>
   class UniquePtr : public PointerBase<T> {
