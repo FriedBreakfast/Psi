@@ -210,6 +210,7 @@ namespace Psi {
       void (*gc_decrement) (Tree*);
       void (*gc_clear) (Tree*);
       void (*complete_callback) (Tree*);
+      void (*complete_cleanup) (Tree*);
     };
 
     class Tree : public SIBase, public boost::intrusive::list_base_hook<> {
@@ -246,6 +247,7 @@ namespace Psi {
 
       template<typename Visitor> static void visit_impl(Tree&, Visitor&) {}
       static void complete_callback_impl(Tree&) {}
+      static void complete_cleanup_impl(Tree&) {}
     };
 
     template<typename T>
@@ -399,6 +401,10 @@ namespace Psi {
       static void complete_callback(Tree *self) {
         Derived::complete_callback_impl(*static_cast<Derived*>(self));
       }
+
+      static void complete_cleanup(Tree *self) {
+        Derived::complete_cleanup_impl(*static_cast<Derived*>(self));
+      }
     };
 
 #define PSI_COMPILER_TREE(derived,name,super) { \
@@ -407,7 +413,8 @@ namespace Psi {
     &TreeWrapper<derived>::gc_increment, \
     &TreeWrapper<derived>::gc_decrement, \
     &TreeWrapper<derived>::gc_clear, \
-    &TreeWrapper<derived>::complete_callback \
+      &TreeWrapper<derived>::complete_callback, \
+    &TreeWrapper<derived>::complete_cleanup \
   }
 
 #define PSI_COMPILER_TREE_INIT() (PSI_REQUIRE_CONVERTIBLE(&vtable, const VtableType*), PSI_COMPILER_SI_INIT(&vtable))

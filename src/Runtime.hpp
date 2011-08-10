@@ -534,7 +534,9 @@ namespace Psi {
 
     struct Iterator {
       typename ContainerType::iterator current, end;
-      Iterator(ContainerType& container) : current(container.begin()), end(container.end()) {}
+      bool start;
+      Iterator(ContainerType& container)
+	: current(container.begin()), end(container.end()), start(true) {}
     };
 
     struct IteratorImpl {
@@ -553,7 +555,11 @@ namespace Psi {
       }
 
       static bool next_impl(Iterator& self) {
-        return ++self.current != self.end;
+	if (self.start)
+	  self.start = false;
+	else
+	  ++self.current;
+        return self.current != self.end;
       }
     };
 

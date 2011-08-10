@@ -376,6 +376,7 @@ namespace Psi {
       SharedPtr<Parser::Expression> m_expression;
       SourceLocation m_location;
       TreePtr<EvaluateContext> m_evaluate_context;
+      CompletionState m_type_completion_state;
 
     public:
       static const TreeVtable vtable;
@@ -398,9 +399,6 @@ namespace Psi {
 
       static void complete_callback_impl(StatementListEntry& self) {
         self.complete_statement();
-        self.m_expression.reset();
-        self.m_location.logical.reset();
-        self.m_evaluate_context.reset();
         self.m_value->complete(true);
       }
 
@@ -408,11 +406,21 @@ namespace Psi {
         return m_value;
       }
 
+      void complete_statement_callback() {
+	TreePtr<Term> expr = compile_expression(m_expression, m_evaluate_context, m_location.logical);
+	m_value.reset(new Statement(expr, m_location));
+      }
+
+      void complete_statement_cleanup() {
+        m_expression.reset();
+        m_location.logical.reset();
+        m_evaluate_context.reset();
+      }
+
       void complete_statement() {
-        if (!m_value) {
-	  TreePtr<Term> expr = compile_expression(m_expression, m_evaluate_context, m_location.logical);
-	  m_value.reset(new Statement(expr, m_location));
-	}
+	m_type_completion_state.complete(compile_context(), m_location, false,
+					 boost::bind(&StatementListEntry::complete_statement_callback, this),
+					 boost::bind(&StatementListEntry::complete_statement_cleanup, this));
       }
     };
 
@@ -493,10 +501,9 @@ namespace Psi {
       TreePtr<StatementListEntry> last_statement;
       PSI_STD::vector<TreePtr<StatementListEntry> > entries;
 
-      bool use_last = false;
       for (LocalIterator<SharedPtr<Parser::NamedExpression> > ii(statements); ii.next();) {
         const Parser::NamedExpression& named_expr = *ii.current();
-        if ((use_last = named_expr.expression.get())) {
+        if (named_expr.expression.get()) {
           String expr_name = named_expr.name ? String(named_expr.name->begin, named_expr.name->end) : String();
           SourceLocation statement_location(named_expr.location.location, make_logical_location(location.logical, expr_name));
           last_statement.reset(new StatementListEntry(compile_context, statement_location, named_expr.expression, context_tree));

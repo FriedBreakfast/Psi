@@ -105,6 +105,8 @@ namespace Psi {
 	Term::visit_impl(self, visitor);
 	visitor("value", self.value);
       }
+
+      static void complete_callback_impl(Statement&);
     };
 
     /**
@@ -128,6 +130,9 @@ namespace Psi {
           ("result", self.result)
           ("dependency", self.dependency);
       }
+
+      static void complete_callback_impl(Block&);
+      static void complete_cleanup_impl(Block&);
     };
 
     /**

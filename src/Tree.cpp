@@ -51,7 +51,8 @@ namespace Psi {
     
     void Tree::complete(bool dependency) {
       m_completion_state.complete(compile_context(), m_location, dependency,
-                                  boost::bind(derived_vptr(this)->complete_callback, this));
+                                  boost::bind(derived_vptr(this)->complete_callback, this),
+				  boost::bind(derived_vptr(this)->complete_cleanup, this));
     }
 
     Term::Term(const TreePtr<Term>& type, const SourceLocation& location)
@@ -275,9 +276,21 @@ namespace Psi {
       PSI_COMPILER_TREE_INIT();
     }
 
+    void Statement::complete_callback_impl(Statement& self) {
+      self.value->complete(true);
+    }
+
     Block::Block(const TreePtr<Term>& type, const SourceLocation& location)
     : Term(type, location) {
       PSI_COMPILER_TREE_INIT();
+    }
+
+    void Block::complete_callback_impl(Block& self) {
+      self.dependency->run(&self);
+    }
+
+    void Block::complete_cleanup_impl(Block& self) {
+      self.dependency.clear();
     }
 
     Interface::Interface(CompileContext& compile_context, const String& name_, const SourceLocation& location)
