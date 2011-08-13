@@ -171,16 +171,17 @@ namespace Psi {
      * \brief Value of type RecursiveType.
      */
     class RecursiveValue : public Term {
-      TreePtr<Term> m_member;
       RecursiveValue(const TreePtr<RecursiveType>&, const TreePtr<Term>&, const SourceLocation&);
     public:
       static const TermVtable vtable;
-
       static TreePtr<Term> get(const TreePtr<RecursiveType>&, const TreePtr<Term>&, const SourceLocation&);
+
+      TreePtr<Term> member;
 
       template<typename Visitor>
       static void visit_impl(RecursiveValue& self, Visitor& visitor) {
         Term::visit_impl(self, visitor);
+	visitor("member", self.member);
       }
     };
 
@@ -276,9 +277,7 @@ namespace Psi {
       FunctionArgument(const TreePtr<Term>&, const SourceLocation&);
     };
 
-    class Function : public Term {
-      DependencyPtr m_dependency;
-      
+    class Function : public Term {      
     public:
       static const TermVtable vtable;
       
@@ -288,16 +287,19 @@ namespace Psi {
       PSI_STD::vector<TreePtr<FunctionArgument> > arguments;
       TreePtr<> result_type;
       TreePtr<> body;
+      DependencyPtr dependency;
 
       template<typename Visitor> static void visit_impl(Function& self, Visitor& visitor) {
         Term::visit_impl(self, visitor);
         visitor
 	  ("arguments", self.arguments)
 	  ("result_type", self.result_type)
-	  ("body", self.body);
+	  ("body", self.body)
+	  ("dependency", self.dependency);
       }
       
       static void complete_callback_impl(Function&);
+      static void complete_cleanup_impl(Function&);
     };
 
     class TryFinally : public Term {

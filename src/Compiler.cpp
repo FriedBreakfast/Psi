@@ -1,12 +1,16 @@
-#include <boost/bind.hpp>
-#include <boost/foreach.hpp>
-#include <boost/format.hpp>
-#include <boost/next_prior.hpp>
-
 #include "Compiler.hpp"
 #include "Tree.hpp"
 #include "Platform.hpp"
 #include "Parser.hpp"
+
+#ifdef PSI_DEBUG
+#include <iostream>
+#endif
+
+#include <boost/bind.hpp>
+#include <boost/foreach.hpp>
+#include <boost/format.hpp>
+#include <boost/next_prior.hpp>
 
 namespace Psi {
   namespace Compiler {
@@ -161,10 +165,8 @@ namespace Psi {
 	}
       }
 
-      if (ignore_anonymous_tail) {
-	while (nodes.back()->anonymous())
-	  nodes.pop_back();
-      }
+      if (ignore_anonymous_tail && nodes.front()->anonymous())
+	nodes.erase(nodes.begin());
 
       if (!nodes.front()->parent())
 	return "(root namespace)";
@@ -184,6 +186,17 @@ namespace Psi {
       const std::string& sss = ss.str();
       return String(sss.c_str(), sss.length());
     }
+
+#if defined(PSI_DEBUG) || defined(PSI_DOXYGEN)
+    /**
+     * \brief Dump the name of this location to stderr.
+     *
+     * Only available if \c PSI_DEBUG is defined.
+     */
+    void LogicalSourceLocation::dump_error_name() {
+      std::cerr << error_name(LogicalSourceLocationPtr()) << std::endl;
+    }
+#endif
 
     bool si_is_a(SIBase *object, const SIVtable *cls) {
       for (const SIVtable *super = object->m_vptr; super; super = super->super) {
@@ -239,27 +252,27 @@ namespace Psi {
      * \brief Walk a tree looking for an interface implementation.
      */
     TreePtr<> interface_lookup_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const TreePtr<Term>& term) {
+      if (TreePtr<ImplementationTerm> templ = dyn_treeptr_cast<ImplementationTerm>(term)) {
+	for (PSI_STD::vector<TreePtr<Implementation> >::iterator ii = templ->implementations.begin(), ie = templ->implementations.end(); ii != ie; ++ii) {
+	  if (interface == (*ii)->interface) {
+	    PSI_ASSERT((*ii)->interface_parameters.size() == parameters.size());
+	    PSI_STD::vector<TreePtr<Term> > wildcards((*ii)->wildcard_types.size());
+	    for (std::size_t ji = 0, je = parameters.size(); ji != je; ++ji) {
+	      if (!(*ii)->interface_parameters[ji]->match(parameters[ji], list_from_stl(wildcards)))
+		goto match_failed;
+	    }
+
+	    return (*ii)->value;
+	  }
+
+	match_failed:;
+	}
+      }
+
       for (LocalIterator<TreePtr<Term> > p(*term); p.next();) {
         TreePtr<Term>& current = p.current();
         if (TreePtr<> result = interface_lookup_search(interface, parameters, current))
-          return result;
-        
-        if (TreePtr<ImplementationTerm> templ = dyn_treeptr_cast<ImplementationTerm>(current)) {
-          for (PSI_STD::vector<TreePtr<Implementation> >::iterator ii = templ->implementations.begin(), ie = templ->implementations.end(); ii != ie; ++ii) {
-            if (interface == (*ii)->interface) {
-              PSI_ASSERT((*ii)->interface_parameters.size() == parameters.size());
-              PSI_STD::vector<TreePtr<Term> > wildcards((*ii)->wildcard_types.size());
-              for (std::size_t ji = 0, je = parameters.size(); ji != je; ++ji) {
-                if (!(*ii)->interface_parameters[ji]->match(parameters[ji], list_from_stl(wildcards)))
-                  goto match_failed;
-              }
-
-              return (*ii)->value;
-            }
-
-          match_failed:;
-          }
-        }
+          return result;        
       }
 
       return TreePtr<>();

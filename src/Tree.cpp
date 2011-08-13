@@ -250,15 +250,18 @@ namespace Psi {
       PSI_COMPILER_TREE_INIT();
     }
 
-    Function::Function(const TreePtr<FunctionType>& type, const SourceLocation& location, DependencyPtr& dependency)
+    Function::Function(const TreePtr<FunctionType>& type, const SourceLocation& location, DependencyPtr& dependency_)
     : Term(type, location) {
       PSI_COMPILER_TREE_INIT();
-      m_dependency.swap(dependency);
+      dependency.swap(dependency_);
     }
 
     void Function::complete_callback_impl(Function& self) {
-      self.m_dependency->run(&self);
-      self.m_dependency.clear();
+      self.dependency->run(&self);
+    }
+
+    void Function::complete_cleanup_impl(Function& self) {
+      self.dependency.clear();
     }
 
     FunctionArgument::FunctionArgument(const TreePtr<Term>& type, const SourceLocation& location)
@@ -335,9 +338,9 @@ namespace Psi {
       PSI_COMPILER_TREE_INIT();
     }
     
-    RecursiveValue::RecursiveValue(const TreePtr<RecursiveType>& type, const TreePtr<Term>& member, const SourceLocation& location)
+    RecursiveValue::RecursiveValue(const TreePtr<RecursiveType>& type, const TreePtr<Term>& member_, const SourceLocation& location)
     : Term(type, location),
-    m_member(member) {
+    member(member_) {
       PSI_COMPILER_TREE_INIT();
     }
     

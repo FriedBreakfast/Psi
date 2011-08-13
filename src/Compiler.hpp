@@ -79,6 +79,9 @@ namespace Psi {
       unsigned depth();
       LogicalSourceLocationPtr ancestor(unsigned depth);
       String error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous_tail=false);
+#if defined(PSI_DEBUG) || defined(PSI_DOXYGEN)
+      void dump_error_name();
+#endif
 
       static LogicalSourceLocationPtr new_root_location();
       LogicalSourceLocationPtr named_child(const String& name);
@@ -913,10 +916,10 @@ namespace Psi {
     
     TreePtr<Term> function_definition_object(CompileContext&, const SourceLocation&);
 
-    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const String&, const TreePtr<MacroEvaluateCallback>&, const std::map<String, TreePtr<MacroDotCallback> >&);
-    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const String&, const TreePtr<MacroEvaluateCallback>&);
-    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const String&, const std::map<String, TreePtr<MacroDotCallback> >&);
-    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const String&);
+    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&, const std::map<String, TreePtr<MacroDotCallback> >&);
+    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&);
+    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<MacroDotCallback> >&);
+    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&);
     void attach_compile_implementation(const TreePtr<Interface>&, const TreePtr<ImplementationTerm>&, const TreePtr<>&, const SourceLocation&);
     TreePtr<Term> make_macro_term(CompileContext&, const SourceLocation&);
   }

@@ -9,7 +9,6 @@ namespace Psi {
   namespace Compiler {
     class NamedMemberMacro : public Macro {
       typedef std::map<String, TreePtr<MacroDotCallback> > NameMapType;
-      String m_name;
       TreePtr<MacroEvaluateCallback> m_evaluate;
       NameMapType m_members;
 
@@ -18,11 +17,9 @@ namespace Psi {
 
       NamedMemberMacro(CompileContext& compile_context,
                        const SourceLocation& location,
-                       const String& name,
                        const TreePtr<MacroEvaluateCallback>& evaluate,
                        const NameMapType& members)
       : Macro(compile_context, location),
-      m_name(name),
       m_evaluate(evaluate),
       m_members(members) {
 	PSI_COMPILER_TREE_INIT();
@@ -32,7 +29,6 @@ namespace Psi {
       static void visit_impl(NamedMemberMacro& self, Visitor& visitor) {
         Macro::visit_impl(self, visitor);
         visitor
-        ("name", self.m_name)
         ("evaluate", self.m_evaluate)
         ("members", self.m_members);
       }
@@ -45,7 +41,7 @@ namespace Psi {
         if (self.m_evaluate) {
           return self.m_evaluate->evaluate(value, parameters, evaluate_context, location);
         } else {
-          self.compile_context().error_throw(location, boost::format("Macro '%s' does not support evaluation") % self.m_name);
+          self.compile_context().error_throw(location, boost::format("Macro '%s' does not support evaluation") % self.location().logical->error_name(location.logical));
         }
       }
 
@@ -55,14 +51,14 @@ namespace Psi {
                                     const TreePtr<EvaluateContext>& evaluate_context,
                                     const SourceLocation& location) {
         if (parameter->expression_type != Parser::expression_token)
-          self.compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % self.m_name);
+          self.compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % self.location().logical->error_name(location.logical));
 
         const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*parameter);
         String member_name(token_expression.text.begin, token_expression.text.end);
         NameMapType::const_iterator it = self.m_members.find(member_name);
 
         if (it == self.m_members.end())
-          self.compile_context().error_throw(location, boost::format("'%s' has no member named '%s'") % self.m_name % member_name);
+          self.compile_context().error_throw(location, boost::format("'%s' has no member named '%s'") % self.location().logical->error_name(location.logical) % member_name);
 
         return it->second->dot(value, evaluate_context, location);
       }
@@ -76,10 +72,9 @@ namespace Psi {
      */
     TreePtr<Macro> make_macro(CompileContext& compile_context,
                               const SourceLocation& location,
-                              const String& name,
                               const TreePtr<MacroEvaluateCallback>& evaluate,
                               const std::map<String, TreePtr<MacroDotCallback> >& members) {
-      return TreePtr<Macro>(new NamedMemberMacro(compile_context, location, name, evaluate, members));
+      return TreePtr<Macro>(new NamedMemberMacro(compile_context, location, evaluate, members));
     }
 
     /**
@@ -87,9 +82,8 @@ namespace Psi {
      */
     TreePtr<Macro> make_macro(CompileContext& compile_context,
                               const SourceLocation& location,
-                              const String& name,
                               const TreePtr<MacroEvaluateCallback>& evaluate) {
-      return make_macro(compile_context, location, name, evaluate, std::map<String, TreePtr<MacroDotCallback> >());
+      return make_macro(compile_context, location, evaluate, std::map<String, TreePtr<MacroDotCallback> >());
     }
 
     /**
@@ -97,18 +91,16 @@ namespace Psi {
      */
     TreePtr<Macro> make_macro(CompileContext& compile_context,
                               const SourceLocation& location,
-                              const String& name,
                               const std::map<String, TreePtr<MacroDotCallback> >& members) {
-      return make_macro(compile_context, location, name, TreePtr<MacroEvaluateCallback>(), members);
+      return make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(), members);
     }
 
     /**
      * \brief Create an interface macro.
      */
     TreePtr<Macro> make_macro(CompileContext& compile_context,
-                              const SourceLocation& location,
-                              const String& name) {
-      return make_macro(compile_context, location, name, TreePtr<MacroEvaluateCallback>(), std::map<String, TreePtr<MacroDotCallback> >());
+                              const SourceLocation& location) {
+      return make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(), std::map<String, TreePtr<MacroDotCallback> >());
     }
 
     /**
