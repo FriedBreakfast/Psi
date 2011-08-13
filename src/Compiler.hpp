@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include <boost/array.hpp>
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/avl_set.hpp>
 
@@ -67,13 +68,17 @@ namespace Psi {
       ~LogicalSourceLocation();
 
       /// \brief Whether this location is anonymous within its parent.
-      bool anonymous() {return m_key.index != 0;}
+      bool anonymous() {return m_parent && (m_key.index != 0);}
       /// \brief The identifying index of this location if it is anonymous.
       unsigned index() {return m_key.index;}
       /// \brief The name of this location within its parent if it is not anonymous.
       const String& name() {return m_key.name;}
       /// \brief Get the parent node of this location
       const LogicalSourceLocationPtr& parent() {return m_parent;}
+
+      unsigned depth();
+      LogicalSourceLocationPtr ancestor(unsigned depth);
+      String error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous_tail=false);
 
       static LogicalSourceLocationPtr new_root_location();
       LogicalSourceLocationPtr named_child(const String& name);
@@ -863,10 +868,8 @@ namespace Psi {
     class Interface : public Tree {
     public:
       static const TreeVtable vtable;
-      Interface(CompileContext&, const String&, const SourceLocation&);
+      Interface(CompileContext&, const SourceLocation&);
 
-      /// \brief Name of this interfce.
-      String name;
       /// \brief If the target of this interface is a compile-time type, this value gives the type of tree we're looking for.
       TreeVtable *compile_time_type;
       /// \brief If the target of this interface is a run-time value, this gives the type of that value.
@@ -876,7 +879,6 @@ namespace Psi {
       static void visit_impl(Interface& self, Visitor& visitor) {
 	Tree::visit_impl(self, visitor);
 	visitor
-	  ("name", self.name)
 	  ("compile_time_type", self.compile_time_type)
 	  ("run_time_type", self.run_time_type);
       }
@@ -886,26 +888,26 @@ namespace Psi {
 
     TreePtr<Term> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
     TreePtr<Block> compile_statement_list(const List<SharedPtr<Parser::NamedExpression> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
-    String logical_location_name(const LogicalSourceLocationPtr& location);
 
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);
 
     TreePtr<> interface_lookup(const TreePtr<Interface>&, const List<TreePtr<Term> >&, const SourceLocation&);
-    TreePtr<> interface_lookup(const TreePtr<Interface>&, const TreePtr<Term>&, const SourceLocation&);
-    void interface_cast_check(const TreePtr<Interface>&, const TreePtr<>&, const SourceLocation&, const TreeVtable*);
+    void interface_cast_check(const TreePtr<Interface>&, const List<TreePtr<Term> >&, const TreePtr<>&, const SourceLocation&, const TreeVtable*);
 
     template<typename T>
     TreePtr<T> interface_lookup_as(const TreePtr<Interface>& interface, const TreePtr<Term>& parameter, const SourceLocation& location) {
-      TreePtr<> result = interface_lookup(interface, parameter, location);
-      interface_cast_check(interface, result, location, reinterpret_cast<const TreeVtable*>(&T::vtable));
+      boost::array<TreePtr<Term>, 1> parameters;
+      parameters[0] = parameter;
+      TreePtr<> result = interface_lookup(interface, list_from_stl(parameters), location);
+      interface_cast_check(interface, list_from_stl(parameters), result, location, reinterpret_cast<const TreeVtable*>(&T::vtable));
       return treeptr_cast<T>(result);
     }
 
     template<typename T>
     TreePtr<T> interface_lookup_as(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const SourceLocation& location) {
       TreePtr<> result = interface_lookup(interface, parameters, location);
-      interface_cast_check(interface, result, location, reinterpret_cast<const TreeVtable*>(&T::vtable));
+      interface_cast_check(interface, parameters, result, location, reinterpret_cast<const TreeVtable*>(&T::vtable));
       return treeptr_cast<T>(result);
     }
     

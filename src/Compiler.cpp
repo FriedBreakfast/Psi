@@ -1,4 +1,3 @@
-#include <boost/array.hpp>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/format.hpp>
@@ -92,6 +91,100 @@ namespace Psi {
       return node;
     }
 
+    /**
+     * \brief Count the number of parent nodes between this location and the root node.
+     */
+    unsigned LogicalSourceLocation::depth() {
+      unsigned d = 0;
+      for (LogicalSourceLocation *l = this->parent().get(); l; l = l->parent().get())
+	++d;
+      return d;
+    } 
+
+    /**
+     * \brief Get the ancestor of this location which is a certain
+     * number of parent nodes away.
+     */
+    LogicalSourceLocationPtr LogicalSourceLocation::ancestor(unsigned depth) {
+      LogicalSourceLocation *ptr = this;
+      for (unsigned i = 0; i != depth; ++i)
+	ptr = ptr->parent().get();
+      return LogicalSourceLocationPtr(ptr);
+    }
+
+    /**
+     * \brief Get the full name of this location for use in an error message.
+     *
+     * \param relative_to Location at which the error occurred, so
+     * that a common prefix may be skipped.
+     *
+     * \param ignore_anonymous_tail Do not include anonymous nodes at
+     * the bottom of the tree.
+     */
+    String LogicalSourceLocation::error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous_tail) {
+      std::vector<LogicalSourceLocation*> nodes;
+      bool last_anonymous = false;
+
+      unsigned print_depth = depth();
+      if (relative_to) {
+	// Find the common ancestor of this and relative_to.
+	unsigned this_depth = depth();
+	unsigned relative_to_depth = relative_to->depth();
+	unsigned min_depth = std::min(this_depth, relative_to_depth);
+	LogicalSourceLocation *this_ancestor = ancestor(this_depth - min_depth).get();
+	LogicalSourceLocation *relative_to_ancestor = relative_to->ancestor(relative_to_depth - min_depth).get();
+	print_depth = this_depth - min_depth;
+
+	while (this_ancestor != relative_to_ancestor) {
+	  ++print_depth;
+	  this_ancestor = this_ancestor->parent().get();
+	  relative_to_ancestor = relative_to_ancestor->parent().get();
+	}
+
+	// Keep going until we get to a named ancestor
+	while (this_ancestor->anonymous()) {
+	  ++print_depth;
+	  this_ancestor = this_ancestor->parent().get();
+	}
+      }
+
+      print_depth = std::max(print_depth, 1u);
+
+      for (LogicalSourceLocation *l = this; print_depth; l = l->parent().get(), --print_depth) {
+        if (!l->anonymous()) {
+	  nodes.push_back(l);
+	  last_anonymous = false;
+        } else {
+	  if (!last_anonymous)
+	    nodes.push_back(l);
+	  last_anonymous = true;
+	}
+      }
+
+      if (ignore_anonymous_tail) {
+	while (nodes.back()->anonymous())
+	  nodes.pop_back();
+      }
+
+      if (!nodes.front()->parent())
+	return "(root namespace)";
+
+      std::stringstream ss;
+      for (std::vector<LogicalSourceLocation*>::reverse_iterator ib = nodes.rbegin(),
+	     ii = nodes.rbegin(), ie = nodes.rend(); ii != ie; ++ii) {
+	if (ii != ib)
+	  ss << '.';
+
+	if ((*ii)->anonymous())
+	  ss << "(anonymous)";
+	else
+	  ss << (*ii)->name();
+      }
+
+      const std::string& sss = ss.str();
+      return String(sss.c_str(), sss.length());
+    }
+
     bool si_is_a(SIBase *object, const SIVtable *cls) {
       for (const SIVtable *super = object->m_vptr; super; super = super->super) {
         if (super == cls)
@@ -102,16 +195,44 @@ namespace Psi {
     }
 
     /**
-     * \brief Checks the result of an interface lookup is non-NULL and of the correct type.
+     * Create a string containing a list of parameters passed to an interface.
      */
-    void interface_cast_check(const TreePtr<Interface>& interface, const TreePtr<>& result, const SourceLocation& location, const TreeVtable* cast_type) {
+    std::string interface_parameters_message(const List<TreePtr<Term> >& parameters, const SourceLocation& location) {
+      std::stringstream ss;
+
+      bool first = true;
+      for (LocalIterator<TreePtr<Term> > p(parameters); p.next();) {
+	if (first)
+	  first = false;
+	else
+	  ss << ", ";
+        TreePtr<Term>& current = p.current();
+	ss << '\'' << current->location().logical->error_name(location.logical) << '\'';
+      }
+
+      return ss.str();
+    }
+
+    /**
+     * \brief Checks the result of an interface lookup is non-NULL and of the correct type.
+     *
+     * \param parameters Parameters the interfacce was searched on.
+     */
+    void interface_cast_check(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const TreePtr<>& result, const SourceLocation& location, const TreeVtable* cast_type) {
       CompileContext& compile_context = interface->compile_context();
 
       if (!result)
-        compile_context.error_throw(location, boost::format("'%s' interface not available") % interface->name);
+        compile_context.error_throw(location,
+				    boost::format("'%s' interface not available for %s")
+				    % interface->location().logical->error_name(location.logical)
+				    % interface_parameters_message(parameters, location));
 
       if (!si_is_a(result.get(), &cast_type->base))
-        compile_context.error_throw(location, boost::format("'%s' interface has the wrong type") % interface->name, CompileContext::error_internal);
+        compile_context.error_throw(location,
+				    boost::format("'%s' interface has the wrong type")
+				    % interface->location().logical->error_name(location.logical)
+				    % interface_parameters_message(parameters, location),
+				    CompileContext::error_internal);
     }
 
     /**
@@ -160,12 +281,6 @@ namespace Psi {
 
       return TreePtr<>();
     }
-    
-    TreePtr<> interface_lookup(const TreePtr<Interface>& interface, const TreePtr<Term>& parameter, const SourceLocation& location) {
-      boost::array<TreePtr<Term>, 1> parameters;
-      parameters[0] = parameter;
-      return interface_lookup(interface, list_from_stl(parameters), location);
-    }
 
     CompileException::CompileException() {
     }
@@ -190,8 +305,8 @@ namespace Psi {
 
       m_metatype.reset(new Metatype(*this, psi_location));
       m_empty_type.reset(new EmptyType(*this, psi_location));
-      m_macro_interface.reset(new Interface(*this, "psi.compiler.Macro", psi_compiler_location));
-      m_argument_passing_interface.reset(new Interface(*this, "psi.compiler.ArgumentPasser", psi_compiler_location));
+      m_macro_interface.reset(new Interface(*this, psi_compiler_location.named_child("Macro")));
+      m_argument_passing_interface.reset(new Interface(*this, psi_compiler_location.named_child("ArgumentPasser")));
     }
 
     struct CompileContext::TreeDisposer {
@@ -228,7 +343,7 @@ namespace Psi {
       default: type = "error"; m_error_occurred = true; break;
       }
       
-      *m_error_stream << boost::format("%s:%s: in '%s'\n") % loc.physical.file->url % loc.physical.first_line % logical_location_name(loc.logical);
+      *m_error_stream << boost::format("%s:%s: in '%s'\n") % loc.physical.file->url % loc.physical.first_line % loc.logical->error_name(LogicalSourceLocationPtr(), true);
       *m_error_stream << boost::format("%s:%s: %s:%s\n") % loc.physical.file->url % loc.physical.first_line % type % message;
     }
 
@@ -434,40 +549,6 @@ namespace Psi {
       default:
         PSI_FAIL("unknown expression type");
       }
-    }
-
-    String logical_location_name(const LogicalSourceLocationPtr& location) {
-      if (!location)
-	return "(root namespace)";
-
-      std::vector<LogicalSourceLocation*> nodes;
-      bool last_anonymous = false;
-
-      for (LogicalSourceLocation *l = location.get(); l->parent(); l = l->parent().get()) {
-        if (!l->anonymous()) {
-	  nodes.push_back(l);
-	  last_anonymous = false;
-        } else {
-	  if (!last_anonymous)
-	    nodes.push_back(l);
-	  last_anonymous = true;
-	}
-      }
-
-      std::stringstream ss;
-      for (std::vector<LogicalSourceLocation*>::reverse_iterator ib = nodes.rbegin(),
-	     ii = nodes.rbegin(), ie = nodes.rend(); ii != ie; ++ii) {
-	if (ii != ib)
-	  ss << '.';
-
-	if ((*ii)->anonymous())
-	  ss << "(anonymous)";
-	else
-	  ss << (*ii)->name();
-      }
-
-      const std::string& sss = ss.str();
-      return String(sss.c_str(), sss.length());
     }
 
     class StatementListEntry : public Tree {

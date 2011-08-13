@@ -293,9 +293,8 @@ namespace Psi {
       self.dependency.clear();
     }
 
-    Interface::Interface(CompileContext& compile_context, const String& name_, const SourceLocation& location)
-      : Tree(compile_context, location),
-	name(name_) {
+    Interface::Interface(CompileContext& compile_context, const SourceLocation& location)
+      : Tree(compile_context, location) {
       PSI_COMPILER_TREE_INIT();
     }
 
