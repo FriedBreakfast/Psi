@@ -7,6 +7,7 @@
 namespace Psi {
   namespace Compiler {
     TreePtr<Term> none_macro(CompileContext& compile_context, const SourceLocation& location);
+    TreePtr<Term> function_definition_macro(CompileContext&, const SourceLocation&);
   }
 }
 

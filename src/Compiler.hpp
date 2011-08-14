@@ -967,8 +967,6 @@ namespace Psi {
       interface_cast_check(interface, parameters, result, location, reinterpret_cast<const TreeVtable*>(&T::vtable));
       return treeptr_cast<T>(result);
     }
-    
-    TreePtr<Term> function_definition_object(CompileContext&, const SourceLocation&);
 
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&, const std::map<String, TreePtr<MacroDotCallback> >&);
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&);

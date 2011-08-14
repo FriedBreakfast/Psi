@@ -84,6 +84,7 @@ add_library(psi-runtime SHARED
 )
 
 add_library(psi-compiler SHARED
+  Class.cpp
   CppCompiler.hpp
   Compiler.cpp Compiler.hpp
   Function.cpp

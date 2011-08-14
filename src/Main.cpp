@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
   PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(file_text);
 
   PSI_STD::map<String, TreePtr<Term> > global_names;
-  global_names["function"] = function_definition_object(compile_context, psi_location.named_child("function"));
+  global_names["function"] = function_definition_macro(compile_context, psi_location.named_child("function"));
   global_names["__none__"] = none_macro(compile_context, psi_location.named_child("__none__"));
 
   TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, psi_location, global_names);

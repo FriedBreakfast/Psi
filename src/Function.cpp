@@ -1,4 +1,5 @@
 #include "Compiler.hpp"
+#include "Macros.hpp"
 #include "Parser.hpp"
 #include "Tree.hpp"
 #include "Utility.hpp"
@@ -360,7 +361,7 @@ namespace Psi {
     /**
      * \brief Create a callback to the function definition function.
      */
-    TreePtr<Term> function_definition_object(CompileContext& compile_context, const SourceLocation& location) {
+    TreePtr<Term> function_definition_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<MacroEvaluateCallback> callback(new FunctionDefineCallback(compile_context, location));
       TreePtr<Macro> macro = make_macro(compile_context, location, callback);
       

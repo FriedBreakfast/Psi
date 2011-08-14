@@ -126,34 +126,27 @@ namespace Psi {
      * the bottom of the tree.
      */
     String LogicalSourceLocation::error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous_tail) {
-      std::vector<LogicalSourceLocation*> nodes;
-      bool last_anonymous = false;
-
       unsigned print_depth = depth();
       if (relative_to) {
 	// Find the common ancestor of this and relative_to.
-	unsigned this_depth = depth();
+	unsigned this_depth = print_depth;
 	unsigned relative_to_depth = relative_to->depth();
 	unsigned min_depth = std::min(this_depth, relative_to_depth);
-	LogicalSourceLocation *this_ancestor = ancestor(this_depth - min_depth).get();
-	LogicalSourceLocation *relative_to_ancestor = relative_to->ancestor(relative_to_depth - min_depth).get();
 	print_depth = this_depth - min_depth;
+	LogicalSourceLocation *this_ancestor = ancestor(print_depth).get();
+	LogicalSourceLocation *relative_to_ancestor = relative_to->ancestor(relative_to_depth - min_depth).get();
 
 	while (this_ancestor != relative_to_ancestor) {
 	  ++print_depth;
 	  this_ancestor = this_ancestor->parent().get();
 	  relative_to_ancestor = relative_to_ancestor->parent().get();
 	}
-
-	// Keep going until we get to a named ancestor
-	while (this_ancestor->anonymous()) {
-	  ++print_depth;
-	  this_ancestor = this_ancestor->parent().get();
-	}
       }
 
       print_depth = std::max(print_depth, 1u);
 
+      std::vector<LogicalSourceLocation*> nodes;
+      bool last_anonymous = false;
       for (LogicalSourceLocation *l = this; print_depth; l = l->parent().get(), --print_depth) {
         if (!l->anonymous()) {
 	  nodes.push_back(l);
@@ -165,11 +158,18 @@ namespace Psi {
 	}
       }
 
-      if (ignore_anonymous_tail && nodes.front()->anonymous())
-	nodes.erase(nodes.begin());
+      if (ignore_anonymous_tail) {
+	if (nodes.front()->anonymous())
+	  nodes.erase(nodes.begin());
+	if (nodes.empty())
+	  return "(anonymous)";
+      }
 
-      if (!nodes.front()->parent())
-	return "(root namespace)";
+      if (!nodes.back()->parent()) {
+	nodes.pop_back();
+	if (nodes.empty())
+	  return "(root namespace)";
+      }
 
       std::stringstream ss;
       for (std::vector<LogicalSourceLocation*>::reverse_iterator ib = nodes.rbegin(),
@@ -679,10 +679,18 @@ namespace Psi {
       }
 
       static void run_impl(StatementListCompiler& self, const TreePtr<Block>& block) {
+	bool failed = false;
         for (std::vector<TreePtr<StatementListEntry> >::iterator ii = self.m_statements.begin(), ie = self.m_statements.end(); ii != ie; ++ii) {
-          (*ii)->complete(true);
-          block->statements.push_back((*ii)->value());
+	  try {
+	    (*ii)->complete(true);
+	    block->statements.push_back((*ii)->value());
+	  } catch (CompileException&) {
+	    failed = true;
+	  }
         }
+
+	if (failed)
+	  throw CompileException();
       }
     };
 
