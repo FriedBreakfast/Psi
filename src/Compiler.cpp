@@ -245,7 +245,7 @@ namespace Psi {
 				    boost::format("'%s' interface has the wrong type")
 				    % interface->location().logical->error_name(location.logical)
 				    % interface_parameters_message(parameters, location),
-				    CompileContext::error_internal);
+				    CompileError::error_internal);
     }
 
     /**
@@ -305,8 +305,36 @@ namespace Psi {
       return "Psi compile exception";
     }
 
+    CompileError::CompileError(CompileContext& compile_context, const SourceLocation& location, unsigned flags)
+      : m_compile_context(&compile_context), m_location(location), m_flags(flags) {
+      bool error_occurred = false;
+      switch (flags) {
+      case error_warning: m_type = "warning"; break;
+      case error_internal: m_type = "internal error"; error_occurred = true; break;
+      default: m_type = "error"; error_occurred = true; break;
+      }
+
+      if (error_occurred)
+	m_compile_context->set_error_occurred();
+
+      m_compile_context->error_stream() << boost::format("%s:%s: in '%s'\n") % location.physical.file->url
+	% location.physical.first_line % location.logical->error_name(LogicalSourceLocationPtr(), true);
+    }
+
+    void CompileError::info(const std::string& message) {
+      info(m_location, message);
+    }
+
+    void CompileError::info(const SourceLocation& location, const std::string& message) {
+      m_compile_context->error_stream() << boost::format("%s:%s:%s: %s\n")
+	% location.physical.file->url % location.physical.first_line % m_type % message;
+    }
+
+    void CompileError::end() {
+    }
+
     CompileContext::CompileContext(std::ostream *error_stream)
-      : m_error_stream(error_stream), m_error_occurred(false),
+      : m_error_stream(error_stream), m_error_occurred(false), m_running_completion_stack(NULL),
 	m_root_location(PhysicalSourceLocation(), LogicalSourceLocation::new_root_location()) {
       PhysicalSourceLocation core_physical_location;
       m_root_location.physical.file.reset(new SourceFile());
@@ -349,15 +377,9 @@ namespace Psi {
     }
 
     void CompileContext::error(const SourceLocation& loc, const std::string& message, unsigned flags) {
-      const char *type;
-      switch (flags) {
-      case error_warning: type = "warning"; break;
-      case error_internal: type = "internal error"; m_error_occurred = true; break;
-      default: type = "error"; m_error_occurred = true; break;
-      }
-      
-      *m_error_stream << boost::format("%s:%s: in '%s'\n") % loc.physical.file->url % loc.physical.first_line % loc.logical->error_name(LogicalSourceLocationPtr(), true);
-      *m_error_stream << boost::format("%s:%s: %s:%s\n") % loc.physical.file->url % loc.physical.first_line % type % message;
+      CompileError error(*this, loc, flags);
+      error.info(message);
+      error.end();
     }
 
     void CompileContext::error_throw(const SourceLocation& loc, const std::string& message, unsigned flags) {
@@ -394,6 +416,26 @@ namespace Psi {
       result->symbol = name;
       result->m_jit_ptr = base;
       return result;
+    }
+
+    RunningCompletionState::RunningCompletionState(CompileContext& compile_context, CompletionState *state, const SourceLocation& location)
+      : m_compile_context(&compile_context), m_state(state), m_location(location) {
+      m_parent = m_compile_context->m_running_completion_stack;
+      m_compile_context->m_running_completion_stack = this;
+    }
+
+    RunningCompletionState::~RunningCompletionState() {
+      m_compile_context->m_running_completion_stack = m_parent;
+    }
+
+    void RunningCompletionState::throw_circular_dependency() {
+      CompileError error(*m_compile_context, m_location);
+      error.info("Circular dependency found");
+      boost::format fmt("via: '%s'");
+      for (RunningCompletionState *ancestor = m_parent; ancestor && (ancestor->m_state != m_state); ancestor = ancestor->m_parent)
+	error.info(ancestor->m_location, fmt % ancestor->m_location.logical->error_name(m_location.logical));
+      error.end();
+      throw CompileException();
     }
     
     class EvaluateContextDictionary : public EvaluateContext {
@@ -471,7 +513,7 @@ namespace Psi {
       CompileContext& compile_context = expr->compile_context();
 
       if (!expr->type())
-        compile_context.error_throw(location, "Expression does not have a type", CompileContext::error_internal);
+        compile_context.error_throw(location, "Expression does not have a type", CompileError::error_internal);
 
       return interface_lookup_as<Macro>(compile_context.macro_interface(), expr->type(), location);
     }
@@ -525,7 +567,7 @@ namespace Psi {
           }
 
           if (!first.value())
-            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: successful lookup of '%s' returned NULL value") % bracket_str % bracket_operation, CompileContext::error_internal);
+            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: successful lookup of '%s' returned NULL value") % bracket_str % bracket_operation, CompileError::error_internal);
 
           boost::array<SharedPtr<Parser::Expression>, 1> expression_list;
           expression_list[0] = expression;
@@ -543,7 +585,7 @@ namespace Psi {
           }
 
           if (!result.value())
-            compile_context.error_throw(location, boost::format("Successful lookup of '%s' returned NULL value") % name, CompileContext::error_internal);
+            compile_context.error_throw(location, boost::format("Successful lookup of '%s' returned NULL value") % name, CompileError::error_internal);
 
           return result.value();
         }
@@ -731,7 +773,7 @@ namespace Psi {
         }
 
         if (!none.value())
-          compile_context.error_throw(location, "'__none__' returned a NULL tree", CompileContext::error_internal);
+          compile_context.error_throw(location, "'__none__' returned a NULL tree", CompileError::error_internal);
 
         block_value = none.value();
       }

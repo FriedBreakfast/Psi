@@ -248,6 +248,21 @@ namespace Psi {
       }
     };
 
+    /**
+     * \brief Data for a running CompletionState.
+     */
+    class RunningCompletionState : public boost::noncopyable {
+      CompileContext *m_compile_context;
+      CompletionState *m_state;
+      RunningCompletionState *m_parent;
+      SourceLocation m_location;
+
+    public:
+      RunningCompletionState(CompileContext&, CompletionState*, const SourceLocation&);
+      ~RunningCompletionState();
+      void throw_circular_dependency();
+    };
+
     struct TreeVtable {
       SIVtable base;
       void (*destroy) (Tree*);
@@ -612,12 +627,20 @@ namespace Psi {
     class Global;
     class Interface;
 
-    class CompileContext {
-      friend class Tree;
-      struct TreeDisposer;
+    /**
+     * \brief Class used for error reporting.
+     */
+    class CompileError {
+      CompileContext *m_compile_context;
+      SourceLocation m_location;
+      unsigned m_flags;
+      const char *m_type;
 
-      std::ostream *m_error_stream;
-      bool m_error_occurred;
+    public:
+      enum ErrorFlags {
+        error_warning=1,
+        error_internal=2
+      };
 
       template<typename T>
       static std::string to_str(const T& t) {
@@ -625,6 +648,33 @@ namespace Psi {
         ss << t;
         return ss.str();
       }
+
+      CompileError(CompileContext& compile_context, const SourceLocation& location, unsigned flags=0);
+
+      void info(const std::string& message);
+      void info(const SourceLocation& location, const std::string& message);
+      void end();
+
+      const SourceLocation& location() {return m_location;}
+
+      template<typename T> void info(const T& message) {info(to_str(message));}
+      template<typename T> void info(const SourceLocation& location, const T& message) {info(location, to_str(message));}
+    };
+
+    /**
+     * \brief Context for objects used during compilation.
+     *
+     * This manages state which is global to the compilation and
+     * compilation object lifetimes.
+     */
+    class CompileContext {
+      friend class Tree;
+      friend class RunningCompletionState;
+      struct TreeDisposer;
+
+      std::ostream *m_error_stream;
+      bool m_error_occurred;
+      RunningCompletionState *m_running_completion_stack;
 
       boost::intrusive::list<Tree, boost::intrusive::constant_time_size<false> > m_gc_list;
 
@@ -639,19 +689,22 @@ namespace Psi {
       CompileContext(std::ostream *error_stream);
       ~CompileContext();
 
-      enum ErrorFlags {
-        error_warning=1,
-        error_internal=2
-      };
+      /// \brief Return the stream used for error reporting.
+      std::ostream& error_stream() {return *m_error_stream;}
 
       /// \brief Returns true if an error has occurred during compilation.
       bool error_occurred() const {return m_error_occurred;}
+      /// \brief Call this to indicate an unrecoverable error occurred at some point during compilation.
+      void set_error_occurred() {m_error_occurred = true;}
       
       void error(const SourceLocation&, const std::string&, unsigned=0);
       void error_throw(const SourceLocation&, const std::string&, unsigned=0) PSI_ATTRIBUTE((PSI_NORETURN));
 
-      template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, to_str(message), flags);}
-      template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, to_str(message), flags);}
+      template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, CompileError::to_str(message), flags);}
+      template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, CompileError::to_str(message), flags);}
+
+      void completion_state_push(RunningCompletionState *state);
+      void completion_state_pop();
 
       void* jit_compile(const TreePtr<Global>&);
 
@@ -671,11 +724,12 @@ namespace Psi {
 
     template<typename A, typename B>
     void CompletionState::complete(CompileContext& compile_context, const SourceLocation& location, bool dependency, const A& body, const B& cleanup) {
+      RunningCompletionState running(compile_context, this, location);
       switch (m_state) {
       case completion_constructed: complete_main(body, cleanup); break;
       case completion_running:
         if (!dependency)
-          compile_context.error_throw(location, "Circular dependency during code evaluation");
+	  running.throw_circular_dependency();
         break;
 
       case completion_finished: break;

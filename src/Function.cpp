@@ -265,7 +265,7 @@ namespace Psi {
           break;
 
         default:
-          compile_context.error_throw(argument_location, "Invalid argument passing category", CompileContext::error_internal);
+          compile_context.error_throw(argument_location, "Invalid argument passing category", CompileError::error_internal);
         }
         
         if (named_expr.name) {
