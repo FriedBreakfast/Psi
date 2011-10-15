@@ -10,6 +10,7 @@
 #include <boost/array.hpp>
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/avl_set.hpp>
+#include <boost/scoped_ptr.hpp>
 
 #include "CppCompiler.hpp"
 #include "GarbageCollection.hpp"
@@ -113,19 +114,76 @@ namespace Psi {
       }
     };
 
+    class TreeBase;
     class Tree;
     class Type;
     class CompileContext;
 
+    class TreePtrBase {
+      typedef void (TreePtrBase::*safe_bool_type) () const;
+      void safe_bool_true() const {}
+
+      mutable TreeBase *m_ptr;
+
+    protected:
+      TreePtrBase() : m_ptr(NULL) {}
+      TreePtrBase(TreeBase *ptr, bool add_ref) : m_ptr(NULL) {reset(ptr, add_ref);}
+      TreePtrBase(const TreePtrBase& src) : m_ptr(NULL) {reset(src.m_ptr, true);}
+      ~TreePtrBase() {reset(NULL, false);}
+
+      TreePtrBase& operator = (const TreePtrBase& src) {reset(src.m_ptr, true); return *this;}
+
+      void reset(TreeBase *ptr, bool add_ref);
+      Tree *evaluate_get() const;
+
+    public:
+      operator safe_bool_type () const {return m_ptr ? &TreePtrBase::safe_bool_true : 0;}
+      bool operator ! () const {return !m_ptr;}
+
+      /// \brief Get the compile context for this Tree, without evaluating the Tree.
+      CompileContext& compile_context() const;
+      /// \brief Get the location of this Tree, without evaluating the Tree.
+      const SourceLocation& location() const;
+
+      TreeBase* release() {
+        TreeBase *p = m_ptr;
+        m_ptr = 0;
+        return p;
+      }
+
+      bool operator == (const TreePtrBase& other) const {return evaluate_get() == other.evaluate_get();};
+      bool operator != (const TreePtrBase& other) const {return evaluate_get() != other.evaluate_get();};
+      bool operator < (const TreePtrBase& other) const {return evaluate_get() < other.evaluate_get();};
+    };
+
     template<typename T=Tree>
-    class TreePtr : public IntrusivePointer<T> {
+    class TreePtr : public TreePtrBase {
+      template<typename U> friend TreePtr<U> tree_from_base(TreeBase*, bool);
+      TreePtr(TreeBase *src, bool add_ref) : TreePtrBase(src, add_ref) {}
+      
     public:
       TreePtr() {}
-      explicit TreePtr(T *ptr) : IntrusivePointer<T>(ptr) {}
-      TreePtr(T *ptr, bool add_ref) : IntrusivePointer<T>(ptr, add_ref) {}
-      template<typename U> TreePtr(const TreePtr<U>& src) : IntrusivePointer<T>(src) {}
-      template<typename U> TreePtr& operator = (const TreePtr<U>& src) {this->reset(src.get()); return *this;}
+      explicit TreePtr(T *ptr) : TreePtrBase(ptr, true) {}
+      TreePtr(T *ptr, bool add_ref) : TreePtrBase(ptr, add_ref) {}
+      template<typename U> TreePtr(const TreePtr<U>& src) : TreePtrBase(src) {}
+      template<typename U> TreePtr& operator = (const TreePtr<U>& src) {TreePtrBase::operator = (src); return *this;}
+      void reset(T *ptr=0, bool add_ref=true) {TreePtrBase::reset(ptr, add_ref);}
+
+      T* get() const;
+      T* operator -> () const {return get();}
+      T& operator * () const {return *get();}
     };
+
+    /**
+     * Get a TreePtr from a point to a TreeBase.
+     *
+     * This should only be used in wrapper functions, since otherwise the type of \c base
+     * should be statically known.
+     */
+    template<typename T>
+    TreePtr<T> tree_from_base(TreeBase *base, bool add_ref=true) {
+      return TreePtr<T>(base, add_ref);
+    }
 
     /**
      * \brief Single inheritance dispatch table base.
@@ -167,124 +225,36 @@ namespace Psi {
       }
     };
 
-    struct Dependency;
+    class Tree;
+    class TreeBase;
+    class TreeCallback;
 
-    struct DependencyVtable {
+    /// \see TreeBase
+    struct TreeBaseVtable {
       SIVtable base;
-      void (*run) (Dependency*, Tree*);
-      void (*gc_increment) (Dependency*);
-      void (*gc_decrement) (Dependency*);
-      void (*destroy) (Dependency*);
-    };
-
-    class Dependency : public SIBase {
-    public:
-      typedef DependencyVtable VtableType;
-
-      void run(Tree *tree) {
-        derived_vptr(this)->run(this, tree);
-      }
-
-      void gc_increment() {
-	derived_vptr(this)->gc_increment(this);
-      }
-
-      void gc_decrement() {
-	derived_vptr(this)->gc_decrement(this);
-      }
-
-      void destroy() {
-        derived_vptr(this)->destroy(this);
-      }
-
-      template<typename Visitor> static void visit_impl(Dependency&, Visitor&) {}
-    };
-
-    class DependencyPtr : public PointerBase<Dependency> {
-    public:
-      DependencyPtr() {}
-      explicit DependencyPtr(Dependency *ptr) : PointerBase<Dependency>(ptr) {}
-      ~DependencyPtr() {clear();}
-      void clear() {if (m_ptr) {m_ptr->destroy(); m_ptr = 0;}}
-      void swap(DependencyPtr& src) {std::swap(m_ptr, src.m_ptr);}
-      void reset(Dependency *ptr) {clear(); m_ptr = ptr;}
-    };
-
-    class CompletionState : boost::noncopyable {
-      enum State {
-        completion_constructed,
-        completion_running,
-        completion_finished,
-        completion_failed
-      };
-
-      char m_state;
-      
-      template<typename A, typename B>
-      void complete_main(const A& body, const B& cleanup) {
-        try {
-          m_state = completion_running;
-          body();
-          m_state = completion_finished;
-        } catch (...) {
-          m_state = completion_failed;
-          cleanup();
-          throw CompileException();
-        }
-        cleanup();
-      }
-
-      struct EmptyCallback {void operator () () const {}};
-
-    public:
-      CompletionState() : m_state(completion_constructed) {}
-
-      template<typename A, typename B>
-      void complete(CompileContext&, const SourceLocation&, bool, const A&, const B&);
-
-      template<typename A>
-      void complete(CompileContext& compile_context, const SourceLocation& location, bool dependency, const A& body) {
-        complete(compile_context, location, dependency, body, EmptyCallback());
-      }
+      void (*destroy) (TreeBase*);
+      void (*gc_increment) (TreeBase*);
+      void (*gc_decrement) (TreeBase*);
+      void (*gc_clear) (TreeBase*);
+      bool is_callback;
     };
 
     /**
-     * \brief Data for a running CompletionState.
+     * Extends SIBase for lazy evaluation of Trees.
+     *
+     * Two types derive from this: Tree, which holds values, and TreeCallbackHolder, which
+     * encapsulates a callback to return a Tree.
      */
-    class RunningCompletionState : public boost::noncopyable {
-      CompileContext *m_compile_context;
-      CompletionState *m_state;
-      RunningCompletionState *m_parent;
-      SourceLocation m_location;
-
-    public:
-      RunningCompletionState(CompileContext&, CompletionState*, const SourceLocation&);
-      ~RunningCompletionState();
-      void throw_circular_dependency();
-    };
-
-    struct TreeVtable {
-      SIVtable base;
-      void (*destroy) (Tree*);
-      void (*gc_increment) (Tree*);
-      void (*gc_decrement) (Tree*);
-      void (*gc_clear) (Tree*);
-      void (*complete_callback) (Tree*);
-      void (*complete_cleanup) (Tree*);
-    };
-
-    class Tree : public SIBase, public boost::intrusive::list_base_hook<> {
+    class TreeBase : public SIBase, public boost::intrusive::list_base_hook<> {
       friend class CompileContext;
-      template<typename> friend class TreePtr;
+      friend class TreePtrBase;
       friend class GCVisitorIncrement;
       friend class GCVisitorDecrement;
       friend class GCVisitorClear;
 
       std::size_t m_reference_count;
-
       CompileContext *m_compile_context;
       SourceLocation m_location;
-      CompletionState m_completion_state;
 
       void destroy() {derived_vptr(this)->destroy(this);}
       void gc_increment() {derived_vptr(this)->gc_increment(this);}
@@ -292,53 +262,21 @@ namespace Psi {
       void gc_clear() {derived_vptr(this)->gc_clear(this);}
 
     public:
+      typedef TreeBaseVtable VtableType;
       static const SIVtable vtable;
-      typedef TreeVtable VtableType;
-
-      Tree(CompileContext&, const SourceLocation&);
-      ~Tree();
+      
+      TreeBase(CompileContext& compile_context, const SourceLocation& location);
+      ~TreeBase();
 
       /// \brief Return the compilation context this tree belongs to.
       CompileContext& compile_context() const {return *m_compile_context;}
       /// \brief Get the location associated with this tree
       const SourceLocation& location() const {return m_location;}
 
-      void complete(bool=false);
-
-      template<typename Visitor> static void visit_impl(Tree&, Visitor&) {}
-      static void complete_callback_impl(Tree&) {}
-      static void complete_cleanup_impl(Tree&) {}
-
-      friend void intrusive_ptr_add_ref(Tree *self) {
-	++self->m_reference_count;
-      }
-
-      friend void intrusive_ptr_release(Tree *self) {
-	if (!--self->m_reference_count)
-	  self->destroy();
+      template<typename Visitor>
+      static void visit_impl(TreeBase& PSI_UNUSED(self), Visitor& PSI_UNUSED(visitor)) {
       }
     };
-
-    template<typename T>
-    T* tree_cast(Tree *ptr) {
-      PSI_ASSERT(si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)));
-      return static_cast<T*>(ptr);
-    }
-
-    template<typename T>
-    T* dyn_tree_cast(Tree *ptr) {
-      return si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)) ? static_cast<T*>(ptr) : 0;
-    }
-
-    template<typename T, typename U>
-    TreePtr<T> treeptr_cast(const TreePtr<U>& ptr) {
-      return TreePtr<T>(tree_cast<T>(ptr.get()));
-    }
-
-    template<typename T, typename U>
-    TreePtr<T> dyn_treeptr_cast(const TreePtr<U>& ptr) {
-      return TreePtr<T>(dyn_tree_cast<T>(ptr.get()));
-    }
 
     /**
      * \brief Base classes for gargabe collection phase
@@ -379,17 +317,11 @@ namespace Psi {
       Derived& operator () (const char*, String&) {return derived();}
       Derived& operator () (const char*, const String&) {return derived();}
       template<typename T> Derived& operator () (const char*, const SharedPtr<T>&) {return derived();}
-      Derived& operator () (const char*, const TreeVtable*) {return derived();}
       Derived& operator () (const char*, unsigned) {return derived();}
 
       template<typename T>
       Derived& operator () (const char*, TreePtr<T>& ptr) {
 	derived().visit_tree_ptr(ptr);
-	return derived();
-      }
-
-      Derived& operator () (const char*, DependencyPtr& ptr) {
-	derived().visit_dependency_ptr(ptr);
 	return derived();
       }
     };
@@ -404,10 +336,6 @@ namespace Psi {
 	if (ptr)
 	  ++ptr->m_reference_count;
       }
-
-      void visit_dependency_ptr(DependencyPtr& ptr) {
-	ptr->gc_increment();
-      }
     };
 
     /**
@@ -419,10 +347,6 @@ namespace Psi {
       void visit_tree_ptr(TreePtr<T>& ptr) {
 	if (ptr)
 	  --ptr->m_reference_count;
-      }
-
-      void visit_dependency_ptr(DependencyPtr& ptr) {
-	ptr->gc_decrement();
       }
     };
 
@@ -440,95 +364,213 @@ namespace Psi {
       void visit_tree_ptr(TreePtr<T>& ptr) {
 	ptr.reset();
       }
-
-      void visit_dependency_ptr(DependencyPtr& ptr) {
-	ptr.clear();
-      }
     };
 
     template<typename Derived>
-    struct TreeWrapper {
-      static void destroy(Tree *self) {
+    struct TreeBaseWrapper : NonConstructible {
+      static void destroy(TreeBase *self) {
         delete static_cast<Derived*>(self);
       }
 
-      static void gc_increment(Tree *self) {
+      static void gc_increment(TreeBase *self) {
 	GCVisitorIncrement p;
         Derived::visit_impl(*static_cast<Derived*>(self), p);
       }
 
-      static void gc_decrement(Tree *self) {
+      static void gc_decrement(TreeBase *self) {
 	GCVisitorDecrement p;
         Derived::visit_impl(*static_cast<Derived*>(self), p);
       }
 
-      static void gc_clear(Tree *self) {
+      static void gc_clear(TreeBase *self) {
 	GCVisitorClear p;
         Derived::visit_impl(*static_cast<Derived*>(self), p);
       }
+    };
 
-      static void complete_callback(Tree *self) {
-        Derived::complete_callback_impl(*static_cast<Derived*>(self));
+#define PSI_COMPILER_TREE_BASE(is_callback,derived,name,super) { \
+    PSI_COMPILER_SI(name,&super::vtable), \
+    &::Psi::Compiler::TreeBaseWrapper<derived>::destroy, \
+    &::Psi::Compiler::TreeBaseWrapper<derived>::gc_increment, \
+    &::Psi::Compiler::TreeBaseWrapper<derived>::gc_decrement, \
+    &::Psi::Compiler::TreeBaseWrapper<derived>::gc_clear, \
+    (is_callback) \
+  }
+
+    inline void TreePtrBase::reset(TreeBase *ptr, bool add_ref) {
+      if (ptr && add_ref)
+        ++ptr->m_reference_count;
+      
+      if (m_ptr)
+        if (!--m_ptr->m_reference_count)
+          m_ptr->destroy();
+
+      m_ptr = ptr;
+    }
+
+    inline CompileContext& TreePtrBase::compile_context() const {
+      return m_ptr->compile_context();
+    }
+
+    inline const SourceLocation& TreePtrBase::location() const {
+      return m_ptr->location();
+    }
+
+    template<typename T>
+    T* TreePtr<T>::get() const {
+      TreeBase *ptr = this->evaluate_get();
+      PSI_ASSERT(si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)));
+      return static_cast<T*>(ptr);
+    }
+
+    /// \see TreeCallback
+    struct TreeCallbackVtable {
+      TreeBaseVtable base;
+      TreeBase* (*evaluate) (TreeCallback*);
+    };
+
+    class TreeCallback : public TreeBase {
+      friend class TreePtrBase;
+      
+      TreePtr<> m_value;
+      
+    public:
+      static const SIVtable vtable;
+
+      TreeCallback(CompileContext&, const SourceLocation&);
+
+      template<typename Visitor> static void visit_impl(TreeCallback&, Visitor&) {}
+    };
+
+    /**
+     * \brief Data for a running TreeCallback.
+     */
+    class RunningTreeCallback : public boost::noncopyable {
+      TreeCallback *m_callback;
+      RunningTreeCallback *m_parent;
+
+    public:
+      RunningTreeCallback(TreeCallback *callback);
+      ~RunningTreeCallback();
+      void throw_circular_dependency();
+    };
+
+    template<typename Derived>
+    struct TreeCallbackWrapper : NonConstructible {
+      static TreeBase* evaluate(TreeCallback *self) {
+        return Derived::evaluate_impl(*static_cast<Derived*>(self)).release();
+      }
+    };
+    
+#define PSI_COMPILER_TREE_CALLBACK(derived,name,super) { \
+    PSI_COMPILER_TREE_BASE(true,derived,name,super), \
+    &::Psi::Compiler::TreeCallbackWrapper<derived>::evaluate \
+  }
+
+#define PSI_COMPILER_TREE_CALLBACK_INIT() PSI_COMPILER_SI_INIT(&vtable)
+
+    /// To get past preprocessor's inability to understand template parameters
+    template<typename T, typename Functor>
+    struct TreeCallbackImplArgs {
+      typedef T TreeType;
+      typedef Functor FunctionType;
+    };
+
+    template<typename Args>
+    class TreeCallbackImpl : public TreeCallback {
+    public:
+      typedef typename Args::TreeType TreeType;
+      typedef typename Args::FunctionType FunctionType;
+
+    private:
+      FunctionType *m_function;
+
+    public:
+      static const TreeCallbackVtable vtable;
+      
+      TreeCallbackImpl(CompileContext& compile_context, const SourceLocation& location, const FunctionType& function)
+      : TreeCallback(compile_context, location), m_function(new FunctionType(function)) {
+        PSI_COMPILER_TREE_CALLBACK_INIT();
       }
 
-      static void complete_cleanup(Tree *self) {
-        Derived::complete_cleanup_impl(*static_cast<Derived*>(self));
+      ~TreeCallbackImpl() {
+        if (m_function)
+          delete m_function;
+      }
+      
+      static TreePtr<TreeType> evaluate_impl(TreeCallbackImpl& self) {
+        PSI_ASSERT(self.m_function);
+        boost::scoped_ptr<FunctionType> function_copy(self.m_function);
+        self.m_function = NULL;
+        return function_copy->evaluate(self.compile_context(), self.location());
+      }
+
+      template<typename Visitor>
+      static void visit_impl(TreeCallbackImpl& self, Visitor& visitor) {
+        TreeCallback::visit_impl(self, visitor);
+        if (self.m_function)
+          self.m_function->visit(visitor);
       }
     };
 
+    template<typename T>
+    const TreeCallbackVtable TreeCallbackImpl<T>::vtable = PSI_COMPILER_TREE_CALLBACK(TreeCallbackImpl<T>, "(anonymous)", TreeCallback);
+
+    /**
+     * \brief Make a lazily evaluated Tree from a C++ functor object.
+     */
+    template<typename T, typename Callback>
+    TreePtr<T> tree_callback(CompileContext& compile_context, const SourceLocation& location, const Callback& callback) {
+      return tree_from_base<T>(new TreeCallbackImpl<TreeCallbackImplArgs<T, Callback> >(compile_context, location, callback));
+    }
+
+    /// \see Tree
+    struct TreeVtable {
+      TreeBaseVtable base;
+    };
+
+    class Tree : public TreeBase {
+    public:
+      static const SIVtable vtable;
+      typedef TreeVtable VtableType;
+
+      Tree(CompileContext&, const SourceLocation&);
+    };
+
+    template<typename T>
+    T* tree_cast(Tree *ptr) {
+      PSI_ASSERT(si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)));
+      return static_cast<T*>(ptr);
+    }
+
+    template<typename T>
+    T* dyn_tree_cast(Tree *ptr) {
+      return si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)) ? static_cast<T*>(ptr) : 0;
+    }
+
+    template<typename T, typename U>
+    TreePtr<T> treeptr_cast(const TreePtr<U>& ptr) {
+      return TreePtr<T>(tree_cast<T>(ptr.get()));
+    }
+
+    template<typename T, typename U>
+    TreePtr<T> dyn_treeptr_cast(const TreePtr<U>& ptr) {
+      return TreePtr<T>(dyn_tree_cast<T>(ptr.get()));
+    }
+
 #define PSI_COMPILER_TREE(derived,name,super) { \
-    PSI_COMPILER_SI(name,&super::vtable), \
-    &TreeWrapper<derived>::destroy, \
-    &TreeWrapper<derived>::gc_increment, \
-    &TreeWrapper<derived>::gc_decrement, \
-    &TreeWrapper<derived>::gc_clear, \
-    &TreeWrapper<derived>::complete_callback, \
-    &TreeWrapper<derived>::complete_cleanup \
+    PSI_COMPILER_TREE_BASE(false,derived,name,super) \
   }
 
 #define PSI_COMPILER_TREE_INIT() (PSI_REQUIRE_CONVERTIBLE(&vtable, const VtableType*), PSI_COMPILER_SI_INIT(&vtable))
 #define PSI_COMPILER_TREE_ABSTRACT(name,super) PSI_COMPILER_SI_ABSTRACT(name,&super::vtable)
-
-    /**
-     * \brief Base class to simplify implementing Dependency in C++.
-     */
-    template<typename Derived, typename TreeType>
-    struct DependencyWrapper : NonConstructible {
-      static void run(Dependency *self, Tree *target) {
-        Derived::run_impl(*static_cast<Derived*>(self), TreePtr<TreeType>(tree_cast<TreeType>(target)));
-      }
-
-      static void gc_increment(Dependency *self) {
-        GCVisitorIncrement p;
-        Derived::visit_impl(*static_cast<Derived*>(self), p);
-      }
-
-      static void gc_decrement(Dependency *self) {
-        GCVisitorDecrement p;
-        Derived::visit_impl(*static_cast<Derived*>(self), p);
-      }
-
-      static void destroy(Dependency *self) {
-        delete static_cast<Derived*>(self);
-      }
-    };
-
-#define PSI_COMPILER_DEPENDENCY(derived,name,tree) { \
-    PSI_COMPILER_SI(name,NULL), \
-    &DependencyWrapper<derived, tree>::run, \
-    &DependencyWrapper<derived, tree>::gc_increment, \
-    &DependencyWrapper<derived, tree>::gc_decrement, \
-    &DependencyWrapper<derived, tree>::destroy \
-  }
-
-#define PSI_COMPILER_DEPENDENCY_INIT() PSI_COMPILER_SI_INIT(&vtable)
 
     class Term;
 
     struct TermVtable {
       TreeVtable base;
       PsiBool (*match) (Term*,Term*,const void*,void*,unsigned);
-      Term* (*rewrite) (Term*,const SourceLocation*, const void*,void*);
+      TreeBase* (*rewrite) (Term*,const SourceLocation*, const void*,void*);
       void (*iterate) (void*,Term*);
       IteratorVtable iterator_vtable;
     };
@@ -547,7 +589,6 @@ namespace Psi {
       static const SIVtable vtable;
 
       Term(const TreePtr<Term>&, const SourceLocation&);
-      ~Term();
 
       /// \brief Get the type of this tree
       const TreePtr<Term>& type() const {return m_type;}
@@ -590,8 +631,9 @@ namespace Psi {
         return Derived::match_impl(*tree_cast<Derived>(left), *tree_cast<Derived>(right), List<TreePtr<Term> >(wildcards_vtable, wildcards_obj), depth);
       }
 
-      static Term* rewrite(Term *self, const SourceLocation *location, const void *substitutions_vtable, void *substitutions_obj) {
-        return Derived::rewrite_impl(*tree_cast<Derived>(self), *location, Map<TreePtr<Term>, TreePtr<Term> >(substitutions_vtable, substitutions_obj)).release();
+      static TreeBase* rewrite(Term *self, const SourceLocation *location, const void *substitutions_vtable, void *substitutions_obj) {
+        TreePtr<Term> result = Derived::rewrite_impl(*tree_cast<Derived>(self), *location, Map<TreePtr<Term>, TreePtr<Term> >(substitutions_vtable, substitutions_obj));
+        return result.release();
       }
 
       static void iterate(void *result, Term *self) {
@@ -668,15 +710,15 @@ namespace Psi {
      * compilation object lifetimes.
      */
     class CompileContext {
-      friend class Tree;
-      friend class RunningCompletionState;
-      struct TreeDisposer;
+      friend class TreeBase;
+      friend class RunningTreeCallback;
+      struct TreeBaseDisposer;
 
       std::ostream *m_error_stream;
       bool m_error_occurred;
-      RunningCompletionState *m_running_completion_stack;
+      RunningTreeCallback *m_running_completion_stack;
 
-      boost::intrusive::list<Tree, boost::intrusive::constant_time_size<false> > m_gc_list;
+      boost::intrusive::list<TreeBase, boost::intrusive::constant_time_size<false> > m_gc_list;
 
       SourceLocation m_root_location;
 
@@ -703,7 +745,7 @@ namespace Psi {
       template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, CompileError::to_str(message), flags);}
       template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, CompileError::to_str(message), flags);}
 
-      void completion_state_push(RunningCompletionState *state);
+      void completion_state_push(RunningTreeCallback *state);
       void completion_state_pop();
 
       void* jit_compile(const TreePtr<Global>&);
@@ -722,22 +764,6 @@ namespace Psi {
       const TreePtr<Term>& metatype() {return m_metatype;}
     };
 
-    template<typename A, typename B>
-    void CompletionState::complete(CompileContext& compile_context, const SourceLocation& location, bool dependency, const A& body, const B& cleanup) {
-      RunningCompletionState running(compile_context, this, location);
-      switch (m_state) {
-      case completion_constructed: complete_main(body, cleanup); break;
-      case completion_running:
-        if (!dependency)
-	  running.throw_circular_dependency();
-        break;
-
-      case completion_finished: break;
-      case completion_failed: throw CompileException();
-      default: PSI_FAIL("unknown future state");
-      }
-    }
-
     class Macro;
     class EvaluateContext;
     class ImplementationTerm;
@@ -750,8 +776,8 @@ namespace Psi {
      */
     struct MacroVtable {
       TreeVtable base;
-      Term* (*evaluate) (Macro*, Term*, const void*, void*, EvaluateContext*, const SourceLocation*);
-      Term* (*dot) (Macro*, Term*, const SharedPtr<Parser::Expression>*,  EvaluateContext*, const SourceLocation*);
+      TreeBase* (*evaluate) (Macro*, Term*, const void*, void*, EvaluateContext*, const SourceLocation*);
+      TreeBase* (*dot) (Macro*, Term*, const SharedPtr<Parser::Expression>*,  EvaluateContext*, const SourceLocation*);
     };
 
     class Macro : public Tree {
@@ -767,14 +793,14 @@ namespace Psi {
                              const List<SharedPtr<Parser::Expression> >& parameters,
                              const TreePtr<EvaluateContext>& evaluate_context,
                              const SourceLocation& location) {
-        return TreePtr<Term>(derived_vptr(this)->evaluate(this, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
+        return tree_from_base<Term>(derived_vptr(this)->evaluate(this, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
       }
 
       TreePtr<Term> dot(const TreePtr<Term>& value,
                         const SharedPtr<Parser::Expression>& parameter,
                         const TreePtr<EvaluateContext>& evaluate_context,
                         const SourceLocation& location) {
-        return TreePtr<Term>(derived_vptr(this)->dot(this, value.get(), &parameter, evaluate_context.get(), &location), false);
+        return tree_from_base<Term>(derived_vptr(this)->dot(this, value.get(), &parameter, evaluate_context.get(), &location), false);
       }
     };
 
@@ -783,21 +809,23 @@ namespace Psi {
      */
     template<typename Derived, typename Impl=Derived>
     struct MacroWrapper : NonConstructible {
-      static Term* evaluate(Macro *self,
-                            Term *value,
-                            const void *parameters_vtable,
-                            void *parameters_object,
-                            EvaluateContext *evaluate_context,
-                            const SourceLocation *location) {
-        return Impl::evaluate_impl(*static_cast<Derived*>(self), TreePtr<Term>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), TreePtr<EvaluateContext>(evaluate_context), *location).release();
+      static TreeBase* evaluate(Macro *self,
+                                Term *value,
+                                const void *parameters_vtable,
+                                void *parameters_object,
+                                EvaluateContext *evaluate_context,
+                                const SourceLocation *location) {
+        TreePtr<Term> result = Impl::evaluate_impl(*static_cast<Derived*>(self), TreePtr<Term>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), TreePtr<EvaluateContext>(evaluate_context), *location);
+        return result.release();
       }
 
-      static Term* dot(Macro *self,
-                       Term *value,
-                       const SharedPtr<Parser::Expression> *parameter,
-                       EvaluateContext *evaluate_context,
-                       const SourceLocation *location) {
-        return Impl::dot_impl(*static_cast<Derived*>(self), TreePtr<Term>(value), *parameter, TreePtr<EvaluateContext>(evaluate_context), *location).release();
+      static TreeBase* dot(Macro *self,
+                           Term *value,
+                           const SharedPtr<Parser::Expression> *parameter,
+                           EvaluateContext *evaluate_context,
+                           const SourceLocation *location) {
+        TreePtr<Term> result = Impl::dot_impl(*static_cast<Derived*>(self), TreePtr<Term>(value), *parameter, TreePtr<EvaluateContext>(evaluate_context), *location);
+        return result.release();
       }
     };
 
@@ -853,7 +881,7 @@ namespace Psi {
      */
     struct MacroEvaluateCallbackVtable {
       TreeVtable base;
-      Term* (*evaluate) (MacroEvaluateCallback*, Term*, const void*, void*, EvaluateContext*, const SourceLocation*);
+      TreeBase* (*evaluate) (MacroEvaluateCallback*, Term*, const void*, void*, EvaluateContext*, const SourceLocation*);
     };
 
     class MacroEvaluateCallback : public Tree {
@@ -866,14 +894,15 @@ namespace Psi {
       }
 
       TreePtr<Term> evaluate(const TreePtr<Term>& value, const List<SharedPtr<Parser::Expression> >& parameters, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location) {
-        return TreePtr<Term>(derived_vptr(this)->evaluate(this, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
+        return tree_from_base<Term>(derived_vptr(this)->evaluate(this, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
       }
     };
 
     template<typename Derived>
     struct MacroEvaluateCallbackWrapper : NonConstructible {
-      static Term* evaluate(MacroEvaluateCallback *self, Term *value, const void *parameters_vtable, void *parameters_object, EvaluateContext *evaluate_context, const SourceLocation *location) {
-        return Derived::evaluate_impl(*static_cast<Derived*>(self), TreePtr<Term>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), TreePtr<EvaluateContext>(evaluate_context), *location).release();
+      static TreeBase* evaluate(MacroEvaluateCallback *self, Term *value, const void *parameters_vtable, void *parameters_object, EvaluateContext *evaluate_context, const SourceLocation *location) {
+        TreePtr<Term> result = Derived::evaluate_impl(*static_cast<Derived*>(self), TreePtr<Term>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), TreePtr<EvaluateContext>(evaluate_context), *location);
+        return result.release();
       }
     };
 
@@ -936,7 +965,6 @@ namespace Psi {
       static void visit_impl(Interface& self, Visitor& visitor) {
 	Tree::visit_impl(self, visitor);
 	visitor
-	  ("compile_time_type", self.compile_time_type)
 	  ("run_time_type", self.run_time_type);
       }
     };

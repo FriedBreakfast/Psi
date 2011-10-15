@@ -74,9 +74,10 @@ int main(int argc, char *argv[]) {
   TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, psi_location, global_names);
 
   TreePtr<> compiled_statements;
+  LogicalSourceLocationPtr root_location = LogicalSourceLocation::new_root_location();
   try {
-    compiled_statements = compile_statement_list(list_from_stl(statements), root_evaluate_context, compile_context.root_location().relocate(file_text.location));
-    compiled_statements->complete();
+    compiled_statements = compile_statement_list(list_from_stl(statements), root_evaluate_context, SourceLocation(file_text.location, root_location));
+    //compiled_statements->complete();
   } catch (CompileException&) {
     return EXIT_FAILURE;
   }

@@ -105,8 +105,6 @@ namespace Psi {
 	Term::visit_impl(self, visitor);
 	visitor("value", self.value);
       }
-
-      static void complete_callback_impl(Statement&);
     };
 
     /**
@@ -120,19 +118,14 @@ namespace Psi {
 
       PSI_STD::vector<TreePtr<Statement> > statements;
       TreePtr<Term> result;
-      DependencyPtr dependency;
 
       template<typename Visitor>
       static void visit_impl(Block& self, Visitor& visitor) {
         Term::visit_impl(self, visitor);
         visitor
 	  ("statements", self.statements)
-          ("result", self.result)
-          ("dependency", self.dependency);
+          ("result", self.result);
       }
-
-      static void complete_callback_impl(Block&);
-      static void complete_cleanup_impl(Block&);
     };
 
     /**
@@ -282,24 +275,18 @@ namespace Psi {
       static const TermVtable vtable;
       
       Function(const TreePtr<FunctionType>&, const SourceLocation&);
-      Function(const TreePtr<FunctionType>&, const SourceLocation&, DependencyPtr&);
 
       PSI_STD::vector<TreePtr<FunctionArgument> > arguments;
       TreePtr<> result_type;
       TreePtr<> body;
-      DependencyPtr dependency;
 
       template<typename Visitor> static void visit_impl(Function& self, Visitor& visitor) {
         Term::visit_impl(self, visitor);
         visitor
 	  ("arguments", self.arguments)
 	  ("result_type", self.result_type)
-	  ("body", self.body)
-	  ("dependency", self.dependency);
+	  ("body", self.body);
       }
-      
-      static void complete_callback_impl(Function&);
-      static void complete_cleanup_impl(Function&);
     };
 
     class TryFinally : public Term {

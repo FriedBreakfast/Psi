@@ -5,7 +5,10 @@
 
 namespace Psi {
   namespace Compiler {
-    const SIVtable Tree::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Tree", NULL);
+    const SIVtable TreeBase::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeBase", NULL);
+    const SIVtable TreeCallback::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeCallback", &TreeBase::vtable);
+    const SIVtable Tree::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Tree", &TreeBase::vtable);
+
     const SIVtable Term::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Term", Tree);
     const SIVtable Type::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Type", Term);
 
@@ -36,23 +39,25 @@ namespace Psi {
 
     const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
     const TermVtable ExternalGlobal::vtable = PSI_COMPILER_TERM(ExternalGlobal, "psi.compiler.ExternalGlobal", Global);
-    
-    Tree::Tree(CompileContext& compile_context, const SourceLocation& location)
-      : m_reference_count(0),
-	m_compile_context(&compile_context),
-	m_location(location) {
+
+    TreeBase::TreeBase(CompileContext& compile_context, const SourceLocation& location)
+    : m_reference_count(0),
+    m_compile_context(&compile_context),
+    m_location(location) {
       m_compile_context->m_gc_list.push_back(*this);
     }
 
-    Tree::~Tree() {
+    TreeBase::~TreeBase() {
       if (is_linked())
-	m_compile_context->m_gc_list.erase(m_compile_context->m_gc_list.iterator_to(*this));
+        m_compile_context->m_gc_list.erase(m_compile_context->m_gc_list.iterator_to(*this));
     }
     
-    void Tree::complete(bool dependency) {
-      m_completion_state.complete(compile_context(), m_location, dependency,
-                                  boost::bind(derived_vptr(this)->complete_callback, this),
-				  boost::bind(derived_vptr(this)->complete_cleanup, this));
+    Tree::Tree(CompileContext& compile_context, const SourceLocation& location)
+    : TreeBase(compile_context, location) {
+    }
+
+    TreeCallback::TreeCallback(CompileContext& compile_context, const SourceLocation& location)
+    : TreeBase(compile_context, location) {
     }
 
     Term::Term(const TreePtr<Term>& type, const SourceLocation& location)
@@ -62,9 +67,6 @@ namespace Psi {
 
     Term::Term(CompileContext& compile_context, const SourceLocation& location)
       : Tree(compile_context, location) {
-    }
-
-    Term::~Term() {
     }
 
     /**
@@ -81,7 +83,7 @@ namespace Psi {
       if (replacement)
         return *replacement;
       else
-        return TreePtr<Term>(derived_vptr(this)->rewrite(this, &location, substitutions.vptr(), substitutions.object()), false);
+        return tree_from_base<Term>(derived_vptr(this)->rewrite(this, &location, substitutions.vptr(), substitutions.object()), false);
     }
 
     /**
@@ -250,20 +252,6 @@ namespace Psi {
       PSI_COMPILER_TREE_INIT();
     }
 
-    Function::Function(const TreePtr<FunctionType>& type, const SourceLocation& location, DependencyPtr& dependency_)
-    : Term(type, location) {
-      PSI_COMPILER_TREE_INIT();
-      dependency.swap(dependency_);
-    }
-
-    void Function::complete_callback_impl(Function& self) {
-      self.dependency->run(&self);
-    }
-
-    void Function::complete_cleanup_impl(Function& self) {
-      self.dependency.clear();
-    }
-
     FunctionArgument::FunctionArgument(const TreePtr<Term>& type, const SourceLocation& location)
     : Term(type, location) {
       PSI_COMPILER_TREE_INIT();
@@ -279,21 +267,9 @@ namespace Psi {
       PSI_COMPILER_TREE_INIT();
     }
 
-    void Statement::complete_callback_impl(Statement& self) {
-      self.value->complete(true);
-    }
-
     Block::Block(const TreePtr<Term>& type, const SourceLocation& location)
     : Term(type, location) {
       PSI_COMPILER_TREE_INIT();
-    }
-
-    void Block::complete_callback_impl(Block& self) {
-      self.dependency->run(&self);
-    }
-
-    void Block::complete_cleanup_impl(Block& self) {
-      self.dependency.clear();
     }
 
     Interface::Interface(CompileContext& compile_context, const SourceLocation& location)

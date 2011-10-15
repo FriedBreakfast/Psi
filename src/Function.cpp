@@ -58,36 +58,28 @@ namespace Psi {
     const EvaluateContextVtable EvaluateContextOneName::vtable =
     PSI_COMPILER_EVALUATE_CONTEXT(EvaluateContextOneName, "psi.compiler.EvaluateContextOneName", EvaluateContext);
 
-    class FunctionBodyCompiler : public Dependency {
+    class FunctionBodyCompiler {
       TreePtr<EvaluateContext> m_body_context;
       SharedPtr<Parser::TokenExpression> m_body;
 
     public:
-      static const DependencyVtable vtable;
-
       FunctionBodyCompiler(const TreePtr<EvaluateContext>& body_context,
                            const SharedPtr<Parser::TokenExpression>& body)
       : m_body_context(body_context), m_body(body) {
-        PSI_COMPILER_DEPENDENCY_INIT();
       }
 
       template<typename Visitor>
-      static void visit_impl(FunctionBodyCompiler& self, Visitor& visitor) {
-	Dependency::visit_impl(self, visitor);
+      void visit(Visitor& visitor) {
         visitor
-        ("body_context", self.m_body_context)
-        ("body", self.m_body);
+        ("body_context", m_body_context)
+        ("body", m_body);
       }
 
-      static void run_impl(FunctionBodyCompiler& self, const TreePtr<Function>& function) {
-        std::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(self.m_body->text);
-        TreePtr<Term> body_tree = compile_statement_list(list_from_stl(statements), self.m_body_context, function->location());
-        function->body = body_tree;
-        body_tree->complete(true);
+      TreePtr<Term> evaluate(CompileContext&, const SourceLocation& location) {
+        std::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(m_body->text);
+        return compile_statement_list(list_from_stl(statements), m_body_context, location);
       }
     };
-
-    const DependencyVtable FunctionBodyCompiler::vtable = PSI_COMPILER_DEPENDENCY(FunctionBodyCompiler, "psi.compiler.FunctionBodyCompiler", Function);
 
     class ArgumentHandler;
 
@@ -326,10 +318,10 @@ namespace Psi {
         argument_values[ii->first] = argument_trees[ii->second];
 
       TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(compile_context, location, argument_values, evaluate_context);
-      DependencyPtr body_compiler(new FunctionBodyCompiler(body_context, body));
-      TreePtr<Function> function(new Function(common.type, location, body_compiler));
+      TreePtr<Function> function(new Function(common.type, location));
       function->result_type = cast_result_type;
       function->arguments.swap(argument_trees);
+      function->body = tree_callback<Term>(compile_context, location, FunctionBodyCompiler(body_context, body));
 
       return function;
     }
