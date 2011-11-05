@@ -17,12 +17,12 @@ namespace Psi {
     /**
      * Evaluate a lazily evaluated Tree (recursively if necessary) and return the final result.
      */
-    Tree* TreePtrBase::evaluate_get() const {
-      if (!m_ptr)
-        return NULL;
-
+    Tree* TreeBasePtrHook::hook_evaluate_helper() const {
       TreeBase *ptr = m_ptr;
       while (true) {
+        if (!ptr)
+          break;
+        
         const TreeBaseVtable *vtable = derived_vptr(ptr);
         if (!vtable->is_callback)
           break;
@@ -41,10 +41,12 @@ namespace Psi {
       }
 
       if (m_ptr != ptr) {
-        ++ptr->m_reference_count;
+        if (ptr)
+          ++ptr->m_reference_count;
 
-        if (!--m_ptr->m_reference_count)
-          m_ptr->destroy();
+        if (m_ptr)
+          if (!--m_ptr->m_reference_count)
+            derived_vptr(m_ptr)->destroy(m_ptr);
 
         m_ptr = ptr;
       }
@@ -290,28 +292,30 @@ namespace Psi {
      * \brief Walk a tree looking for an interface implementation.
      */
     TreePtr<> interface_lookup_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const TreePtr<Term>& term) {
+#if 0
       if (TreePtr<ImplementationTerm> templ = dyn_treeptr_cast<ImplementationTerm>(term)) {
-	for (PSI_STD::vector<TreePtr<Implementation> >::iterator ii = templ->implementations.begin(), ie = templ->implementations.end(); ii != ie; ++ii) {
-	  if (interface == (*ii)->interface) {
+	for (PSI_STD::vector<TreePtr<Implementation> >::const_iterator ii = templ->implementations().begin(), ie = templ->implementations().end(); ii != ie; ++ii) {
+	  if (interface == (*ii)->interface()) {
 	    PSI_ASSERT((*ii)->interface_parameters.size() == parameters.size());
-	    PSI_STD::vector<TreePtr<Term> > wildcards((*ii)->wildcard_types.size());
+	    PSI_STD::vector<TreePtr<Term> > wildcards((*ii)->wildcard_types().size());
 	    for (std::size_t ji = 0, je = parameters.size(); ji != je; ++ji) {
-	      if (!(*ii)->interface_parameters[ji]->match(parameters[ji], list_from_stl(wildcards)))
+	      if (!(*ii)->interface_parameters()[ji]->match(parameters[ji], list_from_stl(wildcards)))
 		goto match_failed;
 	    }
 
-	    return (*ii)->value;
+	    return (*ii)->value();
 	  }
 
 	match_failed:;
 	}
       }
 
-      for (LocalIterator<TreePtr<Term> > p(*term); p.next();) {
+      for (LocalIterator<TreePtr<Term> > p(*term.get()); p.next();) {
         TreePtr<Term>& current = p.current();
         if (TreePtr<> result = interface_lookup_search(interface, parameters, current))
           return result;        
       }
+#endif
 
       return TreePtr<>();
     }
@@ -391,7 +395,7 @@ namespace Psi {
     struct CompileContext::TreeBaseDisposer {
       void operator () (TreeBase *t) {
 	if (!--t->m_reference_count)
-	  t->destroy();
+          derived_vptr(t)->destroy(t);
 	else
 	  PSI_WARNING_FAIL("Dangling pointers to Tree during context destruction");
       }
@@ -409,7 +413,7 @@ namespace Psi {
 
       // Clear cross references in each Tree
       BOOST_FOREACH(TreeBase& t, m_gc_list)
-	t.gc_clear();
+        derived_vptr(&t)->gc_clear(&t);
 
       m_gc_list.clear_and_dispose(TreeBaseDisposer());
     }
@@ -429,11 +433,13 @@ namespace Psi {
      * \brief JIT compile a global symbol.
      */
     void* CompileContext::jit_compile(const TreePtr<Global>& global) {
-      if (!global->m_jit_ptr) {
+      Global *global_ptr = global.get();
+      
+      if (!global_ptr->m_jit_ptr) {
         PSI_FAIL("not implemented");
       }
 
-      return global->m_jit_ptr;
+      return global_ptr->m_jit_ptr;
     }
 
     /**
@@ -451,27 +457,27 @@ namespace Psi {
         error_throw(location, "Internal error: address used to retrieve symbol did not match symbol base");
 
       TreePtr<ExternalGlobal> result(new ExternalGlobal(type, location));
-      result->symbol = name;
-      result->m_jit_ptr = base;
+      result.get()->symbol = name;
+      result.get()->m_jit_ptr = base;
       return result;
     }
 
     RunningTreeCallback::RunningTreeCallback(TreeCallback *callback)
       : m_callback(callback) {
-      m_parent = callback->compile_context().m_running_completion_stack;
-      callback->compile_context().m_running_completion_stack = this;
+      m_parent = callback->m_compile_context->m_running_completion_stack;
+      callback->m_compile_context->m_running_completion_stack = this;
     }
 
     RunningTreeCallback::~RunningTreeCallback() {
-      m_callback->compile_context().m_running_completion_stack = m_parent;
+      m_callback->m_compile_context->m_running_completion_stack = m_parent;
     }
 
     void RunningTreeCallback::throw_circular_dependency() {
-      CompileError error(m_callback->compile_context(), m_callback->location());
+      CompileError error(*m_callback->m_compile_context, m_callback->m_location);
       error.info("Circular dependency found");
       boost::format fmt("via: '%s'");
       for (RunningTreeCallback *ancestor = m_parent; ancestor && (ancestor->m_callback != m_callback); ancestor = ancestor->m_parent)
-	error.info(ancestor->m_callback->location(), fmt % ancestor->m_callback->location().logical->error_name(m_callback->location().logical));
+	error.info(ancestor->m_callback->m_location, fmt % ancestor->m_callback->m_location.logical->error_name(m_callback->m_location.logical));
       error.end();
       throw CompileException();
     }
@@ -660,7 +666,7 @@ namespace Psi {
         visitor("evaluate_context", m_evaluate_context);
       }
 
-      TreePtr<> evaluate(CompileContext&, const SourceLocation& location) {
+      TreePtr<Term> evaluate(CompileContext&, const SourceLocation& location) {
         return compile_expression(m_expression, m_evaluate_context, location.logical);
       }
     };
@@ -686,8 +692,9 @@ namespace Psi {
       template<typename Visitor>
       static void visit_impl(StatementListContext& self, Visitor& visitor) {
         EvaluateContext::visit_impl(self, visitor);
-        visitor("next", self.m_next);
-	visitor("entries", self.entries);
+        visitor
+          ("next", self.m_next)
+          ("entries", self.entries);
       }
 
       static LookupResult<TreePtr<Term> > lookup_impl(const StatementListContext& self, const String& name) {
@@ -712,6 +719,8 @@ namespace Psi {
       TreePtr<Statement> last_statement;
       PSI_STD::vector<TreePtr<Statement> > entries;
 
+      StatementListContext::NameMapType& named_entries = context_tree.get()->entries;
+
       for (LocalIterator<SharedPtr<Parser::NamedExpression> > ii(statements); ii.next();) {
         const Parser::NamedExpression& named_expr = *ii.current();
         if (named_expr.expression.get()) {
@@ -728,7 +737,7 @@ namespace Psi {
           entries.push_back(last_statement);
           
           if (named_expr.name)
-            context_tree->entries[expr_name] = last_statement;
+            named_entries[expr_name] = last_statement;
         } else {
           last_statement.reset();
         }
@@ -753,11 +762,7 @@ namespace Psi {
         block_value = none.value();
       }
 
-      TreePtr<Block> block(new Block(block_value->type(), location));
-      block->statements.swap(entries);
-      block->result = block_value;
-
-      return block;
+      return TreePtr<Block>(new Block(entries, block_value, location));
     }
   }
 }

@@ -3,7 +3,6 @@
 
 namespace Psi {
 #ifdef __GNUC__
-#define PSI_UNUSED(x)
 #define PSI_STD std
 #define PSI_STDINC ""
 #define PSI_ALIGNOF(x) __alignof__(x)
@@ -12,6 +11,7 @@ namespace Psi {
 #define PSI_ALIGNED_MAX aligned(__BIGGEST_ALIGNMENT__)
 #define PSI_NORETURN noreturn
 #define PSI_PURE pure
+#define PSI_UNUSED unused
 
   struct DebugLocation {
     const char *file;
@@ -28,8 +28,6 @@ namespace Psi {
 #else
 #define PSI_UNREACHABLE() void()
 #endif
-#elif defined(PSI_DOXYGEN)
-#define PSI_UNUSED(x) x
 #else
 #error Unsupported compiler!
 #define PSI_UNUSED(x)
@@ -38,6 +36,7 @@ namespace Psi {
 #define PSI_ATTRIBUTE(x)
 #define PSI_NORETURN
 #define PSI_PURE
+#define PSI_UNUSED
 #define PSI_UNREACHABLE() void()
 
   struct DebugLocation {

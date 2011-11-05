@@ -43,8 +43,10 @@ namespace Psi {
             }
             
             case term_function_parameter: {
+#ifdef PSI_DEBUG
               FunctionParameterTerm *cast_src = cast<FunctionParameterTerm>(src);
               PSI_ASSERT(!cast_src->phantom() && (cast_src->function() == self->function()));
+#endif
               new_insert_block = &self->llvm_function()->front();
               break;
             }

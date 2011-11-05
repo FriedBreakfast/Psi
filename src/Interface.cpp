@@ -22,7 +22,7 @@ namespace Psi {
       : Macro(compile_context, location),
       m_evaluate(evaluate),
       m_members(members) {
-	PSI_COMPILER_TREE_INIT();
+	      PSI_COMPILER_TREE_INIT();
       }
 
       template<typename Visitor>
@@ -103,6 +103,7 @@ namespace Psi {
       return make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(), std::map<String, TreePtr<MacroDotCallback> >());
     }
 
+#if 0
     /**
      * \brief Create a term whose type is suitable for attaching interfaces.
      *
@@ -133,5 +134,9 @@ namespace Psi {
       impl->interface_parameters.push_back(type);
       type->implementations.push_back(impl);
     }
+#endif
+    
+    const SIVtable MacroEvaluateCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.MacroEvaluateCallback", Tree);
+    const SIVtable MacroDotCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.MacroDotCallback", Tree);
   }
 }

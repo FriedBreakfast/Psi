@@ -19,6 +19,20 @@ namespace Psi {
   class NonConstructible {
     NonConstructible();
   };
+
+  /**
+   * \brief Allows easy access to default constructors without writing
+   * out entire types.
+   */
+  struct DefaultConstructor {
+    template<typename T> operator T () {
+      return T();
+    }
+  };
+
+  namespace {
+    DefaultConstructor default_ PSI_ATTRIBUTE((PSI_UNUSED)) = {};
+  };
   
   template<typename T>
   struct AlignedStorageFor {

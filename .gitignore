@@ -10,4 +10,7 @@ Makefile
 /GTAGS
 /GRTAGS
 /GSYMS
+/*.anjuta
+/.anjuta/
+/.anjuta_sym_db.db
 

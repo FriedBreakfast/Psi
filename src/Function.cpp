@@ -125,15 +125,22 @@ namespace Psi {
     };
 
     class ArgumentPassingInfoCallback : public Tree {
-      const ArgumentPassingInfoCallbackVtable* derived_vptr() {return reinterpret_cast<const ArgumentPassingInfoCallbackVtable*>(m_vptr);}
-
     public:
-      ArgumentPassingInfo argument_passing_info() {
-        ResultStorage<ArgumentPassingInfo> result;
-        derived_vptr()->argument_passing_info(result.ptr(), this);
-        return result.done();
-      }
+      typedef ArgumentPassingInfoCallbackVtable VtableType;
+      static const SIVtable vtable;
+      
+      class PtrHook : public Tree::PtrHook {
+      public:
+        ArgumentPassingInfo argument_passing_info() const {
+          ResultStorage<ArgumentPassingInfo> result;
+          ArgumentPassingInfoCallback *self = ptr_as<ArgumentPassingInfoCallback>();
+          derived_vptr(self)->argument_passing_info(result.ptr(), self);
+          return result.done();
+        }
+      };
     };
+
+    const SIVtable ArgumentPassingInfoCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ArgumentPassingInfoCallback", Tree);
 
     struct ArgumentHandlerVtable {
       TreeVtable base;
@@ -142,17 +149,25 @@ namespace Psi {
     };
 
     class ArgumentHandler : public Tree {
-      const ArgumentHandlerVtable *derived_vptr() {return reinterpret_cast<const ArgumentHandlerVtable*>(m_vptr);}
-      
     public:
-      void argument_default() {
-        return derived_vptr()->argument_default(this);
-      }
+      typedef ArgumentHandlerVtable VtableType;
+      static const SIVtable vtable;
+      
+      class PtrHook : public Tree::PtrHook {
+      public:
+        void argument_default() const {
+          ArgumentHandler *self = ptr_as<ArgumentHandler>();
+          return derived_vptr(self)->argument_default(self);
+        }
 
-      void argument_handler() {
-        return derived_vptr()->argument_handler(this);
-      }
+        void argument_handler() const {
+          ArgumentHandler *self = ptr_as<ArgumentHandler>();
+          return derived_vptr(self)->argument_handler(self);
+        }
+      };
     };
+
+    const SIVtable ArgumentHandler::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ArgumentHandler", Tree);
 
     template<typename Derived>
     struct ArgumentHandlerWrapper : NonConstructible {
@@ -198,7 +213,7 @@ namespace Psi {
       Parser::ArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(arguments);
 
       FunctionInfo result;
-      result.type.reset(new FunctionType(compile_context, location));
+      PSI_STD::vector<TreePtr<FunctionTypeArgument> > type_arguments;
 
       TreePtr<EvaluateContext> argument_context = evaluate_context;
       for (std::vector<SharedPtr<Parser::NamedExpression> >::const_iterator ii = parsed_arguments.arguments.begin(), ib = parsed_arguments.arguments.begin(), ie = parsed_arguments.arguments.end(); ii != ie; ++ii) {
@@ -213,7 +228,7 @@ namespace Psi {
 	} else {
 	  logical_location = location.logical->new_anonymous_child();
 	}
-	SourceLocation argument_location(named_expr.location.location, logical_location );
+	SourceLocation argument_location(named_expr.location.location, logical_location);
 
         TreePtr<Term> argument_expr = compile_expression(named_expr.expression, argument_context, argument_location.logical);
         TreePtr<ArgumentPassingInfoCallback> passing_info_callback = interface_lookup_as<ArgumentPassingInfoCallback>(compile_context.argument_passing_info_interface(), argument_expr, location);
@@ -221,19 +236,19 @@ namespace Psi {
         ArgumentPassingInfo passing_info = passing_info_callback->argument_passing_info();
 
         for (PSI_STD::vector<PatternArgument>::iterator ii = passing_info.pattern_arguments.begin(), ie = passing_info.pattern_arguments.end(); ii != ie; ++ii) {
-          result.type->arguments.push_back(ii->value);
+          type_arguments.push_back(ii->value);
         }
 
         for (PSI_STD::vector<InterfaceArgument>::iterator ii = passing_info.interface_arguments.begin(), ie = passing_info.interface_arguments.end(); ii != ie; ++ii) {
           TreePtr<FunctionTypeArgument> arg(new FunctionTypeArgument(ii->type, argument_location));
-          result.type->arguments.push_back(arg);
+          type_arguments.push_back(arg);
         }
         
         TreePtr<FunctionTypeArgument> argument(new FunctionTypeArgument(passing_info.type, argument_location));
-        result.type->arguments.push_back(argument);
+        type_arguments.push_back(argument);
 
         FunctionArgumentInfo argument_info;
-        argument_info.index = result.type->arguments.size() - 1;
+        argument_info.index = type_arguments.size() - 1;
         argument_info.handler = passing_info.handler;
 
         switch (passing_info.category) {
@@ -267,15 +282,19 @@ namespace Psi {
         }
       }
 
+      TreePtr<Term> result_type;
+
       if (parsed_arguments.return_type) {
         TreePtr<> result_type = compile_expression(parsed_arguments.return_type, argument_context, location.logical);
         TreePtr<Type> cast_result_type = dyn_treeptr_cast<Type>(result_type);
         if (!cast_result_type)
           compile_context.error_throw(location, "Function result type expression does not evaluate to a type");
-        result.type->result_type = cast_result_type;
+        result_type = cast_result_type;
       } else {
-        result.type->result_type = compile_context.empty_type();
+        result_type = compile_context.empty_type();
       }
+
+      result.type.reset(new FunctionType(result_type, type_arguments, location));
 
       return result;
     }
@@ -301,29 +320,23 @@ namespace Psi {
       PSI_STD::map<TreePtr<Term>, TreePtr<Term> > argument_substitutions;
       PSI_STD::vector<TreePtr<FunctionArgument> > argument_trees;
 
-      for (PSI_STD::vector<TreePtr<FunctionTypeArgument> >::iterator ii = common.type->arguments.begin(), ie = common.type->arguments.end(); ii != ie; ++ii) {
+      for (PSI_STD::vector<TreePtr<FunctionTypeArgument> >::const_iterator ii = common.type->arguments().begin(), ie = common.type->arguments().end(); ii != ie; ++ii) {
         TreePtr<Term> arg_type = (*ii)->type()->rewrite((*ii)->location(), Map<TreePtr<Term>, TreePtr<Term> >(argument_substitutions));
         TreePtr<FunctionArgument> arg(new FunctionArgument(arg_type, (*ii)->location()));
         argument_substitutions[*ii] = arg;
         argument_trees.push_back(arg);
       }
       
-      TreePtr<> result_type = common.type->result_type->rewrite(location, argument_substitutions);
-      TreePtr<Type> cast_result_type = dyn_treeptr_cast<Type>(result_type);
-      if (!cast_result_type)
-        compile_context.error_throw(location, "Rewritten function result type is not a type");
+      TreePtr<Term> result_type = common.type->result_type()->rewrite(location, argument_substitutions);
 
       PSI_STD::map<String, TreePtr<Term> > argument_values;
       for (PSI_STD::map<String, unsigned>::iterator ii = common.argument_names.begin(), ie = common.argument_names.end(); ii != ie; ++ii)
         argument_values[ii->first] = argument_trees[ii->second];
 
       TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(compile_context, location, argument_values, evaluate_context);
-      TreePtr<Function> function(new Function(common.type, location));
-      function->result_type = cast_result_type;
-      function->arguments.swap(argument_trees);
-      function->body = tree_callback<Term>(compile_context, location, FunctionBodyCompiler(body_context, body));
+      TreePtr<Term> body_tree = tree_callback<Term>(compile_context, location, FunctionBodyCompiler(body_context, body));
 
-      return function;
+      return TreePtr<Function>(new Function(result_type, argument_trees, body_tree, location));
     }
 
     /**
@@ -356,11 +369,7 @@ namespace Psi {
     TreePtr<Term> function_definition_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<MacroEvaluateCallback> callback(new FunctionDefineCallback(compile_context, location));
       TreePtr<Macro> macro = make_macro(compile_context, location, callback);
-      
-      TreePtr<Term> term = make_macro_term(compile_context, location);
-      attach_compile_implementation(compile_context.macro_interface(), treeptr_cast<ImplementationTerm>(term->type()), macro, location);
-      
-      return term;
+      return make_macro_term(compile_context, location, macro);
     }
   }
 }
