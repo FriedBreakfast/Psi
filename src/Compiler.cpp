@@ -14,57 +14,99 @@
 
 namespace Psi {
   namespace Compiler {
+    void TreeBasePtrHook::hook_update_chain(TreeBase *ptr) const {
+      const TreeBasePtrHook *hook = this;
+      TreeCallback *ptr_cb = NULL;
+      while (hook->m_ptr != ptr) {
+        PSI_ASSERT(derived_vptr(hook->m_ptr)->is_callback);
+        TreeCallback *next_ptr_cb = static_cast<TreeCallback*>(hook->m_ptr);
+        TreeBasePtrHook *next_hook = &next_ptr_cb->m_value.m_hook;
+
+        ++ptr->m_reference_count;
+        hook->m_ptr = ptr;
+
+        if (ptr_cb) {
+          if (--ptr_cb->m_reference_count)
+            derived_vptr(ptr_cb)->destroy(ptr_cb);
+        }
+        
+        hook = next_hook;
+        ptr_cb = next_ptr_cb;
+      }
+    }
+    
     /**
      * Evaluate a lazily evaluated Tree (recursively if necessary) and return the final result.
      */
     Tree* TreeBasePtrHook::hook_evaluate_helper() const {
-      TreeBase *ptr = m_ptr;
+      PSI_ASSERT(m_ptr);
+
+      /*
+       * Evaluate chain of hooks until either a NULL is found or a non-callback
+       * value is reached.
+       */
+      const TreeBasePtrHook *hook = this;
       while (true) {
-        if (!ptr)
+        if (!hook->m_ptr)
           break;
         
-        const TreeBaseVtable *vtable = derived_vptr(ptr);
+        const TreeBaseVtable *vtable = derived_vptr(hook->m_ptr);
         if (!vtable->is_callback)
           break;
 
-        TreeCallback *ptr_cb = static_cast<TreeCallback*>(ptr);
-        const TreeCallbackVtable *vtable_cb = reinterpret_cast<const TreeCallbackVtable*>(vtable);
+        TreeCallback *ptr_cb = static_cast<TreeCallback*>(hook->m_ptr);
+        hook = &ptr_cb->m_value.m_hook;
 
-        TreeBase *next;
-        {
+        switch (ptr_cb->m_state) {
+        case TreeCallback::state_ready: {
+          const TreeCallbackVtable *vtable_cb = reinterpret_cast<const TreeCallbackVtable*>(vtable);
           RunningTreeCallback running(ptr_cb);
-          next = vtable_cb->evaluate(ptr_cb);
+          ptr_cb->m_state = TreeCallback::state_running;
+          TreeBase *eval_ptr;
+          try {
+            eval_ptr = vtable_cb->evaluate(ptr_cb);
+          } catch (...) {
+            ptr_cb->m_state = TreeCallback::state_failed;
+            hook_update_chain(ptr_cb);
+            throw;
+          }
+          PSI_ASSERT(!hook->m_ptr);
+          hook->m_ptr = eval_ptr;
+          ptr_cb->m_state = TreeCallback::state_finished;
+          break;
         }
-        PSI_ASSERT(next);
-        ptr_cb->m_value = tree_from_base<Tree>(next, false);
-        ptr = next;
+
+        case TreeCallback::state_running:
+          hook_update_chain(ptr_cb);
+          RunningTreeCallback::throw_circular_dependency(ptr_cb);
+          PSI_UNREACHABLE();
+
+        case TreeCallback::state_finished:
+          break;
+
+        case TreeCallback::state_failed:
+          hook_update_chain(ptr_cb);
+          throw CompileException();
+        }
       }
 
-      if (m_ptr != ptr) {
-        if (ptr)
-          ++ptr->m_reference_count;
+      hook_update_chain(hook->m_ptr);
 
-        if (m_ptr)
-          if (!--m_ptr->m_reference_count)
-            derived_vptr(m_ptr)->destroy(m_ptr);
-
-        m_ptr = ptr;
-      }
-
-      return static_cast<Tree*>(ptr);
+      PSI_ASSERT(!m_ptr || !derived_vptr(m_ptr)->is_callback);
+      return static_cast<Tree*>(m_ptr);
     }
     
     bool LogicalSourceLocation::Key::operator < (const Key& other) const {
       if (index) {
-	if (other.index)
-	  return index < other.index;
-	else
-	  return false;
+	      if (other.index)
+	        return index < other.index;
+	      else
+	        return false;
       } else {
-	if (other.index)
-	  return true;
-	else
-	  return name < other.name;
+	      if (other.index)
+	        return true;
+	      else
+	        return name < other.name;
       }
     } 
 
@@ -74,11 +116,11 @@ namespace Psi {
 
     struct LogicalSourceLocation::KeyCompare {
       bool operator () (const Key& key, const LogicalSourceLocation& node) const {
-	return key < node.m_key;
+      	return key < node.m_key;
       }
 
       bool operator () (const LogicalSourceLocation& node, const Key& key) const {
-	return node.m_key < key;
+      	return node.m_key < key;
       }
     };
 
@@ -88,7 +130,7 @@ namespace Psi {
 
     LogicalSourceLocation::~LogicalSourceLocation() {
       if (m_parent)
-	m_parent->m_children.erase(m_parent->m_children.iterator_to(*this));
+        m_parent->m_children.erase(m_parent->m_children.iterator_to(*this));
     }
 
     /**
@@ -111,7 +153,7 @@ namespace Psi {
       std::pair<ChildMapType::iterator, bool> result = m_children.insert_check(key, KeyCompare(), commit_data);
 
       if (!result.second)
-	return LogicalSourceLocationPtr(&*result.first);
+      	return LogicalSourceLocationPtr(&*result.first);
 
       LogicalSourceLocationPtr node(new LogicalSourceLocation(key, LogicalSourceLocationPtr(this)));
       m_children.insert_commit(*node, commit_data);
@@ -122,10 +164,10 @@ namespace Psi {
       unsigned index = 1;
       ChildMapType::iterator end = m_children.end();
       if (!m_children.empty()) {
-	ChildMapType::iterator last = end;
-	--last;
-	if (last->anonymous())
-	  index = last->index() + 1;
+	      ChildMapType::iterator last = end;
+	      --last;
+	      if (last->anonymous())
+	        index = last->index() + 1;
       }
 
       Key key;
@@ -141,7 +183,7 @@ namespace Psi {
     unsigned LogicalSourceLocation::depth() {
       unsigned d = 0;
       for (LogicalSourceLocation *l = this->parent().get(); l; l = l->parent().get())
-	++d;
+      	++d;
       return d;
     } 
 
@@ -152,7 +194,7 @@ namespace Psi {
     LogicalSourceLocationPtr LogicalSourceLocation::ancestor(unsigned depth) {
       LogicalSourceLocation *ptr = this;
       for (unsigned i = 0; i != depth; ++i)
-	ptr = ptr->parent().get();
+      	ptr = ptr->parent().get();
       return LogicalSourceLocationPtr(ptr);
     }
 
@@ -168,19 +210,19 @@ namespace Psi {
     String LogicalSourceLocation::error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous_tail) {
       unsigned print_depth = depth();
       if (relative_to) {
-	// Find the common ancestor of this and relative_to.
-	unsigned this_depth = print_depth;
-	unsigned relative_to_depth = relative_to->depth();
-	unsigned min_depth = std::min(this_depth, relative_to_depth);
-	print_depth = this_depth - min_depth;
-	LogicalSourceLocation *this_ancestor = ancestor(print_depth).get();
-	LogicalSourceLocation *relative_to_ancestor = relative_to->ancestor(relative_to_depth - min_depth).get();
+	      // Find the common ancestor of this and relative_to.
+	      unsigned this_depth = print_depth;
+	      unsigned relative_to_depth = relative_to->depth();
+	      unsigned min_depth = std::min(this_depth, relative_to_depth);
+	      print_depth = this_depth - min_depth;
+	      LogicalSourceLocation *this_ancestor = ancestor(print_depth).get();
+	      LogicalSourceLocation *relative_to_ancestor = relative_to->ancestor(relative_to_depth - min_depth).get();
 
-	while (this_ancestor != relative_to_ancestor) {
-	  ++print_depth;
-	  this_ancestor = this_ancestor->parent().get();
-	  relative_to_ancestor = relative_to_ancestor->parent().get();
-	}
+	      while (this_ancestor != relative_to_ancestor) {
+	        ++print_depth;
+	        this_ancestor = this_ancestor->parent().get();
+	        relative_to_ancestor = relative_to_ancestor->parent().get();
+	      }
       }
 
       print_depth = std::max(print_depth, 1u);
@@ -189,38 +231,38 @@ namespace Psi {
       bool last_anonymous = false;
       for (LogicalSourceLocation *l = this; print_depth; l = l->parent().get(), --print_depth) {
         if (!l->anonymous()) {
-	  nodes.push_back(l);
-	  last_anonymous = false;
+	        nodes.push_back(l);
+	        last_anonymous = false;
         } else {
-	  if (!last_anonymous)
-	    nodes.push_back(l);
-	  last_anonymous = true;
-	}
+	        if (!last_anonymous)
+	          nodes.push_back(l);
+	        last_anonymous = true;
+      	}
       }
 
       if (ignore_anonymous_tail) {
-	if (nodes.front()->anonymous())
-	  nodes.erase(nodes.begin());
-	if (nodes.empty())
-	  return "(anonymous)";
+	      if (nodes.front()->anonymous())
+	        nodes.erase(nodes.begin());
+	      if (nodes.empty())
+	        return "(anonymous)";
       }
 
       if (!nodes.back()->parent()) {
-	nodes.pop_back();
-	if (nodes.empty())
-	  return "(root namespace)";
+	      nodes.pop_back();
+	      if (nodes.empty())
+	        return "(root namespace)";
       }
 
       std::stringstream ss;
       for (std::vector<LogicalSourceLocation*>::reverse_iterator ib = nodes.rbegin(),
-	     ii = nodes.rbegin(), ie = nodes.rend(); ii != ie; ++ii) {
-	if (ii != ib)
-	  ss << '.';
+           ii = nodes.rbegin(), ie = nodes.rend(); ii != ie; ++ii) {
+	      if (ii != ib)
+	        ss << '.';
 
-	if ((*ii)->anonymous())
-	  ss << "(anonymous)";
-	else
-	  ss << (*ii)->name();
+	      if ((*ii)->anonymous())
+	        ss << "(anonymous)";
+	      else
+	        ss << (*ii)->name();
       }
 
       const std::string& sss = ss.str();
@@ -255,12 +297,12 @@ namespace Psi {
 
       bool first = true;
       for (LocalIterator<TreePtr<Term> > p(parameters); p.next();) {
-	if (first)
-	  first = false;
-	else
-	  ss << ", ";
+	      if (first)
+	        first = false;
+	      else
+	        ss << ", ";
         TreePtr<Term>& current = p.current();
-	ss << '\'' << current->location().logical->error_name(location.logical) << '\'';
+	      ss << '\'' << current->location().logical->error_name(location.logical) << '\'';
       }
 
       return ss.str();
@@ -357,10 +399,10 @@ namespace Psi {
       }
 
       if (error_occurred)
-	m_compile_context->set_error_occurred();
+        m_compile_context->set_error_occurred();
 
       m_compile_context->error_stream() << boost::format("%s:%s: in '%s'\n") % location.physical.file->url
-	% location.physical.first_line % location.logical->error_name(LogicalSourceLocationPtr(), true);
+        % location.physical.first_line % location.logical->error_name(LogicalSourceLocationPtr(), true);
     }
 
     void CompileError::info(const std::string& message) {
@@ -369,15 +411,15 @@ namespace Psi {
 
     void CompileError::info(const SourceLocation& location, const std::string& message) {
       m_compile_context->error_stream() << boost::format("%s:%s:%s: %s\n")
-	% location.physical.file->url % location.physical.first_line % m_type % message;
+        % location.physical.file->url % location.physical.first_line % m_type % message;
     }
 
     void CompileError::end() {
     }
 
     CompileContext::CompileContext(std::ostream *error_stream)
-      : m_error_stream(error_stream), m_error_occurred(false), m_running_completion_stack(NULL),
-	m_root_location(PhysicalSourceLocation(), LogicalSourceLocation::new_root_location()) {
+    : m_error_stream(error_stream), m_error_occurred(false), m_running_completion_stack(NULL),
+    m_root_location(PhysicalSourceLocation(), LogicalSourceLocation::new_root_location()) {
       PhysicalSourceLocation core_physical_location;
       m_root_location.physical.file.reset(new SourceFile());
       m_root_location.physical.first_line = m_root_location.physical.first_column = 0;
@@ -394,10 +436,10 @@ namespace Psi {
 
     struct CompileContext::TreeBaseDisposer {
       void operator () (TreeBase *t) {
-	if (!--t->m_reference_count)
+	      if (!--t->m_reference_count)
           derived_vptr(t)->destroy(t);
-	else
-	  PSI_WARNING_FAIL("Dangling pointers to Tree during context destruction");
+	      else
+	        PSI_WARNING_FAIL("Dangling pointers to Tree during context destruction");
       }
     };
 
@@ -409,7 +451,7 @@ namespace Psi {
 
       // Add extra reference to each Tree
       BOOST_FOREACH(TreeBase& t, m_gc_list)
-	++t.m_reference_count;
+        ++t.m_reference_count;
 
       // Clear cross references in each Tree
       BOOST_FOREACH(TreeBase& t, m_gc_list)
@@ -472,12 +514,20 @@ namespace Psi {
       m_callback->m_compile_context->m_running_completion_stack = m_parent;
     }
 
-    void RunningTreeCallback::throw_circular_dependency() {
-      CompileError error(*m_callback->m_compile_context, m_callback->m_location);
+    /**
+     * \brief Throw a circular dependency error caused by something depending on
+     * its own value for evaluation.
+     * 
+     * \param callback Callback being recursively evaluated.
+     */
+    void RunningTreeCallback::throw_circular_dependency(TreeCallback *callback) {
+      PSI_ASSERT(callback->m_state == TreeCallback::state_running);
+      CompileError error(*callback->m_compile_context, callback->m_location);
       error.info("Circular dependency found");
       boost::format fmt("via: '%s'");
-      for (RunningTreeCallback *ancestor = m_parent; ancestor && (ancestor->m_callback != m_callback); ancestor = ancestor->m_parent)
-	error.info(ancestor->m_callback->m_location, fmt % ancestor->m_callback->m_location.logical->error_name(m_callback->m_location.logical));
+      for (RunningTreeCallback *ancestor = callback->m_compile_context->m_running_completion_stack;
+           ancestor && (ancestor->m_callback != callback); ancestor = ancestor->m_parent)
+        error.info(ancestor->m_callback->m_location, fmt % ancestor->m_callback->m_location.logical->error_name(callback->m_location.logical));
       error.end();
       throw CompileException();
     }
@@ -666,8 +716,8 @@ namespace Psi {
         visitor("evaluate_context", m_evaluate_context);
       }
 
-      TreePtr<Term> evaluate(CompileContext&, const SourceLocation& location) {
-        return compile_expression(m_expression, m_evaluate_context, location.logical);
+      TreePtr<Statement> evaluate(CompileContext&, const SourceLocation& location) {
+        return TreePtr<Statement>(new Statement(compile_expression(m_expression, m_evaluate_context, location.logical), location));
       }
     };
     
@@ -725,15 +775,15 @@ namespace Psi {
         const Parser::NamedExpression& named_expr = *ii.current();
         if (named_expr.expression.get()) {
           String expr_name;
-	  LogicalSourceLocationPtr logical_location;
-	  if (named_expr.name) {
-	    expr_name = String(named_expr.name->begin, named_expr.name->end);
-	    logical_location = location.logical->named_child(expr_name);
-	  } else {
-	    logical_location = location.logical->new_anonymous_child();
-	  }
+	        LogicalSourceLocationPtr logical_location;
+	        if (named_expr.name) {
+	          expr_name = String(named_expr.name->begin, named_expr.name->end);
+	          logical_location = location.logical->named_child(expr_name);
+	        } else {
+	          logical_location = location.logical->new_anonymous_child();
+	        }
           SourceLocation statement_location(named_expr.location.location, logical_location);
-          last_statement.reset(new Statement(tree_callback<Term>(compile_context, statement_location, StatementListEntry(named_expr.expression, context_tree)), statement_location));
+          last_statement = tree_callback<Statement>(compile_context, statement_location, StatementListEntry(named_expr.expression, context_tree));
           entries.push_back(last_statement);
           
           if (named_expr.name)

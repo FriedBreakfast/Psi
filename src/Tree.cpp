@@ -100,30 +100,6 @@ namespace Psi {
       return TreePtr<Term>(&self);
     }
 
-    class Term::TypeGetter {
-      TreePtr<Term> m_term;
-
-    public:
-      TypeGetter(const TreePtr<Term>& term) : m_term(term) {
-      }
-      
-      TreePtr<Term> evaluate(CompileContext&, const SourceLocation&) {
-        return m_term.get()->m_type;
-      }
-      
-      template<typename Visitor>
-      void visit(Visitor& visitor) {
-        visitor("term", m_term);
-      }
-    };
-
-    TreePtr<Term> Term::PtrHook::type() const {
-      if (Term *self = try_ptr_as<Term>())
-        return self->m_type;
-      else
-        return tree_callback<Term>(compile_context(), location(), TypeGetter(as_tree_ptr<Term>()));
-    }
-
     Type::Type(CompileContext& compile_context, const SourceLocation& location)
       : Term(compile_context.metatype(), location) {
     }
@@ -331,6 +307,7 @@ namespace Psi {
     m_value(value),
     m_wildcard_types(wildcard_types),
     m_interface_parameters(interface_parameters) {
+      PSI_COMPILER_TREE_INIT();
     }
 
     template<typename Visitor>
@@ -343,13 +320,6 @@ namespace Psi {
         ("interface_parameters", self.m_interface_parameters);
     }
     
-    ImplementationTerm::ImplementationTerm(const TreePtr<Term>& type,
-                                           const PSI_STD::vector<TreePtr<Implementation> >& implementations,
-                                           const SourceLocation& location)
-    : Term(type, location),
-    m_implementations(implementations) {
-    }
-
     Metatype::Metatype(CompileContext& compile_context, const SourceLocation& location)
       : Term(compile_context, location) {
       PSI_COMPILER_TREE_INIT();
@@ -361,7 +331,7 @@ namespace Psi {
     }
 
     TreePtr<Term> EmptyType::value(CompileContext& compile_context, const SourceLocation& location) {
-      return NullValue::get(compile_context.empty_type(), location);
+      return TreePtr<Term>(new NullValue(compile_context.empty_type(), location));
     }
 
     NullValue::NullValue(const TreePtr<Term>& type, const SourceLocation& location)
@@ -369,23 +339,53 @@ namespace Psi {
       PSI_COMPILER_TREE_INIT();
     }
 
-    TreePtr<Term> NullValue::get(const TreePtr<Term>& type, const SourceLocation& location) {
-      return TreePtr<Term>(new NullValue(type, location));
+    GenericType::GenericType(const TreePtr<Term>& member,
+                             const PSI_STD::vector<TreePtr<Parameter> >& parameters,
+                             const PSI_STD::vector<TreePtr<Implementation> >& implementations,
+                             const SourceLocation& location)
+    : Tree(member->compile_context(), location),
+    m_member(member),
+    m_parameters(parameters),
+    m_implementations(implementations) {
+      PSI_COMPILER_TREE_INIT();
     }
 
-    RecursiveType::RecursiveType(CompileContext& compile_context, const SourceLocation& location)
-    : ImplementationTerm(compile_context.metatype(), default_, location) {
-      PSI_COMPILER_TREE_INIT();
+    template<typename Visitor>
+    void GenericType::visit_impl(GenericType& self, Visitor& visitor) {
+      Tree::visit_impl(self, visitor);
+      visitor
+        ("parameters", self.m_parameters)
+        ("member", self.m_member)
+        ("implementations", self.m_implementations);
     }
     
-    RecursiveValue::RecursiveValue(const TreePtr<RecursiveType>& type, const TreePtr<Term>& member_, const SourceLocation& location)
+    TypeInstance::TypeInstance(const TreePtr<GenericType>& generic_type,
+                               const PSI_STD::vector<TreePtr<Term> >& parameter_values,
+                               const SourceLocation& location)
+    : Term(generic_type->compile_context().metatype(), location),
+    m_generic_type(generic_type),
+    m_parameter_values(parameter_values) {
+      PSI_COMPILER_TREE_INIT();
+    }
+
+    template<typename Visitor>
+    void TypeInstance::visit_impl(TypeInstance& self, Visitor& visitor) {
+      Term::visit_impl(self, visitor);
+      visitor
+        ("generic_type", self.m_generic_type)
+        ("parameter_values", self.m_parameter_values);
+    }
+
+    TypeInstanceValue::TypeInstanceValue(const TreePtr<TypeInstance>& type, const TreePtr<Term>& member_value, const SourceLocation& location)
     : Term(type, location),
-    member(member_) {
+    m_member_value(member_value) {
       PSI_COMPILER_TREE_INIT();
     }
-    
-    TreePtr<Term> RecursiveValue::get(const TreePtr<RecursiveType>&, const TreePtr<Term>&, const SourceLocation&) {
-      PSI_FAIL("not implemented");
+
+    template<typename Visitor>
+    void TypeInstanceValue::visit_impl(TypeInstanceValue& self, Visitor& visitor) {
+      Term::visit_impl(self, visitor);
+      visitor("member_value", self.m_member_value);
     }
 
     const SIVtable TreeBase::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeBase", NULL);
@@ -401,7 +401,6 @@ namespace Psi {
     const TermVtable Parameter::vtable = PSI_COMPILER_TERM(Parameter, "psi.compiler.Parameter", Term);
     const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", Tree);
     const TreeVtable Implementation::vtable = PSI_COMPILER_TREE(Implementation, "psi.compiler.Implementation", Tree);
-    const SIVtable ImplementationTerm::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ImplementationTerm", Term);
 
     const TermVtable FunctionType::vtable = PSI_COMPILER_TERM(FunctionType, "psi.compiler.FunctionType", Type);
     const TermVtable FunctionTypeArgument::vtable = PSI_COMPILER_TERM(FunctionTypeArgument, "psi.compiler.FunctionTypeArgument", Term);
@@ -416,8 +415,9 @@ namespace Psi {
     const TermVtable EmptyType::vtable = PSI_COMPILER_TERM(EmptyType, "psi.compiler.EmptyType", Type);
     const TermVtable NullValue::vtable = PSI_COMPILER_TERM(NullValue, "psi.compiler.NullValue", Term);
 
-    const TermVtable RecursiveType::vtable = PSI_COMPILER_TERM(RecursiveType, "psi.compiler.RecursiveType", ImplementationTerm);
-    const TermVtable RecursiveValue::vtable = PSI_COMPILER_TERM(RecursiveValue, "psi.compiler.RecursiveValue", Term);
+    const TreeVtable GenericType::vtable = PSI_COMPILER_TREE(GenericType, "psi.compiler.GenericType", Tree);
+    const TermVtable TypeInstance::vtable = PSI_COMPILER_TERM(TypeInstance, "psi.compiler.TypeInstance", Term);
+    const TermVtable TypeInstanceValue::vtable = PSI_COMPILER_TERM(TypeInstanceValue, "psi.compiler.TypeInstanceValue", Term);
 
     const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
     const TermVtable ExternalGlobal::vtable = PSI_COMPILER_TERM(ExternalGlobal, "psi.compiler.ExternalGlobal", Global);

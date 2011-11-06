@@ -64,35 +64,6 @@ namespace Psi {
       };
     };
 
-    /**
-     * \brief Base type for terms which carry interface implementations.
-     */
-    class ImplementationTerm : public Term {
-      PSI_STD::vector<TreePtr<Implementation> > m_implementations;
-
-    public:
-      static const SIVtable vtable;
-
-      ImplementationTerm(const TreePtr<Term>& type,
-                         const PSI_STD::vector<TreePtr<Implementation> >& implementations,
-                         const SourceLocation& location);
-
-      class PtrHook : public Tree::PtrHook {
-        ImplementationTerm* get() const {return ptr_as<ImplementationTerm>();}
-
-      public:
-        /// \brief Get the list of implementations supplied by this term.
-        const PSI_STD::vector<TreePtr<Implementation> >& implementations() const {return get()->m_implementations;}
-      };
-
-      template<typename Visitor>
-      static void visit_impl(ImplementationTerm& self, Visitor& visitor) {
-        Term::visit_impl(self, visitor);
-        visitor
-          ("implementations", self.m_implementations);
-      }
-    };
-    
     class Global : public Term {
       friend class CompileContext;
       void *m_jit_ptr;
@@ -149,47 +120,55 @@ namespace Psi {
      * to themselves. In order for these to work these types are by
      * definition unique, however template parameters are also available.
      */
-    class RecursiveType : public ImplementationTerm {
-      /// \brief
-      PSI_STD::vector<TreePtr<Term> > m_parameters;
+    class GenericType : public Tree {
       /// \brief Single member of this type.
       TreePtr<Term> m_member;
+      /// \brief
+      PSI_STD::vector<TreePtr<Parameter> > m_parameters;
+      /// \brief Implementations carried by this type.
+      PSI_STD::vector<TreePtr<Implementation> > m_implementations;
 
     public:
-      static const TermVtable vtable;
+      static const TreeVtable vtable;
 
-      RecursiveType(CompileContext& compile_context, const SourceLocation& location);
+      GenericType(const TreePtr<Term>& member,
+                  const PSI_STD::vector<TreePtr<Parameter> >& parameters,
+                  const PSI_STD::vector<TreePtr<Implementation> >& implementations,
+                  const SourceLocation& location);
 
-      template<typename Visitor>
-      static void visit_impl(RecursiveType& self, Visitor& visitor) {
-        ImplementationTerm::visit_impl(self, visitor);
-        visitor
-          ("parameters", self.m_parameters)
-          ("member", self.m_member);
-      }
+      template<typename Visitor> static void visit_impl(GenericType& self, Visitor& visitor);
     };
 
-    class SpecializedRecursiveType : public Term {
+    /**
+     * \brief Instance of GenericType.
+     */
+    class TypeInstance : public Term {
+      TreePtr<GenericType> m_generic_type;
+      /// \brief Arguments to parameters in RecursiveType
+      PSI_STD::vector<TreePtr<Term> > m_parameter_values;
+      
     public:
       static const TermVtable vtable;
+
+      TypeInstance(const TreePtr<GenericType>& generic_type,
+                   const PSI_STD::vector<TreePtr<Term> >& parameter_values,
+                   const SourceLocation& location);
+
+      template<typename Visitor> static void visit_impl(TypeInstance& self, Visitor& visitor);
     };
 
     /**
      * \brief Value of type RecursiveType.
      */
-    class RecursiveValue : public Term {
-      RecursiveValue(const TreePtr<RecursiveType>&, const TreePtr<Term>&, const SourceLocation&);
+    class TypeInstanceValue : public Term {
+      TreePtr<Term> m_member_value;
+
     public:
       static const TermVtable vtable;
-      static TreePtr<Term> get(const TreePtr<RecursiveType>&, const TreePtr<Term>&, const SourceLocation&);
 
-      TreePtr<Term> member;
+      TypeInstanceValue(const TreePtr<TypeInstance>& type, const TreePtr<Term>& member_value, const SourceLocation& location);
 
-      template<typename Visitor>
-      static void visit_impl(RecursiveValue& self, Visitor& visitor) {
-        Term::visit_impl(self, visitor);
-        visitor("member", self.member);
-      }
+      template<typename Visitor> static void visit_impl(TypeInstanceValue& self, Visitor& visitor);
     };
 
     /**
@@ -219,10 +198,9 @@ namespace Psi {
      * \brief Zero initialized value.
      */
     class NullValue : public Term {
-      NullValue(const TreePtr<Term>&, const SourceLocation&);
     public:
       static const TermVtable vtable;
-      static TreePtr<Term> get(const TreePtr<Term>&, const SourceLocation&);
+      NullValue(const TreePtr<Term>&, const SourceLocation&);
     };
 
     /**

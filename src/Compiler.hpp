@@ -160,6 +160,7 @@ namespace Psi {
       void hook_reset(TreeBase *ptr, bool add_ref);
       TreeBase* hook_release() {TreeBase *tmp = m_ptr; m_ptr = NULL; return tmp;}
       Tree* hook_evaluate() const;
+      void hook_update_chain(TreeBase *ptr) const;
       Tree* hook_evaluate_helper() const;
 
       mutable TreeBase *m_ptr;
@@ -179,6 +180,7 @@ namespace Psi {
       TreeBasePtrHook() : m_ptr(NULL) {}
       TreeBasePtrHook(const TreeBasePtrHook& src) : m_ptr(NULL) {hook_reset(src.m_ptr, true);}
       ~TreeBasePtrHook() {hook_reset(NULL, false);}
+      TreeBasePtrHook& operator = (const TreeBasePtrHook& src) {hook_reset(src.m_ptr, true); return *this;}
       
       CompileContext& compile_context() const;
       const SourceLocation& location() const;
@@ -201,6 +203,8 @@ namespace Psi {
     template<typename T=Tree>
     class TreePtr {
       template<typename> friend class TreePtr;
+      friend class TreeBasePtrHook;
+      
       typedef void (TreePtr::*safe_bool_type) () const;
       void safe_bool_true() const {}
       
@@ -445,12 +449,12 @@ namespace Psi {
 
     template<typename T> T* TreeBasePtrHook::ptr_as() const {
       Tree *t = hook_evaluate();
-      PSI_ASSERT(si_is_a(t, reinterpret_cast<const SIVtable*>(&T::vtable)));
+      PSI_ASSERT(!t || si_is_a(t, reinterpret_cast<const SIVtable*>(&T::vtable)));
       return static_cast<T*>(t);
     };
 
     template<typename T> T* TreeBasePtrHook::try_ptr_as() const {
-      if (derived_vptr(m_ptr)->is_callback)
+      if (!m_ptr || derived_vptr(m_ptr)->is_callback)
         return NULL;
 
       PSI_ASSERT(si_is_a(m_ptr, reinterpret_cast<const SIVtable*>(&T::vtable)));
@@ -507,7 +511,7 @@ namespace Psi {
 #define PSI_COMPILER_TREE_ABSTRACT(name,super) PSI_COMPILER_SI_ABSTRACT(name,&super::vtable)
 
     inline Tree* TreeBasePtrHook::hook_evaluate() const {
-      return !derived_vptr(m_ptr)->is_callback ? static_cast<Tree*>(m_ptr) : hook_evaluate_helper();
+      return (!m_ptr || !derived_vptr(m_ptr)->is_callback) ? static_cast<Tree*>(m_ptr) : hook_evaluate_helper();
     }
 
     inline void TreeBasePtrHook::hook_reset(TreeBase *ptr, bool add_ref) {
@@ -519,6 +523,8 @@ namespace Psi {
           derived_vptr(m_ptr)->destroy(m_ptr);
 
       m_ptr = ptr;
+
+      PSI_ASSERT(!m_ptr || derived_vptr(m_ptr));
     }
 
     /// \see TreeCallback
@@ -530,6 +536,15 @@ namespace Psi {
     class TreeCallback : public TreeBase {
       friend class TreeBasePtrHook;
 
+    public:
+      enum CallbackState {
+        state_ready,
+        state_running,
+        state_finished,
+        state_failed
+      };
+
+      CallbackState m_state;
       TreePtr<> m_value;
 
     protected:
@@ -541,7 +556,10 @@ namespace Psi {
 
       TreeCallback(CompileContext&, const SourceLocation&);
 
-      template<typename Visitor> static void visit_impl(TreeCallback&, Visitor&) {}
+      template<typename Visitor> static void visit_impl(TreeCallback& self, Visitor& visitor) {
+        TreeBase::visit_impl(self, visitor);
+        visitor("value", self.m_value);
+      }
     };
 
     /**
@@ -554,7 +572,8 @@ namespace Psi {
     public:
       RunningTreeCallback(TreeCallback *callback);
       ~RunningTreeCallback();
-      void throw_circular_dependency();
+
+      static void throw_circular_dependency(TreeCallback *callback) PSI_ATTRIBUTE((PSI_NORETURN));
     };
 
     template<typename Derived>
@@ -657,8 +676,7 @@ namespace Psi {
 
       public:
         /// \brief Get the type of this tree
-        TreePtr<Term> type() const;
-
+        TreePtr<Term> type() const {return get()->m_type;}
         TreePtr<Term> rewrite(const SourceLocation& location, const Map<TreePtr<Term>, TreePtr<Term> >& substitutions) const {return get()->rewrite(location, substitutions);}
         bool match(const TreePtr<Term>& value, const List<TreePtr<Term> >& wildcards, unsigned depth=0) const {return get()->match(value, wildcards, depth);}
       };

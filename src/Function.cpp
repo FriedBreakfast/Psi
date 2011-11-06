@@ -37,11 +37,11 @@ namespace Psi {
 
       template<typename Visitor>
       static void visit_impl(EvaluateContextOneName& self, Visitor& visitor) {
-	EvaluateContext::visit_impl(self, visitor);
+	      EvaluateContext::visit_impl(self, visitor);
         visitor
-        ("name", self.m_name)
-        ("value", self.m_value)
-        ("next", self.m_next);
+          ("name", self.m_name)
+          ("value", self.m_value)
+          ("next", self.m_next);
       }
 
       static LookupResult<TreePtr<Term> > lookup_impl(EvaluateContextOneName& self, const String& name) {
@@ -220,15 +220,15 @@ namespace Psi {
         const Parser::NamedExpression& named_expr = **ii;
         PSI_ASSERT(named_expr.expression);
 
-	String expr_name;
-	LogicalSourceLocationPtr logical_location;
-	if (named_expr.name) {
-	  expr_name = String(named_expr.name->begin, named_expr.name->end);
-	  logical_location = location.logical->named_child(expr_name);
-	} else {
-	  logical_location = location.logical->new_anonymous_child();
-	}
-	SourceLocation argument_location(named_expr.location.location, logical_location);
+	      String expr_name;
+	      LogicalSourceLocationPtr logical_location;
+	      if (named_expr.name) {
+	        expr_name = String(named_expr.name->begin, named_expr.name->end);
+	        logical_location = location.logical->named_child(expr_name);
+	      } else {
+	        logical_location = location.logical->new_anonymous_child();
+	      }
+	      SourceLocation argument_location(named_expr.location.location, logical_location);
 
         TreePtr<Term> argument_expr = compile_expression(named_expr.expression, argument_context, argument_location.logical);
         TreePtr<ArgumentPassingInfoCallback> passing_info_callback = interface_lookup_as<ArgumentPassingInfoCallback>(compile_context.argument_passing_info_interface(), argument_expr, location);
