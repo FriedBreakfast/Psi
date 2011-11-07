@@ -555,10 +555,10 @@ namespace Psi {
       }
 
       static bool next_impl(Iterator& self) {
-	if (self.start)
-	  self.start = false;
-	else
-	  ++self.current;
+	      if (self.start)
+	        self.start = false;
+	      else
+	        ++self.current;
         return self.current != self.end;
       }
     };

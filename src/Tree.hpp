@@ -36,16 +36,19 @@ namespace Psi {
     };
     
     class Implementation : public Tree {
-      TreePtr<Interface> m_interface;
       TreePtr<> m_value;
+      TreePtr<Interface> m_interface;
       PSI_STD::vector<TreePtr<Term> > m_wildcard_types;
       PSI_STD::vector<TreePtr<Term> > m_interface_parameters;
+
+      bool matches(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
 
     public:
       static const TreeVtable vtable;
 
       Implementation(CompileContext& compile_context,
                      const TreePtr<>& value,
+                     const TreePtr<Interface>& interface,
                      const PSI_STD::vector<TreePtr<Term> >& wildcard_types,
                      const PSI_STD::vector<TreePtr<Term> >& interface_parameters,
                      const SourceLocation& location);
@@ -61,6 +64,7 @@ namespace Psi {
         const PSI_STD::vector<TreePtr<Term> > wildcard_types() const {return get()->m_wildcard_types;}
         /// \brief Parameters to the interface type
         const PSI_STD::vector<TreePtr<Term> > interface_parameters() const {return get()->m_interface_parameters;}
+        bool matches(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) const {return get()->matches(interface, parameters);}
       };
     };
 
@@ -137,6 +141,15 @@ namespace Psi {
                   const SourceLocation& location);
 
       template<typename Visitor> static void visit_impl(GenericType& self, Visitor& visitor);
+
+      class PtrHook : public Tree::PtrHook {
+        GenericType* get() const {return ptr_as<GenericType>();}
+
+      public:
+        const TreePtr<Term>& member() const {return get()->m_member;}
+        const PSI_STD::vector<TreePtr<Parameter> >& parameters() const {return get()->m_parameters;}
+        const PSI_STD::vector<TreePtr<Implementation> >& implementations() const {return get()->m_implementations;}
+      };
     };
 
     /**
@@ -155,6 +168,7 @@ namespace Psi {
                    const SourceLocation& location);
 
       template<typename Visitor> static void visit_impl(TypeInstance& self, Visitor& visitor);
+      static TreePtr<> interface_search_impl(TypeInstance& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
     };
 
     /**

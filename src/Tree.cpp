@@ -92,6 +92,12 @@ namespace Psi {
       }
     }
 
+    TreePtr<> Term::interface_search_impl(Term& self,
+                                          const TreePtr<Interface>& interface,
+                                          const List<TreePtr<Term> >& parameters) {
+      return self.m_type->interface_search(interface, parameters);
+    }
+
     bool Term::match_impl(Term& lhs, Term& rhs, const List<TreePtr<Term> >&, unsigned) {
       return &lhs == &rhs;
     }
@@ -300,11 +306,13 @@ namespace Psi {
 
     Implementation::Implementation(CompileContext& compile_context,
                                    const TreePtr<>& value,
+                                   const TreePtr<Interface>& interface,
                                    const PSI_STD::vector<TreePtr<Term> >& wildcard_types,
                                    const PSI_STD::vector<TreePtr<Term> >& interface_parameters,
                                    const SourceLocation& location)
     : Tree(compile_context, location),
     m_value(value),
+    m_interface(interface),
     m_wildcard_types(wildcard_types),
     m_interface_parameters(interface_parameters) {
       PSI_COMPILER_TREE_INIT();
@@ -314,10 +322,24 @@ namespace Psi {
     void Implementation::visit_impl(Implementation& self, Visitor& visitor) {
       Tree::visit_impl(self, visitor);
       visitor
-        ("interface", self.m_interface)
         ("value", self.m_value)
+        ("interface", self.m_interface)
         ("wildcard_types", self.m_wildcard_types)
         ("interface_parameters", self.m_interface_parameters);
+    }
+
+    bool Implementation::matches(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
+      if (interface != m_interface)
+        return false;
+      
+      PSI_ASSERT(m_interface_parameters.size() == parameters.size());
+      PSI_STD::vector<TreePtr<Term> > wildcards(m_wildcard_types.size());
+      for (std::size_t ji = 0, je = m_interface_parameters.size(); ji != je; ++ji) {
+        if (!m_interface_parameters[ji]->match(parameters[ji], list_from_stl(wildcards)))
+          return false;
+      }
+
+      return true;
     }
     
     Metatype::Metatype(CompileContext& compile_context, const SourceLocation& location)
@@ -374,6 +396,23 @@ namespace Psi {
       visitor
         ("generic_type", self.m_generic_type)
         ("parameter_values", self.m_parameter_values);
+    }
+    
+    TreePtr<> TypeInstance::interface_search_impl(TypeInstance& self,
+                                                  const TreePtr<Interface>& interface,
+                                                  const List<TreePtr<Term> >& parameters) {
+      const PSI_STD::vector<TreePtr<Implementation> >& implementations = self.m_generic_type->implementations();
+	    for (PSI_STD::vector<TreePtr<Implementation> >::const_iterator ii = implementations.begin(), ie = implementations.end(); ii != ie; ++ii) {
+        if ((*ii)->matches(interface, parameters))
+          return (*ii)->value();
+      }
+
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.m_parameter_values.begin(), ie = self.m_parameter_values.end(); ii != ie; ++ii) {
+        if (TreePtr<> result = (*ii)->interface_search(interface, parameters))
+          return result;        
+      }
+
+      return TreePtr<>();
     }
 
     TypeInstanceValue::TypeInstanceValue(const TreePtr<TypeInstance>& type, const TreePtr<Term>& member_value, const SourceLocation& location)

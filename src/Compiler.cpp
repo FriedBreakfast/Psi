@@ -331,38 +331,6 @@ namespace Psi {
     }
 
     /**
-     * \brief Walk a tree looking for an interface implementation.
-     */
-    TreePtr<> interface_lookup_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const TreePtr<Term>& term) {
-#if 0
-      if (TreePtr<ImplementationTerm> templ = dyn_treeptr_cast<ImplementationTerm>(term)) {
-	for (PSI_STD::vector<TreePtr<Implementation> >::const_iterator ii = templ->implementations().begin(), ie = templ->implementations().end(); ii != ie; ++ii) {
-	  if (interface == (*ii)->interface()) {
-	    PSI_ASSERT((*ii)->interface_parameters.size() == parameters.size());
-	    PSI_STD::vector<TreePtr<Term> > wildcards((*ii)->wildcard_types().size());
-	    for (std::size_t ji = 0, je = parameters.size(); ji != je; ++ji) {
-	      if (!(*ii)->interface_parameters()[ji]->match(parameters[ji], list_from_stl(wildcards)))
-		goto match_failed;
-	    }
-
-	    return (*ii)->value();
-	  }
-
-	match_failed:;
-	}
-      }
-
-      for (LocalIterator<TreePtr<Term> > p(*term.get()); p.next();) {
-        TreePtr<Term>& current = p.current();
-        if (TreePtr<> result = interface_lookup_search(interface, parameters, current))
-          return result;        
-      }
-#endif
-
-      return TreePtr<>();
-    }
-
-    /**
      * \brief Locate an interface implementation for a given set of parameters.
      *
      * \param interface Interface to look up implementation for.
@@ -371,7 +339,7 @@ namespace Psi {
     TreePtr<> interface_lookup(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const SourceLocation&) {
       // Walk the various parameters and look for matching interface implementations
       for (LocalIterator<TreePtr<Term> > p(parameters); p.next();) {
-        TreePtr<> result = interface_lookup_search(interface, parameters, p.current());
+        TreePtr<> result = p.current()->interface_search(interface, parameters);
         if (result)
           return result;
       }
@@ -428,8 +396,8 @@ namespace Psi {
       SourceLocation psi_location = m_root_location.named_child("psi");
       SourceLocation psi_compiler_location = psi_location.named_child("compiler");
 
-      m_metatype.reset(new Metatype(*this, psi_location));
-      m_empty_type.reset(new EmptyType(*this, psi_location));
+      m_metatype.reset(new Metatype(*this, psi_location.named_child("Type")));
+      m_empty_type.reset(new EmptyType(*this, psi_location.named_child("Empty")));
       m_macro_interface.reset(new Interface(*this, psi_compiler_location.named_child("Macro")));
       m_argument_passing_interface.reset(new Interface(*this, psi_compiler_location.named_child("ArgumentPasser")));
     }
@@ -604,12 +572,7 @@ namespace Psi {
     };
 
     TreePtr<Macro> expression_macro(const TreePtr<Term>& expr, const SourceLocation& location) {
-      CompileContext& compile_context = expr->compile_context();
-
-      if (!expr->type())
-        compile_context.error_throw(location, "Expression does not have a type", CompileError::error_internal);
-
-      return interface_lookup_as<Macro>(compile_context.macro_interface(), expr->type(), location);
+      return interface_lookup_as<Macro>(expr->compile_context().macro_interface(), expr, location);
     }
     
     /**

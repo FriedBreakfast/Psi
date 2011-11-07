@@ -439,9 +439,12 @@ namespace Psi {
 
       Tree(CompileContext&, const SourceLocation&);
 
-      struct PtrHook : TreeBase::PtrHook {
+      class PtrHook : public TreeBase::PtrHook {
+        Tree* get() const {return ptr_as<Tree>();}
+
+      public:
         void complete() const {
-          Tree *self = ptr_as<Tree>();
+          Tree *self = get();
           derived_vptr(self)->complete(self);
         }
       };
@@ -483,7 +486,7 @@ namespace Psi {
     }
 
     /**
-     * \brief Implements the increment phase of the garbage collector.
+     * \brief Recursively completes a tree.
      */
     class CompleteVisitor : public VisitorBase<CompleteVisitor> {
     public:
@@ -646,11 +649,13 @@ namespace Psi {
     }
 
     class Term;
+    class Interface;
 
     struct TermVtable {
       TreeVtable base;
       PsiBool (*match) (Term*,Term*,const void*,void*,unsigned);
       TreeBase* (*rewrite) (Term*,const SourceLocation*, const void*,void*);
+      TreeBase* (*interface_search) (Tree*, Interface*, const void*, void*);
     };
 
     class Term : public Tree {
@@ -679,6 +684,11 @@ namespace Psi {
         TreePtr<Term> type() const {return get()->m_type;}
         TreePtr<Term> rewrite(const SourceLocation& location, const Map<TreePtr<Term>, TreePtr<Term> >& substitutions) const {return get()->rewrite(location, substitutions);}
         bool match(const TreePtr<Term>& value, const List<TreePtr<Term> >& wildcards, unsigned depth=0) const {return get()->match(value, wildcards, depth);}
+
+        TreePtr<> interface_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) const {
+          Term *self = get();
+          return tree_from_base<Tree>(derived_vptr(self)->interface_search(self, interface.get(), parameters.vptr(), parameters.object()), false);
+        }
       };
 
       template<typename Visitor> static void visit_impl(Term& self, Visitor& visitor) {
@@ -686,6 +696,7 @@ namespace Psi {
         visitor("type", self.m_type);
       }
 
+      static TreePtr<> interface_search_impl(Term& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
       static bool match_impl(Term&, Term&, const List<TreePtr<Term> >&, unsigned);
       static TreePtr<Term> rewrite_impl(Term&, const SourceLocation&, const Map<TreePtr<Term>, TreePtr<Term> >&);
     };
@@ -700,12 +711,18 @@ namespace Psi {
         TreePtr<Term> result = Derived::rewrite_impl(*static_cast<Derived*>(self), *location, Map<TreePtr<Term>, TreePtr<Term> >(substitutions_vtable, substitutions_obj));
         return result.release();
       }
+
+      static TreeBase* interface_search(Tree *self, Interface *interface, const void *parameters_vtable, void *parameters_object) {
+        TreePtr<> result = Derived::interface_search_impl(*static_cast<Derived*>(self), TreePtr<Interface>(interface), List<TreePtr<Term> >(parameters_vtable, parameters_object));
+        return result.release();
+      }
     };
 
 #define PSI_COMPILER_TERM(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
-    &TermWrapper<derived>::match, \
-    &TermWrapper<derived>::rewrite \
+    &::Psi::Compiler::TermWrapper<derived>::match, \
+    &::Psi::Compiler::TermWrapper<derived>::rewrite, \
+    &::Psi::Compiler::TermWrapper<derived>::interface_search \
   }
 
     class Type : public Term {
