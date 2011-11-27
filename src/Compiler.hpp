@@ -626,7 +626,7 @@ namespace Psi {
         PSI_ASSERT(self.m_function);
         boost::scoped_ptr<FunctionType> function_copy(self.m_function);
         self.m_function = NULL;
-        return function_copy->evaluate(self.compile_context(), self.location());
+        return function_copy->evaluate(tree_from_base<TreeType>(&self));
       }
 
       template<typename Visitor>
@@ -979,20 +979,21 @@ namespace Psi {
   }
 
     class Interface : public Tree {
+      unsigned m_n_parameters;
+      /// \brief If the target of this interface is a compile-time type, this value gives the type of tree we're looking for.
+      TreeVtable *m_compile_time_type;
+      /// \brief If the target of this interface is a run-time value, this gives the type of that value.
+      TreePtr<Term> m_run_time_type;
+
     public:
       static const TreeVtable vtable;
       Interface(CompileContext&, const SourceLocation&);
-
-      /// \brief If the target of this interface is a compile-time type, this value gives the type of tree we're looking for.
-      TreeVtable *compile_time_type;
-      /// \brief If the target of this interface is a run-time value, this gives the type of that value.
-      TreePtr<Term> run_time_type;
 
       template<typename Visitor>
       static void visit_impl(Interface& self, Visitor& visitor) {
 	      Tree::visit_impl(self, visitor);
 	      visitor
-	        ("run_time_type", self.run_time_type);
+	        ("run_time_type", self.m_run_time_type);
       }
     };
 

@@ -22,7 +22,7 @@ namespace Psi {
     }
 
     TreeCallback::TreeCallback(CompileContext& compile_context, const SourceLocation& location)
-    : TreeBase(compile_context, location) {
+    : TreeBase(compile_context, location), m_state(state_ready) {
     }
 
     Term::Term(const TreePtr<Term>& type, const SourceLocation& location)
@@ -243,6 +243,7 @@ namespace Psi {
 
     TreePtr<Term> Function::get_type(const TreePtr<Term>& result_type,
                                      const PSI_STD::vector<TreePtr<FunctionArgument> >& arguments) {
+      return default_;
     }
 
     template<typename Visitor> void Function::visit_impl(Function& self, Visitor& visitor) {

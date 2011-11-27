@@ -679,8 +679,8 @@ namespace Psi {
         visitor("evaluate_context", m_evaluate_context);
       }
 
-      TreePtr<Statement> evaluate(CompileContext&, const SourceLocation& location) {
-        return TreePtr<Statement>(new Statement(compile_expression(m_expression, m_evaluate_context, location.logical), location));
+      TreePtr<Statement> evaluate(const TreePtr<Statement>& self) {
+        return TreePtr<Statement>(new Statement(compile_expression(m_expression, m_evaluate_context, self->location().logical), self->location()));
       }
     };
     
@@ -738,13 +738,13 @@ namespace Psi {
         const Parser::NamedExpression& named_expr = *ii.current();
         if (named_expr.expression.get()) {
           String expr_name;
-	        LogicalSourceLocationPtr logical_location;
-	        if (named_expr.name) {
-	          expr_name = String(named_expr.name->begin, named_expr.name->end);
-	          logical_location = location.logical->named_child(expr_name);
-	        } else {
-	          logical_location = location.logical->new_anonymous_child();
-	        }
+          LogicalSourceLocationPtr logical_location;
+          if (named_expr.name) {
+            expr_name = String(named_expr.name->begin, named_expr.name->end);
+            logical_location = location.logical->named_child(expr_name);
+          } else {
+            logical_location = location.logical->new_anonymous_child();
+          }
           SourceLocation statement_location(named_expr.location.location, logical_location);
           last_statement = tree_callback<Statement>(compile_context, statement_location, StatementListEntry(named_expr.expression, context_tree));
           entries.push_back(last_statement);
