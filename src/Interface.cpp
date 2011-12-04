@@ -26,11 +26,10 @@ namespace Psi {
       }
 
       template<typename Visitor>
-      static void visit_impl(NamedMemberMacro& self, Visitor& visitor) {
-        Macro::visit_impl(self, visitor);
-        visitor
-        ("evaluate", self.m_evaluate)
-        ("members", self.m_members);
+      static void visit_impl(Visitor& v) {
+        visit_base<Macro>(v);
+        v("evaluate", &NamedMemberMacro::m_evaluate)
+        ("members", &NamedMemberMacro::m_members);
       }
       
       static TreePtr<Term> evaluate_impl(NamedMemberMacro& self,

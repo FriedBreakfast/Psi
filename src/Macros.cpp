@@ -43,8 +43,8 @@ namespace Psi {
       }
 
       template<typename Visitor>
-      void visit(Visitor& visitor) {
-        visitor("macro", m_macro);
+      static void visit(Visitor& v) {
+        v("macro", &PureMacroConstructor::m_macro);
       }
 
       TreePtr<Term> evaluate(const TreePtr<Term>& self) {

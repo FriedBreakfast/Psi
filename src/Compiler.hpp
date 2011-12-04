@@ -17,6 +17,7 @@
 #include "CppCompiler.hpp"
 #include "GarbageCollection.hpp"
 #include "Runtime.hpp"
+#include "Visitor.hpp"
 #include "Utility.hpp"
 
 namespace Psi {
@@ -299,7 +300,7 @@ namespace Psi {
       ~TreeBase();
 
       template<typename Visitor>
-      static void visit_impl(TreeBase& self PSI_ATTRIBUTE((PSI_UNUSED)), Visitor& visitor PSI_ATTRIBUTE((PSI_UNUSED))) {}
+      static void visit(Visitor& visitor PSI_ATTRIBUTE((PSI_UNUSED))) {}
     };
 
     /// \brief Get the compile context for this Tree, without evaluating the Tree.
@@ -312,81 +313,94 @@ namespace Psi {
      * implementations.
      */
     template<typename Derived>
-    class VisitorBase {
+    class TreeVisitorBase {
       Derived& derived() {
-      	return *static_cast<Derived*>(this);
+        return *static_cast<Derived*>(this);
       }
 
     public:
+      /// Simple types cannot hold references, so we aren't interested in them.
       template<typename T>
-      void visit_collection (T& collection) {
-	      for (typename T::iterator ii = collection.begin(), ie = collection.end(); ii != ie; ++ii)
-	        operator () (NULL, *ii);
+      void visit_simple(const char*, const boost::array<T*, 1>&) {
       }
-
+      
       template<typename T>
-      Derived& operator () (const char*, PSI_STD::vector<T>& obj) {
-	      derived().visit_collection(obj);
-	      return derived();
+      void visit_object(const char*, const boost::array<T*,1>& obj) {
+        visit_members(*this, obj);
       }
 
-      template<typename T, typename U>
-      Derived& operator () (const char*, PSI_STD::map<T, U>& obj) {
-	      derived().visit_collection(obj);
-	      return derived();
+      /// Simple pointers are assumed to be owned by this object
+      template<typename T>
+      void visit_object(const char*, const boost::array<T**,1>& obj) {
+        if (obj[0]) {
+          boost::array<T*, 1> star = {{*obj[0]}};
+          visit_object(NULL, star);
+        }
       }
 
-      template<typename T, typename U>
-      Derived& operator () (const char*, PSI_STD::pair<T, U>& obj) {
-	      operator () (NULL, obj.first);
-	      operator () (NULL, obj.second);
-	      return derived();
+      /// Shared pointers cannot reference trees (this would break the GC), so they are ignored.
+      template<typename T>
+      void visit_object(const char*, const boost::array<SharedPtr<T>*,1>&) {
       }
-
-      Derived& operator () (const char*, String&) {return derived();}
-      Derived& operator () (const char*, const String&) {return derived();}
-      template<typename T> Derived& operator () (const char*, const SharedPtr<T>&) {return derived();}
-      Derived& operator () (const char*, unsigned) {return derived();}
 
       template<typename T>
-      Derived& operator () (const char*, TreePtr<T>& ptr) {
-	      derived().visit_tree_ptr(ptr);
-	      return derived();
+      void visit_object(const char*, const boost::array<TreePtr<T>*, 1>& ptr) {
+        derived().visit_tree_ptr(*ptr[0]);
+      }
+      
+      template<typename T>
+      void visit_sequence (const char*, const boost::array<T*,1>& collections) {
+        for (typename T::iterator ii = collections[0]->begin(), ie = collections[0]->end(); ii != ie; ++ii) {
+          boost::array<typename T::value_type*, 1> m = {{&*ii}};
+          visit_object(NULL, m);
+        }
+      }
+
+      template<typename T>
+      void visit_map(const char*, const boost::array<T*,1>& maps) {
+        for (typename T::iterator ii = maps[0]->begin(), ie = maps[0]->end(); ii != ie; ++ii) {
+#if 0
+          boost::array<const typename T::key_type*, 1> k = {{&ii->first}};
+          visit_object(NULL, k);
+#endif
+          boost::array<typename T::mapped_type*, 1> v = {{&ii->second}};
+          visit_object(NULL, v);
+        }
       }
     };
 
     /**
      * \brief Implements the increment phase of the garbage collector.
      */
-    class GCVisitorIncrement : public VisitorBase<GCVisitorIncrement> {
+    class GCVisitorIncrement : public TreeVisitorBase<GCVisitorIncrement> {
     public:
       template<typename T>
       void visit_tree_ptr(TreePtr<T>& ptr) {
-	      if (ptr)
-	        ++ptr.raw_get()->m_reference_count;
+        if (ptr)
+          ++ptr.raw_get()->m_reference_count;
       }
     };
 
     /**
      * \brief Implements the increment phase of the garbage collector.
      */
-    class GCVisitorDecrement : public VisitorBase<GCVisitorDecrement> {
+    class GCVisitorDecrement : public TreeVisitorBase<GCVisitorDecrement> {
     public:
       template<typename T>
       void visit_tree_ptr(TreePtr<T>& ptr) {
-	      if (ptr)
-	        --ptr.raw_get()->m_reference_count;
+        if (ptr)
+          --ptr.raw_get()->m_reference_count;
       }
     };
 
     /**
      * \brief Implements the increment phase of the garbage collector.
      */
-    class GCVisitorClear : public VisitorBase<GCVisitorClear> {
+    class GCVisitorClear : public TreeVisitorBase<GCVisitorClear> {
     public:
       template<typename T>
-      void visit_collection(T& collection) {
-        collection.clear();
+      void visit_sequence(const char*, const boost::array<T*,1>& seq) {
+        seq[0]->clear();
       }
 
       template<typename T>
@@ -402,18 +416,21 @@ namespace Psi {
       }
 
       static void gc_increment(TreeBase *self) {
+        boost::array<Derived*, 1> a = {{static_cast<Derived*>(self)}};
         GCVisitorIncrement p;
-        Derived::visit_impl(*static_cast<Derived*>(self), p);
+        visit_members(p, a);
       }
 
       static void gc_decrement(TreeBase *self) {
+        boost::array<Derived*, 1> a = {{static_cast<Derived*>(self)}};
         GCVisitorDecrement p;
-        Derived::visit_impl(*static_cast<Derived*>(self), p);
+        visit_members(p, a);
       }
 
       static void gc_clear(TreeBase *self) {
+        boost::array<Derived*, 1> a = {{static_cast<Derived*>(self)}};
         GCVisitorClear p;
-        Derived::visit_impl(*static_cast<Derived*>(self), p);
+        visit_members(p, a);
       }
     };
 
@@ -488,7 +505,7 @@ namespace Psi {
     /**
      * \brief Recursively completes a tree.
      */
-    class CompleteVisitor : public VisitorBase<CompleteVisitor> {
+    class CompleteVisitor : public TreeVisitorBase<CompleteVisitor> {
     public:
       template<typename T>
       void visit_tree_ptr(TreePtr<T>& ptr) {
@@ -500,8 +517,9 @@ namespace Psi {
     template<typename Derived>
     struct TreeWrapper : NonConstructible {
       static void complete(Tree *self) {
+        boost::array<Derived*, 1> a = {{static_cast<Derived*>(self)}};
         CompleteVisitor p;
-        Derived::visit_impl(*static_cast<Derived*>(self), p);
+        visit_members(p, a);
       }
     };
 
@@ -559,9 +577,9 @@ namespace Psi {
 
       TreeCallback(CompileContext&, const SourceLocation&);
 
-      template<typename Visitor> static void visit_impl(TreeCallback& self, Visitor& visitor) {
-        TreeBase::visit_impl(self, visitor);
-        visitor("value", self.m_value);
+      template<typename Visitor> static void visit(Visitor& v) {
+        visit_base<TreeBase>(v);
+        v("value", &TreeCallback::m_value);
       }
     };
 
@@ -630,10 +648,9 @@ namespace Psi {
       }
 
       template<typename Visitor>
-      static void visit_impl(TreeCallbackImpl& self, Visitor& visitor) {
-        TreeCallback::visit_impl(self, visitor);
-        if (self.m_function)
-          self.m_function->visit(visitor);
+      static void visit(Visitor& v) {
+        visit_base<TreeCallback>(v);
+        v("function", &TreeCallbackImpl::m_function);
       }
     };
 
@@ -654,7 +671,6 @@ namespace Psi {
     struct TermVtable {
       TreeVtable base;
       PsiBool (*match) (Term*,Term*,const void*,void*,unsigned);
-      TreeBase* (*rewrite) (Term*,const SourceLocation*, const void*,void*);
       TreeBase* (*interface_search) (Tree*, Interface*, const void*, void*);
     };
 
@@ -665,7 +681,6 @@ namespace Psi {
 
       TreePtr<Term> m_type;
 
-      TreePtr<Term> rewrite(const SourceLocation&, const Map<TreePtr<Term>, TreePtr<Term> >&);
       bool match(const TreePtr<Term>&, const List<TreePtr<Term> >&, unsigned);
 
     public:
@@ -682,7 +697,6 @@ namespace Psi {
       public:
         /// \brief Get the type of this tree
         TreePtr<Term> type() const {return get()->m_type;}
-        TreePtr<Term> rewrite(const SourceLocation& location, const Map<TreePtr<Term>, TreePtr<Term> >& substitutions) const {return get()->rewrite(location, substitutions);}
         bool match(const TreePtr<Term>& value, const List<TreePtr<Term> >& wildcards, unsigned depth=0) const {return get()->match(value, wildcards, depth);}
 
         TreePtr<> interface_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) const {
@@ -691,25 +705,19 @@ namespace Psi {
         }
       };
 
-      template<typename Visitor> static void visit_impl(Term& self, Visitor& visitor) {
-        Tree::visit_impl(self, visitor);
-        visitor("type", self.m_type);
+      template<typename Visitor> static void visit(Visitor& v) {
+        visit_base<Tree>(v);
+        v("type", &Term::m_type);
       }
 
       static TreePtr<> interface_search_impl(Term& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
       static bool match_impl(Term&, Term&, const List<TreePtr<Term> >&, unsigned);
-      static TreePtr<Term> rewrite_impl(Term&, const SourceLocation&, const Map<TreePtr<Term>, TreePtr<Term> >&);
     };
 
     template<typename Derived>
     struct TermWrapper : NonConstructible {
       static PsiBool match(Term *left, Term *right, const void *wildcards_vtable, void *wildcards_obj, unsigned depth) {
         return Derived::match_impl(*static_cast<Derived*>(left), *static_cast<Derived*>(right), List<TreePtr<Term> >(wildcards_vtable, wildcards_obj), depth);
-      }
-
-      static TreeBase* rewrite(Term *self, const SourceLocation *location, const void *substitutions_vtable, void *substitutions_obj) {
-        TreePtr<Term> result = Derived::rewrite_impl(*static_cast<Derived*>(self), *location, Map<TreePtr<Term>, TreePtr<Term> >(substitutions_vtable, substitutions_obj));
-        return result.release();
       }
 
       static TreeBase* interface_search(Tree *self, Interface *interface, const void *parameters_vtable, void *parameters_object) {
@@ -721,7 +729,6 @@ namespace Psi {
 #define PSI_COMPILER_TERM(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
     &::Psi::Compiler::TermWrapper<derived>::match, \
-    &::Psi::Compiler::TermWrapper<derived>::rewrite, \
     &::Psi::Compiler::TermWrapper<derived>::interface_search \
   }
 
@@ -990,10 +997,9 @@ namespace Psi {
       Interface(CompileContext&, const SourceLocation&);
 
       template<typename Visitor>
-      static void visit_impl(Interface& self, Visitor& visitor) {
-	      Tree::visit_impl(self, visitor);
-	      visitor
-	        ("run_time_type", self.m_run_time_type);
+      static void visit(Visitor& v) {
+        visit_base<Tree>(v);
+        v("run_time_type", &Interface::m_run_time_type);
       }
     };
 

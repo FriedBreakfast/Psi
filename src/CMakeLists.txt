@@ -96,6 +96,7 @@ add_library(psi-compiler SHARED
   Tree.cpp Tree.hpp
   TreePattern.hpp
   Utility.cpp Utility.hpp
+  Visitor.hpp
   ${PSI_COMPILER_SOURCES}
 )
 

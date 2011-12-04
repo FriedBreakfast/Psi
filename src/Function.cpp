@@ -36,12 +36,11 @@ namespace Psi {
       }
 
       template<typename Visitor>
-      static void visit_impl(EvaluateContextOneName& self, Visitor& visitor) {
-	      EvaluateContext::visit_impl(self, visitor);
-        visitor
-          ("name", self.m_name)
-          ("value", self.m_value)
-          ("next", self.m_next);
+      static void visit_impl(Visitor& v) {
+        visit_base<EvaluateContext>(v);
+        v("name", &EvaluateContextOneName::m_name)
+        ("value", &EvaluateContextOneName::m_value)
+        ("next", &EvaluateContextOneName::m_next);
       }
 
       static LookupResult<TreePtr<Term> > lookup_impl(EvaluateContextOneName& self, const String& name) {
@@ -69,10 +68,9 @@ namespace Psi {
       }
 
       template<typename Visitor>
-      void visit(Visitor& visitor) {
-        visitor
-        ("body_context", m_body_context)
-        ("body", m_body);
+      static void visit(Visitor& v) {
+        v("body_context", &FunctionBodyCompiler::m_body_context)
+        ("body", &FunctionBodyCompiler::m_body);
       }
 
       TreePtr<Term> evaluate(const TreePtr<Term>& self) {
@@ -89,7 +87,7 @@ namespace Psi {
     struct PatternArgument {
       /// \brief Whether any data is actually passed for this argument.
       PsiBool ghost;
-      TreePtr<FunctionTypeArgument> value;
+      TreePtr<Anonymous> value;
     };
 
     /**
@@ -213,7 +211,7 @@ namespace Psi {
       Parser::ArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(arguments);
 
       FunctionInfo result;
-      PSI_STD::vector<TreePtr<FunctionTypeArgument> > type_arguments;
+      PSI_STD::vector<TreePtr<Anonymous> > type_arguments;
 
       TreePtr<EvaluateContext> argument_context = evaluate_context;
       for (std::vector<SharedPtr<Parser::NamedExpression> >::const_iterator ii = parsed_arguments.arguments.begin(), ib = parsed_arguments.arguments.begin(), ie = parsed_arguments.arguments.end(); ii != ie; ++ii) {
@@ -240,11 +238,11 @@ namespace Psi {
         }
 
         for (PSI_STD::vector<InterfaceArgument>::iterator ii = passing_info.interface_arguments.begin(), ie = passing_info.interface_arguments.end(); ii != ie; ++ii) {
-          TreePtr<FunctionTypeArgument> arg(new FunctionTypeArgument(ii->type, argument_location));
+          TreePtr<Anonymous> arg(new Anonymous(ii->type, argument_location));
           type_arguments.push_back(arg);
         }
         
-        TreePtr<FunctionTypeArgument> argument(new FunctionTypeArgument(passing_info.type, argument_location));
+        TreePtr<Anonymous> argument(new Anonymous(passing_info.type, argument_location));
         type_arguments.push_back(argument);
 
         FunctionArgumentInfo argument_info;
@@ -318,11 +316,11 @@ namespace Psi {
       FunctionInfo common = compile_function_common(parameters->text, compile_context, evaluate_context, location);
 
       PSI_STD::map<TreePtr<Term>, TreePtr<Term> > argument_substitutions;
-      PSI_STD::vector<TreePtr<FunctionArgument> > argument_trees;
+      PSI_STD::vector<TreePtr<Anonymous> > argument_trees;
 
-      for (PSI_STD::vector<TreePtr<FunctionTypeArgument> >::const_iterator ii = common.type->arguments().begin(), ie = common.type->arguments().end(); ii != ie; ++ii) {
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = common.type->argument_types().begin(), ie = common.type->argument_types().end(); ii != ie; ++ii) {
         TreePtr<Term> arg_type = (*ii)->type()->rewrite((*ii)->location(), Map<TreePtr<Term>, TreePtr<Term> >(argument_substitutions));
-        TreePtr<FunctionArgument> arg(new FunctionArgument(arg_type, (*ii)->location()));
+        TreePtr<Anonymous> arg(new Anonymous(arg_type, (*ii)->location()));
         argument_substitutions[*ii] = arg;
         argument_trees.push_back(arg);
       }

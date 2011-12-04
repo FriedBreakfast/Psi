@@ -466,8 +466,7 @@ namespace Psi {
       if (base != ptr)
         error_throw(location, "Internal error: address used to retrieve symbol did not match symbol base");
 
-      TreePtr<ExternalGlobal> result(new ExternalGlobal(type, location));
-      result.get()->symbol = name;
+      TreePtr<ExternalGlobal> result(new ExternalGlobal(type, name, location));
       result.get()->m_jit_ptr = base;
       return result;
     }
@@ -675,8 +674,8 @@ namespace Psi {
       }
       
       template<typename Visitor>
-      void visit(Visitor& visitor) {
-        visitor("evaluate_context", m_evaluate_context);
+      static void visit(Visitor& v) {
+        v("evaluate_context", &StatementListEntry::m_evaluate_context);
       }
 
       TreePtr<Statement> evaluate(const TreePtr<Statement>& self) {
@@ -703,11 +702,10 @@ namespace Psi {
       }
 
       template<typename Visitor>
-      static void visit_impl(StatementListContext& self, Visitor& visitor) {
-        EvaluateContext::visit_impl(self, visitor);
-        visitor
-          ("next", self.m_next)
-          ("entries", self.entries);
+      static void visit(Visitor& v) {
+        visit_base<EvaluateContext>(v);
+        v("next", &StatementListContext::m_next)
+        ("entries", &StatementListContext::entries);
       }
 
       static LookupResult<TreePtr<Term> > lookup_impl(const StatementListContext& self, const String& name) {
