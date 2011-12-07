@@ -238,7 +238,7 @@ namespace Psi {
         }
 
         for (PSI_STD::vector<InterfaceArgument>::iterator ii = passing_info.interface_arguments.begin(), ie = passing_info.interface_arguments.end(); ii != ie; ++ii) {
-          TreePtr<Anonymous> arg(new Anonymous(ii->type, argument_location));
+          TreePtr<Anonymous> arg(new Anonymous(ii->type->parameterize(argument_location, type_arguments), argument_location));
           type_arguments.push_back(arg);
         }
         

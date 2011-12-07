@@ -35,23 +35,6 @@ namespace Psi {
     }
 
     /**
-     * \brief Rewrite a term, substituting new trees for existing ones.
-     *
-     * \param location Location to use for error reporting.
-     * \param substitutions Substitutions to make.
-     */
-    TreePtr<Term> Term::rewrite(const SourceLocation& location, const Map<TreePtr<Term>, TreePtr<Term> >& substitutions) {
-      if (!this)
-        return TreePtr<Term>();
-
-      TreePtr<Term> *replacement = substitutions.get(TreePtr<Term>(this));
-      if (replacement)
-        return *replacement;
-      else
-        return tree_from_base<Term>(derived_vptr(this)->rewrite(this, &location, substitutions.vptr(), substitutions.object()), false);
-    }
-
-    /**
      * \brief Check whether this term, which is a pattern, matches a given value.
      *
      * \param value Tree to match to.
@@ -135,11 +118,23 @@ namespace Psi {
       PSI_COMPILER_TREE_INIT();
     }
 
-    FunctionType::FunctionType(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location)
-    : Type(result_type->compile_context(), location),
-    m_result_type(result_type),
-    m_argument_types(arguments) {
+    FunctionType::FunctionType(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Anonymous> >& arguments, const SourceLocation& location)
+    : Type(result_type->compile_context(), location) {
       PSI_COMPILER_TREE_INIT();
+
+      /*
+       * I haven't written a method to slice a list yet and since I want an error should the arguments forward
+       * reference, I copy the argument list so I can have a "short" version.
+       */
+      PSI_STD::vector<TreePtr<Anonymous> > arguments_copy;
+      arguments_copy.reserve(arguments.size());
+      m_argument_types.reserve(arguments.size());
+      for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
+        m_argument_types.push_back((*ii)->type()->parameterize(location, list_from_stl(arguments_copy)));
+        arguments_copy.push_back(*ii);
+      }
+
+      m_result_type = result_type->parameterize(location, list_from_stl(arguments_copy));
     }
 
     template<typename Key, typename Value>
@@ -172,56 +167,34 @@ namespace Psi {
     TreePtr<Term> FunctionType::argument_type_after(const SourceLocation& location, const List<TreePtr<Term> >& previous) {
       if (previous.size() >= m_argument_types.size())
         compile_context().error_throw(location, "Too many arguments passed to function");
-      
-      PSI_STD::map<TreePtr<Term>, TreePtr<Term> > substitutions;
-      for (unsigned ii = 0, ie = previous.size(); ii != ie; ++ii)
-        substitutions[m_argument_types[ii]] = previous[ii];
 
-      TreePtr<> type = m_argument_types[previous.size()]->type()->rewrite(location, substitutions);
-      TreePtr<Type> cast_type = dyn_treeptr_cast<Type>(type);
-      if (!cast_type)
+      TreePtr<Term> type = m_argument_types[previous.size()]->type()->specialize(location, previous);
+      if (!type->is_type())
         compile_context().error_throw(location, "Rewritten function argument type is not a type");
 
-      return cast_type;
+      return type;
     }
     
     TreePtr<Term> FunctionType::result_type_after(const SourceLocation& location, const List<TreePtr<Term> >& previous) {
       if (previous.size() != m_argument_types.size())
         compile_context().error_throw(location, "Incorrect number of arguments passed to function");
 
-      PSI_STD::map<TreePtr<Term>, TreePtr<Term> > substitutions;
-      for (unsigned ii = 0, ie = previous.size(); ii != ie; ++ii)
-        substitutions[m_argument_types[ii]] = previous[ii];
-
-      TreePtr<> type = m_result_type->rewrite(location, substitutions);
-      TreePtr<Type> cast_type = dyn_treeptr_cast<Type>(type);
-      if (!cast_type)
+      TreePtr<Term> type = m_result_type->specialize(location, previous);
+      if (!type->is_type())
         compile_context().error_throw(location, "Rewritten function result type is not a type");
 
-      return cast_type;
+      return type;
     }
 
     Function::Function(const TreePtr<Term>& result_type,
                        const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
                        const TreePtr<Term>& body,
                        const SourceLocation& location)
-    : Term(get_type(result_type, arguments, location), location),
+    : Term(TreePtr<Term>(new FunctionType(result_type, arguments, location)), location),
     m_arguments(arguments),
     m_result_type(result_type),
     m_body(body) {
       PSI_COMPILER_TREE_INIT();
-    }
-
-    TreePtr<Term> Function::get_type(const TreePtr<Term>& result_type,
-                                     const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
-                                     const SourceLocation& location) {
-      PSI_STD::vector<TreePtr<Anonymous> > type_arguments;
-      for(PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii)
-        type_arguments.push_back(new Anonymous((*ii)->type()->parameterize(type_arguments), (*ii)->location()));
-
-      TreePtr<Term> my_result_type = result_type->parameterize(type_arguments);
-      
-      return TreePtr<Term>(new FunctionType(my_result_type, type_arguments, location));
     }
 
     template<typename Visitor> void Function::visit(Visitor& v) {

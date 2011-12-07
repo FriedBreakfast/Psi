@@ -665,6 +665,7 @@ namespace Psi {
       return tree_from_base<T>(new TreeCallbackImpl<TreeCallbackImplArgs<T, Callback> >(compile_context, location, callback));
     }
 
+    class Anonymous;
     class Term;
     class Interface;
 
@@ -698,6 +699,12 @@ namespace Psi {
         /// \brief Get the type of this tree
         TreePtr<Term> type() const {return get()->m_type;}
         bool match(const TreePtr<Term>& value, const List<TreePtr<Term> >& wildcards, unsigned depth=0) const {return get()->match(value, wildcards, depth);}
+        bool is_type() const;
+
+        /// \brief Replace anonymous terms in the list by parameters
+        TreePtr<Term> parameterize(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth=0) const;
+        /// \brief Replace parameter terms in this tree by given values
+        TreePtr<Term> specialize(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth=0) const;
 
         TreePtr<> interface_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) const {
           Term *self = get();
@@ -732,6 +739,14 @@ namespace Psi {
     &::Psi::Compiler::TermWrapper<derived>::interface_search \
   }
 
+    /**
+     * \brief Base class for most types.
+     *
+     * Note that since types can be parameterized, a term not deriving from Type does
+     * not mean that it is not a type, since type parameters are treated the same as
+     * regular parameters. Use Term::PtrHook::is_type to determine whether a term is
+     * a type or not.
+     */
     class Type : public Term {
     public:
       static const SIVtable vtable;
@@ -739,6 +754,19 @@ namespace Psi {
     };
 
 #define PSI_COMPILER_TYPE(derived,name,super) PSI_COMPILER_TERM(derived,name,super)
+
+    /**
+     * \brief Type of types.
+     */
+    class Metatype : public Term {
+      friend class CompileContext;
+      Metatype(CompileContext&, const SourceLocation&);
+    public:
+      static const TermVtable vtable;
+    };
+
+    /// \brief Is this a type?
+    inline bool Term::PtrHook::is_type() const {return !type() || dyn_tree_cast<Metatype>(type().get());}
 
     class Global;
     class Interface;

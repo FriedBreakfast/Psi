@@ -22,6 +22,9 @@ namespace Psi {
     };
     
     class Parameter : public Term {
+      /// For Term::match
+      friend class Term;
+
       /// Parameter depth (number of enclosing parameter scopes between this parameter and its own scope).
       unsigned m_depth;
       /// Index of this parameter in its scope.
@@ -199,16 +202,6 @@ namespace Psi {
     };
 
     /**
-     * \brief Type of types.
-     */
-    class Metatype : public Term {
-      friend class CompileContext;
-      Metatype(CompileContext&, const SourceLocation&);
-    public:
-      static const TermVtable vtable;
-    };
-
-    /**
      * \brief Empty type.
      *
      * Unions and structures with no members can be replaced by this type.
@@ -262,7 +255,7 @@ namespace Psi {
     public:
       static const TermVtable vtable;
 
-      FunctionType(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      FunctionType(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Anonymous> >& arguments, const SourceLocation& location);
 
       TreePtr<Term> argument_type_after(const SourceLocation& location, const List<TreePtr<Term> >& arguments);
       TreePtr<Term> result_type_after(const SourceLocation& location, const List<TreePtr<Term> >& arguments);
@@ -288,10 +281,6 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Anonymous> > m_arguments;
       TreePtr<Term> m_result_type;
       TreePtr<Term> m_body;
-
-      static TreePtr<Term> get_type(const TreePtr<Term>& result_type,
-                                    const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
-                                    const SourceLocation& location);
 
     public:
       static const TermVtable vtable;
