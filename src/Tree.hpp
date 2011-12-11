@@ -301,6 +301,9 @@ namespace Psi {
       template<typename Visitor> static void visit(Visitor& v);
     };
 
+    /**
+     * \brief Try-finally.
+     */
     class TryFinally : public Term {
       TreePtr<Term> m_try_expr, m_finally_expr;
       
@@ -309,6 +312,26 @@ namespace Psi {
 
       TryFinally(const TreePtr<Term>& try_expr, const TreePtr<Term>& finally_expr, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
+    };
+
+    /**
+     * \brief Function invocation expression.
+     */
+    class FunctionCall : public Term {
+      TreePtr<Term> m_target;
+      PSI_STD::vector<TreePtr<Term> > m_arguments;
+
+    public:
+      static const TermVtable vtable;
+
+      FunctionCall(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments);
+
+      class PtrHook : public Term::PtrHook {
+        FunctionCall* get() const {return ptr_as<FunctionCall>();}
+      public:
+        const TreePtr<Term>& target() const {return get()->m_target;}
+        const PSI_STD::vector<TreePtr<Term> >& arguments() const {return get()->m_arguments;}
+      };
     };
   }
 }

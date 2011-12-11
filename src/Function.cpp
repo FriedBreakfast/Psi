@@ -4,6 +4,7 @@
 #include "Tree.hpp"
 #include "Utility.hpp"
 
+#include <deque>
 #include <boost/bind.hpp>
 #include <boost/format.hpp>
 
@@ -140,12 +141,30 @@ namespace Psi {
 
     const SIVtable ArgumentPassingInfoCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ArgumentPassingInfoCallback", Tree);
 
-    struct ArgumentHandlerVtable {
-      TreeVtable base;
-      void (*argument_default) (ArgumentHandler*);
-      void (*argument_handler) (ArgumentHandler*);
+    /**
+     * \brief Used to pass previous argument information to later arguments in case they use it for processing.
+     */
+    struct ArgumentAssignment {
+      /// \brief The term which represented this value during argument construction.
+      TreePtr<Anonymous> argument;
+      /**
+       * \brief The replacement value.
+       *
+       * Note that due to the generic type system, the type of this value may not
+       * be the same as the type of \c argument.
+       */
+      TreePtr<Term> value;
     };
 
+    struct ArgumentHandlerVtable {
+      TreeVtable base;
+      void (*argument_default) (PSI_STD::vector<TreePtr<Term> >*, ArgumentHandler*, const void*, void*);
+      void (*argument_handler) (PSI_STD::vector<TreePtr<Term> >*, ArgumentHandler*, const void*, void*, const Parser::Expression*);
+    };
+
+    /**
+     * \brief Argument handler term interface.
+     */
     class ArgumentHandler : public Tree {
     public:
       typedef ArgumentHandlerVtable VtableType;
@@ -153,14 +172,18 @@ namespace Psi {
       
       class PtrHook : public Tree::PtrHook {
       public:
-        void argument_default() const {
+        PSI_STD::vector<TreePtr<Term> > argument_default(const List<ArgumentAssignment>& previous) const {
+          ResultStorage<PSI_STD::vector<TreePtr<Term> > > result;
           ArgumentHandler *self = ptr_as<ArgumentHandler>();
-          return derived_vptr(self)->argument_default(self);
+          derived_vptr(self)->argument_default(result.ptr(), self, previous.vptr(), previous.object());
+          return result.done();
         }
 
-        void argument_handler() const {
+        PSI_STD::vector<TreePtr<Term> > argument_handler(const List<ArgumentAssignment>& previous, const Parser::Expression& expr) const {
+          ResultStorage<PSI_STD::vector<TreePtr<Term> > > result;
           ArgumentHandler *self = ptr_as<ArgumentHandler>();
-          return derived_vptr(self)->argument_handler(self);
+          derived_vptr(self)->argument_handler(result.ptr(), self, previous.vptr(), previous.object(), &expr);
+          return result.done();
         }
       };
     };
@@ -256,12 +279,95 @@ namespace Psi {
 
     /**
      * \brief Compile a function invocation.
+     *
+     * Argument evaluation order is currently "undefined" (basically determined by the callee,
+     * but for now the exact semantics are not going to be guaranteed).
      */
     TreePtr<Term> compile_function_invocation(const FunctionInfo& info, const TreePtr<Term>& function,
                                               const List<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location) {
-      PSI_FAIL("not implemented");
+      CompileContext& compile_context = evaluate_context->compile_context();
+
+      if (arguments.size() != 1)
+        compile_context.error_throw(location, boost::format("function incovation expects one macro arguments, got %s") % arguments.size());
+
+      SharedPtr<Parser::TokenExpression> parameters;
+      if (!(parameters = expression_as_token_type(arguments[0], Parser::TokenExpression::bracket)))
+        compile_context.error_throw(location, "Parameters argument to function invocation is not a (...)");
+
+      std::map<String, SharedPtr<Parser::Expression> > named_arguments;
+      std::deque<SharedPtr<Parser::Expression> > positional_arguments;
+      
+      PSI_STD::vector<SharedPtr<Parser::NamedExpression> > parsed_arguments = Parser::parse_argument_list(parameters->text);
+      for (PSI_STD::vector<SharedPtr<Parser::NamedExpression> >::const_iterator ii = parsed_arguments.begin(), ie = parsed_arguments.end(); ii != ie; ++ii) {
+        const Parser::NamedExpression& named_expr = **ii;
+        if (named_expr.name)
+          named_arguments[String(named_expr.name->begin, named_expr.name->end)] = named_expr.expression;
+        else
+          positional_arguments.push_back(named_expr.expression);
+      }
+
+      PSI_STD::vector<ArgumentAssignment> previous_arguments;
+      PSI_STD::vector<TreePtr<Term> > compiled_arguments;
+      for (PSI_STD::vector<ArgumentPassingInfo>::const_iterator ii = info.passing_info.begin(), ie = info.passing_info.end(); ii != ie; ++ii) {
+        SharedPtr<Parser::Expression> argument_expr;
+        switch (ii->category) {
+          case ArgumentPassingInfo::category_positional:
+            argument_expr = positional_arguments.front();
+            positional_arguments.pop_front();
+            break;
+            
+          case ArgumentPassingInfo::category_keyword: {
+            std::map<String, SharedPtr<Parser::Expression> >::iterator ji = named_arguments.find(ii->keyword);
+            if (ji != named_arguments.end()) {
+              argument_expr = ji->second;
+              named_arguments.erase(ji);
+            }
+            break;
+          }
+            
+          case ArgumentPassingInfo::category_automatic:
+            // Default argument never gets a value
+            break;
+        }
+
+        PSI_STD::vector<TreePtr<Term> > current_arguments;
+        if (argument_expr)
+          current_arguments = ii->handler->argument_handler(list_from_stl(previous_arguments), *argument_expr);
+        else
+          current_arguments = ii->handler->argument_default(list_from_stl(previous_arguments));
+
+        if (current_arguments.size() != ii->extra_arguments.size() + 1)
+          compile_context.error_throw(location, "User argument processing has produced the wrong number of low level arguments.");
+
+        // Append generated arguments to low level arguments.
+        compiled_arguments.insert(compiled_arguments.end(), current_arguments.begin(), current_arguments.end());
+
+        // Append generated arguments to previous argument list.
+        for (std::size_t ji = 0, je = ii->extra_arguments.size(); ji != je; ++ji) {
+          ArgumentAssignment aa = {ii->extra_arguments[ji], current_arguments[ji]};
+          previous_arguments.push_back(aa);
+        }
+
+        ArgumentAssignment aa_last = {ii->argument, current_arguments.back()};
+        previous_arguments.push_back(aa_last);
+      }
+
+      // Check all specified arguments have been used
+      if (!positional_arguments.empty())
+        compile_context.error_throw(location, "Too many positional arguments specified");
+
+      if (!named_arguments.empty()) {
+        CompileError err(compile_context, location);
+        err.info("Unexpected keyword arguments to function");
+        for (std::map<String, SharedPtr<Parser::Expression> >::iterator ii = named_arguments.begin(), ie = named_arguments.end(); ii != ie; ++ii)
+          err.info(location.relocate(ii->second->location.location), boost::format("Unexpected keyword: %s") % ii->first);
+        err.end();
+        throw CompileException();
+      }
+
+      return TreePtr<Term>(new FunctionCall(function, compiled_arguments));
     }
 
     class FunctionInvokeCallback : public MacroEvaluateCallback {
