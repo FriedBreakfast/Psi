@@ -44,7 +44,7 @@ namespace Psi {
         ("next", &EvaluateContextOneName::m_next);
       }
 
-      static LookupResult<TreePtr<Term> > lookup_impl(EvaluateContextOneName& self, const String& name) {
+      static LookupResult<TreePtr<Term> > lookup_impl(const EvaluateContextOneName& self, const String& name) {
         if (name == self.m_name) {
           return lookup_result_match(self.m_value);
         } else if (self.m_next) {
@@ -75,8 +75,8 @@ namespace Psi {
       }
 
       TreePtr<Term> evaluate(const TreePtr<Term>& self) {
-        std::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(m_body->text);
-        return compile_statement_list(list_from_stl(statements), m_body_context, self->location());
+        PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(m_body->text);
+        return compile_statement_list(statements, m_body_context, self.location());
       }
     };
 
@@ -120,7 +120,7 @@ namespace Psi {
     class ArgumentPassingInfoCallback;
     
     struct ArgumentPassingInfoCallbackVtable {
-      void (*argument_passing_info) (ArgumentPassingInfo*, ArgumentPassingInfoCallback*);
+      void (*argument_passing_info) (ArgumentPassingInfo*, const ArgumentPassingInfoCallback*);
     };
 
     class ArgumentPassingInfoCallback : public Tree {
@@ -128,15 +128,11 @@ namespace Psi {
       typedef ArgumentPassingInfoCallbackVtable VtableType;
       static const SIVtable vtable;
       
-      class PtrHook : public Tree::PtrHook {
-      public:
-        ArgumentPassingInfo argument_passing_info() const {
-          ResultStorage<ArgumentPassingInfo> result;
-          ArgumentPassingInfoCallback *self = ptr_as<ArgumentPassingInfoCallback>();
-          derived_vptr(self)->argument_passing_info(result.ptr(), self);
-          return result.done();
-        }
-      };
+      ArgumentPassingInfo argument_passing_info() const {
+        ResultStorage<ArgumentPassingInfo> result;
+        derived_vptr(this)->argument_passing_info(result.ptr(), this);
+        return result.done();
+      }
     };
 
     const SIVtable ArgumentPassingInfoCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ArgumentPassingInfoCallback", Tree);
@@ -158,8 +154,8 @@ namespace Psi {
 
     struct ArgumentHandlerVtable {
       TreeVtable base;
-      void (*argument_default) (PSI_STD::vector<TreePtr<Term> >*, ArgumentHandler*, const void*, void*);
-      void (*argument_handler) (PSI_STD::vector<TreePtr<Term> >*, ArgumentHandler*, const void*, void*, const Parser::Expression*);
+      void (*argument_default) (PSI_STD::vector<TreePtr<Term> >*, const ArgumentHandler*, const void*, void*);
+      void (*argument_handler) (PSI_STD::vector<TreePtr<Term> >*, const ArgumentHandler*, const void*, void*, const Parser::Expression*);
     };
 
     /**
@@ -170,22 +166,17 @@ namespace Psi {
       typedef ArgumentHandlerVtable VtableType;
       static const SIVtable vtable;
       
-      class PtrHook : public Tree::PtrHook {
-      public:
-        PSI_STD::vector<TreePtr<Term> > argument_default(const List<ArgumentAssignment>& previous) const {
-          ResultStorage<PSI_STD::vector<TreePtr<Term> > > result;
-          ArgumentHandler *self = ptr_as<ArgumentHandler>();
-          derived_vptr(self)->argument_default(result.ptr(), self, previous.vptr(), previous.object());
-          return result.done();
-        }
+      PSI_STD::vector<TreePtr<Term> > argument_default(const List<ArgumentAssignment>& previous) const {
+        ResultStorage<PSI_STD::vector<TreePtr<Term> > > result;
+        derived_vptr(this)->argument_default(result.ptr(), this, previous.vptr(), previous.object());
+        return result.done();
+      }
 
-        PSI_STD::vector<TreePtr<Term> > argument_handler(const List<ArgumentAssignment>& previous, const Parser::Expression& expr) const {
-          ResultStorage<PSI_STD::vector<TreePtr<Term> > > result;
-          ArgumentHandler *self = ptr_as<ArgumentHandler>();
-          derived_vptr(self)->argument_handler(result.ptr(), self, previous.vptr(), previous.object(), &expr);
-          return result.done();
-        }
-      };
+      PSI_STD::vector<TreePtr<Term> > argument_handler(const List<ArgumentAssignment>& previous, const Parser::Expression& expr) const {
+        ResultStorage<PSI_STD::vector<TreePtr<Term> > > result;
+        derived_vptr(this)->argument_handler(result.ptr(), this, previous.vptr(), previous.object(), &expr);
+        return result.done();
+      }
     };
 
     const SIVtable ArgumentHandler::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ArgumentHandler", Tree);
@@ -287,7 +278,7 @@ namespace Psi {
                                               const List<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location) {
-      CompileContext& compile_context = evaluate_context->compile_context();
+      CompileContext& compile_context = evaluate_context.compile_context();
 
       if (arguments.size() != 1)
         compile_context.error_throw(location, boost::format("function incovation expects one macro arguments, got %s") % arguments.size());
@@ -378,13 +369,13 @@ namespace Psi {
       static const MacroEvaluateCallbackVtable vtable;
 
       FunctionInvokeCallback(const FunctionInfo& info, const TreePtr<Term>& func, const SourceLocation& location)
-      : MacroEvaluateCallback(func->compile_context(), location),
+      : MacroEvaluateCallback(func.compile_context(), location),
       m_info(info),
       m_func(func) {
         PSI_COMPILER_TREE_INIT();
       }
 
-      static TreePtr<Term> evaluate_impl(FunctionInvokeCallback& self,
+      static TreePtr<Term> evaluate_impl(const FunctionInvokeCallback& self,
                                          const TreePtr<Term>&,
                                          const List<SharedPtr<Parser::Expression> >& arguments,
                                          const TreePtr<EvaluateContext>& evaluate_context,
@@ -405,8 +396,8 @@ namespace Psi {
      */
     TreePtr<Term> function_invoke_macro(const FunctionInfo& info, const TreePtr<Term>& func, const SourceLocation& location) {
       TreePtr<MacroEvaluateCallback> callback(new FunctionInvokeCallback(info, func, location));
-      TreePtr<Macro> macro = make_macro(func->compile_context(), location, callback);
-      return make_macro_term(func->compile_context(), location, macro);
+      TreePtr<Macro> macro = make_macro(func.compile_context(), location, callback);
+      return make_macro_term(func.compile_context(), location, macro);
     }
 
     /**
@@ -415,7 +406,7 @@ namespace Psi {
     TreePtr<Term> compile_function_definition(const List<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location) {
-      CompileContext& compile_context = evaluate_context->compile_context();
+      CompileContext& compile_context = evaluate_context.compile_context();
 
       if (arguments.size() != 2)
         compile_context.error_throw(location, boost::format("function macro expects two arguments, got %s") % arguments.size());
@@ -461,7 +452,7 @@ namespace Psi {
         PSI_COMPILER_TREE_INIT();
       }
       
-      static TreePtr<Term> evaluate_impl(FunctionDefineCallback&,
+      static TreePtr<Term> evaluate_impl(const FunctionDefineCallback&,
                                          const TreePtr<Term>&,
                                          const List<SharedPtr<Parser::Expression> >& arguments,
                                          const TreePtr<EvaluateContext>& evaluate_context,

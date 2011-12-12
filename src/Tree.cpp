@@ -25,13 +25,13 @@ namespace Psi {
     : TreeBase(compile_context, location), m_state(state_ready) {
     }
 
-    Term::Term(const TreePtr<Term>& type, const SourceLocation& location)
-    : Tree(type->compile_context(), location),
-    m_type(type) {
+    Term::Term(const TreePtr<Term>& type_, const SourceLocation& location)
+    : Tree(type_.compile_context(), location),
+    type(type_) {
     }
 
     Term::Term(CompileContext& compile_context, const SourceLocation& location)
-      : Tree(compile_context, location) {
+    : Tree(compile_context, location) {
     }
 
     /**
@@ -41,32 +41,32 @@ namespace Psi {
      * \param wildcards Substitutions to be identified.
      * \param depth Number of parameter-enclosing terms above this match.
      */
-    bool Term::match(const TreePtr<Term>& value, const List<TreePtr<Term> >& wildcards, unsigned depth) {
+    bool Term::match(const TreePtr<Term>& value, const List<TreePtr<Term> >& wildcards, unsigned depth) const {
       if (this == value.get())
         return true;
       
       if (!this)
         return false;
 
-      if (Parameter *parameter = dyn_tree_cast<Parameter>(this)) {
-        if (parameter->m_depth == depth) {
+      if (const Parameter *parameter = dyn_tree_cast<Parameter>(this)) {
+        if (parameter->depth == depth) {
           // Check type also matches
-          if (!m_type->match(value->type(), wildcards, depth))
+          if (!type->match(value->type, wildcards, depth))
             return false;
 
-          TreePtr<Term>& wildcard = wildcards[parameter->m_index];
+          TreePtr<Term>& wildcard = wildcards[parameter->index];
           if (wildcard) {
             if (wildcard != value)
               PSI_FAIL("not implemented");
             return false;
           } else {
-            wildcards[parameter->m_index] = value;
+            wildcards[parameter->index] = value;
             return true;
           }
         }
       }
 
-      Term *value_term = value.get();
+      const Term *value_term = value.get();
       if (m_vptr == value_term->m_vptr) {
         // Trees are required to have the same static type to work with pattern matching.
         return derived_vptr(this)->match(this, value_term, wildcards.vptr(), wildcards.object(), depth);
@@ -75,16 +75,12 @@ namespace Psi {
       }
     }
 
-    TreePtr<> Term::interface_search_impl(Term& self,
+    TreePtr<> Term::interface_search_impl(const Term& self,
                                           const TreePtr<Interface>& interface,
                                           const List<TreePtr<Term> >& parameters) {
-      return self.m_type->interface_search(interface, parameters);
+      return self.type->interface_search(interface, parameters);
     }
 
-    bool Term::match_impl(Term& lhs, Term& rhs, const List<TreePtr<Term> >&, unsigned) {
-      return &lhs == &rhs;
-    }
-    
     Type::Type(CompileContext& compile_context, const SourceLocation& location)
       : Term(compile_context.metatype(), location) {
     }
@@ -98,18 +94,18 @@ namespace Psi {
       PSI_COMPILER_TREE_INIT();
     }
 
-    Parameter::Parameter(const TreePtr<Term>& type, unsigned depth, unsigned index, const SourceLocation& location)
+    Parameter::Parameter(const TreePtr<Term>& type, unsigned depth_, unsigned index_, const SourceLocation& location)
     : Term(type, location),
-    m_depth(depth),
-    m_index(index) {
+    depth(depth_),
+    index(index_) {
       PSI_COMPILER_TREE_INIT();
     }
 
     template<typename Visitor>
     void Parameter::visit(Visitor& v) {
       visit_base<Term>(v);
-      v("depth", &Parameter::m_depth)
-      ("index", &Parameter::m_index);
+      v("depth", &Parameter::depth)
+      ("index", &Parameter::index);
     }
 
     ExternalGlobal::ExternalGlobal(const TreePtr<Term>& type, const String& symbol, const SourceLocation& location)
@@ -118,8 +114,8 @@ namespace Psi {
       PSI_COMPILER_TREE_INIT();
     }
 
-    FunctionType::FunctionType(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Anonymous> >& arguments, const SourceLocation& location)
-    : Type(result_type->compile_context(), location) {
+    FunctionType::FunctionType(const TreePtr<Term>& result_type_, const PSI_STD::vector<TreePtr<Anonymous> >& arguments, const SourceLocation& location)
+    : Type(result_type_.compile_context(), location) {
       PSI_COMPILER_TREE_INIT();
 
       /*
@@ -128,13 +124,13 @@ namespace Psi {
        */
       PSI_STD::vector<TreePtr<Anonymous> > arguments_copy;
       arguments_copy.reserve(arguments.size());
-      m_argument_types.reserve(arguments.size());
+      argument_types.reserve(arguments.size());
       for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
-        m_argument_types.push_back((*ii)->type()->parameterize(location, list_from_stl(arguments_copy)));
+        argument_types.push_back((*ii)->type->parameterize(location, list_from_stl(arguments_copy)));
         arguments_copy.push_back(*ii);
       }
 
-      m_result_type = result_type->parameterize(location, list_from_stl(arguments_copy));
+      result_type = result_type_->parameterize(location, list_from_stl(arguments_copy));
     }
 
     template<typename Key, typename Value>
@@ -164,83 +160,83 @@ namespace Psi {
     template<typename Key, typename Value>
     const MapVtable ForwardMap<Key, Value>::vtable = PSI_MAP(ForwardMap, Key, Value);
 
-    TreePtr<Term> FunctionType::argument_type_after(const SourceLocation& location, const List<TreePtr<Term> >& previous) {
-      if (previous.size() >= m_argument_types.size())
+    TreePtr<Term> FunctionType::argument_type_after(const SourceLocation& location, const List<TreePtr<Term> >& previous) const {
+      if (previous.size() >= argument_types.size())
         compile_context().error_throw(location, "Too many arguments passed to function");
 
-      TreePtr<Term> type = m_argument_types[previous.size()]->type()->specialize(location, previous);
+      TreePtr<Term> type = argument_types[previous.size()]->type->specialize(location, previous);
       if (!type->is_type())
         compile_context().error_throw(location, "Rewritten function argument type is not a type");
 
       return type;
     }
     
-    TreePtr<Term> FunctionType::result_type_after(const SourceLocation& location, const List<TreePtr<Term> >& previous) {
-      if (previous.size() != m_argument_types.size())
+    TreePtr<Term> FunctionType::result_type_after(const SourceLocation& location, const List<TreePtr<Term> >& previous) const {
+      if (previous.size() != argument_types.size())
         compile_context().error_throw(location, "Incorrect number of arguments passed to function");
 
-      TreePtr<Term> type = m_result_type->specialize(location, previous);
+      TreePtr<Term> type = result_type->specialize(location, previous);
       if (!type->is_type())
         compile_context().error_throw(location, "Rewritten function result type is not a type");
 
       return type;
     }
 
-    Function::Function(const TreePtr<Term>& result_type,
-                       const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
-                       const TreePtr<Term>& body,
+    Function::Function(const TreePtr<Term>& result_type_,
+                       const PSI_STD::vector<TreePtr<Anonymous> >& arguments_,
+                       const TreePtr<Term>& body_,
                        const SourceLocation& location)
-    : Term(TreePtr<Term>(new FunctionType(result_type, arguments, location)), location),
-    m_arguments(arguments),
-    m_result_type(result_type),
-    m_body(body) {
+    : Term(TreePtr<Term>(new FunctionType(result_type_, arguments_, location)), location),
+    arguments(arguments_),
+    result_type(result_type_),
+    body(body_) {
       PSI_COMPILER_TREE_INIT();
     }
 
     template<typename Visitor> void Function::visit(Visitor& v) {
       visit_base<Term>(v);
-      v("arguments", &Function::m_arguments)
-      ("result_type", &Function::m_result_type)
-      ("body", &Function::m_body);
+      v("arguments", &Function::arguments)
+      ("result_type", &Function::result_type)
+      ("body", &Function::body);
     }
 
-    TryFinally::TryFinally(const TreePtr<Term>& try_expr, const TreePtr<Term>& finally_expr, const SourceLocation& location)
-    : Term(try_expr->type(), location),
-    m_try_expr(try_expr),
-    m_finally_expr(finally_expr) {
+    TryFinally::TryFinally(const TreePtr<Term>& try_expr_, const TreePtr<Term>& finally_expr_, const SourceLocation& location)
+    : Term(try_expr_->type, location),
+    try_expr(try_expr_),
+    finally_expr(finally_expr_) {
       PSI_COMPILER_TREE_INIT();
     }
 
     template<typename Visitor> void TryFinally::visit(Visitor& v) {
       visit_base<Term>(v);
-      v("try_expr", &TryFinally::m_try_expr)
-      ("finally_expr", &TryFinally::m_finally_expr);
+      v("try_expr", &TryFinally::try_expr)
+      ("finally_expr", &TryFinally::finally_expr);
     }
 
-    Statement::Statement(const TreePtr<Term>& value, const SourceLocation& location)
-    : Term(value->type(), location),
-    m_value(value) {
+    Statement::Statement(const TreePtr<Term>& value_, const SourceLocation& location)
+    : Term(value_->type, location),
+    value(value_) {
       PSI_COMPILER_TREE_INIT();
     }
 
     template<typename Visitor>
     void Statement::visit(Visitor& v) {
       visit_base<Term>(v);
-      v("value", &Statement::m_value);
+      v("value", &Statement::value);
     }
 
-    Block::Block(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value, const SourceLocation& location)
-    : Term(value->type(), location),
-    m_statements(statements),
-    m_value(value) {
+    Block::Block(const PSI_STD::vector<TreePtr<Statement> >& statements_, const TreePtr<Term>& value_, const SourceLocation& location)
+    : Term(value_->type, location),
+    statements(statements_),
+    value(value_) {
       PSI_COMPILER_TREE_INIT();
     }
 
     template<typename Visitor>
     void Block::visit(Visitor& v) {
       visit_base<Term>(v);
-      v("statements", &Block::m_statements)
-      ("result", &Block::m_value);
+      v("statements", &Block::statements)
+      ("result", &Block::value);
     }
 
     Interface::Interface(CompileContext& compile_context, const SourceLocation& location)
@@ -249,36 +245,36 @@ namespace Psi {
     }
 
     Implementation::Implementation(CompileContext& compile_context,
-                                   const TreePtr<>& value,
-                                   const TreePtr<Interface>& interface,
-                                   const PSI_STD::vector<TreePtr<Term> >& wildcard_types,
-                                   const PSI_STD::vector<TreePtr<Term> >& interface_parameters,
+                                   const TreePtr<>& value_,
+                                   const TreePtr<Interface>& interface_,
+                                   const PSI_STD::vector<TreePtr<Term> >& wildcard_types_,
+                                   const PSI_STD::vector<TreePtr<Term> >& interface_parameters_,
                                    const SourceLocation& location)
     : Tree(compile_context, location),
-    m_value(value),
-    m_interface(interface),
-    m_wildcard_types(wildcard_types),
-    m_interface_parameters(interface_parameters) {
+    value(value_),
+    interface(interface_),
+    wildcard_types(wildcard_types_),
+    interface_parameters(interface_parameters_) {
       PSI_COMPILER_TREE_INIT();
     }
 
     template<typename Visitor>
     void Implementation::visit(Visitor& v) {
       visit_base<Tree>(v);
-      v("value", &Implementation::m_value)
-      ("interface", &Implementation::m_interface)
-      ("wildcard_types", &Implementation::m_wildcard_types)
-      ("interface_parameters", &Implementation::m_interface_parameters);
+      v("value", &Implementation::value)
+      ("interface", &Implementation::interface)
+      ("wildcard_types", &Implementation::wildcard_types)
+      ("interface_parameters", &Implementation::interface_parameters);
     }
 
-    bool Implementation::matches(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
-      if (interface != m_interface)
+    bool Implementation::matches(const TreePtr<Interface>& interface_, const List<TreePtr<Term> >& parameters) const {
+      if (interface != interface_)
         return false;
       
-      PSI_ASSERT(m_interface_parameters.size() == parameters.size());
-      PSI_STD::vector<TreePtr<Term> > wildcards(m_wildcard_types.size());
-      for (std::size_t ji = 0, je = m_interface_parameters.size(); ji != je; ++ji) {
-        if (!m_interface_parameters[ji]->match(parameters[ji], list_from_stl(wildcards)))
+      PSI_ASSERT(interface_parameters.size() == parameters.size());
+      PSI_STD::vector<TreePtr<Term> > wildcards(wildcard_types.size());
+      for (std::size_t ji = 0, je = interface_parameters.size(); ji != je; ++ji) {
+        if (!interface_parameters[ji]->match(parameters[ji], list_from_stl(wildcards)))
           return false;
       }
 
@@ -304,51 +300,51 @@ namespace Psi {
       PSI_COMPILER_TREE_INIT();
     }
 
-    GenericType::GenericType(const TreePtr<Term>& member,
-                             const PSI_STD::vector<TreePtr<Parameter> >& parameters,
-                             const PSI_STD::vector<TreePtr<Implementation> >& implementations,
+    GenericType::GenericType(const TreePtr<Term>& member_,
+                             const PSI_STD::vector<TreePtr<Parameter> >& parameters_,
+                             const PSI_STD::vector<TreePtr<Implementation> >& implementations_,
                              const SourceLocation& location)
-    : Tree(member->compile_context(), location),
-    m_member(member),
-    m_parameters(parameters),
-    m_implementations(implementations) {
+    : Tree(member_.compile_context(), location),
+    member(member_),
+    parameters(parameters_),
+    implementations(implementations_) {
       PSI_COMPILER_TREE_INIT();
     }
 
     template<typename Visitor>
     void GenericType::visit(Visitor& v) {
       visit_base<Tree>(v);
-      v("parameters", &GenericType::m_parameters)
-      ("member", &GenericType::m_member)
-      ("implementations", &GenericType::m_implementations);
+      v("parameters", &GenericType::parameters)
+      ("member", &GenericType::member)
+      ("implementations", &GenericType::implementations);
     }
     
-    TypeInstance::TypeInstance(const TreePtr<GenericType>& generic_type,
-                               const PSI_STD::vector<TreePtr<Term> >& parameter_values,
+    TypeInstance::TypeInstance(const TreePtr<GenericType>& generic_type_,
+                               const PSI_STD::vector<TreePtr<Term> >& parameter_values_,
                                const SourceLocation& location)
-    : Term(generic_type->compile_context().metatype(), location),
-    m_generic_type(generic_type),
-    m_parameter_values(parameter_values) {
+    : Term(generic_type.compile_context().metatype(), location),
+    generic_type(generic_type_),
+    parameter_values(parameter_values_) {
       PSI_COMPILER_TREE_INIT();
     }
 
     template<typename Visitor>
     void TypeInstance::visit(Visitor& v) {
       visit_base<Term>(v);
-      v("generic_type", &TypeInstance::m_generic_type)
-      ("parameter_values", &TypeInstance::m_parameter_values);
+      v("generic_type", &TypeInstance::generic_type)
+      ("parameter_values", &TypeInstance::parameter_values);
     }
     
-    TreePtr<> TypeInstance::interface_search_impl(TypeInstance& self,
+    TreePtr<> TypeInstance::interface_search_impl(const TypeInstance& self,
                                                   const TreePtr<Interface>& interface,
                                                   const List<TreePtr<Term> >& parameters) {
-      const PSI_STD::vector<TreePtr<Implementation> >& implementations = self.m_generic_type->implementations();
-	    for (PSI_STD::vector<TreePtr<Implementation> >::const_iterator ii = implementations.begin(), ie = implementations.end(); ii != ie; ++ii) {
+      const PSI_STD::vector<TreePtr<Implementation> >& implementations = self.generic_type->implementations;
+      for (PSI_STD::vector<TreePtr<Implementation> >::const_iterator ii = implementations.begin(), ie = implementations.end(); ii != ie; ++ii) {
         if ((*ii)->matches(interface, parameters))
-          return (*ii)->value();
+          return (*ii)->value;
       }
 
-      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.m_parameter_values.begin(), ie = self.m_parameter_values.end(); ii != ie; ++ii) {
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.parameter_values.begin(), ie = self.parameter_values.end(); ii != ie; ++ii) {
         if (TreePtr<> result = (*ii)->interface_search(interface, parameters))
           return result;        
       }

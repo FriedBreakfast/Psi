@@ -58,12 +58,31 @@ namespace Psi {
 
   template<typename V, std::size_t N>
   void visit_callback(V& callback, const char *name, const boost::array<unsigned*,N>& values) {callback.visit_simple(name, values);}
+  template<typename V, std::size_t N>
+  void visit_callback(V& callback, const char *name, const boost::array<const unsigned*,N>& values) {callback.visit_simple(name, values);}
 
   template<typename V, typename T, typename A, std::size_t N>
   void visit_callback(V& callback, const char *name, const boost::array<PSI_STD::vector<T,A>*,N>& values) {callback.visit_sequence(name, values);}
+  template<typename V, typename T, typename A, std::size_t N>
+  void visit_callback(V& callback, const char *name, const boost::array<const PSI_STD::vector<T,A>*,N>& values) {callback.visit_sequence(name, values);}
 
   template<typename V, typename K, typename O, typename C, typename A, std::size_t N>
   void visit_callback(V& callback, const char *name, const boost::array<PSI_STD::map<K, O, C, A>*,N>& values) {callback.visit_map(name, values);}
+  template<typename V, typename K, typename O, typename C, typename A, std::size_t N>
+  void visit_callback(V& callback, const char *name, const boost::array<const PSI_STD::map<K, O, C, A>*,N>& values) {callback.visit_map(name, values);}
+
+  /**
+   * If A is const, gives const B, else gives B.
+   */
+  template<typename A, typename B>
+  struct CopyConst {
+    typedef B type;
+  };
+
+  template<typename A, typename B>
+  struct CopyConst<const A, B> {
+    typedef const B type;
+  };
 
   template<typename ObjectType, typename Callback, std::size_t N>
   class ObjectVisitor {
@@ -77,21 +96,10 @@ namespace Psi {
     ObjectVisitor(Callback *callback, ObjectType *const* objects)
     : m_objects(objects), m_callback(callback) {
     }
-
-#if 0
-    template<typename BaseType>
-    ThisType& base() {
-      boost::array<BaseType*, arity> bases;
-      for (std::size_t ii = 0; ii != arity; ++ii)
-        bases[ii] = m_objects[ii];
-      ObjectVisitor<BaseType, Callback, N> ov(m_callback, &bases[0]);
-      visit(ov, VisitorTag<BaseType>());
-    }
-#endif
     
     template<typename Base, typename U>
     ThisType& operator () (const char *name, U Base::* member) {
-      boost::array<U*, arity> values;
+      boost::array<typename CopyConst<ObjectType, U>::type*, arity> values;
       for (std::size_t ii = 0; ii != arity; ++ii)
         values[ii] = &(m_objects[ii]->*member);
       visit_callback(*m_callback, name, values);

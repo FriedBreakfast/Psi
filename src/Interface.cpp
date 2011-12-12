@@ -32,7 +32,7 @@ namespace Psi {
         ("members", &NamedMemberMacro::m_members);
       }
       
-      static TreePtr<Term> evaluate_impl(NamedMemberMacro& self,
+      static TreePtr<Term> evaluate_impl(const NamedMemberMacro& self,
                                          const TreePtr<Term>& value,
                                          const List<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
@@ -44,7 +44,7 @@ namespace Psi {
         }
       }
 
-      static TreePtr<Term> dot_impl(NamedMemberMacro& self,
+      static TreePtr<Term> dot_impl(const NamedMemberMacro& self,
                                     const TreePtr<Term>& value,
                                     const SharedPtr<Parser::Expression>& parameter,
                                     const TreePtr<EvaluateContext>& evaluate_context,

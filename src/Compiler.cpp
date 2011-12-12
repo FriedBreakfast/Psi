@@ -14,13 +14,13 @@
 
 namespace Psi {
   namespace Compiler {
-    void TreeBasePtrHook::hook_update_chain(TreeBase *ptr) const {
-      const TreeBasePtrHook *hook = this;
+    void TreePtrBase::update_chain(const TreeBase *ptr) const {
+      const TreePtrBase *hook = this;
       TreeCallback *ptr_cb = NULL;
       while (hook->m_ptr != ptr) {
         PSI_ASSERT(derived_vptr(hook->m_ptr)->is_callback);
-        TreeCallback *next_ptr_cb = static_cast<TreeCallback*>(hook->m_ptr);
-        TreeBasePtrHook *next_hook = &next_ptr_cb->m_value.m_hook;
+        TreeCallback *next_ptr_cb = static_cast<TreeCallback*>(const_cast<TreeBase*>(hook->m_ptr));
+        TreePtrBase *next_hook = &next_ptr_cb->m_value;
 
         ++ptr->m_reference_count;
         hook->m_ptr = ptr;
@@ -38,14 +38,14 @@ namespace Psi {
     /**
      * Evaluate a lazily evaluated Tree (recursively if necessary) and return the final result.
      */
-    Tree* TreeBasePtrHook::hook_evaluate_helper() const {
+    const Tree* TreePtrBase::get_helper() const {
       PSI_ASSERT(m_ptr);
 
       /*
        * Evaluate chain of hooks until either a NULL is found or a non-callback
        * value is reached.
        */
-      const TreeBasePtrHook *hook = this;
+      const TreePtrBase *hook = this;
       while (true) {
         if (!hook->m_ptr)
           break;
@@ -54,20 +54,20 @@ namespace Psi {
         if (!vtable->is_callback)
           break;
 
-        TreeCallback *ptr_cb = static_cast<TreeCallback*>(hook->m_ptr);
-        hook = &ptr_cb->m_value.m_hook;
+        TreeCallback *ptr_cb = static_cast<TreeCallback*>(const_cast<TreeBase*>(hook->m_ptr));
+        hook = &ptr_cb->m_value;
 
         switch (ptr_cb->m_state) {
         case TreeCallback::state_ready: {
           const TreeCallbackVtable *vtable_cb = reinterpret_cast<const TreeCallbackVtable*>(vtable);
           RunningTreeCallback running(ptr_cb);
           ptr_cb->m_state = TreeCallback::state_running;
-          TreeBase *eval_ptr;
+          const TreeBase *eval_ptr;
           try {
             eval_ptr = vtable_cb->evaluate(ptr_cb);
           } catch (...) {
             ptr_cb->m_state = TreeCallback::state_failed;
-            hook_update_chain(ptr_cb);
+            update_chain(ptr_cb);
             throw;
           }
           PSI_ASSERT(!hook->m_ptr);
@@ -77,7 +77,7 @@ namespace Psi {
         }
 
         case TreeCallback::state_running:
-          hook_update_chain(ptr_cb);
+          update_chain(ptr_cb);
           RunningTreeCallback::throw_circular_dependency(ptr_cb);
           PSI_UNREACHABLE();
 
@@ -85,15 +85,15 @@ namespace Psi {
           break;
 
         case TreeCallback::state_failed:
-          hook_update_chain(ptr_cb);
+          update_chain(ptr_cb);
           throw CompileException();
         }
       }
 
-      hook_update_chain(hook->m_ptr);
+      update_chain(hook->m_ptr);
 
       PSI_ASSERT(!m_ptr || !derived_vptr(m_ptr)->is_callback);
-      return static_cast<Tree*>(m_ptr);
+      return static_cast<const Tree*>(m_ptr);
     }
     
     bool LogicalSourceLocation::Key::operator < (const Key& other) const {
@@ -280,7 +280,7 @@ namespace Psi {
     }
 #endif
 
-    bool si_is_a(SIBase *object, const SIVtable *cls) {
+    bool si_is_a(const SIBase *object, const SIVtable *cls) {
       for (const SIVtable *super = object->m_vptr; super; super = super->super) {
         if (super == cls)
           return true;
@@ -302,7 +302,7 @@ namespace Psi {
 	      else
 	        ss << ", ";
         TreePtr<Term>& current = p.current();
-	      ss << '\'' << current->location().logical->error_name(location.logical) << '\'';
+	      ss << '\'' << current.location().logical->error_name(location.logical) << '\'';
       }
 
       return ss.str();
@@ -314,20 +314,20 @@ namespace Psi {
      * \param parameters Parameters the interfacce was searched on.
      */
     void interface_cast_check(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const TreePtr<>& result, const SourceLocation& location, const TreeVtable* cast_type) {
-      CompileContext& compile_context = interface->compile_context();
+      CompileContext& compile_context = interface.compile_context();
 
       if (!result)
         compile_context.error_throw(location,
-				    boost::format("'%s' interface not available for %s")
-				    % interface->location().logical->error_name(location.logical)
-				    % interface_parameters_message(parameters, location));
+                                    boost::format("'%s' interface not available for %s")
+                                    % interface.location().logical->error_name(location.logical)
+                                    % interface_parameters_message(parameters, location));
 
       if (!si_is_a(result.get(), &cast_type->base.base))
         compile_context.error_throw(location,
-				    boost::format("'%s' interface has the wrong type")
-				    % interface->location().logical->error_name(location.logical)
-				    % interface_parameters_message(parameters, location),
-				    CompileError::error_internal);
+                                    boost::format("'%s' interface has the wrong type")
+                                    % interface.location().logical->error_name(location.logical)
+                                    % interface_parameters_message(parameters, location),
+                                    CompileError::error_internal);
     }
 
     /**
@@ -404,10 +404,10 @@ namespace Psi {
 
     struct CompileContext::TreeBaseDisposer {
       void operator () (TreeBase *t) {
-	      if (!--t->m_reference_count)
+        if (!--t->m_reference_count)
           derived_vptr(t)->destroy(t);
-	      else
-	        PSI_WARNING_FAIL("Dangling pointers to Tree during context destruction");
+        else
+          PSI_WARNING_FAIL("Dangling pointers to Tree during context destruction");
       }
     };
 
@@ -443,13 +443,13 @@ namespace Psi {
      * \brief JIT compile a global symbol.
      */
     void* CompileContext::jit_compile(const TreePtr<Global>& global) {
-      Global *global_ptr = global.get();
+      const Global *global_ptr = global.get();
       
-      if (!global_ptr->m_jit_ptr) {
+      if (!global_ptr->jit_ptr) {
         PSI_FAIL("not implemented");
       }
 
-      return global_ptr->m_jit_ptr;
+      return global_ptr->jit_ptr;
     }
 
     /**
@@ -467,7 +467,7 @@ namespace Psi {
         error_throw(location, "Internal error: address used to retrieve symbol did not match symbol base");
 
       TreePtr<ExternalGlobal> result(new ExternalGlobal(type, name, location));
-      result.get()->m_jit_ptr = base;
+      result->jit_ptr = base;
       return result;
     }
 
@@ -500,34 +500,34 @@ namespace Psi {
     }
     
     class EvaluateContextDictionary : public EvaluateContext {
-      typedef PSI_STD::map<String, TreePtr<Term> > NameMapType;
-      NameMapType m_entries;
-      TreePtr<EvaluateContext> m_next;
-
     public:
       static const EvaluateContextVtable vtable;
 
+      typedef PSI_STD::map<String, TreePtr<Term> > NameMapType;
+
       EvaluateContextDictionary(CompileContext& compile_context,
                                 const SourceLocation& location,
-                                const std::map<String, TreePtr<Term> >& entries,
-                                const TreePtr<EvaluateContext>& next)
-      : EvaluateContext(compile_context, location), m_entries(entries), m_next(next) {
+                                const NameMapType& entries_,
+                                const TreePtr<EvaluateContext>& next_)
+      : EvaluateContext(compile_context, location), entries(entries_), next(next_) {
         PSI_COMPILER_TREE_INIT();
       }
 
+      NameMapType entries;
+      TreePtr<EvaluateContext> next;
+
       template<typename Visitor>
-      static void visit_impl(EvaluateContextDictionary& self, Visitor& visitor) {
-        visitor
-        ("entries", self.m_entries)
-        ("next", self.m_next);
+      static void visit(Visitor& visitor) {
+        visitor("entries", &EvaluateContextDictionary::entries)
+        ("next", &EvaluateContextDictionary::next);
       }
 
-      static LookupResult<TreePtr<Term> > lookup_impl(EvaluateContextDictionary& self, const String& name) {
-        NameMapType::const_iterator it = self.m_entries.find(name);
-        if (it != self.m_entries.end()) {
+      static LookupResult<TreePtr<Term> > lookup_impl(const EvaluateContextDictionary& self, const String& name) {
+        NameMapType::const_iterator it = self.entries.find(name);
+        if (it != self.entries.end()) {
           return lookup_result_match(it->second);
-        } else if (self.m_next) {
-          return self.m_next->lookup(name);
+        } else if (self.next) {
+          return self.next->lookup(name);
         } else {
           return lookup_result_none;
         }
@@ -571,7 +571,7 @@ namespace Psi {
     };
 
     TreePtr<Macro> expression_macro(const TreePtr<Term>& expr, const SourceLocation& location) {
-      return interface_lookup_as<Macro>(expr->compile_context().macro_interface(), expr, location);
+      return interface_lookup_as<Macro>(expr.compile_context().macro_interface(), expr, location);
     }
     
     /**
@@ -585,7 +585,7 @@ namespace Psi {
                                      const TreePtr<EvaluateContext>& evaluate_context,
                                      const LogicalSourceLocationPtr& source) {
 
-      CompileContext& compile_context = evaluate_context->compile_context();
+      CompileContext& compile_context = evaluate_context.compile_context();
       SourceLocation location(expression->location.location, source);
 
       switch (expression->expression_type) {
@@ -679,41 +679,64 @@ namespace Psi {
       }
 
       TreePtr<Statement> evaluate(const TreePtr<Statement>& self) {
-        return TreePtr<Statement>(new Statement(compile_expression(m_expression, m_evaluate_context, self->location().logical), self->location()));
+        return TreePtr<Statement>(new Statement(compile_expression(m_expression, m_evaluate_context, self.location().logical), self.location()));
       }
     };
     
-    class StatementListContext : public EvaluateContext {
+    class StatementListTree : public Tree {
     public:
+      static const TreeVtable vtable;
+
       typedef std::map<String, TreePtr<Term> > NameMapType;
+
+      StatementListTree(const TreePtr<Block>& block_, const NameMapType& entries_)
+      : Tree(block_.compile_context(), block_.location()),
+      block(block_),
+      entries(entries_) {
+      }
+
+      TreePtr<Block> block;
       NameMapType entries;
 
-    private:
-      TreePtr<EvaluateContext> m_next;
+      template<typename Visitor>
+      static void visit(Visitor& v) {
+        v("block", &StatementListTree::block)
+        ("entries", &StatementListTree::entries);
+      }
+    };
+    
+    const TreeVtable StatementListTree::vtable = PSI_COMPILER_TREE(StatementListTree, "psi.compiler.StatementListTree", Tree);
 
+    class StatementListContext : public EvaluateContext {
     public:
       static const EvaluateContextVtable vtable;
+
+      typedef std::map<String, TreePtr<Term> > NameMapType;
       
-      StatementListContext(CompileContext& compile_context,
-                           const SourceLocation& location,
-                           const TreePtr<EvaluateContext>& next)
-      : EvaluateContext(compile_context, location), m_next(next) {
+      StatementListContext(const TreePtr<StatementListTree>& statement_list_,
+                           const TreePtr<EvaluateContext>& next_)
+      : EvaluateContext(statement_list_.compile_context(), statement_list_.location()),
+      statement_list(statement_list_),
+      next(next_) {
         PSI_COMPILER_TREE_INIT();
       }
+
+      TreePtr<StatementListTree> statement_list;
+      TreePtr<EvaluateContext> next;
 
       template<typename Visitor>
       static void visit(Visitor& v) {
         visit_base<EvaluateContext>(v);
-        v("next", &StatementListContext::m_next)
-        ("entries", &StatementListContext::entries);
+        v("statement_list", &StatementListContext::statement_list)
+        ("next", &StatementListContext::next);
       }
 
       static LookupResult<TreePtr<Term> > lookup_impl(const StatementListContext& self, const String& name) {
-        StatementListContext::NameMapType::const_iterator it = self.entries.find(name);
-        if (it != self.entries.end()) {
+        StatementListContext::NameMapType::const_iterator it = self.statement_list->entries.find(name);
+        if (it != self.statement_list->entries.end()) {
           return lookup_result_match(it->second);
-        } else if (self.m_next) {
-          return self.m_next->lookup(name);
+        } else if (self.next) {
+          return self.next->lookup(name);
         } else {
           return lookup_result_none;
         }
@@ -722,58 +745,80 @@ namespace Psi {
 
     const EvaluateContextVtable StatementListContext::vtable = PSI_COMPILER_EVALUATE_CONTEXT(StatementListContext, "psi.compiler.StatementListContext", EvaluateContext);
 
-    TreePtr<Block> compile_statement_list(const List<SharedPtr<Parser::NamedExpression> >& statements,
+    class StatementListCompiler {
+      PSI_STD::vector<SharedPtr<Parser::NamedExpression> > m_statements;
+      TreePtr<EvaluateContext> m_evaluate_context;
+
+    public:
+      StatementListCompiler(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
+                            const TreePtr<EvaluateContext>& evaluate_context)
+      : m_statements(statements), m_evaluate_context(evaluate_context) {
+      }
+      
+      template<typename Visitor>
+      static void visit(Visitor& v) {
+        v("statements", &StatementListCompiler::m_statements)
+        ("evaluate_context", &StatementListCompiler::m_evaluate_context);
+      }
+
+      TreePtr<StatementListTree> evaluate(const TreePtr<StatementListTree>& self) {
+        CompileContext& compile_context = self.compile_context();
+        TreePtr<StatementListContext> context_tree(new StatementListContext(self, m_evaluate_context));
+        TreePtr<Statement> last_statement;
+        PSI_STD::vector<TreePtr<Statement> > entries;
+        StatementListTree::NameMapType named_entries;
+
+        for (PSI_STD::vector<SharedPtr<Parser::NamedExpression> >::iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii) {
+          const Parser::NamedExpression& named_expr = **ii;
+          if (named_expr.expression.get()) {
+            String expr_name;
+            LogicalSourceLocationPtr logical_location;
+            if (named_expr.name) {
+              expr_name = String(named_expr.name->begin, named_expr.name->end);
+              logical_location = self.location().logical->named_child(expr_name);
+            } else {
+              logical_location = self.location().logical->new_anonymous_child();
+            }
+            SourceLocation statement_location(named_expr.location.location, logical_location);
+            last_statement = tree_callback<Statement>(compile_context, statement_location, StatementListEntry(named_expr.expression, context_tree));
+            entries.push_back(last_statement);
+
+            if (named_expr.name)
+              named_entries[expr_name] = last_statement;
+          } else {
+            last_statement.reset();
+          }
+        }
+
+        TreePtr<Term> block_value;
+        if (last_statement) {
+          block_value = last_statement;
+        } else {
+          LookupResult<TreePtr<Term> > none = m_evaluate_context->lookup("__none__");
+          switch (none.type()) {
+          case lookup_result_type_none:
+            compile_context.error_throw(self.location(), "'__none__' missing");
+          case lookup_result_type_conflict:
+            compile_context.error_throw(self.location(), "'__none__' has multiple definitions");
+          default: break;
+          }
+
+          if (!none.value())
+            compile_context.error_throw(self.location(), "'__none__' returned a NULL tree", CompileError::error_internal);
+
+          block_value = none.value();
+        }
+
+        TreePtr<Block> block(new Block(entries, block_value, self.location()));
+
+        return TreePtr<StatementListTree>(new StatementListTree(block, named_entries));
+      }
+    };
+
+    TreePtr<Block> compile_statement_list(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
                                           const TreePtr<EvaluateContext>& evaluate_context,
                                           const SourceLocation& location) {
-      CompileContext& compile_context = evaluate_context->compile_context();
-      TreePtr<StatementListContext> context_tree(new StatementListContext(compile_context, location, evaluate_context));
-      TreePtr<Statement> last_statement;
-      PSI_STD::vector<TreePtr<Statement> > entries;
-
-      StatementListContext::NameMapType& named_entries = context_tree.get()->entries;
-
-      for (LocalIterator<SharedPtr<Parser::NamedExpression> > ii(statements); ii.next();) {
-        const Parser::NamedExpression& named_expr = *ii.current();
-        if (named_expr.expression.get()) {
-          String expr_name;
-          LogicalSourceLocationPtr logical_location;
-          if (named_expr.name) {
-            expr_name = String(named_expr.name->begin, named_expr.name->end);
-            logical_location = location.logical->named_child(expr_name);
-          } else {
-            logical_location = location.logical->new_anonymous_child();
-          }
-          SourceLocation statement_location(named_expr.location.location, logical_location);
-          last_statement = tree_callback<Statement>(compile_context, statement_location, StatementListEntry(named_expr.expression, context_tree));
-          entries.push_back(last_statement);
-          
-          if (named_expr.name)
-            named_entries[expr_name] = last_statement;
-        } else {
-          last_statement.reset();
-        }
-      }
-
-      TreePtr<Term> block_value;
-      if (last_statement) {
-        block_value = last_statement;
-      } else {
-        LookupResult<TreePtr<Term> > none = evaluate_context->lookup("__none__");
-        switch (none.type()) {
-        case lookup_result_type_none:
-          compile_context.error_throw(location, "'__none__' missing");
-        case lookup_result_type_conflict:
-          compile_context.error_throw(location, "'__none__' has multiple definitions");
-        default: break;
-        }
-
-        if (!none.value())
-          compile_context.error_throw(location, "'__none__' returned a NULL tree", CompileError::error_internal);
-
-        block_value = none.value();
-      }
-
-      return TreePtr<Block>(new Block(entries, block_value, location));
+      return tree_callback<StatementListTree>(evaluate_context.compile_context(), location, StatementListCompiler(statements, evaluate_context))->block;
     }
   }
 }

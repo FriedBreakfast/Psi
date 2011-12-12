@@ -20,12 +20,12 @@ namespace Psi {
         PSI_COMPILER_TREE_INIT();
       }
 
-      static TreePtr<> interface_search_impl(PureMacroTerm& self,
+      static TreePtr<> interface_search_impl(const PureMacroTerm& self,
                                              const TreePtr<Interface>& interface,
                                              const List<TreePtr<Term> >& parameters) {
         for (PSI_STD::vector<TreePtr<Implementation> >::const_iterator ii = self.m_implementations.begin(), ie = self.m_implementations.end(); ii != ie; ++ii) {
           if ((*ii)->matches(interface, parameters))
-            return (*ii)->value();
+            return (*ii)->value;
         }
 
         return default_;
@@ -48,11 +48,11 @@ namespace Psi {
       }
 
       TreePtr<Term> evaluate(const TreePtr<Term>& self) {
-        CompileContext& compile_context = self->compile_context();
+        CompileContext& compile_context = self.compile_context();
         TreePtr<Implementation> impl(new Implementation(compile_context, m_macro, compile_context.macro_interface(),
-                                                        default_, PSI_STD::vector<TreePtr<Term> >(1, self), self->location()));
+                                                        default_, PSI_STD::vector<TreePtr<Term> >(1, self), self.location()));
         PSI_STD::vector<TreePtr<Implementation> > implementations(1, impl);
-        return TreePtr<Term>(new PureMacroTerm(compile_context.metatype(), implementations, self->location()));
+        return TreePtr<Term>(new PureMacroTerm(compile_context.metatype(), implementations, self.location()));
       }
     };
 

@@ -134,15 +134,15 @@ namespace Psi {
      * \brief Single inheritance base.
      */
     class SIBase {
-      friend bool si_is_a(SIBase*, const SIVtable*);
-      friend const SIVtable* si_vptr(SIBase*);
+      friend bool si_is_a(const SIBase*, const SIVtable*);
+      friend const SIVtable* si_vptr(const SIBase*);
 
     protected:
       const SIVtable *m_vptr;
     };
 
-    inline const SIVtable* si_vptr(SIBase *self) {return self->m_vptr;}
-    bool si_is_a(SIBase*, const SIVtable*);
+    inline const SIVtable* si_vptr(const SIBase *self) {return self->m_vptr;}
+    bool si_is_a(const SIBase*, const SIVtable*);
 
     template<typename T>
     const typename T::VtableType* derived_vptr(T *ptr) {
@@ -153,86 +153,57 @@ namespace Psi {
     class Tree;
     class Type;
     class CompileContext;
-    template<typename> class TreePtr;
 
-    class TreeBasePtrHook {
-      template<typename> friend class TreePtr;
+    class TreePtrBase {
+      typedef void (TreePtrBase::*safe_bool_type) () const;
+      void safe_bool_true() const {}
 
-      void hook_reset(TreeBase *ptr, bool add_ref);
-      TreeBase* hook_release() {TreeBase *tmp = m_ptr; m_ptr = NULL; return tmp;}
-      Tree* hook_evaluate() const;
-      void hook_update_chain(TreeBase *ptr) const;
-      Tree* hook_evaluate_helper() const;
+      mutable const TreeBase *m_ptr;
 
-      mutable TreeBase *m_ptr;
-      //TreeBase* get() const {return m_ptr;}
-      
+      void initialize(const TreeBase *ptr, bool add_ref);
+      const Tree* get_helper() const;
+      void update_chain(const TreeBase *ptr) const;
+
     protected:
-      template<typename T> const TreePtr<T>& as_tree_ptr() const {
-        return *reinterpret_cast<const TreePtr<T>*>(this);
-      }
+      void swap(TreePtrBase& other) {std::swap(m_ptr, other.m_ptr);}
       
-      template<typename T> T* ptr_as() const;
-      template<typename T> T* try_ptr_as() const;
-
     public:
-      typedef TreeBase GetType;
-
-      TreeBasePtrHook() : m_ptr(NULL) {}
-      TreeBasePtrHook(const TreeBasePtrHook& src) : m_ptr(NULL) {hook_reset(src.m_ptr, true);}
-      ~TreeBasePtrHook() {hook_reset(NULL, false);}
-      TreeBasePtrHook& operator = (const TreeBasePtrHook& src) {hook_reset(src.m_ptr, true); return *this;}
+      ~TreePtrBase();
+      TreePtrBase() {}
+      explicit TreePtrBase(const TreeBase *ptr, bool add_ref) {initialize(ptr, add_ref);}
+      TreePtrBase(const TreePtrBase& src) {initialize(src.m_ptr, true);}
+      TreePtrBase& operator = (const TreePtrBase& src) {TreePtrBase(src).swap(*this); return *this;}
       
+      const Tree* get() const;
+      const TreeBase* raw_get() const {return m_ptr;}
+      const TreeBase* release() {const TreeBase *tmp = m_ptr; m_ptr = NULL; return tmp;}
+
+      operator safe_bool_type () const {return get() ? &TreePtrBase::safe_bool_true : 0;}
+      bool operator ! () const {return !get();}
+      template<typename U> bool operator == (const TreePtrBase& other) const {return get() == other.get();};
+      template<typename U> bool operator != (const TreePtrBase& other) const {return get() != other.get();};
+      template<typename U> bool operator < (const TreePtrBase& other) const {return get() < other.get();};
+
       CompileContext& compile_context() const;
       const SourceLocation& location() const;
     };
 
-    /**
-     * Wrapper class to avoid referencing ::PtrHookType inside TreePtr, to avoid
-     * template instantiation issues.
-     */
-    template<typename T>
-    class TreePtrHookWrapper {
-      typedef typename T::PtrHook PtrHookType;
-      const TreeBasePtrHook *m_hook;
-
-    public:
-      TreePtrHookWrapper(const TreeBasePtrHook *hook) : m_hook(hook) {}
-      const PtrHookType* operator -> () const {return static_cast<const PtrHookType*>(m_hook);}
-    };
-
     template<typename T=Tree>
-    class TreePtr {
-      template<typename> friend class TreePtr;
-      friend class TreeBasePtrHook;
-      
-      typedef void (TreePtr::*safe_bool_type) () const;
-      void safe_bool_true() const {}
-      
-      template<typename U> friend TreePtr<U> tree_from_base(TreeBase*, bool);
-      TreePtr(TreeBase *src, bool add_ref) {m_hook.hook_reset(src, add_ref);}
-
-      TreeBasePtrHook m_hook;
+    class TreePtr : public TreePtrBase {
+      template<typename U> friend TreePtr<U> tree_from_base(const TreeBase*, bool);
+      TreePtr(const TreeBase *src, bool add_ref) : TreePtrBase(src, add_ref) {}
 
     public:
       TreePtr() {}
-      explicit TreePtr(T *ptr) {m_hook.hook_reset(ptr, true);}
-      TreePtr(T *ptr, bool add_ref) {m_hook.hook_reset(ptr, add_ref);}
-      template<typename U> TreePtr(const TreePtr<U>& src) {BOOST_STATIC_ASSERT((boost::is_convertible<U*, T*>::value)); m_hook = src.m_hook;}
-      template<typename U> TreePtr& operator = (const TreePtr<U>& src) {BOOST_STATIC_ASSERT((boost::is_convertible<U*, T*>::value)); m_hook = src.m_hook; return *this;}
-      void reset(T *ptr=0, bool add_ref=true) {m_hook.hook_reset(ptr, add_ref);}
+      explicit TreePtr(const T *ptr, bool add_ref=true) : TreePtrBase(ptr, add_ref) {}
+      template<typename U> TreePtr(const TreePtr<U>& src) : TreePtrBase(src) {BOOST_STATIC_ASSERT((boost::is_convertible<U*, T*>::value));}
+      template<typename U> TreePtr& operator = (const TreePtr<U>& src) {TreePtr<T>(src).swap(*this); return *this;}
 
-      T* get() const {return m_hook.ptr_as<T>();}
-      const TreePtrHookWrapper<T> operator -> () const {return TreePtrHookWrapper<T>(&m_hook);}
+      const T* get() const;
+      const T* operator -> () const {return get();}
 
-      TreeBase *raw_get() const {return m_hook.m_ptr;}
-      TreeBase* release() {return m_hook.hook_release();}
-      
-      operator safe_bool_type () const {return get() ? &TreePtr::safe_bool_true : 0;}
-      bool operator ! () const {return !get();}
-      template<typename U> bool operator == (const TreePtr<U>& other) const {return get() == other.get();};
-      template<typename U> bool operator != (const TreePtr<U>& other) const {return get() != other.get();};
-      template<typename U> bool operator < (const TreePtr<U>& other) const {return get() < other.get();};
+      void reset(const T *ptr=NULL, bool add_ref=true) {TreePtr<T>(ptr, add_ref).swap(*this);}
+      void swap(TreePtr<T>& other) {TreePtrBase::swap(other);}
     };
 
     /**
@@ -242,7 +213,7 @@ namespace Psi {
      * should be statically known.
      */
     template<typename T>
-    TreePtr<T> tree_from_base(TreeBase *base, bool add_ref=true) {
+    TreePtr<T> tree_from_base(const TreeBase *base, bool add_ref=true) {
       return TreePtr<T>(base, add_ref);
     }
 
@@ -277,13 +248,13 @@ namespace Psi {
     class TreeBase : public SIBase, public boost::intrusive::list_base_hook<> {
       friend class CompileContext;
       friend class RunningTreeCallback;
-      friend class TreeBasePtrHook;
       friend class TreeCallback;
       friend class GCVisitorIncrement;
       friend class GCVisitorDecrement;
       friend class GCVisitorClear;
+      friend class TreePtrBase;
 
-      std::size_t m_reference_count;
+      mutable std::size_t m_reference_count;
       CompileContext *m_compile_context;
       SourceLocation m_location;
 
@@ -292,7 +263,6 @@ namespace Psi {
       const SourceLocation& location() const {return m_location;}
 
     public:
-      typedef TreeBasePtrHook PtrHook;
       typedef TreeBaseVtable VtableType;
       static const SIVtable vtable;
       
@@ -303,10 +273,22 @@ namespace Psi {
       static void visit(Visitor& visitor PSI_ATTRIBUTE((PSI_UNUSED))) {}
     };
 
+    inline void TreePtrBase::initialize(const TreeBase *ptr, bool add_ref) {
+      m_ptr = ptr;
+      if (add_ref && m_ptr)
+        ++m_ptr->m_reference_count;
+    }
+
+    inline TreePtrBase::~TreePtrBase() {
+      if (m_ptr)
+        if (!--m_ptr->m_reference_count)
+          derived_vptr(m_ptr)->destroy(const_cast<TreeBase*>(m_ptr));
+    }
+
     /// \brief Get the compile context for this Tree, without evaluating the Tree.
-    inline CompileContext& TreeBasePtrHook::compile_context() const {return *m_ptr->m_compile_context;}
+    inline CompileContext& TreePtrBase::compile_context() const {return *m_ptr->m_compile_context;}
     /// \brief Get the location of this Tree, without evaluating the Tree.
-    inline const SourceLocation& TreeBasePtrHook::location() const {return m_ptr->m_location;}
+    inline const SourceLocation& TreePtrBase::location() const {return m_ptr->m_location;}
 
     /**
      * \brief Base classes for gargabe collection phase
@@ -456,40 +438,27 @@ namespace Psi {
 
       Tree(CompileContext&, const SourceLocation&);
 
-      class PtrHook : public TreeBase::PtrHook {
-        Tree* get() const {return ptr_as<Tree>();}
-
-      public:
-        void complete() const {
-          Tree *self = get();
-          derived_vptr(self)->complete(self);
-        }
-      };
+      /**
+       * Recursively evaluate all tree references inside this tree.
+       */
+      void complete() const {derived_vptr(this)->complete(const_cast<Tree*>(this));}
     };
 
-    template<typename T> T* TreeBasePtrHook::ptr_as() const {
-      Tree *t = hook_evaluate();
+    template<typename T> const T* TreePtr<T>::get() const {
+      const Tree *t = TreePtrBase::get();
       PSI_ASSERT(!t || si_is_a(t, reinterpret_cast<const SIVtable*>(&T::vtable)));
-      return static_cast<T*>(t);
+      return static_cast<const T*>(t);
     };
 
-    template<typename T> T* TreeBasePtrHook::try_ptr_as() const {
-      if (!m_ptr || derived_vptr(m_ptr)->is_callback)
-        return NULL;
-
-      PSI_ASSERT(si_is_a(m_ptr, reinterpret_cast<const SIVtable*>(&T::vtable)));
-      return static_cast<T*>(m_ptr);
-    }
-
     template<typename T>
-    T* tree_cast(Tree *ptr) {
+    const T* tree_cast(const Tree *ptr) {
       PSI_ASSERT(si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)));
-      return static_cast<T*>(ptr);
+      return static_cast<const T*>(ptr);
     }
 
     template<typename T>
-    T* dyn_tree_cast(Tree *ptr) {
-      return si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)) ? static_cast<T*>(ptr) : 0;
+    const T* dyn_tree_cast(const Tree *ptr) {
+      return si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)) ? static_cast<const T*>(ptr) : 0;
     }
 
     template<typename T, typename U>
@@ -531,31 +500,19 @@ namespace Psi {
 #define PSI_COMPILER_TREE_INIT() (PSI_REQUIRE_CONVERTIBLE(&vtable, const VtableType*), PSI_COMPILER_SI_INIT(&vtable))
 #define PSI_COMPILER_TREE_ABSTRACT(name,super) PSI_COMPILER_SI_ABSTRACT(name,&super::vtable)
 
-    inline Tree* TreeBasePtrHook::hook_evaluate() const {
-      return (!m_ptr || !derived_vptr(m_ptr)->is_callback) ? static_cast<Tree*>(m_ptr) : hook_evaluate_helper();
-    }
-
-    inline void TreeBasePtrHook::hook_reset(TreeBase *ptr, bool add_ref) {
-      if (ptr && add_ref)
-        ++ptr->m_reference_count;
-
-      if (m_ptr)
-        if (!--m_ptr->m_reference_count)
-          derived_vptr(m_ptr)->destroy(m_ptr);
-
-      m_ptr = ptr;
-
-      PSI_ASSERT(!m_ptr || derived_vptr(m_ptr));
+    inline const Tree* TreePtrBase::get() const {
+      return (!m_ptr || !derived_vptr(m_ptr)->is_callback) ? static_cast<const Tree*>(m_ptr) : get_helper();
     }
 
     /// \see TreeCallback
     struct TreeCallbackVtable {
       TreeBaseVtable base;
-      TreeBase* (*evaluate) (TreeCallback*);
+      const TreeBase* (*evaluate) (TreeCallback*);
     };
 
     class TreeCallback : public TreeBase {
-      friend class TreeBasePtrHook;
+      friend class TreePtrBase;
+      friend class RunningTreeCallback;
 
     public:
       enum CallbackState {
@@ -565,6 +522,7 @@ namespace Psi {
         state_failed
       };
 
+    private:
       CallbackState m_state;
       TreePtr<> m_value;
 
@@ -599,7 +557,7 @@ namespace Psi {
 
     template<typename Derived>
     struct TreeCallbackWrapper : NonConstructible {
-      static TreeBase* evaluate(TreeCallback *self) {
+      static const TreeBase* evaluate(TreeCallback *self) {
         return Derived::evaluate_impl(*static_cast<Derived*>(self)).release();
       }
     };
@@ -671,18 +629,13 @@ namespace Psi {
 
     struct TermVtable {
       TreeVtable base;
-      PsiBool (*match) (Term*,Term*,const void*,void*,unsigned);
-      TreeBase* (*interface_search) (Tree*, Interface*, const void*, void*);
+      PsiBool (*match) (const Term*,const Term*,const void*,void*,unsigned);
+      const TreeBase* (*interface_search) (const Term*, const TreeBase*, const void*, void*);
     };
 
     class Term : public Tree {
       friend class Metatype;
-      class TypeGetter;
       Term(CompileContext&, const SourceLocation&);
-
-      TreePtr<Term> m_type;
-
-      bool match(const TreePtr<Term>&, const List<TreePtr<Term> >&, unsigned);
 
     public:
       typedef TermVtable VtableType;
@@ -692,43 +645,38 @@ namespace Psi {
 
       Term(const TreePtr<Term>&, const SourceLocation&);
 
-      class PtrHook : public Tree::PtrHook {
-        Term *get() const {return ptr_as<Term>();}
+      /// \brief The type of this term.
+      TreePtr<Term> type;
 
-      public:
-        /// \brief Get the type of this tree
-        TreePtr<Term> type() const {return get()->m_type;}
-        bool match(const TreePtr<Term>& value, const List<TreePtr<Term> >& wildcards, unsigned depth=0) const {return get()->match(value, wildcards, depth);}
-        bool is_type() const;
+      bool is_type() const;
+      bool match(const TreePtr<Term>& value, const List<TreePtr<Term> >& wildcards, unsigned depth=0) const;
 
-        /// \brief Replace anonymous terms in the list by parameters
-        TreePtr<Term> parameterize(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth=0) const;
-        /// \brief Replace parameter terms in this tree by given values
-        TreePtr<Term> specialize(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth=0) const;
+      /// \brief Replace anonymous terms in the list by parameters
+      TreePtr<Term> parameterize(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth=0) const;
+      /// \brief Replace parameter terms in this tree by given values
+      TreePtr<Term> specialize(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth=0) const;
 
-        TreePtr<> interface_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) const {
-          Term *self = get();
-          return tree_from_base<Tree>(derived_vptr(self)->interface_search(self, interface.get(), parameters.vptr(), parameters.object()), false);
-        }
-      };
+      TreePtr<> interface_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) const {
+        return tree_from_base<Tree>(derived_vptr(this)->interface_search(this, interface.raw_get(), parameters.vptr(), parameters.object()), false);
+      }
 
       template<typename Visitor> static void visit(Visitor& v) {
         visit_base<Tree>(v);
-        v("type", &Term::m_type);
+        v("type", &Term::type);
       }
 
-      static TreePtr<> interface_search_impl(Term& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
-      static bool match_impl(Term&, Term&, const List<TreePtr<Term> >&, unsigned);
+      static TreePtr<> interface_search_impl(const Term& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
     };
 
     template<typename Derived>
     struct TermWrapper : NonConstructible {
-      static PsiBool match(Term *left, Term *right, const void *wildcards_vtable, void *wildcards_obj, unsigned depth) {
-        return Derived::match_impl(*static_cast<Derived*>(left), *static_cast<Derived*>(right), List<TreePtr<Term> >(wildcards_vtable, wildcards_obj), depth);
+      static PsiBool match(const Term *left, const Term *right, const void *wildcards_vtable, void *wildcards_obj, unsigned depth) {
+        PSI_FAIL("not implemented");
+        //return Derived::match_impl(*static_cast<const Derived*>(left), *static_cast<const Derived*>(right), List<TreePtr<Term> >(wildcards_vtable, wildcards_obj), depth);
       }
 
-      static TreeBase* interface_search(Tree *self, Interface *interface, const void *parameters_vtable, void *parameters_object) {
-        TreePtr<> result = Derived::interface_search_impl(*static_cast<Derived*>(self), TreePtr<Interface>(interface), List<TreePtr<Term> >(parameters_vtable, parameters_object));
+      static const TreeBase* interface_search(const Term *self, const TreeBase *interface, const void *parameters_vtable, void *parameters_object) {
+        TreePtr<> result = Derived::interface_search_impl(*static_cast<const Derived*>(self), tree_from_base<Interface>(interface), List<TreePtr<Term> >(parameters_vtable, parameters_object));
         return result.release();
       }
     };
@@ -744,8 +692,8 @@ namespace Psi {
      *
      * Note that since types can be parameterized, a term not deriving from Type does
      * not mean that it is not a type, since type parameters are treated the same as
-     * regular parameters. Use Term::PtrHook::is_type to determine whether a term is
-     * a type or not.
+     * regular parameters. Use Term::is_type to determine whether a term is a type
+     * or not.
      */
     class Type : public Term {
     public:
@@ -766,7 +714,7 @@ namespace Psi {
     };
 
     /// \brief Is this a type?
-    inline bool Term::PtrHook::is_type() const {return !type() || dyn_tree_cast<Metatype>(type().get());}
+    inline bool Term::is_type() const {return !type || dyn_tree_cast<Metatype>(type.get());}
 
     class Global;
     class Interface;
@@ -818,8 +766,8 @@ namespace Psi {
      */
     struct MacroVtable {
       TreeVtable base;
-      TreeBase* (*evaluate) (Macro*, Term*, const void*, void*, EvaluateContext*, const SourceLocation*);
-      TreeBase* (*dot) (Macro*, Term*, const SharedPtr<Parser::Expression>*,  EvaluateContext*, const SourceLocation*);
+      const TreeBase* (*evaluate) (const Macro*, const TreeBase*, const void*, void*, const TreeBase*, const SourceLocation*);
+      const TreeBase* (*dot) (const Macro*, const TreeBase*, const SharedPtr<Parser::Expression>*,  const TreeBase*, const SourceLocation*);
     };
 
     class Macro : public Tree {
@@ -831,23 +779,19 @@ namespace Psi {
       : Tree(compile_context, location) {
       }
 
-      struct PtrHook : Tree::PtrHook {
-        TreePtr<Term> evaluate(const TreePtr<Term>& value,
-                               const List<SharedPtr<Parser::Expression> >& parameters,
-                               const TreePtr<EvaluateContext>& evaluate_context,
-                               const SourceLocation& location) const {
-          Macro *self = ptr_as<Macro>();
-          return tree_from_base<Term>(derived_vptr(self)->evaluate(self, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
-        }
+      TreePtr<Term> evaluate(const TreePtr<Term>& value,
+                              const List<SharedPtr<Parser::Expression> >& parameters,
+                              const TreePtr<EvaluateContext>& evaluate_context,
+                              const SourceLocation& location) const {
+        return tree_from_base<Term>(derived_vptr(this)->evaluate(this, value.raw_get(), parameters.vptr(), parameters.object(), evaluate_context.raw_get(), &location), false);
+      }
 
-        TreePtr<Term> dot(const TreePtr<Term>& value,
-                          const SharedPtr<Parser::Expression>& parameter,
-                          const TreePtr<EvaluateContext>& evaluate_context,
-                          const SourceLocation& location) const {
-          Macro *self = ptr_as<Macro>();
-          return tree_from_base<Term>(derived_vptr(self)->dot(self, value.get(), &parameter, evaluate_context.get(), &location), false);
-        }
-      };
+      TreePtr<Term> dot(const TreePtr<Term>& value,
+                        const SharedPtr<Parser::Expression>& parameter,
+                        const TreePtr<EvaluateContext>& evaluate_context,
+                        const SourceLocation& location) const {
+        return tree_from_base<Term>(derived_vptr(this)->dot(this, value.raw_get(), &parameter, evaluate_context.raw_get(), &location), false);
+      }
     };
 
     /**
@@ -855,22 +799,22 @@ namespace Psi {
      */
     template<typename Derived, typename Impl=Derived>
     struct MacroWrapper : NonConstructible {
-      static TreeBase* evaluate(Macro *self,
-                                Term *value,
+      static const TreeBase* evaluate(const Macro *self,
+                                const TreeBase*value,
                                 const void *parameters_vtable,
                                 void *parameters_object,
-                                EvaluateContext *evaluate_context,
+                                const TreeBase *evaluate_context,
                                 const SourceLocation *location) {
-        TreePtr<Term> result = Impl::evaluate_impl(*static_cast<Derived*>(self), TreePtr<Term>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), TreePtr<EvaluateContext>(evaluate_context), *location);
+        TreePtr<Term> result = Impl::evaluate_impl(*static_cast<const Derived*>(self), tree_from_base<Term>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), tree_from_base<EvaluateContext>(evaluate_context), *location);
         return result.release();
       }
 
-      static TreeBase* dot(Macro *self,
-                           Term *value,
-                           const SharedPtr<Parser::Expression> *parameter,
-                           EvaluateContext *evaluate_context,
-                           const SourceLocation *location) {
-        TreePtr<Term> result = Impl::dot_impl(*static_cast<Derived*>(self), TreePtr<Term>(value), *parameter, TreePtr<EvaluateContext>(evaluate_context), *location);
+      static const TreeBase* dot(const Macro *self,
+                                 const TreeBase *value,
+                                 const SharedPtr<Parser::Expression> *parameter,
+                                 const TreeBase *evaluate_context,
+                                 const SourceLocation *location) {
+        TreePtr<Term> result = Impl::dot_impl(*static_cast<const Derived*>(self), tree_from_base<Term>(value), *parameter, tree_from_base<EvaluateContext>(evaluate_context), *location);
         return result.release();
       }
     };
@@ -886,7 +830,7 @@ namespace Psi {
      */
     struct EvaluateContextVtable {
       TreeVtable base;
-      void (*lookup) (LookupResult<TreePtr<Term> >*, EvaluateContext*, const String*);
+      void (*lookup) (LookupResult<TreePtr<Term> >*, const EvaluateContext*, const String*);
     };
 
     class EvaluateContext : public Tree {
@@ -898,15 +842,11 @@ namespace Psi {
       : Tree(compile_context, location) {
       }
 
-      class PtrHook : public Tree::PtrHook {
-      public:
-        LookupResult<TreePtr<Term> > lookup(const String& name) const {
-          ResultStorage<LookupResult<TreePtr<Term> > > result;
-          EvaluateContext *self = ptr_as<EvaluateContext>();
-          derived_vptr(self)->lookup(result.ptr(), self, &name);
-          return result.done();
-        }
-      };
+      LookupResult<TreePtr<Term> > lookup(const String& name) const {
+        ResultStorage<LookupResult<TreePtr<Term> > > result;
+        derived_vptr(this)->lookup(result.ptr(), this, &name);
+        return result.done();
+      }
     };
 
     /**
@@ -914,8 +854,8 @@ namespace Psi {
      */
     template<typename Derived, typename Impl=Derived>
     struct EvaluateContextWrapper : NonConstructible {
-      static void lookup(LookupResult<TreePtr<Term> > *result, EvaluateContext *self, const String *name) {
-        new (result) LookupResult<TreePtr<Term> >(Impl::lookup_impl(*static_cast<Derived*>(self), *name));
+      static void lookup(LookupResult<TreePtr<Term> > *result, const EvaluateContext *self, const String *name) {
+        new (result) LookupResult<TreePtr<Term> >(Impl::lookup_impl(*static_cast<const Derived*>(self), *name));
       }
     };
 
@@ -931,7 +871,7 @@ namespace Psi {
      */
     struct MacroEvaluateCallbackVtable {
       TreeVtable base;
-      TreeBase* (*evaluate) (MacroEvaluateCallback*, Term*, const void*, void*, EvaluateContext*, const SourceLocation*);
+      const TreeBase* (*evaluate) (const MacroEvaluateCallback*, const TreeBase*, const void*, void*, const TreeBase*, const SourceLocation*);
     };
 
     class MacroEvaluateCallback : public Tree {
@@ -943,19 +883,15 @@ namespace Psi {
       : Tree(compile_context, location) {
       }
 
-      class PtrHook : public Tree::PtrHook {
-      public:
-        TreePtr<Term> evaluate(const TreePtr<Term>& value, const List<SharedPtr<Parser::Expression> >& parameters, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location) const {
-          MacroEvaluateCallback *self = ptr_as<MacroEvaluateCallback>();
-          return tree_from_base<Term>(derived_vptr(self)->evaluate(self, value.get(), parameters.vptr(), parameters.object(), evaluate_context.get(), &location), false);
-        }
-      };
+      TreePtr<Term> evaluate(const TreePtr<Term>& value, const List<SharedPtr<Parser::Expression> >& parameters, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location) const {
+        return tree_from_base<Term>(derived_vptr(this)->evaluate(this, value.raw_get(), parameters.vptr(), parameters.object(), evaluate_context.raw_get(), &location), false);
+      }
     };
 
     template<typename Derived>
     struct MacroEvaluateCallbackWrapper : NonConstructible {
-      static TreeBase* evaluate(MacroEvaluateCallback *self, Term *value, const void *parameters_vtable, void *parameters_object, EvaluateContext *evaluate_context, const SourceLocation *location) {
-        TreePtr<Term> result = Derived::evaluate_impl(*static_cast<Derived*>(self), TreePtr<Term>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), TreePtr<EvaluateContext>(evaluate_context), *location);
+      static const TreeBase* evaluate(const MacroEvaluateCallback *self, const TreeBase *value, const void *parameters_vtable, void *parameters_object, const TreeBase *evaluate_context, const SourceLocation *location) {
+        TreePtr<Term> result = Derived::evaluate_impl(*static_cast<const Derived*>(self), tree_from_base<Term>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), tree_from_base<EvaluateContext>(evaluate_context), *location);
         return result.release();
       }
     };
@@ -972,7 +908,7 @@ namespace Psi {
      */
     struct MacroDotCallbackVtable {
       TreeVtable base;
-      Term* (*dot) (MacroDotCallback*, Term*, EvaluateContext*, const SourceLocation*);
+      Term* (*dot) (const MacroDotCallback*, const TreeBase*, const TreeBase*, const SourceLocation*);
     };
 
     /**
@@ -987,15 +923,11 @@ namespace Psi {
       : Tree(compile_context, location) {
       }
 
-      class PtrHook : public Tree::PtrHook {
-      public:
-        TreePtr<Term> dot(const TreePtr<Term>& value,
-                          const TreePtr<EvaluateContext>& evaluate_context,
-                          const SourceLocation& location) const {
-          MacroDotCallback *self = ptr_as<MacroDotCallback>();
-          return TreePtr<Term>(derived_vptr(self)->dot(self, value.get(), evaluate_context.get(), &location), false);
-        }
-      };
+      TreePtr<Term> dot(const TreePtr<Term>& value,
+                        const TreePtr<EvaluateContext>& evaluate_context,
+                        const SourceLocation& location) const {
+        return TreePtr<Term>(derived_vptr(this)->dot(this, value.raw_get(), evaluate_context.raw_get(), &location), false);
+      }
     };
 
     /**
@@ -1095,7 +1027,7 @@ namespace Psi {
     class Block;
 
     TreePtr<Term> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
-    TreePtr<Block> compile_statement_list(const List<SharedPtr<Parser::NamedExpression> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
+    TreePtr<Block> compile_statement_list(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
 
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);
