@@ -240,9 +240,9 @@ namespace Psi {
     bool empty() const {return !m_c.length;}
     void swap(String&);
   };
-
-  template<typename V, std::size_t N>
-  void visit_callback(V& callback, const char *name, const boost::array<String*,N>& values) {callback.visit_simple(name, values);}
+  
+  template<typename V, typename D>
+  void visit_callback(V& callback, const char *name, VisitorTag<String>, const D& objects) {callback.visit_simple(name, objects);}
 
   std::ostream& operator << (std::ostream&, const String&);
   

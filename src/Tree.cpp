@@ -21,6 +21,51 @@ namespace Psi {
     : TreeBase(compile_context, location) {
     }
 
+    /**
+     * \brief Check whether this tree, which is a pattern, matches a given value.
+     *
+     * \param value Tree to match to.
+     * \param wildcards Substitutions to be identified.
+     * \param depth Number of parameter-enclosing terms above this match.
+     */
+    bool Tree::match(const TreePtr<Tree>& value, const List<TreePtr<Term> >& wildcards, unsigned depth) const {
+      if (this == value.get())
+        return true;
+
+      if (!this)
+        return false;
+
+      if (const Parameter *parameter = dyn_tree_cast<Parameter>(this)) {
+        TreePtr<Term> tvalue = dyn_treeptr_cast<Term>(value);
+        if (!tvalue)
+          return false;
+        
+        if (parameter->depth == depth) {
+          // Check type also matches
+          if (!parameter->type->match(tvalue->type, wildcards, depth))
+            return false;
+
+          TreePtr<Term>& wildcard = wildcards[parameter->index];
+          if (wildcard) {
+            if (wildcard != value)
+              PSI_FAIL("not implemented");
+            return false;
+          } else {
+            wildcards[parameter->index] = tvalue;
+            return true;
+          }
+        }
+      }
+
+      const Tree *value_term = value.get();
+      if (m_vptr == value_term->m_vptr) {
+        // Trees are required to have the same static type to work with pattern matching.
+        return derived_vptr(this)->match(this, value_term, wildcards.vptr(), wildcards.object(), depth);
+      } else {
+        return false;
+      }
+    }
+
     TreeCallback::TreeCallback(CompileContext& compile_context, const SourceLocation& location)
     : TreeBase(compile_context, location), m_state(state_ready) {
     }
@@ -32,47 +77,6 @@ namespace Psi {
 
     Term::Term(CompileContext& compile_context, const SourceLocation& location)
     : Tree(compile_context, location) {
-    }
-
-    /**
-     * \brief Check whether this term, which is a pattern, matches a given value.
-     *
-     * \param value Tree to match to.
-     * \param wildcards Substitutions to be identified.
-     * \param depth Number of parameter-enclosing terms above this match.
-     */
-    bool Term::match(const TreePtr<Term>& value, const List<TreePtr<Term> >& wildcards, unsigned depth) const {
-      if (this == value.get())
-        return true;
-      
-      if (!this)
-        return false;
-
-      if (const Parameter *parameter = dyn_tree_cast<Parameter>(this)) {
-        if (parameter->depth == depth) {
-          // Check type also matches
-          if (!type->match(value->type, wildcards, depth))
-            return false;
-
-          TreePtr<Term>& wildcard = wildcards[parameter->index];
-          if (wildcard) {
-            if (wildcard != value)
-              PSI_FAIL("not implemented");
-            return false;
-          } else {
-            wildcards[parameter->index] = value;
-            return true;
-          }
-        }
-      }
-
-      const Term *value_term = value.get();
-      if (m_vptr == value_term->m_vptr) {
-        // Trees are required to have the same static type to work with pattern matching.
-        return derived_vptr(this)->match(this, value_term, wildcards.vptr(), wildcards.object(), depth);
-      } else {
-        return false;
-      }
     }
 
     TreePtr<> Term::interface_search_impl(const Term& self,
@@ -364,6 +368,27 @@ namespace Psi {
       v("member_value", &TypeInstanceValue::m_member_value);
     }
 
+    TreePtr<Term> FunctionCall::get_type(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
+      TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(target->type);
+      if (!ft)
+        target.compile_context().error_throw(location, "Target of function call does not have function type");
+
+      PSI_STD::vector<TreePtr<Term> >& nc_arguments = const_cast<PSI_STD::vector<TreePtr<Term> >&>(arguments);
+      return ft->result_type_after(location, list_from_stl(nc_arguments));
+    }
+
+    FunctionCall::FunctionCall(const TreePtr<Term>& target_, const PSI_STD::vector<TreePtr<Term> >& arguments_, const SourceLocation& location)
+    : Term(get_type(target_, arguments_, location), location),
+    target(target_),
+    arguments(arguments_) {
+    }
+
+    template<typename Visitor>
+    void FunctionCall::visit(Visitor& v) {
+      visit_base<Term>(v);
+      v("target", &FunctionCall::target);
+    }
+
     const SIVtable TreeBase::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeBase", NULL);
     const SIVtable TreeCallback::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeCallback", &TreeBase::vtable);
     const SIVtable Tree::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Tree", &TreeBase::vtable);
@@ -382,10 +407,6 @@ namespace Psi {
     const TermVtable FunctionType::vtable = PSI_COMPILER_TERM(FunctionType, "psi.compiler.FunctionType", Type);
     const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", Term);
 
-    const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", Term);
-    const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
-    const TermVtable TryFinally::vtable = PSI_COMPILER_TERM(TryFinally, "psi.compiler.TryFinally", Term);
-
     const TermVtable Metatype::vtable = PSI_COMPILER_TERM(Metatype, "psi.compiler.Metatype", Term);
     const TermVtable EmptyType::vtable = PSI_COMPILER_TERM(EmptyType, "psi.compiler.EmptyType", Type);
     const TermVtable NullValue::vtable = PSI_COMPILER_TERM(NullValue, "psi.compiler.NullValue", Term);
@@ -396,5 +417,16 @@ namespace Psi {
 
     const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
     const TermVtable ExternalGlobal::vtable = PSI_COMPILER_TERM(ExternalGlobal, "psi.compiler.ExternalGlobal", Global);
+
+    /**
+     * \name Function entries.
+     */
+    ///@{
+    const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", Term);
+    const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
+    const TermVtable TryFinally::vtable = PSI_COMPILER_TERM(TryFinally, "psi.compiler.TryFinally", Term);
+
+    const TermVtable FunctionCall::vtable = PSI_COMPILER_TERM(FunctionCall, "psi.compiler.FunctionCall", Term);
+    ///@}
   }
 }

@@ -5,6 +5,7 @@
 #include <utility>
 
 #include <boost/array.hpp>
+#include <boost/type_traits/remove_cv.hpp>
 
 /**
  * \file
@@ -27,6 +28,11 @@ namespace Psi {
    */
   template<typename T> class VisitorTag {
     typedef T type;
+  };
+
+  template<typename T>
+  VisitorTag<typename boost::remove_cv<T>::type> visitor_tag() {
+    return VisitorTag<typename boost::remove_cv<T>::type>();
   };
 
   /**
@@ -53,23 +59,20 @@ namespace Psi {
     visit(v, VisitorTag<T>());
   }
 
+  template<typename V, typename T, typename D>
+  void visit_callback(V& callback, const char *name, VisitorTag<T>, const D& objects) {callback.visit_object(name, objects);}
+
+  template<typename V, typename D>
+  void visit_callback(V& callback, const char *name, VisitorTag<unsigned>, const D& values) {callback.visit_simple(name, values);}
+
+  template<typename V, typename T, typename A, typename D>
+  void visit_callback(V& callback, const char *name, VisitorTag<PSI_STD::vector<T,A> >, const D& values) {callback.visit_sequence(name, values);}
+
+  template<typename V, typename K, typename O, typename C, typename A, typename D>
+  void visit_callback(V& callback, const char *name, VisitorTag<PSI_STD::map<K, O, C, A> >, const D& values) {callback.visit_map(name, values);}
+
   template<typename V, typename T, std::size_t N>
-  void visit_callback(V& callback, const char *name, const boost::array<T*,N>& objects) {callback.visit_object(name, objects);}
-
-  template<typename V, std::size_t N>
-  void visit_callback(V& callback, const char *name, const boost::array<unsigned*,N>& values) {callback.visit_simple(name, values);}
-  template<typename V, std::size_t N>
-  void visit_callback(V& callback, const char *name, const boost::array<const unsigned*,N>& values) {callback.visit_simple(name, values);}
-
-  template<typename V, typename T, typename A, std::size_t N>
-  void visit_callback(V& callback, const char *name, const boost::array<PSI_STD::vector<T,A>*,N>& values) {callback.visit_sequence(name, values);}
-  template<typename V, typename T, typename A, std::size_t N>
-  void visit_callback(V& callback, const char *name, const boost::array<const PSI_STD::vector<T,A>*,N>& values) {callback.visit_sequence(name, values);}
-
-  template<typename V, typename K, typename O, typename C, typename A, std::size_t N>
-  void visit_callback(V& callback, const char *name, const boost::array<PSI_STD::map<K, O, C, A>*,N>& values) {callback.visit_map(name, values);}
-  template<typename V, typename K, typename O, typename C, typename A, std::size_t N>
-  void visit_callback(V& callback, const char *name, const boost::array<const PSI_STD::map<K, O, C, A>*,N>& values) {callback.visit_map(name, values);}
+  void visit_callback(V& callback, const char *name, const boost::array<T*,N>& values) {visit_callback(callback, name, visitor_tag<T>(), values);}
 
   /**
    * If A is const, gives const B, else gives B.
@@ -110,7 +113,7 @@ namespace Psi {
   template<typename T, typename U, std::size_t N>
   void visit_members(T& visitor, const boost::array<U*, N>& objects) {
     ObjectVisitor<U, T, N> ov(&visitor, &objects[0]);
-    visit(ov, VisitorTag<U>());
+    visit(ov, visitor_tag<U>());
   }
 }
 

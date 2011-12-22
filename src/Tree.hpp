@@ -269,10 +269,13 @@ namespace Psi {
      * \brief Function invocation expression.
      */
     class FunctionCall : public Term {
+      TreePtr<Term> get_type(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+
     public:
       static const TermVtable vtable;
 
-      FunctionCall(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments);
+      FunctionCall(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
 
       TreePtr<Term> target;
       PSI_STD::vector<TreePtr<Term> > arguments;

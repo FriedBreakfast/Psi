@@ -228,6 +228,7 @@ namespace Psi {
     class Tree;
     class TreeBase;
     class TreeCallback;
+    class Term;
 
     /// \see TreeBase
     struct TreeBaseVtable {
@@ -316,7 +317,7 @@ namespace Psi {
       void visit_object(const char*, const boost::array<T**,1>& obj) {
         if (obj[0]) {
           boost::array<T*, 1> star = {{*obj[0]}};
-          visit_object(NULL, star);
+          visit_callback(*this, NULL, star);
         }
       }
 
@@ -334,7 +335,7 @@ namespace Psi {
       void visit_sequence (const char*, const boost::array<T*,1>& collections) {
         for (typename T::iterator ii = collections[0]->begin(), ie = collections[0]->end(); ii != ie; ++ii) {
           boost::array<typename T::value_type*, 1> m = {{&*ii}};
-          visit_object(NULL, m);
+          visit_callback(*this, NULL, m);
         }
       }
 
@@ -346,7 +347,7 @@ namespace Psi {
           visit_object(NULL, k);
 #endif
           boost::array<typename T::mapped_type*, 1> v = {{&ii->second}};
-          visit_object(NULL, v);
+          visit_callback(*this, NULL, v);
         }
       }
     };
@@ -429,11 +430,14 @@ namespace Psi {
     struct TreeVtable {
       TreeBaseVtable base;
       void (*complete) (Tree*);
+      PsiBool (*match) (const Tree*,const Tree*,const void*,void*,unsigned);
     };
 
     class Tree : public TreeBase {
     public:
       static const SIVtable vtable;
+      static const bool match_unique = true;
+      
       typedef TreeVtable VtableType;
 
       Tree(CompileContext&, const SourceLocation&);
@@ -442,6 +446,11 @@ namespace Psi {
        * Recursively evaluate all tree references inside this tree.
        */
       void complete() const {derived_vptr(this)->complete(const_cast<Tree*>(this));}
+
+      /**
+       * Check whether this term matches another term.
+       */
+      bool match(const TreePtr<Tree>& value, const List<TreePtr<Term> >& wildcards, unsigned depth=0) const;
     };
 
     template<typename T> const T* TreePtr<T>::get() const {
@@ -483,6 +492,100 @@ namespace Psi {
       }
     };
 
+    /**
+     * Term visitor to perform pattern matching.
+     */
+    class MatchVisitor {
+      List<TreePtr<Term> > m_wildcards;
+      unsigned m_depth;
+
+    public:
+      bool result;
+
+      MatchVisitor(const List<TreePtr<Term> >& wildcards, unsigned depth)
+      : m_wildcards(wildcards), m_depth(depth), result(true) {}
+
+      template<typename T>
+      void visit_simple(const char*, const boost::array<T*, 2>& obj) {
+        if (!result)
+          return;
+        result = *obj[0] == *obj[1];
+      }
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<T*, 2>& obj) {
+        if (!result)
+          return;
+        visit_members(*this, obj);
+      }
+
+      /// Simple pointers are assumed to be owned by this object
+      template<typename T>
+      void visit_object(const char*, const boost::array<T*const*, 2>& obj) {
+        if (!result)
+          return;
+
+        boost::array<T*, 2> m = {{*obj[0], *obj[1]}};
+        visit_callback(*this, NULL, m);
+      }
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<const TreePtr<T>*, 2>& ptr) {
+        if (!result)
+          return;
+
+        result = (*ptr[0])->match(*ptr[1], m_wildcards, m_depth);
+      }
+
+      template<typename T>
+      void visit_sequence (const char*, const boost::array<T*,2>& collections) {
+        if (!result)
+          return;
+
+        if (collections[0]->size() != collections[1]->size()) {
+          result = false;
+        } else {
+          typename T::const_iterator ii = collections[0]->begin(), ie = collections[0]->end(),
+          ji = collections[1]->begin(), je = collections[1]->end();
+
+          for (; (ii != ie) && (ji != je); ++ii, ++ji) {
+            boost::array<typename T::const_pointer, 2> m = {{&*ii, &*ji}};
+            visit_callback(*this, "", m);
+
+            if (!result)
+              return;
+          }
+
+          if ((ii != ie) || (ji != je))
+            result = false;
+        }
+      }
+
+      template<typename T>
+      void visit_map(const char*, const boost::array<T*, 2>& maps) {
+        if (!result)
+          return;
+
+        if (maps[0]->size() != maps[1]->size()) {
+          result = false;
+          return;
+        }
+
+        for (typename T::const_iterator ii = maps[0]->begin(), ie = maps[0]->end(), je = maps[1]->end(); ii != ie; ++ii) {
+          typename T::const_iterator ji = maps[1]->find(ii->first);
+          if (ji == je) {
+            result = false;
+            return;
+          }
+
+          boost::array<typename T::const_pointer, 2> v = {{&*ii, &*ji}};
+          visit_callback(*this, NULL, v);
+          if (!result)
+            return;
+        }
+      }
+    };
+
     template<typename Derived>
     struct TreeWrapper : NonConstructible {
       static void complete(Tree *self) {
@@ -490,11 +593,23 @@ namespace Psi {
         CompleteVisitor p;
         visit_members(p, a);
       }
+
+      static PsiBool match(const Tree *left, const Tree *right, const void *wildcards_vtable, void *wildcards_obj, unsigned depth) {
+        if (Derived::match_unique) {
+          return left == right;
+        } else {
+          boost::array<const Derived*, 2> pair = {{static_cast<const Derived*>(left), static_cast<const Derived*>(right)}};
+          MatchVisitor mv(List<TreePtr<Term> >(wildcards_vtable, wildcards_obj), depth);
+          visit_members(mv, pair);
+          return mv.result;
+        }
+      }
     };
 
 #define PSI_COMPILER_TREE(derived,name,super) { \
     PSI_COMPILER_TREE_BASE(false,derived,name,super), \
-    &::Psi::Compiler::TreeWrapper<derived>::complete \
+    &::Psi::Compiler::TreeWrapper<derived>::complete, \
+    &::Psi::Compiler::TreeWrapper<derived>::match \
   }
 
 #define PSI_COMPILER_TREE_INIT() (PSI_REQUIRE_CONVERTIBLE(&vtable, const VtableType*), PSI_COMPILER_SI_INIT(&vtable))
@@ -629,7 +744,8 @@ namespace Psi {
 
     struct TermVtable {
       TreeVtable base;
-      PsiBool (*match) (const Term*,const Term*,const void*,void*,unsigned);
+      const TreeBase* (*parameterize) (const Term*, const SourceLocation*, const void*, void*, unsigned);
+      const TreeBase* (*specialize) (const Term*, const SourceLocation*, const void*, void*, unsigned);
       const TreeBase* (*interface_search) (const Term*, const TreeBase*, const void*, void*);
     };
 
@@ -640,7 +756,7 @@ namespace Psi {
     public:
       typedef TermVtable VtableType;
       typedef TreePtr<Term> IteratorValueType;
-      
+
       static const SIVtable vtable;
 
       Term(const TreePtr<Term>&, const SourceLocation&);
@@ -649,12 +765,17 @@ namespace Psi {
       TreePtr<Term> type;
 
       bool is_type() const;
-      bool match(const TreePtr<Term>& value, const List<TreePtr<Term> >& wildcards, unsigned depth=0) const;
+
 
       /// \brief Replace anonymous terms in the list by parameters
-      TreePtr<Term> parameterize(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth=0) const;
+      TreePtr<Term> parameterize(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth) const {
+        return tree_from_base<Term>(derived_vptr(this)->parameterize(this, &location, elements.vptr(), elements.object(), depth), false);
+      }
+
       /// \brief Replace parameter terms in this tree by given values
-      TreePtr<Term> specialize(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth=0) const;
+      TreePtr<Term> specialize(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth) const {
+        return tree_from_base<Term>(derived_vptr(this)->specialize(this, &location, values.vptr(), values.object(), depth), false);
+      }
 
       TreePtr<> interface_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) const {
         return tree_from_base<Tree>(derived_vptr(this)->interface_search(this, interface.raw_get(), parameters.vptr(), parameters.object()), false);
@@ -669,12 +790,102 @@ namespace Psi {
     };
 
     template<typename Derived>
-    struct TermWrapper : NonConstructible {
-      static PsiBool match(const Term *left, const Term *right, const void *wildcards_vtable, void *wildcards_obj, unsigned depth) {
-        PSI_FAIL("not implemented");
-        //return Derived::match_impl(*static_cast<const Derived*>(left), *static_cast<const Derived*>(right), List<TreePtr<Term> >(wildcards_vtable, wildcards_obj), depth);
+    class RewriteVisitorBase {
+      bool m_changed;
+
+    public:
+      RewriteVisitorBase() : m_changed(false) {}
+
+      bool changed() const {return m_changed;}
+
+      template<typename T>
+      void visit_simple(const char*, const boost::array<T*, 2>& obj) {
+        *obj[0] = *obj[1];
       }
 
+      template<typename T>
+      void visit_object(const char*, const boost::array<T*, 2>& obj) {
+        visit_members(*this, obj);
+      }
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<const TreePtr<T>*, 2>& ptr) {
+        *ptr[0] = static_cast<Derived*>(this)->visit_tree_ptr(*ptr[1]);
+        if (*ptr[0] != *ptr[1])
+          m_changed = true;
+      }
+
+      template<typename T>
+      void visit_collection(const char*, const boost::array<T*,2>& collections) {
+        for (typename T::iterator ii = collections[1]->begin(), ie = collections[1]->end(); ii != ie; ++ii) {
+          typename T::value_type vt;
+          boost::array<typename T::pointer, 2> m = {{&vt, &*ii}};
+          visit_callback(*this, "", m);
+          collections[0]->insert(collections[0]->end(), vt);
+        }
+      }
+
+      template<typename T>
+      void visit_sequence(const char*, const boost::array<T*,2>& collections) {
+        visit_collection(NULL, collections);
+      }
+
+      template<typename T>
+      void visit_map(const char*, const boost::array<T*, 2>& collections) {
+        visit_collection(NULL, collections);
+      }
+    };
+
+    class ParameterizeVisitor : public RewriteVisitorBase<ParameterizeVisitor> {
+      SourceLocation m_location;
+      List<TreePtr<Anonymous> > m_elements;
+      unsigned m_depth;
+      
+    public:
+      ParameterizeVisitor(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth)
+      : m_location(location), m_elements(elements), m_depth(depth) {}
+
+      template<typename T>
+      TreePtr<T> visit_tree_ptr(TreePtr<T>& ptr) {
+        
+        
+        return ptr->parameterize(m_location, m_elements, m_depth);
+      }
+    };
+
+    class SpecializeVisitor : public RewriteVisitorBase<SpecializeVisitor> {
+      SourceLocation m_location;
+      List<TreePtr<Term> > m_values;
+      unsigned m_depth;
+
+    public:
+      SpecializeVisitor(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth)
+      : m_location(location), m_values(values), m_depth(depth) {}
+
+      template<typename T>
+      TreePtr<T> visit_tree_ptr(TreePtr<T>& ptr) {
+        return ptr->specialize(m_location, m_values, m_depth);
+      }
+    };
+
+    template<typename Derived>
+    struct TermWrapper : NonConstructible {
+      static const TreeBase* parameterize(const Term *self, const SourceLocation *location, const void *elements_vtable, void *elements_object, unsigned depth) {
+        Derived rewritten;
+        boost::array<const Derived*, 1> ptrs = {{&rewritten, const_cast<Derived*>(static_cast<const Derived*>(self))}};
+        ParameterizeVisitor pv(List<TreePtr<Term> >(elements_vtable, elements_object), depth);
+        visit_members(pv, ptrs);
+        return pv.changed() ? new Derived(rewritten) : self;
+      }
+      
+      static const TreeBase* specialize(const Term *self, const SourceLocation *location, const void *values_vtable, void *values_object, unsigned depth) {
+        Derived rewritten;
+        boost::array<const Derived*, 1> ptrs = {{&rewritten, const_cast<Derived*>(static_cast<const Derived*>(self))}};
+        SpecializeVisitor pv(List<TreePtr<Term> >(values_vtable, values_object), depth);
+        visit_members(pv, ptrs);
+        return pv.changed() ? new Derived(rewritten) : self;
+      }
+      
       static const TreeBase* interface_search(const Term *self, const TreeBase *interface, const void *parameters_vtable, void *parameters_object) {
         TreePtr<> result = Derived::interface_search_impl(*static_cast<const Derived*>(self), tree_from_base<Interface>(interface), List<TreePtr<Term> >(parameters_vtable, parameters_object));
         return result.release();
@@ -683,7 +894,8 @@ namespace Psi {
 
 #define PSI_COMPILER_TERM(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
-    &::Psi::Compiler::TermWrapper<derived>::match, \
+    &::Psi::Compiler::TermWrapper<derived>::parameterize, \
+    &::Psi::Compiler::TermWrapper<derived>::specialize, \
     &::Psi::Compiler::TermWrapper<derived>::interface_search \
   }
 

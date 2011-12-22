@@ -358,7 +358,7 @@ namespace Psi {
         throw CompileException();
       }
 
-      return TreePtr<Term>(new FunctionCall(function, compiled_arguments));
+      return TreePtr<Term>(new FunctionCall(function, compiled_arguments, location));
     }
 
     class FunctionInvokeCallback : public MacroEvaluateCallback {
