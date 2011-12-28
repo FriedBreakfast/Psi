@@ -17,8 +17,8 @@
 #include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/Target/TargetData.h>
 #include <llvm/Target/TargetMachine.h>
-#include <llvm/Target/TargetRegistry.h>
-#include <llvm/Target/TargetSelect.h>
+#include <llvm/Support/TargetRegistry.h>
+#include <llvm/Support/TargetSelect.h>
 
 #ifdef PSI_DEBUG
 #include <iostream>
@@ -56,7 +56,7 @@ namespace Psi {
         ModuleBuilder *self;
         TypeBuilderCallback(ModuleBuilder *self_) : self(self_) {}
 
-        const llvm::Type* build(Term* term) const {
+        llvm::Type* build(Term* term) const {
           switch(term->term_type()) {
           case term_functional:
             return self->build_type_internal(cast<FunctionalTerm>(term));
@@ -68,11 +68,11 @@ namespace Psi {
           }
 
           case term_function_type: {
-            std::vector<const llvm::Type*> params;
+            llvm::SmallVector<llvm::Type*, 8> params;
             FunctionTypeTerm *function_type = cast<FunctionTypeTerm>(term);
             for (std::size_t i = function_type->n_phantom_parameters(), e = function_type->n_parameters(); i != e; ++i)
               params.push_back(self->build_type(function_type->parameter_type(i)));
-            const llvm::Type *result = self->build_type(function_type->result_type());
+            llvm::Type *result = self->build_type(function_type->result_type());
             return llvm::FunctionType::get(result, params, false);
           }
 
@@ -136,7 +136,7 @@ namespace Psi {
         /// \brief Utility function used by intrinsic_memcpy_64 and
         /// intrinsic_memcpy_32.
         llvm::Function* intrinsic_memcpy(llvm::Module& m, llvm::TargetMachine *target_machine) {
-          const llvm::IntegerType *size_type = target_machine->getTargetData()->getIntPtrType(m.getContext());
+          llvm::IntegerType *size_type = target_machine->getTargetData()->getIntPtrType(m.getContext());
           const char *name;
           switch (size_type->getBitWidth()) {
           case 32: name = "llvm.memcpy.p0i8.p0i8.i32"; break;
@@ -149,12 +149,13 @@ namespace Psi {
             return f;
 
           llvm::LLVMContext& c = m.getContext();
-          std::vector<const llvm::Type*> args;
-          args.push_back(llvm::Type::getInt8PtrTy(c));
-          args.push_back(llvm::Type::getInt8PtrTy(c));
-          args.push_back(size_type);
-          args.push_back(llvm::Type::getInt32Ty(c));
-          args.push_back(llvm::Type::getInt1Ty(c));
+          llvm::Type *args[] = {
+            llvm::Type::getInt8PtrTy(c),
+            llvm::Type::getInt8PtrTy(c),
+            size_type,
+            llvm::Type::getInt32Ty(c),
+            llvm::Type::getInt1Ty(c)
+          };
           llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(c), args, false);
           f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
 
@@ -168,8 +169,7 @@ namespace Psi {
             return f;
 
           llvm::LLVMContext& c = m.getContext();
-          std::vector<const llvm::Type*> args;
-          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(c), args, false);
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(c), llvm::ArrayRef<llvm::Type*>(), false);
           f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
 
           return f;
@@ -182,8 +182,7 @@ namespace Psi {
             return f;
 
           llvm::LLVMContext& c = m.getContext();
-          std::vector<const llvm::Type*> args;
-          args.push_back(llvm::Type::getInt8PtrTy(c));
+          llvm::Type *args[] = {llvm::Type::getInt8PtrTy(c)};
           llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(c), args, false);
           f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
 
@@ -205,9 +204,7 @@ namespace Psi {
             return f;
 
           llvm::LLVMContext& c = m.getContext();
-          std::vector<const llvm::Type*> args;
-          args.push_back(llvm::Type::getInt8PtrTy(c));
-          args.push_back(llvm::Type::getInt8PtrTy(c));
+          llvm::Type *args[] = {llvm::Type::getInt8PtrTy(c), llvm::Type::getInt8PtrTy(c)};
           llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(m.getContext()), args, true);
           return llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
         }
@@ -218,8 +215,7 @@ namespace Psi {
             return f;
           
           llvm::LLVMContext& c = m.getContext();
-          std::vector<const llvm::Type*> args;
-          args.push_back(llvm::Type::getInt8PtrTy(c));
+          llvm::Type *args[] = {llvm::Type::getInt8PtrTy(c)};
           llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getInt32Ty(m.getContext()), args, false);
           return llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
         }
@@ -256,7 +252,7 @@ namespace Psi {
           switch (rewritten_term->term_type()) {
           case term_global_variable: {
             GlobalVariableTerm *global = cast<GlobalVariableTerm>(rewritten_term);
-            const llvm::Type *llvm_type = build_type(global->value_type());
+            llvm::Type *llvm_type = build_type(global->value_type());
             result = new llvm::GlobalVariable(*m_llvm_module, llvm_type,
                                               global->constant(), llvm::GlobalValue::ExternalLinkage,
                                               NULL, global->name());
@@ -267,7 +263,7 @@ namespace Psi {
             FunctionTerm *func = cast<FunctionTerm>(rewritten_term);
             PointerType::Ptr type = cast<PointerType>(func->type());
             FunctionTypeTerm* func_type = cast<FunctionTypeTerm>(type->target_type());
-            const llvm::Type *llvm_type = build_type(func_type);
+            llvm::Type *llvm_type = build_type(func_type);
             PSI_ASSERT_MSG(llvm_type, "could not create function because its LLVM type is not known");
             result = llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_type),
                                             llvm::GlobalValue::ExternalLinkage,
@@ -347,11 +343,11 @@ namespace Psi {
        * term: it is the LLVM type of the LLVM value of terms whose type
        * is this term.
        */
-      const llvm::Type* ModuleBuilder::build_type(Term* term) {
+      llvm::Type* ModuleBuilder::build_type(Term* term) {
         return build_term(m_type_terms, term, TypeBuilderCallback(this)).first;
       }
       
-      const llvm::IntegerType* integer_type(llvm::LLVMContext& context, const llvm::TargetData *target_data, IntegerType::Width width) {
+      llvm::IntegerType* integer_type(llvm::LLVMContext& context, const llvm::TargetData *target_data, IntegerType::Width width) {
         unsigned bits;
         switch (width) {
         case IntegerType::i8: bits = 8; break;
@@ -365,7 +361,7 @@ namespace Psi {
         return llvm::Type::getIntNTy(context, bits);
       }
       
-      const llvm::Type* float_type(llvm::LLVMContext& context, FloatType::Width width) {
+      llvm::Type* float_type(llvm::LLVMContext& context, FloatType::Width width) {
         switch (width) {
         case FloatType::fp32: return llvm::Type::getFloatTy(context);
         case FloatType::fp64: return llvm::Type::getDoubleTy(context);
@@ -496,7 +492,7 @@ extern "C" boost::shared_ptr<Psi::Tvm::Jit> tvm_jit_new(const boost::shared_ptr<
   if (!target)
     throw Psi::Tvm::LLVM::BuildError("Could not get LLVM target: " + error_msg);
 
-  boost::shared_ptr<llvm::TargetMachine> tm(target->createTargetMachine(host, ""));
+  boost::shared_ptr<llvm::TargetMachine> tm(target->createTargetMachine(host, "", ""));
   if (!tm)
     throw Psi::Tvm::LLVM::BuildError("Failed to create target machine");
   

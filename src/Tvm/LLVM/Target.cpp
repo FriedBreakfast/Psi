@@ -12,7 +12,7 @@
 #include <llvm/Module.h>
 #include <llvm/Target/TargetData.h>
 #include <llvm/ADT/Triple.h>
-#include <llvm/Target/TargetRegistry.h>
+#include <llvm/Support/TargetRegistry.h>
 
 namespace Psi {
   namespace Tvm {
@@ -118,7 +118,7 @@ namespace Psi {
         PSI_NOT_IMPLEMENTED();
       }
       
-      TargetCommon::TypeSizeAlignmentLiteral TargetCommon::type_size_alignment_simple(const llvm::Type *llvm_type) {
+      TargetCommon::TypeSizeAlignmentLiteral TargetCommon::type_size_alignment_simple(llvm::Type *llvm_type) {
         TypeSizeAlignmentLiteral result;
         result.size = m_target_data->getTypeAllocSize(llvm_type);
         result.alignment = m_target_data->getABITypeAlignment(llvm_type);
@@ -407,16 +407,17 @@ namespace Psi {
           return f;
         
         llvm::LLVMContext& c = module->getContext();
-        const llvm::Type *i32 = llvm::Type::getInt32Ty(c);
-        const llvm::Type *i8ptr = llvm::Type::getInt8PtrTy(c);
-        std::vector<const llvm::Type*> args;
-        args.push_back(i32);
-        args.push_back(i32);
-        args.push_back(llvm::Type::getInt64Ty(c));
-        args.push_back(i8ptr);
-        args.push_back(i8ptr);
+        llvm::Type *i32 = llvm::Type::getInt32Ty(c);
+        llvm::Type *i8ptr = llvm::Type::getInt8PtrTy(c);
+        llvm::Type *args[] = {
+          i32,
+          i32,
+          llvm::Type::getInt64Ty(c),
+          i8ptr,
+          i8ptr
+        };
 
-        const llvm::FunctionType *ft = llvm::FunctionType::get(i32, args, false);
+        llvm::FunctionType *ft = llvm::FunctionType::get(i32, args, false);
         return llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, fullname, module);
       }
       

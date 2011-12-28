@@ -35,7 +35,7 @@ namespace Psi {
           FunctionTypeTerm* function_type = cast<FunctionTypeTerm>
             (cast<PointerType>(insn->target()->type())->target_type());
 
-          const llvm::Type *llvm_function_type = builder.module_builder()->build_type(function_type)->getPointerTo();
+          llvm::Type *llvm_function_type = builder.module_builder()->build_type(function_type)->getPointerTo();
 
           llvm::Value *target = builder.build_value(insn->target());
 
@@ -52,7 +52,7 @@ namespace Psi {
         static llvm::Instruction* function_call_callback(FunctionBuilder& builder, FunctionCall::Ptr insn) {
           llvm::SmallVector<llvm::Value*, 4> parameters;
           llvm::Value *target = prepare_call_or_invoke(builder, insn, parameters);
-          return builder.irbuilder().CreateCall(target, parameters.begin(), parameters.end());
+          return builder.irbuilder().CreateCall(target, parameters);
         }
         
         static llvm::Instruction* function_invoke_callback(FunctionBuilder& builder, FunctionInvoke::Ptr insn) {
@@ -62,7 +62,7 @@ namespace Psi {
           llvm::BasicBlock *normal_edge = llvm::cast<llvm::BasicBlock>(builder.build_value(insn->normal_edge()));
           llvm::BasicBlock *unwind_edge = llvm::cast<llvm::BasicBlock>(builder.build_value(insn->unwind_edge()));
           
-          return builder.irbuilder().CreateInvoke(target, normal_edge, unwind_edge, parameters.begin(), parameters.end());
+          return builder.irbuilder().CreateInvoke(target, normal_edge, unwind_edge, parameters);
         }
 
         static llvm::Instruction* load_callback(FunctionBuilder& builder, Load::Ptr term) {
@@ -77,7 +77,7 @@ namespace Psi {
         }
 
         static llvm::Instruction* alloca_callback(FunctionBuilder& builder, Alloca::Ptr term) {
-          const llvm::Type *stored_type = builder.module_builder()->build_type(term->stored_type());
+          llvm::Type *stored_type = builder.module_builder()->build_type(term->stored_type());
           llvm::Value *count = builder.build_value(term->count());
           llvm::Value *alignment = builder.build_value(term->alignment());
           llvm::AllocaInst *inst = builder.irbuilder().CreateAlloca(stored_type, count);
@@ -101,10 +101,10 @@ namespace Psi {
           
           PSI_ASSERT(dest->getType() == src->getType());
 
-          const llvm::Type *i8ptr = llvm::IntegerType::getInt8PtrTy(builder.module_builder()->llvm_context());
+          llvm::Type *i8ptr = llvm::IntegerType::getInt8PtrTy(builder.module_builder()->llvm_context());
           if (dest->getType() != i8ptr) {
             const llvm::TargetData *target_data = builder.module_builder()->llvm_target_machine()->getTargetData();
-            const llvm::Type *element_type = llvm::cast<llvm::PointerType>(dest->getType())->getElementType();
+            llvm::Type *element_type = llvm::cast<llvm::PointerType>(dest->getType())->getElementType();
             llvm::Constant *target_size = llvm::ConstantInt::get(target_data->getIntPtrType(builder.module_builder()->llvm_context()), target_data->getTypeAllocSize(element_type));
             count = builder.irbuilder().CreateMul(count, target_size);
             alignment = std::max(alignment, target_data->getABITypeAlignment(element_type));

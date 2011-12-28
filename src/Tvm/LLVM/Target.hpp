@@ -163,7 +163,7 @@ namespace Psi {
         };
         
         LowerFunctionHelperResult lower_function_helper(AggregateLoweringPass::AggregateLoweringRewriter&,  FunctionTypeTerm*);
-        TypeSizeAlignmentLiteral type_size_alignment_simple(const llvm::Type*);
+        TypeSizeAlignmentLiteral type_size_alignment_simple(llvm::Type*);
 
       public:
 	TargetCommon(const Callback*, llvm::LLVMContext*, const llvm::TargetData*);

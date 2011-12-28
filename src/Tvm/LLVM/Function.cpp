@@ -238,8 +238,8 @@ namespace Psi {
           BlockTerm::PhiList& phi_list = it->first->phi_nodes();
           for (BlockTerm::PhiList::iterator jt = phi_list.begin(); jt != phi_list.end(); ++jt) {
             PhiTerm *phi = &*jt;
-            const llvm::Type *llvm_ty = module_builder()->build_type(phi->type());
-            llvm::PHINode *llvm_phi = irbuilder().CreatePHI(llvm_ty, term_name(phi));
+            llvm::Type *llvm_ty = module_builder()->build_type(phi->type());
+            llvm::PHINode *llvm_phi = irbuilder().CreatePHI(llvm_ty, phi->n_incoming(), term_name(phi));
 	    phi_node_map.insert(std::make_pair(phi, llvm_phi));
             m_value_terms.insert(std::make_pair(phi, llvm_phi));
           }
@@ -257,7 +257,7 @@ namespace Psi {
             for (unsigned ii = 0, ie = catch_clause->n_clauses(); ii != ie; ++ii)
               select_args.push_back(build_value(catch_clause->clause(ii)));
 
-            llvm::Value *ex_sel = irbuilder().CreateCall(m_module_builder->llvm_eh_selector(), select_args.begin(), select_args.end());
+            llvm::Value *ex_sel = irbuilder().CreateCall(m_module_builder->llvm_eh_selector(), select_args);
             m_value_terms[catch_clause] = ex_sel;
             
             // Get the value associated to each entry in the catch clause

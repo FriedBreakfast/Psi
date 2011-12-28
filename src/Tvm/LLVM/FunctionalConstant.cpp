@@ -9,19 +9,19 @@ namespace Psi {
     namespace LLVM {
       struct FunctionalConstantBuilder {
         static llvm::Constant *metatype_size_callback(ModuleBuilder& builder, MetatypeSize::Ptr term) {
-          const llvm::Type *type = builder.build_type(term->parameter());
+          llvm::Type *type = builder.build_type(term->parameter());
           uint64_t size = builder.llvm_target_machine()->getTargetData()->getTypeAllocSize(type);
           return llvm::ConstantInt::get(builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context()), size);
         }
 
         static llvm::Constant *metatype_alignment_callback(ModuleBuilder& builder, MetatypeAlignment::Ptr term) {
-          const llvm::Type *type = builder.build_type(term->parameter());       
+          llvm::Type *type = builder.build_type(term->parameter());
           uint64_t size = builder.llvm_target_machine()->getTargetData()->getABITypeAlignment(type);
           return llvm::ConstantInt::get(builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context()), size);
         }
 
         static llvm::Constant* empty_value_callback(ModuleBuilder& builder, EmptyValue::Ptr) {
-          return llvm::ConstantStruct::get(builder.llvm_context(), 0, 0, false);
+          return llvm::ConstantStruct::get(llvm::StructType::get(builder.llvm_context()), llvm::ArrayRef<llvm::Constant*>());
         }
 
         static llvm::Constant* boolean_value_callback(ModuleBuilder& builder, BooleanValue::Ptr term) {
@@ -31,7 +31,7 @@ namespace Psi {
         }
 
         static llvm::Constant* integer_value_callback(ModuleBuilder& builder, IntegerValue::Ptr term) {
-          const llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), term->type()->width());
+          llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), term->type()->width());
           llvm::APInt llvm_value(llvm_type->getBitWidth(), term->value().num_words(), term->value().words());
           return llvm::ConstantInt::get(llvm_type, llvm_value);
         }
@@ -41,24 +41,25 @@ namespace Psi {
         }
 
         static llvm::Constant* array_value_callback(ModuleBuilder& builder, ArrayValue::Ptr term) {
-          const llvm::Type *type = builder.build_type(term->type());
+          llvm::Type *type = builder.build_type(term->type());
           llvm::SmallVector<llvm::Constant*, 4> elements(term->length());
           for (unsigned i = 0; i < term->length(); ++i)
             elements[i] = builder.build_constant(term->value(i));
 
-          return llvm::ConstantArray::get(llvm::cast<llvm::ArrayType>(type), &elements[0], elements.size());
+          return llvm::ConstantArray::get(llvm::cast<llvm::ArrayType>(type), elements);
         }
 
         static llvm::Constant* struct_value_callback(ModuleBuilder& builder, StructValue::Ptr term) {
+          llvm::StructType *type = llvm::cast<llvm::StructType>(builder.build_type(term->type()));
           llvm::SmallVector<llvm::Constant*, 4> members(term->n_members());
           for (unsigned i = 0; i < term->n_members(); ++i)
             members[i] = builder.build_constant(term->member_value(i));
 
-          return llvm::ConstantStruct::get(builder.llvm_context(), &members[0], members.size(), false);
+          return llvm::ConstantStruct::get(type, members);
         }
         
         static llvm::Constant* undefined_value_callback(ModuleBuilder& builder, UndefinedValue::Ptr term) {
-          const llvm::Type *ty = builder.build_type(term->type());
+          llvm::Type *ty = builder.build_type(term->type());
           return llvm::UndefValue::get(ty);
         }
 
@@ -67,43 +68,43 @@ namespace Psi {
         }
 
         static llvm::Constant* pointer_cast_callback(ModuleBuilder& builder, PointerCast::Ptr term) {
-          const llvm::Type *type = builder.build_type(term->target_type());
+          llvm::Type *type = builder.build_type(term->target_type());
           llvm::Constant *source = builder.build_constant(term->pointer());
           return llvm::ConstantExpr::getBitCast(source, type->getPointerTo());
         }
         
         static llvm::Constant* pointer_offset_callback(ModuleBuilder& builder, PointerOffset::Ptr term) {
           llvm::Constant *ptr = builder.build_constant(term->pointer());
-          llvm::Constant *offset = builder.build_constant(term->offset());
-          return llvm::ConstantExpr::getInBoundsGetElementPtr(ptr, &offset, 1);
+          llvm::Constant *offset[] = {builder.build_constant(term->offset())};
+          return llvm::ConstantExpr::getInBoundsGetElementPtr(ptr, offset);
         }
         
         static llvm::Constant* struct_element_callback(ModuleBuilder& builder, StructElement::Ptr term) {
           llvm::Constant *aggregate = builder.build_constant(term->aggregate());
-          unsigned index = term->index();
-          return llvm::ConstantExpr::getExtractValue(aggregate, &index, 1);
+          unsigned indices[] = {term->index()};
+          return llvm::ConstantExpr::getExtractValue(aggregate, indices);
         }
         
         static llvm::Constant* struct_element_ptr_callback(ModuleBuilder& builder, StructElementPtr::Ptr term) {
           llvm::Constant *aggregate_ptr = builder.build_constant(term->aggregate_ptr());
-          const llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.llvm_context());
-          llvm::Constant *indices[2] = {llvm::ConstantInt::get(i32_ty, 0), llvm::ConstantInt::get(i32_ty, term->index())};
-          return llvm::ConstantExpr::getInBoundsGetElementPtr(aggregate_ptr, indices, 2);
+          llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.llvm_context());
+          llvm::Constant *indices[] = {llvm::ConstantInt::get(i32_ty, 0), llvm::ConstantInt::get(i32_ty, term->index())};
+          return llvm::ConstantExpr::getInBoundsGetElementPtr(aggregate_ptr, indices);
         }
         
         static llvm::Constant* struct_element_offset_callback(ModuleBuilder& builder, StructElementOffset::Ptr term) {
-          const llvm::StructType *struct_type = llvm::cast<llvm::StructType>(builder.build_type(term->aggregate_type()));
+          llvm::StructType *struct_type = llvm::cast<llvm::StructType>(builder.build_type(term->aggregate_type()));
           const llvm::StructLayout *layout = builder.llvm_target_machine()->getTargetData()->getStructLayout(struct_type);
           uint64_t value = layout->getElementOffset(term->index());
-          const llvm::Type *size_type = builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context());
+          llvm::Type *size_type = builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context());
           return llvm::ConstantInt::get(size_type, value);
         }
         
         static llvm::Constant* array_element_ptr_callback(ModuleBuilder& builder, ArrayElementPtr::Ptr term) {
           llvm::Constant *aggregate_ptr = builder.build_constant(term->aggregate_ptr());
-          const llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.llvm_context());
-          llvm::Constant *indices[2] = {llvm::ConstantInt::get(i32_ty, 0), builder.build_constant(term->index())};
-          return llvm::ConstantExpr::getInBoundsGetElementPtr(aggregate_ptr, indices, 2);
+          llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.llvm_context());
+          llvm::Constant *indices[] = {llvm::ConstantInt::get(i32_ty, 0), builder.build_constant(term->index())};
+          return llvm::ConstantExpr::getInBoundsGetElementPtr(aggregate_ptr, indices);
         }
         
         static llvm::Constant* select_value_callback(ModuleBuilder& builder, SelectValue::Ptr term) {
@@ -120,7 +121,7 @@ namespace Psi {
           IntegerUnaryOp(CallbackType callback_) : callback(callback_) {}
           
           llvm::Constant* operator () (ModuleBuilder& builder, UnaryOperation::Ptr term) const {
-            const llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), cast<IntegerType>(term->type())->width());
+            llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), cast<IntegerType>(term->type())->width());
             llvm::APInt param = builder.build_constant_integer(term->parameter());
             llvm::APInt result = (param.*callback)();
             return llvm::ConstantInt::get(llvm_type, result);
@@ -138,7 +139,7 @@ namespace Psi {
             : ui_callback(ui_callback_), si_callback(si_callback_) {}
 
           llvm::Constant* operator () (ModuleBuilder& builder, BinaryOperation::Ptr term) const {
-            const llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), cast<IntegerType>(term->type())->width());
+            llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), cast<IntegerType>(term->type())->width());
             llvm::APInt lhs = builder.build_constant_integer(term->lhs());
             llvm::APInt rhs = builder.build_constant_integer(term->rhs());
             llvm::APInt result;

@@ -83,7 +83,7 @@ namespace Psi {
         
         TargetCallback *target_callback() {return m_target_callback;}
 
-        virtual const llvm::Type* build_type(Term *term);
+        virtual llvm::Type* build_type(Term *term);
         virtual llvm::Constant* build_constant(Term *term);
         llvm::GlobalValue* build_global(GlobalTerm *term);
 
@@ -111,10 +111,10 @@ namespace Psi {
         llvm::Module *m_llvm_module;
         TargetCallback *m_target_callback;
 
-        typedef std::tr1::unordered_map<Term*, const llvm::Type*> TypeTermMap;
+        typedef std::tr1::unordered_map<Term*, llvm::Type*> TypeTermMap;
         TypeTermMap m_type_terms;
 
-        const llvm::Type* build_type_internal(FunctionalTerm *term);
+        llvm::Type* build_type_internal(FunctionalTerm *term);
 
         typedef std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*> GlobalTermMap;
         GlobalTermMap m_global_terms;
@@ -174,8 +174,8 @@ namespace Psi {
        * Functions for handling simple types.
        */
       ///@{
-      const llvm::IntegerType* integer_type(llvm::LLVMContext&, const llvm::TargetData*, IntegerType::Width);
-      const llvm::Type* float_type(llvm::LLVMContext&, FloatType::Width);
+      llvm::IntegerType* integer_type(llvm::LLVMContext&, const llvm::TargetData*, IntegerType::Width);
+      llvm::Type* float_type(llvm::LLVMContext&, FloatType::Width);
       ///@}
 
       llvm::TargetMachine* host_machine();
