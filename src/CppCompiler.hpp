@@ -30,7 +30,6 @@ namespace Psi {
 #endif
 #else
 #error Unsupported compiler!
-#define PSI_UNUSED(x)
 #define PSI_STD std
 #define PSI_STDINC ""
 #define PSI_ATTRIBUTE(x)

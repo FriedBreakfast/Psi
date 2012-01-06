@@ -191,8 +191,8 @@ namespace Psi {
       template<typename U> bool operator != (const ObjectPtr<U>& other) const {return get() != other.get();};
       template<typename U> bool operator < (const ObjectPtr<U>& other) const {return get() < other.get();};
 
-      /// \brief Get the compile context for this Object, without evaluating the Tree.
-      CompileContext& compile_context() const;
+      /// \brief Get the compile context for this Object.
+      CompileContext& compile_context() const {return m_ptr->compile_context();}
     };
 
     class TreePtrBase {
@@ -515,6 +515,7 @@ namespace Psi {
       TreeBaseVtable base;
       void (*complete) (Tree*);
       PsiBool (*match) (const Tree*,const Tree*,const void*,void*,unsigned);
+      Tree* (*parameterize_evaluations) (const Tree*,const void*,void*,unsigned);
     };
 
     class Tree : public TreeBase {
@@ -688,12 +689,17 @@ namespace Psi {
           return mv.result;
         }
       }
+      
+      static Tree* parameterize_evaluations(const Tree *self, const void *parameters_vtable PSI_ATTRIBUTE((PSI_UNUSED)), void *parameters_obj PSI_ATTRIBUTE((PSI_UNUSED)), unsigned depth PSI_ATTRIBUTE((PSI_UNUSED))) {
+        PSI_FAIL("not implemented");
+      }
     };
 
 #define PSI_COMPILER_TREE(derived,name,super) { \
     PSI_COMPILER_TREE_BASE(false,derived,name,super), \
     &::Psi::Compiler::TreeWrapper<derived>::complete, \
-    &::Psi::Compiler::TreeWrapper<derived>::match \
+    &::Psi::Compiler::TreeWrapper<derived>::match, \
+    &::Psi::Compiler::TreeWrapper<derived>::parameterize_evaluations \
   }
 
 #define PSI_COMPILER_TREE_INIT() (PSI_REQUIRE_CONVERTIBLE(&vtable, const VtableType*), PSI_COMPILER_SI_INIT(&vtable))
@@ -933,8 +939,6 @@ namespace Psi {
         return treeptr_cast<T>(ptr->parameterize(m_location, m_elements, m_depth));
       }
       
-      TreePtr<GenericType> visit_tree_ptr_helper(const TreePtr<GenericType>& ptr, const GenericType*);
-
     public:
       ParameterizeVisitor(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth)
       : m_location(location), m_elements(elements), m_depth(depth) {}
@@ -959,8 +963,6 @@ namespace Psi {
       TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Term*) {
         return treeptr_cast<T>(ptr->specialize(m_location, m_values, m_depth));
       }
-
-      TreePtr<GenericType> visit_tree_ptr_helper(const TreePtr<GenericType>& ptr, const GenericType*);
 
     public:
       SpecializeVisitor(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth)

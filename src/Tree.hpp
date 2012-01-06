@@ -129,7 +129,7 @@ namespace Psi {
 
       GenericType(CompileContext& compile_context, const SourceLocation& location);
       GenericType(const TreePtr<Term>& member,
-                  const PSI_STD::vector<TreePtr<Parameter> >& parameters,
+                  const PSI_STD::vector<TreePtr<Anonymous> >& parameters,
                   const PSI_STD::vector<TreePtr<Implementation> >& implementations,
                   const SourceLocation& location);
 
@@ -137,22 +137,12 @@ namespace Psi {
 
       /// \brief Single member of this type.
       TreePtr<Term> member;
-      /// \brief
-      PSI_STD::vector<TreePtr<Parameter> > parameters;
       /// \brief Implementations carried by this type.
       PSI_STD::vector<TreePtr<Implementation> > implementations;
 
       TreePtr<GenericType> parameterize(const SourceLocation& location, unsigned depth);
       TreePtr<> specialize(const SourceLocation& location, unsigned depth);
     };
-
-    inline TreePtr<GenericType> ParameterizeVisitor::visit_tree_ptr_helper(const TreePtr<GenericType>& ptr, const GenericType*) {
-      return ptr->parameterize(m_location, m_elements, m_depth);
-    }
-    
-    inline TreePtr<GenericType> SpecializeVisitor::visit_tree_ptr_helper(const TreePtr<GenericType>& ptr, const GenericType*) {
-      return ptr->specialize(m_location, m_values, m_depth);
-    }
 
     /**
      * \brief Instance of GenericType.
