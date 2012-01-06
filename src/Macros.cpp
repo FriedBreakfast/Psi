@@ -7,23 +7,27 @@ namespace Psi {
      * cannot be used as a type.
      */
     class PureMacroTerm : public Term {
-      PSI_STD::vector<TreePtr<Implementation> > m_implementations;
-      
     public:
       static const TermVtable vtable;
+
+      PSI_STD::vector<TreePtr<Implementation> > implementations;
+
+      PureMacroTerm(CompileContext& context, const SourceLocation& location)
+      : Term(context, location) {
+      }
         
       PureMacroTerm(const TreePtr<Term>& type,
-                    const PSI_STD::vector<TreePtr<Implementation> >& implementations,
+                    const PSI_STD::vector<TreePtr<Implementation> >& implementations_,
                     const SourceLocation& location)
       : Term(type, location),
-      m_implementations(implementations) {
+      implementations(implementations_) {
         PSI_COMPILER_TREE_INIT();
       }
 
       static TreePtr<> interface_search_impl(const PureMacroTerm& self,
                                              const TreePtr<Interface>& interface,
                                              const List<TreePtr<Term> >& parameters) {
-        for (PSI_STD::vector<TreePtr<Implementation> >::const_iterator ii = self.m_implementations.begin(), ie = self.m_implementations.end(); ii != ie; ++ii) {
+        for (PSI_STD::vector<TreePtr<Implementation> >::const_iterator ii = self.implementations.begin(), ie = self.implementations.end(); ii != ie; ++ii) {
           if ((*ii)->matches(interface, parameters))
             return (*ii)->value;
         }

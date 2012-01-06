@@ -5,16 +5,20 @@
 
 namespace Psi {
   namespace Compiler {
-    TreeBase::TreeBase(CompileContext& compile_context, const SourceLocation& location)
+    Object::Object(CompileContext& compile_context)
     : m_reference_count(0),
-    m_compile_context(&compile_context),
-    m_location(location) {
+    m_compile_context(&compile_context) {
       m_compile_context->m_gc_list.push_back(*this);
     }
 
-    TreeBase::~TreeBase() {
+    Object::~Object() {
       if (is_linked())
         m_compile_context->m_gc_list.erase(m_compile_context->m_gc_list.iterator_to(*this));
+    }
+    
+    TreeBase::TreeBase(CompileContext& compile_context, const SourceLocation& location)
+    : Object(compile_context),
+    m_location(location) {
     }
     
     Tree::Tree(CompileContext& compile_context, const SourceLocation& location)
@@ -389,7 +393,8 @@ namespace Psi {
       v("target", &FunctionCall::target);
     }
 
-    const SIVtable TreeBase::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeBase", NULL);
+    const SIVtable Object::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Object", NULL);
+    const SIVtable TreeBase::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeBase", &Object::vtable);
     const SIVtable TreeCallback::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeCallback", &TreeBase::vtable);
     const SIVtable Tree::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Tree", &TreeBase::vtable);
 

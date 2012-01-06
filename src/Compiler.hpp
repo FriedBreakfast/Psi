@@ -149,18 +149,58 @@ namespace Psi {
       return reinterpret_cast<const typename T::VtableType*>(si_vptr(ptr));
     }
 
+    class Object;
     class TreeBase;
     class Tree;
     class Type;
     class CompileContext;
 
+    template<typename T>
+    class ObjectPtr {
+      typedef void (ObjectPtr::*safe_bool_type) () const;
+      void safe_bool_true() const {}
+
+      T *m_ptr;
+
+      void initialize(T *ptr, bool add_ref) {
+        m_ptr = ptr;
+        if (add_ref && m_ptr)
+          ++m_ptr->m_reference_count;
+      }
+
+    public:
+      ~ObjectPtr();
+      ObjectPtr() : m_ptr(NULL) {}
+      explicit ObjectPtr(T *ptr, bool add_ref) {initialize(ptr, add_ref);}
+      ObjectPtr(const ObjectPtr& src) {initialize(src.m_ptr, true);}
+      template<typename U> ObjectPtr(const ObjectPtr<U>& src) {initialize(src.get(), true);}
+      ObjectPtr& operator = (const ObjectPtr& src) {ObjectPtr(src).swap(*this); return *this;}
+      template<typename U> ObjectPtr& operator = (const ObjectPtr<U>& src) {ObjectPtr<T>(src).swap(*this); return *this;}
+
+      T* get() const {return m_ptr;}
+      T* release() {T *tmp = m_ptr; m_ptr = NULL; return tmp;}
+      void swap(ObjectPtr& other) {std::swap(m_ptr, other.m_ptr);}
+      void reset(T *ptr=NULL, bool add_ref=true) {ObjectPtr<T>(ptr, add_ref).swap(*this);}
+
+      T& operator * () const {return *get();}
+      T* operator -> () const {return get();}
+
+      operator safe_bool_type () const {return get() ? &ObjectPtr::safe_bool_true : 0;}
+      bool operator ! () const {return !get();}
+      template<typename U> bool operator == (const ObjectPtr<U>& other) const {return get() == other.get();};
+      template<typename U> bool operator != (const ObjectPtr<U>& other) const {return get() != other.get();};
+      template<typename U> bool operator < (const ObjectPtr<U>& other) const {return get() < other.get();};
+
+      /// \brief Get the compile context for this Object, without evaluating the Tree.
+      CompileContext& compile_context() const;
+    };
+
     class TreePtrBase {
       typedef void (TreePtrBase::*safe_bool_type) () const;
       void safe_bool_true() const {}
 
-      mutable const TreeBase *m_ptr;
+      mutable ObjectPtr<const TreeBase> m_ptr;
 
-      void initialize(const TreeBase *ptr, bool add_ref);
       const Tree* get_helper() const;
       void update_chain(const TreeBase *ptr) const;
 
@@ -168,23 +208,22 @@ namespace Psi {
       void swap(TreePtrBase& other) {std::swap(m_ptr, other.m_ptr);}
       
     public:
-      ~TreePtrBase();
       TreePtrBase() {}
-      explicit TreePtrBase(const TreeBase *ptr, bool add_ref) {initialize(ptr, add_ref);}
-      TreePtrBase(const TreePtrBase& src) {initialize(src.m_ptr, true);}
-      TreePtrBase& operator = (const TreePtrBase& src) {TreePtrBase(src).swap(*this); return *this;}
+      explicit TreePtrBase(const TreeBase *ptr, bool add_ref) : m_ptr(ptr, add_ref) {}
       
       const Tree* get() const;
-      const TreeBase* raw_get() const {return m_ptr;}
-      const TreeBase* release() {const TreeBase *tmp = m_ptr; m_ptr = NULL; return tmp;}
+      const TreeBase* raw_get() const {return m_ptr.get();}
+      const ObjectPtr<const TreeBase>& raw_ptr_get() const {return m_ptr;}
+      const TreeBase* release() {return m_ptr.release();}
 
       operator safe_bool_type () const {return get() ? &TreePtrBase::safe_bool_true : 0;}
       bool operator ! () const {return !get();}
-      template<typename U> bool operator == (const TreePtrBase& other) const {return get() == other.get();};
-      template<typename U> bool operator != (const TreePtrBase& other) const {return get() != other.get();};
-      template<typename U> bool operator < (const TreePtrBase& other) const {return get() < other.get();};
+      bool operator == (const TreePtrBase& other) const {return get() == other.get();};
+      bool operator != (const TreePtrBase& other) const {return get() != other.get();};
+      bool operator < (const TreePtrBase& other) const {return get() < other.get();};
 
-      CompileContext& compile_context() const;
+      /// \brief Get the compile context for this Tree, without evaluating the Tree.
+      CompileContext& compile_context() const {return m_ptr.compile_context();}
       const SourceLocation& location() const;
     };
 
@@ -225,78 +264,60 @@ namespace Psi {
       }
     };
 
+    class Object;
     class Tree;
     class TreeBase;
     class TreeCallback;
     class Term;
 
-    /// \see TreeBase
-    struct TreeBaseVtable {
+    /// \see Object
+    struct ObjectVtable {
       SIVtable base;
-      void (*destroy) (TreeBase*);
-      void (*gc_increment) (TreeBase*);
-      void (*gc_decrement) (TreeBase*);
-      void (*gc_clear) (TreeBase*);
-      bool is_callback;
+      void (*destroy) (Object*);
+      void (*gc_increment) (Object*);
+      void (*gc_decrement) (Object*);
+      void (*gc_clear) (Object*);
     };
 
     /**
-     * Extends SIBase for lazy evaluation of Trees.
-     *
-     * Two types derive from this: Tree, which holds values, and TreeCallbackHolder, which
-     * encapsulates a callback to return a Tree.
+     * Extends SIBase to participate in garbage collection.
      */
-    class TreeBase : public SIBase, public boost::intrusive::list_base_hook<> {
+    class Object : public SIBase, public boost::intrusive::list_base_hook<> {
       friend class CompileContext;
-      friend class RunningTreeCallback;
-      friend class TreeCallback;
       friend class GCVisitorIncrement;
       friend class GCVisitorDecrement;
-      friend class GCVisitorClear;
-      friend class TreePtrBase;
+      template<typename> friend class ObjectPtr;
 
       mutable std::size_t m_reference_count;
       CompileContext *m_compile_context;
-      SourceLocation m_location;
-
-    protected:
-      CompileContext& compile_context() const {return *m_compile_context;}
-      const SourceLocation& location() const {return m_location;}
 
     public:
-      typedef TreeBaseVtable VtableType;
+      typedef ObjectVtable VtableType;
       static const SIVtable vtable;
-      
-      TreeBase(CompileContext& compile_context, const SourceLocation& location);
-      ~TreeBase();
 
-      template<typename Visitor>
-      static void visit(Visitor& visitor PSI_ATTRIBUTE((PSI_UNUSED))) {}
+      Object(CompileContext& compile_context);
+      ~Object();
+
+      CompileContext& compile_context() const {return *m_compile_context;}
     };
-
-    inline void TreePtrBase::initialize(const TreeBase *ptr, bool add_ref) {
-      m_ptr = ptr;
-      if (add_ref && m_ptr)
-        ++m_ptr->m_reference_count;
+    
+    template<typename T>
+    ObjectPtr<T>::~ObjectPtr() {
+      if (m_ptr) {
+        if (!--m_ptr->m_reference_count) {
+          const Object *cptr = m_ptr;
+          Object *optr = const_cast<Object*>(cptr);
+          derived_vptr(optr)->destroy(optr);
+        }
+      }
     }
-
-    inline TreePtrBase::~TreePtrBase() {
-      if (m_ptr)
-        if (!--m_ptr->m_reference_count)
-          derived_vptr(m_ptr)->destroy(const_cast<TreeBase*>(m_ptr));
-    }
-
-    /// \brief Get the compile context for this Tree, without evaluating the Tree.
-    inline CompileContext& TreePtrBase::compile_context() const {return *m_ptr->m_compile_context;}
-    /// \brief Get the location of this Tree, without evaluating the Tree.
-    inline const SourceLocation& TreePtrBase::location() const {return m_ptr->m_location;}
 
     /**
      * \brief Base classes for gargabe collection phase
      * implementations.
      */
     template<typename Derived>
-    class TreeVisitorBase {
+    class ObjectVisitorBase {
       Derived& derived() {
         return *static_cast<Derived*>(this);
       }
@@ -306,7 +327,7 @@ namespace Psi {
       template<typename T>
       void visit_simple(const char*, const boost::array<T*, 1>&) {
       }
-      
+
       template<typename T>
       void visit_object(const char*, const boost::array<T*,1>& obj) {
         visit_members(*this, obj);
@@ -327,10 +348,15 @@ namespace Psi {
       }
 
       template<typename T>
+      void visit_object(const char*, const boost::array<ObjectPtr<T>*,1>& ptr) {
+        derived().visit_object_ptr(*ptr[0]);
+      }
+
+      template<typename T>
       void visit_object(const char*, const boost::array<TreePtr<T>*, 1>& ptr) {
         derived().visit_tree_ptr(*ptr[0]);
       }
-      
+
       template<typename T>
       void visit_sequence (const char*, const boost::array<T*,1>& collections) {
         for (typename T::iterator ii = collections[0]->begin(), ie = collections[0]->end(); ii != ie; ++ii) {
@@ -355,35 +381,55 @@ namespace Psi {
     /**
      * \brief Implements the increment phase of the garbage collector.
      */
-    class GCVisitorIncrement : public TreeVisitorBase<GCVisitorIncrement> {
+    class GCVisitorIncrement : public ObjectVisitorBase<GCVisitorIncrement> {
     public:
       template<typename T>
-      void visit_tree_ptr(TreePtr<T>& ptr) {
+      void visit_object_ptr(const ObjectPtr<T>& ptr) {
         if (ptr)
-          ++ptr.raw_get()->m_reference_count;
+          ++ptr->m_reference_count;
+      }
+      
+      template<typename T>
+      void visit_tree_ptr(TreePtr<T>& ptr) {
+        visit_object_ptr(ptr.raw_ptr_get());
       }
     };
 
     /**
      * \brief Implements the increment phase of the garbage collector.
      */
-    class GCVisitorDecrement : public TreeVisitorBase<GCVisitorDecrement> {
+    class GCVisitorDecrement : public ObjectVisitorBase<GCVisitorDecrement> {
     public:
       template<typename T>
-      void visit_tree_ptr(TreePtr<T>& ptr) {
+      void visit_object_ptr(const ObjectPtr<T>& ptr) {
         if (ptr)
-          --ptr.raw_get()->m_reference_count;
+          --ptr->m_reference_count;
+      }
+      
+      template<typename T>
+      void visit_tree_ptr(TreePtr<T>& ptr) {
+        visit_object_ptr(ptr.raw_ptr_get());
       }
     };
 
     /**
      * \brief Implements the increment phase of the garbage collector.
      */
-    class GCVisitorClear : public TreeVisitorBase<GCVisitorClear> {
+    class GCVisitorClear : public ObjectVisitorBase<GCVisitorClear> {
     public:
       template<typename T>
       void visit_sequence(const char*, const boost::array<T*,1>& seq) {
         seq[0]->clear();
+      }
+
+      template<typename T>
+      void visit_map(const char*, const boost::array<T*,1>& maps) {
+        maps[0]->clear();
+      }
+
+      template<typename T>
+      void visit_object_ptr(ObjectPtr<T>& ptr) {
+        ptr.reset();
       }
 
       template<typename T>
@@ -393,36 +439,74 @@ namespace Psi {
     };
 
     template<typename Derived>
-    struct TreeBaseWrapper : NonConstructible {
-      static void destroy(TreeBase *self) {
+    struct ObjectWrapper : NonConstructible {
+      static void destroy(Object *self) {
         delete static_cast<Derived*>(self);
       }
 
-      static void gc_increment(TreeBase *self) {
+      static void gc_increment(Object *self) {
         boost::array<Derived*, 1> a = {{static_cast<Derived*>(self)}};
         GCVisitorIncrement p;
         visit_members(p, a);
       }
 
-      static void gc_decrement(TreeBase *self) {
+      static void gc_decrement(Object *self) {
         boost::array<Derived*, 1> a = {{static_cast<Derived*>(self)}};
         GCVisitorDecrement p;
         visit_members(p, a);
       }
 
-      static void gc_clear(TreeBase *self) {
+      static void gc_clear(Object *self) {
         boost::array<Derived*, 1> a = {{static_cast<Derived*>(self)}};
         GCVisitorClear p;
         visit_members(p, a);
       }
     };
 
-#define PSI_COMPILER_TREE_BASE(is_callback,derived,name,super) { \
+#define PSI_COMPILER_OBJECT(derived,name,super) { \
     PSI_COMPILER_SI(name,&super::vtable), \
-    &::Psi::Compiler::TreeBaseWrapper<derived>::destroy, \
-    &::Psi::Compiler::TreeBaseWrapper<derived>::gc_increment, \
-    &::Psi::Compiler::TreeBaseWrapper<derived>::gc_decrement, \
-    &::Psi::Compiler::TreeBaseWrapper<derived>::gc_clear, \
+    &::Psi::Compiler::ObjectWrapper<derived>::destroy, \
+    &::Psi::Compiler::ObjectWrapper<derived>::gc_increment, \
+    &::Psi::Compiler::ObjectWrapper<derived>::gc_decrement, \
+    &::Psi::Compiler::ObjectWrapper<derived>::gc_clear \
+  }
+
+    /// \see TreeBase
+    struct TreeBaseVtable {
+      ObjectVtable base;
+      bool is_callback;
+    };
+
+    /**
+     * Extends Object for lazy evaluation of Trees.
+     *
+     * Two types derive from this: Tree, which holds values, and TreeCallbackHolder, which
+     * encapsulates a callback to return a Tree.
+     */
+    class TreeBase : public Object {
+      friend class CompileContext;
+      friend class RunningTreeCallback;
+      friend class TreeCallback;
+
+      SourceLocation m_location;
+
+    public:
+      typedef TreeBaseVtable VtableType;
+      static const SIVtable vtable;
+      
+      TreeBase(CompileContext& compile_context, const SourceLocation& location);
+
+      const SourceLocation& location() const {return m_location;}
+
+      template<typename Visitor>
+      static void visit(Visitor& visitor PSI_ATTRIBUTE((PSI_UNUSED))) {}
+    };
+
+    /// \brief Get the location of this Tree, without evaluating the Tree.
+    inline const SourceLocation& TreePtrBase::location() const {return m_ptr->location();}
+
+#define PSI_COMPILER_TREE_BASE(is_callback,derived,name,super) { \
+    PSI_COMPILER_OBJECT(derived,name,super), \
     (is_callback) \
   }
 
@@ -483,7 +567,7 @@ namespace Psi {
     /**
      * \brief Recursively completes a tree.
      */
-    class CompleteVisitor : public TreeVisitorBase<CompleteVisitor> {
+    class CompleteVisitor : public ObjectVisitorBase<CompleteVisitor> {
     public:
       template<typename T>
       void visit_tree_ptr(TreePtr<T>& ptr) {
@@ -616,7 +700,7 @@ namespace Psi {
 #define PSI_COMPILER_TREE_ABSTRACT(name,super) PSI_COMPILER_SI_ABSTRACT(name,&super::vtable)
 
     inline const Tree* TreePtrBase::get() const {
-      return (!m_ptr || !derived_vptr(m_ptr)->is_callback) ? static_cast<const Tree*>(m_ptr) : get_helper();
+      return (!m_ptr || !derived_vptr(m_ptr.get())->is_callback) ? static_cast<const Tree*>(m_ptr.get()) : get_helper();
     }
 
     /// \see TreeCallback
@@ -640,10 +724,6 @@ namespace Psi {
     private:
       CallbackState m_state;
       TreePtr<> m_value;
-
-    protected:
-      CompileContext& compile_context() const {return *m_compile_context;}
-      const SourceLocation& location() const {return m_location;}
 
     public:
       static const SIVtable vtable;
@@ -751,7 +831,6 @@ namespace Psi {
 
     class Term : public Tree {
       friend class Metatype;
-      Term(CompileContext&, const SourceLocation&);
 
     public:
       typedef TermVtable VtableType;
@@ -759,6 +838,7 @@ namespace Psi {
 
       static const SIVtable vtable;
 
+      Term(CompileContext& context, const SourceLocation& location);
       Term(const TreePtr<Term>&, const SourceLocation&);
 
       /// \brief The type of this term.
@@ -766,14 +846,13 @@ namespace Psi {
 
       bool is_type() const;
 
-
       /// \brief Replace anonymous terms in the list by parameters
-      TreePtr<Term> parameterize(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth) const {
+      TreePtr<Term> parameterize(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth=0) const {
         return tree_from_base<Term>(derived_vptr(this)->parameterize(this, &location, elements.vptr(), elements.object(), depth), false);
       }
 
       /// \brief Replace parameter terms in this tree by given values
-      TreePtr<Term> specialize(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth) const {
+      TreePtr<Term> specialize(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth=0) const {
         return tree_from_base<Term>(derived_vptr(this)->specialize(this, &location, values.vptr(), values.object(), depth), false);
       }
 
@@ -799,29 +878,30 @@ namespace Psi {
       bool changed() const {return m_changed;}
 
       template<typename T>
-      void visit_simple(const char*, const boost::array<T*, 2>& obj) {
-        *obj[0] = *obj[1];
+      void visit_simple(const char*, const boost::array<const T*, 2>& obj) {
+        *const_cast<T*>(obj[0]) = *obj[1];
       }
 
       template<typename T>
-      void visit_object(const char*, const boost::array<T*, 2>& obj) {
+      void visit_object(const char*, const boost::array<const T*, 2>& obj) {
         visit_members(*this, obj);
       }
 
       template<typename T>
       void visit_object(const char*, const boost::array<const TreePtr<T>*, 2>& ptr) {
-        *ptr[0] = static_cast<Derived*>(this)->visit_tree_ptr(*ptr[1]);
+        *const_cast<TreePtr<T>*>(ptr[0]) = static_cast<Derived*>(this)->visit_tree_ptr(*ptr[1]);
         if (*ptr[0] != *ptr[1])
           m_changed = true;
       }
 
       template<typename T>
-      void visit_collection(const char*, const boost::array<T*,2>& collections) {
-        for (typename T::iterator ii = collections[1]->begin(), ie = collections[1]->end(); ii != ie; ++ii) {
+      void visit_collection(const char*, const boost::array<const T*,2>& collections) {
+        T *target = const_cast<T*>(collections[0]);
+        for (typename T::const_iterator ii = collections[1]->begin(), ie = collections[1]->end(); ii != ie; ++ii) {
           typename T::value_type vt;
-          boost::array<typename T::pointer, 2> m = {{&vt, &*ii}};
+          boost::array<typename T::const_pointer, 2> m = {{&vt, &*ii}};
           visit_callback(*this, "", m);
-          collections[0]->insert(collections[0]->end(), vt);
+          target->insert(target->end(), vt);
         }
       }
 
@@ -836,20 +916,32 @@ namespace Psi {
       }
     };
 
+    class GenericType;
+
     class ParameterizeVisitor : public RewriteVisitorBase<ParameterizeVisitor> {
       SourceLocation m_location;
       List<TreePtr<Anonymous> > m_elements;
       unsigned m_depth;
+
+      template<typename T>
+      TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Tree*) {
+        return ptr;
+      }
       
+      template<typename T>
+      TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Term*) {
+        return treeptr_cast<T>(ptr->parameterize(m_location, m_elements, m_depth));
+      }
+      
+      TreePtr<GenericType> visit_tree_ptr_helper(const TreePtr<GenericType>& ptr, const GenericType*);
+
     public:
       ParameterizeVisitor(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth)
       : m_location(location), m_elements(elements), m_depth(depth) {}
 
       template<typename T>
-      TreePtr<T> visit_tree_ptr(TreePtr<T>& ptr) {
-        
-        
-        return ptr->parameterize(m_location, m_elements, m_depth);
+      TreePtr<T> visit_tree_ptr(const TreePtr<T>& ptr) {
+        return visit_tree_ptr_helper(ptr, ptr.get());
       }
     };
 
@@ -858,32 +950,44 @@ namespace Psi {
       List<TreePtr<Term> > m_values;
       unsigned m_depth;
 
+      template<typename T>
+      TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Tree*) {
+        return ptr;
+      }
+
+      template<typename T>
+      TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Term*) {
+        return treeptr_cast<T>(ptr->specialize(m_location, m_values, m_depth));
+      }
+
+      TreePtr<GenericType> visit_tree_ptr_helper(const TreePtr<GenericType>& ptr, const GenericType*);
+
     public:
       SpecializeVisitor(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth)
       : m_location(location), m_values(values), m_depth(depth) {}
 
       template<typename T>
-      TreePtr<T> visit_tree_ptr(TreePtr<T>& ptr) {
-        return ptr->specialize(m_location, m_values, m_depth);
+      TreePtr<T> visit_tree_ptr(const TreePtr<T>& ptr) {
+        return visit_tree_ptr_helper(ptr, ptr.get());
       }
     };
 
     template<typename Derived>
     struct TermWrapper : NonConstructible {
       static const TreeBase* parameterize(const Term *self, const SourceLocation *location, const void *elements_vtable, void *elements_object, unsigned depth) {
-        Derived rewritten;
-        boost::array<const Derived*, 1> ptrs = {{&rewritten, const_cast<Derived*>(static_cast<const Derived*>(self))}};
-        ParameterizeVisitor pv(List<TreePtr<Term> >(elements_vtable, elements_object), depth);
+        Derived rewritten(self->compile_context(), *location);
+        boost::array<const Derived*, 2> ptrs = {{&rewritten, static_cast<const Derived*>(self)}};
+        ParameterizeVisitor pv(*location, List<TreePtr<Anonymous> >(elements_vtable, elements_object), depth);
         visit_members(pv, ptrs);
-        return pv.changed() ? new Derived(rewritten) : self;
+        return pv.changed() ? TreePtr<Derived>(new Derived(rewritten)).release() : self;
       }
       
       static const TreeBase* specialize(const Term *self, const SourceLocation *location, const void *values_vtable, void *values_object, unsigned depth) {
-        Derived rewritten;
-        boost::array<const Derived*, 1> ptrs = {{&rewritten, const_cast<Derived*>(static_cast<const Derived*>(self))}};
-        SpecializeVisitor pv(List<TreePtr<Term> >(values_vtable, values_object), depth);
+        Derived rewritten(self->compile_context(), *location);
+        boost::array<const Derived*, 2> ptrs = {{&rewritten, static_cast<const Derived*>(self)}};
+        SpecializeVisitor pv(*location, List<TreePtr<Term> >(values_vtable, values_object), depth);
         visit_members(pv, ptrs);
-        return pv.changed() ? new Derived(rewritten) : self;
+        return pv.changed() ? TreePtr<Derived>(new Derived(rewritten)).release() : self;
       }
       
       static const TreeBase* interface_search(const Term *self, const TreeBase *interface, const void *parameters_vtable, void *parameters_object) {
@@ -919,10 +1023,9 @@ namespace Psi {
      * \brief Type of types.
      */
     class Metatype : public Term {
-      friend class CompileContext;
-      Metatype(CompileContext&, const SourceLocation&);
     public:
       static const TermVtable vtable;
+      Metatype(CompileContext& compile_context, const SourceLocation& location);
     };
 
     /// \brief Is this a type?
@@ -1182,15 +1285,15 @@ namespace Psi {
      * compilation object lifetimes.
      */
     class CompileContext {
-      friend class TreeBase;
+      friend class Object;
       friend class RunningTreeCallback;
-      struct TreeBaseDisposer;
+      struct ObjectDisposer;
 
       std::ostream *m_error_stream;
       bool m_error_occurred;
       RunningTreeCallback *m_running_completion_stack;
 
-      boost::intrusive::list<TreeBase, boost::intrusive::constant_time_size<false> > m_gc_list;
+      boost::intrusive::list<Object, boost::intrusive::constant_time_size<false> > m_gc_list;
 
       SourceLocation m_root_location;
 

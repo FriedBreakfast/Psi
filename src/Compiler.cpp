@@ -16,22 +16,14 @@ namespace Psi {
   namespace Compiler {
     void TreePtrBase::update_chain(const TreeBase *ptr) const {
       const TreePtrBase *hook = this;
-      TreeCallback *ptr_cb = NULL;
-      while (hook->m_ptr != ptr) {
-        PSI_ASSERT(derived_vptr(hook->m_ptr)->is_callback);
-        TreeCallback *next_ptr_cb = static_cast<TreeCallback*>(const_cast<TreeBase*>(hook->m_ptr));
+      ObjectPtr<TreeCallback> ptr_cb;
+      while (hook->m_ptr.get() != ptr) {
+        PSI_ASSERT(derived_vptr(hook->m_ptr.get())->is_callback);
+        ObjectPtr<TreeCallback> next_ptr_cb(static_cast<TreeCallback*>(const_cast<TreeBase*>(hook->m_ptr.get())), true);
         TreePtrBase *next_hook = &next_ptr_cb->m_value;
-
-        ++ptr->m_reference_count;
-        hook->m_ptr = ptr;
-
-        if (ptr_cb) {
-          if (--ptr_cb->m_reference_count)
-            derived_vptr(ptr_cb)->destroy(ptr_cb);
-        }
-        
+        hook->m_ptr.reset(ptr);
         hook = next_hook;
-        ptr_cb = next_ptr_cb;
+        ptr_cb.swap(next_ptr_cb);
       }
     }
     
@@ -50,11 +42,11 @@ namespace Psi {
         if (!hook->m_ptr)
           break;
         
-        const TreeBaseVtable *vtable = derived_vptr(hook->m_ptr);
+        const TreeBaseVtable *vtable = derived_vptr(hook->m_ptr.get());
         if (!vtable->is_callback)
           break;
 
-        TreeCallback *ptr_cb = static_cast<TreeCallback*>(const_cast<TreeBase*>(hook->m_ptr));
+        TreeCallback *ptr_cb = static_cast<TreeCallback*>(const_cast<TreeBase*>(hook->m_ptr.get()));
         hook = &ptr_cb->m_value;
 
         switch (ptr_cb->m_state) {
@@ -71,7 +63,7 @@ namespace Psi {
             throw;
           }
           PSI_ASSERT(!hook->m_ptr);
-          hook->m_ptr = eval_ptr;
+          hook->m_ptr.reset(eval_ptr);
           ptr_cb->m_state = TreeCallback::state_finished;
           break;
         }
@@ -90,10 +82,10 @@ namespace Psi {
         }
       }
 
-      update_chain(hook->m_ptr);
+      update_chain(hook->m_ptr.get());
 
-      PSI_ASSERT(!m_ptr || !derived_vptr(m_ptr)->is_callback);
-      return static_cast<const Tree*>(m_ptr);
+      PSI_ASSERT(!m_ptr || !derived_vptr(m_ptr.get())->is_callback);
+      return static_cast<const Tree*>(m_ptr.get());
     }
     
     bool LogicalSourceLocation::Key::operator < (const Key& other) const {
@@ -322,7 +314,7 @@ namespace Psi {
                                     % interface.location().logical->error_name(location.logical)
                                     % interface_parameters_message(parameters, location));
 
-      if (!si_is_a(result.get(), &cast_type->base.base))
+      if (!si_is_a(result.get(), &cast_type->base.base.base))
         compile_context.error_throw(location,
                                     boost::format("'%s' interface has the wrong type")
                                     % interface.location().logical->error_name(location.logical)
@@ -402,8 +394,8 @@ namespace Psi {
       m_argument_passing_interface.reset(new Interface(*this, psi_compiler_location.named_child("ArgumentPasser")));
     }
 
-    struct CompileContext::TreeBaseDisposer {
-      void operator () (TreeBase *t) {
+    struct CompileContext::ObjectDisposer {
+      void operator () (Object *t) {
         if (!--t->m_reference_count)
           derived_vptr(t)->destroy(t);
         else
@@ -418,14 +410,14 @@ namespace Psi {
       m_argument_passing_interface.reset();
 
       // Add extra reference to each Tree
-      BOOST_FOREACH(TreeBase& t, m_gc_list)
+      BOOST_FOREACH(Object& t, m_gc_list)
         ++t.m_reference_count;
 
       // Clear cross references in each Tree
-      BOOST_FOREACH(TreeBase& t, m_gc_list)
+      BOOST_FOREACH(Object& t, m_gc_list)
         derived_vptr(&t)->gc_clear(&t);
 
-      m_gc_list.clear_and_dispose(TreeBaseDisposer());
+      m_gc_list.clear_and_dispose(ObjectDisposer());
     }
 
     void CompileContext::error(const SourceLocation& loc, const std::string& message, unsigned flags) {
@@ -473,12 +465,12 @@ namespace Psi {
 
     RunningTreeCallback::RunningTreeCallback(TreeCallback *callback)
       : m_callback(callback) {
-      m_parent = callback->m_compile_context->m_running_completion_stack;
-      callback->m_compile_context->m_running_completion_stack = this;
+      m_parent = callback->compile_context().m_running_completion_stack;
+      callback->compile_context().m_running_completion_stack = this;
     }
 
     RunningTreeCallback::~RunningTreeCallback() {
-      m_callback->m_compile_context->m_running_completion_stack = m_parent;
+      m_callback->compile_context().m_running_completion_stack = m_parent;
     }
 
     /**
@@ -489,10 +481,10 @@ namespace Psi {
      */
     void RunningTreeCallback::throw_circular_dependency(TreeCallback *callback) {
       PSI_ASSERT(callback->m_state == TreeCallback::state_running);
-      CompileError error(*callback->m_compile_context, callback->m_location);
+      CompileError error(callback->compile_context(), callback->m_location);
       error.info("Circular dependency found");
       boost::format fmt("via: '%s'");
-      for (RunningTreeCallback *ancestor = callback->m_compile_context->m_running_completion_stack;
+      for (RunningTreeCallback *ancestor = callback->compile_context().m_running_completion_stack;
            ancestor && (ancestor->m_callback != callback); ancestor = ancestor->m_parent)
         error.info(ancestor->m_callback->m_location, fmt % ancestor->m_callback->m_location.logical->error_name(callback->m_location.logical));
       error.end();
