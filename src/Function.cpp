@@ -5,22 +5,10 @@
 #include "Utility.hpp"
 
 #include <deque>
-#include <boost/bind.hpp>
 #include <boost/format.hpp>
 
 namespace Psi {
   namespace Compiler {
-    SharedPtr<Parser::TokenExpression> expression_as_token_type(const SharedPtr<Parser::Expression>& expr, Parser::TokenExpression::TokenType type) {
-      if (expr->expression_type != Parser::expression_token)
-        return SharedPtr<Parser::TokenExpression>();
-
-      SharedPtr<Parser::TokenExpression> cast_expr = checked_pointer_cast<Parser::TokenExpression>(expr);
-      if (cast_expr->token_type != type)
-        return SharedPtr<Parser::TokenExpression>();
-
-      return cast_expr;
-    }
-
     class EvaluateContextOneName : public EvaluateContext {
       String m_name;
       TreePtr<Term> m_value;
@@ -120,6 +108,7 @@ namespace Psi {
     class ArgumentPassingInfoCallback;
     
     struct ArgumentPassingInfoCallbackVtable {
+      TreeVtable base;
       void (*argument_passing_info) (ArgumentPassingInfo*, const ArgumentPassingInfoCallback*);
     };
 

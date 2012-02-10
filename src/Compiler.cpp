@@ -685,6 +685,7 @@ namespace Psi {
       : Tree(block_.compile_context(), block_.location()),
       block(block_),
       entries(entries_) {
+        PSI_COMPILER_TREE_INIT();
       }
 
       TreePtr<Block> block;
@@ -703,7 +704,7 @@ namespace Psi {
     public:
       static const EvaluateContextVtable vtable;
 
-      typedef std::map<String, TreePtr<Term> > NameMapType;
+      typedef StatementListTree::NameMapType NameMapType;
       
       StatementListContext(const TreePtr<StatementListTree>& statement_list_,
                            const TreePtr<EvaluateContext>& next_)

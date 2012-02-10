@@ -180,13 +180,14 @@ namespace {
 
 %token MODE_STATEMENT_LIST
 %token MODE_ARGUMENT_LIST
+%token MODE_POSITIONAL_LIST
 %token MODE_FUNCTION_ARGUMENT_DECLARE
 
 %type <text> IDENTIFIER
 %type <cstr> product_operator add_operator compare_operator unary_operator
 %type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression
 %type <expression> unary_expression compare_expression return_type_declare macro_expression macro_not_list token_expression
-%type <expression_list> compare_expression_build macro_list
+%type <expression_list> compare_expression_build macro_list expression_list expression_list_nonempty
 %type <named_expression> statement named_expression
 %type <named_expression_list> statement_list argument_list_declare_nonempty argument_list_declare argument_list argument_list_nonempty
 
@@ -212,6 +213,7 @@ namespace {
 root: MODE_STATEMENT_LIST statement_list {arguments.result_named_expressions = $2;}
 | MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare {arguments.result_named_expressions = $2; arguments.result_return_type = $3;}
 | MODE_ARGUMENT_LIST argument_list {arguments.result_named_expressions = $2;}
+| MODE_POSITIONAL_LIST expression_list {arguments.result_expressions = $2;}
 ;
 
 argument_list: {$$.clear();}
@@ -234,6 +236,15 @@ argument_list_declare: /* blank */ {$$.clear();}
 argument_list_declare_nonempty:
 named_expression {$$.assign(1, $1);}
 | argument_list_declare_nonempty ',' named_expression {$$ = $1; $$.push_back($3);}
+;
+
+expression_list: {$$.clear();}
+| expression_list_nonempty
+;
+
+expression_list_nonempty:
+expression {$$.assign(1, $1);}
+| expression_list_nonempty ',' expression {$$ = $1; $$.push_back($3);}
 ;
 
 statement_list:
@@ -593,6 +604,16 @@ namespace Psi {
       return args.result_named_expressions;
     }
 
+    /** \brief parse a purely positional argument list.
+     * \details an argument list is a list of Expressions forming arguments to a function call.
+     * \param text Text to parse.
+     */
+    PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(const ParserLocation& text) {
+      ParserInternalArguments args(MODE_POSITIONAL_LIST, text);
+      parse_helper(args);
+      return args.result_expressions;
+    }
+
     /** \brief parse a function argument declaration.
      * \details This is a list of argument declarations possibly
      * followed by a return type Expression.
@@ -605,6 +626,17 @@ namespace Psi {
       result.arguments = args.result_named_expressions;
       result.return_type = args.result_return_type;
       return result;
+    }
+
+    SharedPtr<Parser::TokenExpression> expression_as_token_type(const SharedPtr<Parser::Expression>& expr, Parser::TokenExpression::TokenType type) {
+      if (expr->expression_type != Parser::expression_token)
+        return SharedPtr<Parser::TokenExpression>();
+
+      SharedPtr<Parser::TokenExpression> cast_expr = checked_pointer_cast<Parser::TokenExpression>(expr);
+      if (cast_expr->token_type != type)
+        return SharedPtr<Parser::TokenExpression>();
+
+      return cast_expr;
     }
   }
 }
