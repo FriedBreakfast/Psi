@@ -392,6 +392,7 @@ namespace Psi {
       m_empty_type.reset(new EmptyType(*this, psi_location.named_child("Empty")));
       m_macro_interface.reset(new Interface(*this, psi_compiler_location.named_child("Macro")));
       m_argument_passing_interface.reset(new Interface(*this, psi_compiler_location.named_child("ArgumentPasser")));
+      m_class_member_interface.reset(new Interface(*this, psi_compiler_location.named_child("ClassMemberInfo")));
     }
 
     struct CompileContext::ObjectDisposer {
@@ -514,12 +515,12 @@ namespace Psi {
         ("next", &EvaluateContextDictionary::next);
       }
 
-      static LookupResult<TreePtr<Term> > lookup_impl(const EvaluateContextDictionary& self, const String& name) {
+      static LookupResult<TreePtr<Term> > lookup_impl(const EvaluateContextDictionary& self, const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) {
         NameMapType::const_iterator it = self.entries.find(name);
         if (it != self.entries.end()) {
           return lookup_result_match(it->second);
         } else if (self.next) {
-          return self.next->lookup(name);
+          return self.next->lookup(name, location, evaluate_context);
         } else {
           return lookup_result_none;
         }
@@ -605,7 +606,7 @@ namespace Psi {
           default: PSI_FAIL("unreachable");
           }
 
-          LookupResult<TreePtr<Term> > first = evaluate_context->lookup(bracket_operation);
+          LookupResult<TreePtr<Term> > first = evaluate_context->lookup(bracket_operation, location);
           switch (first.type()) {
           case lookup_result_type_none:
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator missing") % bracket_str % bracket_operation);
@@ -624,7 +625,7 @@ namespace Psi {
 
         case Parser::TokenExpression::identifier: {
           String name(token_expression.text.begin, token_expression.text.end);
-          LookupResult<TreePtr<Term> > result = evaluate_context->lookup(name);
+          LookupResult<TreePtr<Term> > result = evaluate_context->lookup(name, location);
 
           switch (result.type()) {
           case lookup_result_type_none: compile_context.error_throw(location, boost::format("Name not found: %s") % name);
@@ -724,12 +725,12 @@ namespace Psi {
         ("next", &StatementListContext::next);
       }
 
-      static LookupResult<TreePtr<Term> > lookup_impl(const StatementListContext& self, const String& name) {
+      static LookupResult<TreePtr<Term> > lookup_impl(const StatementListContext& self, const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) {
         StatementListContext::NameMapType::const_iterator it = self.statement_list->entries.find(name);
         if (it != self.statement_list->entries.end()) {
           return lookup_result_match(it->second);
         } else if (self.next) {
-          return self.next->lookup(name);
+          return self.next->lookup(name, location, evaluate_context);
         } else {
           return lookup_result_none;
         }
@@ -787,7 +788,7 @@ namespace Psi {
         if (last_statement) {
           block_value = last_statement;
         } else {
-          LookupResult<TreePtr<Term> > none = m_evaluate_context->lookup("__none__");
+          LookupResult<TreePtr<Term> > none = m_evaluate_context->lookup("__none__", self.location());
           switch (none.type()) {
           case lookup_result_type_none:
             compile_context.error_throw(self.location(), "'__none__' missing");

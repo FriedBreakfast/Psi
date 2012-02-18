@@ -32,11 +32,11 @@ namespace Psi {
         ("next", &EvaluateContextOneName::m_next);
       }
 
-      static LookupResult<TreePtr<Term> > lookup_impl(const EvaluateContextOneName& self, const String& name) {
+      static LookupResult<TreePtr<Term> > lookup_impl(const EvaluateContextOneName& self, const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) {
         if (name == self.m_name) {
           return lookup_result_match(self.m_value);
         } else if (self.m_next) {
-          return self.m_next->lookup(name);
+          return self.m_next->lookup(name, location, evaluate_context);
         } else {
           return lookup_result_none;
         }

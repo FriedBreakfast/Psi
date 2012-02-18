@@ -59,7 +59,7 @@ namespace Psi {
         if (it == self.m_members.end())
           self.compile_context().error_throw(location, boost::format("'%s' has no member named '%s'") % self.location().logical->error_name(location.logical) % member_name);
 
-        return it->second->dot(value, evaluate_context, location);
+        return it->second->dot(value, value, evaluate_context, location);
       }
     };
 

@@ -212,7 +212,21 @@ namespace Psi {
     public:
       static const TermVtable vtable;
       StructType(CompileContext& compile_context, const SourceLocation& location);
-      StructType(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& members);
+      StructType(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
+
+      PSI_STD::vector<TreePtr<Term> > members;
+    };
+
+    /**
+     * \brief Structure value.
+     */
+    class StructValue : public Term {
+    public:
+      static const TermVtable vtable;
+      StructValue(CompileContext& compile_context, const SourceLocation& location);
+      StructValue(const TreePtr<StructType>& type, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
+
+      PSI_STD::vector<TreePtr<Term> > members;
     };
 
     /**
@@ -225,7 +239,9 @@ namespace Psi {
     public:
       static const TermVtable vtable;
       UnionType(CompileContext& compile_context, const SourceLocation& location);
-      UnionType(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& members);
+      UnionType(CompileContext& compile_context, const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& members);
+
+      PSI_STD::vector<TreePtr<Term> > members;
     };
 
     class FunctionType : public Type {

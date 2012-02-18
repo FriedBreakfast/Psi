@@ -824,6 +824,14 @@ namespace Psi {
       return tree_from_base<T>(new TreeCallbackImpl<TreeCallbackImplArgs<T, Callback> >(compile_context, location, callback));
     }
 
+    /**
+     * \brief Make a lazily evaluated Tree from a C++ functor object.
+     */
+    template<typename Callback>
+    TreePtr<typename Callback::TreeType> tree_callback(CompileContext& compile_context, const SourceLocation& location, const Callback& callback) {
+      return tree_from_base<typename Callback::TreeType>(new TreeCallbackImpl<TreeCallbackImplArgs<typename Callback::TreeType, Callback> >(compile_context, location, callback));
+    }
+
     class Anonymous;
     class Term;
     class Interface;
@@ -1147,7 +1155,7 @@ namespace Psi {
      */
     struct EvaluateContextVtable {
       TreeVtable base;
-      void (*lookup) (LookupResult<TreePtr<Term> >*, const EvaluateContext*, const String*);
+      void (*lookup) (LookupResult<TreePtr<Term> >*, const EvaluateContext*, const String*, const SourceLocation*, const TreeBase*);
     };
 
     class EvaluateContext : public Tree {
@@ -1159,10 +1167,14 @@ namespace Psi {
       : Tree(compile_context, location) {
       }
 
-      LookupResult<TreePtr<Term> > lookup(const String& name) const {
+      LookupResult<TreePtr<Term> > lookup(const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) const {
         ResultStorage<LookupResult<TreePtr<Term> > > result;
-        derived_vptr(this)->lookup(result.ptr(), this, &name);
+        derived_vptr(this)->lookup(result.ptr(), this, &name, &location, evaluate_context.raw_get());
         return result.done();
+      }
+
+      LookupResult<TreePtr<Term> > lookup(const String& name, const SourceLocation& location) const {
+        return lookup(name, location, TreePtr<EvaluateContext>(this));
       }
     };
 
@@ -1171,8 +1183,8 @@ namespace Psi {
      */
     template<typename Derived, typename Impl=Derived>
     struct EvaluateContextWrapper : NonConstructible {
-      static void lookup(LookupResult<TreePtr<Term> > *result, const EvaluateContext *self, const String *name) {
-        new (result) LookupResult<TreePtr<Term> >(Impl::lookup_impl(*static_cast<const Derived*>(self), *name));
+      static void lookup(LookupResult<TreePtr<Term> > *result, const EvaluateContext *self, const String *name, const SourceLocation *location, const TreeBase* evaluate_context) {
+        new (result) LookupResult<TreePtr<Term> >(Impl::lookup_impl(*static_cast<const Derived*>(self), *name, *location, tree_from_base<EvaluateContext>(evaluate_context)));
       }
     };
 
@@ -1225,7 +1237,7 @@ namespace Psi {
      */
     struct MacroDotCallbackVtable {
       TreeVtable base;
-      Term* (*dot) (const MacroDotCallback*, const TreeBase*, const TreeBase*, const SourceLocation*);
+      TreeBase* (*dot) (const MacroDotCallback*, const TreeBase*, const TreeBase*, const TreeBase*, const SourceLocation*);
     };
 
     /**
@@ -1240,10 +1252,11 @@ namespace Psi {
       : Tree(compile_context, location) {
       }
 
-      TreePtr<Term> dot(const TreePtr<Term>& value,
+      TreePtr<Term> dot(const TreePtr<Term>& parent_value,
+                        const TreePtr<Term>& child_value,
                         const TreePtr<EvaluateContext>& evaluate_context,
                         const SourceLocation& location) const {
-        return TreePtr<Term>(derived_vptr(this)->dot(this, value.raw_get(), evaluate_context.raw_get(), &location), false);
+        return tree_from_base<Term>(derived_vptr(this)->dot(this, parent_value.raw_get(), child_value.raw_get(), evaluate_context.raw_get(), &location), false);
       }
     };
 
@@ -1252,8 +1265,8 @@ namespace Psi {
      */
     template<typename Derived>
     struct MacroDotCallbackWrapper : NonConstructible {
-      static Term* dot(MacroDotCallback *self, Term *value, EvaluateContext *evaluate_context, const SourceLocation *location) {
-        return Derived::dot_impl(*static_cast<Derived*>(self), TreePtr<Term>(value), TreePtr<EvaluateContext>(evaluate_context), *location).release();
+      static TreeBase* dot(MacroDotCallback *self, TreeBase *parent_value, TreeBase *child_value, TreeBase *evaluate_context, const SourceLocation *location) {
+        return Derived::dot_impl(*static_cast<Derived*>(self), tree_from_base<Term>(parent_value), tree_from_base<Term>(child_value), tree_from_base<EvaluateContext>(evaluate_context), *location).release();
       }
     };
 
@@ -1301,6 +1314,7 @@ namespace Psi {
 
       TreePtr<Interface> m_macro_interface;
       TreePtr<Interface> m_argument_passing_interface;
+      TreePtr<Interface> m_class_member_interface;
       TreePtr<Type> m_empty_type;
       TreePtr<Term> m_metatype;
 
@@ -1331,14 +1345,17 @@ namespace Psi {
 
       const SourceLocation& root_location() {return m_root_location;}
 
-      /// \brief Get the Macro interface.
-      const TreePtr<Interface>& macro_interface() {return m_macro_interface;}
-      /// \brief Get the argument passing descriptor interface.
-      const TreePtr<Interface>& argument_passing_info_interface() {return m_argument_passing_interface;}
       /// \brief Get the empty type.
       const TreePtr<Type>& empty_type() {return m_empty_type;}
       /// \brief Get the type of types.
       const TreePtr<Term>& metatype() {return m_metatype;}
+
+      /// \brief Get the Macro interface.
+      const TreePtr<Interface>& macro_interface() {return m_macro_interface;}
+      /// \brief Get the argument passing descriptor interface.
+      const TreePtr<Interface>& argument_passing_info_interface() {return m_argument_passing_interface;}
+      /// \brief Get the class member descriptor interface.
+      const TreePtr<Interface>& class_member_info_interface() {return m_class_member_interface;}
     };
 
     class Block;
