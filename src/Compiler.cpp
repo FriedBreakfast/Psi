@@ -419,8 +419,10 @@ namespace Psi {
           derived_vptr(t)->destroy(t);
         } else if (t->m_reference_count < PSI_COMPILE_CONTEXT_REFERENCE_GUARD) {
           PSI_WARNING_FAIL("Reference counting error: guard references have been used up");
+          PSI_WARNING_FAIL(t->m_vptr->classname);
         } else {
           PSI_WARNING_FAIL("Reference counting error: dangling references to object");
+          PSI_WARNING_FAIL(t->m_vptr->classname);
         }
 #else
         derived_vptr(t)->destroy(t);

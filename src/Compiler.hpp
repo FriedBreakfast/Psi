@@ -3,6 +3,7 @@
 
 #include <list>
 #include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -529,10 +530,32 @@ namespace Psi {
     (is_callback) \
   }
 
+    /**
+     * Data structure for performing recursive object visiting. This stores objects
+     * to visit in a queue and remembers previously visited objects so that nothing
+     * is visited twice.
+     */
+    template<typename T>
+    class VisitQueue {
+      PSI_STD::vector<T> m_queue;
+      PSI_STD::set<T> m_visited;
+      
+    public:
+      bool empty() const {return m_queue.empty();}
+      T pop() {T x = m_queue.back(); m_queue.pop_back(); return x;}
+      
+      void push(const T& x) {
+        if (m_visited.find(x) == m_visited.end()) {
+          m_visited.insert(x);
+          m_queue.push_back(x);
+        }
+      }
+    };
+  
     /// \see Tree
     struct TreeVtable {
       TreeBaseVtable base;
-      void (*complete) (Tree*);
+      void (*complete) (Tree*,VisitQueue<TreePtr<> >*);
       PsiBool (*match) (const Tree*,const Tree*,const void*,void*,unsigned);
       Tree* (*parameterize_evaluations) (const Tree*,const void*,void*,unsigned);
     };
@@ -546,10 +569,7 @@ namespace Psi {
 
       Tree(const TreeVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
 
-      /**
-       * Recursively evaluate all tree references inside this tree.
-       */
-      void complete() const {derived_vptr(this)->complete(const_cast<Tree*>(this));}
+      void complete() const;
 
       /**
        * Check whether this term matches another term.
@@ -588,11 +608,15 @@ namespace Psi {
      * \brief Recursively completes a tree.
      */
     class CompleteVisitor : public ObjectVisitorBase<CompleteVisitor> {
+      VisitQueue<TreePtr<> > *m_queue;
     public:
+      CompleteVisitor(VisitQueue<TreePtr<> > *queue) : m_queue(queue) {
+      }
+      
       template<typename T>
       void visit_tree_ptr(TreePtr<T>& ptr) {
         if (ptr)
-          ptr->complete();
+          m_queue->push(ptr);
       }
     };
 
@@ -692,9 +716,9 @@ namespace Psi {
 
     template<typename Derived>
     struct TreeWrapper : NonConstructible {
-      static void complete(Tree *self) {
+      static void complete(Tree *self, VisitQueue<TreePtr<> > *queue) {
         boost::array<Derived*, 1> a = {{static_cast<Derived*>(self)}};
-        CompleteVisitor p;
+        CompleteVisitor p(queue);
         visit_members(p, a);
       }
 

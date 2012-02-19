@@ -26,6 +26,20 @@ namespace Psi {
     Tree::Tree(const TreeVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
     : TreeBase(PSI_COMPILER_VPTR_UP(TreeBase, vptr), compile_context, location) {
     }
+    
+    /**
+     * Recursively evaluate all tree references inside this tree.
+     */
+    void Tree::complete() const {
+      VisitQueue<TreePtr<> > queue;
+      queue.push(TreePtr<>(this));
+      
+      while (!queue.empty()) {
+        TreePtr<> p = queue.pop();
+        const Tree *ptr = p.get();
+        derived_vptr(ptr)->complete(const_cast<Tree*>(ptr), &queue);
+      }
+    }
 
     /**
      * \brief Check whether this tree, which is a pattern, matches a given value.
