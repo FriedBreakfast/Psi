@@ -815,14 +815,14 @@ namespace Psi {
     /// To get past preprocessor's inability to understand template parameters
     template<typename T, typename Functor>
     struct TreeCallbackImplArgs {
-      typedef T TreeType;
+      typedef T TreeResultType;
       typedef Functor FunctionType;
     };
 
     template<typename Args>
     class TreeCallbackImpl : public TreeCallback {
     public:
-      typedef typename Args::TreeType TreeType;
+      typedef typename Args::TreeResultType TreeResultType;
       typedef typename Args::FunctionType FunctionType;
 
     private:
@@ -840,11 +840,11 @@ namespace Psi {
           delete m_function;
       }
 
-      static TreePtr<TreeType> evaluate_impl(TreeCallbackImpl& self) {
+      static TreePtr<TreeResultType> evaluate_impl(TreeCallbackImpl& self) {
         PSI_ASSERT(self.m_function);
         boost::scoped_ptr<FunctionType> function_copy(self.m_function);
         self.m_function = NULL;
-        return function_copy->evaluate(tree_from_base<TreeType>(&self));
+        return function_copy->evaluate(tree_from_base<TreeResultType>(&self));
       }
 
       template<typename Visitor>
@@ -874,8 +874,65 @@ namespace Psi {
      * \brief Make a lazily evaluated Tree from a C++ functor object.
      */
     template<typename Callback>
-    TreePtr<typename Callback::TreeType> tree_callback(CompileContext& compile_context, const SourceLocation& location, const Callback& callback) {
-      return tree_from_base<typename Callback::TreeType>(new TreeCallbackImpl<TreeCallbackImplArgs<typename Callback::TreeType, Callback> >(compile_context, location, callback));
+    TreePtr<typename Callback::TreeResultType> tree_callback(CompileContext& compile_context, const SourceLocation& location, const Callback& callback) {
+      return tree_from_base<typename Callback::TreeResultType>(new TreeCallbackImpl<TreeCallbackImplArgs<typename Callback::TreeResultType, Callback> >(compile_context, location, callback));
+    }
+    
+    template<typename T, typename F>
+    class TreePropertyWrapper {
+      TreePtr<T> m_tree;
+      F m_func;
+      
+    public:
+      typedef typename F::TreeResultType TreeResultType;
+      
+      TreePropertyWrapper(const TreePtr<T>& tree, const F& func)
+      : m_tree(tree), m_func(func) {
+      }
+
+      TreePtr<TreeResultType> evaluate(const TreePtr<TreeResultType>& self) {
+        return m_func(m_tree);
+      }
+
+      template<typename Visitor>
+      static void visit(Visitor& v) {
+        v("tree", &TreePropertyWrapper::m_tree);
+      }
+    };
+
+    /**
+     * Wrapper for simple functors on trees. Note that the functor \c f should not contain any references
+     * to other trees since there is no way for the GC to see them.
+     */
+    template<typename T, typename Callback>
+    TreePtr<typename Callback::TreeResultType> tree_property(const TreePtr<T>& tree, const Callback& callback, const SourceLocation& location) {
+      return tree_callback(tree.compile_context(), location, TreePropertyWrapper<T, Callback>(tree, callback));
+    }
+    
+    template<typename A, typename B>
+    class TreeAttributeFunction {
+      TreePtr<B> A::*m_ptr;
+      
+    public:
+      typedef B TreeResultType;
+      
+      TreeAttributeFunction(const TreePtr<B> A::*ptr) : m_ptr(ptr) {
+      }
+      
+      TreePtr<B> operator () (const TreePtr<A>& ptr) {
+        return ptr->*m_ptr;
+      }
+    };
+    
+    /**
+     * \brief Delayed member attribute getter.
+     * 
+     * 
+     * This should be used to access attributes of trees when it is possible 
+     */
+    template<typename A, typename B>
+    TreePtr<B> tree_attribute(const TreePtr<A>& tree, TreePtr<B> A::*ptr, const SourceLocation& location) {
+      return tree_property(tree, TreeAttributeFunction<A,B>(ptr), location);
     }
 
     class Anonymous;

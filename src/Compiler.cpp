@@ -720,19 +720,22 @@ namespace Psi {
 
       typedef std::map<String, TreePtr<Term> > NameMapType;
 
-      StatementListTree(const TreePtr<Block>& block_, const NameMapType& entries_)
-      : Tree(&vtable, block_.compile_context(), block_.location()),
-      block(block_),
-      entries(entries_) {
+      StatementListTree(const PSI_STD::vector<TreePtr<Statement> >& entries_, TreePtr<Term>& block_value_, const NameMapType& named_entries_)
+      : Tree(&vtable, block_value_.compile_context(), block_value_.location()),
+      entries(entries_),
+      block_value(block_value_),
+      named_entries(named_entries_) {
       }
 
-      TreePtr<Block> block;
-      NameMapType entries;
+      PSI_STD::vector<TreePtr<Statement> > entries;
+      TreePtr<Term> block_value;
+      NameMapType named_entries;
 
       template<typename Visitor>
       static void visit(Visitor& v) {
-        v("block", &StatementListTree::block)
-        ("entries", &StatementListTree::entries);
+        v("entries", &StatementListTree::entries)
+        ("block_value", &StatementListTree::block_value)
+        ("named_entries", &StatementListTree::named_entries);
       }
     };
     
@@ -762,8 +765,8 @@ namespace Psi {
       }
 
       static LookupResult<TreePtr<Term> > lookup_impl(const StatementListContext& self, const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) {
-        StatementListContext::NameMapType::const_iterator it = self.statement_list->entries.find(name);
-        if (it != self.statement_list->entries.end()) {
+        StatementListContext::NameMapType::const_iterator it = self.statement_list->named_entries.find(name);
+        if (it != self.statement_list->named_entries.end()) {
           return lookup_result_match(it->second);
         } else if (self.next) {
           return self.next->lookup(name, location, evaluate_context);
@@ -795,12 +798,13 @@ namespace Psi {
         CompileContext& compile_context = self.compile_context();
         TreePtr<StatementListContext> context_tree(new StatementListContext(self, m_evaluate_context));
         TreePtr<Statement> last_statement;
+        bool last_statement_set = false;
         PSI_STD::vector<TreePtr<Statement> > entries;
         StatementListTree::NameMapType named_entries;
 
         for (PSI_STD::vector<SharedPtr<Parser::NamedExpression> >::iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii) {
           const Parser::NamedExpression& named_expr = **ii;
-          if (named_expr.expression.get()) {
+          if (last_statement_set = named_expr.expression.get()) {
             String expr_name;
             LogicalSourceLocationPtr logical_location;
             if (named_expr.name) {
@@ -815,13 +819,11 @@ namespace Psi {
 
             if (named_expr.name)
               named_entries[expr_name] = last_statement;
-          } else {
-            last_statement.reset();
           }
         }
 
         TreePtr<Term> block_value;
-        if (last_statement) {
+        if (last_statement_set) {
           block_value = last_statement;
         } else {
           LookupResult<TreePtr<Term> > none = m_evaluate_context->lookup("__none__", self.location());
@@ -839,16 +841,15 @@ namespace Psi {
           block_value = none.value();
         }
 
-        TreePtr<Block> block(new Block(entries, block_value, self.location()));
-
-        return TreePtr<StatementListTree>(new StatementListTree(block, named_entries));
+        return TreePtr<StatementListTree>(new StatementListTree(entries, block_value, named_entries));
       }
     };
 
     TreePtr<Block> compile_statement_list(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
                                           const TreePtr<EvaluateContext>& evaluate_context,
                                           const SourceLocation& location) {
-      return tree_callback<StatementListTree>(evaluate_context.compile_context(), location, StatementListCompiler(statements, evaluate_context))->block;
+      TreePtr<StatementListTree> t = tree_callback<StatementListTree>(evaluate_context.compile_context(), location, StatementListCompiler(statements, evaluate_context));
+      return TreePtr<Block>(new Block(t->entries, t->block_value, location));
     }
   }
 }

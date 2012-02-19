@@ -336,7 +336,7 @@ namespace Psi {
       ClassCompilerTree::NameMapType m_named_entries;
 
     public:
-      typedef ClassCompilerFinalTree TreeType;
+      typedef ClassCompilerFinalTree TreeResultType;
       
       ClassCompilerFinal(const ClassInfo& info,
                          const PSI_STD::vector<TreePtr<ClassMutator> >& mutators,
