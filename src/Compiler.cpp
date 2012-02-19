@@ -63,7 +63,7 @@ namespace Psi {
             throw;
           }
           PSI_ASSERT(!hook->m_ptr);
-          hook->m_ptr.reset(eval_ptr);
+          hook->m_ptr.reset(eval_ptr, false);
           ptr_cb->m_state = TreeCallback::state_finished;
           break;
         }
@@ -90,15 +90,15 @@ namespace Psi {
     
     bool LogicalSourceLocation::Key::operator < (const Key& other) const {
       if (index) {
-	      if (other.index)
-	        return index < other.index;
-	      else
-	        return false;
+        if (other.index)
+          return index < other.index;
+        else
+          return false;
       } else {
-	      if (other.index)
-	        return true;
-	      else
-	        return name < other.name;
+        if (other.index)
+          return true;
+        else
+          return name < other.name;
       }
     } 
 
@@ -108,11 +108,11 @@ namespace Psi {
 
     struct LogicalSourceLocation::KeyCompare {
       bool operator () (const Key& key, const LogicalSourceLocation& node) const {
-      	return key < node.m_key;
+        return key < node.m_key;
       }
 
       bool operator () (const LogicalSourceLocation& node, const Key& key) const {
-      	return node.m_key < key;
+        return node.m_key < key;
       }
     };
 
@@ -272,13 +272,17 @@ namespace Psi {
     }
 #endif
 
-    bool si_is_a(const SIBase *object, const SIVtable *cls) {
-      for (const SIVtable *super = object->m_vptr; super; super = super->super) {
-        if (super == cls)
+    bool si_derived(const SIVtable *base, const SIVtable *derived) {
+      for (const SIVtable *super = derived; super; super = super->super) {
+        if (super == base)
           return true;
       }
-
+      
       return false;
+    }
+
+    bool si_is_a(const SIBase *object, const SIVtable *cls) {
+      return si_derived(cls, object->m_vptr);
     }
 
     /**
@@ -376,6 +380,20 @@ namespace Psi {
 
     void CompileError::end() {
     }
+    
+    BuiltinTypes::BuiltinTypes() {
+    }
+
+    void BuiltinTypes::initialize(CompileContext& compile_context) {
+      SourceLocation psi_location = compile_context.root_location().named_child("psi");
+      SourceLocation psi_compiler_location = psi_location.named_child("compiler");
+
+      metatype.reset(new Metatype(compile_context, psi_location.named_child("Type")));
+      empty_type.reset(new EmptyType(compile_context, psi_location.named_child("Empty")));
+      macro_interface.reset(new Interface(compile_context, psi_compiler_location.named_child("Macro")));
+      argument_passing_info_interface.reset(new Interface(compile_context, psi_compiler_location.named_child("ArgumentPasser")));
+      class_member_info_interface.reset(new Interface(compile_context, psi_compiler_location.named_child("ClassMemberInfo")));
+    }
 
     CompileContext::CompileContext(std::ostream *error_stream)
     : m_error_stream(error_stream), m_error_occurred(false), m_running_completion_stack(NULL),
@@ -384,39 +402,56 @@ namespace Psi {
       m_root_location.physical.file.reset(new SourceFile());
       m_root_location.physical.first_line = m_root_location.physical.first_column = 0;
       m_root_location.physical.last_line = m_root_location.physical.last_column = 0;
-
-      SourceLocation psi_location = m_root_location.named_child("psi");
-      SourceLocation psi_compiler_location = psi_location.named_child("compiler");
-
-      m_metatype.reset(new Metatype(*this, psi_location.named_child("Type")));
-      m_empty_type.reset(new EmptyType(*this, psi_location.named_child("Empty")));
-      m_macro_interface.reset(new Interface(*this, psi_compiler_location.named_child("Macro")));
-      m_argument_passing_interface.reset(new Interface(*this, psi_compiler_location.named_child("ArgumentPasser")));
-      m_class_member_interface.reset(new Interface(*this, psi_compiler_location.named_child("ClassMemberInfo")));
+      m_builtins.initialize(*this);
     }
+    
+#ifdef PSI_DEBUG
+#define PSI_COMPILE_CONTEXT_REFERENCE_GUARD 20
+#else
+#define PSI_COMPILE_CONTEXT_REFERENCE_GUARD 1
+#endif
 
     struct CompileContext::ObjectDisposer {
       void operator () (Object *t) {
-        if (!--t->m_reference_count)
+#ifdef PSI_DEBUG
+        if (t->m_reference_count == PSI_COMPILE_CONTEXT_REFERENCE_GUARD) {
+          t->m_reference_count = 0;
           derived_vptr(t)->destroy(t);
-        else
-          PSI_WARNING_FAIL("Dangling pointers to Tree during context destruction");
+        } else if (t->m_reference_count < PSI_COMPILE_CONTEXT_REFERENCE_GUARD) {
+          PSI_WARNING_FAIL("Reference counting error: guard references have been used up");
+        } else {
+          PSI_WARNING_FAIL("Reference counting error: dangling references to object");
+        }
+#else
+        derived_vptr(t)->destroy(t);
+#endif
       }
     };
 
     CompileContext::~CompileContext() {
-      m_metatype.reset();
-      m_empty_type.reset();
-      m_macro_interface.reset();
-      m_argument_passing_interface.reset();
+      m_builtins = BuiltinTypes();
 
       // Add extra reference to each Tree
       BOOST_FOREACH(Object& t, m_gc_list)
-        ++t.m_reference_count;
+        t.m_reference_count += PSI_COMPILE_CONTEXT_REFERENCE_GUARD;
 
       // Clear cross references in each Tree
       BOOST_FOREACH(Object& t, m_gc_list)
         derived_vptr(&t)->gc_clear(&t);
+        
+#ifdef PSI_DEBUG
+      bool failed = false;
+      for (GCListType::iterator ii = m_gc_list.begin(), ie = m_gc_list.end(); ii != ie; ++ii) {
+        if (ii->m_reference_count != PSI_COMPILE_CONTEXT_REFERENCE_GUARD)
+          failed = true;
+      }
+      
+      if (failed) {
+        PSI_WARNING_FAIL("Incorrect reference count during context destruction: either dangling reference or multiple release");
+        BOOST_FOREACH(Object& t, m_gc_list)
+          PSI_WARNING_FAIL(t.m_vptr->classname);
+      }
+#endif
 
       m_gc_list.clear_and_dispose(ObjectDisposer());
     }
@@ -502,8 +537,7 @@ namespace Psi {
                                 const SourceLocation& location,
                                 const NameMapType& entries_,
                                 const TreePtr<EvaluateContext>& next_)
-      : EvaluateContext(compile_context, location), entries(entries_), next(next_) {
-        PSI_COMPILER_TREE_INIT();
+      : EvaluateContext(&vtable, compile_context, location), entries(entries_), next(next_) {
       }
 
       NameMapType entries;
@@ -564,7 +598,7 @@ namespace Psi {
     };
 
     TreePtr<Macro> expression_macro(const TreePtr<Term>& expr, const SourceLocation& location) {
-      return interface_lookup_as<Macro>(expr.compile_context().macro_interface(), expr, location);
+      return interface_lookup_as<Macro>(expr.compile_context().builtins().macro_interface, expr, location);
     }
     
     /**
@@ -668,7 +702,8 @@ namespace Psi {
       
       template<typename Visitor>
       static void visit(Visitor& v) {
-        v("evaluate_context", &StatementListEntry::m_evaluate_context);
+        v("expression", &StatementListEntry::m_expression)
+        ("evaluate_context", &StatementListEntry::m_evaluate_context);
       }
 
       TreePtr<Statement> evaluate(const TreePtr<Statement>& self) {
@@ -683,10 +718,9 @@ namespace Psi {
       typedef std::map<String, TreePtr<Term> > NameMapType;
 
       StatementListTree(const TreePtr<Block>& block_, const NameMapType& entries_)
-      : Tree(block_.compile_context(), block_.location()),
+      : Tree(&vtable, block_.compile_context(), block_.location()),
       block(block_),
       entries(entries_) {
-        PSI_COMPILER_TREE_INIT();
       }
 
       TreePtr<Block> block;
@@ -709,10 +743,9 @@ namespace Psi {
       
       StatementListContext(const TreePtr<StatementListTree>& statement_list_,
                            const TreePtr<EvaluateContext>& next_)
-      : EvaluateContext(statement_list_.compile_context(), statement_list_.location()),
+      : EvaluateContext(&vtable, statement_list_.compile_context(), statement_list_.location()),
       statement_list(statement_list_),
       next(next_) {
-        PSI_COMPILER_TREE_INIT();
       }
 
       TreePtr<StatementListTree> statement_list;

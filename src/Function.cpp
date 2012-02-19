@@ -19,13 +19,13 @@ namespace Psi {
 
       EvaluateContextOneName(CompileContext& compile_context, const SourceLocation& location,
                              const String& name, const TreePtr<Term>& value, const TreePtr<EvaluateContext>& next)
-      : EvaluateContext(compile_context, location),
+      : EvaluateContext(&vtable, compile_context, location),
       m_name(name), m_value(value), m_next(next) {
         m_vptr = reinterpret_cast<const SIVtable*>(&vtable);
       }
 
       template<typename Visitor>
-      static void visit_impl(Visitor& v) {
+      static void visit(Visitor& v) {
         visit_base<EvaluateContext>(v);
         v("name", &EvaluateContextOneName::m_name)
         ("value", &EvaluateContextOneName::m_value)
@@ -229,7 +229,7 @@ namespace Psi {
         SourceLocation argument_location(named_expr.location.location, logical_location);
 
         TreePtr<Term> argument_expr = compile_expression(named_expr.expression, argument_context, argument_location.logical);
-        TreePtr<ArgumentPassingInfoCallback> passing_info_callback = interface_lookup_as<ArgumentPassingInfoCallback>(compile_context.argument_passing_info_interface(), argument_expr, location);
+        TreePtr<ArgumentPassingInfoCallback> passing_info_callback = interface_lookup_as<ArgumentPassingInfoCallback>(compile_context.builtins().argument_passing_info_interface, argument_expr, location);
 
         ArgumentPassingInfo passing_info = passing_info_callback->argument_passing_info();
 
@@ -249,7 +249,7 @@ namespace Psi {
         if (!result.result_type->is_type())
           compile_context.error_throw(location, "Function result type expression does not evaluate to a type");
       } else {
-        result.result_type = compile_context.empty_type();
+        result.result_type = compile_context.builtins().empty_type;
       }
 
       result.type.reset(new FunctionType(result.result_type, type_arguments, location));
@@ -358,10 +358,9 @@ namespace Psi {
       static const MacroEvaluateCallbackVtable vtable;
 
       FunctionInvokeCallback(const FunctionInfo& info, const TreePtr<Term>& func, const SourceLocation& location)
-      : MacroEvaluateCallback(func.compile_context(), location),
+      : MacroEvaluateCallback(&vtable, func.compile_context(), location),
       m_info(info),
       m_func(func) {
-        PSI_COMPILER_TREE_INIT();
       }
 
       static TreePtr<Term> evaluate_impl(const FunctionInvokeCallback& self,
@@ -437,8 +436,7 @@ namespace Psi {
       static const MacroEvaluateCallbackVtable vtable;
       
       FunctionDefineCallback(CompileContext& compile_context, const SourceLocation& location)
-      : MacroEvaluateCallback(compile_context, location) {
-        PSI_COMPILER_TREE_INIT();
+      : MacroEvaluateCallback(&vtable, compile_context, location) {
       }
       
       static TreePtr<Term> evaluate_impl(const FunctionDefineCallback&,

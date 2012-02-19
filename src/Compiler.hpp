@@ -7,6 +7,10 @@
 #include <stdexcept>
 #include <vector>
 
+#ifdef PSI_DEBUG
+#include <typeinfo>
+#endif
+
 #include <boost/array.hpp>
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/avl_set.hpp>
@@ -143,6 +147,7 @@ namespace Psi {
 
     inline const SIVtable* si_vptr(const SIBase *self) {return self->m_vptr;}
     bool si_is_a(const SIBase*, const SIVtable*);
+    bool si_derived(const SIVtable *base, const SIVtable *derived);
 
     template<typename T>
     const typename T::VtableType* derived_vptr(T *ptr) {
@@ -205,7 +210,7 @@ namespace Psi {
       void update_chain(const TreeBase *ptr) const;
 
     protected:
-      void swap(TreePtrBase& other) {std::swap(m_ptr, other.m_ptr);}
+      void swap(TreePtrBase& other) {m_ptr.swap(other.m_ptr);}
       
     public:
       TreePtrBase() {}
@@ -229,19 +234,20 @@ namespace Psi {
 
     template<typename T=Tree>
     class TreePtr : public TreePtrBase {
-      template<typename U> friend TreePtr<U> tree_from_base(const TreeBase*, bool);
+      template<typename U> friend TreePtr<U> tree_from_base(const TreeBase*);
+      template<typename U> friend TreePtr<U> tree_from_base_take(const TreeBase*);
       TreePtr(const TreeBase *src, bool add_ref) : TreePtrBase(src, add_ref) {}
 
     public:
       TreePtr() {}
-      explicit TreePtr(const T *ptr, bool add_ref=true) : TreePtrBase(ptr, add_ref) {}
+      explicit TreePtr(const T *ptr) : TreePtrBase(ptr, true) {}
       template<typename U> TreePtr(const TreePtr<U>& src) : TreePtrBase(src) {BOOST_STATIC_ASSERT((boost::is_convertible<U*, T*>::value));}
       template<typename U> TreePtr& operator = (const TreePtr<U>& src) {TreePtr<T>(src).swap(*this); return *this;}
 
       const T* get() const;
       const T* operator -> () const {return get();}
 
-      void reset(const T *ptr=NULL, bool add_ref=true) {TreePtr<T>(ptr, add_ref).swap(*this);}
+      void reset(const T *ptr=NULL) {TreePtr<T>(ptr).swap(*this);}
       void swap(TreePtr<T>& other) {TreePtrBase::swap(other);}
     };
 
@@ -252,9 +258,22 @@ namespace Psi {
      * should be statically known.
      */
     template<typename T>
-    TreePtr<T> tree_from_base(const TreeBase *base, bool add_ref=true) {
-      return TreePtr<T>(base, add_ref);
+    TreePtr<T> tree_from_base(const TreeBase *base) {
+      return TreePtr<T>(base, true);
     }
+    
+    /**
+     * Get a TreePtr from a pointer to a TreeBase.
+     * 
+     * This is used where pointers are returned to wrapper functions so that the reference
+     * count need not be incremented. This is a separate function to tree_from_base because
+     * this sort of manual reference count management can easily lead to bugs, and and additional
+     * function makes this easier to look for.
+     */
+    template<typename T>
+    TreePtr<T> tree_from_base_take(const TreeBase *base) {
+      return TreePtr<T>(base, false);
+    };
 
     class VisitorPlaceholder {
     public:
@@ -295,7 +314,7 @@ namespace Psi {
       typedef ObjectVtable VtableType;
       static const SIVtable vtable;
 
-      Object(CompileContext& compile_context);
+      Object(const ObjectVtable *vtable, CompileContext& compile_context);
       ~Object();
 
       CompileContext& compile_context() const {return *m_compile_context;}
@@ -336,7 +355,7 @@ namespace Psi {
       /// Simple pointers are assumed to be owned by this object
       template<typename T>
       void visit_object(const char*, const boost::array<T**,1>& obj) {
-        if (obj[0]) {
+        if (*obj[0]) {
           boost::array<T*, 1> star = {{*obj[0]}};
           visit_callback(*this, NULL, star);
         }
@@ -494,7 +513,7 @@ namespace Psi {
       typedef TreeBaseVtable VtableType;
       static const SIVtable vtable;
       
-      TreeBase(CompileContext& compile_context, const SourceLocation& location);
+      TreeBase(const TreeBaseVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
 
       const SourceLocation& location() const {return m_location;}
 
@@ -525,7 +544,7 @@ namespace Psi {
       
       typedef TreeVtable VtableType;
 
-      Tree(CompileContext&, const SourceLocation&);
+      Tree(const TreeVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
 
       /**
        * Recursively evaluate all tree references inside this tree.
@@ -702,7 +721,7 @@ namespace Psi {
     &::Psi::Compiler::TreeWrapper<derived>::parameterize_evaluations \
   }
 
-#define PSI_COMPILER_TREE_INIT() (PSI_REQUIRE_CONVERTIBLE(&vtable, const VtableType*), PSI_COMPILER_SI_INIT(&vtable))
+#define PSI_COMPILER_VPTR_UP(super,vptr) (PSI_ASSERT(si_derived(reinterpret_cast<const SIVtable*>(&super::vtable), reinterpret_cast<const SIVtable*>(vptr))), reinterpret_cast<const super::VtableType*>(vptr))
 #define PSI_COMPILER_TREE_ABSTRACT(name,super) PSI_COMPILER_SI_ABSTRACT(name,&super::vtable)
 
     inline const Tree* TreePtrBase::get() const {
@@ -732,9 +751,10 @@ namespace Psi {
       TreePtr<> m_value;
 
     public:
+      typedef TreeCallbackVtable VtableType;
       static const SIVtable vtable;
 
-      TreeCallback(CompileContext&, const SourceLocation&);
+      TreeCallback(const TreeCallbackVtable *vptr, CompileContext&, const SourceLocation&);
 
       template<typename Visitor> static void visit(Visitor& v) {
         visit_base<TreeBase>(v);
@@ -768,8 +788,6 @@ namespace Psi {
     &::Psi::Compiler::TreeCallbackWrapper<derived>::evaluate \
   }
 
-#define PSI_COMPILER_TREE_CALLBACK_INIT() PSI_COMPILER_SI_INIT(&vtable)
-
     /// To get past preprocessor's inability to understand template parameters
     template<typename T, typename Functor>
     struct TreeCallbackImplArgs {
@@ -790,8 +808,7 @@ namespace Psi {
       static const TreeCallbackVtable vtable;
 
       TreeCallbackImpl(CompileContext& compile_context, const SourceLocation& location, const FunctionType& function)
-      : TreeCallback(compile_context, location), m_function(new FunctionType(function)) {
-        PSI_COMPILER_TREE_CALLBACK_INIT();
+      : TreeCallback(&vtable, compile_context, location), m_function(new FunctionType(function)) {
       }
 
       ~TreeCallbackImpl() {
@@ -813,8 +830,13 @@ namespace Psi {
       }
     };
 
+#ifndef PSI_DEBUG
     template<typename T>
     const TreeCallbackVtable TreeCallbackImpl<T>::vtable = PSI_COMPILER_TREE_CALLBACK(TreeCallbackImpl<T>, "(anonymous)", TreeCallback);
+#else
+    template<typename T>
+    const TreeCallbackVtable TreeCallbackImpl<T>::vtable = PSI_COMPILER_TREE_CALLBACK(TreeCallbackImpl<T>, typeid(typename T::FunctionType).name(), TreeCallback);
+#endif
 
     /**
      * \brief Make a lazily evaluated Tree from a C++ functor object.
@@ -852,8 +874,8 @@ namespace Psi {
 
       static const SIVtable vtable;
 
-      Term(CompileContext& context, const SourceLocation& location);
-      Term(const TreePtr<Term>&, const SourceLocation&);
+      Term(const TermVtable *vtable, CompileContext& context, const SourceLocation& location);
+      Term(const TermVtable *vtable, const TreePtr<Term>&, const SourceLocation&);
 
       /// \brief The type of this term.
       TreePtr<Term> type;
@@ -862,16 +884,16 @@ namespace Psi {
 
       /// \brief Replace anonymous terms in the list by parameters
       TreePtr<Term> parameterize(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth=0) const {
-        return tree_from_base<Term>(derived_vptr(this)->parameterize(this, &location, elements.vptr(), elements.object(), depth), false);
+        return tree_from_base_take<Term>(derived_vptr(this)->parameterize(this, &location, elements.vptr(), elements.object(), depth));
       }
 
       /// \brief Replace parameter terms in this tree by given values
       TreePtr<Term> specialize(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth=0) const {
-        return tree_from_base<Term>(derived_vptr(this)->specialize(this, &location, values.vptr(), values.object(), depth), false);
+        return tree_from_base_take<Term>(derived_vptr(this)->specialize(this, &location, values.vptr(), values.object(), depth));
       }
 
       TreePtr<> interface_search(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) const {
-        return tree_from_base<Tree>(derived_vptr(this)->interface_search(this, interface.raw_get(), parameters.vptr(), parameters.object()), false);
+        return tree_from_base_take<Tree>(derived_vptr(this)->interface_search(this, interface.raw_get(), parameters.vptr(), parameters.object()));
       }
 
       template<typename Visitor> static void visit(Visitor& v) {
@@ -944,7 +966,10 @@ namespace Psi {
       
       template<typename T>
       TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Term*) {
-        return treeptr_cast<T>(ptr->parameterize(m_location, m_elements, m_depth));
+        if (ptr)
+          return treeptr_cast<T>(ptr->parameterize(m_location, m_elements, m_depth));
+        else
+          return TreePtr<T>();
       }
       
     public:
@@ -1024,7 +1049,7 @@ namespace Psi {
     class Type : public Term {
     public:
       static const SIVtable vtable;
-      Type(CompileContext&, const SourceLocation&);
+      Type(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
     };
 
 #define PSI_COMPILER_TYPE(derived,name,super) PSI_COMPILER_TERM(derived,name,super)
@@ -1100,22 +1125,22 @@ namespace Psi {
       typedef MacroVtable VtableType;
       static const SIVtable vtable;
 
-      Macro(CompileContext& compile_context, const SourceLocation& location)
-      : Tree(compile_context, location) {
+      Macro(const MacroVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
+      : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location) {
       }
 
       TreePtr<Term> evaluate(const TreePtr<Term>& value,
                               const List<SharedPtr<Parser::Expression> >& parameters,
                               const TreePtr<EvaluateContext>& evaluate_context,
                               const SourceLocation& location) const {
-        return tree_from_base<Term>(derived_vptr(this)->evaluate(this, value.raw_get(), parameters.vptr(), parameters.object(), evaluate_context.raw_get(), &location), false);
+        return tree_from_base_take<Term>(derived_vptr(this)->evaluate(this, value.raw_get(), parameters.vptr(), parameters.object(), evaluate_context.raw_get(), &location));
       }
 
       TreePtr<Term> dot(const TreePtr<Term>& value,
                         const SharedPtr<Parser::Expression>& parameter,
                         const TreePtr<EvaluateContext>& evaluate_context,
                         const SourceLocation& location) const {
-        return tree_from_base<Term>(derived_vptr(this)->dot(this, value.raw_get(), &parameter, evaluate_context.raw_get(), &location), false);
+        return tree_from_base_take<Term>(derived_vptr(this)->dot(this, value.raw_get(), &parameter, evaluate_context.raw_get(), &location));
       }
     };
 
@@ -1163,8 +1188,8 @@ namespace Psi {
       typedef EvaluateContextVtable VtableType;
       static const SIVtable vtable;
 
-      EvaluateContext(CompileContext& compile_context, const SourceLocation& location)
-      : Tree(compile_context, location) {
+      EvaluateContext(const EvaluateContextVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
+      : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location) {
       }
 
       LookupResult<TreePtr<Term> > lookup(const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) const {
@@ -1208,12 +1233,12 @@ namespace Psi {
       typedef MacroEvaluateCallbackVtable VtableType;
       static const SIVtable vtable;
 
-      MacroEvaluateCallback(CompileContext& compile_context, const SourceLocation& location)
-      : Tree(compile_context, location) {
+      MacroEvaluateCallback(const MacroEvaluateCallbackVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
+      : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location) {
       }
 
       TreePtr<Term> evaluate(const TreePtr<Term>& value, const List<SharedPtr<Parser::Expression> >& parameters, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location) const {
-        return tree_from_base<Term>(derived_vptr(this)->evaluate(this, value.raw_get(), parameters.vptr(), parameters.object(), evaluate_context.raw_get(), &location), false);
+        return tree_from_base_take<Term>(derived_vptr(this)->evaluate(this, value.raw_get(), parameters.vptr(), parameters.object(), evaluate_context.raw_get(), &location));
       }
     };
 
@@ -1248,15 +1273,15 @@ namespace Psi {
       typedef MacroDotCallbackVtable VtableType;
       static const SIVtable vtable;
 
-      MacroDotCallback(CompileContext& compile_context, const Psi::Compiler::SourceLocation& location)
-      : Tree(compile_context, location) {
+      MacroDotCallback(MacroDotCallbackVtable *vptr, CompileContext& compile_context, const Psi::Compiler::SourceLocation& location)
+      : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location) {
       }
 
       TreePtr<Term> dot(const TreePtr<Term>& parent_value,
                         const TreePtr<Term>& child_value,
                         const TreePtr<EvaluateContext>& evaluate_context,
                         const SourceLocation& location) const {
-        return tree_from_base<Term>(derived_vptr(this)->dot(this, parent_value.raw_get(), child_value.raw_get(), evaluate_context.raw_get(), &location), false);
+        return tree_from_base_take<Term>(derived_vptr(this)->dot(this, parent_value.raw_get(), child_value.raw_get(), evaluate_context.raw_get(), &location));
       }
     };
 
@@ -1289,8 +1314,26 @@ namespace Psi {
       template<typename Visitor>
       static void visit(Visitor& v) {
         visit_base<Tree>(v);
-        v("run_time_type", &Interface::m_run_time_type);
+        v("n_parameters", &Interface::m_n_parameters)
+        ("run_time_type", &Interface::m_run_time_type);
       }
+    };
+    
+    struct BuiltinTypes {
+      BuiltinTypes();
+      void initialize(CompileContext& compile_context);
+
+      /// \brief The empty type.
+      TreePtr<Type> empty_type;
+      /// \brief The type of types
+      TreePtr<Term> metatype;
+      
+      /// \brief The Macro interface.
+      TreePtr<Interface> macro_interface;
+      /// \brief The argument passing descriptor interface.
+      TreePtr<Interface> argument_passing_info_interface;
+      /// \brief The class member descriptor interface.
+      TreePtr<Interface> class_member_info_interface;
     };
 
     /**
@@ -1308,15 +1351,11 @@ namespace Psi {
       bool m_error_occurred;
       RunningTreeCallback *m_running_completion_stack;
 
-      boost::intrusive::list<Object, boost::intrusive::constant_time_size<false> > m_gc_list;
+      typedef boost::intrusive::list<Object, boost::intrusive::constant_time_size<false> > GCListType;
+      GCListType m_gc_list;
 
       SourceLocation m_root_location;
-
-      TreePtr<Interface> m_macro_interface;
-      TreePtr<Interface> m_argument_passing_interface;
-      TreePtr<Interface> m_class_member_interface;
-      TreePtr<Type> m_empty_type;
-      TreePtr<Term> m_metatype;
+      BuiltinTypes m_builtins;
 
     public:
       CompileContext(std::ostream *error_stream);
@@ -1343,19 +1382,10 @@ namespace Psi {
 
       TreePtr<Global> tree_from_address(const SourceLocation&, const TreePtr<Type>&, void*);
 
+      /// \brief Get the root location of this context.
       const SourceLocation& root_location() {return m_root_location;}
-
-      /// \brief Get the empty type.
-      const TreePtr<Type>& empty_type() {return m_empty_type;}
-      /// \brief Get the type of types.
-      const TreePtr<Term>& metatype() {return m_metatype;}
-
-      /// \brief Get the Macro interface.
-      const TreePtr<Interface>& macro_interface() {return m_macro_interface;}
-      /// \brief Get the argument passing descriptor interface.
-      const TreePtr<Interface>& argument_passing_info_interface() {return m_argument_passing_interface;}
-      /// \brief Get the class member descriptor interface.
-      const TreePtr<Interface>& class_member_info_interface() {return m_class_member_interface;}
+      /// \brief Get the builtin trees.
+      const BuiltinTypes& builtins() {return m_builtins;}
     };
 
     class Block;

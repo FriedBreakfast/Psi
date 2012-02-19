@@ -19,14 +19,13 @@ namespace Psi {
                        const SourceLocation& location,
                        const TreePtr<MacroEvaluateCallback>& evaluate,
                        const NameMapType& members)
-      : Macro(compile_context, location),
+      : Macro(&vtable, compile_context, location),
       m_evaluate(evaluate),
       m_members(members) {
-	      PSI_COMPILER_TREE_INIT();
       }
 
       template<typename Visitor>
-      static void visit_impl(Visitor& v) {
+      static void visit(Visitor& v) {
         visit_base<Macro>(v);
         v("evaluate", &NamedMemberMacro::m_evaluate)
         ("members", &NamedMemberMacro::m_members);

@@ -63,8 +63,8 @@ namespace Psi {
     class Global : public Term {
     public:
       static const SIVtable vtable;
-      Global(CompileContext& compile_context, const SourceLocation& location);
-      Global(const TreePtr<Term>& type, const SourceLocation& location);
+      Global(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
+      Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location);
 
       mutable void *jit_ptr;
     };

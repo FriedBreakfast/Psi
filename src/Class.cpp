@@ -86,15 +86,14 @@ namespace Psi {
       ClassMacro(CompileContext& compile_context,
                  const SourceLocation& location,
                  const NameMapType& members_)
-      : Macro(compile_context, location),
+      : Macro(&vtable, compile_context, location),
       members(members_) {
-        PSI_COMPILER_TREE_INIT();
       }
 
       NameMapType members;
 
       template<typename Visitor>
-      static void visit_impl(Visitor& v) {
+      static void visit(Visitor& v) {
         visit_base<Macro>(v);
         v("members", &ClassMacro::members);
       }
@@ -110,7 +109,7 @@ namespace Psi {
 
         TreePtr<Term> member_value;
         TreePtr<Term> evaluated = it->second.callback->dot(value, member_value, evaluate_context, location);
-        TreePtr<Macro> macro = interface_lookup_as<Macro>(self.compile_context().macro_interface(), evaluated, location);
+        TreePtr<Macro> macro = interface_lookup_as<Macro>(self.compile_context().builtins().macro_interface, evaluated, location);
         return macro->evaluate(value, parameters, evaluate_context, location);
       }
 
@@ -196,7 +195,7 @@ namespace Psi {
       static const TreeVtable vtable;
 
       ClassMemberInfoTree(CompileContext& compile_context, const SourceLocation& location, const ClassMemberInfo& member_info_)
-      : Tree(compile_context, location),
+      : Tree(&vtable, compile_context, location),
       member_info(member_info_) {
       }
 
@@ -218,7 +217,7 @@ namespace Psi {
       ClassCompilerFinalTree(CompileContext& compile_context, const SourceLocation& location,
                              const TreePtr<Term>& object_term_,
                              const TreePtr<Term>& static_term_)
-      : Tree(compile_context, location),
+      : Tree(&vtable, compile_context, location),
       object_term(object_term_),
       static_term(static_term_) {
       }
@@ -246,10 +245,9 @@ namespace Psi {
                         const SourceLocation& location,
                         const TreePtr<ClassCompilerFinalTree>& final_,
                         const NameMapType& named_entries_)
-      : Tree(compile_context, location),
+      : Tree(&vtable, compile_context, location),
       final(final_),
       named_entries(named_entries_) {
-        PSI_COMPILER_TREE_INIT();
       }
 
       TreePtr<ClassCompilerFinalTree> final;
@@ -271,10 +269,9 @@ namespace Psi {
 
       ClassCompilerContext(const TreePtr<ClassCompilerTree>& class_compiler_,
                            const TreePtr<EvaluateContext>& next_)
-      : EvaluateContext(class_compiler_.compile_context(), class_compiler_.location()),
+      : EvaluateContext(&vtable, class_compiler_.compile_context(), class_compiler_.location()),
       class_compiler(class_compiler_),
       next(next_) {
-        PSI_COMPILER_TREE_INIT();
       }
 
       TreePtr<ClassCompilerTree> class_compiler;
@@ -324,7 +321,7 @@ namespace Psi {
 
       TreePtr<ClassMemberInfoTree> evaluate(const TreePtr<ClassMemberInfoTree>& self) {
         TreePtr<Term> expr = compile_expression(m_expression, m_context, self.location().logical);
-        TreePtr<ClassMemberInfoCallback> callback = interface_lookup_as<ClassMemberInfoCallback>(self.compile_context().class_member_info_interface(), expr, self.location());
+        TreePtr<ClassMemberInfoCallback> callback = interface_lookup_as<ClassMemberInfoCallback>(self.compile_context().builtins().class_member_info_interface, expr, self.location());
         return TreePtr<ClassMemberInfoTree>(new ClassMemberInfoTree(self.compile_context(), self.location(), callback->class_member_info()));
       }
     };
@@ -463,6 +460,10 @@ namespace Psi {
 
       TreePtr<ClassCompilerTree> evaluate(const TreePtr<ClassCompilerTree>& self) {
         CompileContext& compile_context = self.compile_context();
+        
+        PSI_STD::vector<SharedPtr<Parser::NamedExpression> > parameter_expressions;
+        if (m_parameters)
+          parameter_expressions = Parser::parse_argument_list(m_parameters->text);
 
         PSI_STD::vector<SharedPtr<Parser::Expression> > mutator_expressions;
         if (m_mutators)
@@ -543,8 +544,7 @@ namespace Psi {
       static const MacroEvaluateCallbackVtable vtable;
 
       ClassDefineCallback(CompileContext& compile_context, const SourceLocation& location)
-      : MacroEvaluateCallback(compile_context, location) {
-        PSI_COMPILER_TREE_INIT();
+      : MacroEvaluateCallback(&vtable, compile_context, location) {
       }
 
       static TreePtr<Term> evaluate_impl(const ClassDefineCallback&,

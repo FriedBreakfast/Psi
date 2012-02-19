@@ -13,15 +13,14 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Implementation> > implementations;
 
       PureMacroTerm(CompileContext& context, const SourceLocation& location)
-      : Term(context, location) {
+      : Term(&vtable, context, location) {
       }
         
       PureMacroTerm(const TreePtr<Term>& type,
                     const PSI_STD::vector<TreePtr<Implementation> >& implementations_,
                     const SourceLocation& location)
-      : Term(type, location),
+      : Term(&vtable, type, location),
       implementations(implementations_) {
-        PSI_COMPILER_TREE_INIT();
       }
 
       static TreePtr<> interface_search_impl(const PureMacroTerm& self,
@@ -33,6 +32,12 @@ namespace Psi {
         }
 
         return default_;
+      }
+      
+      template<typename Visitor>
+      static void visit(Visitor& v) {
+        visit_base<Term>(v);
+        v("implementations", &PureMacroTerm::implementations);
       }
     };
 
@@ -53,10 +58,10 @@ namespace Psi {
 
       TreePtr<Term> evaluate(const TreePtr<Term>& self) {
         CompileContext& compile_context = self.compile_context();
-        TreePtr<Implementation> impl(new Implementation(compile_context, m_macro, compile_context.macro_interface(),
+        TreePtr<Implementation> impl(new Implementation(compile_context, m_macro, compile_context.builtins().macro_interface,
                                                         default_, PSI_STD::vector<TreePtr<Term> >(1, self), self.location()));
         PSI_STD::vector<TreePtr<Implementation> > implementations(1, impl);
-        return TreePtr<Term>(new PureMacroTerm(compile_context.metatype(), implementations, self.location()));
+        return TreePtr<Term>(new PureMacroTerm(compile_context.builtins().metatype, implementations, self.location()));
       }
     };
 
@@ -67,7 +72,7 @@ namespace Psi {
     }
     
     TreePtr<Term> none_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<GenericType> generic_type(new GenericType(compile_context.empty_type(), default_, default_, location));
+      TreePtr<GenericType> generic_type(new GenericType(compile_context.builtins().empty_type, default_, default_, location));
       TreePtr<Term> type(new TypeInstance(generic_type, default_, location));
       return TreePtr<Term>(new NullValue(type, location));
     }

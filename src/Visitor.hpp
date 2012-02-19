@@ -72,7 +72,13 @@ namespace Psi {
   void visit_callback(V& callback, const char *name, VisitorTag<PSI_STD::map<K, O, C, A> >, const D& values) {callback.visit_map(name, values);}
 
   template<typename V, typename T, std::size_t N>
-  void visit_callback(V& callback, const char *name, const boost::array<T*,N>& values) {visit_callback(callback, name, visitor_tag<T>(), values);}
+  void visit_callback(V& callback, const char *name, const boost::array<T*,N>& values) {
+#ifdef PSI_DEBUG
+    for (std::size_t i = 0; i != N; ++i)
+      PSI_ASSERT(values[i]);
+#endif
+    visit_callback(callback, name, visitor_tag<T>(), values);
+  }
 
   /**
    * If A is const, gives const B, else gives B.
