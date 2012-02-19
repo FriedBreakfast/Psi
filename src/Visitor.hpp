@@ -63,6 +63,8 @@ namespace Psi {
   void visit_callback(V& callback, const char *name, VisitorTag<T>, const D& objects) {callback.visit_object(name, objects);}
 
   template<typename V, typename D>
+  void visit_callback(V& callback, const char *name, VisitorTag<char>, const D& values) {callback.visit_simple(name, values);}
+  template<typename V, typename D>
   void visit_callback(V& callback, const char *name, VisitorTag<unsigned>, const D& values) {callback.visit_simple(name, values);}
 
   template<typename V, typename T, typename A, typename D>

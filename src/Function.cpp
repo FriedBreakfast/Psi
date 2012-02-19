@@ -103,6 +103,15 @@ namespace Psi {
       TreePtr<Anonymous> argument;
       /// \brief Handler used to interpret the argument.
       TreePtr<ArgumentHandler> handler;
+      
+      template<typename V>
+      static void visit(V& v) {
+        v("category", &ArgumentPassingInfo::category)
+        ("keyword", &ArgumentPassingInfo::keyword)
+        ("extra_arguments", &ArgumentPassingInfo::extra_arguments)
+        ("argument", &ArgumentPassingInfo::argument)
+        ("handler", &ArgumentPassingInfo::handler);
+      }
     };
 
     class ArgumentPassingInfoCallback;
@@ -196,6 +205,14 @@ namespace Psi {
       PSI_STD::vector<ArgumentPassingInfo> passing_info;
       /// \brief Argument names to position.
       PSI_STD::map<String, unsigned> names;
+
+      template<typename V>
+      static void visit(V& v) {
+        v("type", &FunctionInfo::type)
+        ("result_type", &FunctionInfo::result_type)
+        ("passing_info", &FunctionInfo::passing_info)
+        ("names", &FunctionInfo::names);
+      }
     };
 
     /**
@@ -351,16 +368,23 @@ namespace Psi {
     }
 
     class FunctionInvokeCallback : public MacroEvaluateCallback {
-      FunctionInfo m_info;
-      TreePtr<Term> m_func;
-      
     public:
       static const MacroEvaluateCallbackVtable vtable;
 
-      FunctionInvokeCallback(const FunctionInfo& info, const TreePtr<Term>& func, const SourceLocation& location)
-      : MacroEvaluateCallback(&vtable, func.compile_context(), location),
-      m_info(info),
-      m_func(func) {
+      FunctionInvokeCallback(const FunctionInfo& info_, const TreePtr<Term>& function_, const SourceLocation& location)
+      : MacroEvaluateCallback(&vtable, function_.compile_context(), location),
+      info(info_),
+      function(function_) {
+      }
+      
+      FunctionInfo info;
+      TreePtr<Term> function;
+      
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<MacroEvaluateCallback>(v);
+        v("info", &FunctionInvokeCallback::info)
+        ("function", &FunctionInvokeCallback::function);
       }
 
       static TreePtr<Term> evaluate_impl(const FunctionInvokeCallback& self,
@@ -368,7 +392,7 @@ namespace Psi {
                                          const List<SharedPtr<Parser::Expression> >& arguments,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
-        return compile_function_invocation(self.m_info, self.m_func, arguments, evaluate_context, location);
+        return compile_function_invocation(self.info, self.function, arguments, evaluate_context, location);
       }
     };
 

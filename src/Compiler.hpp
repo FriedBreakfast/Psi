@@ -1038,7 +1038,7 @@ namespace Psi {
         boost::array<const Derived*, 2> ptrs = {{&rewritten, static_cast<const Derived*>(self)}};
         ParameterizeVisitor pv(*location, List<TreePtr<Anonymous> >(elements_vtable, elements_object), depth);
         visit_members(pv, ptrs);
-        return pv.changed() ? TreePtr<Derived>(new Derived(rewritten)).release() : self;
+        return TreePtr<Derived>(pv.changed() ? new Derived(rewritten) : static_cast<const Derived*>(self)).release();
       }
       
       static const TreeBase* specialize(const Term *self, const SourceLocation *location, const void *values_vtable, void *values_object, unsigned depth) {
@@ -1046,7 +1046,7 @@ namespace Psi {
         boost::array<const Derived*, 2> ptrs = {{&rewritten, static_cast<const Derived*>(self)}};
         SpecializeVisitor pv(*location, List<TreePtr<Term> >(values_vtable, values_object), depth);
         visit_members(pv, ptrs);
-        return pv.changed() ? TreePtr<Derived>(new Derived(rewritten)).release() : self;
+        return TreePtr<Derived>(pv.changed() ? new Derived(rewritten) : static_cast<const Derived*>(self)).release();
       }
       
       static const TreeBase* interface_search(const Term *self, const TreeBase *interface, const void *parameters_vtable, void *parameters_object) {
@@ -1315,7 +1315,8 @@ namespace Psi {
     template<typename Derived>
     struct MacroDotCallbackWrapper : NonConstructible {
       static TreeBase* dot(MacroDotCallback *self, TreeBase *parent_value, TreeBase *child_value, TreeBase *evaluate_context, const SourceLocation *location) {
-        return Derived::dot_impl(*static_cast<Derived*>(self), tree_from_base<Term>(parent_value), tree_from_base<Term>(child_value), tree_from_base<EvaluateContext>(evaluate_context), *location).release();
+        TreePtr<Term> result = Derived::dot_impl(*static_cast<Derived*>(self), tree_from_base<Term>(parent_value), tree_from_base<Term>(child_value), tree_from_base<EvaluateContext>(evaluate_context), *location);
+        return result.release();
       }
     };
 

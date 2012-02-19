@@ -16,11 +16,11 @@ namespace Psi {
   namespace Compiler {
     void TreePtrBase::update_chain(const TreeBase *ptr) const {
       const TreePtrBase *hook = this;
-      ObjectPtr<TreeCallback> ptr_cb;
+      ObjectPtr<const TreeCallback> ptr_cb;
       while (hook->m_ptr.get() != ptr) {
         PSI_ASSERT(derived_vptr(hook->m_ptr.get())->is_callback);
-        ObjectPtr<TreeCallback> next_ptr_cb(static_cast<TreeCallback*>(const_cast<TreeBase*>(hook->m_ptr.get())), true);
-        TreePtrBase *next_hook = &next_ptr_cb->m_value;
+        ObjectPtr<const TreeCallback> next_ptr_cb(static_cast<const TreeCallback*>(hook->m_ptr.get()), true);
+        const TreePtrBase *next_hook = &next_ptr_cb->m_value;
         hook->m_ptr.reset(ptr);
         hook = next_hook;
         ptr_cb.swap(next_ptr_cb);
@@ -546,8 +546,9 @@ namespace Psi {
       TreePtr<EvaluateContext> next;
 
       template<typename Visitor>
-      static void visit(Visitor& visitor) {
-        visitor("entries", &EvaluateContextDictionary::entries)
+      static void visit(Visitor& v) {
+        visit_base<EvaluateContext>(v);
+        v("entries", &EvaluateContextDictionary::entries)
         ("next", &EvaluateContextDictionary::next);
       }
 
