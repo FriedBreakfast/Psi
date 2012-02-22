@@ -312,6 +312,38 @@ namespace Psi {
       TreePtr<Term> target;
       PSI_STD::vector<TreePtr<Term> > arguments;
     };
+    
+    /**
+     * Tree for builtin types.
+     * 
+     * This saves having to create a separate tree for each one, at least until later in the compilation process
+     * so that a uniform syntax may be used by the user.
+     */
+    class BuiltinType : public Type {
+    public:
+      static const TermVtable vtable;
+      
+      BuiltinType(CompileContext& compile_context, const SourceLocation& location);
+      BuiltinType(CompileContext& compile_context, const String& name, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
+      
+      String name;
+    };
+    
+    /**
+     * Tree for builtin operations. This saves having to create a separate tree for each one.
+     */
+    class BuiltinOperator : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      BuiltinOperator(CompileContext& compile_context, const SourceLocation& location);
+      BuiltinOperator(const String& name, const TreePtr<Term>& type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
+      
+      String name;
+      PSI_STD::vector<TreePtr<Term> > arguments;
+    };
   }
 }
 

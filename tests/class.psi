@@ -1,0 +1,5 @@
+int : builtin_type {int};
+
+x:class()[
+y : int;
+];

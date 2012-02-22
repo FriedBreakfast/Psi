@@ -467,6 +467,37 @@ namespace Psi {
       v("target", &FunctionCall::target);
     }
 
+    BuiltinType::BuiltinType(CompileContext& compile_context, const SourceLocation& location)
+    : Type(&vtable, compile_context, location) {
+    }
+    
+    BuiltinType::BuiltinType(CompileContext& compile_context, const String& name_, const SourceLocation& location)
+    : Type(&vtable, compile_context, location),
+    name(name_) {
+    }
+    
+    template<typename Visitor> void BuiltinType::visit(Visitor& v) {
+      visit_base<Type>(v);
+      v("name", &BuiltinType::name);
+    }
+
+    BuiltinOperator::BuiltinOperator(CompileContext& compile_context, const SourceLocation& location)
+    : Term(&vtable, compile_context, location) {
+    }
+    
+    BuiltinOperator::BuiltinOperator(const String& name_, const TreePtr<Term>& type, const PSI_STD::vector<TreePtr<Term> >& arguments_, const SourceLocation& location)
+    : Term(&vtable, type, location),
+    name(name_),
+    arguments(arguments_) {
+    }
+    
+    template<typename Visitor>
+    void BuiltinOperator::visit(Visitor& v) {
+      visit_base<Term>(v);
+      v("name", &BuiltinOperator::name)
+      ("arguments", &BuiltinOperator::arguments);
+    }
+
     const SIVtable Object::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Object", NULL);
     const SIVtable TreeBase::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeBase", &Object::vtable);
     const SIVtable TreeCallback::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeCallback", &TreeBase::vtable);
@@ -510,5 +541,8 @@ namespace Psi {
 
     const TermVtable FunctionCall::vtable = PSI_COMPILER_TERM(FunctionCall, "psi.compiler.FunctionCall", Term);
     ///@}
+    
+    const TermVtable BuiltinType::vtable = PSI_COMPILER_TERM(BuiltinType, "psi.compiler.BuiltinType", Term);
+    const TermVtable BuiltinOperator::vtable = PSI_COMPILER_TERM(BuiltinType, "psi.compiler.BuiltinOperator", Term);
   }
 }
