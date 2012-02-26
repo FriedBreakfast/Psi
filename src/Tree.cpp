@@ -158,6 +158,9 @@ namespace Psi {
     : Type(&vtable, compile_context, location) {
     }
 
+    /**
+     * \todo Generate function type lazily.
+     */
     FunctionType::FunctionType(const TreePtr<Term>& result_type_, const PSI_STD::vector<TreePtr<Anonymous> >& arguments, const SourceLocation& location)
     : Type(&vtable, result_type_.compile_context(), location) {
       /*
@@ -250,7 +253,7 @@ namespace Psi {
     }
 
     TryFinally::TryFinally(const TreePtr<Term>& try_expr_, const TreePtr<Term>& finally_expr_, const SourceLocation& location)
-    : Term(&vtable, try_expr_->type, location),
+    : Term(&vtable, tree_attribute(try_expr_, &Term::type), location),
     try_expr(try_expr_),
     finally_expr(finally_expr_) {
     }
@@ -266,7 +269,7 @@ namespace Psi {
     }
 
     Statement::Statement(const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, value_->type, location),
+    : Term(&vtable, tree_attribute(value_, &Term::type), location),
     value(value_) {
     }
 
@@ -281,7 +284,7 @@ namespace Psi {
     }
 
     Block::Block(const PSI_STD::vector<TreePtr<Statement> >& statements_, const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, value_->type, location),
+    : Term(&vtable, tree_attribute(value_, &Term::type), location),
     statements(statements_),
     value(value_) {
     }
@@ -481,21 +484,45 @@ namespace Psi {
       v("name", &BuiltinType::name);
     }
 
-    BuiltinOperator::BuiltinOperator(CompileContext& compile_context, const SourceLocation& location)
+    BuiltinFunction::BuiltinFunction(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
     }
     
-    BuiltinOperator::BuiltinOperator(const String& name_, const TreePtr<Term>& type, const PSI_STD::vector<TreePtr<Term> >& arguments_, const SourceLocation& location)
-    : Term(&vtable, type, location),
+    BuiltinFunction::BuiltinFunction(const String& name_, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& argument_types_, const SourceLocation& location)
+    : Term(&vtable, get_type(result_type, argument_types_, location), location),
     name(name_),
-    arguments(arguments_) {
+    argument_types(argument_types_) {
+    }
+    
+    TreePtr<Term> BuiltinFunction::get_type(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& argument_types, const SourceLocation& location) {
+      PSI_STD::vector<TreePtr<Anonymous> > arguments;
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = argument_types.begin(), ie = argument_types.end(); ii != ie; ++ii)
+        arguments.push_back(TreePtr<Anonymous>(new Anonymous(*ii, location)));
+      return TreePtr<Term>(new FunctionType(result_type, arguments, location));
     }
     
     template<typename Visitor>
-    void BuiltinOperator::visit(Visitor& v) {
+    void BuiltinFunction::visit(Visitor& v) {
       visit_base<Term>(v);
-      v("name", &BuiltinOperator::name)
-      ("arguments", &BuiltinOperator::arguments);
+      v("name", &BuiltinFunction::name)
+      ("argument_types", &BuiltinFunction::argument_types);
+    }
+    
+    BuiltinValue::BuiltinValue(CompileContext& compile_context, const SourceLocation& location)
+    : Term(&vtable, compile_context, location) {
+    }
+    
+    BuiltinValue::BuiltinValue(const String& constructor_, const String& data_, const TreePtr<Term>& type, const SourceLocation& location)
+    : Term(&vtable, type, location),
+    constructor(constructor_),
+    data(data_) {
+    }
+    
+    template<typename Visitor>
+    void BuiltinValue::visit(Visitor& v) {
+      visit_base<Term>(v);
+      v("constructor", &BuiltinValue::constructor)
+      ("data", &BuiltinValue::data);
     }
 
     const SIVtable Object::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Object", NULL);
@@ -543,6 +570,7 @@ namespace Psi {
     ///@}
     
     const TermVtable BuiltinType::vtable = PSI_COMPILER_TERM(BuiltinType, "psi.compiler.BuiltinType", Term);
-    const TermVtable BuiltinOperator::vtable = PSI_COMPILER_TERM(BuiltinType, "psi.compiler.BuiltinOperator", Term);
+    const TermVtable BuiltinFunction::vtable = PSI_COMPILER_TERM(BuiltinFunction, "psi.compiler.BuiltinFunction", Term);
+    const TermVtable BuiltinValue::vtable = PSI_COMPILER_TERM(BuiltinValue, "psi.compiler.BuiltinValue", Term);
   }
 }

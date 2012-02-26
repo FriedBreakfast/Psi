@@ -198,7 +198,10 @@ namespace Psi {
       template<typename U> bool operator < (const ObjectPtr<U>& other) const {return get() < other.get();};
 
       /// \brief Get the compile context for this Object.
-      CompileContext& compile_context() const {return m_ptr->compile_context();}
+      CompileContext& compile_context() const {
+        PSI_ASSERT(m_ptr);
+        return m_ptr->compile_context();
+      }
     };
 
     class TreePtrBase {
@@ -916,11 +919,11 @@ namespace Psi {
     public:
       typedef B TreeResultType;
       
-      TreeAttributeFunction(const TreePtr<B> A::*ptr) : m_ptr(ptr) {
+      TreeAttributeFunction(TreePtr<B> A::*ptr) : m_ptr(ptr) {
       }
       
       TreePtr<B> operator () (const TreePtr<A>& ptr) {
-        return ptr->*m_ptr;
+        return ptr.get()->*m_ptr;
       }
     };
     
@@ -931,8 +934,8 @@ namespace Psi {
      * This should be used to access attributes of trees when it is possible 
      */
     template<typename A, typename B>
-    TreePtr<B> tree_attribute(const TreePtr<A>& tree, TreePtr<B> A::*ptr, const SourceLocation& location) {
-      return tree_property(tree, TreeAttributeFunction<A,B>(ptr), location);
+    TreePtr<B> tree_attribute(const TreePtr<A>& tree, TreePtr<B> A::*ptr) {
+      return tree_property(tree, TreeAttributeFunction<A,B>(ptr), tree.location());
     }
 
     class Anonymous;

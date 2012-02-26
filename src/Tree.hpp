@@ -333,16 +333,30 @@ namespace Psi {
     /**
      * Tree for builtin operations. This saves having to create a separate tree for each one.
      */
-    class BuiltinOperator : public Term {
+    class BuiltinFunction : public Term {
+      static TreePtr<Term> get_type(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+
     public:
       static const TermVtable vtable;
       
-      BuiltinOperator(CompileContext& compile_context, const SourceLocation& location);
-      BuiltinOperator(const String& name, const TreePtr<Term>& type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      BuiltinFunction(CompileContext& compile_context, const SourceLocation& location);
+      BuiltinFunction(const String& name, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
       
       String name;
-      PSI_STD::vector<TreePtr<Term> > arguments;
+      PSI_STD::vector<TreePtr<Term> > argument_types;
+    };
+    
+    class BuiltinValue : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      BuiltinValue(CompileContext& compile_context, const SourceLocation& location);
+      BuiltinValue(const String& constructor, const String& data, const TreePtr<Term>& type, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
+
+      String constructor;
+      String data;
     };
   }
 }

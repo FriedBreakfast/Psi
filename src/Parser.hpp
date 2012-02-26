@@ -38,6 +38,7 @@ namespace Psi {
     struct TokenExpression : Expression {
       enum TokenType {
 	identifier,
+        number,
 	brace,
 	square_bracket,
 	bracket
@@ -85,6 +86,7 @@ namespace Psi {
     PSI_STD::vector<SharedPtr<NamedExpression> > parse_statement_list(const ParserLocation&);
     PSI_STD::vector<SharedPtr<NamedExpression> > parse_argument_list(const ParserLocation&);
     PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(const ParserLocation&);
+    SharedPtr<Expression> parse_expression(const ParserLocation& text);
 
     struct ArgumentDeclarations {
       PSI_STD::vector<SharedPtr<NamedExpression> > arguments;

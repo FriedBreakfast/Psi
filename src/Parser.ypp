@@ -78,20 +78,20 @@ namespace {
                const char *s) {
     arguments.error_message = s;
   }
-
-  /**
-   * \brief Checks if a character is a "token" character.
-   *
-   * A token character is alphanumeric or underscore, so this is
-   * equivalent the following in the C locale:
-   *
-   * \code isalpha(c) || isdigit(c) || c == '_' \endcode
-   */
-  bool token_char(char c) {
-    return ((c >= 'A') && (c <= 'Z')) ||
-      ((c >= 'a') && (c <= 'z')) ||
-      ((c >= '0') && (c <= '9')) ||
-      (c == '_');
+  
+  /// \brief isdigit() fixed to the C locale.
+  bool c_isdigit(char c) {
+    return (c >= '0') && (c <= '9');
+  }
+  
+  /// \brief isalpha() fixed to the C locale.
+  bool c_isalpha(char c) {
+    return ((c >= 'A') && (c <= 'Z')) || ((c >= 'a') && (c <= 'z'));
+  }
+  
+  /// \brief isalnum() fixed to the C locale.
+  bool c_isalnum(char c) {
+    return c_isdigit(c) || c_isalpha(c);
   }
 
   int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self);
@@ -169,6 +169,7 @@ namespace {
 
 %token INVALID
 %token IDENTIFIER
+%token NUMBER
 %token COMPARE_EQUAL "=="
 %token COMPARE_UNEQUAL "!="
 %token COMPARE_LESS_EQUAL "<="
@@ -182,8 +183,9 @@ namespace {
 %token MODE_ARGUMENT_LIST
 %token MODE_POSITIONAL_LIST
 %token MODE_FUNCTION_ARGUMENT_DECLARE
+%token MODE_EXPRESSION
 
-%type <text> IDENTIFIER
+%type <text> IDENTIFIER NUMBER
 %type <cstr> product_operator add_operator compare_operator unary_operator
 %type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression
 %type <expression> unary_expression compare_expression return_type_declare macro_expression macro_not_list token_expression
@@ -214,6 +216,7 @@ root: MODE_STATEMENT_LIST statement_list {arguments.result_named_expressions = $
 | MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare {arguments.result_named_expressions = $2; arguments.result_return_type = $3;}
 | MODE_ARGUMENT_LIST argument_list {arguments.result_named_expressions = $2;}
 | MODE_POSITIONAL_LIST expression_list {arguments.result_expressions = $2;}
+| MODE_EXPRESSION expression {arguments.result_expressions.assign(1, $2);}
 ;
 
 argument_list: {$$.clear();}
@@ -358,6 +361,7 @@ macro_not_list token_expression {$$.clear(); $$.push_back($1); $$.push_back($2);
 
 token_expression:
 IDENTIFIER {$$.reset(new TokenExpression(@$, TokenExpression::identifier, $1));}
+| NUMBER {$$.reset(new TokenExpression(@$, TokenExpression::number, $1));}
 | BLOCK
 ;
 
@@ -402,10 +406,35 @@ namespace {
 
     c = *self.current;
 
-    if (token_char(c)) {
-      do {
-        SCANNER_ACCEPT();
-      } while ((self.current != self.end) && token_char(*self.current));
+    if (c_isdigit(c)) {
+      bool has_dot = false;
+      SCANNER_ACCEPT();
+
+      while (self.current != self.end) {
+        c = *self.current;
+        if (c == '.') {
+          if (has_dot) {
+            break;
+          } else {
+            has_dot = true;
+            SCANNER_ACCEPT();
+          }
+        } else if (c_isalnum(c)) {
+          SCANNER_ACCEPT();
+        } else {
+          break;
+        }
+      }
+      SCANNER_RETURN(NUMBER);
+    } else if (c_isalpha(c) || (c == '_')) {
+      SCANNER_ACCEPT();
+      while (self.current != self.end) {
+        c = *self.current;
+        if (c_isalnum(c) || (c == '_'))
+          SCANNER_ACCEPT();
+        else
+          break;
+      }
       SCANNER_RETURN(IDENTIFIER);
     } else if (std::strchr("<>=!", c)) {
       /* Multi-char comparison operators */
@@ -612,6 +641,15 @@ namespace Psi {
       ParserInternalArguments args(MODE_POSITIONAL_LIST, text);
       parse_helper(args);
       return args.result_expressions;
+    }
+    
+    /**
+     * \brief Parse a single expression.
+     */
+    SharedPtr<Expression> parse_expression(const ParserLocation& text) {
+      ParserInternalArguments args(MODE_EXPRESSION, text);
+      parse_helper(args);
+      return args.result_expressions.front();
     }
 
     /** \brief parse a function argument declaration.

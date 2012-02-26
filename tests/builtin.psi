@@ -1,0 +1,7 @@
+int : builtin_type {int};
+int_plus : builtin_function {c.int.plus} (int,int,int);
+
+a : builtin_value (int) {c.int} {0};
+b : builtin_value (int) {c.int} {1};
+z : int_plus(a,b);
+

@@ -675,6 +675,24 @@ namespace Psi {
 
           return result.value();
         }
+        
+        case Parser::TokenExpression::number: {
+          LookupResult<TreePtr<Term> > first = evaluate_context->lookup("__number__", location);
+          switch (first.type()) {
+          case lookup_result_type_none:
+            compile_context.error_throw(location, "Cannot evaluate number: '__number__' operator missing");
+          case lookup_result_type_conflict:
+            compile_context.error_throw(location, "Cannot evaluate number: '__number__' operator lookup ambiguous");
+          default: break;
+          }
+          
+          if (!first.value())
+            compile_context.error_throw(location, "Cannot evaluate number: successful lookup of '__number__' returned NULL value", CompileError::error_internal);
+
+          boost::array<SharedPtr<Parser::Expression>, 1> expression_list;
+          expression_list[0] = expression;
+          return expression_macro(first.value(), location)->evaluate(first.value(), list_from_stl(expression_list), evaluate_context, location);
+        }
 
         default:
           PSI_FAIL("Unknown token type");
