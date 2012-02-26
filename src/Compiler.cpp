@@ -88,6 +88,20 @@ namespace Psi {
       return static_cast<const Tree*>(m_ptr.get());
     }
     
+#ifdef PSI_DEBUG
+    void TreePtrBase::debug_print() const {
+      if (!m_ptr) {
+        std::cerr << "(null)" << std::endl;
+        return;
+      }
+      
+      const SourceLocation& loc = location();
+      std::cerr << loc.physical.file->url << ':' << loc.physical.first_line << ": "
+      << loc.logical->error_name(LogicalSourceLocationPtr())
+      << " : " << si_vptr(m_ptr.get())->classname << std::endl;
+    }
+#endif
+    
     bool LogicalSourceLocation::Key::operator < (const Key& other) const {
       if (index) {
         if (other.index)

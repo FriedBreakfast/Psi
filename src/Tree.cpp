@@ -1,4 +1,5 @@
 #include "Tree.hpp"
+#include "Class.hpp"
 
 #include <boost/checked_delete.hpp>
 #include <boost/bind.hpp>
@@ -273,6 +274,10 @@ namespace Psi {
     value(value_) {
     }
 
+    TreePtr<> Statement::interface_search_impl(const Statement& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
+      return self.value->interface_search(interface, parameters);
+    }
+
     template<typename Visitor>
     void Statement::visit(Visitor& v) {
       visit_base<Term>(v);
@@ -482,6 +487,45 @@ namespace Psi {
     template<typename Visitor> void BuiltinType::visit(Visitor& v) {
       visit_base<Type>(v);
       v("name", &BuiltinType::name);
+    }
+    
+    class BuiltinTypeClassMember : public ClassMemberInfoCallback {
+    public:
+      static const ClassMemberInfoCallbackVtable vtable;
+      
+      TreePtr<Term> type;
+      
+      BuiltinTypeClassMember(const TreePtr<Term>& type_)
+      : ClassMemberInfoCallback(&vtable, type_.compile_context(), type_.location()),
+      type(type_) {
+      }
+      
+      static ClassMemberInfo class_member_info_impl(const BuiltinTypeClassMember& self) {
+        ClassMemberInfo cmi;
+        cmi.member_type = self.type;
+        return cmi;
+      }
+    };
+    
+    const ClassMemberInfoCallbackVtable BuiltinTypeClassMember::vtable =
+    PSI_COMPILER_CLASS_MEMBER_INFO_CALLBACK(BuiltinTypeClassMember, "psi.compiler.BuiltinTypeClassMember", Tree);
+
+    TreePtr<> BuiltinType::interface_search_impl(const BuiltinType& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
+      if (interface == self.compile_context().builtins().class_member_info_interface) {
+        PSI_ASSERT(parameters.size() == 1);
+        parameters[0].debug_print();
+        parameters[0]->type.debug_print();
+        const BuiltinType *param = dyn_tree_cast<BuiltinType>(parameters[0].get());
+        if (!param)
+          return TreePtr<>();
+        
+        if (param->name != self.name)
+          return TreePtr<>();
+        
+        return TreePtr<>(new BuiltinTypeClassMember(TreePtr<Term>(&self)));
+      } else {
+        return TreePtr<>();
+      }
     }
 
     BuiltinFunction::BuiltinFunction(CompileContext& compile_context, const SourceLocation& location)

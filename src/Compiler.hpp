@@ -234,6 +234,10 @@ namespace Psi {
       /// \brief Get the compile context for this Tree, without evaluating the Tree.
       CompileContext& compile_context() const {return m_ptr.compile_context();}
       const SourceLocation& location() const;
+      
+#ifdef PSI_DEBUG
+      void debug_print() const;
+#endif
     };
 
     template<typename T=Tree>

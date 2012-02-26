@@ -96,6 +96,7 @@ namespace Psi {
       Statement(CompileContext& compile_context, const SourceLocation& location);
       Statement(const TreePtr<Term>& value, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
+      static TreePtr<> interface_search_impl(const Statement& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
     };
 
     /**
@@ -326,6 +327,8 @@ namespace Psi {
       BuiltinType(CompileContext& compile_context, const SourceLocation& location);
       BuiltinType(CompileContext& compile_context, const String& name, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
+      
+      static TreePtr<> interface_search_impl(const BuiltinType& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
       
       String name;
     };
