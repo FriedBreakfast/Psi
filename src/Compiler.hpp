@@ -577,11 +577,8 @@ namespace Psi {
       Tree(const TreeVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
 
       void complete() const;
-
-      /**
-       * Check whether this term matches another term.
-       */
       bool match(const TreePtr<Tree>& value, const List<TreePtr<Term> >& wildcards, unsigned depth=0) const;
+      bool match(const TreePtr<Tree>& value) const;
     };
 
     template<typename T> const T* TreePtr<T>::get() const {

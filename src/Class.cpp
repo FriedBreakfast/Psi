@@ -115,7 +115,7 @@ namespace Psi {
       }
     };
 
-    const TreeVtable ClassCompilerFinalTree::vtable = PSI_COMPILER_TREE(ClassMemberInfoTree, "psi.compiler.ClassCompilerFinalTree", Tree);
+    const TreeVtable ClassCompilerFinalTree::vtable = PSI_COMPILER_TREE(ClassCompilerFinalTree, "psi.compiler.ClassCompilerFinalTree", Tree);
 
     class ClassCompilerTree : public Tree {
     public:
@@ -193,6 +193,7 @@ namespace Psi {
       ClassMemberCompiler(const TreePtr<EvaluateContext>& context,
                           const SharedPtr<Parser::Expression>& expression)
       : m_context(context), m_expression(expression) {
+        PSI_ASSERT(expression);
       }
 
       template<typename Visitor>
@@ -367,6 +368,13 @@ namespace Psi {
         PSI_STD::map<String, TreePtr<ClassMemberInfoTree> > named_entries;
         for (PSI_STD::vector<SharedPtr<Parser::NamedExpression> >::iterator ii = member_expressions.begin(), ie = member_expressions.end(); ii != ie; ++ii) {
           const Parser::NamedExpression& named_expr = **ii;
+          
+          /* 
+           * There may be no expression in the structure if it is a completely blank expression (';;'),
+           * or the end of a class after the final semicolon. I ignore these.
+           */
+          if (!named_expr.expression)
+            continue;
 
           String expr_name;
           LogicalSourceLocationPtr logical_location;

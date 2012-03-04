@@ -345,6 +345,7 @@ namespace Psi {
       BuiltinFunction(CompileContext& compile_context, const SourceLocation& location);
       BuiltinFunction(const String& name, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
+      static TreePtr<> interface_search_impl(const BuiltinFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
       
       String name;
       PSI_STD::vector<TreePtr<Term> > argument_types;

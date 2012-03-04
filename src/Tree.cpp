@@ -1,5 +1,6 @@
 #include "Tree.hpp"
 #include "Class.hpp"
+#include "Parser.hpp"
 
 #include <boost/checked_delete.hpp>
 #include <boost/bind.hpp>
@@ -50,14 +51,23 @@ namespace Psi {
      * \param depth Number of parameter-enclosing terms above this match.
      */
     bool Tree::match(const TreePtr<Tree>& value, const List<TreePtr<Term> >& wildcards, unsigned depth) const {
-      if (this == value.get())
+      // Unwrap any Statements involved
+      const Tree *self = this;
+      while (const Statement *stmt = dyn_tree_cast<Statement>(self))
+        self = stmt->value.get();
+      
+      const Tree *other = value.get();
+      while (const Statement *stmt = dyn_tree_cast<Statement>(other))
+        other = stmt->value.get();
+      
+      if (self == other)
         return true;
 
-      if (!this)
+      if (!self)
         return false;
 
-      if (const Parameter *parameter = dyn_tree_cast<Parameter>(this)) {
-        TreePtr<Term> tvalue = dyn_treeptr_cast<Term>(value);
+      if (const Parameter *parameter = dyn_tree_cast<Parameter>(self)) {
+        const Term *tvalue = dyn_tree_cast<Term>(other);
         if (!tvalue)
           return false;
         
@@ -68,23 +78,25 @@ namespace Psi {
 
           TreePtr<Term>& wildcard = wildcards[parameter->index];
           if (wildcard) {
-            if (wildcard != value)
-              PSI_FAIL("not implemented");
-            return false;
+            return wildcard->match(TreePtr<Term>(tvalue), wildcards, depth);
           } else {
-            wildcards[parameter->index] = tvalue;
+            wildcards[parameter->index].reset(tvalue);
             return true;
           }
         }
       }
 
-      const Tree *value_term = value.get();
-      if (m_vptr == value_term->m_vptr) {
+      if (self->m_vptr == other->m_vptr) {
         // Trees are required to have the same static type to work with pattern matching.
-        return derived_vptr(this)->match(this, value_term, wildcards.vptr(), wildcards.object(), depth);
+        return derived_vptr(this)->match(this, other, wildcards.vptr(), wildcards.object(), depth);
       } else {
         return false;
       }
+    }
+    
+    bool Tree::match(const TreePtr<Tree>& value) const {
+      PSI_STD::vector<TreePtr<Term> > wildcards;
+      return match(value, list_from_stl(wildcards));
     }
 
     TreeCallback::TreeCallback(const TreeCallbackVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
@@ -505,27 +517,25 @@ namespace Psi {
         cmi.member_type = self.type;
         return cmi;
       }
+      
+      template<typename Visitor>
+      static void visit(Visitor& v) {
+        visit_base<ClassMemberInfoCallback>(v);
+        v("type", &BuiltinTypeClassMember::type);
+      }
     };
     
     const ClassMemberInfoCallbackVtable BuiltinTypeClassMember::vtable =
-    PSI_COMPILER_CLASS_MEMBER_INFO_CALLBACK(BuiltinTypeClassMember, "psi.compiler.BuiltinTypeClassMember", Tree);
+    PSI_COMPILER_CLASS_MEMBER_INFO_CALLBACK(BuiltinTypeClassMember, "psi.compiler.BuiltinTypeClassMember", ClassMemberInfoCallback);
 
     TreePtr<> BuiltinType::interface_search_impl(const BuiltinType& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
       if (interface == self.compile_context().builtins().class_member_info_interface) {
         PSI_ASSERT(parameters.size() == 1);
-        parameters[0].debug_print();
-        parameters[0]->type.debug_print();
-        const BuiltinType *param = dyn_tree_cast<BuiltinType>(parameters[0].get());
-        if (!param)
-          return TreePtr<>();
-        
-        if (param->name != self.name)
-          return TreePtr<>();
-        
-        return TreePtr<>(new BuiltinTypeClassMember(TreePtr<Term>(&self)));
-      } else {
-        return TreePtr<>();
+        if (self.match(parameters[0]))
+          return TreePtr<>(new BuiltinTypeClassMember(TreePtr<Term>(&self)));
       }
+      
+      return TreePtr<>();
     }
 
     BuiltinFunction::BuiltinFunction(CompileContext& compile_context, const SourceLocation& location)
@@ -550,6 +560,64 @@ namespace Psi {
       visit_base<Term>(v);
       v("name", &BuiltinFunction::name)
       ("argument_types", &BuiltinFunction::argument_types);
+    }
+    
+    class BuiltinFunctionInvokeMacro : public Macro {
+    public:
+      static const MacroVtable vtable;
+      
+      TreePtr<BuiltinFunction> function;
+      
+      BuiltinFunctionInvokeMacro(const TreePtr<BuiltinFunction>& function_)
+      : Macro(&vtable, function_.compile_context(), function_.location()),
+      function(function_) {
+      }
+
+      template<typename Visitor>
+      static void visit(Visitor& v) {
+        visit_base<Macro>(v);
+        v("function", &BuiltinFunctionInvokeMacro::function);
+      }
+
+      static TreePtr<Term> evaluate_impl(const BuiltinFunctionInvokeMacro& self,
+                                         const TreePtr<Term>&,
+                                         const List<SharedPtr<Parser::Expression> >& parameters,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
+        if (parameters.size() != 1)
+          self.compile_context().error_throw(location, "Wrong number of parameters to builtin function invocation macro (expected 1)");
+        
+        SharedPtr<Parser::TokenExpression> arguments;
+        if (!(arguments = expression_as_token_type(parameters[0], Parser::TokenExpression::bracket)))
+          self.compile_context().error_throw(location, "Parameter to builtin function invocation macro is not a (...)");
+        
+        PSI_STD::vector<TreePtr<Term> > argument_values;
+        PSI_STD::vector<SharedPtr<Parser::Expression> > argument_expressions = Parser::parse_positional_list(arguments->text);
+        for (PSI_STD::vector<SharedPtr<Parser::Expression> >::iterator ii = argument_expressions.begin(), ie = argument_expressions.end(); ii != ie; ++ii)
+          argument_values.push_back(compile_expression(*ii, evaluate_context, location.logical));
+
+        return TreePtr<Term>(new FunctionCall(self.function, argument_values, location));
+      }
+
+      static TreePtr<Term> dot_impl(const BuiltinFunctionInvokeMacro& self,
+                                    const TreePtr<Term>&,
+                                    const SharedPtr<Parser::Expression>&,
+                                    const TreePtr<EvaluateContext>&,
+                                    const SourceLocation& location) {
+        self.compile_context().error_throw(location, "Builtin functions do not support the dot operator");
+      }
+    };
+
+    const MacroVtable BuiltinFunctionInvokeMacro::vtable = PSI_COMPILER_MACRO(BuiltinFunctionInvokeMacro, "psi.compiler.BuiltinFunctionInvokeMacro", Macro);
+
+    TreePtr<> BuiltinFunction::interface_search_impl(const BuiltinFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
+      if (interface == self.compile_context().builtins().macro_interface) {
+        PSI_ASSERT(parameters.size() == 1);
+        if (self.match(parameters[0]))
+          return TreePtr<>(new BuiltinFunctionInvokeMacro(TreePtr<BuiltinFunction>(&self)));
+      }
+      
+      return TreePtr<>();
     }
     
     BuiltinValue::BuiltinValue(CompileContext& compile_context, const SourceLocation& location)

@@ -334,8 +334,9 @@ namespace Psi {
 
       if (!si_is_a(result.get(), &cast_type->base.base.base))
         compile_context.error_throw(location,
-                                    boost::format("'%s' interface has the wrong type")
+                                    boost::format("'%s' interface value has the wrong type (%s) for %s")
                                     % interface.location().logical->error_name(location.logical)
+                                    % si_vptr(result.get())->classname
                                     % interface_parameters_message(parameters, location),
                                     CompileError::error_internal);
     }
@@ -836,7 +837,7 @@ namespace Psi {
 
         for (PSI_STD::vector<SharedPtr<Parser::NamedExpression> >::iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii) {
           const Parser::NamedExpression& named_expr = **ii;
-          if (last_statement_set = named_expr.expression.get()) {
+          if ((last_statement_set = named_expr.expression.get())) {
             String expr_name;
             LogicalSourceLocationPtr logical_location;
             if (named_expr.name) {
