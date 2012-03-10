@@ -1079,7 +1079,10 @@ namespace Psi {
 
       template<typename T>
       TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Term*) {
-        return treeptr_cast<T>(ptr->specialize(m_location, m_values, m_depth));
+        if (ptr)
+          return treeptr_cast<T>(ptr->specialize(m_location, m_values, m_depth));
+        else
+          return TreePtr<T>();
       }
 
     public:
