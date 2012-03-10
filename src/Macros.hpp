@@ -12,6 +12,7 @@ namespace Psi {
     TreePtr<Term> builtin_type_macro(CompileContext& compile_context, const SourceLocation& location);
     TreePtr<Term> builtin_function_macro(CompileContext& compile_context, const SourceLocation& location);
     TreePtr<Term> builtin_value_macro(CompileContext& compile_context, const SourceLocation& location);
+    TreePtr<Term> c_function_macro(CompileContext& compile_context, const SourceLocation& location);
   }
 }
 

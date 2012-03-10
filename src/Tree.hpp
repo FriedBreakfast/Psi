@@ -333,24 +333,6 @@ namespace Psi {
       String name;
     };
     
-    /**
-     * Tree for builtin operations. This saves having to create a separate tree for each one.
-     */
-    class BuiltinFunction : public Term {
-      static TreePtr<Term> get_type(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
-
-    public:
-      static const TermVtable vtable;
-      
-      BuiltinFunction(CompileContext& compile_context, const SourceLocation& location);
-      BuiltinFunction(const String& name, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
-      template<typename Visitor> static void visit(Visitor& v);
-      static TreePtr<> interface_search_impl(const BuiltinFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
-      
-      String name;
-      PSI_STD::vector<TreePtr<Term> > argument_types;
-    };
-    
     class BuiltinValue : public Term {
     public:
       static const TermVtable vtable;
@@ -361,6 +343,50 @@ namespace Psi {
 
       String constructor;
       String data;
+    };
+    
+    /**
+     * Base type for trees representing functions which are external to user code.
+     * 
+     * All such functions are entirely non-polymorphic.
+     */
+    class ExternalFunction : public Term {
+      static TreePtr<Term> get_type(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+
+    public:
+      static const SIVtable vtable;
+      
+      ExternalFunction(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
+      ExternalFunction(const TermVtable *vptr, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      static TreePtr<> interface_search_impl(const ExternalFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
+    };
+    
+    /**
+     * Tree for builtin operations. This saves having to create a separate tree for each one.
+     */
+    class BuiltinFunction : public ExternalFunction {
+      static const TermVtable vtable;
+      
+    public:
+      BuiltinFunction(CompileContext& compile_context, const SourceLocation& location);
+      BuiltinFunction(const String& name, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
+      
+      String name;
+    };
+
+    /**
+     * Tree for function calls to C.
+     */
+    class CFunction : public ExternalFunction {
+    public:
+      static const TermVtable vtable;
+      
+      CFunction(CompileContext& compile_context, const SourceLocation& location);
+      CFunction(const String& name, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
+      
+      String name;
     };
   }
 }

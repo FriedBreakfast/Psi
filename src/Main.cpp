@@ -75,6 +75,7 @@ int main(int argc, char *argv[]) {
   global_names["builtin_type"] = builtin_type_macro(compile_context, psi_location.named_child("builtin_type"));
   global_names["builtin_function"] = builtin_function_macro(compile_context, psi_location.named_child("builtin_function"));
   global_names["builtin_value"] = builtin_value_macro(compile_context, psi_location.named_child("builtin_function"));
+  global_names["c_function"] = c_function_macro(compile_context, psi_location.named_child("c_function"));
 
   TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, psi_location, global_names);
 

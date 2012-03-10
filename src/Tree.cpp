@@ -538,88 +538,6 @@ namespace Psi {
       return TreePtr<>();
     }
 
-    BuiltinFunction::BuiltinFunction(CompileContext& compile_context, const SourceLocation& location)
-    : Term(&vtable, compile_context, location) {
-    }
-    
-    BuiltinFunction::BuiltinFunction(const String& name_, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& argument_types_, const SourceLocation& location)
-    : Term(&vtable, get_type(result_type, argument_types_, location), location),
-    name(name_),
-    argument_types(argument_types_) {
-    }
-    
-    TreePtr<Term> BuiltinFunction::get_type(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& argument_types, const SourceLocation& location) {
-      PSI_STD::vector<TreePtr<Anonymous> > arguments;
-      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = argument_types.begin(), ie = argument_types.end(); ii != ie; ++ii)
-        arguments.push_back(TreePtr<Anonymous>(new Anonymous(*ii, location)));
-      return TreePtr<Term>(new FunctionType(result_type, arguments, location));
-    }
-    
-    template<typename Visitor>
-    void BuiltinFunction::visit(Visitor& v) {
-      visit_base<Term>(v);
-      v("name", &BuiltinFunction::name)
-      ("argument_types", &BuiltinFunction::argument_types);
-    }
-    
-    class BuiltinFunctionInvokeMacro : public Macro {
-    public:
-      static const MacroVtable vtable;
-      
-      TreePtr<BuiltinFunction> function;
-      
-      BuiltinFunctionInvokeMacro(const TreePtr<BuiltinFunction>& function_)
-      : Macro(&vtable, function_.compile_context(), function_.location()),
-      function(function_) {
-      }
-
-      template<typename Visitor>
-      static void visit(Visitor& v) {
-        visit_base<Macro>(v);
-        v("function", &BuiltinFunctionInvokeMacro::function);
-      }
-
-      static TreePtr<Term> evaluate_impl(const BuiltinFunctionInvokeMacro& self,
-                                         const TreePtr<Term>&,
-                                         const List<SharedPtr<Parser::Expression> >& parameters,
-                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                         const SourceLocation& location) {
-        if (parameters.size() != 1)
-          self.compile_context().error_throw(location, "Wrong number of parameters to builtin function invocation macro (expected 1)");
-        
-        SharedPtr<Parser::TokenExpression> arguments;
-        if (!(arguments = expression_as_token_type(parameters[0], Parser::TokenExpression::bracket)))
-          self.compile_context().error_throw(location, "Parameter to builtin function invocation macro is not a (...)");
-        
-        PSI_STD::vector<TreePtr<Term> > argument_values;
-        PSI_STD::vector<SharedPtr<Parser::Expression> > argument_expressions = Parser::parse_positional_list(arguments->text);
-        for (PSI_STD::vector<SharedPtr<Parser::Expression> >::iterator ii = argument_expressions.begin(), ie = argument_expressions.end(); ii != ie; ++ii)
-          argument_values.push_back(compile_expression(*ii, evaluate_context, location.logical));
-
-        return TreePtr<Term>(new FunctionCall(self.function, argument_values, location));
-      }
-
-      static TreePtr<Term> dot_impl(const BuiltinFunctionInvokeMacro& self,
-                                    const TreePtr<Term>&,
-                                    const SharedPtr<Parser::Expression>&,
-                                    const TreePtr<EvaluateContext>&,
-                                    const SourceLocation& location) {
-        self.compile_context().error_throw(location, "Builtin functions do not support the dot operator");
-      }
-    };
-
-    const MacroVtable BuiltinFunctionInvokeMacro::vtable = PSI_COMPILER_MACRO(BuiltinFunctionInvokeMacro, "psi.compiler.BuiltinFunctionInvokeMacro", Macro);
-
-    TreePtr<> BuiltinFunction::interface_search_impl(const BuiltinFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
-      if (interface == self.compile_context().builtins().macro_interface) {
-        PSI_ASSERT(parameters.size() == 1);
-        if (self.match(parameters[0]))
-          return TreePtr<>(new BuiltinFunctionInvokeMacro(TreePtr<BuiltinFunction>(&self)));
-      }
-      
-      return TreePtr<>();
-    }
-    
     BuiltinValue::BuiltinValue(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
     }
@@ -635,6 +553,109 @@ namespace Psi {
       visit_base<Term>(v);
       v("constructor", &BuiltinValue::constructor)
       ("data", &BuiltinValue::data);
+    }
+
+    ExternalFunction::ExternalFunction(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
+    : Term(vptr, compile_context, location) {
+    }
+    
+    ExternalFunction::ExternalFunction(const TermVtable *vptr, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& argument_types, const SourceLocation& location)
+    : Term(vptr, get_type(result_type, argument_types, location), location) {
+    }
+    
+    TreePtr<Term> ExternalFunction::get_type(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& argument_types, const SourceLocation& location) {
+      PSI_STD::vector<TreePtr<Anonymous> > arguments;
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = argument_types.begin(), ie = argument_types.end(); ii != ie; ++ii)
+        arguments.push_back(TreePtr<Anonymous>(new Anonymous(*ii, location)));
+      return TreePtr<Term>(new FunctionType(result_type, arguments, location));
+    }
+    
+    class ExternalFunctionInvokeMacro : public Macro {
+    public:
+      static const MacroVtable vtable;
+      
+      TreePtr<Term> function;
+      
+      ExternalFunctionInvokeMacro(const TreePtr<Term>& function_)
+      : Macro(&vtable, function_.compile_context(), function_.location()),
+      function(function_) {
+      }
+
+      template<typename Visitor>
+      static void visit(Visitor& v) {
+        visit_base<Macro>(v);
+        v("function", &ExternalFunctionInvokeMacro::function);
+      }
+
+      static TreePtr<Term> evaluate_impl(const ExternalFunctionInvokeMacro& self,
+                                         const TreePtr<Term>&,
+                                         const List<SharedPtr<Parser::Expression> >& parameters,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
+        if (parameters.size() != 1)
+          self.compile_context().error_throw(location, "Wrong number of parameters to builtin function invocation macro (expected 1)");
+        
+        SharedPtr<Parser::TokenExpression> arguments;
+        if (!(arguments = expression_as_token_type(parameters[0], Parser::TokenExpression::bracket)))
+          self.compile_context().error_throw(location, "Parameter to external function invocation macro is not a (...)");
+        
+        PSI_STD::vector<TreePtr<Term> > argument_values;
+        PSI_STD::vector<SharedPtr<Parser::Expression> > argument_expressions = Parser::parse_positional_list(arguments->text);
+        for (PSI_STD::vector<SharedPtr<Parser::Expression> >::iterator ii = argument_expressions.begin(), ie = argument_expressions.end(); ii != ie; ++ii)
+          argument_values.push_back(compile_expression(*ii, evaluate_context, location.logical));
+
+        return TreePtr<Term>(new FunctionCall(self.function, argument_values, location));
+      }
+
+      static TreePtr<Term> dot_impl(const ExternalFunctionInvokeMacro& self,
+                                    const TreePtr<Term>&,
+                                    const SharedPtr<Parser::Expression>&,
+                                    const TreePtr<EvaluateContext>&,
+                                    const SourceLocation& location) {
+        self.compile_context().error_throw(location, "External functions do not support the dot operator");
+      }
+    };
+
+    const MacroVtable ExternalFunctionInvokeMacro::vtable = PSI_COMPILER_MACRO(ExternalFunctionInvokeMacro, "psi.compiler.ExternalFunctionInvokeMacro", Macro);
+
+    TreePtr<> ExternalFunction::interface_search_impl(const ExternalFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
+      if (interface == self.compile_context().builtins().macro_interface) {
+        PSI_ASSERT(parameters.size() == 1);
+        if (self.match(parameters[0]))
+          return TreePtr<>(new ExternalFunctionInvokeMacro(TreePtr<Term>(&self)));
+      }
+      
+      return TreePtr<>();
+    }
+    
+    BuiltinFunction::BuiltinFunction(CompileContext& compile_context, const SourceLocation& location)
+    : ExternalFunction(&vtable, compile_context, location) {
+    }
+    
+    BuiltinFunction::BuiltinFunction(const String& name_, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& argument_types, const SourceLocation& location)
+    : ExternalFunction(&vtable, result_type, argument_types, location),
+    name(name_) {
+    }
+
+    template<typename Visitor>
+    void BuiltinFunction::visit(Visitor& v) {
+      visit_base<ExternalFunction>(v);
+      v("name", &BuiltinFunction::name);
+    }
+
+    CFunction::CFunction(CompileContext& compile_context, const SourceLocation& location)
+    : ExternalFunction(&vtable, compile_context, location) {
+    }
+    
+    CFunction::CFunction(const String& name_, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& argument_types, const SourceLocation& location)
+    : ExternalFunction(&vtable, result_type, argument_types, location),
+    name(name_) {
+    }
+
+    template<typename Visitor>
+    void CFunction::visit(Visitor& v) {
+      visit_base<ExternalFunction>(v);
+      v("name", &CFunction::name);
     }
 
     const SIVtable Object::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Object", NULL);
@@ -681,8 +702,12 @@ namespace Psi {
     const TermVtable FunctionCall::vtable = PSI_COMPILER_TERM(FunctionCall, "psi.compiler.FunctionCall", Term);
     ///@}
     
+    const SIVtable ExternalFunction::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ExternalFunction", Term);
+    
     const TermVtable BuiltinType::vtable = PSI_COMPILER_TERM(BuiltinType, "psi.compiler.BuiltinType", Term);
-    const TermVtable BuiltinFunction::vtable = PSI_COMPILER_TERM(BuiltinFunction, "psi.compiler.BuiltinFunction", Term);
+    const TermVtable BuiltinFunction::vtable = PSI_COMPILER_TERM(BuiltinFunction, "psi.compiler.BuiltinFunction", ExternalFunction);
     const TermVtable BuiltinValue::vtable = PSI_COMPILER_TERM(BuiltinValue, "psi.compiler.BuiltinValue", Term);
+    
+    const TermVtable CFunction::vtable = PSI_COMPILER_TERM(CFunction, "psi.compiler.CFunction", ExternalFunction);
   }
 }
