@@ -3,6 +3,9 @@
 #include "Platform.hpp"
 #include "Parser.hpp"
 
+#include "Class.hpp"
+#include "Function.hpp"
+
 #ifdef PSI_DEBUG
 #include <iostream>
 #endif
@@ -348,11 +351,37 @@ namespace Psi {
      * \param parameters Parameters to the interface.
      */    
     TreePtr<> interface_lookup(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const SourceLocation&) {
+      PSI_ASSERT(interface->compile_time_type);
+
       // Walk the various parameters and look for matching interface implementations
       for (LocalIterator<TreePtr<Term> > p(parameters); p.next();) {
         TreePtr<> result = p.current()->interface_search(interface, parameters);
-        if (result)
+        if (result) {
+          // Check result has the correct type
+          if (!si_is_a(result.get(), interface->compile_time_type)) {
+            CompileError error(interface.compile_context(), result.location());
+            error.info(boost::format("Implementation of '%s' has the wrong tree type") % interface.location().logical->error_name(result.location().logical));
+            error.info(boost::format("Tree type should be '%s' but is '%s'") % interface->compile_time_type->classname % si_vptr(result.get())->classname);
+            error.info(interface.location(), "Interface defined here");
+            error.end();
+            throw CompileException();
+          }
+          
+          if (interface->run_time_type) {
+            PSI_ASSERT(si_derived(reinterpret_cast<const SIVtable*>(&Term::vtable), interface->compile_time_type));
+            TreePtr<Term> term = treeptr_cast<Term>(result);
+            if (!interface->run_time_type->match(term)) {
+              CompileError error(interface.compile_context(), result.location());
+              error.info(boost::format("Implementation of '%s' has the wrong type") % interface.location().logical->error_name(result.location().logical));
+              error.info(boost::format("Type should be '%s' but is '%s'") % interface->run_time_type.location().logical->error_name(result.location().logical) % term->type.location().logical->error_name(result.location().logical));
+              error.info(interface.location(), "Interface defined here");
+              error.end();
+              throw CompileException();
+            }
+          }
+          
           return result;
+        }
       }
 
       return TreePtr<>();
@@ -405,9 +434,10 @@ namespace Psi {
 
       metatype.reset(new Metatype(compile_context, psi_location.named_child("Type")));
       empty_type.reset(new EmptyType(compile_context, psi_location.named_child("Empty")));
-      macro_interface.reset(new Interface(compile_context, psi_compiler_location.named_child("Macro")));
-      argument_passing_info_interface.reset(new Interface(compile_context, psi_compiler_location.named_child("ArgumentPasser")));
-      class_member_info_interface.reset(new Interface(compile_context, psi_compiler_location.named_child("ClassMemberInfo")));
+      
+      macro_interface.reset(new Interface(compile_context, 1, &Macro::vtable, TreePtr<Term>(), psi_compiler_location.named_child("Macro")));
+      argument_passing_info_interface.reset(new Interface(compile_context, 1, &ArgumentPassingInfoCallback::vtable, TreePtr<Term>(), psi_compiler_location.named_child("ArgumentPasser")));
+      class_member_info_interface.reset(new Interface(compile_context, 1, &ClassMemberInfoCallback::vtable, TreePtr<Term>(), psi_compiler_location.named_child("ClassMemberInfo")));
     }
 
     CompileContext::CompileContext(std::ostream *error_stream)

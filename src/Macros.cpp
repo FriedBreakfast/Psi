@@ -1,8 +1,99 @@
 #include "Macros.hpp"
 #include "Parser.hpp"
 
+#include <boost/format.hpp>
+
 namespace Psi {
   namespace Compiler {
+    const SIVtable MacroEvaluateCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.MacroEvaluateCallback", Tree);
+    const SIVtable MacroDotCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.MacroDotCallback", Tree);
+
+    class NamedMemberMacro : public Macro {
+      typedef std::map<String, TreePtr<MacroDotCallback> > NameMapType;
+      TreePtr<MacroEvaluateCallback> m_evaluate;
+      NameMapType m_members;
+
+    public:
+      static const MacroVtable vtable;
+
+      NamedMemberMacro(CompileContext& compile_context,
+                       const SourceLocation& location,
+                       const TreePtr<MacroEvaluateCallback>& evaluate,
+                       const NameMapType& members)
+      : Macro(&vtable, compile_context, location),
+      m_evaluate(evaluate),
+      m_members(members) {
+      }
+
+      template<typename Visitor>
+      static void visit(Visitor& v) {
+        visit_base<Macro>(v);
+        v("evaluate", &NamedMemberMacro::m_evaluate)
+        ("members", &NamedMemberMacro::m_members);
+      }
+      
+      static TreePtr<Term> evaluate_impl(const NamedMemberMacro& self,
+                                         const TreePtr<Term>& value,
+                                         const List<SharedPtr<Parser::Expression> >& parameters,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
+        if (self.m_evaluate) {
+          return self.m_evaluate->evaluate(value, parameters, evaluate_context, location);
+        } else {
+          self.compile_context().error_throw(location, boost::format("Macro '%s' does not support evaluation") % self.location().logical->error_name(location.logical));
+        }
+      }
+
+      static TreePtr<Term> dot_impl(const NamedMemberMacro& self,
+                                    const TreePtr<Term>& value,
+                                    const SharedPtr<Parser::Expression>& parameter,
+                                    const TreePtr<EvaluateContext>& evaluate_context,
+                                    const SourceLocation& location) {
+        if (parameter->expression_type != Parser::expression_token)
+          self.compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % self.location().logical->error_name(location.logical));
+
+        const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*parameter);
+        String member_name(token_expression.text.begin, token_expression.text.end);
+        NameMapType::const_iterator it = self.m_members.find(member_name);
+
+        if (it == self.m_members.end())
+          self.compile_context().error_throw(location, boost::format("'%s' has no member named '%s'") % self.location().logical->error_name(location.logical) % member_name);
+
+        return it->second->dot(value, value, evaluate_context, location);
+      }
+    };
+
+    const MacroVtable NamedMemberMacro::vtable =
+    PSI_COMPILER_MACRO(NamedMemberMacro, "psi.compiler.NamedMemberMacro", Macro);
+
+    /**
+     * \brief Create an interface macro.
+     */
+    TreePtr<Macro> make_macro(CompileContext& compile_context,
+                              const SourceLocation& location,
+                              const TreePtr<MacroEvaluateCallback>& evaluate,
+                              const std::map<String, TreePtr<MacroDotCallback> >& members) {
+      return TreePtr<Macro>(new NamedMemberMacro(compile_context, location, evaluate, members));
+    }
+
+    /**
+     * \brief Create an interface macro.
+     */
+    TreePtr<Macro> make_macro(CompileContext& compile_context,
+                              const SourceLocation& location,
+                              const TreePtr<MacroEvaluateCallback>& evaluate) {
+      return make_macro(compile_context, location, evaluate, std::map<String, TreePtr<MacroDotCallback> >());
+    }
+
+    /**
+     * \brief Create an interface macro.
+     */
+    TreePtr<Macro> make_macro(CompileContext& compile_context,
+                              const SourceLocation& location,
+                              const std::map<String, TreePtr<MacroDotCallback> >& members) {
+      return make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(), members);
+    }
+
     /**
      * \brief A term whose sole purpose is to carry macros, and therefore
      * cannot be used as a type.

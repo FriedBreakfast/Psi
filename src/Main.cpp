@@ -76,6 +76,10 @@ int main(int argc, char *argv[]) {
   global_names["builtin_function"] = builtin_function_macro(compile_context, psi_location.named_child("builtin_function"));
   global_names["builtin_value"] = builtin_value_macro(compile_context, psi_location.named_child("builtin_function"));
   global_names["c_function"] = c_function_macro(compile_context, psi_location.named_child("c_function"));
+  
+  global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));
+  global_names["implement"] = implementation_define_macro(compile_context, psi_location.named_child("implement"));
+  global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));
 
   TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, psi_location, global_names);
 

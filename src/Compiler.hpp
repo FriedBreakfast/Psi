@@ -130,7 +130,7 @@ namespace Psi {
       const char *classname;
       bool abstract;
     };
-
+    
 #define PSI_COMPILER_SI(classname,super) {reinterpret_cast<const SIVtable*>(super),classname,false}
 #define PSI_COMPILER_SI_ABSTRACT(classname,super) {reinterpret_cast<const SIVtable*>(super),classname,true}
 #define PSI_COMPILER_SI_INIT(vptr) (m_vptr = reinterpret_cast<const SIVtable*>(vptr), PSI_ASSERT(!m_vptr->abstract))
@@ -565,6 +565,25 @@ namespace Psi {
       void (*complete) (Tree*,VisitQueue<TreePtr<> >*);
       PsiBool (*match) (const Tree*,const Tree*,const void*,void*,unsigned);
       Tree* (*parameterize_evaluations) (const Tree*,const void*,void*,unsigned);
+    };
+
+    /**
+     * Used to store pointers to tree types in objects, in order to work with the
+     * visitor system.
+     */
+    class SIType {
+      const SIVtable *m_vptr;
+      
+    public:
+      SIType() : m_vptr(NULL) {}
+      SIType(const SIVtable *vptr) : m_vptr(vptr) {}
+    
+      const SIVtable* get() const {return m_vptr;}
+      operator const SIVtable* () const {return get();}
+      const SIVtable* operator -> () const {return get();}
+      
+      template<typename Visitor>
+      static void visit(Visitor&) {}
     };
 
     class Tree : public TreeBase {
@@ -1390,21 +1409,24 @@ namespace Psi {
   }
 
     class Interface : public Tree {
-      unsigned m_n_parameters;
-      /// \brief If the target of this interface is a compile-time type, this value gives the type of tree we're looking for.
-      TreeVtable *m_compile_time_type;
-      /// \brief If the target of this interface is a run-time value, this gives the type of that value.
-      TreePtr<Term> m_run_time_type;
-
     public:
       static const TreeVtable vtable;
-      Interface(CompileContext&, const SourceLocation&);
+      Interface(CompileContext& compile_context, const SourceLocation& location);
+      Interface(CompileContext& compile_context, unsigned n_parameters, const SIVtable *compile_time_type, const TreePtr<Term>& run_time_type, const SourceLocation& location);
 
+      /// \brief Number of parameters this interface takes.
+      unsigned n_parameters;
+      /// \brief The type that the value of this interface should extend. For run-time values this will be Term.
+      SIType compile_time_type;
+      /// \brief If the target of this interface is a run-time value, this gives the type of that value, otherwise it should be NULL.
+      TreePtr<Term> run_time_type;
+      
       template<typename Visitor>
       static void visit(Visitor& v) {
         visit_base<Tree>(v);
-        v("n_parameters", &Interface::m_n_parameters)
-        ("run_time_type", &Interface::m_run_time_type);
+        v("n_parameters", &Interface::n_parameters)
+        ("compile_time_type", &Interface::compile_time_type)
+        ("run_time_type", &Interface::run_time_type);
       }
     };
     
@@ -1507,7 +1529,6 @@ namespace Psi {
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&, const std::map<String, TreePtr<MacroDotCallback> >&);
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&);
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<MacroDotCallback> >&);
-    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&);
     TreePtr<Term> make_macro_term(CompileContext& compile_context, const SourceLocation& location, const TreePtr<Macro>& macro);
   }
 }

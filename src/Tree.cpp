@@ -316,6 +316,13 @@ namespace Psi {
     Interface::Interface(CompileContext& compile_context, const SourceLocation& location)
     : Tree(&vtable, compile_context, location) {
     }
+    
+    Interface::Interface(CompileContext& compile_context, unsigned n_parameters_, const SIVtable *compile_time_type_, const TreePtr<Term>& run_time_type_, const SourceLocation& location)
+    : Tree(&vtable, compile_context, location),
+    n_parameters(n_parameters_),
+    compile_time_type(compile_time_type_),
+    run_time_type(run_time_type_) {
+    }
 
     Implementation::Implementation(CompileContext& compile_context, const SourceLocation& location)
     : Tree(&vtable, compile_context, location) {
