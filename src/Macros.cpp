@@ -169,6 +169,39 @@ namespace Psi {
       return TreePtr<Term>(new NullValue(type, location));
     }
     
+    class NamespaceMacro : public MacroEvaluateCallback {
+    public:
+      static const MacroEvaluateCallbackVtable vtable;
+      
+      NamespaceMacro(CompileContext& compile_context, const SourceLocation& location)
+      : MacroEvaluateCallback(&vtable, compile_context, location) {
+      }
+      
+      static TreePtr<Term> evaluate_impl(const NamespaceMacro& self,
+                                         const TreePtr<Term>& value,
+                                         const List<SharedPtr<Parser::Expression> >& parameters,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
+        if (parameters.size() != 1)
+          self.compile_context().error_throw(location, "Namespace macro expects 1 parameter");
+        
+        SharedPtr<Parser::TokenExpression> name;
+        if (!(name = expression_as_token_type(parameters[0], Parser::TokenExpression::square_bracket)))
+          self.compile_context().error_throw(location, "Parameter to namespace macro is not a [...]");
+        
+        PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(name->text);
+
+        return compile_namespace(statements, evaluate_context, location);
+      }
+    };
+
+    const MacroEvaluateCallbackVtable NamespaceMacro::vtable = PSI_COMPILER_MACRO_EVALUATE_CALLBACK(NamespaceMacro, "psi.compiler.NamespaceMacro", MacroEvaluateCallback);
+    
+    TreePtr<Term> namespace_macro(CompileContext& compile_context, const SourceLocation& location) {
+      TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(new NamespaceMacro(compile_context, location)));
+      return make_macro_term(compile_context, location, m);
+    }
+    
     class BuiltinTypeMacro : public MacroEvaluateCallback {
     public:
       static const MacroEvaluateCallbackVtable vtable;

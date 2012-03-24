@@ -295,22 +295,44 @@ namespace Psi {
       visit_base<Term>(v);
       v("value", &Statement::value);
     }
+    
+    StatementList::StatementList(const TermVtable* vptr, CompileContext& compile_context, const SourceLocation& location)
+    : Term(vptr, compile_context, location) {
+
+    }
+
+    StatementList::StatementList(const TermVtable* vptr, const TreePtr<Term>& type, const PSI_STD::vector<TreePtr<Statement> >& statements_, const SourceLocation& location)
+    : Term(vptr, type, location),
+    statements(statements_) {
+    }
+
+    template<typename Visitor>
+    void StatementList::visit(Visitor& v) {
+      visit_base<Term>(v);
+      v("statements", &StatementList::statements);
+    }
 
     Block::Block(CompileContext& compile_context, const SourceLocation& location)
-    : Term(&vtable, compile_context, location) {
+    : StatementList(&vtable, compile_context, location) {
     }
 
     Block::Block(const PSI_STD::vector<TreePtr<Statement> >& statements_, const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, tree_attribute(value_, &Term::type), location),
-    statements(statements_),
+    : StatementList(&vtable, tree_attribute(value_, &Term::type), statements_, location),
     value(value_) {
     }
 
     template<typename Visitor>
     void Block::visit(Visitor& v) {
-      visit_base<Term>(v);
-      v("statements", &Block::statements)
-      ("value", &Block::value);
+      visit_base<StatementList>(v);
+      v("value", &Block::value);
+    }
+    
+    Namespace::Namespace(CompileContext& compile_context, const SourceLocation& location)
+    : StatementList(&vtable, compile_context, location) {
+    }
+
+    Namespace::Namespace(const PSI_STD::vector<TreePtr<Statement> >& statements, CompileContext& compile_context, const SourceLocation& location)
+    : StatementList(&vtable, compile_context.builtins().empty_type, statements, location) {
     }
 
     Interface::Interface(CompileContext& compile_context, const SourceLocation& location)
@@ -702,7 +724,9 @@ namespace Psi {
      * \name Function entries.
      */
     ///@{
-    const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", Term);
+    const SIVtable StatementList::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.StatementList", Term);
+    const TermVtable Namespace::vtable = PSI_COMPILER_TERM(Namespace, "psi.compiler.Namespace", StatementList);
+    const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", StatementList);
     const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
     const TermVtable TryFinally::vtable = PSI_COMPILER_TERM(TryFinally, "psi.compiler.TryFinally", Term);
 

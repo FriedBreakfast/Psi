@@ -3,3 +3,7 @@ int : builtin_type {int};
 x:class()[
 y : int;
 ];
+
+z:namespace [
+t : int;
+];

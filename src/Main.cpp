@@ -70,6 +70,7 @@ int main(int argc, char *argv[]) {
   PSI_STD::map<String, TreePtr<Term> > global_names;
   global_names["function"] = function_definition_macro(compile_context, psi_location.named_child("function"));
   global_names["class"] = class_definition_macro(compile_context, psi_location.named_child("child"));
+  global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
   global_names["__none__"] = none_macro(compile_context, psi_location.named_child("__none__"));
   global_names["__number__"] = TreePtr<Term>();
   global_names["builtin_type"] = builtin_type_macro(compile_context, psi_location.named_child("builtin_type"));

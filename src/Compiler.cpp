@@ -518,32 +518,7 @@ namespace Psi {
      * \brief JIT compile a global symbol.
      */
     void* CompileContext::jit_compile(const TreePtr<Global>& global) {
-      const Global *global_ptr = global.get();
-      
-      if (!global_ptr->jit_ptr) {
-        PSI_FAIL("not implemented");
-      }
-
-      return global_ptr->jit_ptr;
-    }
-
-    /**
-     * \brief Create a tree for a global from the address of that global.
-     */
-    TreePtr<Global> CompileContext::tree_from_address(const SourceLocation& location, const TreePtr<Type>& type, void *ptr) {
-      void *base;
-      String name;
-      try {
-        name = Platform::address_to_symbol(ptr, &base);
-      } catch (Platform::PlatformError& e) {
-        error_throw(location, boost::format("Internal error: failed to get symbol name from addres: %s") % e.what());
-      }
-      if (base != ptr)
-        error_throw(location, "Internal error: address used to retrieve symbol did not match symbol base");
-
-      TreePtr<ExternalGlobal> result(new ExternalGlobal(type, name, location));
-      result->jit_ptr = base;
-      return result;
+      PSI_NOT_IMPLEMENTED();
     }
 
     RunningTreeCallback::RunningTreeCallback(TreeCallback *callback)
@@ -783,8 +758,8 @@ namespace Psi {
 
       typedef std::map<String, TreePtr<Term> > NameMapType;
 
-      StatementListTree(const PSI_STD::vector<TreePtr<Statement> >& entries_, TreePtr<Term>& block_value_, const NameMapType& named_entries_)
-      : Tree(&vtable, block_value_.compile_context(), block_value_.location()),
+      StatementListTree(const PSI_STD::vector<TreePtr<Statement> >& entries_, TreePtr<Term>& block_value_, const NameMapType& named_entries_, CompileContext& compile_context, const SourceLocation& location)
+      : Tree(&vtable, compile_context, location),
       entries(entries_),
       block_value(block_value_),
       named_entries(named_entries_) {
@@ -844,17 +819,20 @@ namespace Psi {
     class StatementListCompiler {
       PSI_STD::vector<SharedPtr<Parser::NamedExpression> > m_statements;
       TreePtr<EvaluateContext> m_evaluate_context;
+      bool m_with_value;
 
     public:
       StatementListCompiler(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
-                            const TreePtr<EvaluateContext>& evaluate_context)
-      : m_statements(statements), m_evaluate_context(evaluate_context) {
+                            const TreePtr<EvaluateContext>& evaluate_context,
+                            bool with_value)
+      : m_statements(statements), m_evaluate_context(evaluate_context), m_with_value(with_value) {
       }
       
       template<typename Visitor>
       static void visit(Visitor& v) {
         v("statements", &StatementListCompiler::m_statements)
-        ("evaluate_context", &StatementListCompiler::m_evaluate_context);
+        ("evaluate_context", &StatementListCompiler::m_evaluate_context)
+        ("with_value", &StatementListCompiler::m_with_value);
       }
 
       TreePtr<StatementListTree> evaluate(const TreePtr<StatementListTree>& self) {
@@ -886,33 +864,42 @@ namespace Psi {
         }
 
         TreePtr<Term> block_value;
-        if (last_statement_set) {
-          block_value = last_statement;
-        } else {
-          LookupResult<TreePtr<Term> > none = m_evaluate_context->lookup("__none__", self.location());
-          switch (none.type()) {
-          case lookup_result_type_none:
-            compile_context.error_throw(self.location(), "'__none__' missing");
-          case lookup_result_type_conflict:
-            compile_context.error_throw(self.location(), "'__none__' has multiple definitions");
-          default: break;
+        if (m_with_value) {
+          if (last_statement_set) {
+            block_value = last_statement;
+          } else {
+            LookupResult<TreePtr<Term> > none = m_evaluate_context->lookup("__none__", self.location());
+            switch (none.type()) {
+            case lookup_result_type_none:
+              compile_context.error_throw(self.location(), "'__none__' missing");
+            case lookup_result_type_conflict:
+              compile_context.error_throw(self.location(), "'__none__' has multiple definitions");
+            default: break;
+            }
+
+            if (!none.value())
+              compile_context.error_throw(self.location(), "'__none__' returned a NULL tree", CompileError::error_internal);
+
+            block_value = none.value();
           }
-
-          if (!none.value())
-            compile_context.error_throw(self.location(), "'__none__' returned a NULL tree", CompileError::error_internal);
-
-          block_value = none.value();
         }
-
-        return TreePtr<StatementListTree>(new StatementListTree(entries, block_value, named_entries));
+        
+        return TreePtr<StatementListTree>(new StatementListTree(entries, block_value, named_entries, self.compile_context(), self.location()));
       }
     };
 
     TreePtr<Block> compile_statement_list(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
                                           const TreePtr<EvaluateContext>& evaluate_context,
                                           const SourceLocation& location) {
-      TreePtr<StatementListTree> t = tree_callback<StatementListTree>(evaluate_context.compile_context(), location, StatementListCompiler(statements, evaluate_context));
+      TreePtr<StatementListTree> t = tree_callback<StatementListTree>(evaluate_context.compile_context(), location, StatementListCompiler(statements, evaluate_context, true));
       return TreePtr<Block>(new Block(t->entries, t->block_value, location));
+    }
+    
+    TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
+      TreePtr<StatementListTree> t = tree_callback<StatementListTree>(evaluate_context.compile_context(), location, StatementListCompiler(statements, evaluate_context, false));
+      return TreePtr<Namespace>(new Namespace(t->entries, evaluate_context.compile_context(), location));
     }
   }
 }

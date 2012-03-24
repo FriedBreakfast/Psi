@@ -65,8 +65,6 @@ namespace Psi {
       static const SIVtable vtable;
       Global(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
       Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location);
-
-      mutable void *jit_ptr;
     };
     
     class ExternalGlobal : public Global {
@@ -83,9 +81,9 @@ namespace Psi {
         v("symbol", &ExternalGlobal::m_symbol);
       }
     };
-
+    
     /**
-     * \brief Entry in a Block.
+     * Wrapper around entries in \c StatementList.
      */
     class Statement : public Term {
     public:
@@ -98,20 +96,44 @@ namespace Psi {
       template<typename Visitor> static void visit(Visitor& v);
       static TreePtr<> interface_search_impl(const Statement& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
     };
+    
+    /**
+     * \brief Base class for terms which are lists of other terms.
+     */
+    class StatementList : public Term {
+    public:
+      static const SIVtable vtable;
+      
+      PSI_STD::vector<TreePtr<Statement> > statements;
+
+      StatementList(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
+      StatementList(const TermVtable *vptr, const TreePtr<Term>& type, const PSI_STD::vector<TreePtr<Statement> >& statements, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
+    };
 
     /**
      * \brief Tree for a block of code.
      */
-    class Block : public Term {
+    class Block : public StatementList {
     public:
       static const TermVtable vtable;
       
-      PSI_STD::vector<TreePtr<Statement> > statements;
       TreePtr<Term> value;
 
       Block(CompileContext& compile_context, const SourceLocation& location);
       Block(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
+    };
+    
+    /**
+     * \brief Tree for a namespace.
+     */
+    class Namespace : public StatementList {
+    public:
+      static const TermVtable vtable;
+
+      Namespace(CompileContext& compile_context, const SourceLocation& location);
+      Namespace(const PSI_STD::vector<TreePtr<Statement> >& statements, CompileContext& compile_context, const SourceLocation& location);
     };
 
     /**

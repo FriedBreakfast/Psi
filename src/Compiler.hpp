@@ -1491,8 +1491,6 @@ namespace Psi {
 
       void* jit_compile(const TreePtr<Global>&);
 
-      TreePtr<Global> tree_from_address(const SourceLocation&, const TreePtr<Type>&, void*);
-
       /// \brief Get the root location of this context.
       const SourceLocation& root_location() {return m_root_location;}
       /// \brief Get the builtin trees.
@@ -1500,9 +1498,11 @@ namespace Psi {
     };
 
     class Block;
+    class Namespace;
 
     TreePtr<Term> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
     TreePtr<Block> compile_statement_list(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
+    TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
 
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);
