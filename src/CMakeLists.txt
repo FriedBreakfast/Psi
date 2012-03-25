@@ -87,6 +87,7 @@ add_library(psi-compiler SHARED
   Class.cpp Class.hpp
   CppCompiler.hpp
   Compiler.cpp Compiler.hpp
+  ExpressionCompiler.cpp
   Function.cpp Function.hpp
   Interface.cpp
   GarbageCollection.hpp
