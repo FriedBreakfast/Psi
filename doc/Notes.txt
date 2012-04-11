@@ -1,6 +1,18 @@
-<!-- -*- mode: html -*- -->
-
 \page notes Design notes
+
+\section new_notes New design notes
+
+\subsection nested_functions_2 Nested functions implementation
+
+With nested functions there is the question of how to implement local variable capture. Following C++0x, the basic implementation method should be to create an object with copies of all captured parameters. This object will implement an interface appropriate to the function type, although I'm not sure whether this requires any complex implementation since I can always demand that callback function types are created by defining a new interface, which is probably a good idea anyway since invoking functions is usally done by a wrapper object.
+
+This then begs the question of how to handle parameter capture syntactically. I will implement:
+
+<pre>capture () ...</pre>
+
+Where the dots represent an inner macro invocation to which the capture is applied. When there is no capture any variables may be used from enclosing scopes, however the resulting function object generated will not support the move interface (this may require care since nearly all objects should support this).
+
+I intend to implement a similar method for nested classes and such: the capture macro should enable a child namespace containing multiple classes and functions capturing the same variables to be created. I should also created a method for specifying how captured variables are stored since accidentally copying captured variables will be easy and shared data structures (read: coroutines) could be implemented by capturing variables with appropriate storage scope.
 
 \section nested_functions Nested functions
 
