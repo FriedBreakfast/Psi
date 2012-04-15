@@ -105,6 +105,22 @@ namespace Psi {
       return false;
   }
 
+  bool operator == (const String& lhs, const char *rhs) {
+    return strncmp(lhs.c_str(), rhs, lhs.length()) == 0;
+  }
+  
+  bool operator == (const char *lhs, const String& rhs) {
+    return strncmp(lhs, rhs.c_str(), rhs.length()) == 0;
+  }
+
+  bool operator == (const String& lhs, const std::string& rhs) {
+    return lhs.c_str() == rhs;
+  }
+
+  bool operator == (const std::string& lhs, const String& rhs) {
+    return lhs == rhs.c_str();
+  }
+  
   std::ostream& operator << (std::ostream& os, const String& str) {
     os << str.c_str();
     return os;

@@ -1446,6 +1446,24 @@ namespace Psi {
       /// \brief The class member descriptor interface.
       TreePtr<Interface> class_member_info_interface;
     };
+    
+    class Function;
+    
+    /**
+     * \brief Base class for JIT compile callbacks.
+     */
+    class JitCompiler {
+      CompileContext *m_compile_context;
+      
+      virtual void* build_function(const TreePtr<Function>& function) = 0;
+      virtual void* build_global() = 0;
+      
+    public:
+      JitCompiler(CompileContext *compile_context);
+      virtual ~JitCompiler();
+      
+      CompileContext& compile_context() {return *m_compile_context;}
+    };
 
     /**
      * \brief Context for objects used during compilation.
@@ -1502,7 +1520,13 @@ namespace Psi {
 
     TreePtr<Term> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
     TreePtr<Block> compile_statement_list(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
-    TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
+    
+    struct NamespaceCompileResult {
+      TreePtr<Namespace> ns;
+      PSI_STD::map<String, TreePtr<Term> > entries;
+    };
+    
+    NamespaceCompileResult compile_namespace(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
 
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);
@@ -1530,6 +1554,8 @@ namespace Psi {
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&);
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<MacroDotCallback> >&);
     TreePtr<Term> make_macro_term(CompileContext& compile_context, const SourceLocation& location, const TreePtr<Macro>& macro);
+    
+    TreePtr<Term> find_by_name(const TreePtr<Namespace>& ns, const std::string& name);
   }
 }
 

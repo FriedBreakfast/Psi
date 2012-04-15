@@ -236,10 +236,16 @@ namespace Psi {
     bool operator < (const String&) const;
 
     void clear();
+    std::size_t length() const {return m_c.length;}
     const char *c_str() const {return m_c.data;}
     bool empty() const {return !m_c.length;}
     void swap(String&);
   };
+  
+  bool operator == (const String& lhs, const char *rhs);
+  bool operator == (const char *lhs, const String& rhs);
+  bool operator == (const String& lhs, const std::string& rhs);
+  bool operator == (const std::string& lhs, const String& rhs);
   
   template<typename V, typename D>
   void visit_callback(V& callback, const char *name, VisitorTag<String>, const D& objects) {callback.visit_simple(name, objects);}

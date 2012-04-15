@@ -191,7 +191,7 @@ namespace Psi {
         
         PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(name->text);
 
-        return compile_namespace(statements, evaluate_context, location);
+        return compile_namespace(statements, evaluate_context, location).ns;
       }
     };
 

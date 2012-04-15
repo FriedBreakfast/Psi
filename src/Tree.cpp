@@ -241,14 +241,14 @@ namespace Psi {
     }
 
     Function::Function(CompileContext& compile_context, const SourceLocation& location)
-    : Term(&vtable, compile_context, location) {
+    : Global(&vtable, compile_context, location) {
     }
-
+    
     Function::Function(const TreePtr<Term>& result_type_,
                        const PSI_STD::vector<TreePtr<Anonymous> >& arguments_,
                        const TreePtr<Term>& body_,
                        const SourceLocation& location)
-    : Term(&vtable, TreePtr<Term>(new FunctionType(result_type_, arguments_, location)), location),
+    : Global(&vtable, TreePtr<Term>(new FunctionType(result_type_, arguments_, location)), location),
     arguments(arguments_),
     result_type(result_type_),
     body(body_) {

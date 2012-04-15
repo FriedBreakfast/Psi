@@ -285,11 +285,14 @@ namespace Psi {
       return TreePtr<Block>(new Block(t->entries, t->block_value, location));
     }
     
-    TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
-                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                         const SourceLocation& location) {
+    NamespaceCompileResult compile_namespace(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
+                                             const TreePtr<EvaluateContext>& evaluate_context,
+                                             const SourceLocation& location) {
       TreePtr<StatementListTree> t = tree_callback<StatementListTree>(evaluate_context.compile_context(), location, StatementListCompiler(statements, evaluate_context, false));
-      return TreePtr<Namespace>(new Namespace(t->entries, evaluate_context.compile_context(), location));
+      NamespaceCompileResult r;
+      r.ns = TreePtr<Namespace>(new Namespace(t->entries, evaluate_context.compile_context(), location));
+      r.entries = t->named_entries;
+      return r;
     }
   }
 }

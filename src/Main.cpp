@@ -28,6 +28,43 @@ namespace {
   }
 }
 
+Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(Psi::Compiler::CompileContext& compile_context) {
+  using namespace Psi::Compiler;
+
+  SourceLocation psi_location = compile_context.root_location().named_child("psi");
+  
+  PSI_STD::map<Psi::String, TreePtr<Term> > global_names;
+  global_names["function"] = function_definition_macro(compile_context, psi_location.named_child("function"));
+  global_names["class"] = class_definition_macro(compile_context, psi_location.named_child("child"));
+  global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
+  global_names["__none__"] = none_macro(compile_context, psi_location.named_child("__none__"));
+  global_names["__number__"] = TreePtr<Term>();
+  global_names["builtin_type"] = builtin_type_macro(compile_context, psi_location.named_child("builtin_type"));
+  global_names["builtin_function"] = builtin_function_macro(compile_context, psi_location.named_child("builtin_function"));
+  global_names["builtin_value"] = builtin_value_macro(compile_context, psi_location.named_child("builtin_function"));
+  global_names["c_function"] = c_function_macro(compile_context, psi_location.named_child("c_function"));
+  
+  global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));
+  global_names["implement"] = implementation_define_macro(compile_context, psi_location.named_child("implement"));
+  global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));
+
+  return evaluate_context_dictionary(compile_context, psi_location, global_names);
+}
+
+Psi::Parser::ParserLocation url_location(const Psi::String& url, const char *text_begin, const char *text_end) {
+  using namespace Psi;
+  using namespace Psi::Compiler;
+  
+  Parser::ParserLocation file_text;
+  file_text.location.file.reset(new SourceFile());
+  file_text.location.file->url = url;
+  file_text.location.first_line = file_text.location.first_column = 1;
+  file_text.location.last_line = file_text.location.last_column = 0;
+  file_text.begin = text_begin;
+  file_text.end = text_end;
+  return file_text;
+}
+
 int main(int argc, char *argv[]) {
   std::string prog_name = find_program_name(argv[0]);
   
@@ -54,41 +91,35 @@ int main(int argc, char *argv[]) {
   using namespace Psi::Compiler;
 
   CompileContext compile_context(&std::cerr);
-  
-  SourceLocation psi_location = compile_context.root_location().named_child("psi");
-
-  Parser::ParserLocation file_text;
-  file_text.location.file.reset(new SourceFile());
-  file_text.location.file->url = argv[1];
-  file_text.location.first_line = file_text.location.first_column = 1;
-  file_text.location.last_line = file_text.location.last_column = 0;
-  file_text.begin = source_text.get();
-  file_text.end = source_text.get() + source_length;
+  TreePtr<EvaluateContext> root_evaluate_context = create_globals(compile_context);
+  Parser::ParserLocation file_text = url_location(argv[1], source_text.get(), source_text.get() + source_length);
   
   PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(file_text);
-
-  PSI_STD::map<String, TreePtr<Term> > global_names;
-  global_names["function"] = function_definition_macro(compile_context, psi_location.named_child("function"));
-  global_names["class"] = class_definition_macro(compile_context, psi_location.named_child("child"));
-  global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
-  global_names["__none__"] = none_macro(compile_context, psi_location.named_child("__none__"));
-  global_names["__number__"] = TreePtr<Term>();
-  global_names["builtin_type"] = builtin_type_macro(compile_context, psi_location.named_child("builtin_type"));
-  global_names["builtin_function"] = builtin_function_macro(compile_context, psi_location.named_child("builtin_function"));
-  global_names["builtin_value"] = builtin_value_macro(compile_context, psi_location.named_child("builtin_function"));
-  global_names["c_function"] = c_function_macro(compile_context, psi_location.named_child("c_function"));
   
-  global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));
-  global_names["implement"] = implementation_define_macro(compile_context, psi_location.named_child("implement"));
-  global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));
+  // Code used to bootstrap into user program.
+  std::string init = "main()";
+  Parser::ParserLocation init_text = url_location("(init)", init.c_str(), init.c_str() + init.length());
 
-  TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_dictionary(compile_context, psi_location, global_names);
-
-  TreePtr<> compiled_statements;
   LogicalSourceLocationPtr root_location = LogicalSourceLocation::new_root_location();
   try {
-    compiled_statements = compile_namespace(statements, root_evaluate_context, SourceLocation(file_text.location, root_location));
-    compiled_statements->complete();
+    NamespaceCompileResult ns = compile_namespace(statements, root_evaluate_context, SourceLocation(file_text.location, root_location));
+    ns.ns->complete();
+    
+    SourceLocation init_location(init_text.location, root_location);
+
+    // Create only statement in main function
+    SharedPtr<Parser::Expression> init_expr = Parser::parse_expression(init_text);
+    TreePtr<EvaluateContext> init_evaluate_context = evaluate_context_dictionary(compile_context, init_location, ns.entries);
+    TreePtr<Term> init_tree = compile_expression(init_expr, init_evaluate_context, root_location);
+    init_tree->complete();
+    
+    // Create main function
+    TreePtr<Term> main_result(new EmptyType(compile_context, init_location));
+    TreePtr<Function> main_function(new Function(main_result, default_, init_tree, init_location));
+    
+    void (*main_ptr) ();
+    *reinterpret_cast<void**>(&main_ptr) = compile_context.jit_compile(main_function);
+    main_ptr();
   } catch (CompileException&) {
     return EXIT_FAILURE;
   }

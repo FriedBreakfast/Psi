@@ -7,3 +7,6 @@ a : builtin_value (int) {c.int} {0};
 b : builtin_value (int) {c.int} {1};
 z : int_plus(a,b);
 
+main : function () [
+];
+

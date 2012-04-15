@@ -288,7 +288,7 @@ namespace Psi {
       }
     };
 
-    class Function : public Term {
+    class Function : public Global {
     public:
       static const TermVtable vtable;
       

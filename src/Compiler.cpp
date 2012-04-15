@@ -598,5 +598,35 @@ namespace Psi {
     TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const SourceLocation& location, const std::map<String, TreePtr<Term> >& entries) {
       return evaluate_context_dictionary(compile_context, location, entries, TreePtr<EvaluateContext>());
     }
+    
+    /**
+     * \brief Find a global or function by name inside a namespace tree.
+     * 
+     * \param ns Namespace under which to search for a function.
+     */
+    TreePtr<Term> find_by_name(const TreePtr<Namespace>& ns, const std::string& name) {
+      std::size_t dot_pos = name.find('.');
+      std::string prefix = name.substr(0, dot_pos);
+      std::string suffix;
+      if (dot_pos != std::string::npos)
+        suffix = name.substr(dot_pos + 1);
+      
+      LogicalSourceLocationPtr ns_loc = ns->location().logical;
+      BOOST_FOREACH(const TreePtr<Statement>& st, ns->statements) {
+        const LogicalSourceLocationPtr& st_loc = st->location().logical;
+        if (!st_loc->anonymous() &&
+          (st_loc->parent() == ns_loc) &&
+          (st_loc->name() == prefix)) {
+          if (dot_pos == std::string::npos) {
+            return st->value;
+          } else if (TreePtr<Namespace> ns_child = dyn_treeptr_cast<Namespace>(st->value)) {
+            if (TreePtr<Term> value = find_by_name(ns_child, suffix))
+              return value;
+          }
+        }
+      }
+      
+      return TreePtr<Term>();
+    }
   }
 }
