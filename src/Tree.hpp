@@ -201,6 +201,21 @@ namespace Psi {
 
       template<typename Visitor> static void visit(Visitor& v);
     };
+    
+    /**
+     * \brief Bottom type.
+     * 
+     * This type cannot be instantiated, hence any expression of this type
+     * cannot return.
+     */
+    class BottomType : public Type {
+      friend class CompileContext;
+    public:
+      static const TermVtable vtable;
+      static TreePtr<Term> value(CompileContext& compile_context, const SourceLocation& location);
+
+      BottomType(CompileContext&, const SourceLocation&);
+    };
 
     /**
      * \brief Empty type.
@@ -318,6 +333,87 @@ namespace Psi {
 
       TreePtr<Term> try_expr, finally_expr;
     };
+    
+    class TryCatch : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      TryCatch(CompileContext& compile_context, const SourceLocation& location);
+      TryCatch(const TreePtr<Term>& try_clause,
+               const PSI_STD::vector<TreePtr<Anonymous> >& catch_parameters,
+               const TreePtr<Term>& catch_clause,
+               const SourceLocation& location);
+      
+      TreePtr<Term> try_clause;
+      PSI_STD::vector<TreePtr<Anonymous> > catch_parameters;
+      TreePtr<Term> catch_clause;
+    };
+    
+    /**
+     * \brief If-Then-Else.
+     */
+    class IfThenElse : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      IfThenElse(CompileContext& compile_context, const SourceLocation& location);
+      IfThenElse(const TreePtr<Term>& condition, const TreePtr<Term>& true_value, const TreePtr<Term>& false_value, const SourceLocation& location);
+      
+      TreePtr<Term> condition;
+      TreePtr<Term> true_value;
+      TreePtr<Term> false_value;
+    };
+    
+    /**
+     * \brief Jump group entry.
+     * 
+     * Target of JumpTo instruction.
+     */
+    class JumpGroupEntry : public Tree {
+    public:
+      static const TreeVtable vtable;
+      
+      JumpGroupEntry(CompileContext& compile_context, const SourceLocation& location);
+      JumpGroupEntry(const TreePtr<Term>& value, const TreePtr<Anonymous>& argument, const SourceLocation& location);
+      
+      TreePtr<Term> value;
+      TreePtr<Anonymous> argument;
+    };
+    
+    /**
+     * \brief Jump group.
+     * 
+     * Allows a structured JumpTo instruction to exist: the jump instruction unwinds to this
+     * group and then causes the selected branch to be run (used as the result value).
+     * 
+     * All control constructs are implemented using this class.
+     */
+    class JumpGroup : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      JumpGroup(CompileContext& compile_context, const SourceLocation& location);
+      JumpGroup(const TreePtr<Term>& initial, const PSI_STD::vector<TreePtr<JumpGroupEntry> >& values, const SourceLocation& location);
+      
+      TreePtr<Term> initial;
+      PSI_STD::vector<TreePtr<JumpGroupEntry> > entries;
+    };
+    
+    /**
+     * \brief Jump instruction.
+     * 
+     * Unwinds to the specified jump group and then takes the specified branch.
+     */
+    class JumpTo : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      JumpTo(CompileContext& compile_context, const SourceLocation& location);
+      JumpTo(const TreePtr<JumpGroupEntry>& target, const TreePtr<Term>& argument, const SourceLocation& location);
+      
+      TreePtr<JumpGroupEntry> target;
+      TreePtr<Term> argument;
+    };
 
     /**
      * \brief Function invocation expression.
@@ -350,7 +446,7 @@ namespace Psi {
       BuiltinType(CompileContext& compile_context, const String& name, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
       
-      static TreePtr<> interface_search_impl(const BuiltinType& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
+      static TreePtr<> interface_search_impl(BuiltinType& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
       
       String name;
     };
@@ -380,7 +476,7 @@ namespace Psi {
       
       ExternalFunction(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
       ExternalFunction(const TermVtable *vptr, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
-      static TreePtr<> interface_search_impl(const ExternalFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
+      static TreePtr<> interface_search_impl(ExternalFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
     };
     
     /**

@@ -32,7 +32,7 @@ namespace Psi {
     /**
      * Recursively evaluate all tree references inside this tree.
      */
-    void Tree::complete() const {
+    void Tree::complete() {
       VisitQueue<TreePtr<> > queue;
       queue.push(TreePtr<>(this));
       
@@ -50,14 +50,14 @@ namespace Psi {
      * \param wildcards Substitutions to be identified.
      * \param depth Number of parameter-enclosing terms above this match.
      */
-    bool Tree::match(const TreePtr<Tree>& value, const List<TreePtr<Term> >& wildcards, unsigned depth) const {
+    bool Tree::match(const TreePtr<Tree>& value, const List<TreePtr<Term> >& wildcards, unsigned depth) {
       // Unwrap any Statements involved
-      const Tree *self = this;
-      while (const Statement *stmt = dyn_tree_cast<Statement>(self))
+      Tree *self = this;
+      while (Statement *stmt = dyn_tree_cast<Statement>(self))
         self = stmt->value.get();
       
-      const Tree *other = value.get();
-      while (const Statement *stmt = dyn_tree_cast<Statement>(other))
+      Tree *other = value.get();
+      while (Statement *stmt = dyn_tree_cast<Statement>(other))
         other = stmt->value.get();
       
       if (self == other)
@@ -66,8 +66,8 @@ namespace Psi {
       if (!self)
         return false;
 
-      if (const Parameter *parameter = dyn_tree_cast<Parameter>(self)) {
-        const Term *tvalue = dyn_tree_cast<Term>(other);
+      if (Parameter *parameter = dyn_tree_cast<Parameter>(self)) {
+        Term *tvalue = dyn_tree_cast<Term>(other);
         if (!tvalue)
           return false;
         
@@ -94,7 +94,7 @@ namespace Psi {
       }
     }
     
-    bool Tree::match(const TreePtr<Tree>& value) const {
+    bool Tree::match(const TreePtr<Tree>& value) {
       PSI_STD::vector<TreePtr<Term> > wildcards;
       return match(value, list_from_stl(wildcards));
     }
@@ -390,6 +390,10 @@ namespace Psi {
     : Term(&vtable, compile_context, location) {
     }
 
+    BottomType::BottomType(CompileContext& compile_context, const SourceLocation& location)
+    : Type(&vtable, compile_context, location) {
+    }
+
     EmptyType::EmptyType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
     }
@@ -490,6 +494,38 @@ namespace Psi {
       visit_base<Term>(v);
       v("member_value", &TypeInstanceValue::m_member_value);
     }
+    
+    IfThenElse::IfThenElse(CompileContext& compile_context, const SourceLocation& location)
+    : Term(&vtable, compile_context, location) {
+    }
+    
+    namespace {
+      struct IfThenElseType {
+        TreePtr<Term> true_value;
+        TreePtr<Term> false_value;
+        
+        IfThenElseType(const TreePtr<Term>& true_value_, const TreePtr<Term>& false_value_)
+        : true_value(true_value_), false_value(false_value_) {
+        }
+        
+        TreePtr<Term> evaluate(const TreePtr<Term>&) {
+          return type_combine(true_value->type, false_value->type);
+        }
+        
+        template<typename Visitor>
+        static void visit(Visitor& v) {
+          v("true_value", &IfThenElseType::true_value)
+          ("false_value", &IfThenElseType::false_value);
+        }
+      };
+    }
+
+    IfThenElse::IfThenElse(const TreePtr<Term>& condition_, const TreePtr<Term>& true_value_, const TreePtr<Term>& false_value_, const SourceLocation& location)
+    : Term(&vtable, tree_callback<Term>(condition_.compile_context(), location, IfThenElseType(true_value_, false_value_)), location),
+    condition(condition_),
+    true_value(true_value_),
+    false_value(false_value_) {
+    }
 
     TreePtr<Term> FunctionCall::get_type(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
       TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(target->type);
@@ -498,6 +534,60 @@ namespace Psi {
 
       PSI_STD::vector<TreePtr<Term> >& nc_arguments = const_cast<PSI_STD::vector<TreePtr<Term> >&>(arguments);
       return ft->result_type_after(location, list_from_stl(nc_arguments));
+    }
+    
+    JumpGroupEntry::JumpGroupEntry(CompileContext& compile_context, const SourceLocation& location)
+    : Tree(&vtable, compile_context, location) {
+    }
+    
+    JumpGroupEntry::JumpGroupEntry(const TreePtr<Term>& value_, const TreePtr<Anonymous>& argument_, const SourceLocation& location)
+    : Tree(&vtable, value.compile_context(), location),
+    value(value_),
+    argument(argument_) {
+    }
+    
+    JumpGroup::JumpGroup(CompileContext& compile_context, const SourceLocation& location)
+    : Term(&vtable, compile_context, location) {
+    }
+    
+    namespace {
+      struct JumpGroupType {
+        TreePtr<Term> initial;
+        PSI_STD::vector<TreePtr<JumpGroupEntry> > entries;
+        
+        JumpGroupType(const TreePtr<Term>& initial_, const PSI_STD::vector<TreePtr<JumpGroupEntry> >& entries_)
+        : initial(initial_), entries(entries_) {
+        }
+        
+        TreePtr<Term> evaluate(const TreePtr<Term>&) {
+          TreePtr<Term> result = initial->type;
+          for (PSI_STD::vector<TreePtr<JumpGroupEntry> >::iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
+            result = type_combine(result, (*ii)->value->type);
+          return result;
+        }
+
+        template<typename Visitor>
+        static void visit(Visitor& v) {
+          v("initial", &JumpGroupType::initial)
+          ("entries", &JumpGroupType::entries);
+        }
+      };
+    }
+
+    JumpGroup::JumpGroup(const TreePtr<Term>& initial_, const PSI_STD::vector<TreePtr<JumpGroupEntry> >& entries_, const SourceLocation& location)
+    : Term(&vtable, tree_callback<Term>(initial_.compile_context(), location, JumpGroupType(initial_, entries_)), location),
+    initial(initial_),
+    entries(entries_) {
+    }
+    
+    JumpTo::JumpTo(CompileContext& compile_context, const SourceLocation& location)
+    : Term(&vtable , compile_context, location) {
+    }
+    
+    JumpTo::JumpTo(const TreePtr<JumpGroupEntry>& target_, const TreePtr<Term>& argument_, const SourceLocation& location)
+    : Term(&vtable, target_.compile_context().builtins().bottom_type, location),
+    target(target_),
+    argument(argument_) {
     }
 
     FunctionCall::FunctionCall(CompileContext& compile_context, const SourceLocation& location)
@@ -557,7 +647,7 @@ namespace Psi {
     const ClassMemberInfoCallbackVtable BuiltinTypeClassMember::vtable =
     PSI_COMPILER_CLASS_MEMBER_INFO_CALLBACK(BuiltinTypeClassMember, "psi.compiler.BuiltinTypeClassMember", ClassMemberInfoCallback);
 
-    TreePtr<> BuiltinType::interface_search_impl(const BuiltinType& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
+    TreePtr<> BuiltinType::interface_search_impl(BuiltinType& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
       if (interface == self.compile_context().builtins().class_member_info_interface) {
         PSI_ASSERT(parameters.size() == 1);
         if (self.match(parameters[0]))
@@ -647,7 +737,7 @@ namespace Psi {
 
     const MacroVtable ExternalFunctionInvokeMacro::vtable = PSI_COMPILER_MACRO(ExternalFunctionInvokeMacro, "psi.compiler.ExternalFunctionInvokeMacro", Macro);
 
-    TreePtr<> ExternalFunction::interface_search_impl(const ExternalFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
+    TreePtr<> ExternalFunction::interface_search_impl(ExternalFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) {
       if (interface == self.compile_context().builtins().macro_interface) {
         PSI_ASSERT(parameters.size() == 1);
         if (self.match(parameters[0]))
@@ -707,6 +797,7 @@ namespace Psi {
     const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", Term);
 
     const TermVtable Metatype::vtable = PSI_COMPILER_TERM(Metatype, "psi.compiler.Metatype", Term);
+    const TermVtable BottomType::vtable = PSI_COMPILER_TERM(BottomType, "psi.compiler.BottomType", Type);
     const TermVtable EmptyType::vtable = PSI_COMPILER_TERM(EmptyType, "psi.compiler.EmptyType", Type);
     const TermVtable NullValue::vtable = PSI_COMPILER_TERM(NullValue, "psi.compiler.NullValue", Term);
 
@@ -729,6 +820,12 @@ namespace Psi {
     const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", StatementList);
     const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
     const TermVtable TryFinally::vtable = PSI_COMPILER_TERM(TryFinally, "psi.compiler.TryFinally", Term);
+    
+    const TermVtable IfThenElse::vtable = PSI_COMPILER_TERM(IfThenElse, "psi.compiler.IfThenElse", Term);
+    
+    const TreeVtable JumpGroupEntry::vtable = PSI_COMPILER_TREE(JumpGroupEntry, "psi.compiler.JumpGroupEntry", Tree);
+    const TermVtable JumpGroup::vtable = PSI_COMPILER_TERM(JumpGroup, "psi.compiler.JumpGroup", Term);
+    const TermVtable JumpTo::vtable = PSI_COMPILER_TERM(JumpTo, "psi.compiler.JumpTo", Term);
 
     const TermVtable FunctionCall::vtable = PSI_COMPILER_TERM(FunctionCall, "psi.compiler.FunctionCall", Term);
     ///@}

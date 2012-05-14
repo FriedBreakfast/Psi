@@ -28,6 +28,7 @@ add_library(psi-compiler SHARED
   ExpressionCompiler.cpp
   Function.cpp Function.hpp
   Interface.cpp
+  FunctionLower.cpp FunctionLower.hpp
   GarbageCollection.hpp
   Macros.cpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
@@ -45,9 +46,16 @@ if (UNIX)
   target_link_libraries(psi-compiler -ldl)
 endif()
 
-add_executable(psi Main.cpp)
+add_library(psi-llvm SHARED
+  Tvm/llvm/Jit.cpp
+  Tvm/llvm/Jit.hpp
+)
 
-target_link_libraries(psi psi-compiler debug psi-assert)
+set_target_properties(psi-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
+target_link_libraries(psi-llvm ${LLVM_LIBS} debug psi-assert)
+
+add_executable(psi Main.cpp)
+target_link_libraries(psi psi-compiler psi-llvm debug psi-assert)
 
 #install(TARGETS psi
 #  LIBRARY DESTINATION lib

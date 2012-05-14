@@ -15,7 +15,7 @@
 
 namespace Psi {
   namespace Compiler {
-    void TreePtrBase::update_chain(const TreeBase *ptr) const {
+    void TreePtrBase::update_chain(TreeBase *ptr) const {
       const TreePtrBase *hook = this;
       ObjectPtr<const TreeCallback> ptr_cb;
       while (hook->m_ptr.get() != ptr) {
@@ -31,7 +31,7 @@ namespace Psi {
     /**
      * Evaluate a lazily evaluated Tree (recursively if necessary) and return the final result.
      */
-    const Tree* TreePtrBase::get_helper() const {
+    Tree* TreePtrBase::get_helper() const {
       PSI_ASSERT(m_ptr);
 
       /*
@@ -55,7 +55,7 @@ namespace Psi {
           const TreeCallbackVtable *vtable_cb = reinterpret_cast<const TreeCallbackVtable*>(vtable);
           RunningTreeCallback running(ptr_cb);
           ptr_cb->m_state = TreeCallback::state_running;
-          const TreeBase *eval_ptr;
+          TreeBase *eval_ptr;
           try {
             eval_ptr = vtable_cb->evaluate(ptr_cb);
           } catch (...) {
@@ -86,7 +86,7 @@ namespace Psi {
       update_chain(hook->m_ptr.get());
 
       PSI_ASSERT(!m_ptr || !derived_vptr(m_ptr.get())->is_callback);
-      return static_cast<const Tree*>(m_ptr.get());
+      return static_cast<Tree*>(m_ptr.get());
     }
     
 #ifdef PSI_DEBUG
@@ -432,6 +432,7 @@ namespace Psi {
 
       metatype.reset(new Metatype(compile_context, psi_location.named_child("Type")));
       empty_type.reset(new EmptyType(compile_context, psi_location.named_child("Empty")));
+      bottom_type.reset(new BottomType(compile_context, psi_location.named_child("Bottom")));
       
       macro_interface.reset(new Interface(compile_context, 1, &Macro::vtable, TreePtr<Term>(), psi_compiler_location.named_child("Macro")));
       argument_passing_info_interface.reset(new Interface(compile_context, 1, &ArgumentPassingInfoCallback::vtable, TreePtr<Term>(), psi_compiler_location.named_child("ArgumentPasser")));
@@ -627,6 +628,15 @@ namespace Psi {
       }
       
       return TreePtr<Term>();
+    }
+    
+    /**
+     * \brief Unify two types.
+     * 
+     * This returns the type that either \c lhs or \c rhs can be converted to.
+     */
+    TreePtr<Term> type_combine(const TreePtr<Term>& lhs, const TreePtr<Term>& rhs) {
+      PSI_NOT_IMPLEMENTED();
     }
   }
 }
