@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 2.6)
 project(type-test)
 
 include(CPack)
+include(CTest)
 
 set(PSI_DEBUG 0 CACHE BOOL "Enable debug checks")
 set(PSI_ENABLE_VALGRIND 0 CACHE BOOL "Enable Valgrind support")
@@ -17,13 +18,13 @@ execute_process(COMMAND ${LLVM_CONFIG} --cxxflags OUTPUT_VARIABLE LLVM_CXX_FLAGS
 execute_process(COMMAND ${LLVM_CONFIG} --ldflags OUTPUT_VARIABLE LLVM_LDFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(COMMAND ${LLVM_CONFIG} --libs OUTPUT_VARIABLE LLVM_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
 
+if(LLVM_CXX_FLAGS MATCHES "-fno-exceptions" OR LLVM_CXX_FLAGS MATCHES "-fno-rtti")
+  message(SEND_ERROR "LLVM must be built with REQUIRES_EH=1 and REQUIRES_RTTI=1 set")
+endif()
+
 # Set up useful GCC flags
 if(CMAKE_COMPILER_IS_GNUCXX)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
-  # I need exception handling; not sure whether this will cause problems later though
-  string(REGEX REPLACE "-fno-exceptions" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
-  # This should show up as a link time error if there is a problem
-  string(REGEX REPLACE "-fno-rtti" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
   # These flags do not have to be consistent between compilation units
   string(REGEX REPLACE "-Woverloaded-virtual" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
   string(REGEX REPLACE "-O.?" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
