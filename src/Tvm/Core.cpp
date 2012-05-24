@@ -36,10 +36,11 @@ namespace Psi {
       return m_str;
     }
 
-    Term::Term(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type)
-    : User(ui),
-    m_term_type(term_type),
+    Value::Value(Context *context, TermType term_type, const ValuePtr<>& type, const ValuePtr<>& source)
+    : m_reference_count(0),
     m_context(context),
+    m_term_type(term_type),
+    m_type(type),
     m_source(source) {
 
       PSI_ASSERT(!source ||
@@ -70,36 +71,17 @@ namespace Psi {
           throw TvmInternalError("type of a term cannot be a value or recursive, it must be metatype or a type");
         }
       }
-
-      use_set(0, type);
     }
 
-    Term::~Term() {
-      std::size_t n = n_uses();
-      for (std::size_t i = 0; i < n; ++i)
-        use_set(i, 0);
+    Value::~Value() {
     }
-
-    void Term::set_base_parameter(std::size_t n, Term *t) {
-      if (t && (m_context != t->m_context))
-        throw TvmUserError("term context mismatch");
-
-      PSI_ASSERT_MSG(!use_get(n+1), "parameters to existing terms cannot be changed once set");
-
-      use_set(n+1, t);
-    }
-
-    /**
-     * Change the number of parameters to this term. This should only
-     * be used for phi terms.
-     */
-    void Term::resize_base_parameters(std::size_t n) {
-      PSI_ASSERT(term_type() == term_phi);
-      resize_uses(n+1);
+    
+    void Value::destroy() {
+      delete this;
     }
 
     std::size_t Term::hash_value() const {
-      if (HashTerm *ht = dyn_cast<HashTerm>(const_cast<Term*>(this)))
+      if (HashableValue *ht = dyn_cast<HashableValue>(const_cast<Term*>(this)))
         return ht->m_hash;
       else
         return boost::hash_value(this);
@@ -116,12 +98,12 @@ namespace Psi {
       return h.m_hash;
     }
 
-    HashTerm::HashTerm(const UserInitializer& ui, Context *context, TermType term_type, Term *source, Term* type, std::size_t hash)
-      : Term(ui, context, term_type, source, type),
-        m_hash(hash) {
+    HashableValue::HashableValue(Context *context, TermType term_type, const ValuePtr<>& type, std::size_t hash)
+    : Value(context, term_type, type),
+      m_hash(hash) {
     }
 
-    HashTerm::~HashTerm() {
+    HashableValue::~HashableValue() {
       Context::HashTermSetType& hs = context().m_hash_terms;
       hs.erase(hs.iterator_to(*this));
     }
@@ -133,11 +115,10 @@ namespace Psi {
      * contents; the final type of this variable will in fact be a
      * pointer to this type.
      */
-    GlobalTerm::GlobalTerm(const UserInitializer& ui, Context *context, TermType term_type, Term* type, const std::string& name, Module *module)
-      : Term(ui, context, term_type, this, PointerType::get(type)),
-        m_name(name),
-        m_module(module) {
-      PSI_ASSERT(!type->source());
+    Global::Global(Context *context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module)
+    : Value(context, term_type, PointerType::get(type)),
+      m_name(name),
+      m_module(module) {
     }
 
     /**

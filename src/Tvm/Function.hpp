@@ -8,171 +8,49 @@
 
 namespace Psi {
   namespace Tvm {
-    class BlockTerm;
 
-    struct InstructionTypeResult {
-      InstructionTypeResult(Term *type_) : type(type_), terminator(false) {}
-      template<typename Range> InstructionTypeResult(Term *type_, const Range& successors_)
-      : type(type_), terminator(true), successors(successors_.begin(), successors_.end()) {}
-      Term *type;
-      bool terminator;
-      std::vector<BlockTerm*> successors;
-    };
+class FunctionType;
+    class Block;
     
     /**
      * \brief Base class for terms which belong to a block.
      */
-    class BlockMemberTerm : public Term {
+    class BlockMember : public Value {
+      friend class Block;
+
     public:
       /// \brief Get the block this term is part of.
-      BlockTerm* block() {return m_block;}
+      const ValuePtr<Block>& block() {return m_block;}
 
     protected:
-      BlockMemberTerm(const Psi::UserInitializer& ui, Context* context, TermType term_type, Term* source, Term* type, BlockTerm *block);
+      BlockMember(Context* context, TermType term_type, const ValuePtr<>& type, const ValuePtr<>& source);
       
-      BlockTerm *m_block;
+      ValuePtr<Block> m_block;
     };
     
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<BlockMemberTerm> {
-      typedef BlockMemberTerm* Ptr;
-      typedef BlockMemberTerm& Reference;
-
-      static Ptr null() {
-        return 0;
-      }
-
-      static Ptr cast(Term *t) {
-        return checked_cast<BlockMemberTerm*>(t);
-      }
-
-      static bool isa(Term* t) {
-        return (t->term_type() == term_instruction) ||
-        (t->term_type() == term_phi) ||
-        (t->term_type() == term_catch_clause);
-      }
-    };
-#endif
-
     /**
      * \brief Instruction term. Per-instruction funtionality is
      * created by implementing InstructionTermBackend and wrapping
      * that in InstructionTerm.
      */
-    class InstructionTerm : public BlockMemberTerm {
-      friend class BlockTerm;
-      template<typename> friend class InstructionTermSpecialized;
+    class Instruction : public BlockMember {
+      friend class Block;
 
-    public:
-      const char *operation() {return m_operation;}
-      std::size_t n_parameters() {return Term::n_base_parameters();}
-      Term* parameter(std::size_t n) {return get_base_parameter(n);}
+    protected:
+      Instruction(Context *context, const ValuePtr<>& type, const char *operation, const ValuePtr<Value>& source);
 
     private:
-      class Initializer;
-      InstructionTerm(const UserInitializer& ui, Context *context,
-                      Term* type, const char *operation, ArrayPtr<Term*const> parameters,
-                      BlockTerm* block);
-
       const char *m_operation;
       typedef boost::intrusive::list_member_hook<> InstructionListHook;
       InstructionListHook m_instruction_list_hook;
     };
-
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<InstructionTerm> : CoreCastImplementation<InstructionTerm, term_instruction> {};
-#endif
-
-    template<typename TermTagType>
-    class InstructionTermSpecialized : public InstructionTerm, CompressedBase<typename TermTagType::Data> {
-      friend class BlockTerm;
-      template<typename> friend class InstructionTermSetupSpecialized;
-      typedef typename TermTagType::Data Data;
-
-    public:
-      const Data& data() {return CompressedBase<Data>::get();}
-
-    private:
-      InstructionTermSpecialized(const UserInitializer& ui, Context *context,
-                                 Term* type, const char *operation, ArrayPtr<Term*const> parameters,
-                                 BlockTerm* block, const Data& data)
-        : InstructionTerm(ui, context, type, operation, parameters, block),
-          CompressedBase<Data>(data) {
-      }
-    };
-
-    class InstructionTermSetup {
-      template<typename> friend struct InstructionTermSetupSpecialized;
-      friend class BlockTerm;
-      friend class InstructionTerm;
-
-      InstructionTermSetup(const char *operation_, std::size_t term_size_)
-        : operation(operation_), term_size(term_size_) {}
-
-      const char *operation;
-      std::size_t term_size;
-      virtual InstructionTerm* construct(void *ptr,
-                                         const UserInitializer& ui, Context *context, Term* type,
-                                         const char *operation, ArrayPtr<Term*const> parameters,
-                                         BlockTerm *block) const = 0;
-
-      virtual InstructionTypeResult type(FunctionTerm* function, ArrayPtr<Term*const> parameters) const = 0;
-    };
-
-    template<typename TermTagType>
-    class InstructionTermSetupSpecialized : InstructionTermSetup {
-      friend class BlockTerm;
-      typedef typename TermTagType::Data Data;
-
-      InstructionTermSetupSpecialized(const Data *data_)
-        : InstructionTermSetup(TermTagType::operation, sizeof(InstructionTermSpecialized<TermTagType>)), data(data_) {}
-
-      const Data *data;
-
-      virtual InstructionTerm* construct(void *ptr,
-                                         const UserInitializer& ui, Context *context, Term* type,
-                                         const char *operation, ArrayPtr<Term*const> parameters,
-                                         BlockTerm *block) const {
-        return new (ptr) InstructionTermSpecialized<TermTagType>
-          (ui, context, type, operation, parameters, block, *data);
-      }
-
-      virtual InstructionTypeResult type(FunctionTerm* function, ArrayPtr<Term*const> parameters) const {
-        return TermTagType::type(function, *data, parameters);
-      }
-    };
-
+    
     /**
-     * Base class for pointers to instruction terms. This provides
-     * generic functions for all instruction terms in a non-template
-     * class.
+     * Describes incoming edges for Phi nodes.
      */
-    class InstructionTermPtr : public TermPtrBase {
-    public:
-      /// \brief To comply with the \c PtrAdapter interface.
-      typedef InstructionTerm GetType;
-      InstructionTermPtr() {}
-      explicit InstructionTermPtr(InstructionTerm *term) : TermPtrBase(term) {}
-      /// \brief To comply with the \c PtrAdapter interface.
-      InstructionTerm* get() const {return checked_cast<InstructionTerm*>(m_ptr);}
-      /// \copydoc InstructionTerm::operation
-      const char *operation() const {return get()->operation();}
-    };
-
-    /**
-     * Base class for pointers to instruction terms - this is
-     * specialized to individual term types.
-     */
-    template<typename Data>
-    class InstructionTermPtrBase : public InstructionTermPtr {
-    public:
-      InstructionTermPtrBase() {}
-      explicit InstructionTermPtrBase(InstructionTerm *term) : InstructionTermPtr(term) {}
-
-    protected:
-      const Data& data() const {
-        return checked_cast<InstructionTermSpecialized<Data>*>(get())->data();
-      }
+    struct PhiEdge {
+      ValuePtr<Block> block;
+      ValuePtr<> value;
     };
 
     /**
@@ -181,201 +59,116 @@ namespace Psi {
      *
      * \sa http://en.wikipedia.org/wiki/Static_single_assignment_form
      */
-    class PhiTerm : public BlockMemberTerm {
-      friend class BlockTerm;
+    class Phi : public BlockMember {
+      friend class Block;
 
     public:
-      void add_incoming(BlockTerm* block, Term* value);
-
-      /// \brief Number of incoming edges
-      std::size_t n_incoming() {return m_n_incoming;}
-      /// \brief Get the block corresponding to a given incoming edge
-      BlockTerm *incoming_block(std::size_t n);
-      /// \brief Get the value of a given incoming edge
-      Term *incoming_value(std::size_t n) {return get_base_parameter(n*2+1);}
-      Term *incoming_value_from(BlockTerm*);
+      void add_edge(const ValuePtr<Block>& block, const ValuePtr<>& value);
+      /// \brief Get incoming edge list
+      const std::vector<PhiEdge>& edges() const {return m_edges;}
 
     private:
-      class Initializer;
-      PhiTerm(const UserInitializer& ui, Context *context, Term* type, BlockTerm *block);
+      Phi(Context *context, const ValuePtr<>& type, const ValuePtr<Block>& block);
       typedef boost::intrusive::list_member_hook<> PhiListHook;
       PhiListHook m_phi_list_hook;
-      std::size_t m_n_incoming;
+      std::vector<PhiEdge> m_edges;
     };
-
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<PhiTerm> : CoreCastImplementation<PhiTerm, term_phi> {};
-#endif
-
-    /**
-     * \brief List of exception types for catch clauses.
-     * 
-     * This value of this term in a landing pad will indicate which exception was thrown. For
-     * DWARF2 exception handling, the clause list is basically embedded in data alongside the
-     * compiled function and the exception personality routine processes this to get the result
-     * of this term. The Linux exception API/ABI has more flexibility than this, but LLVMs C++
-     * oriented EH instructions don't expose this.
-     */
-    class CatchClauseTerm : public BlockMemberTerm {
-      friend class BlockTerm;
-      
-    public:
-      unsigned n_clauses();
-      void add_clause(Term*);
-      Term* clause(unsigned);
-
-    private:
-      class Initializer;
-      CatchClauseTerm(const UserInitializer&, Context*, BlockTerm*);
-    };
-    
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<CatchClauseTerm> : CoreCastImplementation<CatchClauseTerm, term_catch_clause> {};
-#endif
-    
-    PSI_TVM_FUNCTIONAL_TYPE(CatchClauseNameType, TypeOperation)
-    typedef Empty Data;
-    static Ptr get(Context&);
-    PSI_TVM_FUNCTIONAL_TYPE_END(CatchClauseNameType)
-
-    PSI_TVM_FUNCTIONAL_TYPE(CatchClauseName, FunctionalOperation)
-    typedef unsigned Data;
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the catch clause we're getting the name from
-    CatchClauseTerm *catch_clause() const {return cast<CatchClauseTerm>(get()->parameter(0));}
-    /// \brief Get the index into the clause that this term represents.
-    unsigned clause_index() const {return data();}
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static Ptr get(CatchClauseTerm*,unsigned);
-    PSI_TVM_FUNCTIONAL_TYPE_END(CatchClauseName)
 
     /**
      * \brief Block (list of instructions) inside a function. The
      * value of this term is the label used to jump to this block.
      */
-    class BlockTerm : public Term {
+    class Block : public Value {
       friend class FunctionTerm;
 
     public:
-      typedef boost::intrusive::list<InstructionTerm,
-                                     boost::intrusive::member_hook<InstructionTerm, InstructionTerm::InstructionListHook, &InstructionTerm::m_instruction_list_hook>,
+      typedef boost::intrusive::list<Instruction,
+                                     boost::intrusive::member_hook<Instruction, Instruction::InstructionListHook, &Instruction::m_instruction_list_hook>,
                                      boost::intrusive::constant_time_size<false> > InstructionList;
-      typedef boost::intrusive::list<PhiTerm,
-                                     boost::intrusive::member_hook<PhiTerm, PhiTerm::PhiListHook, &PhiTerm::m_phi_list_hook>,
+      typedef boost::intrusive::list<Phi,
+                                     boost::intrusive::member_hook<Phi, Phi::PhiListHook, &Phi::m_phi_list_hook>,
                                      boost::intrusive::constant_time_size<false> > PhiList;
 
-      PhiTerm* new_phi(Term* type);
+      ValuePtr<Phi> insert_phi(const ValuePtr<>& type);
+      void insert_instruction(const ValuePtr<Instruction>& insn, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
 
-      /**
-       * Create a new instruction in this block.
-       * 
-       * \tparam T Instruction type to create.
-       * 
-       * \param parameters Parameters to the created instruction.
-       * 
-       * \param insert_before Instruction to insert the new instruction
-       * before. If null, insert the new instruction at the end of this
-       * block.
-       * 
-       * \param data Custom (non-term) data for the new instruction.
-       */
-      template<typename T>
-      typename T::Ptr new_instruction(ArrayPtr<Term*const> parameters, InstructionTerm *insert_before=0, const typename T::Data& data = typename T::Data()) {
-        return cast<T>(new_instruction_bare(InstructionTermSetupSpecialized<T>(&data), parameters, insert_before));
-      }
-
-      InstructionList& instructions() {return m_instructions;}
-      PhiList& phi_nodes() {return m_phi_nodes;}
+      const InstructionList& instructions() const {return m_instructions;}
+      const PhiList& phi_nodes() const {return m_phi_nodes;}
 
       /** \brief Whether this block has been terminated so no more instructions can be added. */
       bool terminated() {return m_terminated;}
       /** \brief Get the function which contains this block. */
-      FunctionTerm* function();
+      ValuePtr<Function> function();
       /** \brief Get a pointer to the dominating block. */
-      BlockTerm* dominator();
+      const ValuePtr<Block>& dominator() {return m_dominator;}
       /** \brief Get this block's catch list (this will be NULL for a regular block). */
-      CatchClauseTerm* catch_clause() {return cast<CatchClauseTerm>(get_base_parameter(2));}
-      /** \brief Whether this block is a landing pad. */
-      bool landing_pad() {return catch_clause();}
+      const ValuePtr<Block>& landing_pad() {return m_landing_pad;}
 
-      bool check_available(Term* term, InstructionTerm *before=0);
-      bool dominated_by(BlockTerm* block);
+      bool check_available(const ValuePtr<>& term, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
+      bool dominated_by(const ValuePtr<Block>& block);
       
-      /// \brief Get the list of blocks which can be run immediately after this one (excluding exception landing pads)
-      const std::vector<BlockTerm*>& successors() {return m_successors;}
-      
-      static BlockTerm* common_dominator(BlockTerm*,BlockTerm*);
+      static ValuePtr<Block> common_dominator(const ValuePtr<Block>&, const ValuePtr<Block>&);
 
     private:
-      class Initializer;
-      BlockTerm(const UserInitializer&, Context*, FunctionTerm*, BlockTerm*, bool);
+      Block(Context *context, const ValuePtr<Function>& function, const ValuePtr<Block>& dominator, bool);
       InstructionList m_instructions;
       PhiList m_phi_nodes;
       bool m_terminated;
-      std::vector<BlockTerm*> m_successors;
-
-      InstructionTerm* new_instruction_bare(const InstructionTermSetup& setup, ArrayPtr<Term*const> parameters, InstructionTerm *insert_before);
+      
+      ValuePtr<Block> m_dominator;
+      ValuePtr<Block> m_landing_pad;
     };
 
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<BlockTerm> : CoreCastImplementation<BlockTerm, term_block> {};
-#endif
+    class Function;
 
-    class FunctionTerm;
-
-    class FunctionParameterTerm : public Term {
-      friend class FunctionTerm;
+    class FunctionParameter : public Value {
+      friend class Function;
     public:
-      FunctionTerm* function();
+      ValuePtr<Function> function();
       bool parameter_phantom() {return m_phantom;}
 
     private:
       class Initializer;
-      FunctionParameterTerm(const UserInitializer&, Context*, FunctionTerm*, Term*, bool);
+      FunctionParameter(Context*, const ValuePtr<Function>& function, const ValuePtr<>& type, bool phantom);
       bool m_phantom;
     };
 
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<FunctionParameterTerm> : CoreCastImplementation<FunctionParameterTerm, term_function_parameter> {};
-#endif
-    
     /**
-     * \brief %Function.
+     * \brief Function.
      */
-    class FunctionTerm : public GlobalTerm {
+    class Function : public Global {
       friend class Module;
     public:
-      typedef boost::unordered_multimap<Term*, std::string> TermNameMap;
+      typedef boost::unordered_multimap<Value*, std::string> TermNameMap;
 
       /**
        * Get the type of this function. This returns the raw function
        * type, whereas the actual type of this term is a pointer to
        * that type.
        */
-      FunctionTypeTerm* function_type();
+      ValuePtr<FunctionType> function_type() const;
 
-      std::size_t n_parameters() {return n_base_parameters() - 3;}
+      std::size_t n_parameters() const;
       /** \brief Get a function parameter. */
-      FunctionParameterTerm* parameter(std::size_t n) {return cast<FunctionParameterTerm>(get_base_parameter(n+3));}
+      ValuePtr<FunctionParameter> parameter(std::size_t n) const;
 
       /**
        * Get the return type of this function, as viewed from inside the
        * function (i.e., with parameterized types replaced by parameters
        * to this function).
        */
-      Term* result_type() {return get_base_parameter(2);}
+      ValuePtr<> result_type() const;
 
-      BlockTerm* entry() {return cast<BlockTerm>(get_base_parameter(1));}
-      void set_entry(BlockTerm* block);
+      ValuePtr<Block> entry();
 
-      BlockTerm* new_block();
-      BlockTerm* new_block(BlockTerm* dominator);
-      BlockTerm* new_landing_pad();
-      BlockTerm* new_landing_pad(BlockTerm* dominator);
+      ValuePtr<Block> new_block();
+      ValuePtr<Block> new_block(const ValuePtr<Block>& dominator);
+      ValuePtr<Block> new_landing_pad();
+      ValuePtr<Block> new_landing_pad(const ValuePtr<Block>& dominator);
 
-      void add_term_name(Term *term, const std::string& name);
+      void add_term_name(Value *term, const std::string& name);
       const TermNameMap& term_name_map() {return m_name_map;}
-      std::vector<BlockTerm*> topsort_blocks();
+      std::vector<Block*> topsort_blocks();
       
       /**
        * \brief Get the exception handling personality of this function.
@@ -393,44 +186,35 @@ namespace Psi {
       void exception_personality(const std::string& v) {m_exception_personality = v;}
 
     private:
-      class Initializer;
-      FunctionTerm(const UserInitializer&, Context*, FunctionTypeTerm*, const std::string&, Module*);
+      Function(Context*, const ValuePtr<FunctionType>&, const std::string&, Module*);
       TermNameMap m_name_map;
       std::string m_exception_personality;
     };
 
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<FunctionTerm> : CoreCastImplementation<FunctionTerm, term_function> {};
-#endif
-
     /**
      * \brief Term type appearing in dependent types of completed function types.
      */
-    PSI_TVM_FUNCTIONAL_TYPE(FunctionTypeResolvedParameter, FunctionalOperation)
-    struct Data {
-      Data(unsigned depth_, unsigned index_)
-        : depth(depth_), index(index_) {}
-
-      unsigned depth;
-      unsigned index;
-
-      bool operator == (const Data&) const;
-      friend std::size_t hash_value(const Data&);
+    class FunctionTypeResolvedParameter : public SimpleOp {
+      unsigned m_depth;
+      unsigned m_index;
+      
+    public:
+      /// \brief Get the depth of this parameter relative to the
+      /// function type it is part of.
+      ///
+      /// If a parameter is used as the type of a parameter in its own
+      /// functions argument list, then this is zero. For each function
+      /// type it is then nested inside, this should increase by one.
+      unsigned depth() const {return m_depth;}
+      /// \brief Get the parameter number of this parameter in its
+      /// function.
+      unsigned index() const {return m_index;}
+      
+      static ValuePtr<FunctionTypeResolvedParameter> get(const ValuePtr<>& type, unsigned depth, unsigned index);
+      
+    private:
+      FunctionTypeResolvedParameter(Context *context, const ValuePtr<>& type, unsigned depth, unsigned index);
     };
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the depth of this parameter relative to the
-    /// function type it is part of.
-    ///
-    /// If a parameter is used as the type of a parameter in its own
-    /// functions argument list, then this is zero. For each function
-    /// type it is then nested inside, this should increase by one.
-    unsigned depth() const {return data().depth;}
-    /// \brief Get the parameter number of this parameter in its
-    /// function.
-    unsigned index() const {return data().index;}
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static Ptr get(Term* type, unsigned depth, unsigned index);
-    PSI_TVM_FUNCTIONAL_TYPE_END(FunctionTypeResolvedParameter)
 
     /**
      * \brief Type of functions.
@@ -440,49 +224,41 @@ namespace Psi {
      * function call (note that there is no <tt>result_of</tt> term,
      * since the result must be the appropriate term itself).
      */
-    class FunctionTypeTerm : public HashTerm {
+    class FunctionType : public HashableValue {
       friend class Context;
     public:
-      Term* parameter_type(std::size_t n) {return get_base_parameter(n+1);}
-      /// \brief Return the number of phantom parameters.
-      std::size_t n_phantom_parameters() {return m_n_phantom;}
-      /// \brief Return the number of parameters, including both
-      /// phantom and ordinary parameters.
-      std::size_t n_parameters() {return n_base_parameters()-1;}
-      Term* result_type() {return get_base_parameter(0);}
       CallingConvention calling_convention() {return m_calling_convention;}
-      Term* parameter_type_after(ArrayPtr<Term*const> previous);
-      Term* result_type_after(ArrayPtr<Term*const> parameters);
+      const ValuePtr<>& result_type() const {return m_result_type;}
+      const std::vector<ValuePtr<> >& phantom_parameter_types() const {return m_phantom_parameter_types;}
+      const std::vector<ValuePtr<> >& parameter_types() const {return m_parameter_types;}
+
+      ValuePtr<> parameter_type_after(const std::vector<ValuePtr<> >& previous);
+      ValuePtr<> result_type_after(const std::vector<ValuePtr<> >& parameters);
 
     private:
-      class Setup;
-      FunctionTypeTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term* result_type,
-                       ArrayPtr<Term*const> parameter_types, std::size_t n_phantom, CallingConvention calling_convention);
+      FunctionType(Context *context, CallingConvention calling_convention, const ValuePtr<>& result_type,
+                   const std::vector<ValuePtr<> >& phantom_parameter_types,
+                   const std::vector<ValuePtr<> >& parameter_types);
 
-      std::size_t m_n_phantom;
       CallingConvention m_calling_convention;
+
+      ValuePtr<> m_result_type;
+      std::vector<ValuePtr<> > m_phantom_parameter_types;
+      std::vector<ValuePtr<> > m_parameter_types;
     };
 
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<FunctionTypeTerm> : CoreCastImplementation<FunctionTypeTerm, term_function_type> {};
-#endif
-
-    class FunctionTypeParameterTerm : public Term {
+    class FunctionTypeParameter : public Value {
       friend class Context;
-      class Initializer;
-      FunctionTypeParameterTerm(const UserInitializer&, Context*, Term*);
+      FunctionTypeParameter(Context *context, const ValuePtr<>& type);
     };
-
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<FunctionTypeParameterTerm> : CoreCastImplementation<FunctionTypeParameterTerm, term_function_type_parameter> {};
-#endif
 
     /**
      * Helper class for inserting instructions into blocks.
      */
     class InstructionInsertPoint {
-      BlockTerm *m_block;
-      InstructionTerm *m_instruction;
+      Block *m_block;
+      Instruction *m_instruction;
+
     public:
       /**
        * Constructs an invalid inserter.
@@ -495,8 +271,8 @@ namespace Psi {
        * 
        * \param insert_at_end Block to append instructions to.
        */
-      explicit InstructionInsertPoint(BlockTerm *insert_at_end)
-      : m_block(insert_at_end), m_instruction(0) {}
+      explicit InstructionInsertPoint(const ValuePtr<Block>& insert_at_end)
+      : m_block(insert_at_end.get()), m_instruction(0) {}
       
       /**
        * Construct an inserter which inserts instructions in the same
@@ -505,98 +281,23 @@ namespace Psi {
        * \param insert_before Instruction to insert created instructions
        * before.
        */
-      explicit InstructionInsertPoint(InstructionTerm *insert_before)
-      : m_block(insert_before->block()), m_instruction(insert_before) {}
+      explicit InstructionInsertPoint(const ValuePtr<Instruction>& insert_before)
+      : m_block(insert_before->block().get()), m_instruction(insert_before.get()) {}
       
-      static InstructionInsertPoint after_source(Term*);
+      static InstructionInsertPoint after_source(const ValuePtr<>& source);
       
-      template<typename T>
-      typename T::Ptr create(ArrayPtr<Term*const> parameters, const typename T::Data& data = typename T::Data()) const {
-        PSI_ASSERT(m_block);
-        return m_block->new_instruction<T>(parameters, m_instruction, data);
-      }
+      void insert(const ValuePtr<Instruction>& instruction);
       
       /// \brief Block to insert instructions into
-      BlockTerm* block() const {return m_block;}
+      Block* block() const {return m_block;}
+
       /**
        * \brief Instruction to insert new instructions before
        * 
        * If this is NULL, instructions will be inserted at the end of the block.
        */
-      InstructionTerm* instruction() const {return m_instruction;}
+      Instruction* instruction() const {return m_instruction;}
     };
-
-    template<typename T>
-    struct InstructionCastImplementation {
-      typedef typename T::Ptr Ptr;
-
-      static Ptr cast(Term *t) {
-        return cast(checked_cast<InstructionTerm*>(t));
-      }
-
-      static Ptr cast(InstructionTerm *t) {
-        PSI_ASSERT(T::operation == t->operation());
-        return Ptr(typename T::PtrHook(checked_cast<InstructionTermSpecialized<T>*>(t)));
-      }
-
-      static bool isa(Term *t) {
-        InstructionTerm *ft = dyn_cast<InstructionTerm>(t);
-        if (!ft)
-          return false;
-
-        return T::operation == ft->operation();
-      }
-      
-      static Ptr null() {
-        return Ptr();
-      }
-    };
-
-#define PSI_TVM_INSTRUCTION_TYPE(name) \
-    struct name : NonConstructible {   \
-    typedef name ThisType;             \
-    static const char operation[];
-
-#define PSI_TVM_INSTRUCTION_PTR_HOOK()                                  \
-    struct PtrHook : InstructionTermPtrBase<Data> {                     \
-    friend struct InstructionCastImplementation<ThisType>;              \
-    friend class InstructionTermSpecialized<ThisType>;                  \
-  private:                                                              \
-  explicit PtrHook(InstructionTerm *t) : InstructionTermPtrBase<Data>(t) {} \
-  public:                                                               \
-  PtrHook() {}
-
-#define PSI_TVM_INSTRUCTION_PTR_HOOK_END() }; typedef PtrDecayAdapter<PtrHook> Ptr;
-
-#ifndef PSI_DOXYGEN
-#define PSI_TVM_INSTRUCTION_TYPE_CAST(name) template<> struct CastImplementation<name> : InstructionCastImplementation<name> {};
-#else
-#define PSI_TVM_INSTRUCTION_TYPE_CAST(name)
-#endif
-
-#define PSI_TVM_INSTRUCTION_TYPE_END(name)                              \
-    static InstructionTypeResult type(FunctionTerm*, const Data&, ArrayPtr<Term*const>); \
-  }; PSI_TVM_INSTRUCTION_TYPE_CAST(name)
-
-    inline BlockTerm* PhiTerm::incoming_block(std::size_t n) {
-      return cast<BlockTerm>(get_base_parameter(n*2));
-    }
-
-    inline BlockTerm* BlockTerm::dominator() {
-      return cast<BlockTerm>(get_base_parameter(1));
-    }
-
-    inline FunctionTerm* BlockTerm::function() {
-      return cast<FunctionTerm>(get_base_parameter(0));
-    }
-
-    inline FunctionTerm* FunctionParameterTerm::function() {
-      return cast<FunctionTerm>(get_base_parameter(0));
-    }
-
-    inline FunctionTypeTerm* FunctionTerm::function_type() {
-      return cast<FunctionTypeTerm>(value_type());
-    }
   }
 }
 
