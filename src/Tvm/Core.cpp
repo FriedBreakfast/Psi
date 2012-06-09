@@ -36,12 +36,14 @@ namespace Psi {
       return m_str;
     }
 
-    Value::Value(Context *context, TermType term_type, const ValuePtr<>& type, const ValuePtr<>& source)
+    Value::Value(Context *context, TermType term_type, const ValuePtr<>& type,
+                 const ValuePtr<>& source, const SourceLocation& location)
     : m_reference_count(0),
     m_context(context),
     m_term_type(term_type),
     m_type(type),
-    m_source(source) {
+    m_source(source),
+    m_location(location) {
 
       PSI_ASSERT(!source ||
         (source->term_type() == term_global_variable) ||

@@ -8,8 +8,7 @@
 
 namespace Psi {
   namespace Tvm {
-
-class FunctionType;
+    class FunctionType;
     class Block;
     
     /**
@@ -35,9 +34,13 @@ class FunctionType;
      */
     class Instruction : public BlockMember {
       friend class Block;
+      
+    public:
+      const char *operation_name() const {return m_operation;}
+      virtual void rewrite(RewriteCallback& callback) = 0;
 
     protected:
-      Instruction(Context *context, const ValuePtr<>& type, const char *operation, const ValuePtr<Value>& source);
+      Instruction(const ValuePtr<>& type, const OperationSetup& setup, const SourceLocation& location);
 
     private:
       const char *m_operation;
@@ -45,6 +48,29 @@ class FunctionType;
       InstructionListHook m_instruction_list_hook;
     };
     
+    template<typename T>
+    OperationSetup instruction_setup() {
+      return OperationSetup(T::operation);
+    }
+
+    template<typename T, typename U>
+    OperationSetup instruction_setup(const U& x) {
+      return instruction_setup<T>()(x);
+    }
+    
+#define PSI_TVM_INSTRUCTION_DECL(Type) \
+  public: \
+    static const char operation[]; \
+    virtual void rewrite(RewriteCallback& callback); \
+    static bool isa_impl(const Value *ptr) {return (ptr->term_type() == term_instruction) && (operation == value_cast<Type>(ptr)->operation_name());} \
+    
+#define PSI_TVM_INSTRUCTION_IMPL(Type,Base,Name) \
+    const char Type::operation[] = #Name; \
+    \
+    ValuePtr<FunctionalValue> Type::rewrite(RewriteCallback& callback) { \
+      return callback.context().get_functional(Type(callback, *this)); \
+    }
+
     /**
      * Describes incoming edges for Phi nodes.
      */
@@ -66,6 +92,9 @@ class FunctionType;
       void add_edge(const ValuePtr<Block>& block, const ValuePtr<>& value);
       /// \brief Get incoming edge list
       const std::vector<PhiEdge>& edges() const {return m_edges;}
+      
+      /// \brief Get the value from a specific source block.
+      ValuePtr<> incoming_value_from(const ValuePtr<Block>& block);
 
     private:
       Phi(Context *context, const ValuePtr<>& type, const ValuePtr<Block>& block);
@@ -89,11 +118,11 @@ class FunctionType;
                                      boost::intrusive::member_hook<Phi, Phi::PhiListHook, &Phi::m_phi_list_hook>,
                                      boost::intrusive::constant_time_size<false> > PhiList;
 
-      ValuePtr<Phi> insert_phi(const ValuePtr<>& type);
+      ValuePtr<Phi> insert_phi(const ValuePtr<>& type, const SourceLocation& location);
       void insert_instruction(const ValuePtr<Instruction>& insn, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
 
-      const InstructionList& instructions() const {return m_instructions;}
-      const PhiList& phi_nodes() const {return m_phi_nodes;}
+      InstructionList& instructions() {return m_instructions;}
+      PhiList& phi_nodes() {return m_phi_nodes;}
 
       /** \brief Whether this block has been terminated so no more instructions can be added. */
       bool terminated() {return m_terminated;}
@@ -103,6 +132,9 @@ class FunctionType;
       const ValuePtr<Block>& dominator() {return m_dominator;}
       /** \brief Get this block's catch list (this will be NULL for a regular block). */
       const ValuePtr<Block>& landing_pad() {return m_landing_pad;}
+      
+      /** \brief Get the list of blocks which this one can exit to (including exceptions) */
+      std::vector<ValuePtr<Block> > successors();
 
       bool check_available(const ValuePtr<>& term, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
       bool dominated_by(const ValuePtr<Block>& block);
@@ -126,6 +158,10 @@ class FunctionType;
     public:
       ValuePtr<Function> function();
       bool parameter_phantom() {return m_phantom;}
+      
+      static bool isa_impl(const Value& ptr) {
+        return ptr.term_type() == term_function_parameter;
+      }
 
     private:
       class Initializer;
@@ -160,15 +196,16 @@ class FunctionType;
       ValuePtr<> result_type() const;
 
       ValuePtr<Block> entry();
+      void set_entry(const ValuePtr<Block>& block);
 
-      ValuePtr<Block> new_block();
-      ValuePtr<Block> new_block(const ValuePtr<Block>& dominator);
-      ValuePtr<Block> new_landing_pad();
-      ValuePtr<Block> new_landing_pad(const ValuePtr<Block>& dominator);
+      ValuePtr<Block> new_block(const SourceLocation& location);
+      ValuePtr<Block> new_block(const ValuePtr<Block>& dominator, const SourceLocation& location);
+      ValuePtr<Block> new_landing_pad(const SourceLocation& location);
+      ValuePtr<Block> new_landing_pad(const ValuePtr<Block>& dominator, const SourceLocation& location);
 
       void add_term_name(Value *term, const std::string& name);
       const TermNameMap& term_name_map() {return m_name_map;}
-      std::vector<Block*> topsort_blocks();
+      std::vector<ValuePtr<Block> > topsort_blocks();
       
       /**
        * \brief Get the exception handling personality of this function.
@@ -229,22 +266,25 @@ class FunctionType;
     public:
       CallingConvention calling_convention() {return m_calling_convention;}
       const ValuePtr<>& result_type() const {return m_result_type;}
-      const std::vector<ValuePtr<> >& phantom_parameter_types() const {return m_phantom_parameter_types;}
+      /// \brief Get the number of phantom parameters.
+      unsigned n_phantom() const {return m_n_phantom;}
+      /// \brief Get the vector parameter types.
       const std::vector<ValuePtr<> >& parameter_types() const {return m_parameter_types;}
 
       ValuePtr<> parameter_type_after(const std::vector<ValuePtr<> >& previous);
       ValuePtr<> result_type_after(const std::vector<ValuePtr<> >& parameters);
+      
+      static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type;}
 
     private:
       FunctionType(Context *context, CallingConvention calling_convention, const ValuePtr<>& result_type,
-                   const std::vector<ValuePtr<> >& phantom_parameter_types,
-                   const std::vector<ValuePtr<> >& parameter_types);
+                   const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom);
 
       CallingConvention m_calling_convention;
 
       ValuePtr<> m_result_type;
-      std::vector<ValuePtr<> > m_phantom_parameter_types;
       std::vector<ValuePtr<> > m_parameter_types;
+      unsigned m_n_phantom;
     };
 
     class FunctionTypeParameter : public Value {
@@ -256,8 +296,8 @@ class FunctionType;
      * Helper class for inserting instructions into blocks.
      */
     class InstructionInsertPoint {
-      Block *m_block;
-      Instruction *m_instruction;
+      ValuePtr<Block> m_block;
+      ValuePtr<Instruction> m_instruction;
 
     public:
       /**
@@ -272,7 +312,7 @@ class FunctionType;
        * \param insert_at_end Block to append instructions to.
        */
       explicit InstructionInsertPoint(const ValuePtr<Block>& insert_at_end)
-      : m_block(insert_at_end.get()), m_instruction(0) {}
+      : m_block(insert_at_end), m_instruction(0) {}
       
       /**
        * Construct an inserter which inserts instructions in the same
@@ -282,21 +322,21 @@ class FunctionType;
        * before.
        */
       explicit InstructionInsertPoint(const ValuePtr<Instruction>& insert_before)
-      : m_block(insert_before->block().get()), m_instruction(insert_before.get()) {}
+      : m_block(insert_before->block()), m_instruction(insert_before) {}
       
       static InstructionInsertPoint after_source(const ValuePtr<>& source);
       
       void insert(const ValuePtr<Instruction>& instruction);
       
       /// \brief Block to insert instructions into
-      Block* block() const {return m_block;}
+      const ValuePtr<Block>& block() const {return m_block;}
 
       /**
        * \brief Instruction to insert new instructions before
        * 
        * If this is NULL, instructions will be inserted at the end of the block.
        */
-      Instruction* instruction() const {return m_instruction;}
+      const ValuePtr<Instruction>& instruction() const {return m_instruction;}
     };
   }
 }

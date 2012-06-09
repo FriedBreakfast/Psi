@@ -3,12 +3,46 @@
 
 #include "Core.hpp"
 
+#include <boost/functional/hash.hpp>
+
 namespace Psi {
   namespace Tvm {
-    class RewriteCallback {
+    class FunctionalOperationSetup {
+      OperationSetup m_base;
+      std::size_t m_hash;
+      
+      template<typename T> void base_combine(const T&) {}
+      template<typename T> void base_combine(const ValuePtr<T>& ptr) {m_base.combine(ptr);}
+      
     public:
-      virtual ValuePtr<>& rewrite(const ValuePtr<>& value) = 0;
+      explicit FunctionalOperationSetup(const char *operation)
+      : m_base(operation),
+      m_hash(boost::hash_value(operation)) {
+      }
+      
+      template<typename T>
+      void combine(T& x) {
+        boost::hash_combine(m_hash, x);
+        base_combine(x);
+      }
+      
+      template<typename T>
+      FunctionalOperationSetup operator () (const T& x) const {
+        FunctionalOperationSetup copy(*this);
+        copy.combine(x);
+        return copy;
+      }
     };
+    
+    template<typename T>
+    FunctionalOperationSetup functional_setup() {
+      return FunctionalOperationSetup(T::operation);
+    }
+
+    template<typename T, typename U>
+    FunctionalOperationSetup functional_setup(const U& value) {
+      return functional_setup<T>()(value);
+    }
 
     /**
      * \brief Base class of functional (machine state independent) terms.
@@ -24,7 +58,7 @@ namespace Psi {
       template<typename> friend class FunctionalTermWithData;
 
     public:
-      const char *operation() const {return m_operation;}
+      const char *operation_name() const {return m_operation;}
 
       /**
        * \brief Build a copy of this term with a new set of parameters.
@@ -34,56 +68,74 @@ namespace Psi {
        * 
        * \param callback Callback used to rewrite members.
        */
-      virtual ValuePtr<FunctionalValue> rewrite(Context& context, RewriteCallback& callback) = 0;
-
-      /**
-       * Check whether this is a simple binary operation (for casting
-       * implementation).
-       */
-      virtual bool is_binary_op() const;
-
-      /**
-       * Check whether this is a simple unary operation (for casting
-       * implementation).
-       */
-      virtual bool is_unary_op() const;
+      virtual ValuePtr<FunctionalValue> rewrite(RewriteCallback& callback) = 0;
       
-      /**
-       * Check whether this is a simple operation which takes no parameters
-       * (it should also have no additional data associated with it).
-       */
-      virtual bool is_simple_op() const;
+      static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_functional;}
 
     protected:
-      FunctionalValue(Context *context, const ValuePtr<>& type, std::size_t hash, const char *operation);
+      FunctionalValue(Context& context, const ValuePtr<>& type, const FunctionalOperationSetup& hash, const SourceLocation& location);
 
     private:
       const char *m_operation;
     };
+    
+#define PSI_TVM_FUNCTIONAL_DECL(Type) \
+  public: \
+    static const char operation[]; \
+    virtual ValuePtr<FunctionalValue> rewrite(RewriteCallback& callback); \
+    static bool isa_impl(const Value& ptr) {return (ptr.term_type() == term_functional) && (operation == checked_cast<const Type&>(ptr).operation_name());} \
+  private: \
+    Type(const RewriteCallback& callback, const Type& src); \
+    virtual ValuePtr<FunctionalValue> clone(void *ptr);
+    
+#define PSI_TVM_FUNCTIONAL_IMPL(Type,Base,Name) \
+    const char Type::operation[] = #Name; \
+    \
+    ValuePtr<FunctionalValue> Type::clone(void *ptr) { \
+      return ValuePtr<FunctionalValue>(::new (ptr) Type(*this)); \
+    } \
+    \
+    ValuePtr<FunctionalValue> Type::rewrite(RewriteCallback& callback) { \
+      return callback.context().get_functional(Type(callback, *this)); \
+    }
 
     class SimpleOp : public FunctionalValue {
     public:
-      virtual bool is_simple_op() const;
+      SimpleOp(const ValuePtr<>& type, const FunctionalOperationSetup& hash, const SourceLocation& location);
     };
     
     class UnaryOp : public FunctionalValue {
+    protected:
+      UnaryOp(const ValuePtr<>& type, const ValuePtr<>& parameter, const FunctionalOperationSetup& hash, const SourceLocation& location);
+      UnaryOp(const RewriteCallback& callback, const UnaryOp& src);
+      
+    private:
+      ValuePtr<> m_parameter;
+      
     public:
-      virtual bool is_unary_op() const;
+      /// \brief Return the single argument to this value
+      const ValuePtr<>& parameter() const {return m_parameter;}
     };
     
     class BinaryOp : public FunctionalValue {
-    public:
-      virtual bool is_binary_op() const;
+    protected:
+      BinaryOp(const ValuePtr<>& type, const ValuePtr<>& lhs, const ValuePtr<>& rhs, const FunctionalOperationSetup& hash, const SourceLocation& location);
+      BinaryOp(const RewriteCallback& callback, const BinaryOp& src);
     };
     
     class Type : public FunctionalValue {
     public:
+      Type(Context& context, const FunctionalOperationSetup& hash, const SourceLocation& location);
     };
     
     class Constructor : public FunctionalValue {
+    protected:
+      Constructor(const ValuePtr<>& type, const FunctionalOperationSetup& hash, const SourceLocation& location);
     };
     
     class AggregateOp : public FunctionalValue {
+    protected:
+      AggregateOp(const ValuePtr<>& type, const FunctionalOperationSetup& hash, const SourceLocation& location);
     };
   }
 }

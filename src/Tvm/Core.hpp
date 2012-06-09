@@ -13,6 +13,7 @@
 #include <boost/iterator/iterator_adaptor.hpp>
 #include <boost/intrusive_ptr.hpp>
 
+#include "../SourceLocation.hpp"
 #include "../Utility.hpp"
 
 namespace Psi {
@@ -119,6 +120,11 @@ namespace Psi {
      */
     class Value {
       friend class Context;
+      
+      /// Disable general new operator
+      static void* operator new (size_t);
+      /// Disable placement new
+      static void* operator new (size_t, void*);
 
     public:
       virtual ~Value();
@@ -168,6 +174,9 @@ namespace Psi {
       /** \brief Get the term describing the type of this term. */
       const ValuePtr<>& type() const {return m_type;}
       
+      /** \brief Get the location this value originated from */
+      const SourceLocation& location() const {return m_location;}
+      
       void dump();
 
       std::size_t hash_value() const;
@@ -179,6 +188,7 @@ namespace Psi {
       unsigned char m_category : 2;
       ValuePtr<> m_type;
       ValuePtr<> m_source;
+      SourceLocation m_location;
       boost::intrusive::list_member_hook<> m_value_list_hook;
       
       void destroy();
@@ -193,29 +203,50 @@ namespace Psi {
       }
 
     protected:
-      Value(Context *context, TermType term_type, const ValuePtr<>& type, Value *source);
+      Value(Context *context, TermType term_type, const ValuePtr<>& type,
+            const ValuePtr<>& source, const SourceLocation& location);
     };
+    
+    ValuePtr<> common_source(const ValuePtr<>& t1, const ValuePtr<>& t2);
     
     template<typename T>
     T* value_cast(Value *ptr) {
       return checked_cast<T*>(ptr);
+    }
+
+    template<typename T>
+    const T* value_cast(const Value *ptr) {
+      return checked_cast<const T*>(ptr);
     }
     
     template<typename T, typename U>
     ValuePtr<T> value_cast(const ValuePtr<U>& ptr) {
       return ValuePtr<T>(value_cast<T>(ptr.get()));
     }
+    
+    template<typename T>
+    bool isa(const Value *ptr) {
+      return T::isa_impl(*ptr);
+    }
+    
+    template<typename T, typename U>
+    bool isa(const ValuePtr<U>& ptr) {
+      return isa<T>(ptr.get());
+    }
+    
+    template<typename T, typename U>
+    ValuePtr<T> dyn_cast(const ValuePtr<U>& ptr) {
+      return ValuePtr<T>(isa<T>(ptr) ? value_cast<T>(ptr.get()) : NULL);
+    }
 
     class HashableValue : public Value {
       friend class Context;
-      friend class Term;
-      friend class Apply;
-      friend class FunctionType;
-      friend class FunctionalValue;
 
-    private:
+    protected:
       HashableValue(Context *context, TermType term_type, const ValuePtr<>& type, std::size_t hash);
       virtual ~HashableValue();
+      
+    private:
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
       TermSetHook m_hashable_set_hook;
       std::size_t m_hash;
@@ -240,6 +271,11 @@ namespace Psi {
       const ValuePtr<>& alignment() const {return m_alignment;}
       /// \brief Set the minimum alignment of this symbol.
       void set_alignment(const ValuePtr<>& alignment) {m_alignment = alignment;}
+      
+      static bool isa_impl(const Value& x) {
+        return (x.term_type() == term_global_variable) ||
+          (x.term_type() == term_function);
+      }
 
     private:
       Global(Context *context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module);
@@ -304,6 +340,7 @@ namespace Psi {
                                               
     private:
       Context *m_context;
+      SourceLocation m_location;
       std::string m_name;
       static const std::size_t initial_members_buckets = 64;
       UniqueArray<ModuleMemberList::bucket_type> m_members_buckets;
@@ -317,6 +354,8 @@ namespace Psi {
       
       /// \brief Get the context this module belongs to.
       Context& context() {return *m_context;}
+      /// \brief Get the location this module originated from.
+      const SourceLocation& location() const {return m_location;}
       /// \brief Get the map of members of this module
       ModuleMemberList& members() {return m_members;}
       /// \brief Get the name of this module
@@ -369,12 +408,26 @@ namespace Psi {
       Context();
       ~Context();
 
-      template<typename T> typename T::Ptr get_functional(const std::vector<ValuePtr<> >& parameters, const typename T::Data& data = typename T::Data());
+      /**
+       * \brief Get a pointer to a functional term.
+       * 
+       * Casts the result back to the incoming type.
+       */
+      template<typename T>
+      ValuePtr<T> get_functional(const T& value) {
+        return value_cast<T>(get_functional_bare(value));
+      }
+
+      /**
+       * \brief Get a pointer to a functional term given that term's value.
+       */
+      ValuePtr<> get_functional_bare(const FunctionalValue& value);
 
       ValuePtr<FunctionType> get_function_type(CallingConvention calling_convention,
                                                const ValuePtr<>& result,
-                                               const std::vector<ValuePtr<FunctionTypeParameter> >& phantom_parameters,
-                                               const std::vector<ValuePtr<FunctionTypeParameter> >& parameters);
+                                               const std::vector<ValuePtr<FunctionTypeParameter> >& parameters,
+                                               unsigned n_phantom,
+                                               const SourceLocation& location);
 
       ValuePtr<FunctionType> get_function_type_fixed(CallingConvention calling_convention,
                                                      const ValuePtr<>& result,
@@ -399,13 +452,45 @@ namespace Psi {
       ValuePtr<RecursiveParameter> new_recursive_parameter(const ValuePtr<>& type);
 
       class FunctionTypeResolverRewriter;
-
-      ValuePtr<FunctionalValue> get_functional_bare(const FunctionalValue& value);
     };
 
     bool term_unique(const ValuePtr<>& term);
     void print_module(std::ostream&, Module*);
     void print_term(std::ostream&, const ValuePtr<>&);
+
+    class RewriteCallback {
+      Context *m_context;
+    public:
+      RewriteCallback(Context *context) : m_context(context) {}
+      /// \brief Get the context to create rewritten terms in.
+      Context& context() {return *m_context;}
+      virtual ValuePtr<> rewrite(const ValuePtr<>& value) = 0;
+    };
+    
+    /**
+     * Class used to construct common data for functional operations
+     * and instructions.
+     */
+    class OperationSetup {
+      const char *m_operation;
+      ValuePtr<> m_source;
+      
+    public:
+      explicit OperationSetup(const char *operation)
+      : m_operation(operation) {
+      }
+      
+      void combine(const ValuePtr<>& ptr) {
+        m_source = common_source(m_source, ptr->source());
+      }
+      
+      template<typename T>
+      OperationSetup operator () (const T& x) const {
+        OperationSetup copy(*this);
+        copy.combine(x);
+        return copy;
+      }
+    };
   }
 }
 

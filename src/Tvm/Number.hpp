@@ -13,165 +13,198 @@
 
 namespace Psi {
   namespace Tvm {
-    PSI_TVM_FUNCTIONAL_TYPE_SIMPLE(BooleanType)
-
-    PSI_TVM_FUNCTIONAL_TYPE(BooleanValue, ConstructorOperation)
-    typedef PrimitiveWrapper<bool> Data;
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the value of this constant.
-    bool value() const {return data().value();}
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static Ptr get(Context&, bool);
-    PSI_TVM_FUNCTIONAL_TYPE_END(BooleanValue)
-
-    PSI_TVM_FUNCTIONAL_TYPE(IntegerType, TypeOperation)
-    /// \brief Available integer bit widths
-    enum Width {
-      i8, ///< 8 bits
-      i16, ///< 16 bits
-      i32, ///< 32 bits
-      i64, ///< 64 bits
-      i128, ///< 128 bits
-      /// Same width as a pointer. For platform independence, this
-      /// is not considered equal to any of the other bit widths,
-      /// even though in practise it will always be the same as one
-      /// of them.
-      iptr
+    class BooleanType : public Type {
+      PSI_TVM_FUNCTIONAL_DECL(BooleanType)
     };
 
-    struct Data {
-      Data(Width width_, bool is_signed_)
-        : width(width_), is_signed(is_signed_) {}
-
-      Width width;
-      bool is_signed;
-
-      bool operator == (const Data& other) const {
-        return (width == other.width) && (is_signed == other.is_signed);
-      }
-
-      friend std::size_t hash_value(const Data& self) {
-        std::size_t h = 0;
-        boost::hash_combine(h, int(self.width));
-        boost::hash_combine(h, self.is_signed);
-        return h;
-      }
-    };
-
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the width of this integer type.
-    Width width() const {return data().width;}
-    /// \brief Whether this integer type is signed.
-    bool is_signed() const {return data().is_signed;}
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static unsigned value_bits(IntegerType::Width);
-    static Ptr get(Context&, Width, bool);
-    PSI_TVM_FUNCTIONAL_TYPE_END(IntegerType)
-
-    PSI_TVM_FUNCTIONAL_TYPE(IntegerValue, ConstructorOperation)
-    struct Data {
-      IntegerType::Width width;
-      bool is_signed;
-      BigInteger value;
+    class BooleanValue : public Constructor {
+      PSI_TVM_FUNCTIONAL_DECL(BooleanValue)
       
-      bool operator == (const Data& other) const {
-        return (width == other.width) && (is_signed == other.is_signed) && (value == other.value);
-      }
+    private:
+      bool m_value;
+      
+    public:
+      /// \brief Get the value of this constant.
+      bool value() const {return m_value;}
 
-      friend std::size_t hash_value(const Data& self) {
-        std::size_t h = 0;
-        boost::hash_combine(h, self.width);
-        boost::hash_combine(h, self.is_signed);
-        boost::hash_combine(h, self.value);
-        return h;
-      }
-    };
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the value of this constant.
-    const BigInteger& value() const {return data().value;}
-    /// \brief Get the type of this term cast to IntegerType::Ptr
-    IntegerType::Ptr type() const {return cast<IntegerType>(PtrBaseType::type());}
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static Ptr get(Context&, IntegerType::Width, bool, const BigInteger&);
-    PSI_TVM_FUNCTIONAL_TYPE_END(IntegerValue)
-
-    PSI_TVM_FUNCTIONAL_TYPE(FloatType, TypeOperation)
-    enum Width {
-      fp32, ///< 32-bit IEEE float
-      fp64, ///< 64-bit IEEE float
-      fp128, ///< 128-bit IEEE float
-      fp_x86_80,  ///< 80-bit x86 "long double" type
-      fp_ppc_128, ///< 128-bit PPC-specific floating point type. See
-                  ///"man float" on MacOS for details.
+      static ValuePtr<BooleanValue> get(Context& context, bool value);
     };
 
-    typedef PrimitiveWrapper<Width> Data;
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the width of this floating point type.
-    Width width() const {return data().value();}
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static FloatType::Ptr get(Context&, Width width);
-    PSI_TVM_FUNCTIONAL_TYPE_END(FloatType)
+    class IntegerType : public Type {
+      PSI_TVM_FUNCTIONAL_DECL(IntegerType)
+      
+    public:
+      /// \brief Available integer bit widths
+      enum Width {
+        i8, ///< 8 bits
+        i16, ///< 16 bits
+        i32, ///< 32 bits
+        i64, ///< 64 bits
+        i128, ///< 128 bits
+        /// Same width as a pointer. For platform independence, this
+        /// is not considered equal to any of the other bit widths,
+        /// even though in practise it will always be the same as one
+        /// of them.
+        iptr
+      };
+      
+      Width width() const {return m_width;}
+      bool is_signed() const {return m_is_signed;}
+      unsigned bits() const {return value_bits(m_width);}
+      
+      static ValuePtr<IntegerType> get(Context& context, Width width, bool is_signed);
+      static ValuePtr<IntegerType> get_intptr(Context& context, const SourceLocation& location);
 
-    inline std::size_t hash_value(FloatType::Width w) {
-      return boost::hash_value(int(w));
-    }
-
-    PSI_TVM_FUNCTIONAL_TYPE(FloatValue, ConstructorOperation)
-    struct Data {
-      FloatType::Width width;
-      unsigned exponent;
-      char mantissa[16];
-
-      bool operator == (const Data& other) const {
-        return (exponent == other.exponent) && std::equal(mantissa, mantissa+sizeof(mantissa), other.mantissa);
-      }
-
-      friend std::size_t hash_value(const Data& self) {
-        std::size_t h = 0;
-        boost::hash_combine(h, self.exponent);
-        boost::hash_range(h, self.mantissa, self.mantissa+sizeof(self.mantissa));
-        return h;
-      }
+      static unsigned value_bits(IntegerType::Width width);
+      
+    private:
+      Width m_width;
+      bool m_is_signed;
     };
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the type of this term cast to FloatType::Ptr
-    FloatType::Ptr type() const {return cast<FloatType>(PtrBaseType::type());}
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static FloatValue::Ptr get(Context&, FloatType::Width width, const Data&);
-    PSI_TVM_FUNCTIONAL_TYPE_END(FloatValue)
 
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerAdd, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerMultiply, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerDivide, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_UNARY(IntegerNegative, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitAnd, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitOr, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(BitXor, IntegerType)
-    PSI_TVM_FUNCTIONAL_TYPE_UNARY(BitNot, IntegerType)
+    class IntegerValue : public Constructor {
+      PSI_TVM_FUNCTIONAL_DECL(IntegerValue)
+      
+    private:
+      IntegerType::Width m_width;
+      bool m_is_signed;
+      BigInteger m_value;
+      
+    public:
+      /// \brief Get the value of this constant.
+      const BigInteger& value() const {return m_value;}
+      /// \brief Get the type of this term cast to IntegerType::Ptr
+      ValuePtr<IntegerType> type() const {return value_cast<IntegerType>(Value::type());}
+
+      static ValuePtr<IntegerValue> get(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value);
+      static ValuePtr<> get_intptr(Context& context, std::size_t n);
+    };
+
+    class FloatType : public Type {
+      PSI_TVM_FUNCTIONAL_DECL(FloatType)
+
+    public:
+      enum Width {
+        fp32, ///< 32-bit IEEE float
+        fp64, ///< 64-bit IEEE float
+        fp128, ///< 128-bit IEEE float
+        fp_x86_80,  ///< 80-bit x86 "long double" type
+        fp_ppc_128, ///< 128-bit PPC-specific floating point type. See
+                    ///"man float" on MacOS for details.
+      };
+
+      /// \brief Get the width of this floating point type.
+      Width width() const {return m_width;}
+
+      static ValuePtr<FloatType> get(Context& context, Width width);
+      
+    private:
+      Width m_width;
+    };
+
+    class FloatValue : public Constructor {
+      PSI_TVM_FUNCTIONAL_DECL(FloatValue)
+
+    public:
+      static const unsigned mantissa_width = 16;
+
+    private:
+      FloatType::Width m_width;
+      unsigned m_exponent;
+      char m_mantissa[mantissa_width];
+      
+    public:
+      /// \brief Get the type of this term cast to FloatType::Ptr
+      ValuePtr<FloatType> type() const {return value_cast<FloatType>(Value::type());}
+
+      static ValuePtr<FloatValue> get(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa);
+    };
     
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareEq, BooleanType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareNe, BooleanType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareGt, BooleanType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareGe, BooleanType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareLt, BooleanType)
-    PSI_TVM_FUNCTIONAL_TYPE_BINARY(IntegerCompareLe, BooleanType)
+    /**
+     * \brief Unary operations on integers.
+     */
+    class IntegerUnaryOp : public UnaryOp {
+      PSI_TVM_FUNCTIONAL_DECL(IntegerUnaryOp)
+
+    public:
+      enum Which {
+        int_neg,
+        int_not
+      };
+      
+      IntegerUnaryOp(Which which, const ValuePtr<>& arg);
+      /// \brief Which opertion this is
+      Which which() const {return m_which;}
+      
+    private:
+      Which m_which;
+    };
 
     /**
-     * Select a value based on a boolean condition.
+     * \brief Binary operations on two integers of the same width.
      */
-    PSI_TVM_FUNCTIONAL_TYPE(SelectValue, FunctionalOperation)
-    typedef Empty Data;
-    PSI_TVM_FUNCTIONAL_PTR_HOOK()
-    /// \brief Get the condition which selects which value is returned.
-    Term *condition() const {return get()->parameter(0);}
-    /// \brief Get the value of this term if \c condition is true.
-    Term *true_value() const {return get()->parameter(1);}
-    /// \brief Get the value of this term if \c condition is false.
-    Term *false_value() const {return get()->parameter(2);}
-    PSI_TVM_FUNCTIONAL_PTR_HOOK_END()
-    static SelectValue::Ptr get(Term *condition, Term *true_value, Term *false_value);
-    PSI_TVM_FUNCTIONAL_TYPE_END(SelectValue)
+    class IntegerBinaryOp : public BinaryOp {
+      PSI_TVM_FUNCTIONAL_DECL(IntegerBinaryOp)
+
+    public:
+      enum Which {
+        int_add,
+        int_mul,
+        int_div,
+        int_and,
+        int_or,
+        int_xor
+      };
+      
+      IntegerBinaryOp(Which which, const ValuePtr<>& lhs, const ValuePtr<>& rhs);
+      /// \brief Which opertion this is
+      Which which() const {return m_which;}
+      
+    private:
+      Which m_which;
+    };
+    
+    class Compare : public BinaryOp {
+    public:
+      /// \brief Comparison types
+      enum Which {
+        cmp_eq,
+        cmp_ne,
+        cmp_gt,
+        cmp_ge,
+        cmp_lt,
+        cmp_le
+      };
+      
+      Compare(Which which, const ValuePtr<>& lhs, const ValuePtr<>& rhs);
+      Which which() const {return m_which;}
+      
+    private:
+      Which m_which;
+    };
+    
+    class IntegerCompare : public Compare {
+      static ValuePtr<IntegerCompare> get(Compare::Which which, const ValuePtr<>& lhs, const ValuePtr<>& rhs);
+    };
+    
+    class Select : public FunctionalValue {
+      PSI_TVM_FUNCTIONAL_DECL(Select)
+
+    public:
+      /// \brief Get the condition which selects which value is returned.
+      const ValuePtr<>& condition() const {return m_condition;}
+      /// \brief Get the value of this term if \c condition is true.
+      const ValuePtr<>& true_value() const {return m_true_value;}
+      /// \brief Get the value of this term if \c condition is false.
+      const ValuePtr<>& false_value() const {return m_false_value;}
+
+      static ValuePtr<Select> get(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value);
+
+    private:
+      ValuePtr<> m_condition;
+      ValuePtr<> m_true_value;
+      ValuePtr<> m_false_value;
+    };
   }
 }
 

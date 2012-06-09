@@ -26,123 +26,127 @@ namespace Psi {
     struct FunctionalBuilder : NonConstructible {
       /// \name Metatype operations
       ///@{
-      static Term* type_type(Context&);
-      static Term* type_value(Term *size, Term *alignment);
-      static Term* type_size(Term *type);
-      static Term* type_alignment(Term *type);
+      static ValuePtr<> type_type(Context& context, const SourceLocation& location);
+      static ValuePtr<> type_value(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location);
+      static ValuePtr<> type_size(const ValuePtr<>& type, const SourceLocation& location);
+      static ValuePtr<> type_alignment(const ValuePtr<>& type, const SourceLocation& location);
       ///@}
       
       /// \name Simple types
       ///@{
-      static Term* block_type(Context&);
-      static Term* empty_type(Context&);
-      static Term* empty_value(Context&);
-      static Term* byte_type(Context&);
-      static Term* byte_pointer_type(Context&);
-      static Term* undef(Term*);
+      static ValuePtr<> block_type(Context& context, const SourceLocation& location);
+      static ValuePtr<> empty_type(Context& context, const SourceLocation& location);
+      static ValuePtr<> empty_value(Context& context, const SourceLocation& location);
+      static ValuePtr<> byte_type(Context& context, const SourceLocation& location);
+      static ValuePtr<> byte_pointer_type(Context& context, const SourceLocation& location);
+      static ValuePtr<> undef(const ValuePtr<>& type, const SourceLocation& location);
       ///@}
       
       /// \name Aggregate types
       ///@{
-      static Term* pointer_type(Term*);
-      static Term* array_type(Term*,Term*);
-      static Term* array_type(Term*,unsigned);
-      static Term* struct_type(Context&, ArrayPtr<Term*const>);
-      static Term* union_type(Context&, ArrayPtr<Term*const>);
+      static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const SourceLocation& location);
+      static ValuePtr<> array_type(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
+      static ValuePtr<> array_type(const ValuePtr<>& element_type, unsigned length, const SourceLocation& location);
+      static ValuePtr<> struct_type(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
+      static ValuePtr<> union_type(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
       ///@}
       
       /// \name Aggregate values
       ///@{
-      static Term* array_value(Term*,ArrayPtr<Term*const>);
-      static Term* struct_value(Context&,ArrayPtr<Term*const>);
-      static Term* union_value(Term*,Term*);
+      static ValuePtr<> array_value(const ValuePtr<>&,const std::vector<ValuePtr<> >&, const SourceLocation& location);
+      static ValuePtr<> struct_value(Context&,const std::vector<ValuePtr<> >&, const SourceLocation& location);
+      static ValuePtr<> union_value(const ValuePtr<>&,const ValuePtr<>&, const SourceLocation& location);
       ///@}
       
       /// \name Aggregate element access
       ///@{
-      static Term* array_element(Term*, Term*);
-      static Term* array_element(Term*, unsigned);
-      static Term* struct_element(Term*, unsigned);
-      static Term* union_element(Term*, Term*);
-      static Term* union_element(Term*, unsigned);
+      static ValuePtr<> array_element(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> array_element(const ValuePtr<>&, unsigned, const SourceLocation& location);
+      static ValuePtr<> struct_element(const ValuePtr<>&, unsigned, const SourceLocation& location);
+      static ValuePtr<> union_element(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> union_element(const ValuePtr<>&, unsigned, const SourceLocation& location);
       ///@}
       
       /// \name Aggregate pointer functions
       ///@{
-      static Term* array_element_ptr(Term*, Term*);
-      static Term* array_element_ptr(Term*, unsigned);
-      static Term* struct_element_ptr(Term*, unsigned);
-      static Term* union_element_ptr(Term*, Term*);
-      static Term* union_element_ptr(Term*, unsigned);
+      static ValuePtr<> array_element_ptr(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> array_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
+      static ValuePtr<> struct_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
+      static ValuePtr<> union_element_ptr(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> union_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
       ///@}
       
-      static Term* struct_element_offset(Term*, unsigned);
+      static ValuePtr<> struct_element_offset(const ValuePtr<>&, unsigned, const SourceLocation& location);
       
       /// \name Pointer operations
       ///@{
-      static Term* pointer_cast(Term*, Term*);
-      static Term* pointer_offset(Term*, Term*);
-      static Term* pointer_offset(Term*, unsigned);
+      static ValuePtr<> pointer_cast(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> pointer_offset(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> pointer_offset(const ValuePtr<>&, unsigned, const SourceLocation& location);
       ///@}
       
       /// \name Integer type and value construction operations
       ///@{
-      static Term* bool_type(Context&);
-      static Term* bool_value(Context&, bool);
-      static Term* int_type(Context&, IntegerType::Width, bool);
-      static Term* size_type(Context&);
-      static Term* int_value(Context&, IntegerType::Width, bool, int);
-      static Term* int_value(Context&, IntegerType::Width, bool, unsigned);
-      static Term* int_value(Context&, IntegerType::Width, bool, const std::string&, bool=false, unsigned=10);
-      static Term* int_value(Context&, IntegerType::Width, bool, const BigInteger&);
-      static Term* int_value(IntegerType::Ptr, int);
-      static Term* int_value(IntegerType::Ptr, unsigned);
-      static Term* int_value(IntegerType::Ptr, const std::string&, bool=false, unsigned=10);
-      static Term* int_value(IntegerType::Ptr, const BigInteger&);
-      static Term* size_value(Context&, unsigned);
+      static ValuePtr<> bool_type(Context&, const SourceLocation& location);
+      static ValuePtr<> bool_value(Context&, bool, const SourceLocation& location);
+      static ValuePtr<> int_type(Context&, IntegerType::Width, bool, const SourceLocation& location);
+      static ValuePtr<> size_type(Context&, const SourceLocation& location);
+      static ValuePtr<> int_value(Context&, IntegerType::Width, bool, int, const SourceLocation& location);
+      static ValuePtr<> int_value(Context&, IntegerType::Width, bool, unsigned, const SourceLocation& location);
+      static ValuePtr<> int_value(Context&, IntegerType::Width, bool, const std::string&, const SourceLocation& location);
+      static ValuePtr<> int_value(Context&, IntegerType::Width, bool, const std::string&, bool, const SourceLocation& location);
+      static ValuePtr<> int_value(Context&, IntegerType::Width, bool, const std::string&, bool/*=false*/, unsigned/*=10*/, const SourceLocation& location);
+      static ValuePtr<> int_value(Context&, IntegerType::Width, bool, const BigInteger&, const SourceLocation& location);
+      static ValuePtr<> int_value(const ValuePtr<IntegerType>&, int, const SourceLocation& location);
+      static ValuePtr<> int_value(const ValuePtr<IntegerType>&, unsigned, const SourceLocation& location);
+      static ValuePtr<> int_value(const ValuePtr<IntegerType>&, const std::string&, const SourceLocation& location);
+      static ValuePtr<> int_value(const ValuePtr<IntegerType>&, const std::string&, bool, const SourceLocation& location);
+      static ValuePtr<> int_value(const ValuePtr<IntegerType>&, const std::string&, bool/*=false*/, unsigned/*=10*/, const SourceLocation& location);
+      static ValuePtr<> int_value(const ValuePtr<IntegerType>&, const BigInteger&, const SourceLocation& location);
+      static ValuePtr<> size_value(Context&, unsigned, const SourceLocation& location);
       ///@}
       
       /// \name Integer arithmetic operations
       ///@{      
-      static Term *add(Term*, Term*);
-      static Term *sub(Term*, Term*);
-      static Term *mul(Term*, Term*);
-      static Term *div(Term*, Term*);
-      static Term *neg(Term*);
+      static ValuePtr<> add(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
+      static ValuePtr<> sub(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
+      static ValuePtr<> mul(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
+      static ValuePtr<> div(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
+      static ValuePtr<> neg(const ValuePtr<>& value, const SourceLocation& location);
       ///@}
       
       /// \name Integer bitwise operations
       ///@{
-      static Term *bit_and(Term*, Term*);
-      static Term *bit_or(Term*, Term*);
-      static Term *bit_xor(Term*, Term*);
-      static Term *bit_not(Term*);
+      static ValuePtr<> bit_and(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> bit_or(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> bit_xor(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> bit_not(const ValuePtr<>&, const SourceLocation& location);
       ///@}
       
       /// \name Integer comparison operations
       ///@{      
-      static Term *cmp_eq(Term*, Term*);
-      static Term *cmp_ne(Term*, Term*);
-      static Term *cmp_gt(Term*, Term*);
-      static Term *cmp_ge(Term*, Term*);
-      static Term *cmp_lt(Term*, Term*);
-      static Term *cmp_le(Term*, Term*);
+      static ValuePtr<> cmp_eq(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> cmp_ne(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> cmp_gt(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> cmp_ge(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> cmp_lt(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> cmp_le(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       ///@}
       
       /// \name Other integer operations
       ///@{
-      static Term *max(Term*, Term*);
-      static Term *min(Term*, Term*);
-      static Term* align_to(Term*, Term*);
+      static ValuePtr<> max(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> min(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> align_to(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       ///@}
       
-      static Term* float_type(Context&, FloatType::Width);
+      static ValuePtr<> float_type(Context&, FloatType::Width, const SourceLocation& location);
       
-      static Term *select(Term*, Term*, Term*);
-      static Term *specialize(Term*, ArrayPtr<Term*const>);
+      static ValuePtr<> select(const ValuePtr<>&, const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> specialize(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
       
-      static Term* catch_type(Context&);
-      static Term* catch_(Term*,unsigned);
+      static ValuePtr<> catch_type(Context&, const SourceLocation& location);
+      static ValuePtr<> catch_(const ValuePtr<>&,unsigned, const SourceLocation& location);
     };
   }
 }

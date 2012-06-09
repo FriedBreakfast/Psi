@@ -6,86 +6,75 @@
 
 namespace Psi {
   namespace Tvm {
-    PSI_TVM_INSTRUCTION_TYPE(Return)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Get the value returned to the caller.
-    Term* value() const {return get()->parameter(0);}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint, Term*);
-    PSI_TVM_INSTRUCTION_TYPE_END(Return)
+    class Return : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(Return)
+      
+    public:
+      Return(const ValuePtr<>& value, const SourceLocation& location);
+      
+      /// \brief The value returned to the caller.
+      ValuePtr<> value;
+    };
+    
+    class ConditionalBranch : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(ConditionalBranch)
+    public:
+      ConditionalBranch(const ValuePtr<>& condition, const ValuePtr<Block>& true_target, const ValuePtr<Block>& false_target, const SourceLocation& location);
+      
+      /// \brief The value used to choose the branch taken.
+      ValuePtr<> condition;
+      /// \brief The block jumped to if \c condition is true.
+      ValuePtr<Block> true_target;
+      /// \brief The block jumped to if \c condition is false.
+      ValuePtr<Block> false_target;
+    };
+    
+    class UnconditionalBranch : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(UnconditionalBranch)
+      
+    public:
+      UnconditionalBranch(const ValuePtr<Block>& target, const SourceLocation& location);
+      
+      /// \brief The block jumped to.
+      ValuePtr<Block> target;
+    };
+    
+    class Call : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(Call)
+      
+    public:
+      Call(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);
+      
+      /// \brief The function being called.
+      ValuePtr<> target;
+      /// \brief Parameters applied to the target function.
+      std::vector<ValuePtr<> > parameters;
+      
+      /// \brief Get the function type of the function being called.
+      ValuePtr<FunctionType> target_function_type() const {return value_cast<FunctionType>(value_cast<PointerType>(target->type())->target_type());}
+    };
 
-    PSI_TVM_INSTRUCTION_TYPE(ConditionalBranch)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Get the value used to choose the branch taken.
-    Term* condition() const {return get()->parameter(0);}
-    /// \brief Get the block jumped to if \c condition is true.
-    BlockTerm* true_target() const {return cast<BlockTerm>(get()->parameter(1));}
-    /// \brief Get the block jumped to if \c condition is false.
-    BlockTerm* false_target() const {return cast<BlockTerm>(get()->parameter(2));}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint, Term*, Term*, Term*);
-    PSI_TVM_INSTRUCTION_TYPE_END(ConditionalBranch)
-
-    PSI_TVM_INSTRUCTION_TYPE(UnconditionalBranch)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Get the block jumped to.
-    BlockTerm* target() const {return cast<BlockTerm>(get()->parameter(0));}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint, Term*);
-    PSI_TVM_INSTRUCTION_TYPE_END(UnconditionalBranch)
-
-    PSI_TVM_INSTRUCTION_TYPE(FunctionCall)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Get the function being called.
-    Term* target() const {return get()->parameter(0);}
-    /// \brief Get the value of the <tt>n</tt>th parameter used.
-    Term* parameter(std::size_t n) const {return get()->parameter(n+1);}
-    /// \brief Get the function type of the function being called.
-    FunctionTypeTerm* target_function_type() const {return cast<FunctionTypeTerm>(cast<PointerType>(target()->type())->target_type());}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint,Term*,ArrayPtr<Term*const>);
-    PSI_TVM_INSTRUCTION_TYPE_END(FunctionCall)
-
-    PSI_TVM_INSTRUCTION_TYPE(FunctionInvoke)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Get the normal continuation edge
-    BlockTerm *normal_edge() const {return cast<BlockTerm>(get()->parameter(0));}
-    /// \brief Get the unwind edge
-    BlockTerm *unwind_edge() const {return cast<BlockTerm>(get()->parameter(1));}
-    /// \brief Get the function being called.
-    Term* target() const {return get()->parameter(2);}
-    /// \brief Get the value of the <tt>n</tt>th parameter used.
-    Term* parameter(std::size_t n) const {return get()->parameter(n+3);}
-    /// \brief Get the function type of the function being called.
-    FunctionTypeTerm* target_function_type() const {return cast<FunctionTypeTerm>(cast<PointerType>(target()->type())->target_type());}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint,BlockTerm*,BlockTerm*,Term*,ArrayPtr<Term*const>);
-    PSI_TVM_INSTRUCTION_TYPE_END(FunctionInvoke)
-
-    PSI_TVM_INSTRUCTION_TYPE(Store)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Get the value to be stored
-    Term* value() const {return get()->parameter(0);}
-    /// \brief Get the memory address which is to be written to
-    Term* target() const {return get()->parameter(1);}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint,Term*,Term*);
-    PSI_TVM_INSTRUCTION_TYPE_END(Store)
-
-    PSI_TVM_INSTRUCTION_TYPE(Load)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Get the pointer being read from
-    Term* target() const {return get()->parameter(0);}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint,Term*);
-    PSI_TVM_INSTRUCTION_TYPE_END(Load)
+    class Store : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(Store)
+      
+    public:
+      Store(const ValuePtr<>& value, const ValuePtr<>& target, const SourceLocation& location);
+      
+      /// \brief The value to be stored
+      ValuePtr<> value;
+      /// \brief The memory address which is to be written to
+      ValuePtr<> target;
+    };
+    
+    class Load : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(Load)
+      
+    public:
+      Load(const ValuePtr<>& target, const SourceLocation& location);
+      
+      /// \brief The pointer being read from
+      ValuePtr<> target;
+    };
 
     /**
      * \brief Stack allocation instruction.
@@ -107,18 +96,19 @@ namespace Psi {
      * of the specified alignment. The value 1 is therefore a safe
      * default when no custom alignment is required.
      */
-    PSI_TVM_INSTRUCTION_TYPE(Alloca)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Get the type which storage is allocated for
-    Term* stored_type() const {return get()->parameter(0);}
-    /// \brief Get the number of elements of storage being allocated.
-    Term* count() const {return get()->parameter(1);}
-    /// \brief Get the minimum alignment of the returned pointer.
-    Term* alignment() const {return get()->parameter(2);}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint,Term*,Term*,Term*);
-    PSI_TVM_INSTRUCTION_TYPE_END(Alloca)
+    class Alloca : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(Alloca)
+      
+    public:
+      Alloca(const ValuePtr<>& element_type, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location);
+      
+      /// \brief Type which storage is allocated for
+      ValuePtr<> element_type;
+      /// \brief Number of elements of storage being allocated.
+      ValuePtr<> count;
+      /// \brief Minimum alignment of the returned pointer.
+      ValuePtr<> alignment;
+    };
     
     /**
      * \brief memcpy as an instruction.
@@ -130,20 +120,20 @@ namespace Psi {
      * follows the ordinary memcpy convention and has the destination
      * first and source second.
      */
-    PSI_TVM_INSTRUCTION_TYPE(MemCpy)
-    typedef Empty Data;
-    PSI_TVM_INSTRUCTION_PTR_HOOK()
-    /// \brief Copy destination
-    Term* dest() const {return get()->parameter(0);}
-    /// \brief Copy source
-    Term* src() const {return get()->parameter(1);}
-    /// \brief Number of elements to copy
-    Term* count() const {return get()->parameter(2);}
-    /// \brief Alignment hint
-    Term* alignment() const {return get()->parameter(3);}
-    PSI_TVM_INSTRUCTION_PTR_HOOK_END()
-    static Ptr create(InstructionInsertPoint,Term*,Term*,Term*,Term*);
-    PSI_TVM_INSTRUCTION_TYPE_END(MemCpy)
+    class MemCpy : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(MemCpy)
+      
+    public:
+      MemCpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location);
+      /// \brief Copy destination
+      ValuePtr<> dest;
+      /// \brief Copy source
+      ValuePtr<> src;
+      /// \brief Number of elements to copy
+      ValuePtr<> count;
+      /// \brief Alignment hint
+      ValuePtr<> alignment;
+    };
   }
 }
 

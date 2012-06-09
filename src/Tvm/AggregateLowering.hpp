@@ -12,76 +12,75 @@
 
 namespace Psi {
   namespace Tvm {    
+    class LoweredType {
+      ValuePtr<> m_stack_type, m_heap_type;
+      ValuePtr<> m_size, m_alignment;
+      
+    public:
+      LoweredType() : m_stack_type(0), m_heap_type(0), m_size(0), m_alignment(0) {}
+      /// \brief Constructor for unknown types
+      LoweredType(const ValuePtr<>& size, const ValuePtr<>& alignment) : m_stack_type(0), m_heap_type(0), m_size(size), m_alignment(alignment) {}
+      /// \brief Constructor for types which are the same on the stack and heap
+      LoweredType(const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& type) : m_stack_type(type), m_heap_type(type), m_size(size), m_alignment(alignment) {}
+      /// \brief Constructor for types which are different on the stack and heap
+      LoweredType(const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& stack_type, const ValuePtr<>& heap_type) : m_stack_type(stack_type), m_heap_type(heap_type), m_size(size), m_alignment(alignment) {}
+      
+      /// \brief Get the type used to represent this type on the stack
+      const ValuePtr<>& stack_type() const {return m_stack_type;}
+      
+      /// \brief Get the type used to represent this type on the heap
+      const ValuePtr<>& heap_type() const {return m_heap_type;}
+      
+      /// \brief Get the size of this type in a suitable form for later passes
+      const ValuePtr<>& size() const {return m_size;}
+      
+      /// \brief Get the alignment of this type in a suitable form for later passes
+      const ValuePtr<>& alignment() const {return m_alignment;}
+      
+      /// \brief Check whether this is a valid lowered type.
+      bool valid() const {return m_size && m_alignment;}
+    };
+    
+    /**
+      * \brief Per-term result of aggregate lowering.
+      * 
+      * The lowering pass will try to split aggregate operations
+      * into simpler operations on scalars, so a value can be
+      * represented in one of several ways depending on whether
+      * it is an aggregate or not.
+      */
+    class LoweredValue {
+      ValuePtr<> m_value;
+      bool m_on_stack;
+      
+    public:
+      LoweredValue() : m_value(0), m_on_stack(false) {}
+
+      LoweredValue(const ValuePtr<>& value, bool on_stack) : m_value(value), m_on_stack(on_stack) {
+        PSI_ASSERT(on_stack ? true : isa<PointerType>(value->type()));
+      }
+
+      /**
+        * \brief Whether this is a type which the later passes recognise
+        * and can be handled on the stack.
+        * 
+        * If this is false, the value is handled via pointers using
+        * \c alloca.
+        */
+      bool on_stack() const {return m_on_stack;}
+
+      /**
+        * \brief Value of this term.
+        */
+      const ValuePtr<>& value() const {return m_value;}
+    };
+
     /**
      * A function pass which removes aggregate operations by rewriting
      * them in terms of pointer offsets, so that later stages need not
      * handle them.
      */
     class AggregateLoweringPass : public ModuleRewriter {
-    public:
-      class Type {
-        Term *m_stack_type, *m_heap_type;
-        Term *m_size, *m_alignment;
-        
-      public:
-        Type() : m_stack_type(0), m_heap_type(0), m_size(0), m_alignment(0) {}
-        /// \brief Constructor for unknown types
-        Type(Term *size, Term *alignment) : m_stack_type(0), m_heap_type(0), m_size(size), m_alignment(alignment) {}
-        /// \brief Constructor for types which are the same on the stack and heap
-        Type(Term *size, Term *alignment, Term *type) : m_stack_type(type), m_heap_type(type), m_size(size), m_alignment(alignment) {}
-        /// \brief Constructor for types which are different on the stack and heap
-        Type(Term *size, Term *alignment, Term *stack_type, Term *heap_type) : m_stack_type(stack_type), m_heap_type(heap_type), m_size(size), m_alignment(alignment) {}
-        
-        /// \brief Get the type used to represent this type on the stack
-        Term *stack_type() const {return m_stack_type;}
-        
-        /// \brief Get the type used to represent this type on the heap
-        Term *heap_type() const {return m_heap_type;}
-        
-        /// \brief Get the size of this type in a suitable form for later passes
-        Term *size() const {return m_size;}
-        
-        /// \brief Get the alignment of this type in a suitable form for later passes
-        Term *alignment() const {return m_alignment;}
-        
-        /// \brief Check whether this is a valid lowered type.
-        bool valid() const {return m_size && m_alignment;}
-      };
-      
-      /**
-       * \brief Per-term result of aggregate lowering.
-       * 
-       * The lowering pass will try to split aggregate operations
-       * into simpler operations on scalars, so a value can be
-       * represented in one of several ways depending on whether
-       * it is an aggregate or not.
-       */
-      class Value {
-        Term *m_value;
-        bool m_on_stack;
-        
-      public:
-        Value() : m_value(0), m_on_stack(false) {}
-
-        Value(Term *value, bool on_stack) : m_value(value), m_on_stack(on_stack) {
-          PSI_ASSERT(on_stack ? true : isa<PointerType>(value->type()));
-        }
-
-        /**
-         * \brief Whether this is a type which the later passes recognise
-         * and can be handled on the stack.
-         * 
-         * If this is false, the value is handled via pointers using
-         * \c alloca.
-         */
-        bool on_stack() const {return m_on_stack;}
-
-        /**
-         * \brief Value of this term.
-         */
-        Term *value() const {return m_value;}
-      };
-
     public:
       class FunctionRunner;
       class GlobalVariableRunner;
@@ -93,8 +92,8 @@ namespace Psi {
         
         AggregateLoweringPass *m_pass;
         
-        typedef boost::unordered_map<Term*, Type> TypeMapType;
-        typedef boost::unordered_map<Term*, Value> ValueMapType;
+        typedef boost::unordered_map<ValuePtr<>, LoweredType> TypeMapType;
+        typedef boost::unordered_map<ValuePtr<>, LoweredValue> ValueMapType;
 
         TypeMapType m_type_map;
         ValueMapType m_value_map;
@@ -111,12 +110,12 @@ namespace Psi {
         /**
          * Work out the expected form of a type after this pass.
          */
-        virtual Type rewrite_type(Term *type) = 0;
+        virtual LoweredType rewrite_type(const ValuePtr<>& type) = 0;
         
         /**
          * Rewrite a value for later passes.
          */
-        virtual Value rewrite_value(Term *value) = 0;
+        virtual LoweredValue rewrite_value(const ValuePtr<>& value) = 0;
         
         /**
          * \brief \em Load a value.
@@ -126,7 +125,7 @@ namespace Psi {
          * 
          * \param load_term Term to assign the result of this load to.
          */
-        virtual Value load_value(Term* load_term, Term *ptr) = 0;
+        virtual LoweredValue load_value(const ValuePtr<>& load_term, const ValuePtr<>& ptr, const SourceLocation& location) = 0;
         
         /**
          * \brief \em Store a value.
@@ -135,7 +134,7 @@ namespace Psi {
          * value in. If the value is a constant it will be created as a global;
          * if it is a variable it will be created using the alloca instruction.
          */
-        virtual Term* store_value(Term *value) = 0;
+        virtual ValuePtr<> store_value(const ValuePtr<>& value, const SourceLocation& location) = 0;
         
         /**
          * \brief \em Store a type value.
@@ -151,82 +150,82 @@ namespace Psi {
          * \param alignment Alignment of the type (this value should belong to
          * the target context).
          */
-        virtual Term* store_type(Term *size, Term *alignment) = 0;
+        virtual ValuePtr<> store_type(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location) = 0;
 
-        Term* rewrite_value_stack(Term*);
-        Term* rewrite_value_ptr(Term*);
-        Value lookup_value(Term*);
-        Term* lookup_value_stack(Term*);
-        Term* lookup_value_ptr(Term*);
+        ValuePtr<> rewrite_value_stack(const ValuePtr<>&);
+        ValuePtr<> rewrite_value_ptr(const ValuePtr<>&);
+        LoweredValue lookup_value(const ValuePtr<>&);
+        ValuePtr<> lookup_value_stack(const ValuePtr<>&);
+        ValuePtr<> lookup_value_ptr(const ValuePtr<>&);
       };
 
       /**
        * Class which actually runs the pass, and holds per-run data.
        */
       class FunctionRunner : public AggregateLoweringRewriter {
-        FunctionTerm *m_old_function, *m_new_function;
+        ValuePtr<Function> m_old_function, m_new_function;
         InstructionBuilder m_builder;
         
         struct BlockPhiData {
           // Phi nodes derived from Phi nodes in the original function
-          std::vector<PhiTerm*> user;
+          std::vector<ValuePtr<Phi> > user;
           // Phi nodes generated as a replacement for alloca
-          std::vector<PhiTerm*> alloca_;
+          std::vector<ValuePtr<Phi> > alloca_;
           // List of used slots
-          std::vector<Term*> used;
+          std::vector<ValuePtr<> > used;
           // List of free slots
-          std::vector<Term*> free_;
+          std::vector<ValuePtr<> > free_;
         };
         
-        typedef boost::unordered_map<BlockTerm*, BlockPhiData> BlockPhiMapType;
-        typedef boost::unordered_map<Term*, BlockPhiMapType> TypePhiMapType;
+        typedef boost::unordered_map<ValuePtr<Block>, BlockPhiData> BlockPhiMapType;
+        typedef boost::unordered_map<ValuePtr<>, BlockPhiMapType> TypePhiMapType;
         
         TypePhiMapType m_generated_phi_terms;
         
-        void create_phi_node(BlockTerm*,Term*);
-        void populate_phi_node(Term*, ArrayPtr<BlockTerm*>, ArrayPtr<Term*>);
-        Term* create_storage(Term*);
-        Term* create_alloca(Term*);
-        void create_phi_alloca_terms(const std::vector<std::pair<BlockTerm*, BlockTerm*> >&);
+        void create_phi_node(const ValuePtr<Block>&, const ValuePtr<>&);
+        void populate_phi_node(const ValuePtr<>&, const std::vector<PhiEdge>& edges);
+        ValuePtr<> create_storage(const ValuePtr<>& type, const SourceLocation& location);
+        ValuePtr<> create_alloca(const ValuePtr<>& type, const SourceLocation& location);
+        void create_phi_alloca_terms(const std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > >& sorted_blocks);
         
       public:        
-        FunctionRunner(AggregateLoweringPass *pass, FunctionTerm *function);
+        FunctionRunner(AggregateLoweringPass *pass, const ValuePtr<Function>& function);
         virtual void run();
         
         /// \brief Get the new version of the function
-        FunctionTerm* new_function() {return m_new_function;}
+        const ValuePtr<Function>& new_function() {return m_new_function;}
         
         /// \brief Get the function being rebuilt
-        FunctionTerm* old_function() {return m_old_function;}
+        const ValuePtr<Function>& old_function() {return m_old_function;}
         
         /// \brief Return an InstructionBuilder set to the current instruction insert point.
         InstructionBuilder& builder() {return m_builder;}
         
-        void add_mapping(Term*, Term*, bool);
-        BlockTerm* rewrite_block(BlockTerm*);
+        void add_mapping(const ValuePtr<>&, const ValuePtr<>&, bool);
+        ValuePtr<Block> rewrite_block(const ValuePtr<Block>&);
         
-        virtual Value load_value(Term*, Term*);
-        virtual Term* store_value(Term*);
-        virtual Term* store_type(Term*, Term*);
-        Term* store_value(Term*, Term*);
+        virtual LoweredValue load_value(const ValuePtr<>& load_term, const ValuePtr<>& ptr, const SourceLocation& location);
+        virtual ValuePtr<> store_value(const ValuePtr<>& value, const SourceLocation& location);
+        virtual ValuePtr<> store_type(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location);
+        ValuePtr<> store_value(const ValuePtr<>& value, const ValuePtr<>& ptr, const SourceLocation& location);
 
-        virtual Type rewrite_type(Term*);
-        virtual Value rewrite_value(Term*);
+        virtual LoweredType rewrite_type(const ValuePtr<>&);
+        virtual LoweredValue rewrite_value(const ValuePtr<>&);
       };
       
       class ModuleLevelRewriter : public AggregateLoweringRewriter {
       public:
         ModuleLevelRewriter(AggregateLoweringPass*);
-        virtual Value load_value(Term*, Term*);
-        virtual Term* store_value(Term*);
-        virtual Term* store_type(Term*, Term*);
-        virtual Type rewrite_type(Term*);
-        virtual Value rewrite_value(Term*);
+        virtual LoweredValue load_value(const ValuePtr<>& load_term, const ValuePtr<>& ptr, const SourceLocation& location);
+        virtual ValuePtr<> store_value(const ValuePtr<>&, const SourceLocation& location);
+        virtual ValuePtr<> store_type(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+        virtual LoweredType rewrite_type(const ValuePtr<>&);
+        virtual LoweredValue rewrite_value(const ValuePtr<>&);
       };
       
       struct TypeSizeAlignment {
-        Term *size;
-        Term *alignment;
+        ValuePtr<> size;
+        ValuePtr<> alignment;
       };
 
       /**
@@ -241,7 +240,7 @@ namespace Psi {
          * 
          * \param runner Holds per-pass data.
          */
-        virtual void lower_function_call(FunctionRunner& runner, FunctionCall::Ptr term) = 0;
+        virtual void lower_function_call(FunctionRunner& runner, const ValuePtr<Call>& term) = 0;
 
         /**
          * Create a return instruction to return the given value
@@ -251,7 +250,7 @@ namespace Psi {
          * 
          * \return The actual return instruction created.
          */
-        virtual InstructionTerm* lower_return(FunctionRunner& runner, Term *value) = 0;
+        virtual ValuePtr<Instruction> lower_return(FunctionRunner& runner, const ValuePtr<>& value, const SourceLocation& location) = 0;
 
         /**
          * Change a function's type and add entry code to decode
@@ -268,7 +267,7 @@ namespace Psi {
          * 
          * \param function Function being lowered.
          */
-        virtual FunctionTerm* lower_function(AggregateLoweringPass& runner, FunctionTerm *function) = 0;
+        virtual ValuePtr<Function> lower_function(AggregateLoweringPass& runner, const ValuePtr<Function>& function) = 0;
         
         /**
          * Create necessary entry code into a function to convert low level
@@ -278,7 +277,7 @@ namespace Psi {
          * 
          * \param target_function Newly created function.
          */
-        virtual void lower_function_entry(FunctionRunner& runner, FunctionTerm *source_function, FunctionTerm *target_function) = 0;
+        virtual void lower_function_entry(FunctionRunner& runner, const ValuePtr<Function>& source_function, const ValuePtr<Function>& target_function) = 0;
         
         /**
          * \brief Convert a value to another type.
@@ -296,7 +295,7 @@ namespace Psi {
          * 
          * \param type Type of value to return.
          */
-        virtual Term* convert_value(Term *value, Term *type) = 0;
+        virtual ValuePtr<> convert_value(const ValuePtr<>& value, const ValuePtr<>& type) = 0;
 
         /**
          * \brief Get the type with alignment closest to the specified alignment.
@@ -305,7 +304,7 @@ namespace Psi {
          * Its size must be the same as its alignment. The first member of the
          * pair is the type, the second member of the pair is the size of the first.
          */
-        virtual std::pair<Term*,Term*> type_from_alignment(Term *alignment) = 0;
+        virtual std::pair<ValuePtr<>,ValuePtr<> > type_from_alignment(const ValuePtr<>& alignment) = 0;
         
         /**
          * \brief Get the size and alignment of a type.
@@ -315,7 +314,7 @@ namespace Psi {
          * 
          * \param type A primitive type.
          */
-        virtual TypeSizeAlignment type_size_alignment(Term *type) = 0;
+        virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>& type) = 0;
       };
 
     private:
@@ -325,26 +324,26 @@ namespace Psi {
       ModuleLevelRewriter m_global_rewriter;
 
       struct GlobalBuildStatus {
-        GlobalBuildStatus(Context&);
-        GlobalBuildStatus(Term*, Term*, Term*, Term*, Term*);
-        std::vector<Term*> elements;
+        GlobalBuildStatus(Context& context, const SourceLocation& location);
+        GlobalBuildStatus(const ValuePtr<>& element, const ValuePtr<>& element_size_, const ValuePtr<>& element_alignment_, const ValuePtr<>& size_, const ValuePtr<>& alignment_);
+        std::vector<ValuePtr<> > elements;
         /// \brief Size of the entries in elements as a sequence (not including end padding to reach a multiple of alignment)
-        Term* elements_size;
+        ValuePtr<> elements_size;
         /// \brief Actual alignment of the first element in this set
-        Term* first_element_alignment;
+        ValuePtr<> first_element_alignment;
         /// \brief Largest alignment of any elements in this set
-        Term* max_element_alignment;
+        ValuePtr<> max_element_alignment;
         /// \brief Desired size of this set of elements.
-        Term* size;
+        ValuePtr<> size;
         /// \brief Desired alignment of this set of elements.
-        Term* alignment;
+        ValuePtr<> alignment;
       };
       
-      GlobalBuildStatus rewrite_global_type(Term*);
-      GlobalBuildStatus rewrite_global_value(Term*);
-      void global_append(GlobalBuildStatus&, const GlobalBuildStatus&, bool);
-      void global_pad_to_size(GlobalBuildStatus&, Term*, Term*, bool);
-      void global_group(GlobalBuildStatus&, bool);
+      GlobalBuildStatus rewrite_global_type(const ValuePtr<>&);
+      GlobalBuildStatus rewrite_global_value(const ValuePtr<>&);
+      void global_append(GlobalBuildStatus&, const GlobalBuildStatus&, bool, const SourceLocation& location);
+      void global_pad_to_size(GlobalBuildStatus&, const ValuePtr<>&, const ValuePtr<>&, bool, const SourceLocation& location);
+      void global_group(GlobalBuildStatus&, bool, const SourceLocation& location);
       virtual void update_implementation(bool);
 
     public:

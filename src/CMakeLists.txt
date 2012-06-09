@@ -7,6 +7,11 @@ add_library(psi-assert SHARED Assert.cpp Assert.hpp)
 bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated)
 set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
 
+add_library(psi-compiler-common SHARED
+  Runtime.cpp Runtime.hpp
+  SourceLocation.cpp SourceLocation.hpp
+)
+
 add_library(psi-tvm SHARED
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
   Tvm/AggregateLowering.cpp
@@ -28,11 +33,10 @@ add_library(psi-tvm SHARED
   Tvm/Rewrite.hpp
   Tvm/Source.cpp
   Tvm/TermOperationMap.hpp
-  Tvm/User.cpp Tvm/User.hpp
   Tvm/Utility.hpp
 )
 
-target_link_libraries(psi-tvm ${PSI_DEBUG_LIBS})
+target_link_libraries(psi-tvm psi-compiler-common debug psi-assert)
 if(UNIX)
   target_link_libraries(psi-tvm -ldl)
 endif()
@@ -95,7 +99,6 @@ add_library(psi-compiler SHARED
   Macros.cpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
   Platform.cpp Platform.hpp
-  Runtime.cpp Runtime.hpp
   Tree.cpp Tree.hpp
   TreePattern.hpp
   Utility.cpp Utility.hpp
@@ -103,7 +106,7 @@ add_library(psi-compiler SHARED
   ${PSI_COMPILER_SOURCES}
 )
 
-target_link_libraries(psi-compiler debug psi-assert)
+target_link_libraries(psi-compiler psi-compiler-common debug psi-assert)
 if (UNIX)
   target_link_libraries(psi-compiler -ldl)
 endif()

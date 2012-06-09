@@ -6,13 +6,13 @@
 #include <boost/optional.hpp>
 #include <boost/shared_ptr.hpp>
 
-#include "Compiler.hpp"
+#include "SourceLocation.hpp"
 #include "Runtime.hpp"
 
 namespace Psi {
   namespace Parser {
     struct ParserLocation {
-      Compiler::PhysicalSourceLocation location;
+      PhysicalSourceLocation location;
       const char *begin, *end;
     };
 

@@ -23,7 +23,7 @@ namespace Psi {
     template<typename TermType, typename ResultType, typename UserParameter>
     class TermOperationMap {
       struct Callback {
-        virtual ResultType call(UserParameter parameter, TermType *term) = 0;
+        virtual ResultType call(UserParameter parameter, const ValuePtr<TermType>& term) = 0;
       };
       
       template<typename TermTagType, typename CbType>
@@ -33,8 +33,8 @@ namespace Psi {
       public:
         CallbackImpl(const CbType& cb) : m_cb(cb) {}
         
-        virtual ResultType call(UserParameter parameter, TermType *term) {
-          return m_cb(parameter, cast<TermTagType>(term));
+        virtual ResultType call(UserParameter parameter, const ValuePtr<TermType>& term) {
+          return m_cb(parameter, value_cast<TermTagType>(term));
         }
       };
       
@@ -45,12 +45,12 @@ namespace Psi {
       public:
         DefaultCallbackImpl(const CbType& cb) : m_cb(cb) {}
         
-        virtual ResultType call(UserParameter parameter, TermType *term) {
+        virtual ResultType call(UserParameter parameter, const ValuePtr<TermType>& term) {
           return m_cb(parameter, term);
         }
       };
       
-      static ResultType default_throw_callback(UserParameter&, TermType*) {
+      static ResultType default_throw_callback(UserParameter&, const ValuePtr<TermType>&) {
         throw TvmInternalError("term type not supported");
       }
 
@@ -70,8 +70,8 @@ namespace Psi {
       };
       
     public:
-      ResultType call(UserParameter parameter, TermType *term) const {
-        typename CallbackMapType::const_iterator it = m_callback_map.find(term->operation());
+      ResultType call(UserParameter parameter, const ValuePtr<TermType>& term) const {
+        typename CallbackMapType::const_iterator it = m_callback_map.find(term->operation_name());
         if (it != m_callback_map.end()) {
           return it->second->call(parameter, term);
         } else {

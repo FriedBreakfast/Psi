@@ -21,37 +21,36 @@ namespace Psi {
     public:
       InstructionBuilder();
       explicit InstructionBuilder(const InstructionInsertPoint&);
-      explicit InstructionBuilder(BlockTerm*);
-      explicit InstructionBuilder(InstructionTerm*);
+      explicit InstructionBuilder(const ValuePtr<Block>&);
+      explicit InstructionBuilder(const ValuePtr<Instruction>&);
       
       /// \name Insert point control
       ///@{
       const InstructionInsertPoint& insert_point() const;
       void set_insert_point(const InstructionInsertPoint&);
-      void set_insert_point(BlockTerm*);
-      void set_insert_point(InstructionTerm*);
+      void set_insert_point(const ValuePtr<Block>&);
+      void set_insert_point(const ValuePtr<Instruction>&);
       ///@}
       
       /// \name Control flow
       ///@{
-      InstructionTerm* return_(Term*);
-      InstructionTerm* br(Term*);
-      InstructionTerm* cond_br(Term*,Term*,Term*);
-      InstructionTerm* call(Term*,ArrayPtr<Term*const>);
-      InstructionTerm* invoke(BlockTerm*,BlockTerm*,Term*,ArrayPtr<Term*const>);
+      ValuePtr<Instruction> return_(const ValuePtr<>& value, const SourceLocation& location);
+      ValuePtr<Instruction> br(const ValuePtr<Block>& target, const SourceLocation& location);
+      ValuePtr<Instruction> cond_br(const ValuePtr<>& condition, const ValuePtr<Block>& true_target, const ValuePtr<Block>& false_target, const SourceLocation& location);
+      ValuePtr<Instruction> call(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);
       ///@}
       
       /// \name Memory operations
       ///@{
-      InstructionTerm* alloca_(Term*,Term*,Term*);
-      InstructionTerm* alloca_(Term*,Term*);
-      InstructionTerm* alloca_(Term*,unsigned);
-      InstructionTerm* alloca_(Term*);
-      InstructionTerm* load(Term*);
-      InstructionTerm* store(Term*,Term*);
-      InstructionTerm* memcpy(Term*,Term*,Term*,Term*);
-      InstructionTerm* memcpy(Term*,Term*,Term*);
-      InstructionTerm* memcpy(Term*,Term*,unsigned);
+      ValuePtr<Instruction> alloca_(const ValuePtr<>& type, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location);
+      ValuePtr<Instruction> alloca_(const ValuePtr<>& type, const ValuePtr<>& count, const SourceLocation& location);
+      ValuePtr<Instruction> alloca_(const ValuePtr<>& type, unsigned count, const SourceLocation& location);
+      ValuePtr<Instruction> alloca_(const ValuePtr<>& type, const SourceLocation& location);
+      ValuePtr<Instruction> load(const ValuePtr<>& src, const SourceLocation& location);
+      ValuePtr<Instruction> store(const ValuePtr<>& value, const ValuePtr<>& dest, const SourceLocation& location);
+      ValuePtr<Instruction> memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location);
+      ValuePtr<Instruction> memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const SourceLocation& location);
+      ValuePtr<Instruction> memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, unsigned count, const SourceLocation& location);
       ///@}
     };
   }
