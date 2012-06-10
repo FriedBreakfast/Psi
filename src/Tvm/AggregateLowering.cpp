@@ -1408,7 +1408,7 @@ namespace Psi {
           } else {
             global_type = FunctionalBuilder::struct_type(context(), status.elements, term->location());
           }
-          ValuePtr<GlobalVariable> new_var = target_module()->new_global_variable(old_var->name(), global_type);
+          ValuePtr<GlobalVariable> new_var = target_module()->new_global_variable(old_var->name(), global_type, old_var->location());
           new_var->set_constant(old_var->constant());
           
           if (old_var->alignment())

@@ -40,7 +40,7 @@ namespace Psi {
         return module().context();
       }
 
-      Term* AssemblerContext::get(const std::string& name) const {
+      ValuePtr<> AssemblerContext::get(const std::string& name) const {
         for (const AssemblerContext *self = this; self; self = self->m_parent) {
           TermMap::const_iterator it = self->m_terms.find(name);
           if (it != self->m_terms.end())
@@ -49,37 +49,39 @@ namespace Psi {
         throw AssemblerError("Name not defined: " + name);
       }
 
-      void AssemblerContext::put(const std::string& name, Term* value) {
+      void AssemblerContext::put(const std::string& name, const ValuePtr<>& value) {
         std::pair<TermMap::iterator, bool> result = m_terms.insert(std::make_pair(name, value));
         if (!result.second)
           throw AssemblerError("Name defined twice: " + name);
       }
 
-      Term* build_functional_expression(AssemblerContext& context, const Parser::CallExpression& expression) {
+      ValuePtr<> build_functional_expression(AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& logical_location) {
         boost::unordered_map<std::string, FunctionalTermCallback>::const_iterator it =
           functional_ops.find(expression.target->text);
 
         if (it == functional_ops.end())
           throw AssemblerError("unknown operation " + expression.target->text);
 
-        return it->second(it->first, context, expression);
+        return it->second(it->first, context, expression, logical_location);
       }
 
-      Term* build_literal_int(AssemblerContext& context, IntegerType::Width width, bool is_signed, const Parser::LiteralExpression& expression) {
+      ValuePtr<> build_literal_int(AssemblerContext& context, IntegerType::Width width, bool is_signed,
+                                   const Parser::LiteralExpression& expression, const LogicalSourceLocationPtr& logical_location) {
         std::string value = expression.value->text;
         bool negative = (value[0] == '-');
         if (negative)
           value = value.substr(1);
-        return FunctionalBuilder::int_value(context.context(), width, is_signed, value, negative);
+        return FunctionalBuilder::int_value(context.context(), width, is_signed, value, negative,
+                                            SourceLocation(expression.location, logical_location));
       }
 
-      Term* build_literal(AssemblerContext& context, const Parser::LiteralExpression& expression) {
+      ValuePtr<> build_literal(AssemblerContext& context, const Parser::LiteralExpression& expression, const LogicalSourceLocationPtr& logical_location) {
         switch (expression.literal_type) {
 #define HANDLE_INT(lit_name,int_name)                                   \
           case Parser::literal_##lit_name:                              \
-            return build_literal_int(context, IntegerType::int_name, true, expression); \
+            return build_literal_int(context, IntegerType::int_name, true, expression, logical_location); \
         case Parser::literal_u##lit_name:                               \
-            return build_literal_int(context, IntegerType::int_name, false, expression);
+            return build_literal_int(context, IntegerType::int_name, false, expression, logical_location);
 
           HANDLE_INT(byte,  i8)
           HANDLE_INT(short, i16)
@@ -95,66 +97,72 @@ namespace Psi {
         }
       }
 
-      Term* build_expression(AssemblerContext& context, const Parser::Expression& expression) {
+      ValuePtr<> build_expression(AssemblerContext& context, const Parser::Expression& expression, const LogicalSourceLocationPtr& logical_location) {
         switch(expression.expression_type) {
         case Parser::expression_call:
-          return build_functional_expression(context, checked_cast<const Parser::CallExpression&>(expression));
+          return build_functional_expression(context, checked_cast<const Parser::CallExpression&>(expression), logical_location);
 
         case Parser::expression_name:
           return context.get(checked_cast<const Parser::NameExpression&>(expression).name->text);
 
         case Parser::expression_function_type:
-          return build_function_type(context, checked_cast<const Parser::FunctionTypeExpression&>(expression));
+          return build_function_type(context, checked_cast<const Parser::FunctionTypeExpression&>(expression), logical_location);
 
         case Parser::expression_literal:
-          return build_literal(context, checked_cast<const Parser::LiteralExpression&>(expression));
+          return build_literal(context, checked_cast<const Parser::LiteralExpression&>(expression), logical_location);
 
         default:
           PSI_FAIL("invalid expression type");
         }
       }
 
-      void build_function_parameters(AssemblerContext& context,
-                                     const UniqueList<Parser::NamedExpression>& parameters,
-                                     ArrayPtr<FunctionTypeParameterTerm*>  result) {
-        std::size_t n = 0;
-        for (UniqueList<Parser::NamedExpression>::const_iterator it = parameters.begin();
-             it != parameters.end(); ++it, ++n) {
-          Term* param_type = build_expression(context, *it->expression);
-          FunctionTypeParameterTerm* param = context.context().new_function_type_parameter(param_type);
+      std::vector<ValuePtr<FunctionTypeParameter> > build_function_parameters(AssemblerContext& context,
+                                                                              const UniqueList<Parser::NamedExpression>& parameters,
+                                                                              const LogicalSourceLocationPtr& logical_location) {
+        std::vector<ValuePtr<FunctionTypeParameter> > result;
+        for (UniqueList<Parser::NamedExpression>::const_iterator it = parameters.begin(); it != parameters.end(); ++it) {
+          ValuePtr<> param_type = build_expression(context, *it->expression, logical_location);
+          ValuePtr<FunctionTypeParameter> param = context.context().new_function_type_parameter(param_type);
           if (it->name)
             context.put(it->name->text, param);
-          result[n] = param;
+          result.push_back(param);
         }
+        return result;
       }
 
-      FunctionTypeTerm* build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type) {
+      ValuePtr<FunctionType> build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type, const LogicalSourceLocationPtr& logical_location) {
         AssemblerContext my_context(&context);
 
-        ScopedArray<FunctionTypeParameterTerm*> phantom_parameters(function_type.phantom_parameters.size());
-        build_function_parameters(my_context, function_type.phantom_parameters, phantom_parameters);
+        std::vector<ValuePtr<FunctionTypeParameter> > phantom_parameters =
+          build_function_parameters(my_context, function_type.phantom_parameters, logical_location);
+          
+        unsigned n_phantom = phantom_parameters.size();
 
-        ScopedArray<FunctionTypeParameterTerm*> parameters(function_type.parameters.size());
-        build_function_parameters(my_context, function_type.parameters, parameters);
+        std::vector<ValuePtr<FunctionTypeParameter> > parameters =
+          build_function_parameters(my_context, function_type.parameters, logical_location);
+          
+        parameters.insert(parameters.begin(), phantom_parameters.begin(), phantom_parameters.end());
 
-        Term* result_type = build_expression(my_context, *function_type.result_type);
+        ValuePtr<> result_type = build_expression(my_context, *function_type.result_type, logical_location);
 
-        return context.context().get_function_type(function_type.calling_convention, result_type, phantom_parameters, parameters);
+        return context.context().get_function_type(function_type.calling_convention, result_type, parameters, n_phantom,
+                                                   SourceLocation(function_type.location, logical_location));
       }
 
-      Term* build_instruction_expression(AssemblerContext& context, InstructionBuilder& builder, const Parser::CallExpression& expression) {
+      ValuePtr<> build_instruction_expression(AssemblerContext& context, InstructionBuilder& builder, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& logical_location) {
         boost::unordered_map<std::string, InstructionTermCallback>::const_iterator it =
           instruction_ops.find(expression.target->text);
 
         if (it != instruction_ops.end()) {
-          return it->second(it->first, builder, context, expression);
+          return it->second(it->first, builder, context, expression, logical_location);
         } else {
-          return build_functional_expression(context, expression);
+          return build_functional_expression(context, expression, logical_location);
         }
       }
 
-      Term* build_instruction(AssemblerContext& context, std::vector<PhiTerm*>& phi_nodes,
-                              InstructionBuilder& builder, const Parser::Expression& expression) {
+      ValuePtr<> build_instruction(AssemblerContext& context, std::vector<ValuePtr<Phi> >& phi_nodes,
+                                   InstructionBuilder& builder, const Parser::Expression& expression,
+                                   const LogicalSourceLocationPtr& logical_location) {
         switch(expression.expression_type) {
         case Parser::expression_phi: {
           const Parser::PhiExpression& phi_expr = checked_cast<const Parser::PhiExpression&>(expression);
@@ -162,87 +170,95 @@ namespace Psi {
           // check that all the incoming edges listed are indeed label values
           for (UniqueList<Parser::PhiNode>::const_iterator kt = phi_expr.nodes.begin();
                kt != phi_expr.nodes.end(); ++kt) {
-            Term *block = context.get(kt->label->text);
+            ValuePtr<> block = context.get(kt->label->text);
             if (block->term_type() != term_block)
               throw AssemblerError("incoming label of phi node does not name a block");
           }
 
-          Term* type = build_expression(context, *phi_expr.type);
-          PhiTerm *phi = builder.insert_point().block()->new_phi(type);
+          ValuePtr<> type = build_expression(context, *phi_expr.type, logical_location);
+          ValuePtr<Phi> phi = builder.insert_point().block()->insert_phi(type, SourceLocation(phi_expr.location, logical_location));
           phi_nodes.push_back(phi);
           return phi;
         }
 
         case Parser::expression_call:
-          return build_instruction_expression(context, builder, checked_cast<const Parser::CallExpression&>(expression));
+          return build_instruction_expression(context, builder, checked_cast<const Parser::CallExpression&>(expression), logical_location);
 
         default:
-          return build_expression(context, expression);
+          return build_expression(context, expression, logical_location);
         }
       }
 
-      void build_function(AssemblerContext& context, FunctionTerm& function, const Parser::Function& function_def) {
+      void build_function(AssemblerContext& context, const ValuePtr<Function>& function, const Parser::Function& function_def) {
         AssemblerContext my_context(&context);
 
-        std::vector<BlockTerm*> blocks;
-
-        BlockTerm* entry = function.new_block();
-        function.set_entry(entry);
+        std::vector<ValuePtr<Block> > blocks;
+        
+        LogicalSourceLocationPtr logical_location = function->location().logical;
+        
+        ValuePtr<Block> entry = function->new_block(function->location());
+        function->set_entry(entry);
         blocks.push_back(entry);
 
         std::size_t n = 0;
         for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->phantom_parameters.begin();
              it != function_def.type->phantom_parameters.end(); ++it, ++n) {
           if (it->name) {
-            my_context.put(it->name->text, function.parameter(n));
-            function.add_term_name(function.parameter(n), it->name->text);
+            my_context.put(it->name->text, function->parameter(n));
+            function->add_term_name(function->parameter(n), it->name->text);
           }
         }
 
         for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->parameters.begin();
              it != function_def.type->parameters.end(); ++it, ++n) {
           if (it->name) {
-            my_context.put(it->name->text, function.parameter(n));
-            function.add_term_name(function.parameter(n), it->name->text);
+            my_context.put(it->name->text, function->parameter(n));
+            function->add_term_name(function->parameter(n), it->name->text);
           }
         }
 
         for (UniqueList<Parser::Block>::const_iterator it = boost::next(function_def.blocks.begin());
              it != function_def.blocks.end(); ++it) {
-          BlockTerm* dominator;
+          ValuePtr<Block> dominator;
           if (it->dominator_name) {
-            Term* dominator_base = my_context.get(it->dominator_name->text);
+            ValuePtr<> dominator_base = my_context.get(it->dominator_name->text);
             if (dominator_base->term_type() != term_block)
               throw AssemblerError("dominator block name is not a block");
-            dominator = checked_cast<BlockTerm*>(dominator_base);
+            dominator = value_cast<Block>(dominator_base);
           } else {
             dominator = entry;
           }
-          BlockTerm* bl = function.new_block(dominator);
+          LogicalSourceLocationPtr block_location_logical = logical_location->named_child(it->name->text);
+          ValuePtr<Block> bl = function->new_block(dominator, SourceLocation(it->location, block_location_logical));
           my_context.put(it->name->text, bl);
-          function.add_term_name(bl, it->name->text);
+          function->add_term_name(bl, it->name->text);
           blocks.push_back(bl);
         }
 
-        std::vector<PhiTerm*> phi_nodes;
-        std::vector<BlockTerm*>::const_iterator bt = blocks.begin();
+        std::vector<ValuePtr<Phi> > phi_nodes;
+        std::vector<ValuePtr<Block> >::const_iterator bt = blocks.begin();
         for (UniqueList<Parser::Block>::const_iterator it = function_def.blocks.begin();
              it != function_def.blocks.end(); ++it, ++bt) {
           PSI_ASSERT(bt != blocks.end());
           InstructionBuilder builder(*bt);
           for (UniqueList<Parser::NamedExpression>::const_iterator jt = it->statements.begin();
                jt != it->statements.end(); ++jt) {
-            Term* value = build_instruction(my_context, phi_nodes, builder, *jt->expression);
+            LogicalSourceLocationPtr value_location;
+            if (jt->name)
+              value_location = logical_location->named_child(jt->name->text);
+            else
+              value_location = logical_location->new_anonymous_child();
+            ValuePtr<> value = build_instruction(my_context, phi_nodes, builder, *jt->expression, value_location);
             if (jt->name) {
               my_context.put(jt->name->text, value);
-              function.add_term_name(value, jt->name->text);
+              function->add_term_name(value, jt->name->text);
             }
           }
         }
 
         // add values to phi terms
         bt = blocks.begin();
-        std::vector<PhiTerm*>::iterator pt = phi_nodes.begin();
+        std::vector<ValuePtr<Phi> >::iterator pt = phi_nodes.begin();
         for (UniqueList<Parser::Block>::const_iterator it = function_def.blocks.begin();
              it != function_def.blocks.end(); ++it, ++bt) {
           PSI_ASSERT(bt != blocks.end());
@@ -253,14 +269,14 @@ namespace Psi {
 
             PSI_ASSERT(pt != phi_nodes.end());
             const Parser::PhiExpression& phi_expr = checked_cast<const Parser::PhiExpression&>(*jt->expression);
-            PhiTerm *phi_term = *pt;
+            ValuePtr<Phi> phi_term = *pt;
             ++pt;
 
             for (UniqueList<Parser::PhiNode>::const_iterator kt = phi_expr.nodes.begin();
                  kt != phi_expr.nodes.end(); ++kt) {
-              BlockTerm *block = cast<BlockTerm>(my_context.get(kt->label->text));
-              Term *value = build_expression(my_context, *kt->expression);
-              phi_term->add_incoming(block, value);
+              ValuePtr<Block> block = value_cast<Block>(my_context.get(kt->label->text));
+              ValuePtr<> value = build_expression(my_context, *kt->expression, phi_term->location().logical);
+              phi_term->add_edge(block, value);
             }
           }
         }
@@ -275,23 +291,24 @@ namespace Psi {
 
       for (UniqueList<Parser::NamedGlobalElement>::const_iterator it = globals.begin();
            it != globals.end(); ++it) {
+        LogicalSourceLocationPtr location = module.location().logical->named_child(it->name->text);
         if (it->value->global_type == Parser::global_function) {
           const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
-          FunctionTypeTerm* function_type = Assembler::build_function_type(asmct, *def.type);
-          FunctionTerm* function = module.new_function(it->name->text, function_type);
+          ValuePtr<FunctionType> function_type = Assembler::build_function_type(asmct, *def.type, location);
+          ValuePtr<Function> function = module.new_function(it->name->text, function_type, SourceLocation(def.location, location));
           asmct.put(it->name->text, function);
           result[it->name->text] = function;
         } else if (it->value->global_type == Parser::global_variable) {
           const Parser::GlobalVariable& var = checked_cast<const Parser::GlobalVariable&>(*it->value);
-          Term* global_type = Assembler::build_expression(asmct, *var.type);
-          GlobalVariableTerm* global_var = module.new_global_variable(it->name->text, global_type);
+          ValuePtr<> global_type = Assembler::build_expression(asmct, *var.type, location);
+          ValuePtr<GlobalVariable> global_var = module.new_global_variable(it->name->text, global_type, SourceLocation(var.location, location));
           global_var->set_constant(var.constant);
           asmct.put(it->name->text, global_var);
           result[it->name->text] = global_var;
         } else {
           const Parser::GlobalDefine& def = checked_cast<const Parser::GlobalDefine&>(*it->value);
           PSI_ASSERT(it->value->global_type == Parser::global_define);
-          Term* ptr = Assembler::build_expression(asmct, *def.value);
+          ValuePtr<> ptr = Assembler::build_expression(asmct, *def.value, location);
           asmct.put(it->name->text, ptr);
         }
       }
@@ -301,18 +318,18 @@ namespace Psi {
         if (it->value->global_type == Parser::global_define)
           continue;
 
-        GlobalTerm* ptr = result[it->name->text];
+        ValuePtr<Global> ptr = result[it->name->text];
         PSI_ASSERT(ptr);
         if (it->value->global_type == Parser::global_function) {
           const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
-          FunctionTerm* function = cast<FunctionTerm>(ptr);
+          ValuePtr<Function> function = value_cast<Function>(ptr);
           if (!def.blocks.empty())
-            Assembler::build_function(asmct, *function, def);
+            Assembler::build_function(asmct, function, def);
         } else {
           PSI_ASSERT(it->value->global_type == Parser::global_variable);
           const Parser::GlobalVariable& var = checked_cast<const Parser::GlobalVariable&>(*it->value);
-          GlobalVariableTerm* global_var = cast<GlobalVariableTerm>(ptr);
-          Term* value = Assembler::build_expression(asmct, *var.value);
+          ValuePtr<GlobalVariable> global_var = value_cast<GlobalVariable>(ptr);
+          ValuePtr<> value = Assembler::build_expression(asmct, *var.value, global_var->location().logical);
           global_var->set_value(value);
         }
       }

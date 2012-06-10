@@ -364,9 +364,9 @@ namespace Psi {
       void dump();
       
       ValuePtr<Global> get_member(const std::string& name);
-      ValuePtr<GlobalVariable> new_global_variable(const std::string& name, const ValuePtr<>& type);
-      ValuePtr<GlobalVariable> new_global_variable_set(const std::string&, const ValuePtr<>& value);
-      ValuePtr<Function> new_function(const std::string& name, const ValuePtr<FunctionType>& type);
+      ValuePtr<GlobalVariable> new_global_variable(const std::string& name, const ValuePtr<>& type, const SourceLocation& location);
+      ValuePtr<GlobalVariable> new_global_variable_set(const std::string&, const ValuePtr<>& value, const SourceLocation& location);
+      ValuePtr<Function> new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location);
     };
 
     /**

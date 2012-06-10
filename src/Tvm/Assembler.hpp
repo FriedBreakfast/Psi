@@ -36,29 +36,29 @@ namespace Psi {
 
         Module& module() const;
         Context& context() const;
-        Term* get(const std::string& name) const;
-        void put(const std::string& name, Term* value);
+        ValuePtr<> get(const std::string& name) const;
+        void put(const std::string& name, const ValuePtr<>& value);
 
       private:
         Module *m_module;
         const AssemblerContext *m_parent;
-        typedef boost::unordered_map<std::string, Term*> TermMap;
+        typedef boost::unordered_map<std::string, ValuePtr<> > TermMap;
         TermMap m_terms;
       };
 
-      Term* build_expression(AssemblerContext& context, const Parser::Expression& expression);
-      FunctionTypeTerm* build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type);
-      FunctionTerm* build_function(AssemblerContext& context, const Parser::Function& function);
-      Term* build_call_expression(AssemblerContext& context, const Parser::Expression& expression);
+      ValuePtr<> build_expression(AssemblerContext& context, const Parser::Expression& expression, const LogicalSourceLocationPtr& location);
+      ValuePtr<FunctionType> build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type, const LogicalSourceLocationPtr& location);
+      void build_function(AssemblerContext& context, const ValuePtr<Function>& function, const Parser::Function& function_def);
+      ValuePtr<> build_call_expression(AssemblerContext& context, const Parser::Expression& expression, const LogicalSourceLocationPtr& location);
 
-      typedef boost::function<Term*(const std::string&,AssemblerContext&,const Parser::CallExpression&)> FunctionalTermCallback;
-      typedef boost::function<InstructionTerm*(const std::string&,InstructionBuilder&,AssemblerContext&,const Parser::CallExpression&)> InstructionTermCallback;
+      typedef boost::function<ValuePtr<>(const std::string&,AssemblerContext&,const Parser::CallExpression&,const LogicalSourceLocationPtr&)> FunctionalTermCallback;
+      typedef boost::function<ValuePtr<Instruction>(const std::string&,InstructionBuilder&,AssemblerContext&,const Parser::CallExpression&,const LogicalSourceLocationPtr&)> InstructionTermCallback;
 
       extern const boost::unordered_map<std::string, FunctionalTermCallback> functional_ops;
       extern const boost::unordered_map<std::string, InstructionTermCallback> instruction_ops;
     }
 
-    typedef boost::unordered_map<std::string, GlobalTerm*> AssemblerResult;
+    typedef boost::unordered_map<std::string, ValuePtr<Global> > AssemblerResult;
 
     AssemblerResult build(Module&, const boost::intrusive::list<Parser::NamedGlobalElement>&);
     AssemblerResult parse_and_build(Module&, const char*, const char*);

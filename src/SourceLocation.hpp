@@ -23,10 +23,10 @@ namespace Psi {
 
   class LogicalSourceLocation : public boost::intrusive::avl_set_base_hook<> {
     struct Key {
-            unsigned index;
-            String name;
+      unsigned index;
+      String name;
 
-            bool operator < (const Key&) const;
+      bool operator < (const Key&) const;
     };
 
     struct Compare {bool operator () (const LogicalSourceLocation&, const LogicalSourceLocation&) const;};

@@ -140,6 +140,7 @@ namespace Psi {
       bool dominated_by(const ValuePtr<Block>& block);
       
       static ValuePtr<Block> common_dominator(const ValuePtr<Block>&, const ValuePtr<Block>&);
+      static bool isa_impl(const Value& v) {return v.term_type() == term_block;}
 
     private:
       Block(Context *context, const ValuePtr<Function>& function, const ValuePtr<Block>& dominator, bool);
@@ -203,7 +204,7 @@ namespace Psi {
       ValuePtr<Block> new_landing_pad(const SourceLocation& location);
       ValuePtr<Block> new_landing_pad(const ValuePtr<Block>& dominator, const SourceLocation& location);
 
-      void add_term_name(Value *term, const std::string& name);
+      void add_term_name(const ValuePtr<>& term, const std::string& name);
       const TermNameMap& term_name_map() {return m_name_map;}
       std::vector<ValuePtr<Block> > topsort_blocks();
       

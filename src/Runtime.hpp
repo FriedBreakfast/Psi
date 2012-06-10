@@ -223,6 +223,7 @@ namespace Psi {
   public:
     String();
     String(const String&);
+    String(const std::string&);
     String(const char*);
     String(const char*, const char*);
     String(const char*, PsiSize);

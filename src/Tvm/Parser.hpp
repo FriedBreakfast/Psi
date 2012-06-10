@@ -5,25 +5,19 @@
 
 #include "Core.hpp"
 #include "ParserUtility.hpp"
+#include "../SourceLocation.hpp"
 
 namespace Psi {
   namespace Tvm {
     namespace Parser {
-      struct Location {
-        int first_line;
-        int first_column;
-        int last_line;
-        int last_column;
-      };
-
       struct Element {
-        Element(const Location& location_);
+        Element(const PhysicalSourceLocation& location_);
 
-        Location location;
+        PhysicalSourceLocation location;
       };
 
       struct Token : Element, boost::intrusive::list_base_hook<> {
-        Token(const Location& location_, const std::string& text_);
+        Token(const PhysicalSourceLocation& location_, const std::string& text_);
 
         std::string text;
       };
@@ -31,8 +25,8 @@ namespace Psi {
       struct Expression;
 
       struct NamedExpression : Element, boost::intrusive::list_base_hook<> {
-        NamedExpression(const Location& location_, UniquePtr<Token>& name_, UniquePtr<Expression>& expression_);
-        NamedExpression(const Location& location_, UniquePtr<Expression>& expression_);
+        NamedExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, UniquePtr<Expression>& expression_);
+        NamedExpression(const PhysicalSourceLocation& location_, UniquePtr<Expression>& expression_);
         virtual ~NamedExpression();
 
         UniquePtr<Token> name;
@@ -48,21 +42,21 @@ namespace Psi {
       };
 
       struct Expression : Element, boost::intrusive::list_base_hook<> {
-        Expression(const Location& location_, ExpressionType expression_type_);
+        Expression(const PhysicalSourceLocation& location_, ExpressionType expression_type_);
         virtual ~Expression();
 
         ExpressionType expression_type;
       };
 
       struct NameExpression : Expression {
-        NameExpression(const Location& location_, UniquePtr<Token>& name);
+        NameExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name);
         virtual ~NameExpression();
 
         UniquePtr<Token> name;
       };
 
       struct PhiNode : Element, boost::intrusive::list_base_hook<> {
-        PhiNode(const Location& location_, UniquePtr<Token>& label_, UniquePtr<Expression>& expression_);
+        PhiNode(const PhysicalSourceLocation& location_, UniquePtr<Token>& label_, UniquePtr<Expression>& expression_);
         ~PhiNode();
 
         UniquePtr<Token> label;
@@ -70,7 +64,7 @@ namespace Psi {
       };
 
       struct PhiExpression : Expression {
-        PhiExpression(const Location& location_, UniquePtr<Expression>& type_, UniqueList<PhiNode>& nodes);
+        PhiExpression(const PhysicalSourceLocation& location_, UniquePtr<Expression>& type_, UniqueList<PhiNode>& nodes);
         virtual ~PhiExpression();
 
         UniquePtr<Expression> type;
@@ -78,7 +72,7 @@ namespace Psi {
       };
 
       struct CallExpression : Expression {
-        CallExpression(const Location& location_, UniquePtr<Token>& target_,
+        CallExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& target_,
                        UniqueList<Expression>& terms_);
         virtual ~CallExpression();
 
@@ -87,7 +81,7 @@ namespace Psi {
       };
 
       struct FunctionTypeExpression : Expression {
-        FunctionTypeExpression(const Location& location_,
+        FunctionTypeExpression(const PhysicalSourceLocation& location_,
                                CallingConvention calling_convention_,
                                UniqueList<NamedExpression>& phantom_parameters_,
                                UniqueList<NamedExpression>& parameters_,
@@ -116,7 +110,7 @@ namespace Psi {
       };
 
       struct LiteralExpression : Expression {
-        LiteralExpression(const Location& location_, LiteralType literal_type_, UniquePtr<Token>& value_);
+        LiteralExpression(const PhysicalSourceLocation& location_, LiteralType literal_type_, UniquePtr<Token>& value_);
         virtual ~LiteralExpression();
 
         LiteralType literal_type;
@@ -124,8 +118,8 @@ namespace Psi {
       };
 
       struct Block : Element, boost::intrusive::list_base_hook<> {
-        Block(const Location& location_, bool landing_pad_, UniqueList<NamedExpression>& statements_);
-        Block(const Location& location_, bool landing_pad_, UniquePtr<Token>& name_, UniquePtr<Token>& dominator_name_,
+        Block(const PhysicalSourceLocation& location_, bool landing_pad_, UniqueList<NamedExpression>& statements_);
+        Block(const PhysicalSourceLocation& location_, bool landing_pad_, UniquePtr<Token>& name_, UniquePtr<Token>& dominator_name_,
               UniqueList<NamedExpression>& statements_);
         ~Block();
 
@@ -142,16 +136,16 @@ namespace Psi {
       };
 
       struct GlobalElement : Element, boost::intrusive::list_base_hook<> {
-        GlobalElement(const Location& location_, GlobalType global_type_);
+        GlobalElement(const PhysicalSourceLocation& location_, GlobalType global_type_);
         virtual ~GlobalElement();
 
         GlobalType global_type;
       };
 
       struct Function : GlobalElement {
-        Function(const Location& location_,
+        Function(const PhysicalSourceLocation& location_,
                  UniquePtr<FunctionTypeExpression>& type_);
-        Function(const Location& location_,
+        Function(const PhysicalSourceLocation& location_,
                  UniquePtr<FunctionTypeExpression>& type_,
                  UniqueList<Block>& blocks_);
         virtual ~Function();
@@ -161,10 +155,10 @@ namespace Psi {
       };
 
       struct GlobalVariable : GlobalElement {
-        GlobalVariable(const Location& location_,
+        GlobalVariable(const PhysicalSourceLocation& location_,
                        bool constant_,
                        UniquePtr<Expression>& type_);
-        GlobalVariable(const Location& location_,
+        GlobalVariable(const PhysicalSourceLocation& location_,
                        bool constant_,
                        UniquePtr<Expression>& type_,
                        UniquePtr<Expression>& value_);
@@ -176,7 +170,7 @@ namespace Psi {
       };
 
       struct GlobalDefine : GlobalElement {
-        GlobalDefine(const Location& location_,
+        GlobalDefine(const PhysicalSourceLocation& location_,
                      UniquePtr<Expression>& value_);
         virtual ~GlobalDefine();
 
@@ -184,7 +178,7 @@ namespace Psi {
       };
 
       struct NamedGlobalElement : Element, boost::intrusive::list_base_hook<> {
-        NamedGlobalElement(const Location& location_, UniquePtr<Token>& name_, UniquePtr<GlobalElement>& value_);
+        NamedGlobalElement(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, UniquePtr<GlobalElement>& value_);
         ~NamedGlobalElement();
 
         UniquePtr<Token> name;

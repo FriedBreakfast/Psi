@@ -17,75 +17,76 @@ namespace Psi {
           throw TvmUserError(str(boost::format("%s: %d parameters expected") % name % expected));
       }
 
-      void default_parameter_setup(ArrayPtr<Term*> parameters, AssemblerContext& context, const Parser::CallExpression& expression) {
-        PSI_ASSERT(parameters.size() == expression.terms.size());
-        std::size_t n = 0;
-        for (UniqueList<Parser::Expression>::const_iterator it = expression.terms.begin(); it != expression.terms.end(); ++n, ++it)
-          parameters[n] = build_expression(context, *it);
+      std::vector<ValuePtr<> > default_parameter_setup(AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
+        std::vector<ValuePtr<> > parameters;
+        for (UniqueList<Parser::Expression>::const_iterator it = expression.terms.begin(); it != expression.terms.end(); ++it)
+          parameters.push_back(build_expression(context, *it, location));
+        return parameters;
       }
       
       struct NullaryOpCallback {
-        typedef Term* (*GetterType) (Context&);
+        typedef ValuePtr<> (*GetterType) (Context&,const SourceLocation&);
         GetterType getter;
         NullaryOpCallback(GetterType getter_) : getter(getter_) {}
-        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
+        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           check_n_terms(name, 0, expression);
-          return getter(context.context());
+          return getter(context.context(), SourceLocation(expression.location, location));
         }
       };
       
       struct UnaryOpCallback {
-        typedef Term* (*GetterType) (Term*);
+        typedef ValuePtr<> (*GetterType) (const ValuePtr<>&,const SourceLocation&);
         GetterType getter;
         UnaryOpCallback(GetterType getter_) : getter(getter_) {}
-        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
+        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           check_n_terms(name, 1, expression);
-          return getter(build_expression(context, expression.terms.front()));
+          return getter(build_expression(context, expression.terms.front(), location), SourceLocation(expression.location, location));
         }
       };
 
       struct BinaryOpCallback {
-        typedef Term* (*GetterType) (Term*,Term*);
+        typedef ValuePtr<> (*GetterType) (const ValuePtr<>&,const ValuePtr<>&,const SourceLocation&);
         GetterType getter;
         BinaryOpCallback(GetterType getter_) : getter(getter_) {}
-        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
+        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           check_n_terms(name, 2, expression);
-          StaticArray<Term*, 2> parameters;
-          default_parameter_setup(parameters, context, expression);
-          return getter(parameters[0], parameters[1]);
+          std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
+          return getter(parameters[0], parameters[1], SourceLocation(expression.location, location));
         }
       };
       
       struct ContextArrayCallback {
-        typedef Term* (*GetterType) (Context&,ArrayPtr<Term*const>);
+        typedef ValuePtr<> (*GetterType) (Context&,const std::vector<ValuePtr<> >&,const SourceLocation&);
         GetterType getter;
         ContextArrayCallback(GetterType getter_) : getter(getter_) {}
-        Term* operator () (const std::string&, AssemblerContext& context, const Parser::CallExpression& expression) {
-          ScopedArray<Term*> parameters(expression.terms.size());
-          default_parameter_setup(parameters, context, expression);
-          return getter(context.context(), parameters);
+        ValuePtr<> operator () (const std::string&, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
+          std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
+          return getter(context.context(), parameters, SourceLocation(expression.location, location));
         }
       };
       
       struct TermPlusArrayCallback {
-        typedef Term* (*GetterType) (Term*,ArrayPtr<Term*const>);
+        typedef ValuePtr<> (*GetterType) (const ValuePtr<>&,const std::vector<ValuePtr<> >&,const SourceLocation&);
         GetterType getter;
         TermPlusArrayCallback(GetterType getter_) : getter(getter_) {}
-        Term* operator () (const std::string&, AssemblerContext& context, const Parser::CallExpression& expression) {
-          ScopedArray<Term*> parameters(expression.terms.size());
-          default_parameter_setup(parameters, context, expression);
-          return getter(parameters[0], parameters.slice(1, parameters.size()));
+        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
+          std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
+          if (parameters.empty())
+            throw TvmUserError(str(boost::format("%s: at least one parameter expected") % name));
+          ValuePtr<> first = parameters.front();
+          parameters.erase(parameters.begin());
+          return getter(first, parameters, SourceLocation(expression.location, location));
         }
       };
       
       struct StructElementCallback {
-        typedef Term* (*GetterType) (Term*,unsigned);
+        typedef ValuePtr<> (*GetterType) (const ValuePtr<>&,unsigned,const SourceLocation&);
         GetterType getter;
         StructElementCallback(GetterType getter_) : getter(getter_) {}
-        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) {
+        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           check_n_terms(name, 2, expression);
           
-          Term *aggregate = build_expression(context, expression.terms.front());
+          ValuePtr<> aggregate = build_expression(context, expression.terms.front(), location);
           const Parser::Expression& index = expression.terms.back();
           
           if (index.expression_type != Parser::expression_literal)
@@ -94,7 +95,7 @@ namespace Psi {
           const Parser::LiteralExpression& index_literal = checked_cast<const Parser::LiteralExpression&>(index);
           unsigned index_int = boost::lexical_cast<unsigned>(index_literal.value->text);
           
-          return FunctionalBuilder::struct_element(aggregate, index_int);
+          return FunctionalBuilder::struct_element(aggregate, index_int, SourceLocation(expression.location, location));
         }
       };
 
@@ -104,9 +105,9 @@ namespace Psi {
 
         IntTypeCallback(IntegerType::Width width_, bool is_signed_) : width(width_), is_signed(is_signed_) {}
 
-        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
+        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
           check_n_terms(name, 0, expression);
-          return FunctionalBuilder::int_type(context.context(), width, is_signed);
+          return FunctionalBuilder::int_type(context.context(), width, is_signed, SourceLocation(expression.location, location));
         }
       };
 
@@ -115,9 +116,9 @@ namespace Psi {
 
         FloatTypeCallback(FloatType::Width width_) : width(width_) {}
 
-        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
+        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
           check_n_terms(name, 0, expression);
-          return FunctionalBuilder::float_type(context.context(), width);
+          return FunctionalBuilder::float_type(context.context(), width, SourceLocation(expression.location, location));
         }
       };
 
@@ -126,9 +127,9 @@ namespace Psi {
 
         BoolValueCallback(bool value_) : value(value_) {}
 
-        Term* operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression) const {
+        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
           check_n_terms(name, 0, expression);
-          return FunctionalBuilder::bool_value(context.context(), value);
+          return FunctionalBuilder::bool_value(context.context(), value, SourceLocation(expression.location, location));
         }
       };
 
@@ -179,39 +180,96 @@ namespace Psi {
         ("pointer_cast", BinaryOpCallback(&FunctionalBuilder::pointer_cast))
         ("pointer_offset", BinaryOpCallback(&FunctionalBuilder::pointer_offset));
 
-      template<typename T>
-      struct DefaultInstructionCallback {
-        InstructionTerm* operator () (const std::string&, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression) const {
-          ScopedArray<Term*> parameters(expression.terms.size());
-          default_parameter_setup(parameters, context, expression);
-          return builder.insert_point().template create<T>(parameters);
+      struct NullaryInstructionCallback {
+        typedef ValuePtr<Instruction> (InstructionBuilder::*CreateType) (const SourceLocation&);
+        CreateType create;
+        NullaryInstructionCallback(CreateType create_) : create(create_) {}
+        ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext&, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
+          check_n_terms(name, 0, expression);
+          return (builder.*create)(SourceLocation(expression.location, location));
         }
       };
       
-      struct NullaryInstructionCallback {
-        typedef InstructionTerm* (InstructionBuilder::*CreateType) ();
-        CreateType create;
-        NullaryInstructionCallback(CreateType create_) : create(create_) {}
-        InstructionTerm* operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext&, const Parser::CallExpression& expression) const {
-          check_n_terms(name, 0, expression);
-          return (builder.*create)();
+      struct UnaryInstructionCallback {
+        typedef ValuePtr<Instruction> (InstructionBuilder::*Callback) (const ValuePtr<>&, const SourceLocation&);
+        Callback callback;
+        UnaryInstructionCallback(Callback callback_) : callback(callback_) {}
+        ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
+          check_n_terms(name, 1, expression);
+          std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
+          return (builder.*callback)(parameters[0], SourceLocation(expression.location, location));
         }
       };
 
-#define CALLBACK(ty) (ty::operation, DefaultInstructionCallback<ty>())
+      struct BinaryInstructionCallback {
+        typedef ValuePtr<Instruction> (InstructionBuilder::*Callback) (const ValuePtr<>&, const ValuePtr<>&, const SourceLocation&);
+        Callback callback;
+        BinaryInstructionCallback(Callback callback_) : callback(callback_) {}
+        ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
+          check_n_terms(name, 2, expression);
+          std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
+          return (builder.*callback)(parameters[0], parameters[1], SourceLocation(expression.location, location));
+        }
+      };
+
+      struct CallCallback {
+        ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
+          std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
+          if (parameters.empty())
+            throw TvmUserError(str(boost::format("%s: at least one parameter expected") % name));
+          ValuePtr<> target = parameters.front();
+          parameters.erase(parameters.begin());
+          return builder.call(target, parameters, SourceLocation(expression.location, location));
+        }
+      };
+      
+      namespace {
+        ValuePtr<Block> as_block(const std::string& name, const ValuePtr<>& ptr) {
+          ValuePtr<Block> bl = dyn_cast<Block>(ptr);
+          if (!bl)
+            throw TvmUserError(str(boost::format("Parameter to %s is not a block") % name));
+          return bl;
+        }
+      }
+      
+      struct UnconditionalBranchCallback {
+        ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
+          check_n_terms(name, 1, expression);
+          std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
+          return builder.br(as_block(name, parameters[0]), SourceLocation(expression.location, location));
+        }
+      };
+
+      struct ConditionalBranchCallback {
+        ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
+          check_n_terms(name, 3, expression);
+          std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
+          return builder.cond_br(parameters[0], as_block(name, parameters[1]), as_block(name, parameters[2]), SourceLocation(expression.location, location));
+        }
+      };
+      
+      struct AllocaCallback {
+        ValuePtr<Instruction> operator () (const std::string&, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
+          std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
+          SourceLocation loc(expression.location, location);
+          switch (parameters.size()) {
+          case 1: return builder.alloca_(parameters[0], loc);
+          case 2: return builder.alloca_(parameters[0], parameters[1], loc);
+          case 3: return builder.alloca_(parameters[0], parameters[1], parameters[2], loc);
+          default: throw TvmUserError("alloca expects 1, 2 or 3 parameters");
+          }
+        }
+      };
 
       const boost::unordered_map<std::string, InstructionTermCallback> instruction_ops =
         boost::assign::map_list_of<std::string, InstructionTermCallback>
-        CALLBACK(FunctionInvoke)
-        CALLBACK(FunctionCall)
-        CALLBACK(UnconditionalBranch)
-        CALLBACK(ConditionalBranch)
-        CALLBACK(Return)
-        CALLBACK(Alloca)
-        CALLBACK(Load)
-        CALLBACK(Store);
-
-#undef CALLBACK
+        ("call", CallCallback())
+        ("br", UnconditionalBranchCallback())
+        ("cond_br", ConditionalBranchCallback())
+        ("return", UnaryInstructionCallback(&InstructionBuilder::return_))
+        ("alloca", AllocaCallback())
+        ("load", UnaryInstructionCallback(&InstructionBuilder::load))
+        ("store", BinaryInstructionCallback(&InstructionBuilder::store));
     }
   }
 }
