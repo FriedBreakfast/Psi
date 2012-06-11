@@ -44,6 +44,11 @@ namespace Psi {
       return functional_setup<T>()(value);
     }
 
+    class FunctionalValueVisitor {
+    public:
+      virtual void next(const ValuePtr<>& ptr) = 0;
+    };
+
     /**
      * \brief Base class of functional (machine state independent) terms.
      *
@@ -70,6 +75,8 @@ namespace Psi {
        */
       virtual ValuePtr<FunctionalValue> rewrite(RewriteCallback& callback) = 0;
       
+      virtual void visit(FunctionalValueVisitor& visitor) = 0;
+      
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_functional;}
 
     protected:
@@ -83,6 +90,7 @@ namespace Psi {
   public: \
     static const char operation[]; \
     virtual ValuePtr<FunctionalValue> rewrite(RewriteCallback& callback); \
+    virtual void visit(FunctionalValueVisitor& callback); \
     static bool isa_impl(const Value& ptr) {return (ptr.term_type() == term_functional) && (operation == checked_cast<const Type&>(ptr).operation_name());} \
   private: \
     Type(const RewriteCallback& callback, const Type& src); \

@@ -108,7 +108,7 @@ namespace Psi {
     private:
       Value *m_value;
     };
-
+    
     /**
      * \brief Base class for all compile- and run-time values.
      *
@@ -180,7 +180,7 @@ namespace Psi {
       void dump();
 
       std::size_t hash_value() const;
-
+      
     private:
       std::size_t m_reference_count;
       Context *m_context;
@@ -352,18 +352,12 @@ namespace Psi {
       struct GlobalEquals {bool operator () (const Global&, const Global&) const;};
       struct GlobalHasher {std::size_t operator () (const Global&) const;};
       
-      typedef boost::intrusive::unordered_set<Global,
-                                              boost::intrusive::member_hook<Global, boost::intrusive::unordered_set_member_hook<>, &Global::m_module_member_hook>,
-                                              boost::intrusive::equal<GlobalEquals>,
-                                              boost::intrusive::hash<GlobalHasher>,
-                                              boost::intrusive::power_2_buckets<true> > ModuleMemberList;
+      typedef std::map<std::string, ValuePtr<Global> > ModuleMemberList;
                                               
     private:
       Context *m_context;
       SourceLocation m_location;
       std::string m_name;
-      static const std::size_t initial_members_buckets = 64;
-      UniqueArray<ModuleMemberList::bucket_type> m_members_buckets;
       ModuleMemberList m_members;
       
       void add_member(const ValuePtr<Global>& global);

@@ -221,16 +221,14 @@ namespace Psi {
     Module::Module(Context *context, const std::string& name, const SourceLocation& location)
     : m_context(context),
     m_location(location),
-    m_name(name),
-    m_members_buckets(initial_members_buckets),
-    m_members(ModuleMemberList::bucket_traits(m_members_buckets.get(), initial_members_buckets)) {
+    m_name(name) {
     }
     
     Module::~Module() {
     }
 
     void Module::add_member(const ValuePtr<Global>& term) {
-      if (!m_members.insert(*term).second)
+      if (!m_members.insert(std::make_pair(term->name(), term)).second)
         throw TvmUserError("Duplicate module member name");
     }
     

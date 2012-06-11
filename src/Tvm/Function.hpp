@@ -27,6 +27,11 @@ namespace Psi {
       ValuePtr<Block> m_block;
     };
     
+    class InstructionVisitor {
+    public:
+      virtual void next(ValuePtr<>& ptr) = 0;
+    };
+    
     /**
      * \brief Instruction term. Per-instruction funtionality is
      * created by implementing InstructionTermBackend and wrapping
@@ -37,7 +42,7 @@ namespace Psi {
       
     public:
       const char *operation_name() const {return m_operation;}
-      virtual void rewrite(RewriteCallback& callback) = 0;
+      virtual void visit(InstructionVisitor& visitor) = 0;
 
     protected:
       Instruction(const ValuePtr<>& type, const OperationSetup& setup, const SourceLocation& location);
@@ -61,7 +66,7 @@ namespace Psi {
 #define PSI_TVM_INSTRUCTION_DECL(Type) \
   public: \
     static const char operation[]; \
-    virtual void rewrite(RewriteCallback& callback); \
+    virtual void visit(InstructionVisitor& callback); \
     static bool isa_impl(const Value *ptr) {return (ptr->term_type() == term_instruction) && (operation == value_cast<Type>(ptr)->operation_name());} \
     
 #define PSI_TVM_INSTRUCTION_IMPL(Type,Base,Name) \
@@ -111,18 +116,14 @@ namespace Psi {
       friend class FunctionTerm;
 
     public:
-      typedef boost::intrusive::list<Instruction,
-                                     boost::intrusive::member_hook<Instruction, Instruction::InstructionListHook, &Instruction::m_instruction_list_hook>,
-                                     boost::intrusive::constant_time_size<false> > InstructionList;
-      typedef boost::intrusive::list<Phi,
-                                     boost::intrusive::member_hook<Phi, Phi::PhiListHook, &Phi::m_phi_list_hook>,
-                                     boost::intrusive::constant_time_size<false> > PhiList;
+      typedef std::vector<ValuePtr<Instruction> > InstructionList;
+      typedef std::vector<ValuePtr<Phi> > PhiList;
 
       ValuePtr<Phi> insert_phi(const ValuePtr<>& type, const SourceLocation& location);
       void insert_instruction(const ValuePtr<Instruction>& insn, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
 
-      InstructionList& instructions() {return m_instructions;}
-      PhiList& phi_nodes() {return m_phi_nodes;}
+      const InstructionList& instructions() const {return m_instructions;}
+      const PhiList& phi_nodes() const {return m_phi_nodes;}
 
       /** \brief Whether this block has been terminated so no more instructions can be added. */
       bool terminated() {return m_terminated;}
@@ -176,7 +177,7 @@ namespace Psi {
     class Function : public Global {
       friend class Module;
     public:
-      typedef boost::unordered_multimap<Value*, std::string> TermNameMap;
+      typedef boost::unordered_multimap<ValuePtr<>, std::string> TermNameMap;
 
       /**
        * Get the type of this function. This returns the raw function

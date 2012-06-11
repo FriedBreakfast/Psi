@@ -723,27 +723,26 @@ namespace Psi {
         const ValuePtr<Block>& new_block = ii->second;
 
         // Generate PHI nodes
-        Block::PhiList& phi_list = old_block->phi_nodes();
-        for (Block::PhiList::iterator ji = phi_list.begin(), je = phi_list.end(); ji != je; ++ji)
-          create_phi_node(new_block, ValuePtr<Phi>(&*ji));
+        const Block::PhiList& phi_list = old_block->phi_nodes();
+        for (Block::PhiList::const_iterator ji = phi_list.begin(), je = phi_list.end(); ji != je; ++ji)
+          create_phi_node(new_block, *ji);
 
         // Create instructions
-        Block::InstructionList& insn_list = old_block->instructions();
+        const Block::InstructionList& insn_list = old_block->instructions();
         m_builder.set_insert_point(new_block);
-        for (Block::InstructionList::iterator ji = insn_list.begin(), je = insn_list.end(); ji != je; ++ji) {
-          ValuePtr<Instruction> insn(&*ji);
-          LoweredValue value = InstructionTermRewriter::callback_map.call(*this, insn);
+        for (Block::InstructionList::const_iterator ji = insn_list.begin(), je = insn_list.end(); ji != je; ++ji) {
+          LoweredValue value = InstructionTermRewriter::callback_map.call(*this, *ji);
           if (value.value())
-            m_value_map[insn] = value;
+            m_value_map[*ji] = value;
         }
       }
       
       // Populate preexisting PHI nodes with values
       for (std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > >::iterator ii = sorted_blocks.begin(), ie = sorted_blocks.end(); ii != ie; ++ii) {
         ValuePtr<Block> old_block = ii->first;
-        Block::PhiList& phi_list = old_block->phi_nodes();
-        for (Block::PhiList::iterator ji = phi_list.begin(), je = phi_list.end(); ji != je; ++ji) {
-          ValuePtr<Phi> phi_node(&*ji);
+        const Block::PhiList& phi_list = old_block->phi_nodes();
+        for (Block::PhiList::const_iterator ji = phi_list.begin(), je = phi_list.end(); ji != je; ++ji) {
+          const ValuePtr<Phi>& phi_node = *ji;
 
           std::vector<PhiEdge> edges;
           for (unsigned ki = 0, ke = phi_node->edges().size(); ki != ke; ++ki) {
@@ -1068,7 +1067,7 @@ namespace Psi {
         }
         
         // Create memory slots
-        m_builder.set_insert_point(ValuePtr<Instruction>(&type_block->instructions().back()));
+        m_builder.set_insert_point(type_block->instructions().back());
         
         BlockPhiData& entry_data = ii->second[type_block];
         entry_data.free_.resize(total_vars);
@@ -1392,7 +1391,7 @@ namespace Psi {
       for (Module::ModuleMemberList::iterator i = source_module()->members().begin(),
            e = source_module()->members().end(); i != e; ++i) {
         
-        ValuePtr<Global> term(&*i);
+        ValuePtr<Global> term = i->second;
         if (global_map_get(term))
           continue;
       
