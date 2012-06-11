@@ -37,7 +37,7 @@ namespace Psi {
     }
 
     Value::Value(Context *context, TermType term_type, const ValuePtr<>& type,
-                 const ValuePtr<>& source, const SourceLocation& location)
+                 Value *source, const SourceLocation& location)
     : m_reference_count(0),
     m_context(context),
     m_term_type(term_type),
@@ -82,8 +82,8 @@ namespace Psi {
       delete this;
     }
 
-    std::size_t Term::hash_value() const {
-      if (HashableValue *ht = dyn_cast<HashableValue>(const_cast<Term*>(this)))
+    std::size_t Value::hash_value() const {
+      if (const HashableValue *ht = dyn_cast<HashableValue>(this))
         return ht->m_hash;
       else
         return boost::hash_value(this);
@@ -92,16 +92,17 @@ namespace Psi {
     /**
      * Dump this term to stderr.
      */
-    void Term::dump() {
-      print_term(std::cerr, this);
+    void Value::dump() {
+      print_term(std::cerr, ValuePtr<>(this));
     }
     
-    std::size_t Context::HashTermHasher::operator() (const HashTerm& h) const {
+    std::size_t Context::HashableValueHasher::operator() (const HashableValue& h) const {
       return h.m_hash;
     }
 
-    HashableValue::HashableValue(Context *context, TermType term_type, const ValuePtr<>& type, std::size_t hash)
-    : Value(context, term_type, type),
+    HashableValue::HashableValue(Context *context, TermType term_type, const ValuePtr<>& type, std::size_t hash,
+                                 Value *source, const SourceLocation& location)
+    : Value(context, term_type, type, source, location),
       m_hash(hash) {
     }
 
@@ -117,8 +118,8 @@ namespace Psi {
      * contents; the final type of this variable will in fact be a
      * pointer to this type.
      */
-    Global::Global(Context *context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module)
-    : Value(context, term_type, PointerType::get(type)),
+    Global::Global(Context *context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
+    : Value(context, term_type, PointerType::get(type, location), this, location),
       m_name(name),
       m_module(module) {
     }
@@ -127,57 +128,36 @@ namespace Psi {
      * \brief Get the value type of a global, i.e. the type pointed to
      * by the global's value.
      */
-    Term* GlobalTerm::value_type() const {
-      return cast<PointerType>(type())->target_type();
+    ValuePtr<> Global::value_type() const {
+      return value_cast<PointerType>(type())->target_type();
     }
 
-    GlobalVariableTerm::GlobalVariableTerm(const UserInitializer& ui, Context *context, Term* type,
-                                           const std::string& name, Module *module)
-      : GlobalTerm(ui, context, term_global_variable, type, name, module),
-        m_constant(false) {
+    GlobalVariable::GlobalVariable(Context *context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
+    : Global(context, term_global_variable, type, name, module, location),
+      m_constant(false) {
     }
 
-    void GlobalVariableTerm::set_value(Term* value) {
+    void GlobalVariable::set_value(const ValuePtr<>& value) {
       if (value->phantom())
         throw TvmUserError("value of global variable cannot be phantom");
 
       if (value->source()) {
-        GlobalTerm *source = dyn_cast<GlobalTerm>(value->source());
+        Global *source = dyn_cast<Global>(value->source());
         if (!source || (module() != source->module()))
           throw TvmUserError("value of global variable must be a global from the same module");
       }
 
-      set_base_parameter(1, value);
+      m_value = value;
     }
     
-    class GlobalVariableTerm::Initializer : public InitializerBase<GlobalVariableTerm> {
-    public:
-      Initializer(Term* type, const std::string& name, Module *module)
-        : m_type(type), m_name(name), m_module(module) {
-      }
-
-      GlobalVariableTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-        return new (base) GlobalVariableTerm(ui, context, m_type, m_name, m_module);
-      }
-
-      std::size_t n_uses() const {
-        return 2;
-      }
-
-    private:
-      Term* m_type;
-      std::string m_name;
-      Module *m_module;
-    };
-
     /**
      * \brief Create a new global term.
      */
-    GlobalVariableTerm* Module::new_global_variable(const std::string& name, Term* type) {
+    ValuePtr<GlobalVariable> Module::new_global_variable(const std::string& name, const ValuePtr<>& type, const SourceLocation& location) {
       if (type->phantom())
         throw TvmUserError("global variable type cannot be phantom");
 
-      GlobalVariableTerm *result = context().allocate_term(GlobalVariableTerm::Initializer(type, name, this));
+      ValuePtr<GlobalVariable> result(::new GlobalVariable(&context(), type, name, this, location));
       add_member(result);
       return result;
     }
@@ -185,8 +165,8 @@ namespace Psi {
     /**
      * \brief Create a new global term, initialized with the specified value.
      */
-    GlobalVariableTerm* Module::new_global_variable_set(const std::string& name, Term* value) {
-      GlobalVariableTerm* t = new_global_variable(name, value->type());
+    ValuePtr<GlobalVariable> Module::new_global_variable_set(const std::string& name, const ValuePtr<>& value, const SourceLocation& location) {
+      ValuePtr<GlobalVariable> t = new_global_variable(name, value->type(), location);
       t->set_value(value);
       return t;
     }
@@ -196,16 +176,15 @@ namespace Psi {
         m_hash_terms(HashTermSetType::bucket_traits(m_hash_term_buckets.get(), initial_hash_term_buckets)) {
     }
 
-    struct Context::TermDisposer {
-      void operator () (Term *t) const {
-        t->clear_users();
-        t->~Term();
+    struct Context::ValueDisposer {
+      void operator () (Value *t) const {
+        t->gc_clear();
         operator delete (t);
       }
     };
 
     Context::~Context() {
-      m_all_terms.clear_and_dispose(TermDisposer());
+      m_all_terms.clear_and_dispose(ValueDisposer());
       PSI_WARNING(m_hash_terms.empty());
     }
 
@@ -226,11 +205,11 @@ namespace Psi {
     }
 #endif
 
-    std::size_t Module::GlobalTermHasher::operator() (const GlobalTerm& h) const {
+    std::size_t Module::GlobalHasher::operator() (const Global& h) const {
       return boost::hash_value(h.name());
     }
 
-    bool Module::GlobalTermEquals::operator () (const GlobalTerm& lhs, const GlobalTerm& rhs) const {
+    bool Module::GlobalEquals::operator () (const Global& lhs, const Global& rhs) const {
       return lhs.name() == rhs.name();
     }
 
@@ -239,8 +218,9 @@ namespace Psi {
      * 
      * \param name Name of the module.
      */
-    Module::Module(Context *context, const std::string& name)
+    Module::Module(Context *context, const std::string& name, const SourceLocation& location)
     : m_context(context),
+    m_location(location),
     m_name(name),
     m_members_buckets(initial_members_buckets),
     m_members(ModuleMemberList::bucket_traits(m_members_buckets.get(), initial_members_buckets)) {
@@ -249,7 +229,7 @@ namespace Psi {
     Module::~Module() {
     }
 
-    void Module::add_member(GlobalTerm *term) {
+    void Module::add_member(const ValuePtr<Global>& term) {
       if (!m_members.insert(*term).second)
         throw TvmUserError("Duplicate module member name");
     }
@@ -265,7 +245,7 @@ namespace Psi {
      * Return whether a term is unique, i.e. it is not functional so
      * a copy would be automatically distinct from the original.
      */
-    bool term_unique(Term* term) {
+    bool term_unique(const ValuePtr<>& term) {
       switch (term->term_type()) {
       case term_instruction:
       case term_block:

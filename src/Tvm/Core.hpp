@@ -160,7 +160,7 @@ namespace Psi {
        * the resulting value</li>
        * </ol>
        */
-      const ValuePtr<>& source() const {return m_source;}
+      Value* source() const {return m_source;}
 
       bool phantom() const;
       bool parameterized() const;
@@ -187,11 +187,14 @@ namespace Psi {
       unsigned char m_term_type;
       unsigned char m_category : 2;
       ValuePtr<> m_type;
-      ValuePtr<> m_source;
+      Value *m_source;
       SourceLocation m_location;
       boost::intrusive::list_member_hook<> m_value_list_hook;
       
       void destroy();
+      virtual void gc_increment();
+      virtual void gc_decrement();
+      virtual void gc_clear();
       
       friend void intrusive_ptr_add_ref(Value *self) {
         ++self->m_reference_count;
@@ -204,10 +207,10 @@ namespace Psi {
 
     protected:
       Value(Context *context, TermType term_type, const ValuePtr<>& type,
-            const ValuePtr<>& source, const SourceLocation& location);
+            Value *source, const SourceLocation& location);
     };
     
-    ValuePtr<> common_source(const ValuePtr<>& t1, const ValuePtr<>& t2);
+    Value* common_source(Value *t1, Value *t2);
     
     template<typename T>
     T* value_cast(Value *ptr) {
@@ -235,16 +238,33 @@ namespace Psi {
     }
     
     template<typename T, typename U>
+    T* dyn_cast(U* ptr) {
+      return isa<T>(ptr) ? value_cast<T>(ptr) : NULL;
+    }
+    
+    template<typename T, typename U>
+    const T* dyn_cast(const U* ptr) {
+      return isa<T>(ptr) ? value_cast<const T>(ptr) : NULL;
+    }
+    
+    template<typename T, typename U>
     ValuePtr<T> dyn_cast(const ValuePtr<U>& ptr) {
       return ValuePtr<T>(isa<T>(ptr) ? value_cast<T>(ptr.get()) : NULL);
     }
 
     class HashableValue : public Value {
       friend class Context;
+      friend std::size_t Value::hash_value() const;
 
     protected:
-      HashableValue(Context *context, TermType term_type, const ValuePtr<>& type, std::size_t hash);
+      HashableValue(Context *context, TermType term_type, const ValuePtr<>& type, std::size_t hash, Value *source, const SourceLocation& location);
       virtual ~HashableValue();
+
+    public:
+      static bool isa_impl(const Value& v) {
+        return (v.term_type() == term_functional) || (v.term_type() == term_function_type)
+          || (v.term_type() == term_apply);
+      }
       
     private:
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
@@ -261,7 +281,7 @@ namespace Psi {
       friend class Module;
 
     public:
-      const ValuePtr<>& value_type() const;
+      ValuePtr<> value_type() const;
       /// \brief Get the module this global belongs to.
       Module* module() const {return m_module;}
       /// \brief Get the name of this global within the module.
@@ -278,7 +298,7 @@ namespace Psi {
       }
 
     private:
-      Global(Context *context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module);
+      Global(Context *context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location);
       boost::intrusive::unordered_set_member_hook<> m_module_member_hook;
       std::string m_name;
       Module *m_module;
@@ -307,7 +327,7 @@ namespace Psi {
       
     private:
       class Initializer;
-      GlobalVariable(Context *context, const ValuePtr<>& type, const std::string& name, Module *module);
+      GlobalVariable(Context *context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location);
 
       bool m_constant;
       ValuePtr<> m_value;
@@ -346,10 +366,10 @@ namespace Psi {
       UniqueArray<ModuleMemberList::bucket_type> m_members_buckets;
       ModuleMemberList m_members;
       
-      void add_member(Global*);
+      void add_member(const ValuePtr<Global>& global);
       
     public:
-      Module(Context*, const std::string&);
+      Module(Context*, const std::string& name, const SourceLocation& location);
       ~Module();
       
       /// \brief Get the context this module belongs to.
@@ -381,7 +401,7 @@ namespace Psi {
       friend class Block;
       friend class Module;
 
-      struct TermDisposer;
+      struct ValueDisposer;
       struct HashableValueHasher {std::size_t operator () (const HashableValue&) const;};
 
       typedef boost::intrusive::unordered_set<HashableValue,
@@ -473,7 +493,7 @@ namespace Psi {
      */
     class OperationSetup {
       const char *m_operation;
-      ValuePtr<> m_source;
+      Value *m_source;
       
     public:
       explicit OperationSetup(const char *operation)

@@ -5,15 +5,12 @@
 
 namespace Psi {
   namespace Tvm {
-    class RecursiveParameterTerm : public Term {
-      friend class Context;
-      class Initializer;
-      RecursiveParameterTerm(const UserInitializer& ui, Context *context, Term* type);
-    };
+    class ApplyValue;
 
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<RecursiveParameterTerm> : CoreCastImplementation<RecursiveParameterTerm, term_recursive_parameter> {};
-#endif
+    class RecursiveParameter : public Value {
+      friend class Context;
+      RecursiveParameter(Context *context, const ValuePtr<>& type);
+    };
 
     /**
      * \brief Recursive term: usually used to create recursive types.
@@ -22,50 +19,40 @@ namespace Psi {
      * RecursiveTerm using Context::new_recursive, create the type as
      * normal and then call #resolve to finalize the type.
      */
-    class RecursiveTerm : public Term {
+    class RecursiveType : public Value {
       friend class Context;
+      ValuePtr<> m_result;
+      std::vector<ValuePtr<RecursiveParameter> > m_parameters;
 
     public:
-      void resolve(Term* term);
-      ApplyTerm* apply(ArrayPtr<Term*const> parameters);
+      void resolve(const ValuePtr<>& term);
+      ValuePtr<ApplyValue> apply(const std::vector<ValuePtr<> >& parameters);
 
-      std::size_t n_parameters() {return n_base_parameters() - 1;}
-      RecursiveParameterTerm* parameter(std::size_t i);
-      Term* result() {return get_base_parameter(0);}
+      std::size_t n_parameters() {return m_parameters.size();}
+      const ValuePtr<RecursiveParameter>& parameter(std::size_t i) {return m_parameters[i];}
+      const ValuePtr<> result() {return m_result;}
 
     private:
-      class Initializer;
-      RecursiveTerm(const UserInitializer& ui, Context *context, Term* result_type,
-                    Term *source, ArrayPtr<RecursiveParameterTerm*const> parameters);
+      RecursiveType(Context *context, const ValuePtr<>& result_type,
+                    const ValuePtr<>& source, const std::vector<ValuePtr<RecursiveParameter> >& parameters);
     };
 
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<RecursiveTerm> : CoreCastImplementation<RecursiveTerm, term_recursive> {};
-#endif
-
-    class ApplyTerm : public HashTerm {
+    class ApplyValue : public HashableValue {
       friend class Context;
+      ValuePtr<RecursiveType> m_recursive;
+      std::vector<ValuePtr<> > m_parameters;
 
     public:
-      std::size_t n_parameters() {return n_base_parameters() - 1;}
-      Term* unpack();
+      std::size_t n_parameters() {return m_parameters.size();}
+      ValuePtr<> unpack();
 
-      RecursiveTerm* recursive() {return cast<RecursiveTerm>(get_base_parameter(0));}
-      Term* parameter(std::size_t i) {return get_base_parameter(i+1);}
+      const ValuePtr<RecursiveType>& recursive() {return m_recursive;}
+      const ValuePtr<>& parameter(std::size_t i) {return m_parameters[i];}
 
     private:
-      class Setup;
-      ApplyTerm(const UserInitializer& ui, Context *context, RecursiveTerm *recursive,
-                ArrayPtr<Term*const> parameters, std::size_t hash);
+      ApplyValue(Context *context, const ValuePtr<RecursiveType>& recursive,
+                 const std::vector<ValuePtr<> >& parameters);
     };
-
-#ifndef PSI_DOXYGEN
-    template<> struct CastImplementation<ApplyTerm> : CoreCastImplementation<ApplyTerm, term_apply> {};
-#endif
-
-    inline RecursiveParameterTerm* RecursiveTerm::parameter(std::size_t i) {
-      return cast<RecursiveParameterTerm>(get_base_parameter(i+2));
-    }
   }
 }
 

@@ -790,7 +790,7 @@ namespace Psi {
      * \param type Type to create storage for.
      */
     ValuePtr<> AggregateLoweringPass::FunctionRunner::create_storage(const ValuePtr<>& type, const SourceLocation& location) {
-      if (ValuePtr<> source = type->source()) {
+      if (Value *source = type->source()) {
         ValuePtr<Block> block;
         switch(source->term_type()) {
         case term_instruction: block = rewrite_block(value_cast<Instruction>(source)->block()); break;
@@ -909,7 +909,7 @@ namespace Psi {
       switch (value->source()->term_type()) {
       case term_instruction: insert_block = value_cast<Instruction>(value->source())->block(); break;
       case term_phi: insert_block = value_cast<Phi>(value->source())->block(); break;
-      case term_block: insert_block = value_cast<Block>(value->source()); break;
+      case term_block: insert_block.reset(value_cast<Block>(value->source())); break;
       case term_function_parameter: insert_block = value_cast<FunctionParameter>(value->source())->function()->entry(); break;
       default: PSI_FAIL("unexpected term type");
       }
@@ -1025,7 +1025,7 @@ namespace Psi {
       for (TypePhiMapType::iterator ii = m_generated_phi_terms.begin(), ie = m_generated_phi_terms.end(); ii != ie; ++ii) {
         // Find block to create alloca's for current type
         ValuePtr<Block> type_block = new_function()->entry();
-        if (ValuePtr<> source = ii->first->source()) {
+        if (Value *source = ii->first->source()) {
           switch (source->term_type()) {
           case term_instruction: type_block = rewrite_block(value_cast<Instruction>(source)->block()); break;
           case term_phi: type_block = rewrite_block(value_cast<Phi>(source)->block()); break;
