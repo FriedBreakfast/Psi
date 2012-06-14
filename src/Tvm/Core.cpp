@@ -100,10 +100,10 @@ namespace Psi {
       return h.m_hash;
     }
 
-    HashableValue::HashableValue(Context *context, TermType term_type, const ValuePtr<>& type, std::size_t hash,
-                                 Value *source, const SourceLocation& location)
-    : Value(context, term_type, type, source, location),
-      m_hash(hash) {
+    HashableValue::HashableValue(Context *context, TermType term_type, const ValuePtr<>& type,
+                                 const HashableValueSetup& setup, const SourceLocation& location)
+    : Value(context, term_type, type, setup.source(), location),
+      m_hash(setup.hash()) {
     }
 
     HashableValue::~HashableValue() {

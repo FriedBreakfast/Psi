@@ -10,105 +10,37 @@
 
 namespace Psi {
   namespace Tvm {
-    bool FunctionTypeResolvedParameter::Data::operator == (const FunctionTypeResolvedParameter::Data& other) const {
-      return (depth == other.depth) && (index == other.index);
+    PSI_TVM_FUNCTIONAL_IMPL(FunctionTypeResolvedParameter, SimpleOp, function_type_resolved_parameter)
+
+    ValuePtr<FunctionTypeResolvedParameter> FunctionTypeResolvedParameter::get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location) {
+      return type->context().get_functional(FunctionTypeResolvedParameter(type, depth, index, location));
+    }
+    
+    FunctionTypeResolvedParameter::FunctionTypeResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location)
+    : SimpleOp(type, hashable_setup<FunctionTypeResolvedParameter>(type), location),
+    m_depth(depth),
+    m_index(index) {
+    }
+    
+    namespace {
+      HashableValueSetup function_type_hashable_setup(CallingConvention calling_convention, const ValuePtr<>& result_type, const std::vector<ValuePtr<> >& parameter_types) {
+        HashableValueSetup hv = hashable_setup<FunctionType>(result_type);
+        hv.combine(calling_convention);
+        for (std::vector<ValuePtr<> >::const_iterator ii = parameter_types.begin(), ie = parameter_types.end(); ii != ie; ++ii)
+          hv.combine(*ii);
+        return hv;
+      }
     }
 
-    std::size_t hash_value(const FunctionTypeResolvedParameter::Data& self) {
-      std::size_t h = 0;
-      boost::hash_combine(h, self.depth);
-      boost::hash_combine(h, self.index);
-      return h;
+    FunctionType::FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
+                               const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, const SourceLocation& location)
+    : HashableValue(&result_type->context(), term_function_type, Metatype::get(result_type->context(), location),
+                    function_type_hashable_setup(calling_convention, result_type, parameter_types), location),
+    m_n_phantom(n_phantom),
+    m_parameter_types(parameter_types),
+    m_result_type(result_type),
+    m_calling_convention(calling_convention) {
     }
-
-    FunctionTypeResolvedParameter::Ptr FunctionTypeResolvedParameter::get(Term* type, unsigned depth, unsigned index) {
-      return type->context().get_functional<FunctionTypeResolvedParameter>
-        (StaticArray<Term*, 1>(type), Data(depth, index));
-    }
-
-    const char FunctionTypeResolvedParameter::operation[] = "function_type_resolved_parameter";
-
-    FunctionalTypeResult FunctionTypeResolvedParameter::type(Context&, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 1)
-        throw TvmInternalError("FunctionTypeResolverParameter takes one parameter");
-
-      return parameters[0];
-    }
-
-    FunctionTypeTerm::FunctionTypeTerm(const UserInitializer& ui, Context *context, std::size_t hash, Term* result_type, ArrayPtr<Term*const> parameter_types, std::size_t n_phantom, CallingConvention calling_convention)
-      : HashTerm(ui, context, term_function_type,
-                 common_source(result_type->source(), common_source(parameter_types)),
-                 Metatype::get(*context), hash),
-        m_n_phantom(n_phantom),
-        m_calling_convention(calling_convention) {
-      set_base_parameter(0, result_type);
-      for (std::size_t i = 0; i < parameter_types.size(); i++)
-        set_base_parameter(i+1, parameter_types[i]);
-    }
-
-    class FunctionTypeTerm::Setup : public InitializerBase<FunctionTypeTerm> {
-    public:
-      Setup(Term* result_type, ArrayPtr<Term*const> parameter_types,
-            std::size_t n_phantom, CallingConvention calling_convention)
-        : m_parameter_types(parameter_types),
-          m_result_type(result_type),
-          m_n_phantom(n_phantom),
-          m_calling_convention(calling_convention) {
-        m_hash = 0;
-        boost::hash_combine(m_hash, result_type->hash_value());
-        for (std::size_t i = 0; i < parameter_types.size(); ++i)
-          boost::hash_combine(m_hash, parameter_types[i]->hash_value());
-        boost::hash_combine(m_hash, calling_convention);
-      }
-
-      void prepare_initialize(Context*) {
-      }
-
-      FunctionTypeTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
-        return new (base) FunctionTypeTerm(ui, context, m_hash, m_result_type, m_parameter_types, m_n_phantom, m_calling_convention);
-      }
-
-      std::size_t hash() const {
-        return m_hash;
-      }
-
-      std::size_t n_uses() const {
-        return m_parameter_types.size() + 1;
-      }
-
-      bool equals(HashTerm *term) const {
-        if ((m_hash != term->m_hash) || (term->term_type() != term_function_type))
-          return false;
-
-        FunctionTypeTerm *cast_term = cast<FunctionTypeTerm>(term);
-
-        if (m_parameter_types.size() != cast_term->n_parameters())
-          return false;
-
-        for (std::size_t i = 0; i < m_parameter_types.size(); ++i) {
-          if (m_parameter_types[i] != cast_term->parameter_type(i))
-            return false;
-        }
-
-        if (m_result_type != cast_term->result_type())
-          return false;
-
-        if (m_n_phantom != cast_term->n_phantom_parameters())
-          return false;
-
-        if (m_calling_convention != cast_term->calling_convention())
-          return false;
-
-        return true;
-      }
-
-    private:
-      std::size_t m_hash;
-      ArrayPtr<Term*const> m_parameter_types;
-      Term* m_result_type;
-      std::size_t m_n_phantom;
-      CallingConvention m_calling_convention;
-    };
 
     class Context::FunctionTypeResolverRewriter {
       ArrayPtr<FunctionTypeParameterTerm*const> m_parameters;

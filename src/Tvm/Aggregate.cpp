@@ -11,7 +11,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(Metatype, FunctionalValue, type)
 
     Metatype::Metatype(Context& context, const SourceLocation& location)
-    : FunctionalValue(context, ValuePtr<>(), functional_setup<Metatype>(), location) {
+    : FunctionalValue(context, ValuePtr<>(), hashable_setup<Metatype>(), location) {
     }
     
     ValuePtr<> Metatype::get(Context& context, const SourceLocation& location) {
@@ -22,7 +22,7 @@ namespace Psi {
 
     MetatypeValue::MetatypeValue(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location)
     : Constructor(Metatype::get(size->context(), location),
-                  functional_setup<MetatypeValue>(size)(alignment), location),
+                  hashable_setup<MetatypeValue>(size)(alignment), location),
     m_size(size),
     m_alignment(alignment) {
       ValuePtr<> intptr_type = IntegerType::get_intptr(context(), location);
@@ -35,7 +35,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(MetatypeSize, UnaryOp, sizeof)
     
     MetatypeSize::MetatypeSize(const ValuePtr<>& target, const SourceLocation& location)
-    : UnaryOp(IntegerType::get_intptr(target->context(), location), target, functional_setup<MetatypeSize>(), location) {
+    : UnaryOp(IntegerType::get_intptr(target->context(), location), target, hashable_setup<MetatypeSize>(), location) {
       if (target->type() != Metatype::get(context(), location))
         throw TvmUserError("Parameter to sizeof must be a type");
     }
@@ -47,7 +47,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(MetatypeAlignment, UnaryOp, alignof)
 
     MetatypeAlignment::MetatypeAlignment(const ValuePtr<>& target, const SourceLocation& location)
-    : UnaryOp(IntegerType::get_intptr(target->context(), location), target, functional_setup<MetatypeAlignment>(), location) {
+    : UnaryOp(IntegerType::get_intptr(target->context(), location), target, hashable_setup<MetatypeAlignment>(), location) {
       if (target->type() != Metatype::get(context(), location))
         throw TvmUserError("Parameter to alignof must be a type");
     }
@@ -59,7 +59,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(EmptyType, Type, empty)
     
     EmptyType::EmptyType(Context& context, const SourceLocation& location)
-    : Type(context, functional_setup<EmptyType>(), location) {
+    : Type(context, hashable_setup<EmptyType>(), location) {
     }
     
     ValuePtr<EmptyType> EmptyType::get(Context& context, const SourceLocation& location) {
@@ -69,7 +69,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(EmptyValue, Constructor, empty_v)
 
     EmptyValue::EmptyValue(Context& context, const SourceLocation& location)
-    : Constructor(EmptyType::get(context, location), functional_setup<EmptyValue>(), location) {
+    : Constructor(EmptyType::get(context, location), hashable_setup<EmptyValue>(), location) {
     }
     
     ValuePtr<EmptyValue> EmptyValue::get(Context& context, const SourceLocation& location) {
@@ -79,7 +79,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(BlockType, Type, block)
     
     BlockType::BlockType(Context& context, const SourceLocation& location)
-    : Type(context, functional_setup<BlockType>(), location) {
+    : Type(context, hashable_setup<BlockType>(), location) {
     }
     
     ValuePtr<BlockType> BlockType::get(Context& context, const SourceLocation& location) {
@@ -89,7 +89,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(ByteType, Type, byte)
     
     ByteType::ByteType(Context& context, const SourceLocation& location)
-    : Type(context, functional_setup<ByteType>(), location) {
+    : Type(context, hashable_setup<ByteType>(), location) {
     }
     
     ValuePtr<ByteType> ByteType::get(Context& context, const SourceLocation& location) {
@@ -99,7 +99,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(UndefinedValue, SimpleOp, undef);
 
     UndefinedValue::UndefinedValue(const ValuePtr<>& type, const SourceLocation& location)
-    : SimpleOp(type, functional_setup<UndefinedValue>(type), location) {
+    : SimpleOp(type, hashable_setup<UndefinedValue>(type), location) {
     }
     
     ValuePtr<> UndefinedValue::get(const ValuePtr<>& type, const SourceLocation& location) {
@@ -109,7 +109,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(PointerType, Type, pointer)
     
     PointerType::PointerType(const ValuePtr<>& target_type, const SourceLocation& location)
-    : Type(target_type->context(), functional_setup<PointerType>(target_type), location),
+    : Type(target_type->context(), hashable_setup<PointerType>(target_type), location),
     m_target_type(target_type) {
       if (!target_type->is_type())
         throw TvmUserError("pointer argument must be a type");
@@ -122,7 +122,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(PointerCast, AggregateOp, cast)
     
     PointerCast::PointerCast(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const SourceLocation& location)
-    : AggregateOp(PointerType::get(pointer, location), functional_setup<PointerCast>(pointer)(target_type), location),
+    : AggregateOp(PointerType::get(pointer, location), hashable_setup<PointerCast>(pointer)(target_type), location),
     m_pointer(pointer),
     m_target_type(target_type) {
       if (!isa<PointerType>(pointer->type()))
@@ -138,7 +138,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(PointerOffset, AggregateOp, offset)
     
     PointerOffset::PointerOffset(const ValuePtr<>& pointer, const ValuePtr<>& offset, const SourceLocation& location)
-    : AggregateOp(pointer->type(), functional_setup<PointerOffset>(pointer)(offset), location),
+    : AggregateOp(pointer->type(), hashable_setup<PointerOffset>(pointer)(offset), location),
     m_pointer(pointer),
     m_offset(offset) {
       if (!isa<PointerType>(pointer))
@@ -162,7 +162,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(ArrayType, Type, array);
     
     ArrayType::ArrayType(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location)
-    : Type(element_type->context(), functional_setup<ArrayType>(element_type)(length), location),
+    : Type(element_type->context(), hashable_setup<ArrayType>(element_type)(length), location),
     m_element_type(element_type),
     m_length(length) {
     }
@@ -174,8 +174,8 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(ArrayValue, Constructor, array_v)
     
     namespace {
-      FunctionalOperationSetup array_functional_setup(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements) {
-        FunctionalOperationSetup vh = functional_setup<ArrayType>(element_type);
+      HashableValueSetup array_hashable_setup(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements) {
+        HashableValueSetup vh = hashable_setup<ArrayType>(element_type);
         for (std::vector<ValuePtr<> >::const_iterator ii = elements.begin(), ie = elements.end(); ii != ie; ++ii)
           vh.combine(*ii);
         return vh;
@@ -183,7 +183,7 @@ namespace Psi {
     }
     
     ArrayValue::ArrayValue(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements, const SourceLocation& location)
-    : Constructor(ArrayType::get(element_type, IntegerValue::get_intptr(element_type->context(), elements.size()), location), array_functional_setup(element_type, elements), location),
+    : Constructor(ArrayType::get(element_type, IntegerValue::get_intptr(element_type->context(), elements.size()), location), array_hashable_setup(element_type, elements), location),
     m_element_type(element_type),
     m_elements(elements) {
       if (!element_type->is_type())
@@ -211,7 +211,7 @@ namespace Psi {
     }
     
     ArrayElement::ArrayElement(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location)
-    : AggregateOp(array_element_type(aggregate), functional_setup<ArrayElement>(aggregate)(index), location),
+    : AggregateOp(array_element_type(aggregate), hashable_setup<ArrayElement>(aggregate)(index), location),
     m_aggregate(aggregate),
     m_index(index) {
       if (index->type() != IntegerType::get_intptr(index->context(), location))
@@ -234,7 +234,7 @@ namespace Psi {
     }
     
     ArrayElementPtr::ArrayElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location)
-    : AggregateOp(array_element_ptr_type(aggregate_ptr, location), functional_setup<ArrayElementPtr>(aggregate_ptr)(index), location),
+    : AggregateOp(array_element_ptr_type(aggregate_ptr, location), hashable_setup<ArrayElementPtr>(aggregate_ptr)(index), location),
     m_aggregate_ptr(aggregate_ptr),
     m_index(index) {
       if (index->type() != IntegerType::get_intptr(index->context(), location))
@@ -248,8 +248,8 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(StructType, Type, struct)
     
     namespace {
-      FunctionalOperationSetup struct_type_functional_setup(const std::vector<ValuePtr<> >& members) {
-        FunctionalOperationSetup vh = functional_setup<StructType>();
+      HashableValueSetup struct_type_hashable_setup(const std::vector<ValuePtr<> >& members) {
+        HashableValueSetup vh = hashable_setup<StructType>();
         for (std::vector<ValuePtr<> >::const_iterator ii = members.begin(), ie = members.end(); ii != ie; ++ii) {
           if (!(*ii)->is_type())
             throw TvmUserError("struct argument is not a type");
@@ -260,7 +260,7 @@ namespace Psi {
     }
     
     StructType::StructType(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location)
-    : Type(context, struct_type_functional_setup(members), location),
+    : Type(context, struct_type_hashable_setup(members), location),
     m_members(members) {
     }
 
@@ -279,8 +279,8 @@ namespace Psi {
         return StructType::get(context, member_types, location);
       }
       
-      FunctionalOperationSetup struct_value_functional_setup(const std::vector<ValuePtr<> >& members) {
-        FunctionalOperationSetup vh = functional_setup<StructValue>();
+      HashableValueSetup struct_value_hashable_setup(const std::vector<ValuePtr<> >& members) {
+        HashableValueSetup vh = hashable_setup<StructValue>();
         for (std::vector<ValuePtr<> >::const_iterator ii = members.begin(), ie = members.end(); ii != ie; ++ii)
           vh.combine(*ii);
         return vh;
@@ -288,7 +288,7 @@ namespace Psi {
     }
     
     StructValue::StructValue(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location)
-    : Constructor(struct_value_type(context, members, location), struct_value_functional_setup(members), location),
+    : Constructor(struct_value_type(context, members, location), struct_value_hashable_setup(members), location),
     m_members(members) {
     }
 
@@ -310,7 +310,7 @@ namespace Psi {
     }
     
     StructElement::StructElement(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location)
-    : AggregateOp(struct_element_type(aggregate, index), functional_setup<StructElement>(aggregate)(index), location),
+    : AggregateOp(struct_element_type(aggregate, index), hashable_setup<StructElement>(aggregate)(index), location),
     m_aggregate(aggregate),
     m_index(index) {
     }
@@ -338,7 +338,7 @@ namespace Psi {
     }
     
     StructElementPtr::StructElementPtr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location)
-    : AggregateOp(struct_element_ptr_type(aggregate_ptr, index, location), functional_setup<StructElementPtr>(aggregate_ptr)(index), location),
+    : AggregateOp(struct_element_ptr_type(aggregate_ptr, index, location), hashable_setup<StructElementPtr>(aggregate_ptr)(index), location),
     m_aggregate_ptr(aggregate_ptr),
     m_index(index) {
     }
@@ -350,7 +350,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(StructElementOffset, AggregateOp, struct_eo)
     
     StructElementOffset::StructElementOffset(const ValuePtr<>& aggregate_type, unsigned index, const SourceLocation& location)
-    : AggregateOp(IntegerType::get_intptr(aggregate_type->context(), location), functional_setup<StructElementOffset>(aggregate_type)(index), location),
+    : AggregateOp(IntegerType::get_intptr(aggregate_type->context(), location), hashable_setup<StructElementOffset>(aggregate_type)(index), location),
     m_aggregate_type(dyn_cast<StructType>(aggregate_type)),
     m_index(index) {
       if (!m_aggregate_type)
@@ -366,8 +366,8 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(UnionType, Type, union)
 
     namespace {
-      FunctionalOperationSetup union_type_functional_setup(const std::vector<ValuePtr<> >& members) {
-        FunctionalOperationSetup vh = functional_setup<UnionType>();
+      HashableValueSetup union_type_hashable_setup(const std::vector<ValuePtr<> >& members) {
+        HashableValueSetup vh = hashable_setup<UnionType>();
         for (std::vector<ValuePtr<> >::const_iterator ii = members.begin(), ie = members.end(); ii != ie; ++ii) {
           if (!(*ii)->is_type())
             throw TvmUserError("union argument is not a type");
@@ -378,7 +378,7 @@ namespace Psi {
     }
 
     UnionType::UnionType(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location)
-    : Type(context, union_type_functional_setup(members), location),
+    : Type(context, union_type_hashable_setup(members), location),
     m_members(members) {
     }
     
@@ -405,7 +405,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(UnionValue, Constructor, union_v)
     
     UnionValue::UnionValue(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location)
-    : Constructor(type, functional_setup<UnionValue>(type)(value), location),
+    : Constructor(type, hashable_setup<UnionValue>(type)(value), location),
     m_value(value) {
       ValuePtr<UnionType> ty = dyn_cast<UnionType>(type);
       if (!ty)
@@ -421,7 +421,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(UnionElement, AggregateOp, union_el)
     
     UnionElement::UnionElement(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location)
-    : AggregateOp(member_type, functional_setup<UnionElement>(aggregate)(member_type), location),
+    : AggregateOp(member_type, hashable_setup<UnionElement>(aggregate)(member_type), location),
     m_aggregate(aggregate),
     m_member_type(member_type) {
       ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(aggregate->type());
@@ -439,7 +439,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(UnionElementPtr, AggregateOp, union_ep)
 
     UnionElementPtr::UnionElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member_type, const SourceLocation& location)
-    : AggregateOp(member_type, functional_setup<UnionElementPtr>(aggregate_ptr)(member_type), location),
+    : AggregateOp(member_type, hashable_setup<UnionElementPtr>(aggregate_ptr)(member_type), location),
     m_aggregate_ptr(aggregate_ptr),
     m_member_type(member_type) {
       ValuePtr<PointerType> ptr_ty = dyn_cast<PointerType>(aggregate_ptr->type());
@@ -492,8 +492,8 @@ namespace Psi {
            location);
       }
       
-      FunctionalOperationSetup function_specialize_functional_setup(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters) {
-        FunctionalOperationSetup vh = functional_setup<FunctionSpecialize>(function);
+      HashableValueSetup function_specialize_hashable_setup(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters) {
+        HashableValueSetup vh = hashable_setup<FunctionSpecialize>(function);
         for (std::vector<ValuePtr<> >::const_iterator ii = parameters.begin(), ie = parameters.end(); ii != ie; ++ii)
           vh.combine(*ii);
         return vh;
@@ -502,7 +502,7 @@ namespace Psi {
     
     FunctionSpecialize::FunctionSpecialize(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location)
     : FunctionalValue(function->context(), function_specialize_type(function, parameters, location),
-                      function_specialize_functional_setup(function, parameters), location),
+                      function_specialize_hashable_setup(function, parameters), location),
     m_function(function),
     m_parameters(parameters) {
     }

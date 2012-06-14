@@ -234,10 +234,15 @@ namespace Psi {
      * \brief Term type appearing in dependent types of completed function types.
      */
     class FunctionTypeResolvedParameter : public SimpleOp {
+      PSI_TVM_FUNCTIONAL_DECL(FunctionTypeResolvedParameter)
+      
+    private:
       unsigned m_depth;
       unsigned m_index;
       
     public:
+      FunctionTypeResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
+
       /// \brief Get the depth of this parameter relative to the
       /// function type it is part of.
       ///
@@ -249,10 +254,7 @@ namespace Psi {
       /// function.
       unsigned index() const {return m_index;}
       
-      static ValuePtr<FunctionTypeResolvedParameter> get(const ValuePtr<>& type, unsigned depth, unsigned index);
-      
-    private:
-      FunctionTypeResolvedParameter(Context *context, const ValuePtr<>& type, unsigned depth, unsigned index);
+      static ValuePtr<FunctionTypeResolvedParameter> get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
     };
 
     /**
@@ -279,8 +281,9 @@ namespace Psi {
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type;}
 
     private:
-      FunctionType(Context *context, CallingConvention calling_convention, const ValuePtr<>& result_type,
-                   const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom);
+      FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
+                   const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom,
+                   const SourceLocation& location);
 
       CallingConvention m_calling_convention;
 

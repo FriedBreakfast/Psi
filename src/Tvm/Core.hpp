@@ -252,12 +252,81 @@ namespace Psi {
       return ValuePtr<T>(isa<T>(ptr) ? value_cast<T>(ptr.get()) : NULL);
     }
 
+    /**
+     * Class used to construct common data for functional operations
+     * and instructions.
+     */
+    class OperationSetup {
+      const char *m_operation;
+      Value *m_source;
+      
+    public:
+      explicit OperationSetup(const char *operation)
+      : m_operation(operation) {
+      }
+      
+      void combine(const ValuePtr<>& ptr) {
+        m_source = common_source(m_source, ptr->source());
+      }
+      
+      template<typename T>
+      OperationSetup operator () (const T& x) const {
+        OperationSetup copy(*this);
+        copy.combine(x);
+        return copy;
+      }
+
+      const char *operation() const {return m_operation;}
+      Value *source() const {return m_source;}
+    };
+
+    class HashableValueSetup {
+      OperationSetup m_base;
+      std::size_t m_hash;
+      
+      template<typename T> void base_combine(const T&) {}
+      template<typename T> void base_combine(const ValuePtr<T>& ptr) {m_base.combine(ptr);}
+      
+    public:
+      explicit HashableValueSetup(const char *operation)
+      : m_base(operation),
+      m_hash(boost::hash_value(operation)) {
+      }
+      
+      template<typename T>
+      void combine(T& x) {
+        boost::hash_combine(m_hash, x);
+        base_combine(x);
+      }
+      
+      template<typename T>
+      HashableValueSetup operator () (const T& x) const {
+        HashableValueSetup copy(*this);
+        copy.combine(x);
+        return copy;
+      }
+      
+      std::size_t hash() const {return m_hash;}
+      const char *operation() const {return m_base.operation();}
+      Value *source() const {return m_base.source();}
+    };
+    
+    template<typename T>
+    HashableValueSetup hashable_setup() {
+      return HashableValueSetup(T::operation);
+    }
+
+    template<typename T, typename U>
+    HashableValueSetup hashable_setup(const U& value) {
+      return hashable_setup<T>()(value);
+    }
+
     class HashableValue : public Value {
       friend class Context;
       friend std::size_t Value::hash_value() const;
 
     protected:
-      HashableValue(Context *context, TermType term_type, const ValuePtr<>& type, std::size_t hash, Value *source, const SourceLocation& location);
+      HashableValue(Context *context, TermType term_type, const ValuePtr<>& type, const HashableValueSetup& setup, const SourceLocation& location);
       virtual ~HashableValue();
 
     public:
@@ -479,31 +548,6 @@ namespace Psi {
       /// \brief Get the context to create rewritten terms in.
       Context& context() {return *m_context;}
       virtual ValuePtr<> rewrite(const ValuePtr<>& value) = 0;
-    };
-    
-    /**
-     * Class used to construct common data for functional operations
-     * and instructions.
-     */
-    class OperationSetup {
-      const char *m_operation;
-      Value *m_source;
-      
-    public:
-      explicit OperationSetup(const char *operation)
-      : m_operation(operation) {
-      }
-      
-      void combine(const ValuePtr<>& ptr) {
-        m_source = common_source(m_source, ptr->source());
-      }
-      
-      template<typename T>
-      OperationSetup operator () (const T& x) const {
-        OperationSetup copy(*this);
-        copy.combine(x);
-        return copy;
-      }
     };
   }
 }

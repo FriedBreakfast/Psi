@@ -14,14 +14,14 @@ namespace Psi {
      * parameters. This allows rewriting of the recursive term used.
      */
     template<typename T>
-    ApplyTerm* rewrite_apply_term(T& rewriter, ApplyTerm* term) {
-      Term* recursive_base = rewriter(term->recursive());
+    ValuePtr<ApplyValue> rewrite_apply_term(T& rewriter, const ValuePtr<ApplyValue>& term) {
+      ValuePtr<> recursive_base = rewriter(term->recursive());
       if (recursive_base->term_type() != term_recursive)
         throw TvmInternalError("result of rewriting recursive term was not a recursive term");
-      RecursiveTerm* recursive = cast<RecursiveTerm>(recursive_base);
-      ScopedArray<Term*> parameters(term->n_parameters());
+      ValuePtr<RecursiveType> recursive = value_cast<RecursiveType>(recursive_base);
+      std::vector<ValuePtr<> > parameters;
       for (unsigned i = 0; i != parameters.size(); ++i)
-        parameters[i] = rewriter(term->parameter(i));
+        parameters.push_back(rewriter(term->parameter(i)));
       return term->context().apply_recursive(recursive, parameters);
     }
 
@@ -32,31 +32,33 @@ namespace Psi {
      * apply term.
      */
     template<typename T>
-    FunctionalTerm* rewrite_functional_term(T& rewriter, FunctionalTerm* term) {
-      ScopedArray<Term*> parameters(term->n_parameters());
-      for (unsigned i = 0; i != parameters.size(); ++i)
-        parameters[i] = rewriter(term->parameter(i));
-      return term->rewrite(term->context(), parameters);
+    ValuePtr<FunctionalValue> rewrite_functional_term(T& rewriter, const ValuePtr<FunctionalValue>& term) {
+      class MyRewriteCallback : public RewriteCallback {
+        T *m_rewriter;
+      public:
+        MyRewriteCallback(Context *context, T *rewriter) : RewriteCallback(context) {}
+        virtual ValuePtr<> rewrite(const ValuePtr<>& value) {return (*m_rewriter)(value);}
+      };
+      MyRewriteCallback my_rewrite_callback(&term->context(), &rewriter);
+      return term->rewrite(my_rewrite_callback);
     }
     
     template<typename T>
-    FunctionTypeTerm* rewrite_function_type_term(T& rewriter, FunctionTypeTerm *term) {
-      ScopedArray<FunctionTypeParameterTerm*> parameters(term->n_parameters());
+    ValuePtr<FunctionType> rewrite_function_type_term(T& rewriter, const ValuePtr<FunctionType>& term) {
+      std::vector<ValuePtr<FunctionTypeParameter> > parameters;
       for (unsigned i = 0, e = parameters.size(); i != e; ++i) {
-        Term *param_type = rewriter(term->parameter_type(i));
-        parameters[i] = term->context().new_function_type_parameter(param_type);
+        ValuePtr<> param_type = rewriter(term->parameter_types()[i]);
+        parameters.push_back(term->context().new_function_type_parameter(param_type));
       }
 
-      Term* result_type = rewriter(term->result_type());
+      ValuePtr<> result_type = rewriter(term->result_type());
       
-      std::size_t n_phantom = term->n_phantom_parameters();
-      std::size_t n_parameters = term->n_parameters();
-
       return term->context().get_function_type
         (term->calling_convention(),
          result_type,
-         parameters.slice(0, n_phantom),
-         parameters.slice(n_phantom, n_parameters - n_phantom));
+         parameters,
+         term->n_phantom(),
+         term->location());
     }
 
     /**
@@ -65,7 +67,7 @@ namespace Psi {
      * #rewrite_apply_term and #rewrite_functional_term.
      */
     template<typename T>
-    Term* rewrite_term_default(T& rewriter, Term* term) {
+    ValuePtr<> rewrite_term_default(T& rewriter, const ValuePtr<>& term) {
       if (term_unique(term))
         return term;
 
@@ -80,13 +82,13 @@ namespace Psi {
                                "a recursive term (which cannot be rewritten)");
 
       case term_apply:
-        return rewrite_apply_term(rewriter, cast<ApplyTerm>(term));
+        return rewrite_apply_term(rewriter, value_cast<ApplyValue>(term));
 
       case term_functional:
-        return rewrite_functional_term(rewriter, cast<FunctionalTerm>(term));
+        return rewrite_functional_term(rewriter, value_cast<FunctionalValue>(term));
 
       case term_function_type:
-        return rewrite_function_type_term(rewriter, cast<FunctionTypeTerm>(term));
+        return rewrite_function_type_term(rewriter, value_cast<FunctionType>(term));
 
       case term_function_type_parameter:
         throw TvmInternalError("unresolved function parameter encountered during term rewriting");

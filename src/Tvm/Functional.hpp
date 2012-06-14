@@ -7,43 +7,6 @@
 
 namespace Psi {
   namespace Tvm {
-    class FunctionalOperationSetup {
-      OperationSetup m_base;
-      std::size_t m_hash;
-      
-      template<typename T> void base_combine(const T&) {}
-      template<typename T> void base_combine(const ValuePtr<T>& ptr) {m_base.combine(ptr);}
-      
-    public:
-      explicit FunctionalOperationSetup(const char *operation)
-      : m_base(operation),
-      m_hash(boost::hash_value(operation)) {
-      }
-      
-      template<typename T>
-      void combine(T& x) {
-        boost::hash_combine(m_hash, x);
-        base_combine(x);
-      }
-      
-      template<typename T>
-      FunctionalOperationSetup operator () (const T& x) const {
-        FunctionalOperationSetup copy(*this);
-        copy.combine(x);
-        return copy;
-      }
-    };
-    
-    template<typename T>
-    FunctionalOperationSetup functional_setup() {
-      return FunctionalOperationSetup(T::operation);
-    }
-
-    template<typename T, typename U>
-    FunctionalOperationSetup functional_setup(const U& value) {
-      return functional_setup<T>()(value);
-    }
-
     class FunctionalValueVisitor {
     public:
       virtual void next(const ValuePtr<>& ptr) = 0;
@@ -80,7 +43,7 @@ namespace Psi {
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_functional;}
 
     protected:
-      FunctionalValue(Context& context, const ValuePtr<>& type, const FunctionalOperationSetup& hash, const SourceLocation& location);
+      FunctionalValue(Context& context, const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
 
     private:
       const char *m_operation;
@@ -109,12 +72,12 @@ namespace Psi {
 
     class SimpleOp : public FunctionalValue {
     public:
-      SimpleOp(const ValuePtr<>& type, const FunctionalOperationSetup& hash, const SourceLocation& location);
+      SimpleOp(const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
     };
     
     class UnaryOp : public FunctionalValue {
     protected:
-      UnaryOp(const ValuePtr<>& type, const ValuePtr<>& parameter, const FunctionalOperationSetup& hash, const SourceLocation& location);
+      UnaryOp(const ValuePtr<>& type, const ValuePtr<>& parameter, const HashableValueSetup& hash, const SourceLocation& location);
       UnaryOp(const RewriteCallback& callback, const UnaryOp& src);
       
     private:
@@ -127,23 +90,23 @@ namespace Psi {
     
     class BinaryOp : public FunctionalValue {
     protected:
-      BinaryOp(const ValuePtr<>& type, const ValuePtr<>& lhs, const ValuePtr<>& rhs, const FunctionalOperationSetup& hash, const SourceLocation& location);
+      BinaryOp(const ValuePtr<>& type, const ValuePtr<>& lhs, const ValuePtr<>& rhs, const HashableValueSetup& hash, const SourceLocation& location);
       BinaryOp(const RewriteCallback& callback, const BinaryOp& src);
     };
     
     class Type : public FunctionalValue {
     public:
-      Type(Context& context, const FunctionalOperationSetup& hash, const SourceLocation& location);
+      Type(Context& context, const HashableValueSetup& hash, const SourceLocation& location);
     };
     
     class Constructor : public FunctionalValue {
     protected:
-      Constructor(const ValuePtr<>& type, const FunctionalOperationSetup& hash, const SourceLocation& location);
+      Constructor(const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
     };
     
     class AggregateOp : public FunctionalValue {
     protected:
-      AggregateOp(const ValuePtr<>& type, const FunctionalOperationSetup& hash, const SourceLocation& location);
+      AggregateOp(const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
     };
   }
 }
