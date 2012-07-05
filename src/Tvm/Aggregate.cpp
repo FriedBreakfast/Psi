@@ -476,8 +476,9 @@ namespace Psi {
         std::vector<ValuePtr<> > apply_parameters(parameters);
         std::vector<ValuePtr<FunctionTypeParameter> > new_parameters;
         while (apply_parameters.size() < function_type->parameter_types().size()) {
+          ValuePtr<> previous_type = function_type->parameter_type_after(apply_parameters);
           ValuePtr<FunctionTypeParameter> param =
-            function_type->context().new_function_type_parameter(function_type->parameter_type_after(apply_parameters));
+            function_type->context().new_function_type_parameter(previous_type, previous_type->location());
           apply_parameters.push_back(param);
           new_parameters.push_back(param);
         }

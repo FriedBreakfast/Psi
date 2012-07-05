@@ -6,7 +6,7 @@
 
 namespace Psi {
   namespace Tvm {
-    class Return : public Instruction {
+    class Return : public TerminatorInstruction {
       PSI_TVM_INSTRUCTION_DECL(Return)
       
     public:
@@ -16,7 +16,7 @@ namespace Psi {
       ValuePtr<> value;
     };
     
-    class ConditionalBranch : public Instruction {
+    class ConditionalBranch : public TerminatorInstruction {
       PSI_TVM_INSTRUCTION_DECL(ConditionalBranch)
     public:
       ConditionalBranch(const ValuePtr<>& condition, const ValuePtr<Block>& true_target, const ValuePtr<Block>& false_target, const SourceLocation& location);
@@ -29,7 +29,7 @@ namespace Psi {
       ValuePtr<Block> false_target;
     };
     
-    class UnconditionalBranch : public Instruction {
+    class UnconditionalBranch : public TerminatorInstruction {
       PSI_TVM_INSTRUCTION_DECL(UnconditionalBranch)
       
     public:

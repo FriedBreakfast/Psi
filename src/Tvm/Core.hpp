@@ -211,6 +211,7 @@ namespace Psi {
     };
     
     Value* common_source(Value *t1, Value *t2);
+    bool source_dominated(Value *dominator, Value *dominated);
     
     template<typename T>
     T* value_cast(Value *ptr) {
@@ -498,13 +499,13 @@ namespace Psi {
        */
       template<typename T>
       ValuePtr<T> get_functional(const T& value) {
-        return value_cast<T>(get_functional_bare(value));
+        return value_cast<T>(get_hash_term(value));
       }
 
       /**
        * \brief Get a pointer to a functional term given that term's value.
        */
-      ValuePtr<> get_functional_bare(const FunctionalValue& value);
+      ValuePtr<> get_hash_term(const HashableValue& value);
 
       ValuePtr<FunctionType> get_function_type(CallingConvention calling_convention,
                                                const ValuePtr<>& result,
@@ -514,9 +515,10 @@ namespace Psi {
 
       ValuePtr<FunctionType> get_function_type_fixed(CallingConvention calling_convention,
                                                      const ValuePtr<>& result,
-                                                     const std::vector<ValuePtr<> >& parameter_types);
+                                                     const std::vector<ValuePtr<> >& parameter_types,
+                                                     const SourceLocation& location);
 
-      ValuePtr<FunctionTypeParameter> new_function_type_parameter(const ValuePtr<>& type);
+      ValuePtr<FunctionTypeParameter> new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location);
 
       ValuePtr<Apply> apply_recursive(const ValuePtr<Recursive>& recursive,
                                       const std::vector<ValuePtr<> >& parameters);
@@ -528,9 +530,6 @@ namespace Psi {
 
     private:
       Context(const Context&);
-
-      template<typename T> typename T::TermType* allocate_term(const T& initializer);
-      template<typename T> typename T::TermType* hash_term_get(T& Setup);
 
       ValuePtr<RecursiveParameter> new_recursive_parameter(const ValuePtr<>& type);
 

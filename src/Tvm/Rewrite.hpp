@@ -48,7 +48,7 @@ namespace Psi {
       std::vector<ValuePtr<FunctionTypeParameter> > parameters;
       for (unsigned i = 0, e = parameters.size(); i != e; ++i) {
         ValuePtr<> param_type = rewriter(term->parameter_types()[i]);
-        parameters.push_back(term->context().new_function_type_parameter(param_type));
+        parameters.push_back(term->context().new_function_type_parameter(param_type, term->location()));
       }
 
       ValuePtr<> result_type = rewriter(term->result_type());

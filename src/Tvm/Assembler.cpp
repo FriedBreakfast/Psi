@@ -122,7 +122,7 @@ namespace Psi {
         std::vector<ValuePtr<FunctionTypeParameter> > result;
         for (UniqueList<Parser::NamedExpression>::const_iterator it = parameters.begin(); it != parameters.end(); ++it) {
           ValuePtr<> param_type = build_expression(context, *it->expression, logical_location);
-          ValuePtr<FunctionTypeParameter> param = context.context().new_function_type_parameter(param_type);
+          ValuePtr<FunctionTypeParameter> param = context.context().new_function_type_parameter(param_type, SourceLocation(it->location, logical_location));
           if (it->name)
             context.put(it->name->text, param);
           result.push_back(param);

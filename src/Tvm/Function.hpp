@@ -22,7 +22,8 @@ namespace Psi {
       const ValuePtr<Block>& block() {return m_block;}
 
     protected:
-      BlockMember(Context* context, TermType term_type, const ValuePtr<>& type, const ValuePtr<>& source);
+      BlockMember(TermType term_type, const ValuePtr<>& type, const ValuePtr<Block>& block,
+                  Value* source, const SourceLocation& location);
       
       ValuePtr<Block> m_block;
     };
@@ -45,7 +46,8 @@ namespace Psi {
       virtual void visit(InstructionVisitor& visitor) = 0;
 
     protected:
-      Instruction(const ValuePtr<>& type, const OperationSetup& setup, const SourceLocation& location);
+      Instruction(const ValuePtr<>& type, const char *operation,
+                  const ValuePtr<Block>& block, const SourceLocation& location);
 
     private:
       const char *m_operation;
@@ -53,6 +55,19 @@ namespace Psi {
       InstructionListHook m_instruction_list_hook;
     };
     
+    /**
+     * \brief Base class for instructions which terminate blocks.
+     */
+    class TerminatorInstruction : public Instruction {
+    protected:
+      void check_dominated(const ValuePtr<Block>& target);
+
+    public:
+      TerminatorInstruction(const char *operation, const ValuePtr<Block>& block, const SourceLocation& location);
+      
+      virtual std::vector<ValuePtr<Block> > successors() = 0;
+    };
+
     template<typename T>
     OperationSetup instruction_setup() {
       return OperationSetup(T::operation);
@@ -102,13 +117,14 @@ namespace Psi {
       ValuePtr<> incoming_value_from(const ValuePtr<Block>& block);
 
     private:
-      Phi(Context *context, const ValuePtr<>& type, const ValuePtr<Block>& block);
+      Phi(const ValuePtr<>& type, const ValuePtr<Block>& block, const SourceLocation& location);
       typedef boost::intrusive::list_member_hook<> PhiListHook;
       PhiListHook m_phi_list_hook;
       std::vector<PhiEdge> m_edges;
     };
 
     /**
+
      * \brief Block (list of instructions) inside a function. The
      * value of this term is the label used to jump to this block.
      */
@@ -144,13 +160,18 @@ namespace Psi {
       static bool isa_impl(const Value& v) {return v.term_type() == term_block;}
 
     private:
-      Block(Context *context, const ValuePtr<Function>& function, const ValuePtr<Block>& dominator, bool);
+      Block(const ValuePtr<Function>& function, const ValuePtr<Block>& dominator,
+            bool is_landing_pad, const ValuePtr<Block>& landing_pad,
+            const SourceLocation& location);
       InstructionList m_instructions;
       PhiList m_phi_nodes;
-      bool m_terminated;
       
+      ValuePtr<Function> m_function;
       ValuePtr<Block> m_dominator;
       ValuePtr<Block> m_landing_pad;
+      
+      bool m_is_landing_pad;
+      bool m_terminated;
     };
 
     class Function;
@@ -287,14 +308,14 @@ namespace Psi {
 
       CallingConvention m_calling_convention;
 
-      ValuePtr<> m_result_type;
       std::vector<ValuePtr<> > m_parameter_types;
       unsigned m_n_phantom;
+      ValuePtr<> m_result_type;
     };
 
     class FunctionTypeParameter : public Value {
       friend class Context;
-      FunctionTypeParameter(Context *context, const ValuePtr<>& type);
+      FunctionTypeParameter(Context *context, const ValuePtr<>& type, const SourceLocation& location);
     };
 
     /**
