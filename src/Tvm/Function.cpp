@@ -23,8 +23,10 @@ namespace Psi {
     }
     
     namespace {
+      static const char function_type_operation[] = "function_type";
+      
       HashableValueSetup function_type_hashable_setup(CallingConvention calling_convention, const ValuePtr<>& result_type, const std::vector<ValuePtr<> >& parameter_types) {
-        HashableValueSetup hv = hashable_setup<FunctionType>(result_type);
+        HashableValueSetup hv = HashableValueSetup(function_type_operation)(result_type);
         hv.combine(calling_convention);
         for (std::vector<ValuePtr<> >::const_iterator ii = parameter_types.begin(), ie = parameter_types.end(); ii != ie; ++ii)
           hv.combine(*ii);
@@ -34,12 +36,12 @@ namespace Psi {
 
     FunctionType::FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
                                const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, const SourceLocation& location)
-    : HashableValue(&result_type->context(), term_function_type, Metatype::get(result_type->context(), location),
+    : HashableValue(result_type->context(), term_function_type, Metatype::get(result_type->context(), location),
                     function_type_hashable_setup(calling_convention, result_type, parameter_types), location),
+    m_calling_convention(calling_convention),
     m_parameter_types(parameter_types),
     m_n_phantom(n_phantom),
-    m_result_type(result_type),
-    m_calling_convention(calling_convention) {
+    m_result_type(result_type) {
     }
 
     class Context::FunctionTypeResolverRewriter {
@@ -186,17 +188,17 @@ namespace Psi {
       return ParameterTypeRewriter(parameters)(result_type());
     }
     
-    FunctionTypeParameter::FunctionTypeParameter(Context *context, const ValuePtr<>& type, const SourceLocation& location)
+    FunctionTypeParameter::FunctionTypeParameter(Context& context, const ValuePtr<>& type, const SourceLocation& location)
     : Value(context, term_function_type_parameter, type, this, location) {
     }
 
     ValuePtr<FunctionTypeParameter> Context::new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location) {
-      return ValuePtr<FunctionTypeParameter>(new FunctionTypeParameter(this, type, location));
+      return ValuePtr<FunctionTypeParameter>(new FunctionTypeParameter(*this, type, location));
     }
 
     BlockMember::BlockMember(TermType term_type, const ValuePtr<>& type, const ValuePtr<Block>& block,
                              Value* source, const SourceLocation& location)
-    : Value(&block->context(), term_type, type, source, location),
+    : Value(block->context(), term_type, type, source, location),
     m_block(block) {
     }
 
@@ -296,6 +298,18 @@ namespace Psi {
       if (term)
         m_terminated = true;
     }
+    
+    /**
+     * \brief Get the list of blocks which this one can exit to (including exceptions)
+     */
+    std::vector<ValuePtr<Block> > Block::successors() {
+      std::vector<ValuePtr<Block> > result;
+      if (m_terminated)
+        result = dyn_cast<TerminatorInstruction>(m_instructions.back())->successors();
+      if (m_landing_pad)
+        result.push_back(m_landing_pad);
+      return result;
+    }
 
     /**
      * \brief Add a value for a phi term along an incoming edge.
@@ -358,7 +372,7 @@ namespace Psi {
 
     Block::Block(const ValuePtr<Function>& function, const ValuePtr<Block>& dominator,
                  bool is_landing_pad, const ValuePtr<Block>& landing_pad, const SourceLocation& location)
-    : Value(&function->context(), term_block, BlockType::get(function->context(), location), this, location),
+    : Value(function->context(), term_block, BlockType::get(function->context(), location), this, location),
     m_function(function),
     m_dominator(dominator),
     m_landing_pad(landing_pad),
@@ -366,72 +380,18 @@ namespace Psi {
     m_terminated(false) {
     }
 
-    
-    FunctionParameterTerm::FunctionParameterTerm(const UserInitializer& ui, Context *context, FunctionTerm* function, Term* type, bool phantom)
-      : Term(ui, context, term_function_parameter, this, type),
-      m_phantom(phantom) {
+    FunctionParameter::FunctionParameter(Context& context, const ValuePtr<Function>& function, const ValuePtr<>& type, bool phantom, const SourceLocation& location)
+    : Value(context, term_function_parameter, type, this, location),
+    m_phantom(phantom),
+    m_function(function) {
       PSI_ASSERT(!type->parameterized());
-      set_base_parameter(0, function);
     }
-
-    class FunctionParameterTerm::Initializer : public InitializerBase<FunctionParameterTerm> {
-    public:
-      Initializer(FunctionTerm* function, Term* type, bool phantom)
-        : m_function(function), m_type(type), m_phantom(phantom) {
-      }
-
-      std::size_t n_uses() const {
-        return 1;
-      }
-
-      FunctionParameterTerm* initialize(void *base, const UserInitializer& ui, Context *context) const {
-        return new (base) FunctionParameterTerm(ui, context, m_function, m_type, m_phantom);
-      }
-
-    private:
-      FunctionTerm* m_function;
-      Term* m_type;
-      bool m_phantom;
-    };
-
-    FunctionTerm::FunctionTerm(const UserInitializer& ui, Context *context, FunctionTypeTerm* type, const std::string& name, Module *module)
-      : GlobalTerm(ui, context, term_function, type, name, module) {
-      ScopedArray<Term*> parameters(type->n_parameters());
-      for (std::size_t i = 0; i < parameters.size(); ++i) {
-        Term* param_type = type->parameter_type_after(parameters.slice(0, i));
-        FunctionParameterTerm* param = context->allocate_term(FunctionParameterTerm::Initializer(this, param_type, i<type->n_phantom_parameters()));
-        set_base_parameter(i+3, param);
-        parameters[i] = param;
-      }
-
-      set_base_parameter(2, type->result_type_after(parameters));
-    }
-
-    class FunctionTerm::Initializer : public InitializerBase<FunctionTerm> {
-    public:
-      Initializer(FunctionTypeTerm* type, const std::string& name, Module *module)
-      : m_type(type), m_name(name), m_module(module) {
-      }
-
-      FunctionTerm* initialize(void *base, const UserInitializer& ui, Context* context) const {
-        return new (base) FunctionTerm(ui, context, m_type, m_name, m_module);
-      }
-
-      std::size_t n_uses() const {
-        return m_type->n_parameters() + 3;
-      }
-
-    private:
-      FunctionTypeTerm* m_type;
-      std::string m_name;
-      Module *m_module;
-    };
 
     /**
      * \brief Create a new function.
      */
-    FunctionTerm* Module::new_function(const std::string& name, FunctionTypeTerm* type) {
-      FunctionTerm *result = context().allocate_term(FunctionTerm::Initializer(type, name, this));
+    ValuePtr<Function> Module::new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location) {
+      ValuePtr<Function> result(::new Function(&context(), type, name, this, location));
       add_member(result);
       return result;
     }
@@ -443,11 +403,11 @@ namespace Psi {
      * external. Once an entry point has been set, it cannot be
      * changed.
      */
-    void FunctionTerm::set_entry(BlockTerm* block) {
-      if (entry())
+    void Function::set_entry(const ValuePtr<Block>& block) {
+      if (m_entry)
         throw TvmUserError("Cannot change the entry point of a function once it is set");
       
-      set_base_parameter(1, block);
+      m_entry = block;
     }
 
     /**
@@ -456,39 +416,24 @@ namespace Psi {
      * \param dominator Dominating block. If this is NULL, only parameters
      * are available in this block.
      */
-    BlockTerm* FunctionTerm::new_block(BlockTerm* dominator) {
-      return context().allocate_term(BlockTerm::Initializer(this, dominator, false));
+    ValuePtr<Block> Function::new_block(const SourceLocation& location, const ValuePtr<Block>& dominator, const ValuePtr<Block>& landing_pad) {
+      return ValuePtr<Block>(::new Block(ValuePtr<Function>(this), dominator, false, landing_pad, location));
     }
 
     /**
      * \brief Create a new block.
      * 
-     * Equivalent to <tt>new_block(NULL)</tt>.
+     * \param dominator Dominating block. If this is NULL, only parameters
+     * are available in this block.
      */
-    BlockTerm* FunctionTerm::new_block() {
-      return new_block(NULL);
-    }
-
-    /**
-     * \brief Create a new landing pad.
-     * 
-     * \param dominator Dominating block.
-     */
-    BlockTerm* FunctionTerm::new_landing_pad(BlockTerm* dominator) {
-      return context().allocate_term(BlockTerm::Initializer(this, dominator, true));
-    }
-    
-    /**
-     * \brief Create a new landing pad which is not dominated by any block.
-     */
-    BlockTerm* FunctionTerm::new_landing_pad() {
-      return new_landing_pad(NULL);
+    ValuePtr<Block> Function::new_landing_pad(const SourceLocation& location, const ValuePtr<Block>& dominator, const ValuePtr<Block>& landing_pad) {
+      return ValuePtr<Block>(::new Block(ValuePtr<Function>(this), dominator, true, landing_pad, location));
     }
 
     /**
      * Add a name for a term within this function.
      */
-    void FunctionTerm::add_term_name(Term *term, const std::string& name) {
+    void Function::add_term_name(const ValuePtr<>& term, const std::string& name) {
       m_name_map.insert(std::make_pair(term, name));
     }
 
@@ -500,16 +445,16 @@ namespace Psi {
      * In addition, the first block in the resulting list will always
      * be the function entry.
      */
-    std::vector<BlockTerm*> FunctionTerm::topsort_blocks() {
-      std::vector<BlockTerm*> blocks;
-      boost::unordered_set<BlockTerm*> visited_blocks;
+    std::vector<ValuePtr<Block> > Function::topsort_blocks() {
+      std::vector<ValuePtr<Block> > blocks;
+      boost::unordered_set<ValuePtr<Block> > visited_blocks;
 
       blocks.push_back(entry());
       visited_blocks.insert(entry());
       
       for (std::size_t i = 0; i != blocks.size(); ++i) {
-        std::vector<BlockTerm*> successors = blocks[i]->successors();
-        for (std::vector<BlockTerm*>::iterator it = successors.begin(); it != successors.end(); ++it) {
+        std::vector<ValuePtr<Block> > successors = blocks[i]->successors();
+        for (std::vector<ValuePtr<Block> >::iterator it = successors.begin(); it != successors.end(); ++it) {
           if (visited_blocks.find((*it)->dominator()) != visited_blocks.end()) {
             if (visited_blocks.insert(*it).second)
               blocks.push_back(*it);
@@ -526,39 +471,41 @@ namespace Psi {
      * \param source Source to insert instructions after. This should be a
      * value source as returned by Term::source().
      */
-    InstructionInsertPoint InstructionInsertPoint::after_source(Term *source) {
+    InstructionInsertPoint InstructionInsertPoint::after_source(const ValuePtr<>& source) {
+      ValuePtr<Block> block;
+
       switch (source->term_type()) {
       // switch statements allow some weird stuff...
       {
-        BlockTerm *block;
-        
       case term_function:
-        block = cast<FunctionTerm>(source)->entry();
+        block = value_cast<Function>(source)->entry();
         goto block_function_common;
 
       case term_block:
-        block = cast<BlockTerm>(source);
+        block = value_cast<Block>(source);
         goto block_function_common;
       
       block_function_common:
-        BlockTerm::InstructionList& insn_list = block->instructions();
+        const Block::InstructionList& insn_list = block->instructions();
         if (insn_list.empty())
           return InstructionInsertPoint(block);
         else
-          return InstructionInsertPoint(&insn_list.front());
+          return InstructionInsertPoint(insn_list.front());
       }
 
       case term_instruction: {
-        InstructionTerm *insn = cast<InstructionTerm>(source);
-        BlockTerm *block = insn->block();
-        BlockTerm::InstructionList& insn_list = block->instructions();
-        BlockTerm::InstructionList::iterator insn_it = insn_list.iterator_to(*insn);
+        ValuePtr<Instruction> insn = value_cast<Instruction>(source);
+        ValuePtr<Block> block = insn->block();
+        const Block::InstructionList& insn_list = block->instructions();
+        Block::InstructionList::const_iterator insn_it =
+          std::find(insn_list.begin(), insn_list.end(), insn);
+        if (insn_it == insn_list.end())
+          throw TvmUserError("instruction cannot be found in this block");
         ++insn_it;
         if (insn_it == insn_list.end())
           return InstructionInsertPoint(block);
         else
-          return InstructionInsertPoint(&*insn_it);
-        break;
+          return InstructionInsertPoint(*insn_it);
       }
 
       default:

@@ -32,6 +32,10 @@ namespace Psi {
         throw TvmUserError("second parameter to type_v must be intptr");
     }
 
+    ValuePtr<> MetatypeValue::get(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location) {
+      return size->context().get_functional(MetatypeValue(size, alignment, location));
+    }
+    
     PSI_TVM_FUNCTIONAL_IMPL(MetatypeSize, UnaryOp, sizeof)
     
     MetatypeSize::MetatypeSize(const ValuePtr<>& target, const SourceLocation& location)
@@ -183,7 +187,7 @@ namespace Psi {
     }
     
     ArrayValue::ArrayValue(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements, const SourceLocation& location)
-    : Constructor(ArrayType::get(element_type, IntegerValue::get_intptr(element_type->context(), elements.size()), location), array_hashable_setup(element_type, elements), location),
+    : Constructor(ArrayType::get(element_type, IntegerValue::get_intptr(element_type->context(), elements.size(), location), location), array_hashable_setup(element_type, elements), location),
     m_element_type(element_type),
     m_elements(elements) {
       if (!element_type->is_type())

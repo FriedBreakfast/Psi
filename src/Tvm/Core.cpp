@@ -36,10 +36,10 @@ namespace Psi {
       return m_str;
     }
 
-    Value::Value(Context *context, TermType term_type, const ValuePtr<>& type,
+    Value::Value(Context& context, TermType term_type, const ValuePtr<>& type,
                  Value *source, const SourceLocation& location)
     : m_reference_count(0),
-    m_context(context),
+    m_context(&context),
     m_term_type(term_type),
     m_type(type),
     m_source(source),
@@ -62,7 +62,7 @@ namespace Psi {
           m_category = category_recursive;
         }
       } else {
-        if (context != type->m_context)
+        if (m_context != type->m_context)
           throw TvmUserError("context mismatch between term and its type");
 
         switch (type->m_category) {
@@ -100,7 +100,7 @@ namespace Psi {
       return h.m_hash;
     }
 
-    HashableValue::HashableValue(Context *context, TermType term_type, const ValuePtr<>& type,
+    HashableValue::HashableValue(Context& context, TermType term_type, const ValuePtr<>& type,
                                  const HashableValueSetup& setup, const SourceLocation& location)
     : Value(context, term_type, type, setup.source(), location),
       m_hash(setup.hash()) {
@@ -118,7 +118,7 @@ namespace Psi {
      * contents; the final type of this variable will in fact be a
      * pointer to this type.
      */
-    Global::Global(Context *context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
+    Global::Global(Context& context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
     : Value(context, term_type, PointerType::get(type, location), this, location),
       m_name(name),
       m_module(module) {
@@ -132,7 +132,7 @@ namespace Psi {
       return value_cast<PointerType>(type())->target_type();
     }
 
-    GlobalVariable::GlobalVariable(Context *context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
+    GlobalVariable::GlobalVariable(Context& context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
     : Global(context, term_global_variable, type, name, module, location),
       m_constant(false) {
     }
@@ -157,7 +157,7 @@ namespace Psi {
       if (type->phantom())
         throw TvmUserError("global variable type cannot be phantom");
 
-      ValuePtr<GlobalVariable> result(::new GlobalVariable(&context(), type, name, this, location));
+      ValuePtr<GlobalVariable> result(::new GlobalVariable(context(), type, name, this, location));
       add_member(result);
       return result;
     }

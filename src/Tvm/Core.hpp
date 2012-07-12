@@ -63,7 +63,7 @@ namespace Psi {
     enum TermType {
       term_instruction, ///< Instruction: \copybrief Instruction
       term_apply, ///< Apply: \copybrief Apply
-      term_recursive, ///< Recursive: \copybrief Recursive
+      term_recursive, ///< RecursiveType: \copybrief RecursiveType
       term_recursive_parameter, ///< RecursiveParameter: \copybrief RecursiveParameter
       term_block, ///< Block: \copybrief Block
       term_global_variable, ///< GlobalVariable: \copybrief GlobalVariable
@@ -206,7 +206,7 @@ namespace Psi {
       }
 
     protected:
-      Value(Context *context, TermType term_type, const ValuePtr<>& type,
+      Value(Context& context, TermType term_type, const ValuePtr<>& type,
             Value *source, const SourceLocation& location);
     };
     
@@ -327,7 +327,7 @@ namespace Psi {
       friend std::size_t Value::hash_value() const;
 
     protected:
-      HashableValue(Context *context, TermType term_type, const ValuePtr<>& type, const HashableValueSetup& setup, const SourceLocation& location);
+      HashableValue(Context& context, TermType term_type, const ValuePtr<>& type, const HashableValueSetup& setup, const SourceLocation& location);
       virtual ~HashableValue();
 
     public:
@@ -368,7 +368,7 @@ namespace Psi {
       }
 
     private:
-      Global(Context *context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location);
+      Global(Context& context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location);
       boost::intrusive::unordered_set_member_hook<> m_module_member_hook;
       std::string m_name;
       Module *m_module;
@@ -396,8 +396,7 @@ namespace Psi {
       void set_constant(bool is_const) {m_constant = is_const;}
       
     private:
-      class Initializer;
-      GlobalVariable(Context *context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location);
+      GlobalVariable(Context& context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location);
 
       bool m_constant;
       ValuePtr<> m_value;
@@ -407,8 +406,8 @@ namespace Psi {
     class FunctionType;
     class FunctionTypeParameter;
     class Function;
-    class Apply;
-    class Recursive;
+    class ApplyValue;
+    class RecursiveType;
     class RecursiveParameter;
     
     /**
@@ -520,13 +519,13 @@ namespace Psi {
 
       ValuePtr<FunctionTypeParameter> new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location);
 
-      ValuePtr<Apply> apply_recursive(const ValuePtr<Recursive>& recursive,
-                                      const std::vector<ValuePtr<> >& parameters);
+      ValuePtr<ApplyValue> apply_recursive(const ValuePtr<RecursiveType>& recursive,
+                                           const std::vector<ValuePtr<> >& parameters);
 
-      ValuePtr<Recursive> new_recursive(const ValuePtr<>&, const ValuePtr<>&,
-                                        const std::vector<ValuePtr<> >&);
+      ValuePtr<RecursiveType> new_recursive(const ValuePtr<>&, const ValuePtr<>&,
+                                            const std::vector<ValuePtr<> >&);
 
-      void resolve_recursive(const ValuePtr<Recursive>& recursive, const ValuePtr<>& to);
+      void resolve_recursive(const ValuePtr<RecursiveType>& recursive, const ValuePtr<>& to);
 
     private:
       Context(const Context&);

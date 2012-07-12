@@ -85,6 +85,7 @@ namespace Psi {
     public:
       
       MetatypeValue(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location);
+      static ValuePtr<> get(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location);
       
       /// \brief Get the size of this type
       const ValuePtr<>& size() const {return m_size;}

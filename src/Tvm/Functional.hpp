@@ -88,10 +88,36 @@ namespace Psi {
       const ValuePtr<>& parameter() const {return m_parameter;}
     };
     
+#define PSI_TVM_UNARY_OP_DECL(name,base) \
+    class name : public base { \
+      PSI_TVM_FUNCTIONAL_DECL(name) \
+      \
+    public: \
+      name(const ValuePtr<>& arg, const SourceLocation& location); \
+      static ValuePtr<> get(const ValuePtr<>& arg, const SourceLocation& location); \
+    };
+    
     class BinaryOp : public FunctionalValue {
+    public:
+      const ValuePtr<>& lhs() const {return m_lhs;}
+      const ValuePtr<>& rhs() const {return m_rhs;}
+      
     protected:
       BinaryOp(const ValuePtr<>& type, const ValuePtr<>& lhs, const ValuePtr<>& rhs, const HashableValueSetup& hash, const SourceLocation& location);
       BinaryOp(const RewriteCallback& callback, const BinaryOp& src);
+      
+    private:
+      ValuePtr<> m_lhs;
+      ValuePtr<> m_rhs;
+    };
+
+#define PSI_TVM_BINARY_OP_DECL(name,base) \
+    class name : public base { \
+      PSI_TVM_FUNCTIONAL_DECL(name) \
+      \
+    public: \
+      name(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location); \
+      static ValuePtr<> get(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location); \
     };
     
     class Type : public FunctionalValue {

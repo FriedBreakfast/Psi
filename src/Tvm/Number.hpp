@@ -15,6 +15,10 @@ namespace Psi {
   namespace Tvm {
     class BooleanType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(BooleanType)
+      
+    public:
+      BooleanType(Context& context, const SourceLocation& location);
+      static ValuePtr<BooleanType> get(Context& context, const SourceLocation& location);
     };
 
     class BooleanValue : public Constructor {
@@ -27,7 +31,7 @@ namespace Psi {
       /// \brief Get the value of this constant.
       bool value() const {return m_value;}
 
-      static ValuePtr<BooleanValue> get(Context& context, bool value);
+      static ValuePtr<BooleanValue> get(Context& context, bool value, const SourceLocation& location);
     };
 
     class IntegerType : public Type {
@@ -52,7 +56,7 @@ namespace Psi {
       bool is_signed() const {return m_is_signed;}
       unsigned bits() const {return value_bits(m_width);}
       
-      static ValuePtr<IntegerType> get(Context& context, Width width, bool is_signed);
+      static ValuePtr<IntegerType> get(Context& context, Width width, bool is_signed, const SourceLocation& location);
       static ValuePtr<IntegerType> get_intptr(Context& context, const SourceLocation& location);
 
       static unsigned value_bits(IntegerType::Width width);
@@ -76,8 +80,8 @@ namespace Psi {
       /// \brief Get the type of this term cast to IntegerType::Ptr
       ValuePtr<IntegerType> type() const {return value_cast<IntegerType>(Value::type());}
 
-      static ValuePtr<IntegerValue> get(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value);
-      static ValuePtr<> get_intptr(Context& context, std::size_t n);
+      static ValuePtr<IntegerValue> get(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location);
+      static ValuePtr<> get_intptr(Context& context, std::size_t n, const SourceLocation& location);
     };
 
     class FloatType : public Type {
@@ -96,7 +100,7 @@ namespace Psi {
       /// \brief Get the width of this floating point type.
       Width width() const {return m_width;}
 
-      static ValuePtr<FloatType> get(Context& context, Width width);
+      static ValuePtr<FloatType> get(Context& context, Width width, const SourceLocation& location);
       
     private:
       Width m_width;
@@ -140,12 +144,13 @@ namespace Psi {
       Which m_which;
     };
 
+    PSI_TVM_UNARY_OP_DECL(IntegerNegative, IntegerUnaryOp)
+    PSI_TVM_UNARY_OP_DECL(BitNot, IntegerUnaryOp)
+
     /**
      * \brief Binary operations on two integers of the same width.
      */
     class IntegerBinaryOp : public BinaryOp {
-      PSI_TVM_FUNCTIONAL_DECL(IntegerBinaryOp)
-
     public:
       enum Which {
         int_add,
@@ -156,36 +161,30 @@ namespace Psi {
         int_xor
       };
       
-      IntegerBinaryOp(Which which, const ValuePtr<>& lhs, const ValuePtr<>& rhs);
       /// \brief Which opertion this is
       Which which() const {return m_which;}
+
+    protected:
+      IntegerBinaryOp(Which which, const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
       
     private:
       Which m_which;
     };
     
-    class Compare : public BinaryOp {
-    public:
-      /// \brief Comparison types
-      enum Which {
-        cmp_eq,
-        cmp_ne,
-        cmp_gt,
-        cmp_ge,
-        cmp_lt,
-        cmp_le
-      };
-      
-      Compare(Which which, const ValuePtr<>& lhs, const ValuePtr<>& rhs);
-      Which which() const {return m_which;}
-      
-    private:
-      Which m_which;
-    };
     
-    class IntegerCompare : public Compare {
-      static ValuePtr<IntegerCompare> get(Compare::Which which, const ValuePtr<>& lhs, const ValuePtr<>& rhs);
-    };
+    PSI_TVM_BINARY_OP_DECL(IntegerAdd, IntegerBinaryOp);
+    PSI_TVM_BINARY_OP_DECL(IntegerMultiply, IntegerBinaryOp);
+    PSI_TVM_BINARY_OP_DECL(IntegerDivide, IntegerBinaryOp);
+    PSI_TVM_BINARY_OP_DECL(BitAnd, IntegerBinaryOp);
+    PSI_TVM_BINARY_OP_DECL(BitOr, IntegerBinaryOp);
+    PSI_TVM_BINARY_OP_DECL(BitXor, IntegerBinaryOp);
+    
+    PSI_TVM_BINARY_OP_DECL(IntegerCompareEq, IntegerBinaryOp);
+    PSI_TVM_BINARY_OP_DECL(IntegerCompareNe, IntegerBinaryOp);
+    PSI_TVM_BINARY_OP_DECL(IntegerCompareGt, IntegerBinaryOp);
+    PSI_TVM_BINARY_OP_DECL(IntegerCompareGe, IntegerBinaryOp);
+    PSI_TVM_BINARY_OP_DECL(IntegerCompareLt, IntegerBinaryOp);
+    PSI_TVM_BINARY_OP_DECL(IntegerCompareLe, IntegerBinaryOp);
     
     class Select : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(Select)
@@ -198,7 +197,7 @@ namespace Psi {
       /// \brief Get the value of this term if \c condition is false.
       const ValuePtr<>& false_value() const {return m_false_value;}
 
-      static ValuePtr<Select> get(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value);
+      static ValuePtr<Select> get(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location);
 
     private:
       ValuePtr<> m_condition;

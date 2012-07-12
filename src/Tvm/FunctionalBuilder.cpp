@@ -5,70 +5,70 @@
 namespace Psi {
   namespace Tvm {
     /// \brief Get the metatype, the type of types.
-    Term* FunctionalBuilder::type_type(Context& context) {
-      return Metatype::get(context);
+    ValuePtr<> FunctionalBuilder::type_type(Context& context, const SourceLocation& location) {
+      return Metatype::get(context, location);
     }
     
     /// \brief Create a type just from its size and alignment
-    Term* FunctionalBuilder::type_value(Term *size, Term *alignment) {
-      return MetatypeValue::get(size, alignment);
+    ValuePtr<> FunctionalBuilder::type_value(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location) {
+      return MetatypeValue::get(size, alignment, location);
     }
     
     /// \brief Get the size of a type.
-    Term* FunctionalBuilder::type_size(Term *type) {
-      if (MetatypeValue::Ptr mt = dyn_cast<MetatypeValue>(type)) {
+    ValuePtr<> FunctionalBuilder::type_size(const ValuePtr<>& type, const SourceLocation& location) {
+      if (ValuePtr<MetatypeValue> mt = dyn_cast<MetatypeValue>(type)) {
         return mt->size();
       }
       
-      Term *result = MetatypeSize::get(type);
+      const ValuePtr<>& result = MetatypeSize::get(type, location);
       
       if (isa<UndefinedValue>(type))
-        return undef(result->type());
+        return undef(result->type(), location);
       
       return result;
     }
     
     /// \brief Get the alignment of a type.
-    Term* FunctionalBuilder::type_alignment(Term *type) {
-      if (MetatypeValue::Ptr mt = dyn_cast<MetatypeValue>(type))
+    ValuePtr<> FunctionalBuilder::type_alignment(const ValuePtr<>& type, const SourceLocation& location) {
+      if (ValuePtr<MetatypeValue> mt = dyn_cast<MetatypeValue>(type))
         return mt->alignment();
 
-      Term *result = MetatypeAlignment::get(type);
+      const ValuePtr<>& result = MetatypeAlignment::get(type, location);
       
       if (isa<UndefinedValue>(type))
-        return undef(result->type());
+        return undef(result->type(), location);
       
       return result;
     }
 
     /// \brief Get the type of blocks
-    Term* FunctionalBuilder::block_type(Context& context) {
-      return BlockType::get(context);
+    ValuePtr<> FunctionalBuilder::block_type(Context& context, const SourceLocation& location) {
+      return BlockType::get(context, location);
     }
     
     /// \brief Get the empty type
-    Term* FunctionalBuilder::empty_type(Context& context) {
-      return EmptyType::get(context);
+    ValuePtr<> FunctionalBuilder::empty_type(Context& context, const SourceLocation& location) {
+      return EmptyType::get(context, location);
     }
     
     /// \brief Get the unique value of the empty type
-    Term* FunctionalBuilder::empty_value(Context& context) {
-      return EmptyValue::get(context);
+    ValuePtr<> FunctionalBuilder::empty_value(Context& context, const SourceLocation& location) {
+      return EmptyValue::get(context, location);
     }
     
     /// \brief Get the byte type
-    Term* FunctionalBuilder::byte_type(Context& context) {
-      return ByteType::get(context);
+    ValuePtr<> FunctionalBuilder::byte_type(Context& context, const SourceLocation& location) {
+      return ByteType::get(context, location);
     }
     
     /// \brief Get the pointer-to-byte type
-    Term* FunctionalBuilder::byte_pointer_type(Context& context) {
-      return PointerType::get(ByteType::get(context));
+    ValuePtr<> FunctionalBuilder::byte_pointer_type(Context& context, const SourceLocation& location) {
+      return PointerType::get(ByteType::get(context, location), location);
     }
     
     /// \brief Get an undefined value of the specified type.
-    Term* FunctionalBuilder::undef(Term *type) {
-      return UndefinedValue::get(type);
+    ValuePtr<> FunctionalBuilder::undef(const ValuePtr<>& type, const SourceLocation& location) {
+      return UndefinedValue::get(type, location);
     }
 
     /**
@@ -76,8 +76,8 @@ namespace Psi {
      * 
      * \param target Type being pointed to.
      */
-    Term* FunctionalBuilder::pointer_type(Term* target) {
-      return PointerType::get(target);
+    ValuePtr<> FunctionalBuilder::pointer_type(const ValuePtr<>& target, const SourceLocation& location) {
+      return PointerType::get(target, location);
     }
     
     /**
@@ -87,13 +87,13 @@ namespace Psi {
      * 
      * \param length The array length.
      */
-    Term* FunctionalBuilder::array_type(Term* element_type, Term* length) {
-      return ArrayType::get(element_type, length);
+    ValuePtr<> FunctionalBuilder::array_type(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location) {
+      return ArrayType::get(element_type, length, location);
     }
     
     /// \copydoc FunctionalBuilder::array_type(Term*,Term*)
-    Term* FunctionalBuilder::array_type(Term *element_type, unsigned length) {
-      return array_type(element_type, size_value(element_type->context(), length));
+    ValuePtr<> FunctionalBuilder::array_type(const ValuePtr<>& element_type, unsigned length, const SourceLocation& location) {
+      return array_type(element_type, size_value(element_type->context(), length, location), location);
     }
     
     /**
@@ -103,8 +103,8 @@ namespace Psi {
      * 
      * \param elements List of types of members of the struct.
      */
-    Term* FunctionalBuilder::struct_type(Context& context, ArrayPtr<Term*const> elements) {
-      return StructType::get(context, elements);
+    ValuePtr<> FunctionalBuilder::struct_type(Context& context, const std::vector<ValuePtr<> >& elements, const SourceLocation& location) {
+      return StructType::get(context, elements, location);
     }
     
     /**
@@ -114,8 +114,8 @@ namespace Psi {
      * 
      * \param elements List of types of members of the union.
      */
-    Term* FunctionalBuilder::union_type(Context& context, ArrayPtr<Term*const> elements) {
-      return UnionType::get(context, elements);
+    ValuePtr<> FunctionalBuilder::union_type(Context& context, const std::vector<ValuePtr<> >& elements, const SourceLocation& location) {
+      return UnionType::get(context, elements, location);
     }
     
     /**
@@ -126,8 +126,8 @@ namespace Psi {
      * 
      * \param elements Values of array elements.
      */
-    Term* FunctionalBuilder::array_value(Term* element_type, ArrayPtr<Term*const> elements) {
-      return ArrayValue::get(element_type, elements);
+    ValuePtr<> FunctionalBuilder::array_value(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements, const SourceLocation& location) {
+      return ArrayValue::get(element_type, elements, location);
     }
     
     /**
@@ -138,8 +138,8 @@ namespace Psi {
      * \param elements Values of structure elements. The structure
      * type will be inferred from the types of these elements.
      */
-    Term* FunctionalBuilder::struct_value(Context& context, ArrayPtr<Term*const> elements) {
-      return StructValue::get(context, elements);
+    ValuePtr<> FunctionalBuilder::struct_value(Context& context, const std::vector<ValuePtr<> >& elements, const SourceLocation& location) {
+      return StructValue::get(context, elements, location);
     }
     
     /**
@@ -154,11 +154,11 @@ namespace Psi {
      * 
      * \param value Value for an element of the union.
      */
-    Term* FunctionalBuilder::union_value(Term* type, Term* value) {
-      Term *result = UnionValue::get(cast<UnionType>(type), value);
+    ValuePtr<> FunctionalBuilder::union_value(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location) {
+      const ValuePtr<>& result = UnionValue::get(value_cast<UnionType>(type), value, location);
       
       if (isa<UndefinedValue>(value))
-        return undef(type);
+        return undef(type, location);
       
       return result;
     }
@@ -177,11 +177,11 @@ namespace Psi {
      * 
      * \param index Index into the array.
      */
-    Term* FunctionalBuilder::array_element(Term* array, Term* index) {
-      Term *result = ArrayElement::get(array, index);
+    ValuePtr<> FunctionalBuilder::array_element(const ValuePtr<>& array, const ValuePtr<>& index, const SourceLocation& location) {
+      const ValuePtr<>& result = ArrayElement::get(array, index);
       
-      if (ArrayValue::Ptr array_val = dyn_cast<ArrayValue>(array)) {
-        if (IntegerValue::Ptr index_val = dyn_cast<IntegerValue>(index)) {
+      if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(array)) {
+        if (ValuePtr<IntegerValue> index_val = dyn_cast<IntegerValue>(index)) {
           boost::optional<unsigned> index_ui = index_val->value().unsigned_value();
           if (index_ui && (*index_ui < array_val->length()))
             return array_val->value(*index_ui);
@@ -189,7 +189,7 @@ namespace Psi {
             throw TvmUserError("array index out of range");
         }
       } else if (isa<UndefinedValue>(array) || isa<UndefinedValue>(index)) {
-        return undef(result->type());
+        return undef(result->type(), location);
       }
       
       return result;
@@ -201,8 +201,8 @@ namespace Psi {
      * \param array Array being subscripted.
      * \param index Index into the array.
      */
-    Term* FunctionalBuilder::array_element(Term* array, unsigned index) {
-      return array_element(array, size_value(array->context(), index));
+    ValuePtr<> FunctionalBuilder::array_element(const ValuePtr<>& array, unsigned index, const SourceLocation& location) {
+      return array_element(array, size_value(array->context(), index, location), location);
     }
     
     /**
@@ -211,13 +211,13 @@ namespace Psi {
      * \param aggregate Struct being subscripted.
      * \param index Index of the member to get a value for.
      */
-    Term* FunctionalBuilder::struct_element(Term* aggregate, unsigned index) {
-      Term *result = StructElement::get(aggregate, index);
+    ValuePtr<> FunctionalBuilder::struct_element(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
+      const ValuePtr<>& result = StructElement::get(aggregate, index);
       
-      if (StructValue::Ptr struct_val = dyn_cast<StructValue>(aggregate)) {
+      if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(aggregate)) {
         return struct_val->member_value(index);
       } else if (isa<UndefinedValue>(aggregate)) {
-        return undef(result->type());
+        return undef(result->type(), location);
       }
       
       return result;
@@ -229,15 +229,15 @@ namespace Psi {
      * \param aggregate Union being subscripted.
      * \param member_type Type of the member whose value is returned.
      */
-    Term* FunctionalBuilder::union_element(Term* aggregate, Term* member_type) {
-      Term *result = UnionElement::get(aggregate, member_type);
+    ValuePtr<> FunctionalBuilder::union_element(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location) {
+      const ValuePtr<>& result = UnionElement::get(aggregate, member_type);
       
-      if (UnionValue::Ptr union_val = dyn_cast<UnionValue>(aggregate)) {
-        Term *value = union_val->value();
+      if (ValuePtr<UnionValue> union_val = dyn_cast<UnionValue>(aggregate)) {
+        const ValuePtr<>& value = union_val->value();
         if (member_type == value->type())
           return value;
       } else if (isa<UndefinedValue>(aggregate)) {
-        return undef(result->type());
+        return undef(result->type(), location);
       }
       
       return result;
@@ -253,13 +253,13 @@ namespace Psi {
      * \param aggregate Union being subscripted.
      * \param index Index of the member to get a value for.
      */
-    Term* FunctionalBuilder::union_element(Term* aggregate, unsigned index) {
-      UnionType::Ptr union_ty = dyn_cast<UnionType>(aggregate->type());
+    ValuePtr<> FunctionalBuilder::union_element(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
+      ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(aggregate->type());
       if (!union_ty)
         throw TvmUserError("union_el aggregate parameter is not a union");
       if (index >= union_ty->n_members())
         throw TvmUserError("union member index out of range");
-      return union_element(aggregate, union_ty->member_type(index));
+      return union_element(aggregate, union_ty->member_type(index), location);
     }
     
     /**
@@ -269,11 +269,11 @@ namespace Psi {
      * 
      * \param index Index of element to get.
      */
-    Term* FunctionalBuilder::array_element_ptr(Term *array, Term *index) {
-      Term *result = ArrayElementPtr::get(array, index);
+    ValuePtr<> FunctionalBuilder::array_element_ptr(const ValuePtr<>& array, const ValuePtr<>& index, const SourceLocation& location) {
+      ValuePtr<> result = ArrayElementPtr::get(array, index, location);
       
       if (isa<UndefinedValue>(array) || isa<UndefinedValue>(index))
-        return undef(result->type());
+        return undef(result->type(), location);
       
       return result;
     }
@@ -285,8 +285,8 @@ namespace Psi {
      * 
      * \param index Index of element to get.
      */
-    Term* FunctionalBuilder::array_element_ptr(Term *array, unsigned index) {
-      return array_element_ptr(array, size_value(array->context(), index));
+    ValuePtr<> FunctionalBuilder::array_element_ptr(const ValuePtr<>& array, unsigned index, const SourceLocation& location) {
+      return array_element_ptr(array, size_value(array->context(), index, location), location);
     }
     
     /**
@@ -296,11 +296,11 @@ namespace Psi {
      * 
      * \param index Index of member to get a pointer to.
      */
-    Term* FunctionalBuilder::struct_element_ptr(Term *aggregate, unsigned index) {
-      Term *result = StructElementPtr::get(aggregate, index);
+    ValuePtr<> FunctionalBuilder::struct_element_ptr(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
+      const ValuePtr<>& result = StructElementPtr::get(aggregate, index);
       
       if (isa<UndefinedValue>(aggregate))
-        return undef(result->type());
+        return undef(result->type(), location);
       
       return result;
     }
@@ -312,11 +312,11 @@ namespace Psi {
      * 
      * \param type Member type to get a pointer to.
      */
-    Term* FunctionalBuilder::union_element_ptr(Term *aggregate, Term *type) {
-      Term *result = UnionElementPtr::get(aggregate, type);
+    ValuePtr<> FunctionalBuilder::union_element_ptr(const ValuePtr<>& aggregate, const ValuePtr<>& type, const SourceLocation& location) {
+      const ValuePtr<>& result = UnionElementPtr::get(aggregate, type);
       
       if (isa<UndefinedValue>(aggregate))
-        return undef(result->type());
+        return undef(result->type(), location);
       
       return result;
     }
@@ -331,16 +331,16 @@ namespace Psi {
      * 
      * \param index Index of member to get a pointer to.
      */
-    Term* FunctionalBuilder::union_element_ptr(Term *aggregate, unsigned index) {
-      PointerType::Ptr union_ptr_ty = dyn_cast<PointerType>(aggregate->type());
+    ValuePtr<> FunctionalBuilder::union_element_ptr(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
+      ValuePtr<PointerType> union_ptr_ty = dyn_cast<PointerType>(aggregate->type());
       if (!union_ptr_ty)
         throw TvmUserError("union_ep aggregate parameter is not a pointer");
-      UnionType::Ptr union_ty = dyn_cast<UnionType>(union_ptr_ty->target_type());
+      ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(union_ptr_ty->target_type());
       if (!union_ty)
         throw TvmUserError("union_ep aggregate parameter is not a pointer to a union");
       if (index >= union_ty->n_members())
         throw TvmUserError("union member index out of range");
-      return union_element_ptr(aggregate, union_ty->member_type(index));
+      return union_element_ptr(aggregate, union_ty->member_type(index), location);
     }
     
     /**
@@ -350,8 +350,8 @@ namespace Psi {
      * 
      * \param index Index of member to get the offset of.
      */
-    Term* FunctionalBuilder::struct_element_offset(Term *type, unsigned index) {
-      return StructElementOffset::get(type, index);
+    ValuePtr<> FunctionalBuilder::struct_element_offset(const ValuePtr<>& type, unsigned index, const SourceLocation& location) {
+      return StructElementOffset::get(type, index, location);
     }
     
     /**
@@ -362,23 +362,24 @@ namespace Psi {
      * \param result_type Type of pointed-to type of the new pointer (and
      * hence not necessarily a pointer type itself).
      */
-    Term* FunctionalBuilder::pointer_cast(Term *ptr, Term *result_type) {
+    ValuePtr<> FunctionalBuilder::pointer_cast(const ValuePtr<>& ptr, const ValuePtr<>& result_type, const SourceLocation& location) {
+      ValuePtr<> my_ptr = ptr;
       // Try to get to the lowest pointer if multiple casts are involved
       while (true) {
-        PointerCast::Ptr cast_ptr = dyn_cast<PointerCast>(ptr);
+        ValuePtr<PointerCast> cast_ptr = dyn_cast<PointerCast>(my_ptr);
         if (cast_ptr)
-          ptr = cast_ptr->pointer();
+          my_ptr = cast_ptr->pointer();
         else
           break;
       }
-      PointerType::Ptr base_type = cast<PointerType>(ptr->type());
+      ValuePtr<PointerType> base_type = value_cast<PointerType>(my_ptr->type());
       if (base_type->target_type() == result_type) {
-        return ptr;
+        return my_ptr;
       } else {
-        Term *result = PointerCast::get(ptr, result_type);
+        const ValuePtr<>& result = PointerCast::get(my_ptr, result_type, location);
         
-        if (isa<UndefinedValue>(ptr))
-          return undef(result->type());
+        if (isa<UndefinedValue>(my_ptr))
+          return undef(result->type(), location);
         
         return result;
       }
@@ -392,18 +393,18 @@ namespace Psi {
      * \param offset Offset from original pointer in units of the
      * pointed-to type.
      */
-    Term* FunctionalBuilder::pointer_offset(Term *ptr, Term *offset) {
-      Term *result = PointerOffset::get(ptr, offset);
+    ValuePtr<> FunctionalBuilder::pointer_offset(const ValuePtr<>& ptr, const ValuePtr<>& offset, const SourceLocation& location) {
+      const ValuePtr<>& result = PointerOffset::get(ptr, offset, location);
       
       if (isa<UndefinedValue>(ptr) || isa<UndefinedValue>(offset))
-        return undef(result->type());
+        return undef(result->type(), location);
       
       return result;
     }
 
     /// \copydoc FunctionalBuilder::pointer_offset(Term*,Term*)
-    Term* FunctionalBuilder::pointer_offset(Term *ptr, unsigned offset) {
-      Term *result = PointerOffset::get(ptr, size_value(ptr->context(), offset));
+    ValuePtr<> FunctionalBuilder::pointer_offset(const ValuePtr<>& ptr, unsigned offset, const SourceLocation& location) {
+      const ValuePtr<>& result = PointerOffset::get(ptr, size_value(ptr->context(), offset, location), location);
       
       if (!offset)
         return ptr;
@@ -412,23 +413,23 @@ namespace Psi {
     }
     
     /// \brief Get the boolean type
-    Term* FunctionalBuilder::bool_type(Context& context) {
-      return BooleanType::get(context);
+    ValuePtr<> FunctionalBuilder::bool_type(Context& context, const SourceLocation& location) {
+      return BooleanType::get(context, location);
     }
     
     /// \brief Get a constant boolean value.
-    Term* FunctionalBuilder::bool_value(Context& context, bool value) {
-      return BooleanValue::get(context, value);
+    ValuePtr<> FunctionalBuilder::bool_value(Context& context, bool value, const SourceLocation& location) {
+      return BooleanValue::get(context, value, location);
     }
     
     /// \brief Get an integer type
-    Term* FunctionalBuilder::int_type(Context& context, IntegerType::Width width, bool is_signed) {
-      return IntegerType::get(context, width, is_signed);
+    ValuePtr<> FunctionalBuilder::int_type(Context& context, IntegerType::Width width, bool is_signed, const SourceLocation& location) {
+      return IntegerType::get(context, width, is_signed, location);
     }
     
     /// \brief Get the intptr type
-    Term* FunctionalBuilder::size_type(Context& context) {
-      return int_type(context, IntegerType::iptr, false);
+    ValuePtr<> FunctionalBuilder::size_type(Context& context, const SourceLocation& location) {
+      return int_type(context, IntegerType::iptr, false, location);
     }
     
     /**
@@ -440,13 +441,13 @@ namespace Psi {
      * 
      * \param value Value of the integer to get.
      */    
-    Term* FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, int value) {
-      return IntegerValue::get(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value));
+    ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, int value, const SourceLocation& location) {
+      return IntegerValue::get(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value), location);
     }
 
     /// \copydoc FunctionalBuilder::int_value(Term*,int)
-    Term* FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, unsigned value) {
-      return IntegerValue::get(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value));
+    ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, unsigned value, const SourceLocation& location) {
+      return IntegerValue::get(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value), location);
     }
 
     /**
@@ -463,10 +464,10 @@ namespace Psi {
      * 
      * \param base Base to use to parse the string.
      */
-    Term* FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const std::string& value, bool negative, unsigned base) {
+    ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const std::string& value, bool negative, unsigned base, const SourceLocation& location) {
       BigInteger bv(IntegerType::value_bits(width));
       bv.parse(value, negative, base);
-      return IntegerValue::get(context, width, is_signed, bv);
+      return IntegerValue::get(context, width, is_signed, bv, location);
     }
     
     /**
@@ -474,28 +475,28 @@ namespace Psi {
      * 
      * \param value Value of the integer to create.
      */
-    Term* FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value) {
-      return IntegerValue::get(context, width, is_signed, value);
+    ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location) {
+      return IntegerValue::get(context, width, is_signed, value, location);
     }
     
     /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,int)
-    Term* FunctionalBuilder::int_value(IntegerType::Ptr type, int value) {
-      return int_value(type->context(), type->width(), type->is_signed(), value);
+    ValuePtr<> FunctionalBuilder::int_value(const ValuePtr<IntegerType>& type, int value, const SourceLocation& location) {
+      return int_value(type->context(), type->width(), type->is_signed(), value, location);
     }
     
     /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,int)
-    Term* FunctionalBuilder::int_value(IntegerType::Ptr type, unsigned value) {
-      return int_value(type->context(), type->width(), type->is_signed(), value);
+    ValuePtr<> FunctionalBuilder::int_value(const ValuePtr<IntegerType>& type, unsigned value, const SourceLocation& location) {
+      return int_value(type->context(), type->width(), type->is_signed(), value, location);
     }
     
     /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,const std::string&,bool,unsigned)
-    Term* FunctionalBuilder::int_value(IntegerType::Ptr type, const std::string& value, bool negative, unsigned base) {
-      return int_value(type->context(), type->width(), type->is_signed(), value, negative, base);
+    ValuePtr<> FunctionalBuilder::int_value(const ValuePtr<IntegerType>& type, const std::string& value, bool negative, unsigned base, const SourceLocation& location) {
+      return int_value(type->context(), type->width(), type->is_signed(), value, negative, base, location);
     }
     
     /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,const BigInteger&)
-    Term* FunctionalBuilder::int_value(IntegerType::Ptr type, const BigInteger& value) {
-      return IntegerValue::get(type->context(), type->width(), type->is_signed(), value);
+    ValuePtr<> FunctionalBuilder::int_value(const ValuePtr<IntegerType>& type, const BigInteger& value, const SourceLocation& location) {
+      return IntegerValue::get(type->context(), type->width(), type->is_signed(), value, location);
     }
 
     /**
@@ -508,8 +509,8 @@ namespace Psi {
      * 
      * \param value Value to initialize the constant with.
      */
-    Term* FunctionalBuilder::size_value(Context& context, unsigned value) {
-      return int_value(context, IntegerType::iptr, false, value);
+    ValuePtr<> FunctionalBuilder::size_value(Context& context, unsigned value, const SourceLocation& location) {
+      return int_value(context, IntegerType::iptr, false, value, location);
     }
     
     namespace {      
@@ -529,10 +530,10 @@ namespace Psi {
        * commutative operation on a pair of constants.
        */
       template<typename CommutativeOp, typename ConstType, typename ConstCombiner>
-      Term* commutative_simplify(Term *lhs, Term *rhs, const ConstCombiner& const_combiner) {
-        typename ConstType::Ptr const_lhs = dyn_cast<ConstType>(lhs), const_rhs = dyn_cast<ConstType>(rhs);
+      ValuePtr<> commutative_simplify(ValuePtr<> lhs, ValuePtr<> rhs, const ConstCombiner& const_combiner, const SourceLocation& location) {
+        ValuePtr<ConstType> const_lhs = dyn_cast<ConstType>(lhs), const_rhs = dyn_cast<ConstType>(rhs);
         if (const_lhs && const_rhs) {
-          return const_combiner(const_lhs, const_rhs);
+          return const_combiner(const_lhs, const_rhs, location);
         } else if (const_lhs || const_rhs) {
           if (!const_lhs) {
             std::swap(const_lhs, const_rhs);
@@ -540,26 +541,26 @@ namespace Psi {
           }
           PSI_ASSERT(const_lhs && !const_rhs);
           
-          if (typename CommutativeOp::Ptr com_op_rhs = dyn_cast<CommutativeOp>(rhs))
-            if (typename ConstType::Ptr const_rhs_lhs = dyn_cast<ConstType>(com_op_rhs->lhs()))
-              return CommutativeOp::get(const_combiner(const_lhs, const_rhs_lhs), com_op_rhs->rhs());
+          if (ValuePtr<CommutativeOp> com_op_rhs = dyn_cast<CommutativeOp>(rhs))
+            if (ValuePtr<ConstType> const_rhs_lhs = dyn_cast<ConstType>(com_op_rhs->lhs()))
+              return CommutativeOp::get(const_combiner(const_lhs, const_rhs_lhs, location), com_op_rhs->rhs(), location);
 
-          return CommutativeOp::get(const_lhs, rhs);
+          return CommutativeOp::get(const_lhs, rhs, location);
         } else {
           PSI_ASSERT(!const_lhs && !const_rhs);
-          typename CommutativeOp::Ptr com_op_lhs = dyn_cast<CommutativeOp>(lhs), com_op_rhs = dyn_cast<CommutativeOp>(rhs);
-          typename ConstType::Ptr const_lhs_lhs = com_op_lhs ? dyn_cast<ConstType>(com_op_lhs->lhs()) : typename ConstType::Ptr();
-          typename ConstType::Ptr const_rhs_lhs = com_op_rhs ? dyn_cast<ConstType>(com_op_rhs->lhs()) : typename ConstType::Ptr();
+          ValuePtr<CommutativeOp> com_op_lhs = dyn_cast<CommutativeOp>(lhs), com_op_rhs = dyn_cast<CommutativeOp>(rhs);
+          ValuePtr<ConstType> const_lhs_lhs = com_op_lhs ? dyn_cast<ConstType>(com_op_lhs->lhs()) : ValuePtr<ConstType>();
+          ValuePtr<ConstType> const_rhs_lhs = com_op_rhs ? dyn_cast<ConstType>(com_op_rhs->lhs()) : ValuePtr<ConstType>();
           
           if (const_lhs_lhs && const_rhs_lhs) {
-            return CommutativeOp::get(const_combiner(const_lhs_lhs, const_rhs_lhs),
-                                      CommutativeOp::get(com_op_lhs->rhs(), com_op_rhs->rhs()));
+            return CommutativeOp::get(const_combiner(const_lhs_lhs, const_rhs_lhs, location),
+                                      CommutativeOp::get(com_op_lhs->rhs(), com_op_rhs->rhs(), location), location);
           } else if (const_lhs_lhs) {
-            return CommutativeOp::get(const_lhs_lhs, CommutativeOp::get(com_op_lhs->rhs(), rhs));
+            return CommutativeOp::get(const_lhs_lhs, CommutativeOp::get(com_op_lhs->rhs(), rhs, location), location);
           } else if (const_rhs_lhs) {
-            return CommutativeOp::get(const_rhs_lhs, CommutativeOp::get(lhs, com_op_rhs->rhs()));
+            return CommutativeOp::get(const_rhs_lhs, CommutativeOp::get(lhs, com_op_rhs->rhs(), location), location);
           } else {
-            return CommutativeOp::get(lhs, rhs);
+            return CommutativeOp::get(lhs, rhs, location);
           }
         }
       }
@@ -571,111 +572,111 @@ namespace Psi {
         explicit IntConstCombiner(CallbackType callback) : m_callback(callback) {
         }
         
-        Term* operator () (IntegerValue::Ptr lhs, IntegerValue::Ptr rhs) const {
+        ValuePtr<> operator () (const ValuePtr<IntegerValue>& lhs, const ValuePtr<IntegerValue>& rhs, const SourceLocation& location) const {
           BigInteger value;
           (value.*m_callback)(lhs->value(), rhs->value());
-          return FunctionalBuilder::int_value(lhs->type(), value);
+          return FunctionalBuilder::int_value(lhs->type(), value, location);
         }
 
       private:
         CallbackType m_callback;
       };
 
-      Term* int_binary_undef(const char *op, Term *lhs, Term *rhs) {
+      ValuePtr<> int_binary_undef(const char *op, const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
         if (lhs->type() != rhs->type())
           throw TvmUserError(std::string("type mismatch on parameter to") + op);
         else if (!isa<IntegerType>(lhs->type()))
           throw TvmUserError(std::string("parameters to ") + op + " are not integers");
-        return FunctionalBuilder::undef(lhs->type());
+        return FunctionalBuilder::undef(lhs->type(), location);
       }
       
-      Term* int_unary_undef(const char *op, Term *parameter) {
+      ValuePtr<> int_unary_undef(const char *op, const ValuePtr<>& parameter, const SourceLocation& location) {
         if (!isa<IntegerType>(parameter->type()))
           throw TvmUserError(std::string("parameters to ") + op +  " are not integers");
-        return FunctionalBuilder::undef(parameter->type());
+        return FunctionalBuilder::undef(parameter->type(), location);
       }
     }
 
     /// \brief Get an integer add operation.
-    Term *FunctionalBuilder::add(Term *lhs, Term *rhs) {
+    ValuePtr<> FunctionalBuilder::add(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
       if (isa<UndefinedValue>(lhs) || isa<UndefinedValue>(rhs)) {
-        return int_binary_undef(IntegerAdd::operation, lhs, rhs);
+        return int_binary_undef(IntegerAdd::operation, lhs, rhs, location);
       } else if (isa<IntegerNegative>(lhs) && isa<IntegerNegative>(rhs)) {
-        return neg(add(cast<IntegerNegative>(lhs)->parameter(), cast<IntegerNegative>(rhs)->parameter()));
+        return neg(add(value_cast<IntegerNegative>(lhs)->parameter(), value_cast<IntegerNegative>(rhs)->parameter(), location), location);
       } else {
-        return commutative_simplify<IntegerAdd, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::add));
+        return commutative_simplify<IntegerAdd, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::add), location);
       }
     }
     
     /// \brief Get an integer subtract operation.
-    Term *FunctionalBuilder::sub(Term *lhs, Term *rhs) {
-      return add(lhs, neg(rhs));
+    ValuePtr<> FunctionalBuilder::sub(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      return add(lhs, neg(rhs, location), location);
     }
     
     /// \brief Get an integer multiply operation.
-    Term *FunctionalBuilder::mul(Term *lhs, Term *rhs) {
-      return IntegerMultiply::get(lhs, rhs);
+    ValuePtr<> FunctionalBuilder::mul(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      return IntegerMultiply::get(lhs, rhs, location);
     }
     
     /// \brief Get an integer division operation.
-    Term *FunctionalBuilder::div(Term *lhs, Term *rhs) {
-      return IntegerDivide::get(lhs, rhs);
+    ValuePtr<> FunctionalBuilder::div(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      return IntegerDivide::get(lhs, rhs, location);
     }
     
     /// \brief Get an integer negation operation
-    Term *FunctionalBuilder::neg(Term *parameter) {
+    ValuePtr<> FunctionalBuilder::neg(const ValuePtr<>& parameter, const SourceLocation& location) {
       if (isa<UndefinedValue>(parameter)) {
-        return int_unary_undef(IntegerNegative::operation, parameter);
-      } else if (IntegerNegative::Ptr neg_op = dyn_cast<IntegerNegative>(parameter)) {
+        return int_unary_undef(IntegerNegative::operation, parameter, location);
+      } else if (ValuePtr<IntegerNegative> neg_op = dyn_cast<IntegerNegative>(parameter)) {
         return neg_op->parameter();
-      } else if (IntegerValue::Ptr int_val = dyn_cast<IntegerValue>(parameter)) {
+      } else if (ValuePtr<IntegerValue> int_val = dyn_cast<IntegerValue>(parameter)) {
         BigInteger value;
         value.negative(int_val->value());
-        return int_value(int_val->type(), value);
+        return int_value(int_val->type(), value, location);
       } else {
-        return IntegerNegative::get(parameter);
+        return IntegerNegative::get(parameter, location);
       }
     }      
     
     /// \brief Get a bitwise and operation
-    Term *FunctionalBuilder::bit_and(Term *lhs, Term *rhs) {
+    ValuePtr<> FunctionalBuilder::bit_and(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
       if (isa<UndefinedValue>(lhs) && isa<UndefinedValue>(rhs)) {
-        return int_binary_undef(BitAnd::operation, lhs, rhs);
+        return int_binary_undef(BitAnd::operation, lhs, rhs, location);
       } else {
-        return commutative_simplify<BitAnd, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::bit_and));
+        return commutative_simplify<BitAnd, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::bit_and), location);
       }
     }
     
     /// \brief Get a bitwise or operation
-    Term *FunctionalBuilder::bit_or(Term *lhs, Term *rhs) {
+    ValuePtr<> FunctionalBuilder::bit_or(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
       if (isa<UndefinedValue>(lhs) || isa<UndefinedValue>(rhs)) {
-        return int_binary_undef(BitOr::operation, lhs, rhs);
+        return int_binary_undef(BitOr::operation, lhs, rhs, location);
       } else {
-        return commutative_simplify<BitOr, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::bit_or));
+        return commutative_simplify<BitOr, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::bit_or), location);
       }
     }
     
     /// \brief Get a bitwise exclusive or operation
-    Term *FunctionalBuilder::bit_xor(Term *lhs, Term *rhs) {
+    ValuePtr<> FunctionalBuilder::bit_xor(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
       if (isa<UndefinedValue>(lhs) || isa<UndefinedValue>(rhs)) {
-        return int_binary_undef(BitXor::operation, lhs, rhs);
+        return int_binary_undef(BitXor::operation, lhs, rhs, location);
       } else {
-        return commutative_simplify<BitXor, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::bit_xor));
+        return commutative_simplify<BitXor, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::bit_xor), location);
       }
     }
     
     /// \brief Get a bitwise inverse operation
-    Term *FunctionalBuilder::bit_not(Term *parameter) {
+    ValuePtr<> FunctionalBuilder::bit_not(const ValuePtr<>& parameter, const SourceLocation& location) {
       if (isa<UndefinedValue>(parameter)) {
-        return int_unary_undef(BitNot::operation, parameter);
-      } else if (BitNot::Ptr not_op = dyn_cast<BitNot>(parameter)) {
+        return int_unary_undef(BitNot::operation, parameter, location);
+      } else if (ValuePtr<BitNot> not_op = dyn_cast<BitNot>(parameter)) {
         return not_op->parameter();
-      } else if (IntegerValue::Ptr int_val = dyn_cast<IntegerValue>(parameter)) {
+      } else if (ValuePtr<IntegerValue> int_val = dyn_cast<IntegerValue>(parameter)) {
         BigInteger value;
         value.bit_not(int_val->value());
-        return int_value(int_val->type(), value);
+        return int_value(int_val->type(), value, location);
       } else {
-        return BitNot::get(parameter);
+        return BitNot::get(parameter, location);
       }
     }
     
@@ -690,11 +691,11 @@ namespace Psi {
         
         CompareShortcut(Category c) : m_c(c) {}
         
-        Term* operator() (Context& context) const {
+        ValuePtr<> operator() (Context& context, const SourceLocation& location) const {
           switch (m_c) {
-          case undef: return FunctionalBuilder::undef(FunctionalBuilder::bool_type(context));
-          case true_: return FunctionalBuilder::bool_value(context, true);
-          case false_: return FunctionalBuilder::bool_value(context, false);
+          case undef: return FunctionalBuilder::undef(FunctionalBuilder::bool_type(context, location), location);
+          case true_: return FunctionalBuilder::bool_value(context, true, location);
+          case false_: return FunctionalBuilder::bool_value(context, false, location);
           default: PSI_FAIL("unexpected value");
           }
         }
@@ -718,88 +719,89 @@ namespace Psi {
        * lhs is max.
        */
       template<typename Op, typename Comparator>
-      Term *cmp_op(Term *lhs, Term *rhs, const Comparator& cmp,
-                   CompareShortcut lhs_undef_min, CompareShortcut lhs_undef_max,
-                   CompareShortcut rhs_undef_min, CompareShortcut rhs_undef_max) {
+      ValuePtr<> cmp_op(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const Comparator& cmp,
+                        CompareShortcut lhs_undef_min, CompareShortcut lhs_undef_max,
+                        CompareShortcut rhs_undef_min, CompareShortcut rhs_undef_max,
+                        const SourceLocation& location) {
         if (lhs->type() != rhs->type())
           throw TvmUserError(std::string("type mismatch on parameters to ") + Op::operation + " operation");
-        IntegerType::Ptr int_ty = dyn_cast<IntegerType>(lhs->type());
+        ValuePtr<IntegerType> int_ty = dyn_cast<IntegerType>(lhs->type());
         if (!int_ty)
           throw TvmUserError(std::string("parameters to ") + Op::operation + " are not integers");
         bool int_ty_signed = int_ty->is_signed();
         
         bool lhs_undef = isa<UndefinedValue>(lhs), rhs_undef = isa<UndefinedValue>(rhs);
-        IntegerValue::Ptr lhs_val = dyn_cast<IntegerValue>(lhs), rhs_val = dyn_cast<IntegerValue>(rhs);
+        ValuePtr<IntegerValue> lhs_val = dyn_cast<IntegerValue>(lhs), rhs_val = dyn_cast<IntegerValue>(rhs);
         
         if (lhs_undef && rhs_undef) {
-          return FunctionalBuilder::undef(FunctionalBuilder::bool_type(int_ty->context()));
+          return FunctionalBuilder::undef(FunctionalBuilder::bool_type(int_ty->context(), location), location);
         } else if (lhs_undef) {
           if (rhs_val) {
             if (rhs_val->value().is_max(int_ty_signed))
-              return lhs_undef_max(int_ty->context());
+              return lhs_undef_max(int_ty->context(), location);
             else if (rhs_val->value().is_min(int_ty_signed))
-              return lhs_undef_min(int_ty->context());
+              return lhs_undef_min(int_ty->context(), location);
             else
-              return FunctionalBuilder::undef(FunctionalBuilder::bool_type(int_ty->context()));
+              return FunctionalBuilder::undef(FunctionalBuilder::bool_type(int_ty->context(), location), location);
           }
         } else if (rhs_undef) {
           if (lhs_val) {
             if (lhs_val->value().is_max(int_ty_signed))
-              return rhs_undef_max(int_ty->context());
+              return rhs_undef_max(int_ty->context(), location);
             else if (lhs_val->value().is_min(int_ty_signed))
-              return rhs_undef_min(int_ty->context());
+              return rhs_undef_min(int_ty->context(), location);
             else
-              return FunctionalBuilder::undef(FunctionalBuilder::bool_type(int_ty->context()));
+              return FunctionalBuilder::undef(FunctionalBuilder::bool_type(int_ty->context(), location), location);
           }
         } else if (lhs_val && rhs_val) {
           int cmp_val = int_ty->is_signed() ? lhs_val->value().cmp_signed(rhs_val->value()) : lhs_val->value().cmp_unsigned(rhs_val->value());
-          return FunctionalBuilder::bool_value(int_ty->context(), cmp(cmp_val, 0));
+          return FunctionalBuilder::bool_value(int_ty->context(), cmp(cmp_val, 0), location);
         }
         
-        return Op::get(lhs, rhs);
+        return Op::get(lhs, rhs, location);
       }
     }
 
     /// \brief Get an integer == comparison operation
-    Term *FunctionalBuilder::cmp_eq(Term *lhs, Term *rhs) {
-      return cmp_op<IntegerCompareEq>(lhs, rhs, std::equal_to<int>(), CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::undef);
+    ValuePtr<> FunctionalBuilder::cmp_eq(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      return cmp_op<IntegerCompareEq>(lhs, rhs, std::equal_to<int>(), CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::undef, location);
     }
     
     /// \brief Get an integer != comparison operation
-    Term *FunctionalBuilder::cmp_ne(Term *lhs, Term *rhs) {
-      return cmp_op<IntegerCompareNe>(lhs, rhs, std::not_equal_to<int>(), CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::undef);
+    ValuePtr<> FunctionalBuilder::cmp_ne(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      return cmp_op<IntegerCompareNe>(lhs, rhs, std::not_equal_to<int>(), CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::undef, location);
     }
     
     /// \brief Get an integer \> comparison operation
-    Term *FunctionalBuilder::cmp_gt(Term *lhs, Term *rhs) {
-      return cmp_op<IntegerCompareGt>(lhs, rhs, std::greater<int>(), CompareShortcut::undef, CompareShortcut::false_, CompareShortcut::false_, CompareShortcut::undef);
+    ValuePtr<> FunctionalBuilder::cmp_gt(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      return cmp_op<IntegerCompareGt>(lhs, rhs, std::greater<int>(), CompareShortcut::undef, CompareShortcut::false_, CompareShortcut::false_, CompareShortcut::undef, location);
     }
     
     /// \brief Get an integer \> comparison operation
-    Term *FunctionalBuilder::cmp_ge(Term *lhs, Term *rhs) {
-      return cmp_op<IntegerCompareGe>(lhs, rhs, std::greater_equal<int>(), CompareShortcut::true_, CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::true_);
+    ValuePtr<> FunctionalBuilder::cmp_ge(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      return cmp_op<IntegerCompareGe>(lhs, rhs, std::greater_equal<int>(), CompareShortcut::true_, CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::true_, location);
     }
     
     /// \brief Get an integer \< comparison operation
-    Term *FunctionalBuilder::cmp_lt(Term *lhs, Term *rhs) {
-      return cmp_op<IntegerCompareLt>(lhs, rhs, std::less<int>(), CompareShortcut::false_, CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::false_);
+    ValuePtr<> FunctionalBuilder::cmp_lt(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      return cmp_op<IntegerCompareLt>(lhs, rhs, std::less<int>(), CompareShortcut::false_, CompareShortcut::undef, CompareShortcut::undef, CompareShortcut::false_, location);
     }
     
     /// \brief Get an integer \<= comparison operation
-    Term *FunctionalBuilder::cmp_le(Term *lhs, Term *rhs) {
-      return cmp_op<IntegerCompareLe>(lhs, rhs, std::less_equal<int>(), CompareShortcut::undef, CompareShortcut::true_, CompareShortcut::true_, CompareShortcut::undef);
+    ValuePtr<> FunctionalBuilder::cmp_le(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      return cmp_op<IntegerCompareLe>(lhs, rhs, std::less_equal<int>(), CompareShortcut::undef, CompareShortcut::true_, CompareShortcut::true_, CompareShortcut::undef, location);
     }
 
     /// \brief Get the maximum of two integers
-    Term *FunctionalBuilder::max(Term *lhs, Term *rhs) {
-      Term *cond = cmp_ge(lhs, rhs);
-      return select(cond, lhs, rhs);
+    ValuePtr<> FunctionalBuilder::max(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      ValuePtr<> cond = cmp_ge(lhs, rhs, location);
+      return select(cond, lhs, rhs, location);
     }
     
     /// \brief Get the minimum of two integers
-    Term *FunctionalBuilder::min(Term *lhs, Term *rhs) {
-      Term *cond = cmp_le(lhs, rhs);
-      return select(cond, lhs, rhs);
+    ValuePtr<> FunctionalBuilder::min(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      ValuePtr<> cond = cmp_le(lhs, rhs, location);
+      return select(cond, lhs, rhs, location);
     }
 
     /**
@@ -808,12 +810,12 @@ namespace Psi {
      *
      * The formula used is: <tt>(offset + align - 1) & ~(align - 1)</tt>
      */
-    Term* FunctionalBuilder::align_to(Term *offset, Term *align) {
-      Term *one = size_value(offset->context(), 1);
-      Term *align_minus_one = sub(align, one);
-      Term *offset_plus_align_minus_one = add(offset, align_minus_one);
-      Term *not_align_minus_one = bit_not(align_minus_one);
-      return bit_and(offset_plus_align_minus_one, not_align_minus_one);
+    ValuePtr<> FunctionalBuilder::align_to(const ValuePtr<>& offset, const ValuePtr<>& align, const SourceLocation& location) {
+      const ValuePtr<>& one = size_value(offset->context(), 1, location);
+      const ValuePtr<>& align_minus_one = sub(align, one, location);
+      const ValuePtr<>& offset_plus_align_minus_one = add(offset, align_minus_one, location);
+      const ValuePtr<>& not_align_minus_one = bit_not(align_minus_one, location);
+      return bit_and(offset_plus_align_minus_one, not_align_minus_one, location);
     }
   
     /**
@@ -825,11 +827,11 @@ namespace Psi {
      * 
      * \param if_false Value of this operation if \c condition is false.
      */
-    Term *FunctionalBuilder::select(Term *condition, Term *if_true, Term *if_false) {
-      Term *result = SelectValue::get(condition, if_true, if_false);
+    ValuePtr<> FunctionalBuilder::select(const ValuePtr<>& condition, const ValuePtr<>& if_true, const ValuePtr<>& if_false, const SourceLocation& location) {
+      ValuePtr<> result = Select::get(condition, if_true, if_false, location);
       if (if_true == if_false)
         return if_true;
-      if (BooleanValue::Ptr bool_val = dyn_cast<BooleanValue>(condition))
+      if (ValuePtr<BooleanValue> bool_val = dyn_cast<BooleanValue>(condition))
         return bool_val->value() ? if_true : if_false;
       
       /* 
@@ -838,46 +840,29 @@ namespace Psi {
        * regardless of the condition.
        */
       if (isa<UndefinedValue>(condition) && (isa<UndefinedValue>(if_true) || isa<UndefinedValue>(if_false)))
-        return undef(result->type());
+        return undef(result->type(), location);
       return result;
     }
 
     /**
      * Specialize a function by binding values to its phantom parameters.
      */
-    Term* FunctionalBuilder::specialize(Term *function, ArrayPtr<Term*const> parameters) {      
+    ValuePtr<> FunctionalBuilder::specialize(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {      
       if (parameters.size() == 0) {
-        if (!isa<PointerType>(function) || !isa<FunctionTypeTerm>(cast<PointerType>(function)->target_type()))
+        if (!isa<PointerType>(function) || !isa<FunctionType>(value_cast<PointerType>(function)->target_type()))
           throw TvmUserError("specialize target is not a function pointer");
 
         return function;
       }
       
-      return FunctionSpecialize::get(function, parameters);
+      return FunctionSpecialize::get(function, parameters, location);
     }
     
     /**
      * Get a floating point type.
      */
-    Term* FunctionalBuilder::float_type(Context& context, FloatType::Width width) {
-      return FloatType::get(context, width);
-    }
-    
-    /**
-     * \brief Get the type used to name catch clauses.
-     */
-    Term* FunctionalBuilder::catch_type(Context& context) {
-      return CatchClauseNameType::get(context);
-    }
-
-    /**
-     * \brief Get the name of a catch clause.
-     */
-    Term* FunctionalBuilder::catch_(Term *clause, unsigned index) {
-      CatchClauseTerm *cast_clause = dyn_cast<CatchClauseTerm>(clause);
-      if (!cast_clause)
-        throw TvmUserError("catch clause name parameter is not a catch clause.");
-      return CatchClauseName::get(cast_clause, index);
+    ValuePtr<> FunctionalBuilder::float_type(Context& context, FloatType::Width width, const SourceLocation& location) {
+      return FloatType::get(context, width, location);
     }
   }
 }

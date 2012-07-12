@@ -39,6 +39,33 @@ namespace Psi {
       ValuePtr<Block> target;
     };
     
+    /**
+     * \brief Instruction used to mark unreachable end-of-block.
+     * 
+     * This is used after an instruction which in general may or may not throw,
+     * but is known to in this case.
+     */
+    class Unreachable : public TerminatorInstruction {
+      PSI_TVM_INSTRUCTION_DECL(Unreachable)
+      
+    public:
+      Unreachable(const ValuePtr<Block>& block, const SourceLocation& location);
+    };
+    
+    inline bool TerminatorInstruction::isa_impl(const Value& ptr) {
+      const Instruction *insn = dyn_cast<Instruction>(&ptr);
+      if (!insn)
+        return false;
+      
+      const char *op = insn->operation_name();
+      if ((op == ConditionalBranch::operation)
+        || (op == UnconditionalBranch::operation)
+        || (op == Unreachable::operation))
+        return true;
+      
+      return false;
+    }
+    
     class Call : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(Call)
       

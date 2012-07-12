@@ -79,7 +79,7 @@ namespace Psi {
        * \brief Get a pointer to the given term, generating code or
        * global data as necessary.
        */
-      virtual void* get_symbol(GlobalTerm *global) = 0;
+      virtual void* get_symbol(const ValuePtr<Global>& global) = 0;
     };
     
     /**

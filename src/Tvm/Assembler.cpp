@@ -229,7 +229,7 @@ namespace Psi {
             dominator = entry;
           }
           LogicalSourceLocationPtr block_location_logical = logical_location->named_child(it->name->text);
-          ValuePtr<Block> bl = function->new_block(dominator, SourceLocation(it->location, block_location_logical));
+          ValuePtr<Block> bl = function->new_block(SourceLocation(it->location, block_location_logical), dominator);
           my_context.put(it->name->text, bl);
           function->add_term_name(bl, it->name->text);
           blocks.push_back(bl);

@@ -9,8 +9,7 @@ namespace Psi {
     const char Return::operation[] = "return";
     const char ConditionalBranch::operation[] = "cond_br";
     const char UnconditionalBranch::operation[] = "br";
-    const char FunctionCall::operation[] = "call";
-    const char FunctionInvoke::operation[] = "invoke";
+    const char Call::operation[] = "call";
     const char Store::operation[] = "store";
     const char Load::operation[] = "load";
     const char Alloca::operation[] = "alloca";

@@ -44,6 +44,10 @@ namespace Psi {
     public:
       const char *operation_name() const {return m_operation;}
       virtual void visit(InstructionVisitor& visitor) = 0;
+      
+      static bool isa_impl(const Value& ptr) {
+        return ptr.term_type() == term_instruction;
+      }
 
     protected:
       Instruction(const ValuePtr<>& type, const char *operation,
@@ -66,6 +70,8 @@ namespace Psi {
       TerminatorInstruction(const char *operation, const ValuePtr<Block>& block, const SourceLocation& location);
       
       virtual std::vector<ValuePtr<Block> > successors() = 0;
+      
+      static bool isa_impl(const Value& ptr);
     };
 
     template<typename T>
@@ -129,7 +135,7 @@ namespace Psi {
      * value of this term is the label used to jump to this block.
      */
     class Block : public Value {
-      friend class FunctionTerm;
+      friend class Function;
 
     public:
       typedef std::vector<ValuePtr<Instruction> > InstructionList;
@@ -144,13 +150,12 @@ namespace Psi {
       /** \brief Whether this block has been terminated so no more instructions can be added. */
       bool terminated() {return m_terminated;}
       /** \brief Get the function which contains this block. */
-      ValuePtr<Function> function();
+      ValuePtr<Function> function() {return m_function;}
       /** \brief Get a pointer to the dominating block. */
       const ValuePtr<Block>& dominator() {return m_dominator;}
       /** \brief Get this block's catch list (this will be NULL for a regular block). */
       const ValuePtr<Block>& landing_pad() {return m_landing_pad;}
       
-      /** \brief Get the list of blocks which this one can exit to (including exceptions) */
       std::vector<ValuePtr<Block> > successors();
 
       bool check_available(const ValuePtr<>& term, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
@@ -179,7 +184,7 @@ namespace Psi {
     class FunctionParameter : public Value {
       friend class Function;
     public:
-      ValuePtr<Function> function();
+      const ValuePtr<Function>& function() {return m_function;}
       bool parameter_phantom() {return m_phantom;}
       
       static bool isa_impl(const Value& ptr) {
@@ -187,9 +192,9 @@ namespace Psi {
       }
 
     private:
-      class Initializer;
-      FunctionParameter(Context*, const ValuePtr<Function>& function, const ValuePtr<>& type, bool phantom);
+      FunctionParameter(Context& context, const ValuePtr<Function>& function, const ValuePtr<>& type, bool phantom, const SourceLocation& location);
       bool m_phantom;
+      ValuePtr<Function> m_function;
     };
 
     /**
@@ -218,13 +223,15 @@ namespace Psi {
        */
       ValuePtr<> result_type() const;
 
-      ValuePtr<Block> entry();
+      const ValuePtr<Block>& entry() {return m_entry;}
       void set_entry(const ValuePtr<Block>& block);
 
-      ValuePtr<Block> new_block(const SourceLocation& location);
-      ValuePtr<Block> new_block(const ValuePtr<Block>& dominator, const SourceLocation& location);
-      ValuePtr<Block> new_landing_pad(const SourceLocation& location);
-      ValuePtr<Block> new_landing_pad(const ValuePtr<Block>& dominator, const SourceLocation& location);
+      ValuePtr<Block> new_block(const SourceLocation& location,
+                                const ValuePtr<Block>& dominator=ValuePtr<Block>(),
+                                const ValuePtr<Block>& landing_pad=ValuePtr<Block>());
+      ValuePtr<Block> new_landing_pad(const SourceLocation& location,
+                                const ValuePtr<Block>& dominator=ValuePtr<Block>(),
+                                const ValuePtr<Block>& landing_pad=ValuePtr<Block>());
 
       void add_term_name(const ValuePtr<>& term, const std::string& name);
       const TermNameMap& term_name_map() {return m_name_map;}
@@ -246,9 +253,11 @@ namespace Psi {
       void exception_personality(const std::string& v) {m_exception_personality = v;}
 
     private:
-      Function(Context*, const ValuePtr<FunctionType>&, const std::string&, Module*);
+      Function(Context *context, const ValuePtr<FunctionType>& type, const std::string& name,
+               Module *module, const SourceLocation& location);
       TermNameMap m_name_map;
       std::string m_exception_personality;
+      ValuePtr<Block> m_entry;
     };
 
     /**
@@ -315,7 +324,7 @@ namespace Psi {
 
     class FunctionTypeParameter : public Value {
       friend class Context;
-      FunctionTypeParameter(Context *context, const ValuePtr<>& type, const SourceLocation& location);
+      FunctionTypeParameter(Context& context, const ValuePtr<>& type, const SourceLocation& location);
     };
 
     /**

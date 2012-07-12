@@ -709,7 +709,7 @@ namespace Psi {
       // which has already been handled
       for (std::vector<ValuePtr<Block> >::iterator ii = old_sorted_blocks.begin(), ie = old_sorted_blocks.end(); ii != ie; ++ii) {
         ValuePtr<Block> dominator = (*ii)->dominator() ? rewrite_block((*ii)->dominator()) : prolog_block;
-        ValuePtr<Block> new_block = new_function()->new_block(dominator, (*ii)->location());
+        ValuePtr<Block> new_block = new_function()->new_block((*ii)->location(), dominator);
         sorted_blocks.push_back(std::make_pair(*ii, new_block));
         m_value_map.insert(std::make_pair(*ii, LoweredValue(new_block, true)));
       }
