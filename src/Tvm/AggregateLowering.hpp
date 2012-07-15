@@ -347,7 +347,7 @@ namespace Psi {
       virtual void update_implementation(bool);
 
     public:
-      AggregateLoweringPass(Module*, TargetCallback*, Context* =0);
+      AggregateLoweringPass(const boost::shared_ptr<Module>&, TargetCallback*, Context* =0);
 
       /// \brief Get the (target) context of this pass
       Context& context() {return target_module()->context();}

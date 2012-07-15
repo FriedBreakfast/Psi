@@ -9,9 +9,9 @@ namespace Psi {
      * \param target_context Context to create target module in. If NULL,
      * create in the same context as the source module.
      */
-    ModuleRewriter::ModuleRewriter(Module* source_module, Context *target_context)
+    ModuleRewriter::ModuleRewriter(const boost::shared_ptr<Module>& source_module, Context *target_context)
     : m_source_module(source_module),
-    m_target_module(target_context ? target_context : &source_module->context(), source_module->name()) {
+    m_target_module(new Module(target_context ? target_context : &source_module->context(), source_module->name(), source_module->location())) {
     }
     
     /**
@@ -21,9 +21,9 @@ namespace Psi {
      * from the correct modules, and that key does not already
      * exist in the global variable map.
      */
-    void ModuleRewriter::global_map_put(GlobalTerm *key, GlobalTerm *value) {
-      PSI_ASSERT(key->module() == source_module());
-      PSI_ASSERT(value->module() == target_module());
+    void ModuleRewriter::global_map_put(const ValuePtr<Global>& key, const ValuePtr<Global>& value) {
+      PSI_ASSERT(key->module() == source_module().get());
+      PSI_ASSERT(value->module() == target_module().get());
       
       std::pair<GlobalMapType::iterator, bool> result =
         m_global_map.insert(std::make_pair(key, value));
@@ -35,13 +35,13 @@ namespace Psi {
      * 
      * Returns NULL if the term is not present.
      */
-    GlobalTerm* ModuleRewriter::global_map_get(GlobalTerm *term) {
-      PSI_ASSERT(term->module() == source_module());
+    ValuePtr<Global> ModuleRewriter::global_map_get(const ValuePtr<Global>& term) {
+      PSI_ASSERT(term->module() == source_module().get());
       GlobalMapType::iterator it = m_global_map.find(term);
       if (it != m_global_map.end())
         return it->second;
       else
-        return 0;
+        return ValuePtr<Global>();
     }
     
     /**
@@ -49,26 +49,24 @@ namespace Psi {
      * 
      * Throws an exception if the term is missing.
      */
-    GlobalTerm* ModuleRewriter::target_symbol(GlobalTerm *term) {
-      if (term->module() != source_module())
+    ValuePtr<Global> ModuleRewriter::target_symbol(const ValuePtr<Global>& term) {
+      if (term->module() != source_module().get())
         throw TvmUserError("global symbol is not from this rewriter's source module");
       
-      GlobalTerm *t = global_map_get(term);
+      ValuePtr<Global> t = global_map_get(term);
       if (!t)
         throw TvmUserError("missing symbol in module rewriter: " + term->name());
       return t;
     }
     
     /// \copydoc ModuleRewriter::target_symbol(GlobalTerm*)
-    FunctionTerm* ModuleRewriter::target_symbol(FunctionTerm *term) {
-      GlobalTerm *g = term;
-      return cast<FunctionTerm>(target_symbol(g));
+    ValuePtr<Function> ModuleRewriter::target_symbol(const ValuePtr<Function>& term) {
+      return value_cast<Function>(target_symbol(term));
     }
     
     /// \copydoc ModuleRewriter::target_symbol(GlobalTerm*)
-    GlobalVariableTerm* ModuleRewriter::target_symbol(GlobalVariableTerm *term) {
-      GlobalTerm *g = term;
-      return cast<GlobalVariableTerm>(target_symbol(g));
+    ValuePtr<GlobalVariable> ModuleRewriter::target_symbol(const ValuePtr<GlobalVariable>& term) {
+      return value_cast<GlobalVariable>(target_symbol(term));
     }
     
     /**

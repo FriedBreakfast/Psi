@@ -1367,7 +1367,7 @@ namespace Psi {
      * \param target_context Context to create rewritten module in. Uses the
      * source module if this is NULL.
      */
-    AggregateLoweringPass::AggregateLoweringPass(Module *source_module, TargetCallback *target_callback_, Context* target_context)
+    AggregateLoweringPass::AggregateLoweringPass(const boost::shared_ptr<Module>& source_module, TargetCallback *target_callback_, Context* target_context)
     : ModuleRewriter(source_module, target_context),
     m_global_rewriter(this),
     target_callback(target_callback_),
