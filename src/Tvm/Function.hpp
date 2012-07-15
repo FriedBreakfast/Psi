@@ -20,6 +20,8 @@ namespace Psi {
     public:
       /// \brief Get the block this term is part of.
       const ValuePtr<Block>& block() {return m_block;}
+      /// \brief Get the function the block this is in is part of
+      const ValuePtr<Function>& function();
 
     protected:
       BlockMember(TermType term_type, const ValuePtr<>& type, const ValuePtr<Block>& block,
@@ -48,6 +50,8 @@ namespace Psi {
       static bool isa_impl(const Value& ptr) {
         return ptr.term_type() == term_instruction;
       }
+      
+      virtual void type_check() = 0;
 
     protected:
       Instruction(const ValuePtr<>& type, const char *operation,
@@ -88,14 +92,11 @@ namespace Psi {
   public: \
     static const char operation[]; \
     virtual void visit(InstructionVisitor& callback); \
+    virtual void type_check(); \
     static bool isa_impl(const Value *ptr) {return (ptr->term_type() == term_instruction) && (operation == value_cast<Type>(ptr)->operation_name());} \
     
 #define PSI_TVM_INSTRUCTION_IMPL(Type,Base,Name) \
-    const char Type::operation[] = #Name; \
-    \
-    ValuePtr<FunctionalValue> Type::rewrite(RewriteCallback& callback) { \
-      return callback.context().get_functional(Type(callback, *this)); \
-    }
+    const char Type::operation[] = #Name;
 
     /**
      * Describes incoming edges for Phi nodes.
@@ -150,7 +151,7 @@ namespace Psi {
       /** \brief Whether this block has been terminated so no more instructions can be added. */
       bool terminated() {return m_terminated;}
       /** \brief Get the function which contains this block. */
-      ValuePtr<Function> function() {return m_function;}
+      const ValuePtr<Function>& function() {return m_function;}
       /** \brief Get a pointer to the dominating block. */
       const ValuePtr<Block>& dominator() {return m_dominator;}
       /** \brief Get this block's catch list (this will be NULL for a regular block). */
@@ -178,6 +179,8 @@ namespace Psi {
       bool m_is_landing_pad;
       bool m_terminated;
     };
+    
+    inline const ValuePtr<Function>& BlockMember::function() {return m_block->function();}
 
     class Function;
 

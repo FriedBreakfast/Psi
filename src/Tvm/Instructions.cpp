@@ -6,322 +6,186 @@
 
 namespace Psi {
   namespace Tvm {
-    const char Return::operation[] = "return";
-    const char ConditionalBranch::operation[] = "cond_br";
-    const char UnconditionalBranch::operation[] = "br";
-    const char Call::operation[] = "call";
-    const char Store::operation[] = "store";
-    const char Load::operation[] = "load";
-    const char Alloca::operation[] = "alloca";
-    const char MemCpy::operation[] = "memcpy";
+    PSI_TVM_INSTRUCTION_IMPL(Return, TerminatorInstruction, "return");
+    PSI_TVM_INSTRUCTION_IMPL(ConditionalBranch, TerminatorInstruction, "cond_br");
+    PSI_TVM_INSTRUCTION_IMPL(UnconditionalBranch, TerminatorInstruction, "br");
+    PSI_TVM_INSTRUCTION_IMPL(Unreachable, TerminatorInstruction, "unreachable");
+    
+    PSI_TVM_INSTRUCTION_IMPL(Call, Instruction, "call");
+    PSI_TVM_INSTRUCTION_IMPL(Store, Instruction, "store");
+    PSI_TVM_INSTRUCTION_IMPL(Load, Instruction, "load");
+    PSI_TVM_INSTRUCTION_IMPL(Alloca, Instruction, "alloca");
+    PSI_TVM_INSTRUCTION_IMPL(MemCpy, Instruction, "memcpy");
 
-    InstructionTypeResult Return::type(FunctionTerm *function, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 1)
-        throw TvmUserError("return instruction takes one argument");
-
-      Term *ret_val = parameters[0];
-      if (ret_val->type() != function->result_type())
+    Return::Return(const ValuePtr<>& value_, const ValuePtr<Block>& block, const SourceLocation& location)
+    : TerminatorInstruction(operation, block, location),
+    value(value_) {
+    }
+    
+    void Return::type_check() {
+      if (value->type() != function()->result_type())
         throw TvmUserError("return instruction argument has incorrect type");
 
-      if (ret_val->phantom())
+      if (value->phantom())
         throw TvmUserError("cannot return a phantom value");
-
-      return InstructionTypeResult(FunctionalBuilder::empty_type(function->context()), std::vector<BlockTerm*>());
     }
 
-    /**
-     * Create a return instruction.
-     * 
-     * \param value Value to return.
-     */
-    Return::Ptr Return::create(InstructionInsertPoint insert_point, Term *value) {
-      Term *parameters[] = {value};
-      return insert_point.create<Return>(ArrayPtr<Term*const>(parameters,1));
+    ConditionalBranch::ConditionalBranch(const ValuePtr<>& condition_, const ValuePtr<Block>& true_target_, const ValuePtr<Block>& false_target_, const ValuePtr<Block>& block, const SourceLocation& location)
+    : TerminatorInstruction(operation, block, location),
+    condition(condition_),
+    true_target(true_target_),
+    false_target(false_target_) {
     }
-
-    InstructionTypeResult ConditionalBranch::type(FunctionTerm* function, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 3)
-        throw TvmUserError("branch instruction takes three arguments: cond, trueTarget, falseTarget");
-
-      Term *cond = parameters[0];
-
-      if (cond->type() != BooleanType::get(function->context()))
+    
+    void ConditionalBranch::type_check() {
+      if (condition->type() != BooleanType::get(context(), location()))
         throw TvmUserError("first parameter to branch instruction must be of boolean type");
 
-      BlockTerm* true_target = dyn_cast<BlockTerm>(parameters[1]);
-      BlockTerm* false_target = dyn_cast<BlockTerm>(parameters[2]);
-      if (!true_target || !false_target)
-        throw TvmUserError("second and third parameters to branch instruction must be blocks");
-
-      PSI_ASSERT(!true_target->phantom() && !false_target->phantom());
-
-      if (cond->phantom())
+      if (condition->phantom())
         throw TvmUserError("cannot conditionally branch on a phantom value");
 
-      return InstructionTypeResult(FunctionalBuilder::empty_type(function->context()),
-                                   boost::assign::list_of(true_target)(false_target));
+      if (!true_target || !false_target)
+        throw TvmUserError("jump targets may not be null");
+      
+      if (true_target->phantom() || false_target->phantom())
+        throw TvmUserError("jump targets cannot be phantom");
+      
+      if ((true_target->function() != function()) || (false_target->function() != function()))
+        throw TvmUserError("jump target must be in the same function");
     }
-
-    /**
-     * Create a cond_br instruction.
-     * 
-     * \param condition Used to select which branch is taken.
-     * 
-     * \param true_target Branch taken if \c condition is true.
-     * 
-     * \param false_target Branch taken if \c condition is false.
-     */
-    ConditionalBranch::Ptr ConditionalBranch::create(InstructionInsertPoint insert_point, Term *condition, Term *true_target, Term *false_target) {
-      Term *parameters[] = {condition, true_target, false_target};
-      return insert_point.create<ConditionalBranch>(ArrayPtr<Term*const>(parameters,3));
+    
+    UnconditionalBranch::UnconditionalBranch(const ValuePtr<Block>& target_, const ValuePtr<Block>& block, const SourceLocation& location)
+    : TerminatorInstruction(operation, block, location),
+    target(target_) {
     }
-
-    InstructionTypeResult UnconditionalBranch::type(FunctionTerm *function, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 1)
-        throw TvmUserError("unconditional branch instruction takes one argument - the branch target");
-
-      BlockTerm* target = dyn_cast<BlockTerm>(parameters[0]);
+    
+    void UnconditionalBranch::type_check() {
       if (!target)
-        throw TvmUserError("second parameter to branch instruction must be blocks");
-
-      PSI_ASSERT(!target->phantom());
-
-      return InstructionTypeResult(FunctionalBuilder::empty_type(function->context()),
-                                   boost::assign::list_of(target));
+        throw TvmUserError("jump targets may not be null");
+      
+      if (target->phantom())
+        throw TvmUserError("jump targets cannot be phantom");
+      
+      if (target->function() != function())
+        throw TvmUserError("jump target must be in the same function");
     }
-
-    /**
-     * Create a br instruction.
-     * 
-     * \param target Block to jump to.
-     */
-    UnconditionalBranch::Ptr UnconditionalBranch::create(InstructionInsertPoint insert_point, Term *target) {
-      Term *parameters[] = {target};
-      return insert_point.create<UnconditionalBranch>(ArrayPtr<Term*const>(parameters,1));
+    
+    Unreachable::Unreachable(const ValuePtr<Block>& block, const SourceLocation& location)
+    : TerminatorInstruction(operation, block, location) {
+    }
+    
+    void Unreachable::type_check() {
     }
     
     namespace {
-      Term* check_call_parameters(ArrayPtr<Term*const> parameters) {
-        if (parameters.size() < 1)
-          throw TvmUserError("function call instruction must have at least one parameter: the function being called");
-
-        Term *target = parameters[0];
-        if (target->phantom())
-          throw TvmUserError("function call target cannot have phantom value");
-
-        PointerType::Ptr target_ptr_type = dyn_cast<PointerType>(target->type());
-        if (!target_ptr_type)
-          throw TvmUserError("function call target is not a pointer type");
-
-        FunctionTypeTerm* target_function_type =
-          dyn_cast<FunctionTypeTerm>(target_ptr_type->target_type());
-        if (!target_function_type)
-          throw TvmUserError("function call target is not a function pointer");
+      ValuePtr<> call_type(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters) {
+        ValuePtr<FunctionType> target_type = dyn_cast<FunctionType>(target->type());
+        if (!target_type)
+          throw TvmUserError("Function call target does not have function type");
         
-        if (target_function_type->source())
-          throw TvmUserError("cannot call a function which has an abstract type");
+        return target_type->result_type_after(parameters);
+      }
+    }
+    
+    Call::Call(const ValuePtr<>& target_, const std::vector<ValuePtr<> >& parameters_, const ValuePtr<Block>& block, const SourceLocation& location)
+    : Instruction(call_type(target, parameters), operation, block, location),
+    target(target_),
+    parameters(parameters_) {
+    }
 
-        std::size_t n_parameters = target_function_type->n_parameters();
-        if (parameters.size() != n_parameters + 1)
-          throw TvmUserError("wrong number of arguments to function");
+    void Call::type_check() {
+      if (call_type(target, parameters) != type())
+        throw TvmUserError("Type of function call has changed since instruction was created");
 
-        for (std::size_t i = 0; i < n_parameters; ++i) {
-          if ((i >= target_function_type->n_phantom_parameters()) && parameters[i]->phantom())
-            throw TvmUserError("cannot pass phantom value to non-phantom function parameter");
+      if (target->phantom())
+        throw TvmUserError("function call target cannot have phantom value");
 
-          Term* expected_type = target_function_type->parameter_type_after(parameters.slice(1, i+1));
-          if (parameters[i+1]->type() != expected_type)
-            throw TvmUserError("function argument has the wrong type");
-        }
-
-        Term* result_type = target_function_type->result_type_after(parameters.slice(1, 1+n_parameters));
-        if (result_type->phantom())
-          throw TvmUserError("cannot create function call which leads to unknown result type");
-
-        return result_type;
+      ValuePtr<FunctionType> target_type = target_function_type();
+      for (std::size_t ii = 0, ie = parameters.size(); ii < ie; ++ii) {
+        if ((ii >= target_type->n_phantom()) && parameters[ii]->phantom())
+          throw TvmUserError("cannot pass phantom value to non-phantom function parameter");
+      }
+    }
+    
+    namespace {
+      /**
+       * Get the pointed-to type from a pointer.
+       */
+      ValuePtr<> pointer_target_type(const ValuePtr<>& ptr) {
+        ValuePtr<PointerType> target_ptr_type = dyn_cast<PointerType>(ptr->type());
+        if (!target_ptr_type)
+          throw TvmUserError("store target is not a pointer type");
+        return target_ptr_type->target_type();
       }
     }
 
-    InstructionTypeResult FunctionCall::type(FunctionTerm*, const Data&, ArrayPtr<Term*const> parameters) {
-      return check_call_parameters(parameters);
-    }
-
-    /**
-     * Create a call instruction.
-     * 
-     * \param target Function to call.
-     * 
-     * \param parameters Parameters to pass.
-     */
-    FunctionCall::Ptr FunctionCall::create(InstructionInsertPoint insert_point, Term *target, ArrayPtr<Term*const> parameters) {
-      ScopedArray<Term*> insn_params(parameters.size() + 1);
-      insn_params[0] = target;
-      for (std::size_t i = 0, e = parameters.size(); i != e; ++i)
-        insn_params[i+1] = parameters[i];
-      return insert_point.create<FunctionCall>(insn_params);
+    Store::Store(const ValuePtr<>& value_, const ValuePtr<>& target_, const ValuePtr<Block>& block, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::empty_type(value_->context(), location), operation, block, location),
+    value(value_),
+    target(target_) {
     }
     
-    InstructionTypeResult FunctionInvoke::type(FunctionTerm*, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() < 3)
-        throw TvmUserError("invoke instruction takes at least 3 parameters");
-
-      Term *result_type = check_call_parameters(parameters.slice(2, parameters.size()));
-      
-      BlockTerm* normal_edge = dyn_cast<BlockTerm>(parameters[0]);
-      BlockTerm* unwind_edge = dyn_cast<BlockTerm>(parameters[1]);
-      if (!normal_edge || !unwind_edge)
-        throw TvmUserError("first and second parameters to invoke instruction must be blocks");
-      
-      return InstructionTypeResult(result_type, boost::assign::list_of(normal_edge)(unwind_edge));
-    }
-
-    /**
-     * Create a call instruction.
-     * 
-     * \param target Function to call.
-     * 
-     * \param parameters Parameters to pass.
-     */
-    FunctionInvoke::Ptr FunctionInvoke::create(InstructionInsertPoint insert_point, BlockTerm *normal_edge, BlockTerm *unwind_edge, Term *target, ArrayPtr<Term*const> parameters) {
-      ScopedArray<Term*> insn_params(parameters.size() + 3);
-      insn_params[0] = normal_edge;
-      insn_params[1] = unwind_edge;
-      insn_params[2] = target;
-      for (std::size_t i = 0, e = parameters.size(); i != e; ++i)
-        insn_params[i+3] = parameters[i];
-      return insert_point.create<FunctionInvoke>(insn_params);
-    }
-
-    InstructionTypeResult Store::type(FunctionTerm* function, const Store::Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 2)
-        throw TvmUserError("store instruction takes two parameters");
-
-      Term *value = parameters[0];
-      Term *target = parameters[1];
-
+    void Store::type_check() {
       if (target->phantom() || value->phantom())
         throw TvmUserError("value and target for store instruction cannot have phantom values");
 
-      PointerType::Ptr target_ptr_type = dyn_cast<PointerType>(target->type());
-      if (!target_ptr_type)
-        throw TvmUserError("store target is not a pointer type");
-
-      if (target_ptr_type->target_type() != value->type())
+      if (pointer_target_type(target) != value->type())
         throw TvmUserError("store target type is not a pointer to the type of value");
-
-      return FunctionalBuilder::empty_type(function->context());
     }
 
-    /**
-     * Create a store instruction.
-     * 
-     * \param value Value to store.
-     * 
-     * \param ptr Location to store \c value to.
-     */
-    Store::Ptr Store::create(InstructionInsertPoint insert_point, Term *value, Term *ptr) {
-      Term *parameters[] = {value, ptr};
-      return insert_point.create<Store>(ArrayPtr<Term*const>(parameters, 2));
+    Load::Load(const ValuePtr<>& target_, const ValuePtr<Block>& block, const SourceLocation& location)
+    : Instruction(pointer_target_type(target_), operation, block, location),
+    target(target_) {
     }
 
-    InstructionTypeResult Load::type(FunctionTerm*, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 1)
-        throw TvmUserError("load instruction takes one parameter");
-
-      Term *target = parameters[0];
-
-      if (target->phantom())
-        throw TvmUserError("value and target for load instruction cannot have phantom values");
-
-      PointerType::Ptr target_ptr_type = dyn_cast<PointerType>(target->type());
-      if (!target_ptr_type)
-        throw TvmUserError("load target is not a pointer type");
-
-      if (target_ptr_type->target_type()->phantom())
-        throw TvmUserError("load target has phantom type");
-
-      return target_ptr_type->target_type();
+    void Load::type_check() {
+      if (type() != pointer_target_type(target))
+        throw TvmUserError("load target type has changed since instruction creation");
+    }
+    
+    Alloca::Alloca(const ValuePtr<>& element_type_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const ValuePtr<Block>& block, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::pointer_type(element_type, location), operation, block, location),
+    element_type(element_type_),
+    count(count_),
+    alignment(alignment_) {
     }
 
-    /**
-     * Create a load instruction.
-     * 
-     * \param ptr Location to load a value from.
-     */
-    Load::Ptr Load::create(InstructionInsertPoint insert_point, Term *ptr) {
-      Term *parameters[] = {ptr};
-      return insert_point.create<Load>(ArrayPtr<Term*const>(parameters, 1));
-    }
-
-    InstructionTypeResult Alloca::type(FunctionTerm *function, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 3)
-        throw TvmUserError("alloca instruction takes three parameters");
-
-      if (!parameters[0]->is_type())
+    void Alloca::type_check() {
+      if (!element_type->is_type())
         throw TvmUserError("first parameter to alloca is not a type");
       
-      Term *size_type = FunctionalBuilder::size_type(function->context());
+      ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location());
 
-      if (parameters[1]->type() != size_type)
+      if (count && (count->type() != size_type))
         throw TvmUserError("second parameter to alloca is not a uintptr");
 
-      if (parameters[2]->type() != size_type)
+      if (alignment && (alignment->type() != size_type))
         throw TvmUserError("third parameter to alloca is not a uintptr");
       
-      if (parameters[0]->phantom() || parameters[1]->phantom() || parameters[2]->phantom())
+      if (element_type->phantom() ||
+        (count && count->phantom()) ||
+        (alignment && alignment->phantom()))
         throw TvmUserError("parameter to alloca cannot be phantom");
-      
-      return FunctionalBuilder::pointer_type(parameters[0]);
+    }
+    
+    MemCpy::MemCpy(const ValuePtr<>& dest_, const ValuePtr<>& src_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const ValuePtr<Block>& block, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::empty_type(dest->context(), location), operation, block, location),
+    dest(dest_),
+    src(src_),
+    count(count_),
+    alignment(alignment_) { 
     }
 
-    /**
-     * Create an alloca instruction.
-     * 
-     * \param type Type to allocate memory for on the stack.
-     * 
-     * \param count Number of elements of type \c type to allocate.
-     * 
-     * \param alignment Minimum alignment of the returned pointer.
-     * This is not always honored - see the Alloca class documentation
-     * for details.
-     */
-    Alloca::Ptr Alloca::create(InstructionInsertPoint insert_point, Term *type, Term *count, Term* alignment) {
-      Term *parameters[] = {type, count, alignment};
-      return insert_point.create<Alloca>(ArrayPtr<Term*const>(parameters, 3));
-    }
-    
-    InstructionTypeResult MemCpy::type(FunctionTerm *function, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 4)
-        throw TvmUserError("memcpy instruction takes four parameters");
-      
-      if (!isa<PointerType>(parameters[0]->type()))
+    void MemCpy::type_check() {
+      if (!isa<PointerType>(dest->type()))
         throw TvmUserError("first parameter to memcpy instruction is not a pointer");
       
-      if (parameters[0]->type() != parameters[1]->type())
+      if (dest->type() != src->type())
         throw TvmUserError("first two parameters to memcpy instruction must have the same type");
       
-      Term *size_type = FunctionalBuilder::size_type(function->context());
-      if ((parameters[2]->type() != size_type) || (parameters[3]->type() != size_type))
+      ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location());
+      if (count->type() != size_type || (alignment && (alignment->type() != size_type)))
         throw TvmUserError("third and fourth parameters to memcpy instruction must be uintptr");
-      
-      return FunctionalBuilder::empty_type(function->context());
-    }
-    
-    /**
-     * Create a memcpy instruction.
-     * 
-     * \param dest Copy destination.
-     * 
-     * \param src Copy source.
-     * 
-     * \param count Number of bytes to copy.
-     * 
-     * \param alignment Alignment hint. Both source and destination pointers
-     * must be aligned to this boundary.
-     */
-    MemCpy::Ptr MemCpy::create(InstructionInsertPoint insert_point, Term *dest, Term *src, Term *count, Term *alignment) {
-      Term *parameters[] = {dest, src, count, alignment};
-      return insert_point.create<MemCpy>(ArrayPtr<Term*const>(parameters, 4));
     }
   }
 }

@@ -27,7 +27,7 @@ namespace Psi {
      * 
      * \param insert_at_end Block to insert instructions at the end of
      */
-    InstructionBuilder::InstructionBuilder(BlockTerm *insert_at_end)
+    InstructionBuilder::InstructionBuilder(const ValuePtr<Block>& insert_at_end)
     : m_insert_point(insert_at_end) {
     }
 
@@ -36,14 +36,14 @@ namespace Psi {
      * 
      * \param insert_before Point to create new instructions before.
      */
-    InstructionBuilder::InstructionBuilder(InstructionTerm *insert_before)
+    InstructionBuilder::InstructionBuilder(const ValuePtr<Instruction>& insert_before)
     : m_insert_point(insert_before) {
     }
 
     /**
      * \brief Get the current insertion point.
      */
-    const Psi::Tvm::InstructionInsertPoint& InstructionBuilder::insert_point() const {
+    const InstructionInsertPoint& InstructionBuilder::insert_point() const {
       return m_insert_point;
     }
     
@@ -59,7 +59,7 @@ namespace Psi {
      * 
      * \param insert_at_end Block to append instructions to.
      */
-    void InstructionBuilder::set_insert_point(BlockTerm *insert_at_end) {
+    void InstructionBuilder::set_insert_point(const ValuePtr<Block>& insert_at_end) {
       m_insert_point = InstructionInsertPoint(insert_at_end);
     }
     
@@ -68,7 +68,7 @@ namespace Psi {
      * 
      * \param insert_before Point to create new instructions before.
      */
-    void InstructionBuilder::set_insert_point(InstructionTerm *insert_before) {
+    void InstructionBuilder::set_insert_point(const ValuePtr<Instruction>& insert_before) {
       m_insert_point = InstructionInsertPoint(insert_before);
     }
 
@@ -77,8 +77,10 @@ namespace Psi {
      * 
      * \param value Value to return from the function.
      */
-    InstructionTerm* InstructionBuilder::return_(Term* value) {
-      return Return::create(m_insert_point, value);
+    ValuePtr<Instruction> InstructionBuilder::return_(const ValuePtr<>& value, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new Return(value, m_insert_point.block(), location));
+      m_insert_point.insert(insn);
+      return insn;
     }
     
     /**
@@ -87,8 +89,10 @@ namespace Psi {
      * \param target Block to jump to. This must be a block value
      * not an indirect pointer so that control flow can be tracked.
      */
-    InstructionTerm* InstructionBuilder::br(Term* target) {
-      return UnconditionalBranch::create(m_insert_point, target);
+    ValuePtr<Instruction> InstructionBuilder::br(const ValuePtr<Block>& target, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new UnconditionalBranch(target, m_insert_point.block(), location));
+      m_insert_point.insert(insn);
+      return insn;
     }
     
     /**
@@ -100,8 +104,10 @@ namespace Psi {
      * 
      * \param if_false Block to jump to if \c condition is false.
      */
-    InstructionTerm* InstructionBuilder::cond_br(Term* condition, Term* if_true, Term* if_false) {
-      return ConditionalBranch::create(m_insert_point, condition, if_true, if_false);
+    ValuePtr<Instruction> InstructionBuilder::cond_br(const ValuePtr<>& condition, const ValuePtr<Block>& if_true, const ValuePtr<Block>& if_false, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new ConditionalBranch(condition, if_true, if_false, m_insert_point.block(), location));
+      m_insert_point.insert(insn);
+      return insn;
     }
     
     /**
@@ -111,19 +117,10 @@ namespace Psi {
      * 
      * \param parameters Parameters to the function.
      */
-    InstructionTerm* InstructionBuilder::call(Term* target, ArrayPtr<Term*const> parameters) {
-      return FunctionCall::create(m_insert_point, target, parameters);
-    }
-    
-    /**
-     * \brief Call a function which may throw an exception.
-     * 
-     * \param target Function to call
-     * 
-     * \param parameters Parameters to the function.
-     */
-    InstructionTerm* InstructionBuilder::invoke(BlockTerm *normal_edge, BlockTerm *unwind_edge, Term* target, ArrayPtr<Term*const> parameters) {
-      return FunctionInvoke::create(m_insert_point, normal_edge, unwind_edge, target, parameters);
+    ValuePtr<Instruction> InstructionBuilder::call(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new Call(target, parameters, m_insert_point.block(), location));
+      m_insert_point.insert(insn);
+      return insn;
     }
 
     /**
@@ -142,8 +139,10 @@ namespace Psi {
      * maximum alignment - see Alloca class documentation for
      * details.
      */
-    InstructionTerm* InstructionBuilder::alloca_(Term* type, Term *count, Term* alignment) {
-      return Alloca::create(m_insert_point, type, count, alignment);
+    ValuePtr<Instruction> InstructionBuilder::alloca_(const ValuePtr<>& type, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new Alloca(type, count, alignment, m_insert_point.block(), location));
+      m_insert_point.insert(insn);
+      return insn;
     }
 
     /**
@@ -157,13 +156,13 @@ namespace Psi {
      * \param count Number of elements of type \c type to
      * allocate space for.
      */
-    InstructionTerm* InstructionBuilder::alloca_(Term* type, Term *count) {
-      return alloca_(type, count, FunctionalBuilder::size_value(type->context(), 1));
+    ValuePtr<Instruction> InstructionBuilder::alloca_(const ValuePtr<>& type, const ValuePtr<>& count, const SourceLocation& location) {
+      return alloca_(type, count, ValuePtr<>(), location);
     }
     
-    /// \copydoc InstructionBuilder::alloca_(Term*,Term*)
-    InstructionTerm* InstructionBuilder::alloca_(Term *type, unsigned count) {
-      return alloca_(type, FunctionalBuilder::size_value(type->context(), count));
+    /// \copydoc InstructionBuilder::alloca_(const ValuePtr<>&,const ValuePtr<>&,const SourceLocation&)
+    ValuePtr<Instruction> InstructionBuilder::alloca_(const ValuePtr<>& type, unsigned count, const SourceLocation& location) {
+      return alloca_(type, FunctionalBuilder::size_value(type->context(), count, location), ValuePtr<>(), location);
     }
 
     /**
@@ -174,9 +173,8 @@ namespace Psi {
      * 
      * \param type Type to allocate space for.
      */
-    InstructionTerm* InstructionBuilder::alloca_(Term* type) {
-      Term *one = FunctionalBuilder::size_value(type->context(), 1);
-      return alloca_(type, one, one);
+    ValuePtr<Instruction> InstructionBuilder::alloca_(const ValuePtr<>& type, const SourceLocation& location) {
+      return alloca_(type, ValuePtr<>(), ValuePtr<>(), location);
     }
     
     /**
@@ -184,8 +182,10 @@ namespace Psi {
      * 
      * \param ptr Pointer to value.
      */
-    InstructionTerm* InstructionBuilder::load(Term* ptr) {
-      return Load::create(m_insert_point, ptr);
+    ValuePtr<Instruction> InstructionBuilder::load(const ValuePtr<>& ptr, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new Load(ptr, m_insert_point.block(), location));
+      m_insert_point.insert(insn);
+      return insn;
     }
     
     /**
@@ -195,8 +195,10 @@ namespace Psi {
      * 
      * \param ptr Pointer to store \c value to.
      */
-    InstructionTerm* InstructionBuilder::store(Term* value, Term* ptr) {
-      return Store::create(m_insert_point, value, ptr);
+    ValuePtr<Instruction> InstructionBuilder::store(const ValuePtr<>& value, const ValuePtr<>& ptr, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new Store(value, ptr, m_insert_point.block(), location));
+      m_insert_point.insert(insn);
+      return insn;
     }
     
     /**
@@ -210,8 +212,10 @@ namespace Psi {
      * 
      * \param alignment Alignment hint.
      */
-    InstructionTerm* InstructionBuilder::memcpy(Term *dest, Term *src, Term *count, Term *alignment) {
-      return MemCpy::create(m_insert_point, dest, src, count, alignment);
+    ValuePtr<Instruction> InstructionBuilder::memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new MemCpy(dest, src, count, alignment, m_insert_point.block(), location));
+      m_insert_point.insert(insn);
+      return insn;
     }
     
     /**
@@ -225,15 +229,13 @@ namespace Psi {
      * 
      * \param count Number of bytes to copy.
      */
-    InstructionTerm* InstructionBuilder::memcpy(Term *dest, Term *src, Term *count) {
-      Term *one = FunctionalBuilder::size_value(dest->context(), 1);
-      return memcpy(dest, src, count, one);
+    ValuePtr<Instruction> InstructionBuilder::memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const SourceLocation& location) {
+      return memcpy(dest, src, count, ValuePtr<>(), location);
     }
 
-    /// \copydoc InstructionBuilder::memcpy(Term*,Term*,Term*)
-    InstructionTerm* InstructionBuilder::memcpy(Term *dest, Term *src, unsigned count) {
-      Term *count_term = FunctionalBuilder::size_value(dest->context(), count);
-      return memcpy(dest, src, count_term);
+    /// \copydoc InstructionBuilder::memcpy(const ValuePtr<>&,const ValuePtr<>&,const ValuePtr<>&)
+    ValuePtr<Instruction> InstructionBuilder::memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, unsigned count, const SourceLocation& location) {
+      return memcpy(dest, src, FunctionalBuilder::size_value(dest->context(), count, location), ValuePtr<>(), location);
     }
   }
 }
