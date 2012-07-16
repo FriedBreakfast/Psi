@@ -2,49 +2,48 @@
 #include "FunctionalBuilder.hpp"
 #include "Number.hpp"
 
+#include <limits>
+
 namespace Psi {
   namespace Tvm {
-    const char BooleanType::operation[] = "bool";
-    const char BooleanValue::operation[] = "bool_v";
-    const char IntegerType::operation[] = "int";
-    const char IntegerValue::operation[] = "int_v";
-    const char FloatType::operation[] = "float";
-    const char FloatValue::operation[] = "float_v";
-    const char SelectValue::operation[] = "select";
+    PSI_TVM_FUNCTIONAL_IMPL(BooleanType, SimpleType, bool)
+    PSI_TVM_FUNCTIONAL_IMPL(BooleanValue, SimpleConstructor, bool_v)
+    PSI_TVM_FUNCTIONAL_IMPL(IntegerType, SimpleType, int)
+    PSI_TVM_FUNCTIONAL_IMPL(IntegerValue, SimpleConstructor, int_v)
+    PSI_TVM_FUNCTIONAL_IMPL(FloatType, SimpleType, float)
+    PSI_TVM_FUNCTIONAL_IMPL(FloatValue, SimpleType, float_v)
+    PSI_TVM_FUNCTIONAL_IMPL(Select, FunctionalValue, select);
 
-    FunctionalTypeResult BooleanType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 0)
-        throw TvmUserError("bool type takes no parameters");
-      return FunctionalBuilder::type_type(context);
+    BooleanType::BooleanType(Context& context, const SourceLocation& location)
+    : SimpleType(context, hashable_setup<BooleanType>(), location) {
+    }
+    
+    ValuePtr<BooleanType> BooleanType::get(Context& context, const SourceLocation& location) {
+      return context.get_functional(BooleanType(context, location));
     }
 
-    /// \brief Get the boolean type
-    BooleanType::Ptr BooleanType::get(Context& context) {
-      return context.get_functional<BooleanType>(ArrayPtr<Term*>());
+    BooleanValue::BooleanValue(Context& context, bool value, const SourceLocation& location)
+    : SimpleConstructor(Metatype::get(context, location), hashable_setup<BooleanType>(value), location),
+    m_value(value) {
+    }
+    
+    ValuePtr<BooleanValue> BooleanValue::get(Context& context, bool value, const SourceLocation& location) {
+      return context.get_functional(BooleanValue(context, value, location));
+    }
+    
+    IntegerType::IntegerType(Context& context, Width width, bool is_signed, const SourceLocation& location)
+    : SimpleType(context, hashable_setup<IntegerType>(width)(is_signed), location),
+    m_width(width),
+    m_is_signed(is_signed) {
+    }
+    
+    ValuePtr<IntegerType> IntegerType::get(Context& context, Width width, bool is_signed, const SourceLocation& location) {
+      return context.get_functional(IntegerType(context, width, is_signed, location));
     }
 
-    FunctionalTypeResult BooleanValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 0)
-        throw TvmUserError("bool_v value takes no parameters");
-      return FunctionalBuilder::bool_type(context);
+    ValuePtr<IntegerType> IntegerType::get_intptr(Context& context, const SourceLocation& location) {
+      return get(context, iptr, false, location);
     }
-
-    /// \brief Get the boolean type
-    BooleanValue::Ptr BooleanValue::get(Context& context, bool value) {
-      return context.get_functional<BooleanValue>(ArrayPtr<Term*>(), value);
-    }
-
-    FunctionalTypeResult IntegerType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 0)
-        throw TvmUserError("int type takes no parameters");
-      return FunctionalBuilder::type_type(context);
-    }
-
-    /// \brief Get an integer type with the specified width and signedness
-    IntegerType::Ptr IntegerType::get(Context& context, Width width, bool is_signed) {
-      return context.get_functional<IntegerType>(ArrayPtr<Term*>(), Data(width, is_signed));
-    }
-
     
     /**
      * Get the number of bits used to represent constants of the given width.
@@ -62,150 +61,96 @@ namespace Psi {
       default: PSI_FAIL("unexpected integer width");
       }
     }
-
-    FunctionalTypeResult IntegerValue::type(Context& context, const Data& data, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 0)
-        throw TvmUserError("int_v value takes no parameters");
-      return FunctionalBuilder::int_type(context, data.width, data.is_signed);
-    }
-
-    /**
-     * Get an integer value from specific data, produced by one of the
-     * #parse or #convert functions.
-     */
-    IntegerValue::Ptr IntegerValue::get(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value) {
-      Data data;
-      data.width = width;
-      data.is_signed = is_signed;
-      data.value = value;
-      return context.get_functional<IntegerValue>(StaticArray<Term*,0>(), data);
-    }
-
-    FunctionalTypeResult FloatType::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 0)
-        throw TvmUserError("float type takes no parameters");
-      return FunctionalBuilder::type_type(context);
-    }
-
-    /// \brief Get a floating point type of the specified width.
-    FloatType::Ptr FloatType::get(Context& context, Width width) {
-      return context.get_functional<FloatType>(ArrayPtr<Term*>(), width);
+    
+    IntegerValue::IntegerValue(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location)
+    : SimpleConstructor(IntegerType::get(context, width, is_signed, location), hashable_setup<IntegerValue>(width)(is_signed)(value), location),
+    m_width(width),
+    m_is_signed(is_signed),
+    m_value(value) {
     }
     
-    FunctionalTypeResult FloatValue::type(Context& context, const Data& data, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 0)
-        throw TvmUserError("float_v value takes no parameters");
-      return FunctionalBuilder::float_type(context, data.width);
+    ValuePtr<IntegerValue> IntegerValue::get(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location) {
+      return context.get_functional(IntegerValue(context, width, is_signed, value, location));
+    }
+    
+    ValuePtr<IntegerValue> IntegerValue::get_intptr(Context& context, unsigned n, const SourceLocation& location) {
+      return get(context, IntegerType::iptr, false, BigInteger(std::numeric_limits<unsigned>::digits, n), location);
     }
 
-    FloatValue::Ptr FloatValue::get(Context& context, FloatType::Width width, const Data& data) {
+    FloatType::FloatType(Context& context, FloatType::Width width, const SourceLocation& location)
+    : SimpleType(context, hashable_setup<FloatType>(width), location),
+    m_width(width) {
+    }
+
+    ValuePtr<FloatType> FloatType::get(Context& context, Width width, const SourceLocation& location) {
+      return context.get_functional(FloatType(context, width, location));
+    }
+    
+    FloatValue::FloatValue(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location)
+    : SimpleConstructor(FloatType::get(context, width, location), hashable_setup<FloatValue>(width)(exponent), location),
+    m_width(width),
+    m_exponent(exponent) {
       PSI_NOT_IMPLEMENTED();
-      return context.get_functional<FloatValue>(StaticArray<Term*,0>(), data);
+    }
+    
+    ValuePtr<FloatValue> FloatValue::get(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location) {
+      return FloatValue::get(context, width, exponent, mantissa, location);
+    }
+    
+    IntegerUnaryOp::IntegerUnaryOp(const ValuePtr<>& arg, const HashableValueSetup& setup, const SourceLocation& location)
+    : UnaryOp(arg->type(), arg, setup, location) {
+      if (!isa<IntegerType>(arg->type()))
+        throw TvmUserError("Argument to integer unary operation must have integer type");
+    }
+    
+    IntegerBinaryOp::IntegerBinaryOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const HashableValueSetup& setup, const SourceLocation& location)
+    : BinaryOp(lhs->type(), lhs, rhs, setup, location) {
+      if (!isa<IntegerType>(lhs->type()))
+        throw TvmUserError("Argument to integer binary operation must have integer type");
+      if (lhs->type() != rhs->type())
+        throw TvmUserError("Both parameters to integer binary operation must have the same type");
     }
 
-    namespace {
-      FunctionalTypeResult binary_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
-        if (parameters.size() != 2)
-          throw TvmUserError(std::string(operation) + " expects two operands");
-
-        Term* type = parameters[0]->type();
-        if (type != parameters[1]->type())
-          throw TvmUserError(std::string(operation) + ": both operands must be of the same type");
-
-        return type;
-      }
-
-      FunctionalTypeResult integer_binary_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
-        FunctionalTypeResult result = binary_op_type(operation, parameters);
-
-        if (!isa<IntegerType>(result.type))
-          throw TvmUserError(std::string(operation) + ": parameters must be integers");
-
-        return result;
-      }
-
-      FunctionalTypeResult unary_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
-        if (parameters.size() != 1)
-          throw TvmUserError(std::string(operation) + " expects two operands");
-
-        return parameters[0]->type();
-      }
-
-      FunctionalTypeResult integer_unary_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
-        FunctionalTypeResult result = unary_op_type(operation, parameters);
-
-        if (!isa<IntegerType>(result.type))
-          throw TvmUserError(std::string(operation) + ": parameter must be an integers");
-
-        return result;
-      }
-
-      FunctionalTypeResult integer_cmp_op_type(const char *operation, ArrayPtr<Term*const> parameters) {
-        FunctionalTypeResult result = integer_binary_op_type(operation, parameters);
-        result.type = BooleanType::get(result.type->context());
-        return result;
-      }
+    IntegerCompareOp::IntegerCompareOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const HashableValueSetup& setup, const SourceLocation& location)
+    : BinaryOp(BooleanType::get(lhs->context(), location), lhs, rhs, setup, location) {
+      if (!isa<IntegerType>(lhs->type()))
+        throw TvmUserError("Argument to integer compare operation must have integer type");
+      if (lhs->type() != rhs->type())
+        throw TvmUserError("Both parameters to integer compare operation must have the same type");
     }
 
-#define IMPLEMENT_BINARY(name,op_name,type_cb)                          \
-    const char name::operation[] = op_name;                             \
-                                                                        \
-    FunctionalTypeResult name::type(Context&, const Data&, ArrayPtr<Term*const> parameters) { \
-      return type_cb(name::operation, parameters);                      \
-    }                                                                   \
-                                                                        \
-    name::Ptr name::get(Term *lhs, Term *rhs) {                         \
-      Term *parameters[] = {lhs, rhs};                                  \
-      return lhs->context().get_functional<name>(ArrayPtr<Term*const>(parameters, 2)); \
+#define IMPLEMENT_INT_BINARY(name,op_name) PSI_TVM_BINARY_OP_IMPL(name,IntegerBinaryOp,op_name)
+#define IMPLEMENT_INT_UNARY(name,op_name) PSI_TVM_UNARY_OP_IMPL(name,IntegerUnaryOp,op_name)
+#define IMPLEMENT_INT_COMPARE(name,op_name) PSI_TVM_BINARY_OP_IMPL(name,IntegerCompareOp,op_name)
+
+    IMPLEMENT_INT_BINARY(IntegerAdd, add)
+    IMPLEMENT_INT_BINARY(IntegerMultiply, mul)
+    IMPLEMENT_INT_BINARY(IntegerDivide, div)
+    IMPLEMENT_INT_UNARY(IntegerNegative, neg)
+    IMPLEMENT_INT_BINARY(BitAnd, bit_and)
+    IMPLEMENT_INT_BINARY(BitOr, bit_or)
+    IMPLEMENT_INT_BINARY(BitXor, bit_xor)
+    IMPLEMENT_INT_UNARY(BitNot, bit_not)
+    IMPLEMENT_INT_COMPARE(IntegerCompareEq, cmp_eq)
+    IMPLEMENT_INT_COMPARE(IntegerCompareNe, cmp_ne)
+    IMPLEMENT_INT_COMPARE(IntegerCompareGt, cmp_gt)
+    IMPLEMENT_INT_COMPARE(IntegerCompareGe, cmp_ge)
+    IMPLEMENT_INT_COMPARE(IntegerCompareLt, cmp_lt)
+    IMPLEMENT_INT_COMPARE(IntegerCompareLe, cmp_le)
+
+    Select::Select(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location)
+    : FunctionalValue(condition->context(), true_value->type(), hashable_setup<Select>(condition)(true_value)(false_value), location),
+    m_condition(condition),
+    m_true_value(true_value),
+    m_false_value(false_value) {
+      if (!isa<BooleanType>(m_condition->type()))
+        throw TvmUserError("Condition parameter to select must be a boolean");
+      if (m_true_value->type() != m_false_value->type())
+        throw TvmUserError("Second and third parameters to select must have the same type");
     }
 
-#define IMPLEMENT_UNARY(name,op_name,type_cb)                           \
-    const char name::operation[] = op_name;                             \
-                                                                        \
-    FunctionalTypeResult name::type(Context&, const Data&, ArrayPtr<Term*const> parameters) { \
-      return type_cb(name::operation, parameters);                      \
-    }                                                                   \
-                                                                        \
-    name::Ptr name::get(Term *parameter) {                              \
-      Term *parameters[] = {parameter};                                 \
-      return parameter->context().get_functional<name>(ArrayPtr<Term*const>(parameters, 1)); \
-    }
-
-#define IMPLEMENT_INT_BINARY(name,op_name) IMPLEMENT_BINARY(name,op_name,integer_binary_op_type)
-#define IMPLEMENT_INT_UNARY(name,op_name) IMPLEMENT_UNARY(name,op_name,integer_unary_op_type)
-#define IMPLEMENT_INT_COMPARE(name,op_name) IMPLEMENT_BINARY(name,op_name,integer_cmp_op_type)
-
-    IMPLEMENT_INT_BINARY(IntegerAdd, "add")
-    IMPLEMENT_INT_BINARY(IntegerMultiply, "mul")
-    IMPLEMENT_INT_BINARY(IntegerDivide, "div")
-    IMPLEMENT_INT_UNARY(IntegerNegative, "neg")
-    IMPLEMENT_INT_BINARY(BitAnd, "bit_and")
-    IMPLEMENT_INT_BINARY(BitOr, "bit_or")
-    IMPLEMENT_INT_BINARY(BitXor, "bit_xor")
-    IMPLEMENT_INT_UNARY(BitNot, "bit_not")
-    IMPLEMENT_INT_COMPARE(IntegerCompareEq, "cmp_eq")
-    IMPLEMENT_INT_COMPARE(IntegerCompareNe, "cmp_ne")
-    IMPLEMENT_INT_COMPARE(IntegerCompareGt, "cmp_gt")
-    IMPLEMENT_INT_COMPARE(IntegerCompareGe, "cmp_ge")
-    IMPLEMENT_INT_COMPARE(IntegerCompareLt, "cmp_lt")
-    IMPLEMENT_INT_COMPARE(IntegerCompareLe, "cmp_le")
-
-    FunctionalTypeResult SelectValue::type(Context& context, const Data&, ArrayPtr<Term*const> parameters) {
-      if (parameters.size() != 3)
-        throw TvmUserError("select takes three operands");
-
-      if (parameters[0]->type() != BooleanType::get(context))
-        throw TvmUserError("select: first operand must be of type bool");
-
-      Term *type = parameters[1]->type();
-      if (type != parameters[2]->type())
-        throw TvmUserError("select: second and third operands must have the same type");
-
-      return type;
-    }
-
-    SelectValue::Ptr SelectValue::get(Term *condition, Term *true_value, Term *false_value) {
-      return condition->context().get_functional<SelectValue>(StaticArray<Term*,3>(condition, true_value, false_value));
+    ValuePtr<Select> Select::get(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location) {
+      return condition->context().get_functional(Select(condition, true_value, false_value, location));
     }
   }
 }

@@ -6,16 +6,16 @@
 
 namespace Psi {
   namespace Tvm {
-    PSI_TVM_INSTRUCTION_IMPL(Return, TerminatorInstruction, "return");
-    PSI_TVM_INSTRUCTION_IMPL(ConditionalBranch, TerminatorInstruction, "cond_br");
-    PSI_TVM_INSTRUCTION_IMPL(UnconditionalBranch, TerminatorInstruction, "br");
-    PSI_TVM_INSTRUCTION_IMPL(Unreachable, TerminatorInstruction, "unreachable");
+    PSI_TVM_INSTRUCTION_IMPL(Return, TerminatorInstruction, return);
+    PSI_TVM_INSTRUCTION_IMPL(ConditionalBranch, TerminatorInstruction, cond_br);
+    PSI_TVM_INSTRUCTION_IMPL(UnconditionalBranch, TerminatorInstruction, br);
+    PSI_TVM_INSTRUCTION_IMPL(Unreachable, TerminatorInstruction, unreachable);
     
-    PSI_TVM_INSTRUCTION_IMPL(Call, Instruction, "call");
-    PSI_TVM_INSTRUCTION_IMPL(Store, Instruction, "store");
-    PSI_TVM_INSTRUCTION_IMPL(Load, Instruction, "load");
-    PSI_TVM_INSTRUCTION_IMPL(Alloca, Instruction, "alloca");
-    PSI_TVM_INSTRUCTION_IMPL(MemCpy, Instruction, "memcpy");
+    PSI_TVM_INSTRUCTION_IMPL(Call, Instruction, call);
+    PSI_TVM_INSTRUCTION_IMPL(Store, Instruction, store);
+    PSI_TVM_INSTRUCTION_IMPL(Load, Instruction, load);
+    PSI_TVM_INSTRUCTION_IMPL(Alloca, Instruction, alloca);
+    PSI_TVM_INSTRUCTION_IMPL(MemCpy, Instruction, memcpy);
 
     Return::Return(const ValuePtr<>& value_, const ValuePtr<Block>& block, const SourceLocation& location)
     : TerminatorInstruction(operation, block, location),

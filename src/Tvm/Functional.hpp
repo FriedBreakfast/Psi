@@ -4,6 +4,7 @@
 #include "Core.hpp"
 
 #include <boost/functional/hash.hpp>
+#include <boost/concept_check.hpp>
 
 namespace Psi {
   namespace Tvm {
@@ -96,6 +97,16 @@ namespace Psi {
       name(const ValuePtr<>& arg, const SourceLocation& location); \
       static ValuePtr<> get(const ValuePtr<>& arg, const SourceLocation& location); \
     };
+
+#define PSI_TVM_UNARY_OP_IMPL(name,base,op_name) \
+    PSI_TVM_FUNCTIONAL_IMPL(name,base,op_name) \
+    name::name(const ValuePtr<>& arg, const SourceLocation& location) \
+    : base(arg, hashable_setup<name>(), location) { \
+    } \
+    \
+    ValuePtr<> name::get(const ValuePtr<>& arg, const SourceLocation& location) { \
+      return arg->context().get_functional(name(arg, location)); \
+    }
     
     class BinaryOp : public FunctionalValue {
     public:
@@ -120,14 +131,36 @@ namespace Psi {
       static ValuePtr<> get(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location); \
     };
     
+#define PSI_TVM_BINARY_OP_IMPL(name,base,op_name) \
+    PSI_TVM_FUNCTIONAL_IMPL(name,base,op_name) \
+    name::name(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) \
+    : base(lhs, rhs, hashable_setup<name>(), location) { \
+    } \
+    \
+    ValuePtr<> name::get(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) { \
+      return lhs->context().get_functional(name(lhs, rhs, location)); \
+    }
+    
     class Type : public FunctionalValue {
     public:
       Type(Context& context, const HashableValueSetup& hash, const SourceLocation& location);
     };
     
+    class SimpleType : public FunctionalValue {
+    public:
+      SimpleType(Context& context, const HashableValueSetup& hash, const SourceLocation& location);
+      virtual void type_check();
+    };
+    
     class Constructor : public FunctionalValue {
     protected:
       Constructor(const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
+    };
+    
+    class SimpleConstructor : public FunctionalValue {
+    public:
+      SimpleConstructor(const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
+      virtual void type_check();
     };
     
     class AggregateOp : public FunctionalValue {
