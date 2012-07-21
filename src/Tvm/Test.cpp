@@ -24,8 +24,23 @@ int main(int argc, char *argv[]) {
 namespace Psi {
   namespace Tvm {
     namespace Test {
+      namespace {
+        SourceLocation module_location() {
+          PhysicalSourceLocation phys;
+          phys.file.reset(new SourceFile());
+          phys.file->url = "(test)";
+          phys.first_line = phys.first_column = 1;
+          phys.last_line = phys.last_column = 0;
+  
+          LogicalSourceLocationPtr log = LogicalSourceLocation::new_root_location();
+          return SourceLocation(phys, log);
+        }
+      }
+      
       ContextFixture::ContextFixture()
-      : module(&context, "test_module"), m_jit(jit_factory->create_jit()) {
+      : location(module_location()),
+      module(&context, "test_module", location),
+      m_jit(jit_factory->create_jit()) {
       }
 
       ContextFixture::~ContextFixture() {

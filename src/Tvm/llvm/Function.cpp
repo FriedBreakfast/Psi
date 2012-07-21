@@ -23,29 +23,29 @@ namespace Psi {
                              const FunctionBuilder::ValueTermMap *value_terms_)
           : self(self_), value_terms(value_terms_) {}
 
-        llvm::Value* build(Term *term) const {
+        llvm::Value* build(const ValuePtr<>& term) const {
           llvm::BasicBlock *old_insert_block = self->irbuilder().GetInsertBlock();
 
           // Set the insert point to the dominator block of the value
           llvm::BasicBlock *new_insert_block;
-          Term *src = term->source();
+          Value *src = term->source();
           PSI_ASSERT(src);
           switch (src->term_type()) {
             case term_instruction: {
-              FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(cast<InstructionTerm>(src)->block());
+              FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(value_cast<Instruction>(src)->block());
               new_insert_block = llvm::cast<llvm::BasicBlock>(it->second);
               break;
             }
             
             case term_phi: {
-              FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(cast<PhiTerm>(src)->block());
+              FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(value_cast<Phi>(src)->block());
               new_insert_block = llvm::cast<llvm::BasicBlock>(it->second);
               break;
             }
             
             case term_function_parameter: {
 #ifdef PSI_DEBUG
-              FunctionParameterTerm *cast_src = cast<FunctionParameterTerm>(src);
+              FunctionParameter *cast_src = value_cast<FunctionParameter>(src);
               PSI_ASSERT(!cast_src->phantom() && (cast_src->function() == self->function()));
 #endif
               new_insert_block = &self->llvm_function()->front();
@@ -76,12 +76,12 @@ namespace Psi {
           llvm::Value* result;
           switch(term->term_type()) {
           case term_functional: {
-            result = self->build_value_functional(cast<FunctionalTerm>(term));
+            result = self->build_value_functional(value_cast<FunctionalValue>(term));
             break;
           }
 
           case term_apply: {
-            Term* actual = cast<ApplyTerm>(term)->unpack();
+            ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
             PSI_ASSERT(actual->term_type() != term_apply);
             result = self->build_value(actual);
             break;
@@ -104,7 +104,7 @@ namespace Psi {
       };
 
       FunctionBuilder::FunctionBuilder(ModuleBuilder *global_builder,
-                                       FunctionTerm *function,
+                                       const ValuePtr<Function>& function,
                                        llvm::Function *llvm_function)
         : m_module_builder(global_builder),
           m_irbuilder(global_builder->llvm_context(), llvm::TargetFolder(global_builder->llvm_target_machine()->getTargetData())),
@@ -121,10 +121,10 @@ namespace Psi {
        *
        * \pre <tt>!term->phantom()</tt>
        */
-      llvm::Value* FunctionBuilder::build_value(Term* term) {
+      llvm::Value* FunctionBuilder::build_value(const ValuePtr<>& term) {
         PSI_ASSERT(!term->phantom());
 
-        if (!term->source() || isa<GlobalTerm>(term->source()))
+        if (!term->source() || isa<Global>(term->source()))
           return module_builder()->build_constant(term);
 
         switch (term->term_type()) {
@@ -149,29 +149,29 @@ namespace Psi {
       /**
        * Remove unnecessary stack save and restore instructions.
        */
-      void FunctionBuilder::setup_stack_save_restore(const std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >& blocks) {
-        boost::unordered_map<BlockTerm*, BlockTerm*> stack_dominator;
-        boost::unordered_map<BlockTerm*, llvm::Value*> stack_save_values;
-        boost::unordered_set<BlockTerm*> stack_restore_required;
+      void FunctionBuilder::setup_stack_save_restore(const std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >& blocks) {
+        boost::unordered_map<ValuePtr<Block>, ValuePtr<Block> > stack_dominator;
+        boost::unordered_map<ValuePtr<Block>, llvm::Value*> stack_save_values;
+        boost::unordered_set<ValuePtr<Block> > stack_restore_required;
 
         stack_dominator[blocks.front().first] = blocks.front().first;
-        for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii)
+        for (std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii)
           stack_dominator[ii->first] = stack_dominator[ii->first->dominator()];
 
         // Work out which saves and restores are required
-        for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
-          BlockTerm *stack_restore = stack_dominator[ii->first];
+        for (std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
+          ValuePtr<> stack_restore = stack_dominator[ii->first];
           bool has_alloca = false;
-          for (BlockTerm::InstructionList::iterator ji = ii->first->instructions().begin(), je = ii->first->instructions().end(); ji != je; ++ji) {
-            if (isa<Alloca>(&*ji)) {
+          for (Block::InstructionList::const_iterator ji = ii->first->instructions().begin(), je = ii->first->instructions().end(); ji != je; ++ji) {
+            if (isa<Alloca>(*ji)) {
               has_alloca = true;
               break;
             }
           }
           
-          const std::vector<BlockTerm*>& successors = ii->first->successors();
-          for (std::vector<BlockTerm*>::const_iterator ji = successors.begin(), je = successors.end(); ji != je; ++ji) {
-            BlockTerm *target_stack_restore = stack_dominator[*ji];
+          std::vector<ValuePtr<Block> > successors = ii->first->successors();
+          for (std::vector<ValuePtr<Block> >::const_iterator ji = successors.begin(), je = successors.end(); ji != je; ++ji) {
+            ValuePtr<Block> target_stack_restore = stack_dominator[*ji];
             if (has_alloca ? (target_stack_restore != ii->first) : (target_stack_restore != stack_restore)) {
               stack_save_values[target_stack_restore] = NULL;
               stack_restore_required.insert(*ji);
@@ -180,8 +180,8 @@ namespace Psi {
         }
         
         // Insert required saves
-        for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
-          boost::unordered_map<BlockTerm*, llvm::Value*>::iterator ji = stack_save_values.find(ii->first);
+        for (std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
+          boost::unordered_map<ValuePtr<Block>, llvm::Value*>::iterator ji = stack_save_values.find(ii->first);
           if (ji != stack_save_values.end()) {
             irbuilder().SetInsertPoint(ii->second, boost::prior(ii->second->end()));
             ji->second = irbuilder().CreateCall(module_builder()->llvm_stacksave());
@@ -189,10 +189,10 @@ namespace Psi {
         }
         
         // Insert required restores
-        for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
+        for (std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
           if (stack_restore_required.find(ii->first) != stack_restore_required.end()) {
             irbuilder().SetInsertPoint(ii->second, ii->second->getFirstNonPHI());
-            BlockTerm *restore = stack_dominator[ii->first];
+            ValuePtr<Block> restore = stack_dominator[ii->first];
             irbuilder().CreateCall(module_builder()->llvm_stackrestore(), stack_save_values[restore]);
           }
         }
@@ -201,24 +201,24 @@ namespace Psi {
       void FunctionBuilder::run() {
         // Set up parameters
         llvm::Function::ArgumentListType::iterator ii = m_llvm_function->getArgumentList().begin(), ie = m_llvm_function->getArgumentList().end();
-        for (std::size_t in = function()->function_type()->n_phantom_parameters(); ii != ie; ++ii, ++in) {
-          FunctionParameterTerm* param = m_function->parameter(in);
+        for (std::size_t in = function()->function_type()->n_phantom(); ii != ie; ++ii, ++in) {
+          ValuePtr<FunctionParameter> param = m_function->parameter(in);
           llvm::Value *value = &*ii;
           value->setName(term_name(param));
           m_value_terms.insert(std::make_pair(param, value));
         }
 
         // create llvm blocks
-        std::vector<BlockTerm*> sorted_blocks = m_function->topsort_blocks();
-        std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> > blocks;
-        for (std::vector<BlockTerm*>::iterator it = sorted_blocks.begin(); it != sorted_blocks.end(); ++it) {
+        std::vector<ValuePtr<Block> > sorted_blocks = m_function->topsort_blocks();
+        std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> > blocks;
+        for (std::vector<ValuePtr<Block> >::iterator it = sorted_blocks.begin(); it != sorted_blocks.end(); ++it) {
           llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(module_builder()->llvm_context(), term_name(*it), m_llvm_function);
           std::pair<ValueTermMap::iterator, bool> insert_result = m_value_terms.insert(std::make_pair(*it, llvm_bb));
           PSI_ASSERT(insert_result.second);
           blocks.push_back(std::make_pair(*it, llvm_bb));
         }
 
-        std::tr1::unordered_map<PhiTerm*, llvm::PHINode*> phi_node_map;
+        std::tr1::unordered_map<ValuePtr<Phi>, llvm::PHINode*> phi_node_map;
         
         // Set up exception handling personality routine
         llvm::Constant *eh_personality;
@@ -230,23 +230,24 @@ namespace Psi {
         }
         
         // Build basic blocks
-        for (std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >::iterator it = blocks.begin();
+        for (std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >::iterator it = blocks.begin();
              it != blocks.end(); ++it) {
           irbuilder().SetInsertPoint(it->second);
           PSI_ASSERT(it->second->empty());
 
           // Set up phi terms
-          BlockTerm::PhiList& phi_list = it->first->phi_nodes();
-          for (BlockTerm::PhiList::iterator jt = phi_list.begin(); jt != phi_list.end(); ++jt) {
-            PhiTerm *phi = &*jt;
+          const Block::PhiList& phi_list = it->first->phi_nodes();
+          for (Block::PhiList::const_iterator jt = phi_list.begin(), je = phi_list.end(); jt != je; ++jt) {
+            const ValuePtr<Phi>& phi = *jt;
             llvm::Type *llvm_ty = module_builder()->build_type(phi->type());
-            llvm::PHINode *llvm_phi = irbuilder().CreatePHI(llvm_ty, phi->n_incoming(), term_name(phi));
+            llvm::PHINode *llvm_phi = irbuilder().CreatePHI(llvm_ty, phi->edges().size(), term_name(phi));
             phi_node_map.insert(std::make_pair(phi, llvm_phi));
             m_value_terms.insert(std::make_pair(phi, llvm_phi));
           }
           
           // Check if this is a landing pad - if so, add entry instructions
-          if (CatchClauseTerm *catch_clause = it->first->catch_clause()) {
+          if (it->first->is_landing_pad()) {
+#if 0
             if (!eh_personality)
               throw BuildError("Landing pad block occurs in function with no exception personality set.");
 
@@ -266,12 +267,13 @@ namespace Psi {
               llvm::Value *catch_id = irbuilder().CreateCall(m_module_builder->llvm_eh_typeid_for(), select_args[ii+2]);
               m_value_terms[FunctionalBuilder::catch_(catch_clause, ii)] = catch_id;
             }
+#endif
           }
 
           // Build instructions!
-          BlockTerm::InstructionList& insn_list = it->first->instructions();
-          for (BlockTerm::InstructionList::iterator jt = insn_list.begin(); jt != insn_list.end(); ++jt) {
-            InstructionTerm *insn = &*jt;
+          const Block::InstructionList& insn_list = it->first->instructions();
+          for (Block::InstructionList::const_iterator jt = insn_list.begin(), je = insn_list.end(); jt != je; ++jt) {
+            const ValuePtr<Instruction>& insn = *jt;
             llvm::Value *r = build_value_instruction(insn);
             m_value_terms.insert(std::make_pair(insn, r));
           }
@@ -281,15 +283,14 @@ namespace Psi {
         }
 
         // Set up LLVM phi node incoming edges
-        for (std::tr1::unordered_map<PhiTerm*, llvm::PHINode*>::iterator it = phi_node_map.begin();
-             it != phi_node_map.end(); ++it) {
-
-          for (std::size_t n = 0; n < it->first->n_incoming(); ++n) {
-            PSI_ASSERT(m_value_terms.find(it->first->incoming_block(n)) != m_value_terms.end());
+        for (std::tr1::unordered_map<ValuePtr<Phi>, llvm::PHINode*>::iterator it = phi_node_map.begin(), ie = phi_node_map.end(); it != ie; ++it) {
+          for (std::vector<PhiEdge>::const_iterator ji = it->first->edges().begin(), je = it->first->edges().end(); ji != je; ++ji) {
+            const PhiEdge& edge = *ji;
+            PSI_ASSERT(m_value_terms.find(edge.block) != m_value_terms.end());
             llvm::BasicBlock *incoming_block =
-              llvm::cast<llvm::BasicBlock>(m_value_terms.find(it->first->incoming_block(n))->second);
+              llvm::cast<llvm::BasicBlock>(m_value_terms.find(edge.block)->second);
             PSI_ASSERT(incoming_block);
-            llvm::Value* incoming_value = build_value(it->first->incoming_value(n));
+            llvm::Value* incoming_value = build_value(edge.value);
             it->second->addIncoming(incoming_value, incoming_block);
           }
         }
@@ -308,9 +309,9 @@ namespace Psi {
        * Get one of the names for a term, or an empty StringRef if the
        * term has no name.
        */
-      llvm::StringRef FunctionBuilder::term_name(Term *term) {
-        const FunctionTerm::TermNameMap& map = m_function->term_name_map();
-        FunctionTerm::TermNameMap::const_iterator it = map.find(term);
+      llvm::StringRef FunctionBuilder::term_name(const ValuePtr<>& term) {
+        const Function::TermNameMap& map = m_function->term_name_map();
+        Function::TermNameMap::const_iterator it = map.find(term);
 
         if (it != map.end()) {
           return llvm::StringRef(it->second);

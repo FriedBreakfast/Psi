@@ -11,9 +11,9 @@ namespace Psi {
     /**
      * Base class for types which rewrite entire modules.
      */
-    class ModuleRewriter {
-      boost::shared_ptr<Module> m_source_module;
-      boost::shared_ptr<Module> m_target_module;
+    class ModuleRewriter : public boost::noncopyable {
+      Module *m_source_module;
+      std::auto_ptr<Module> m_target_module;
       typedef boost::unordered_map<ValuePtr<Global>, ValuePtr<Global> > GlobalMapType;
       GlobalMapType m_global_map;
       
@@ -22,12 +22,14 @@ namespace Psi {
       ValuePtr<Global> global_map_get(const ValuePtr<Global>& key);
       
     public:
-      ModuleRewriter(const boost::shared_ptr<Module>&, Context* =0);
+      ModuleRewriter(Module*, Context* =0);
       
       /// \brief The module being rewritten
-      const boost::shared_ptr<Module>& source_module() {return m_source_module;}
+      Module *source_module() {return m_source_module;}
       /// \brief The module where rewritten symbols are created
-      const boost::shared_ptr<Module>& target_module() {return m_target_module;}
+      Module *target_module() {return m_target_module.get();}
+      /// \brief Return ownership of the target module
+      Module *release_target_module() {return m_target_module.release();}
             
       ValuePtr<Global> target_symbol(const ValuePtr<Global>&);
       ValuePtr<Function> target_symbol(const ValuePtr<Function>&);

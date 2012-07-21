@@ -22,7 +22,7 @@ namespace Psi {
       std::vector<ValuePtr<> > parameters;
       for (unsigned i = 0; i != parameters.size(); ++i)
         parameters.push_back(rewriter(term->parameter(i)));
-      return term->context().apply_recursive(recursive, parameters);
+      return term->context().apply_recursive(recursive, parameters, term->location());
     }
 
     /**
@@ -36,7 +36,7 @@ namespace Psi {
       class MyRewriteCallback : public RewriteCallback {
         T *m_rewriter;
       public:
-        MyRewriteCallback(Context *context, T *rewriter) : RewriteCallback(context) {}
+        MyRewriteCallback(Context *context, T *rewriter) : RewriteCallback(context), m_rewriter(rewriter) {}
         virtual ValuePtr<> rewrite(const ValuePtr<>& value) {return (*m_rewriter)(value);}
       };
       MyRewriteCallback my_rewrite_callback(&term->context(), &rewriter);

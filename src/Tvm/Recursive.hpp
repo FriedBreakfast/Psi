@@ -9,7 +9,7 @@ namespace Psi {
 
     class RecursiveParameter : public Value {
       friend class Context;
-      RecursiveParameter(Context *context, const ValuePtr<>& type);
+      RecursiveParameter(const ValuePtr<>& type, const SourceLocation& location);
     };
 
     /**
@@ -26,15 +26,16 @@ namespace Psi {
 
     public:
       void resolve(const ValuePtr<>& term);
-      ValuePtr<ApplyValue> apply(const std::vector<ValuePtr<> >& parameters);
+      ValuePtr<ApplyValue> apply(const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);
 
       std::size_t n_parameters() {return m_parameters.size();}
       const ValuePtr<RecursiveParameter>& parameter(std::size_t i) {return m_parameters[i];}
       const ValuePtr<> result() {return m_result;}
 
     private:
-      RecursiveType(Context *context, const ValuePtr<>& result_type,
-                    const ValuePtr<>& source, const std::vector<ValuePtr<RecursiveParameter> >& parameters);
+      RecursiveType(const ValuePtr<>& result_type, Value *source,
+                    const std::vector<ValuePtr<RecursiveParameter> >& parameters,
+                    const SourceLocation& location);
     };
 
     class ApplyValue : public HashableValue {
@@ -43,6 +44,8 @@ namespace Psi {
       std::vector<ValuePtr<> > m_parameters;
 
     public:
+      static const char operation[];
+      
       std::size_t n_parameters() {return m_parameters.size();}
       ValuePtr<> unpack();
 
@@ -50,8 +53,10 @@ namespace Psi {
       const ValuePtr<>& parameter(std::size_t i) {return m_parameters[i];}
 
     private:
-      ApplyValue(Context *context, const ValuePtr<RecursiveType>& recursive,
-                 const std::vector<ValuePtr<> >& parameters);
+      ApplyValue(Context& context,
+                 const ValuePtr<RecursiveType>& recursive,
+                 const std::vector<ValuePtr<> >& parameters,
+                 const SourceLocation& location);
     };
   }
 }

@@ -43,78 +43,78 @@ namespace Psi {
       }
 
       TargetCommon::LowerFunctionHelperResult
-      TargetCommon::lower_function_helper(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, FunctionTypeTerm* function_type) {
+      TargetCommon::lower_function_helper(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& function_type) {
         if (!m_callback->convention_supported(function_type->calling_convention()))
           throw BuildError("Calling convention is not supported on this platform");
         
         LowerFunctionHelperResult result;
-        std::vector<Term*> parameter_types;
+        std::vector<ValuePtr<> > parameter_types;
 
         result.return_handler =
           m_callback->parameter_type_info(rewriter, function_type->calling_convention(), function_type->result_type());
-        Term *return_type = result.return_handler->lowered_type();
+        ValuePtr<> return_type = result.return_handler->lowered_type();
         result.sret = result.return_handler->return_by_sret();
         if (result.sret)
           parameter_types.push_back(return_type);
 
-        result.n_phantom = function_type->n_phantom_parameters();
-        result.n_passed_parameters = function_type->n_parameters() - result.n_phantom;
+        result.n_phantom = function_type->n_phantom();
+        result.n_passed_parameters = function_type->parameter_types().size() - result.n_phantom;
         for (std::size_t i = 0; i != result.n_passed_parameters; ++i) {
           boost::shared_ptr<ParameterHandler> handler = m_callback->parameter_type_info
-            (rewriter, function_type->calling_convention(), function_type->parameter_type(i+result.n_phantom));
+            (rewriter, function_type->calling_convention(), function_type->parameter_types()[i+result.n_phantom]);
           result.parameter_handlers.push_back(handler);
           parameter_types.push_back(handler->lowered_type());
         }
         
         result.lowered_type = rewriter.context().get_function_type_fixed
-          (function_type->calling_convention(), return_type, parameter_types);
+          (function_type->calling_convention(), return_type, parameter_types, function_type->location());
           
         return result;
       }
 
-      void TargetCommon::lower_function_call(AggregateLoweringPass::FunctionRunner& runner, FunctionCall::Ptr term) {
+      void TargetCommon::lower_function_call(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<Call>& term) {
         LowerFunctionHelperResult helper_result = lower_function_helper(runner, term->target_function_type());
         
         int sret = helper_result.sret ? 1 : 0;
-        ScopedArray<Term*> parameters(sret + helper_result.n_passed_parameters);
+        std::vector<ValuePtr<> > parameters(sret + helper_result.n_passed_parameters);
 
-        Term *sret_addr = 0;
+        ValuePtr<> sret_addr;
         if (helper_result.sret) {
-          sret_addr = helper_result.return_handler->return_by_sret_setup(runner);
+          sret_addr = helper_result.return_handler->return_by_sret_setup(runner, term->location());
           parameters[0] = sret_addr;
         }
         
         for (std::size_t i = 0; i != helper_result.n_passed_parameters; ++i)
-          parameters[i+sret] = helper_result.parameter_handlers[i]->pack(runner, term->parameter(i+helper_result.n_phantom));
+          parameters[i+sret] = helper_result.parameter_handlers[i]->pack(runner, term->parameters[i+helper_result.n_phantom], term->location());
         
-        Term *lowered_target = runner.rewrite_value_stack(term->target());
-        Term *cast_target = FunctionalBuilder::pointer_cast(lowered_target, helper_result.lowered_type);
-        Term *result = runner.builder().call(cast_target, parameters);
+        ValuePtr<> lowered_target = runner.rewrite_value_stack(term->target);
+        ValuePtr<> cast_target = FunctionalBuilder::pointer_cast(lowered_target, helper_result.lowered_type, term->location());
+        ValuePtr<> result = runner.builder().call(cast_target, parameters, term->location());
         
-        helper_result.return_handler->return_unpack(runner, sret_addr, term, result);
+        helper_result.return_handler->return_unpack(runner, sret_addr, term, result, term->location());
       }
 
-      InstructionTerm* TargetCommon::lower_return(AggregateLoweringPass::FunctionRunner& runner, Term *value) {
-        FunctionTypeTerm *function_type = runner.old_function()->function_type();
+      ValuePtr<Instruction> TargetCommon::lower_return(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& value, const SourceLocation& location) {
+        ValuePtr<FunctionType> function_type = runner.old_function()->function_type();
         boost::shared_ptr<ParameterHandler> return_handler =
           m_callback->parameter_type_info(runner, function_type->calling_convention(), function_type->result_type());
           
-        return return_handler->return_pack(runner, value);
+        return return_handler->return_pack(runner, value, location);
       }
 
-      FunctionTerm* TargetCommon::lower_function(AggregateLoweringPass& pass, FunctionTerm *function) {
+      ValuePtr<Function> TargetCommon::lower_function(AggregateLoweringPass& pass, const ValuePtr<Function>& function) {
         LowerFunctionHelperResult helper_result = lower_function_helper(pass.global_rewriter(), function->function_type());
-        return pass.target_module()->new_function(function->name(), helper_result.lowered_type);
+        return pass.target_module()->new_function(function->name(), helper_result.lowered_type, function->location());
       }
       
-      void TargetCommon::lower_function_entry(AggregateLoweringPass::FunctionRunner& runner, FunctionTerm *source_function, FunctionTerm *target_function) {
+      void TargetCommon::lower_function_entry(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<Function>& source_function, const ValuePtr<Function>& target_function) {
         LowerFunctionHelperResult helper_result = lower_function_helper(runner, source_function->function_type());
         int sret = helper_result.sret ? 1 : 0;
         for (std::size_t i = 0; i != helper_result.n_passed_parameters; ++i)
-          helper_result.parameter_handlers[i]->unpack(runner, source_function->parameter(i+helper_result.n_phantom), target_function->parameter(i + sret));
+          helper_result.parameter_handlers[i]->unpack(runner, source_function->parameter(i+helper_result.n_phantom), target_function->parameter(i + sret), target_function->location());
       }
       
-      Term* TargetCommon::convert_value(Term *value, Term *type) {
+      ValuePtr<> TargetCommon::convert_value(const ValuePtr<>& value, const ValuePtr<>& type) {
         PSI_NOT_IMPLEMENTED();
       }
       
@@ -125,8 +125,8 @@ namespace Psi {
         return result;
       }
       
-      TargetCommon::TypeSizeAlignmentLiteral TargetCommon::type_size_alignment_literal(Term *type) {
-        if (PointerType::Ptr pointer_ty = dyn_cast<PointerType>(type)) {
+      TargetCommon::TypeSizeAlignmentLiteral TargetCommon::type_size_alignment_literal(const ValuePtr<>& type) {
+        if (ValuePtr<PointerType> pointer_ty = dyn_cast<PointerType>(type)) {
           TypeSizeAlignmentLiteral result;
           result.size = m_target_data->getPointerSize();
           result.alignment = m_target_data->getPointerABIAlignment();
@@ -135,9 +135,9 @@ namespace Psi {
           return  type_size_alignment_simple(llvm::Type::getInt1Ty(context()));
         } else if (isa<ByteType>(type)) {
           return type_size_alignment_simple(llvm::Type::getInt8Ty(context()));
-        } else if (IntegerType::Ptr int_ty = dyn_cast<IntegerType>(type)) {
+        } else if (ValuePtr<IntegerType> int_ty = dyn_cast<IntegerType>(type)) {
           return type_size_alignment_simple(integer_type(context(), m_target_data, int_ty->width()));
-        } else if (FloatType::Ptr float_ty = dyn_cast<FloatType>(type)) {
+        } else if (ValuePtr<FloatType> float_ty = dyn_cast<FloatType>(type)) {
           return type_size_alignment_simple(float_type(context(), float_ty->width()));
         } else if (isa<EmptyType>(type)) {
           TypeSizeAlignmentLiteral result;
@@ -149,16 +149,16 @@ namespace Psi {
         }
       }
       
-      AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment(Term *type) {
+      AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment(const ValuePtr<>& type) {
         TypeSizeAlignmentLiteral literal = type_size_alignment_literal(type);
         AggregateLoweringPass::TypeSizeAlignment result;
-        result.size = FunctionalBuilder::size_value(type->context(), literal.size);
-        result.alignment = FunctionalBuilder::size_value(type->context(), literal.alignment);
+        result.size = FunctionalBuilder::size_value(type->context(), literal.size, type->location());
+        result.alignment = FunctionalBuilder::size_value(type->context(), literal.alignment, type->location());
         return result;
       }
       
-      std::pair<Term*, Term*> TargetCommon::type_from_alignment(Term *alignment) {
-        if (IntegerValue::Ptr alignment_int_val = dyn_cast<IntegerValue>(alignment)) {
+      std::pair<ValuePtr<>, ValuePtr<> > TargetCommon::type_from_alignment(const ValuePtr<>& alignment) {
+        if (ValuePtr<IntegerValue> alignment_int_val = dyn_cast<IntegerValue>(alignment)) {
           boost::optional<unsigned> alignment_val = alignment_int_val->value().unsigned_value();
           if (alignment_val) {
             unsigned real_alignment = std::min(*alignment_val, 16u);
@@ -178,16 +178,16 @@ namespace Psi {
             default: PSI_FAIL("should not reach here");
             }
             
-            Term *int_type = FunctionalBuilder::int_type(alignment->context(), width, false);
-            return std::make_pair(int_type, FunctionalBuilder::size_value(alignment->context(), real_alignment));
+            ValuePtr<> int_type = FunctionalBuilder::int_type(alignment->context(), width, false, alignment->location());
+            return std::make_pair(int_type, FunctionalBuilder::size_value(alignment->context(), real_alignment, alignment->location()));
           }
         }
         
-        return std::make_pair(FunctionalBuilder::byte_type(alignment->context()),
-                              FunctionalBuilder::size_value(alignment->context(), 1));
+        return std::make_pair(FunctionalBuilder::byte_type(alignment->context(), alignment->location()),
+                              FunctionalBuilder::size_value(alignment->context(), 1, alignment->location()));
       }
 
-      TargetCommon::ParameterHandler::ParameterHandler(Term *type, Term *lowered_type, CallingConvention calling_convention)
+      TargetCommon::ParameterHandler::ParameterHandler(const ValuePtr<>& type, const ValuePtr<>& lowered_type, CallingConvention calling_convention)
         : m_type(type), m_lowered_type(lowered_type), m_calling_convention(calling_convention) {
         PSI_ASSERT(type);
         PSI_ASSERT(lowered_type);
@@ -198,7 +198,7 @@ namespace Psi {
        */
       class TargetCommon::ParameterHandlerSimple : public ParameterHandler {
       public:
-        ParameterHandlerSimple(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, Term *type, CallingConvention calling_convention)
+        ParameterHandlerSimple(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type, CallingConvention calling_convention)
           : ParameterHandler(type, rewriter.rewrite_type(type).stack_type(), calling_convention) {
         }
 
@@ -206,24 +206,24 @@ namespace Psi {
           return false;
         }
 
-        virtual Term* pack(AggregateLoweringPass::FunctionRunner& builder, Term *source_value) const {
+        virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation&) const {
           return builder.rewrite_value_stack(source_value);
         }
 
-        virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, Term *source_value, Term *target_value) const {
+        virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation&) const {
           runner.add_mapping(source_value, target_value, true);
         }
 
-        virtual Term* return_by_sret_setup(AggregateLoweringPass::FunctionRunner&) const {
-          return NULL;
+        virtual ValuePtr<> return_by_sret_setup(AggregateLoweringPass::FunctionRunner&, const SourceLocation&) const {
+          return ValuePtr<>();
         }
 
-        virtual InstructionTerm* return_pack(AggregateLoweringPass::FunctionRunner& builder, Term *value) const {
-          Term *lowered_value = builder.rewrite_value_stack(value);
-          return builder.builder().return_(lowered_value);
+        virtual ValuePtr<Instruction> return_pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& value, const SourceLocation& location) const {
+          ValuePtr<> lowered_value = builder.rewrite_value_stack(value);
+          return builder.builder().return_(lowered_value, location);
         }
 
-        virtual void return_unpack(AggregateLoweringPass::FunctionRunner& runner, Term*, Term *source_value, Term *target_value) const {
+        virtual void return_unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>&, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation&) const {
           runner.add_mapping(source_value, target_value, true);
         }
       };
@@ -233,7 +233,7 @@ namespace Psi {
        * parameter type by assuming that LLVM already has the correct
        * behaviour.
        */
-      boost::shared_ptr<TargetCommon::ParameterHandler> TargetCommon::parameter_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, Term *type, CallingConvention calling_convention) {
+      boost::shared_ptr<TargetCommon::ParameterHandler> TargetCommon::parameter_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type, CallingConvention calling_convention) {
         return boost::make_shared<ParameterHandlerSimple>(boost::ref(rewriter), type, calling_convention);
       }
 
@@ -245,7 +245,7 @@ namespace Psi {
       class TargetCommon::ParameterHandlerChangeTypeByMemory : public ParameterHandler {
 
       public:
-        ParameterHandlerChangeTypeByMemory(Term *type, Term *lowered_type, CallingConvention calling_convention)
+        ParameterHandlerChangeTypeByMemory(const ValuePtr<>& type, const ValuePtr<>& lowered_type, CallingConvention calling_convention)
           : ParameterHandler(type, lowered_type, calling_convention) {
         }
 
@@ -253,38 +253,38 @@ namespace Psi {
           return false;
         }
 
-        virtual Term* pack(AggregateLoweringPass::FunctionRunner& builder, Term *source_value) const {
-          AggregateLoweringPass::Value value = builder.rewrite_value(source_value);
+        virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation& location) const {
+          LoweredValue value = builder.rewrite_value(source_value);
           
-          Term *ptr;
+          ValuePtr<> ptr;
           if (value.on_stack()) {
-            ptr = builder.builder().alloca_(value.value()->type());
-            builder.builder().store(value.value(), ptr);
+            ptr = builder.builder().alloca_(value.value()->type(), location);
+            builder.builder().store(value.value(), ptr, location);
           } else {
             ptr = value.value();
           }
           
-          Term *cast_ptr = FunctionalBuilder::pointer_cast(ptr, lowered_type());
-          return builder.builder().load(cast_ptr);
+          ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, lowered_type(), location);
+          return builder.builder().load(cast_ptr, location);
         }
 
-        virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, Term *source_value, Term *target_value) const {
-          Term *ptr = runner.builder().alloca_(lowered_type());
-          runner.builder().store(target_value, ptr);
-          runner.load_value(source_value, ptr);
+        virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const {
+          ValuePtr<> ptr = runner.builder().alloca_(lowered_type(), location);
+          runner.builder().store(target_value, ptr, location);
+          runner.load_value(source_value, ptr, location);
         }
 
-        virtual Term* return_by_sret_setup(AggregateLoweringPass::FunctionRunner&) const {
-          return NULL;
+        virtual ValuePtr<> return_by_sret_setup(AggregateLoweringPass::FunctionRunner&, const SourceLocation&) const {
+          return ValuePtr<>();
         }
 
-        virtual InstructionTerm* return_pack(AggregateLoweringPass::FunctionRunner& builder, Term *value) const {
-          Term *packed_value = pack(builder, value);
-          return builder.builder().return_(packed_value);
+        virtual ValuePtr<Instruction> return_pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& value, const SourceLocation& location) const {
+          ValuePtr<> packed_value = pack(builder, value, location);
+          return builder.builder().return_(packed_value, location);
         }
 
-        virtual void return_unpack(AggregateLoweringPass::FunctionRunner& builder, Term*, Term *source_value, Term *target_value) const {
-          unpack(builder, source_value, target_value);
+        virtual void return_unpack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>&, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const {
+          unpack(builder, source_value, target_value, location);
         }
       };
 
@@ -296,7 +296,7 @@ namespace Psi {
        * \param type The original type of the parameter.
        * \param llvm_type The type LLVM will use for the parameter.
        */
-      boost::shared_ptr<TargetCommon::ParameterHandler> TargetCommon::parameter_handler_change_type_by_memory(Term *type, Term *lowered_type, CallingConvention calling_convention) {
+      boost::shared_ptr<TargetCommon::ParameterHandler> TargetCommon::parameter_handler_change_type_by_memory(const ValuePtr<>& type, const ValuePtr<>& lowered_type, CallingConvention calling_convention) {
         return boost::make_shared<ParameterHandlerChangeTypeByMemory>(type, lowered_type, calling_convention);
       }
 
@@ -308,56 +308,56 @@ namespace Psi {
        */
       class TargetCommon::ParameterHandlerForcePtr : public ParameterHandler {
       public:
-        ParameterHandlerForcePtr(Context& target_context, Term *type, CallingConvention calling_convention)
-          : ParameterHandler(type, FunctionalBuilder::byte_pointer_type(target_context), calling_convention) {
+        ParameterHandlerForcePtr(Context& target_context, const ValuePtr<>& type, CallingConvention calling_convention)
+          : ParameterHandler(type, FunctionalBuilder::byte_pointer_type(target_context, type->location()), calling_convention) {
         }
 
         virtual bool return_by_sret() const {
           return true;
         }
 
-        virtual Term* pack(AggregateLoweringPass::FunctionRunner& builder, Term *source_value) const {
-          AggregateLoweringPass::Value value = builder.rewrite_value(source_value);
+        virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation& location) const {
+          LoweredValue value = builder.rewrite_value(source_value);
           
           if (value.on_stack()) {
-            Term *ptr = builder.builder().alloca_(value.value()->type());
-            builder.builder().store(value.value(), ptr);
+            ValuePtr<> ptr = builder.builder().alloca_(value.value()->type(), location);
+            builder.builder().store(value.value(), ptr, location);
             return ptr;
           } else {
             return value.value();
           }
         }
 
-        virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, Term *source_value, Term *target_value) const {
-          runner.load_value(source_value, target_value);
+        virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const {
+          runner.load_value(source_value, target_value, location);
         }
 
-        virtual Term* return_by_sret_setup(AggregateLoweringPass::FunctionRunner& runner) const {
-          AggregateLoweringPass::Type lowered_type = runner.rewrite_type(type());
+        virtual ValuePtr<> return_by_sret_setup(AggregateLoweringPass::FunctionRunner& runner, const SourceLocation& location) const {
+          LoweredType lowered_type = runner.rewrite_type(type());
           if (lowered_type.heap_type())
-            return runner.builder().alloca_(lowered_type.heap_type());
+            return runner.builder().alloca_(lowered_type.heap_type(), location);
           
-          if (ArrayType::Ptr array_ty = dyn_cast<ArrayType>(type())) {
-            AggregateLoweringPass::Type element_type = runner.rewrite_type(array_ty->element_type());
+          if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(type())) {
+            LoweredType element_type = runner.rewrite_type(array_ty->element_type());
             if (element_type.heap_type()) {
-              Term *length = runner.rewrite_value_stack(array_ty->length());
-              return runner.builder().alloca_(element_type.heap_type(), length);
+              ValuePtr<> length = runner.rewrite_value_stack(array_ty->length());
+              return runner.builder().alloca_(element_type.heap_type(), length, location);
             }
           }
           
           AggregateLoweringPass::TypeSizeAlignment size_align = runner.pass().target_callback->type_size_alignment(type());
           Context& context = runner.new_function()->context();
-          return runner.builder().alloca_(FunctionalBuilder::byte_type(context), size_align.size, size_align.alignment);
+          return runner.builder().alloca_(FunctionalBuilder::byte_type(context, location), size_align.size, size_align.alignment, location);
         }
 
-        virtual InstructionTerm* return_pack(AggregateLoweringPass::FunctionRunner& builder, Term *value) const {
-          Term *sret_parameter = builder.new_function()->parameter(0);
-          builder.store_value(value, sret_parameter);
-          return builder.builder().return_(sret_parameter);
+        virtual ValuePtr<Instruction> return_pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& value, const SourceLocation& location) const {
+          ValuePtr<> sret_parameter = builder.new_function()->parameter(0);
+          builder.store_value(value, sret_parameter, location);
+          return builder.builder().return_(sret_parameter, location);
         }
 
-        virtual void return_unpack(AggregateLoweringPass::FunctionRunner& builder, Term *sret_addr, Term *source_value, Term*) const {
-          builder.load_value(source_value, sret_addr);
+        virtual void return_unpack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& sret_addr, const ValuePtr<>& source_value, const ValuePtr<>&, const SourceLocation& location) const {
+          builder.load_value(source_value, sret_addr, location);
         }
       };
 
@@ -367,7 +367,7 @@ namespace Psi {
        * used when such a "by-reference" strategy will not be
        * correctly handled by LLVM.
        */
-      boost::shared_ptr<TargetCommon::ParameterHandler> TargetCommon::parameter_handler_force_ptr(Context& target_context, Term *type, CallingConvention calling_convention) {
+      boost::shared_ptr<TargetCommon::ParameterHandler> TargetCommon::parameter_handler_force_ptr(Context& target_context, const ValuePtr<>& type, CallingConvention calling_convention) {
         return boost::make_shared<ParameterHandlerForcePtr>(boost::ref(target_context), type, calling_convention);
       }
 
@@ -378,7 +378,7 @@ namespace Psi {
       class TargetDefault : public TargetCommon {
       private:
         struct Callback : TargetCommon::Callback {
-          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, Term *type) const {
+          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, const ValuePtr<>& type) const {
             return TargetCommon::parameter_handler_simple(rewriter, type, cconv);
           }
 

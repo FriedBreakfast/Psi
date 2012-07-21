@@ -49,7 +49,7 @@ namespace Psi {
       
       struct ModuleMapping {
         llvm::Module *module;
-        std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*> globals;
+        std::tr1::unordered_map<ValuePtr<Global>, llvm::GlobalValue*> globals;
       };
 
       class TargetCallback {
@@ -83,11 +83,11 @@ namespace Psi {
         
         TargetCallback *target_callback() {return m_target_callback;}
 
-        virtual llvm::Type* build_type(Term *term);
-        virtual llvm::Constant* build_constant(Term *term);
-        llvm::GlobalValue* build_global(GlobalTerm *term);
+        virtual llvm::Type* build_type(const ValuePtr<>& term);
+        virtual llvm::Constant* build_constant(const ValuePtr<>& term);
+        llvm::GlobalValue* build_global(const ValuePtr<Global>& term);
 
-        const llvm::APInt& build_constant_integer(Term *term);
+        const llvm::APInt& build_constant_integer(const ValuePtr<>& term);
         
         ModuleMapping run(Module*);
         
@@ -111,18 +111,18 @@ namespace Psi {
         llvm::Module *m_llvm_module;
         TargetCallback *m_target_callback;
 
-        typedef std::tr1::unordered_map<Term*, llvm::Type*> TypeTermMap;
+        typedef std::tr1::unordered_map<ValuePtr<>, llvm::Type*> TypeTermMap;
         TypeTermMap m_type_terms;
 
-        llvm::Type* build_type_internal(FunctionalTerm *term);
+        llvm::Type* build_type_internal(const ValuePtr<FunctionalValue>& term);
 
-        typedef std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*> GlobalTermMap;
+        typedef std::tr1::unordered_map<ValuePtr<Global>, llvm::GlobalValue*> GlobalTermMap;
         GlobalTermMap m_global_terms;
 
-        typedef std::tr1::unordered_map<Term*, llvm::Constant*> ConstantTermMap;
+        typedef std::tr1::unordered_map<ValuePtr<>, llvm::Constant*> ConstantTermMap;
         ConstantTermMap m_constant_terms;
 
-        llvm::Constant* build_constant_internal(FunctionalTerm *term);
+        llvm::Constant* build_constant_internal(const ValuePtr<FunctionalValue>& term);
         
         llvm::Function *m_llvm_memcpy, *m_llvm_stacksave, *m_llvm_stackrestore,
         *m_llvm_eh_exception, *m_llvm_eh_selector, *m_llvm_eh_typeid_for;
@@ -132,42 +132,42 @@ namespace Psi {
         friend class ModuleBuilder;
 
       public:
-        typedef std::tr1::unordered_map<Term*, llvm::Value*> ValueTermMap;
+        typedef std::tr1::unordered_map<ValuePtr<>, llvm::Value*> ValueTermMap;
 
         ~FunctionBuilder();
         
         ModuleBuilder *module_builder() {return m_module_builder;}
 
-        FunctionTerm *function() {return m_function;}
+        const ValuePtr<Function>& function() {return m_function;}
         llvm::Function* llvm_function() {return m_llvm_function;}
         IRBuilder& irbuilder() {return m_irbuilder;}
 
         unsigned unknown_alloca_align();
 
-        llvm::Value* build_value(Term *term);
+        llvm::Value* build_value(const ValuePtr<>& term);
 
-        llvm::StringRef term_name(Term *term);
+        llvm::StringRef term_name(const ValuePtr<>& term);
         
       private:
         struct ValueBuilderCallback;
 
-        FunctionBuilder(ModuleBuilder*, FunctionTerm*, llvm::Function*);
+        FunctionBuilder(ModuleBuilder*, const ValuePtr<Function>&, llvm::Function*);
 
         ModuleBuilder *m_module_builder;
         IRBuilder m_irbuilder;
 
-        FunctionTerm *m_function;
+        ValuePtr<Function> m_function;
         llvm::Function *m_llvm_function;
 
         ValueTermMap m_value_terms;
 
         void run();
-        void setup_stack_save_restore(const std::vector<std::pair<BlockTerm*, llvm::BasicBlock*> >&);
+        void setup_stack_save_restore(const std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >&);
 
-        llvm::Value* build_value_instruction(InstructionTerm *term);
-        llvm::Value* build_value_functional(FunctionalTerm *term);
+        llvm::Value* build_value_instruction(const ValuePtr<Instruction>& term);
+        llvm::Value* build_value_functional(const ValuePtr<FunctionalValue>& term);
 
-        llvm::PHINode* build_phi_node(Term *type, llvm::Instruction *insert_point);
+        llvm::PHINode* build_phi_node(const ValuePtr<>& type, llvm::Instruction *insert_point);
       };
       
       /**
@@ -190,7 +190,7 @@ namespace Psi {
         virtual void add_module(Module*);
         virtual void remove_module(Module*);
         virtual void rebuild_module(Module*, bool);
-        virtual void* get_symbol(GlobalTerm*);
+        virtual void* get_symbol(const ValuePtr<Global>&);
 
       private:
         llvm::LLVMContext m_llvm_context;

@@ -56,22 +56,22 @@ namespace Psi {
         ModuleBuilder *self;
         TypeBuilderCallback(ModuleBuilder *self_) : self(self_) {}
 
-        llvm::Type* build(Term* term) const {
+        llvm::Type* build(const ValuePtr<>& term) const {
           switch(term->term_type()) {
           case term_functional:
-            return self->build_type_internal(cast<FunctionalTerm>(term));
+            return self->build_type_internal(value_cast<FunctionalValue>(term));
 
           case term_apply: {
-            Term* actual = cast<ApplyTerm>(term)->unpack();
+            ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
             PSI_ASSERT(actual->term_type() != term_apply);
             return self->build_type(actual);
           }
 
           case term_function_type: {
             llvm::SmallVector<llvm::Type*, 8> params;
-            FunctionTypeTerm *function_type = cast<FunctionTypeTerm>(term);
-            for (std::size_t i = function_type->n_phantom_parameters(), e = function_type->n_parameters(); i != e; ++i)
-              params.push_back(self->build_type(function_type->parameter_type(i)));
+            ValuePtr<FunctionType> function_type = value_cast<FunctionType>(term);
+            for (std::size_t i = function_type->n_phantom(), e = function_type->parameter_types().size(); i != e; ++i)
+              params.push_back(self->build_type(function_type->parameter_types()[i]));
             llvm::Type *result = self->build_type(function_type->result_type());
             return llvm::FunctionType::get(result, params, false);
           }
@@ -101,7 +101,7 @@ namespace Psi {
        *
        * \pre <tt>!term->phantom() && term->global()</tt>
        */
-      const llvm::APInt& ModuleBuilder::build_constant_integer(Term *term) {
+      const llvm::APInt& ModuleBuilder::build_constant_integer(const ValuePtr<>& term) {
         llvm::Constant *c = build_constant(term);
         PSI_ASSERT(llvm::isa<llvm::ConstantInt>(c));
         return llvm::cast<llvm::ConstantInt>(c)->getValue();
@@ -111,20 +111,20 @@ namespace Psi {
         ModuleBuilder *self;
         ConstantBuilderCallback(ModuleBuilder *self_) : self(self_) {}
 
-        llvm::Constant* build(Term *term) const {
+        llvm::Constant* build(const ValuePtr<>& term) const {
           switch (term->term_type()) {
           case term_functional:
-            return self->build_constant_internal(cast<FunctionalTerm>(term));
+            return self->build_constant_internal(value_cast<FunctionalValue>(term));
            
           case term_apply: {
-            Term* actual = cast<ApplyTerm>(term)->unpack();
+            ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
             PSI_ASSERT(actual->term_type() != term_apply);
             return self->build_constant(actual);
           }
 
           case term_global_variable:
           case term_function:
-            return self->build_global(cast<GlobalTerm>(term));
+            return self->build_global(value_cast<Global>(term));
 
           default:
             PSI_FAIL("unexpected type term type");
@@ -246,12 +246,12 @@ namespace Psi {
         aggregate_lowering_pass.update();
         
         for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {
-          GlobalTerm *term = &*i;
-          GlobalTerm *rewritten_term = aggregate_lowering_pass.target_symbol(term);
+          const ValuePtr<Global>& term = i->second;
+          ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
           llvm::GlobalValue *result;
           switch (rewritten_term->term_type()) {
           case term_global_variable: {
-            GlobalVariableTerm *global = cast<GlobalVariableTerm>(rewritten_term);
+            ValuePtr<GlobalVariable> global = value_cast<GlobalVariable>(rewritten_term);
             llvm::Type *llvm_type = build_type(global->value_type());
             result = new llvm::GlobalVariable(*m_llvm_module, llvm_type,
                                               global->constant(), llvm::GlobalValue::ExternalLinkage,
@@ -260,9 +260,9 @@ namespace Psi {
           }
 
           case term_function: {
-            FunctionTerm *func = cast<FunctionTerm>(rewritten_term);
-            PointerType::Ptr type = cast<PointerType>(func->type());
-            FunctionTypeTerm* func_type = cast<FunctionTypeTerm>(type->target_type());
+            ValuePtr<Function> func = value_cast<Function>(rewritten_term);
+            ValuePtr<PointerType> type = value_cast<PointerType>(func->type());
+            ValuePtr<FunctionType> func_type = value_cast<FunctionType>(type->target_type());
             llvm::Type *llvm_type = build_type(func_type);
             PSI_ASSERT_MSG(llvm_type, "could not create function because its LLVM type is not known");
             result = llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_type),
@@ -283,17 +283,17 @@ namespace Psi {
         }
         
         for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {
-          GlobalTerm *term = &*i;
-          GlobalTerm *rewritten_term = aggregate_lowering_pass.target_symbol(term);
+          const ValuePtr<Global>& term = i->second;
+          ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
           PSI_ASSERT(m_global_terms.find(rewritten_term) != m_global_terms.end());
           llvm::GlobalValue *llvm_term = m_global_terms.find(rewritten_term)->second;
           
           if (rewritten_term->term_type() == term_function) {
-            FunctionBuilder fb(this, cast<FunctionTerm>(rewritten_term), llvm::cast<llvm::Function>(llvm_term));
+            FunctionBuilder fb(this, value_cast<Function>(rewritten_term), llvm::cast<llvm::Function>(llvm_term));
             fb.run();
           } else {
             PSI_ASSERT(term->term_type() == term_global_variable);
-            if (Term *value = cast<GlobalVariableTerm>(rewritten_term)->value()) {
+            if (ValuePtr<> value = value_cast<GlobalVariable>(rewritten_term)->value()) {
               llvm::Constant *llvm_value = build_constant(value);
               llvm::cast<llvm::GlobalVariable>(llvm_term)->setInitializer(llvm_value);
             } else {
@@ -309,8 +309,8 @@ namespace Psi {
       /**
        * \brief Get the global variable specified by the given term.
        */
-      llvm::GlobalValue* ModuleBuilder::build_global(GlobalTerm* term) {
-        std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*>::iterator it = m_global_terms.find(term);
+      llvm::GlobalValue* ModuleBuilder::build_global(const ValuePtr<Global>& term) {
+        std::tr1::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator it = m_global_terms.find(term);
         if (it == m_global_terms.end())
           throw BuildError("Cannot find global term");
         return it->second;
@@ -321,8 +321,8 @@ namespace Psi {
         *
         * \pre <tt>!term->phantom() && term->global()</tt>
         */
-      llvm::Constant* ModuleBuilder::build_constant(Term *term) {
-        PSI_ASSERT(!term->phantom() && (!term->source() || isa<GlobalTerm>(term->source())));
+      llvm::Constant* ModuleBuilder::build_constant(const ValuePtr<>& term) {
+        PSI_ASSERT(!term->phantom() && (!term->source() || isa<Global>(term->source())));
 
         switch (term->term_type()) {
         case term_function:
@@ -343,7 +343,7 @@ namespace Psi {
        * term: it is the LLVM type of the LLVM value of terms whose type
        * is this term.
        */
-      llvm::Type* ModuleBuilder::build_type(Term* term) {
+      llvm::Type* ModuleBuilder::build_type(const ValuePtr<>& term) {
         return build_term(m_type_terms, term, TypeBuilderCallback(this)).first;
       }
       
@@ -416,13 +416,13 @@ namespace Psi {
         add_module(module);
       }
       
-      void* LLVMJit::get_symbol(GlobalTerm *global) {
+      void* LLVMJit::get_symbol(const ValuePtr<Global>& global) {
         Module *module = global->module();
         std::tr1::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
         if (it == m_modules.end())
           throw BuildError("Module does not appear to be available in this JIT");
         
-        std::tr1::unordered_map<GlobalTerm*, llvm::GlobalValue*>::iterator jt = it->second.globals.find(global);
+        std::tr1::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator jt = it->second.globals.find(global);
         PSI_ASSERT(jt != it->second.globals.end());
         
         return m_llvm_engine->getPointerToGlobal(jt->second);

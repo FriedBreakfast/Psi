@@ -31,7 +31,7 @@ namespace {
 Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(Psi::Compiler::CompileContext& compile_context) {
   using namespace Psi::Compiler;
 
-  SourceLocation psi_location = compile_context.root_location().named_child("psi");
+  Psi::SourceLocation psi_location = compile_context.root_location().named_child("psi");
   
   PSI_STD::map<Psi::String, TreePtr<Term> > global_names;
   global_names["function"] = function_definition_macro(compile_context, psi_location.named_child("function"));

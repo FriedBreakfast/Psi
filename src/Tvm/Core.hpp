@@ -301,6 +301,12 @@ namespace Psi {
       }
       
       template<typename T>
+      void combine(const std::vector<T>& x) {
+        for (typename std::vector<T>::const_iterator ii = x.begin(), ie = x.end(); ii != ie; ++ii)
+          combine(*ii);
+      }
+      
+      template<typename T>
       HashableValueSetup operator () (const T& x) const {
         HashableValueSetup copy(*this);
         copy.combine(x);
@@ -520,17 +526,20 @@ namespace Psi {
       ValuePtr<FunctionTypeParameter> new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location);
 
       ValuePtr<ApplyValue> apply_recursive(const ValuePtr<RecursiveType>& recursive,
-                                           const std::vector<ValuePtr<> >& parameters);
+                                           const std::vector<ValuePtr<> >& parameters,
+                                           const SourceLocation& location);
 
-      ValuePtr<RecursiveType> new_recursive(const ValuePtr<>&, const ValuePtr<>&,
-                                            const std::vector<ValuePtr<> >&);
+      ValuePtr<RecursiveType> new_recursive(const ValuePtr<>& result,
+                                            const std::vector<ValuePtr<> >& parameters,
+                                            Value *source,
+                                            const SourceLocation& location);
 
       void resolve_recursive(const ValuePtr<RecursiveType>& recursive, const ValuePtr<>& to);
 
     private:
       Context(const Context&);
 
-      ValuePtr<RecursiveParameter> new_recursive_parameter(const ValuePtr<>& type);
+      ValuePtr<RecursiveParameter> new_recursive_parameter(const ValuePtr<>& type, const SourceLocation& location);
 
       class FunctionTypeResolverRewriter;
     };

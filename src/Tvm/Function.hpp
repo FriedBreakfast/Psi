@@ -93,7 +93,7 @@ namespace Psi {
     static const char operation[]; \
     virtual void visit(InstructionVisitor& callback); \
     virtual void type_check(); \
-    static bool isa_impl(const Value *ptr) {return (ptr->term_type() == term_instruction) && (operation == value_cast<Type>(ptr)->operation_name());} \
+    static bool isa_impl(const Value& val) {return (val.term_type() == term_instruction) && (operation == static_cast<const Type&>(val).operation_name());}
     
 #define PSI_TVM_INSTRUCTION_IMPL(Type,Base,Name) \
     const char Type::operation[] = #Name;
@@ -156,6 +156,8 @@ namespace Psi {
       const ValuePtr<Block>& dominator() {return m_dominator;}
       /** \brief Get this block's catch list (this will be NULL for a regular block). */
       const ValuePtr<Block>& landing_pad() {return m_landing_pad;}
+      /// \brief Whether this block is a landing pad.
+      bool is_landing_pad() const {return m_is_landing_pad;}
       
       std::vector<ValuePtr<Block> > successors();
 
@@ -328,6 +330,8 @@ namespace Psi {
     class FunctionTypeParameter : public Value {
       friend class Context;
       FunctionTypeParameter(Context& context, const ValuePtr<>& type, const SourceLocation& location);
+    public:
+      static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type_parameter;}
     };
 
     /**

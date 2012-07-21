@@ -83,7 +83,7 @@ namespace Psi {
          * Get the type used to pass a parameter of a given class with a
          * given size in bytes.
          */
-        Term* type_from_amd64_class_and_size(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, AMD64_Class amd64_class, uint64_t size) {
+        ValuePtr<> type_from_amd64_class_and_size(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, AMD64_Class amd64_class, uint64_t size, const SourceLocation& location) {
           switch (amd64_class) {
           case amd64_sse: {
             FloatType::Width width;
@@ -93,12 +93,12 @@ namespace Psi {
             case 16: width = FloatType::fp128; break;
             default: PSI_FAIL("unknown SSE floating point type width");
             }
-            return FunctionalBuilder::float_type(rewriter.context(), width);
+            return FunctionalBuilder::float_type(rewriter.context(), width, location);
           }
 
           case amd64_x87:
             PSI_ASSERT(size == 16);
-            return FunctionalBuilder::float_type(rewriter.context(), FloatType::fp_x86_80);
+            return FunctionalBuilder::float_type(rewriter.context(), FloatType::fp_x86_80, location);
 
           case amd64_integer: {
             IntegerType::Width width;
@@ -110,7 +110,7 @@ namespace Psi {
             case 16: width = IntegerType::i128; break;
             default: PSI_FAIL("unknown integer width in AMD64 parameter passing");
             }
-            return FunctionalBuilder::int_type(rewriter.context(), width, false);
+            return FunctionalBuilder::int_type(rewriter.context(), width, false, location);
           }
 
           default:
@@ -123,7 +123,7 @@ namespace Psi {
          * single EVT in LLVM, and is accurately represented by this
          * type.
          */
-        ElementTypeInfo primitive_element_info(Term *type, AMD64_Class amd_class) {
+        ElementTypeInfo primitive_element_info(const ValuePtr<>& type, AMD64_Class amd_class) {
           TargetCommon::TypeSizeAlignmentLiteral size_align = type_size_alignment_literal(type);
           return ElementTypeInfo(TargetParameterCategory::simple, amd_class, size_align.size, size_align.alignment, 1);
         }
@@ -131,8 +131,8 @@ namespace Psi {
         /**
          * Compute element type info for a sub-part of the object.
          */
-        ElementTypeInfo get_element_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, Term *element) {
-          if (StructType::Ptr struct_ty = dyn_cast<StructType>(element)) {
+        ElementTypeInfo get_element_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& element) {
+          if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(element)) {
             TargetParameterCategory category = TargetParameterCategory::simple;
             uint64_t size = 0, align = 1;
             unsigned n_elements = 0;
@@ -149,16 +149,16 @@ namespace Psi {
 
             size = align_to(size, align);
             return ElementTypeInfo(category, amd64_class, size, align, n_elements);
-          } else if (ArrayType::Ptr array_ty = dyn_cast<ArrayType>(element)) {
+          } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(element)) {
             ElementTypeInfo child = get_element_info(rewriter, array_ty->element_type());
-            IntegerValue::Ptr length = cast<IntegerValue>(rewriter.rewrite_value_stack(array_ty->length()));
+            ValuePtr<IntegerValue> length = value_cast<IntegerValue>(rewriter.rewrite_value_stack(array_ty->length()));
             boost::optional<unsigned> length_val = length->value().unsigned_value();
             if (!length_val)
               throw BuildError("array length value out of range");
             child.size *= *length_val;
             child.n_elements *= *length_val;
             return child;
-          } else if (UnionType::Ptr union_ty = dyn_cast<UnionType>(element)) {
+          } else if (ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(element)) {
             TargetParameterCategory category = TargetParameterCategory::altered;
             uint64_t size = 0, align = 1;
             unsigned n_elements = 0;
@@ -176,22 +176,22 @@ namespace Psi {
             return ElementTypeInfo(category, amd64_class, size, align, n_elements);
           } else if (isa<PointerType>(element) || isa<BooleanType>(element) || isa<IntegerType>(element)) {
             return primitive_element_info(element, amd64_integer);
-          } else if (FloatType::Ptr float_ty = dyn_cast<FloatType>(element)) {
+          } else if (ValuePtr<FloatType> float_ty = dyn_cast<FloatType>(element)) {
             return primitive_element_info(element, (float_ty->width() != FloatType::fp_x86_80) ? amd64_sse : amd64_x87);
           } else if (isa<EmptyType>(element)) {
             return ElementTypeInfo(TargetParameterCategory::simple, amd64_no_class, 0, 1, 0);
           } else if (isa<Metatype>(element)) {
-            Term *size_type = FunctionalBuilder::size_type(element->context());
-            Term *metatype_struct = FunctionalBuilder::struct_type(element->context(), StaticArray<Term*,2>(size_type, size_type));
+            ValuePtr<> size_type = FunctionalBuilder::size_type(element->context(), element->location());
+            ValuePtr<> metatype_struct = FunctionalBuilder::struct_type(element->context(), std::vector<ValuePtr<> >(2, size_type), element->location());
             return get_element_info(rewriter, metatype_struct);
           } else {
-            PSI_ASSERT_MSG(!dyn_cast<FunctionTypeParameterTerm>(element) && !dyn_cast<FunctionParameterTerm>(element),
+            PSI_ASSERT_MSG(!dyn_cast<FunctionTypeParameter>(element) && !dyn_cast<FunctionParameter>(element),
                            "low-level parameter type should not depend on function type parameters");
             PSI_FAIL("unknown type");
           }
         }
 
-        ElementTypeInfo get_parameter_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, Term *type) {
+        ElementTypeInfo get_parameter_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type) {
           ElementTypeInfo result = get_element_info(rewriter, type);
 
           switch (result.amd64_class) {
@@ -254,14 +254,14 @@ namespace Psi {
            *
            * </ul>
            */
-          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, Term *type) const {
+          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, const ValuePtr<>& type) const {
             ElementTypeInfo info = self->get_parameter_info(rewriter, type);
             switch (info.category) {
             case TargetParameterCategory::simple:
               return TargetCommon::parameter_handler_simple(rewriter, type, cconv);
 
             case TargetParameterCategory::altered: {
-              Term *lowered_type = self->type_from_amd64_class_and_size(rewriter, info.amd64_class, info.size);
+              ValuePtr<> lowered_type = self->type_from_amd64_class_and_size(rewriter, info.amd64_class, info.size, type->location());
               return TargetCommon::parameter_handler_change_type_by_memory(type, lowered_type, cconv);
             }
 

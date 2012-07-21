@@ -9,7 +9,7 @@ namespace Psi {
      * \param target_context Context to create target module in. If NULL,
      * create in the same context as the source module.
      */
-    ModuleRewriter::ModuleRewriter(const boost::shared_ptr<Module>& source_module, Context *target_context)
+    ModuleRewriter::ModuleRewriter(Module *source_module, Context *target_context)
     : m_source_module(source_module),
     m_target_module(new Module(target_context ? target_context : &source_module->context(), source_module->name(), source_module->location())) {
     }
@@ -22,8 +22,8 @@ namespace Psi {
      * exist in the global variable map.
      */
     void ModuleRewriter::global_map_put(const ValuePtr<Global>& key, const ValuePtr<Global>& value) {
-      PSI_ASSERT(key->module() == source_module().get());
-      PSI_ASSERT(value->module() == target_module().get());
+      PSI_ASSERT(key->module() == source_module());
+      PSI_ASSERT(value->module() == target_module());
       
       std::pair<GlobalMapType::iterator, bool> result =
         m_global_map.insert(std::make_pair(key, value));
@@ -36,7 +36,7 @@ namespace Psi {
      * Returns NULL if the term is not present.
      */
     ValuePtr<Global> ModuleRewriter::global_map_get(const ValuePtr<Global>& term) {
-      PSI_ASSERT(term->module() == source_module().get());
+      PSI_ASSERT(term->module() == source_module());
       GlobalMapType::iterator it = m_global_map.find(term);
       if (it != m_global_map.end())
         return it->second;
@@ -50,7 +50,7 @@ namespace Psi {
      * Throws an exception if the term is missing.
      */
     ValuePtr<Global> ModuleRewriter::target_symbol(const ValuePtr<Global>& term) {
-      if (term->module() != source_module().get())
+      if (term->module() != source_module())
         throw TvmUserError("global symbol is not from this rewriter's source module");
       
       ValuePtr<Global> t = global_map_get(term);

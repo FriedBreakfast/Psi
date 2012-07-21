@@ -12,6 +12,7 @@ namespace Psi {
     namespace Test {
       class ContextFixture {
       public:
+        SourceLocation location;
         Context context;
         Module module;
 

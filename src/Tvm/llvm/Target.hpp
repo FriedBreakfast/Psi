@@ -77,18 +77,18 @@ namespace Psi {
          * type on a particular target.
          */
         class ParameterHandler {
-          Term *m_type;
-          Term *m_lowered_type;
+          ValuePtr<> m_type;
+          ValuePtr<> m_lowered_type;
           CallingConvention m_calling_convention;
 
         public:
-          ParameterHandler(Term *type, Term *lowered_type, CallingConvention calling_convention);
+          ParameterHandler(const ValuePtr<>& type, const ValuePtr<>& lowered_type, CallingConvention calling_convention);
 
           /// The type of term that this object was created to pass.
-          Term *type() const {return m_type;}
+          const ValuePtr<>& type() const {return m_type;}
           
           /// Type used to pass this parameter.
-          Term *lowered_type() const {return m_lowered_type;}
+          const ValuePtr<>& lowered_type() const {return m_lowered_type;}
 
           /// The calling convention this parameter type was built for.
           CallingConvention calling_convention() const {return m_calling_convention;}
@@ -99,10 +99,10 @@ namespace Psi {
           virtual bool return_by_sret() const = 0;
 
           /// \brief Convert a parameter to the correct type for passing.
-          virtual Term* pack(AggregateLoweringPass::FunctionRunner& builder, Term *source_value) const = 0;
+          virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation& location) const = 0;
 
           /// \brief Convert a parameter from the passed type.
-          virtual void unpack(AggregateLoweringPass::FunctionRunner& builder, Term *source_value, Term *target_value) const = 0;
+          virtual void unpack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const = 0;
 
           /**
            * \brief Prepare for a call which returns by a custom sret.
@@ -112,10 +112,10 @@ namespace Psi {
            * otherwise it should always return a non-NULL value giving the
            * memory to use to store the sret return.
            */
-          virtual Term* return_by_sret_setup(AggregateLoweringPass::FunctionRunner& builder) const = 0;
+          virtual ValuePtr<> return_by_sret_setup(AggregateLoweringPass::FunctionRunner& builder, const SourceLocation& location) const = 0;
 
           /// \brief Generate code for returning a value from a function.
-          virtual InstructionTerm* return_pack(AggregateLoweringPass::FunctionRunner& builder, Term *value) const = 0;
+          virtual ValuePtr<Instruction> return_pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& value, const SourceLocation& location) const = 0;
 
           /**
            * \brief Decode a value returned by a called function.
@@ -126,7 +126,7 @@ namespace Psi {
            * will always be passed as the third parameter so it is not
            * necessary to check whether it is NULL.
            */
-          virtual void return_unpack(AggregateLoweringPass::FunctionRunner& builder, Term *sret_addr, Term *source_value, Term *target_value) const = 0;
+          virtual void return_unpack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& sret_addr, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const = 0;
         };
 
       private:
@@ -141,7 +141,7 @@ namespace Psi {
          */
         struct Callback {
           /// \brief Return information about how to pass this parameter.
-          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, Term *type) const = 0;
+          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, const ValuePtr<>& type) const = 0;
 
           /// \brief Checks whether a given calling convention actually
           /// makes sense for a given platform.
@@ -154,7 +154,7 @@ namespace Psi {
         const llvm::TargetData *m_target_data;
         
         struct LowerFunctionHelperResult {
-          FunctionTypeTerm *lowered_type;
+          ValuePtr<FunctionType> lowered_type;
           bool sret;
           boost::shared_ptr<ParameterHandler> return_handler;
           std::vector<boost::shared_ptr<ParameterHandler> > parameter_handlers;
@@ -162,29 +162,29 @@ namespace Psi {
           std::size_t n_passed_parameters;
         };
         
-        LowerFunctionHelperResult lower_function_helper(AggregateLoweringPass::AggregateLoweringRewriter&,  FunctionTypeTerm*);
+        LowerFunctionHelperResult lower_function_helper(AggregateLoweringPass::AggregateLoweringRewriter&,  const ValuePtr<FunctionType>&);
         TypeSizeAlignmentLiteral type_size_alignment_simple(llvm::Type*);
 
       public:
         TargetCommon(const Callback*, llvm::LLVMContext*, const llvm::TargetData*);
 
-        static boost::shared_ptr<ParameterHandler> parameter_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter&, Term *, CallingConvention);
-        static boost::shared_ptr<ParameterHandler> parameter_handler_change_type_by_memory(Term*, Term*, CallingConvention);
-        static boost::shared_ptr<ParameterHandler> parameter_handler_force_ptr(Context&, Term*, CallingConvention);
+        static boost::shared_ptr<ParameterHandler> parameter_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter&, const ValuePtr<>&, CallingConvention);
+        static boost::shared_ptr<ParameterHandler> parameter_handler_change_type_by_memory(const ValuePtr<>&, const ValuePtr<>&, CallingConvention);
+        static boost::shared_ptr<ParameterHandler> parameter_handler_force_ptr(Context&, const ValuePtr<>&, CallingConvention);
 
         static llvm::CallingConv::ID map_calling_convention(CallingConvention conv);
         
         llvm::LLVMContext& context() const {return *m_context;}
         
-        TypeSizeAlignmentLiteral type_size_alignment_literal(Term*);
+        TypeSizeAlignmentLiteral type_size_alignment_literal(const ValuePtr<>&);
 
-        virtual void lower_function_call(AggregateLoweringPass::FunctionRunner&, FunctionCall::Ptr);
-        virtual InstructionTerm* lower_return(AggregateLoweringPass::FunctionRunner&, Term*);
-        virtual FunctionTerm* lower_function(AggregateLoweringPass&, FunctionTerm*);
-        virtual void lower_function_entry(AggregateLoweringPass::FunctionRunner&, FunctionTerm*, FunctionTerm*);
-        virtual Term* convert_value(Term*, Term*);
-        virtual AggregateLoweringPass::TypeSizeAlignment type_size_alignment(Term*);
-        virtual std::pair<Term*,Term*> type_from_alignment(Term*);
+        virtual void lower_function_call(AggregateLoweringPass::FunctionRunner&, const ValuePtr<Call>&);
+        virtual ValuePtr<Instruction> lower_return(AggregateLoweringPass::FunctionRunner&, const ValuePtr<>&, const SourceLocation&);
+        virtual ValuePtr<Function> lower_function(AggregateLoweringPass&, const ValuePtr<Function>&);
+        virtual void lower_function_entry(AggregateLoweringPass::FunctionRunner&, const ValuePtr<Function>&, const ValuePtr<Function>&);
+        virtual ValuePtr<> convert_value(const ValuePtr<>&, const ValuePtr<>&);
+        virtual AggregateLoweringPass::TypeSizeAlignment type_size_alignment(const ValuePtr<>&);
+        virtual std::pair<ValuePtr<>,ValuePtr<> > type_from_alignment(const ValuePtr<>&);
       };
       
       llvm::Function* target_exception_personality_linux(llvm::Module*, const std::string&);
