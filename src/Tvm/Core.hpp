@@ -342,10 +342,16 @@ namespace Psi {
           || (v.term_type() == term_apply);
       }
       
+      virtual bool equals(const HashableValue& rhs) const = 0;
+      const char *operation_name() const {return m_operation;}
+      
     private:
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
       TermSetHook m_hashable_set_hook;
       std::size_t m_hash;
+      const char *m_operation;
+
+      virtual HashableValue* clone() const = 0;
     };
 
     /**
@@ -510,7 +516,7 @@ namespace Psi {
       /**
        * \brief Get a pointer to a functional term given that term's value.
        */
-      ValuePtr<> get_hash_term(const HashableValue& value);
+      ValuePtr<HashableValue> get_hash_term(const HashableValue& value);
 
       ValuePtr<FunctionType> get_function_type(CallingConvention calling_convention,
                                                const ValuePtr<>& result,

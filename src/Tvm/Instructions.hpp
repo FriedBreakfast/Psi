@@ -10,7 +10,7 @@ namespace Psi {
       PSI_TVM_INSTRUCTION_DECL(Return)
       
     public:
-      Return(const ValuePtr<>& value, const ValuePtr<Block>& block, const SourceLocation& location);
+      Return(const ValuePtr<>& value, const SourceLocation& location);
       virtual std::vector<ValuePtr<Block> > successors();
       
       /// \brief The value returned to the caller.
@@ -20,7 +20,7 @@ namespace Psi {
     class ConditionalBranch : public TerminatorInstruction {
       PSI_TVM_INSTRUCTION_DECL(ConditionalBranch)
     public:
-      ConditionalBranch(const ValuePtr<>& condition, const ValuePtr<Block>& true_target, const ValuePtr<Block>& false_target, const ValuePtr<Block>& block, const SourceLocation& location);
+      ConditionalBranch(const ValuePtr<>& condition, const ValuePtr<Block>& true_target, const ValuePtr<Block>& false_target, const SourceLocation& location);
       virtual std::vector<ValuePtr<Block> > successors();
       
       /// \brief The value used to choose the branch taken.
@@ -35,7 +35,7 @@ namespace Psi {
       PSI_TVM_INSTRUCTION_DECL(UnconditionalBranch)
       
     public:
-      UnconditionalBranch(const ValuePtr<Block>& target, const ValuePtr<Block>& block, const SourceLocation& location);
+      UnconditionalBranch(const ValuePtr<Block>& target, const SourceLocation& location);
       virtual std::vector<ValuePtr<Block> > successors();
       
       /// \brief The block jumped to.
@@ -52,7 +52,7 @@ namespace Psi {
       PSI_TVM_INSTRUCTION_DECL(Unreachable)
       
     public:
-      Unreachable(const ValuePtr<Block>& block, const SourceLocation& location);
+      Unreachable(Context& context, const SourceLocation& location);
       virtual std::vector<ValuePtr<Block> > successors();
     };
     
@@ -81,7 +81,7 @@ namespace Psi {
       PSI_TVM_INSTRUCTION_DECL(Call)
       
     public:
-      Call(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters, const ValuePtr<Block>& block, const SourceLocation& location);
+      Call(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);
       
       /// \brief The function being called.
       ValuePtr<> target;
@@ -96,7 +96,7 @@ namespace Psi {
       PSI_TVM_INSTRUCTION_DECL(Store)
       
     public:
-      Store(const ValuePtr<>& value, const ValuePtr<>& target, const ValuePtr<Block>& block, const SourceLocation& location);
+      Store(const ValuePtr<>& value, const ValuePtr<>& target, const SourceLocation& location);
       
       /// \brief The value to be stored
       ValuePtr<> value;
@@ -108,7 +108,7 @@ namespace Psi {
       PSI_TVM_INSTRUCTION_DECL(Load)
       
     public:
-      Load(const ValuePtr<>& target, const ValuePtr<Block>& block, const SourceLocation& location);
+      Load(const ValuePtr<>& target, const SourceLocation& location);
       
       /// \brief The pointer being read from
       ValuePtr<> target;
@@ -138,7 +138,7 @@ namespace Psi {
       PSI_TVM_INSTRUCTION_DECL(Alloca)
       
     public:
-      Alloca(const ValuePtr<>& element_type, const ValuePtr<>& count, const ValuePtr<>& alignment, const ValuePtr<Block>& block, const SourceLocation& location);
+      Alloca(const ValuePtr<>& element_type, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location);
       
       /// \brief Type which storage is allocated for
       ValuePtr<> element_type;
@@ -162,7 +162,7 @@ namespace Psi {
       PSI_TVM_INSTRUCTION_DECL(MemCpy)
       
     public:
-      MemCpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const ValuePtr<>& alignment, const ValuePtr<Block>& block, const SourceLocation& location);
+      MemCpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location);
       /// \brief Copy destination
       ValuePtr<> dest;
       /// \brief Copy source

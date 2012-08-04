@@ -78,7 +78,7 @@ namespace Psi {
      * \param value Value to return from the function.
      */
     ValuePtr<Instruction> InstructionBuilder::return_(const ValuePtr<>& value, const SourceLocation& location) {
-      ValuePtr<Instruction> insn(::new Return(value, m_insert_point.block(), location));
+      ValuePtr<Instruction> insn(::new Return(value, location));
       m_insert_point.insert(insn);
       return insn;
     }
@@ -90,7 +90,7 @@ namespace Psi {
      * not an indirect pointer so that control flow can be tracked.
      */
     ValuePtr<Instruction> InstructionBuilder::br(const ValuePtr<Block>& target, const SourceLocation& location) {
-      ValuePtr<Instruction> insn(::new UnconditionalBranch(target, m_insert_point.block(), location));
+      ValuePtr<Instruction> insn(::new UnconditionalBranch(target, location));
       m_insert_point.insert(insn);
       return insn;
     }
@@ -105,7 +105,7 @@ namespace Psi {
      * \param if_false Block to jump to if \c condition is false.
      */
     ValuePtr<Instruction> InstructionBuilder::cond_br(const ValuePtr<>& condition, const ValuePtr<Block>& if_true, const ValuePtr<Block>& if_false, const SourceLocation& location) {
-      ValuePtr<Instruction> insn(::new ConditionalBranch(condition, if_true, if_false, m_insert_point.block(), location));
+      ValuePtr<Instruction> insn(::new ConditionalBranch(condition, if_true, if_false, location));
       m_insert_point.insert(insn);
       return insn;
     }
@@ -118,7 +118,7 @@ namespace Psi {
      * \param parameters Parameters to the function.
      */
     ValuePtr<Instruction> InstructionBuilder::call(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
-      ValuePtr<Instruction> insn(::new Call(target, parameters, m_insert_point.block(), location));
+      ValuePtr<Instruction> insn(::new Call(target, parameters, location));
       m_insert_point.insert(insn);
       return insn;
     }
@@ -140,7 +140,7 @@ namespace Psi {
      * details.
      */
     ValuePtr<Instruction> InstructionBuilder::alloca_(const ValuePtr<>& type, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location) {
-      ValuePtr<Instruction> insn(::new Alloca(type, count, alignment, m_insert_point.block(), location));
+      ValuePtr<Instruction> insn(::new Alloca(type, count, alignment, location));
       m_insert_point.insert(insn);
       return insn;
     }
@@ -183,7 +183,7 @@ namespace Psi {
      * \param ptr Pointer to value.
      */
     ValuePtr<Instruction> InstructionBuilder::load(const ValuePtr<>& ptr, const SourceLocation& location) {
-      ValuePtr<Instruction> insn(::new Load(ptr, m_insert_point.block(), location));
+      ValuePtr<Instruction> insn(::new Load(ptr, location));
       m_insert_point.insert(insn);
       return insn;
     }
@@ -196,7 +196,7 @@ namespace Psi {
      * \param ptr Pointer to store \c value to.
      */
     ValuePtr<Instruction> InstructionBuilder::store(const ValuePtr<>& value, const ValuePtr<>& ptr, const SourceLocation& location) {
-      ValuePtr<Instruction> insn(::new Store(value, ptr, m_insert_point.block(), location));
+      ValuePtr<Instruction> insn(::new Store(value, ptr, location));
       m_insert_point.insert(insn);
       return insn;
     }
@@ -213,7 +213,7 @@ namespace Psi {
      * \param alignment Alignment hint.
      */
     ValuePtr<Instruction> InstructionBuilder::memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location) {
-      ValuePtr<Instruction> insn(::new MemCpy(dest, src, count, alignment, m_insert_point.block(), location));
+      ValuePtr<Instruction> insn(::new MemCpy(dest, src, count, alignment, location));
       m_insert_point.insert(insn);
       return insn;
     }

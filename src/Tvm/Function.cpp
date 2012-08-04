@@ -14,7 +14,7 @@ namespace Psi {
 
     ValuePtr<FunctionTypeResolvedParameter> FunctionTypeResolvedParameter::get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location) {
       return type->context().get_functional(FunctionTypeResolvedParameter(type, depth, index, location));
-    }
+    }void insert(const ValuePtr<Instruction>& instruction);
     
     FunctionTypeResolvedParameter::FunctionTypeResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location)
     : SimpleOp(type, hashable_setup<FunctionTypeResolvedParameter>(type), location),
@@ -42,6 +42,14 @@ namespace Psi {
     m_parameter_types(parameter_types),
     m_n_phantom(n_phantom),
     m_result_type(result_type) {
+    }
+
+    HashableValue* FunctionType::clone() const {
+      return ::new FunctionType(*this);
+    }
+
+    bool FunctionType::equals(const HashableValue& value) const {
+      PSI_NOT_IMPLEMENTED();
     }
 
     class Context::FunctionTypeResolverRewriter {
@@ -196,20 +204,18 @@ namespace Psi {
       return ValuePtr<FunctionTypeParameter>(new FunctionTypeParameter(*this, type, location));
     }
 
-    BlockMember::BlockMember(TermType term_type, const ValuePtr<>& type, const ValuePtr<Block>& block,
+    BlockMember::BlockMember(TermType term_type, const ValuePtr<>& type,
                              Value* source, const SourceLocation& location)
-    : Value(block->context(), term_type, type, source, location),
-    m_block(block) {
+    : Value(type->context(), term_type, type, source, location) {
     }
 
-    Instruction::Instruction(const ValuePtr<>& type, const char *operation,
-                             const ValuePtr<Block>& block, const SourceLocation& location)
-    : BlockMember(term_instruction, type, block, this, location),
+    Instruction::Instruction(const ValuePtr<>& type, const char *operation, const SourceLocation& location)
+    : BlockMember(term_instruction, type, this, location),
     m_operation(operation) {
     }
 
-    TerminatorInstruction::TerminatorInstruction(const char* operation, const ValuePtr<Block>& block, const SourceLocation& location)
-    : Instruction(EmptyType::get(block->context(), location), operation, block, location) {
+    TerminatorInstruction::TerminatorInstruction(Context& context, const char* operation, const SourceLocation& location)
+    : Instruction(EmptyType::get(context, location), operation, location) {
     }
 
     /**
@@ -279,6 +285,9 @@ namespace Psi {
     }
 
     void Block::insert_instruction(const ValuePtr<Instruction>& insn, const ValuePtr<Instruction>& insert_before) {
+      if (insn->m_block)
+        throw TvmUserError("Instruction has already been inserted into a block");
+
       if (m_terminated && !insert_before)
         throw TvmUserError("cannot add instruction at end of already terminated block");
       
@@ -294,6 +303,7 @@ namespace Psi {
         throw TvmUserError("terminating instruction cannot be inserted other than at the end of a block");
 
       m_instructions.insert(insert_before_it, insn);
+      insn->m_block = ValuePtr<Block>(this);
       
       if (term)
         m_terminated = true;
@@ -337,8 +347,8 @@ namespace Psi {
       m_edges.push_back(e);
     }
 
-    Phi::Phi(const ValuePtr<>& type, const ValuePtr<Block>& block, const SourceLocation& location)
-    : BlockMember(term_phi, type, block, this, location) {
+    Phi::Phi(const ValuePtr<>& type, const SourceLocation& location)
+    : BlockMember(term_phi, type, this, location) {
       if (type->phantom())
         throw TvmUserError("type of phi term cannot be phantom");
     }
@@ -365,7 +375,8 @@ namespace Psi {
      * take on must be of the same type.
      */
     ValuePtr<Phi> Block::insert_phi(const ValuePtr<>& type, const SourceLocation& location) {
-      ValuePtr<Phi> phi(::new Phi(type, ValuePtr<Block>(this), location));
+      ValuePtr<Phi> phi(::new Phi(type, location));
+      phi->m_block = ValuePtr<Block>(this);
       m_phi_nodes.push_back(phi);
       return phi;
     }
@@ -511,6 +522,15 @@ namespace Psi {
       default:
         PSI_FAIL("unexpected term type");
       }
+    }
+    
+    /**
+     * \brief Insert instruction at this point.
+     * 
+     * Need to check that all values are available!
+     */
+    void InstructionInsertPoint::insert(const ValuePtr<Instruction>& instruction) {
+      m_block->insert_instruction(instruction, m_instruction);
     }
   }
 }

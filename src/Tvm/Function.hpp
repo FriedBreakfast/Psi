@@ -21,10 +21,10 @@ namespace Psi {
       /// \brief Get the block this term is part of.
       const ValuePtr<Block>& block() {return m_block;}
       /// \brief Get the function the block this is in is part of
-      const ValuePtr<Function>& function();
+      ValuePtr<Function> function();
 
     protected:
-      BlockMember(TermType term_type, const ValuePtr<>& type, const ValuePtr<Block>& block,
+      BlockMember(TermType term_type, const ValuePtr<>& type,
                   Value* source, const SourceLocation& location);
       
       ValuePtr<Block> m_block;
@@ -55,7 +55,7 @@ namespace Psi {
 
     protected:
       Instruction(const ValuePtr<>& type, const char *operation,
-                  const ValuePtr<Block>& block, const SourceLocation& location);
+                  const SourceLocation& location);
 
     private:
       const char *m_operation;
@@ -71,7 +71,7 @@ namespace Psi {
       void check_dominated(const ValuePtr<Block>& target);
 
     public:
-      TerminatorInstruction(const char *operation, const ValuePtr<Block>& block, const SourceLocation& location);
+      TerminatorInstruction(Context& context, const char *operation, const SourceLocation& location);
       
       virtual std::vector<ValuePtr<Block> > successors() = 0;
       
@@ -91,8 +91,8 @@ namespace Psi {
 #define PSI_TVM_INSTRUCTION_DECL(Type) \
   public: \
     static const char operation[]; \
-    virtual void visit(InstructionVisitor& callback); \
     virtual void type_check(); \
+    virtual void visit(InstructionVisitor& callback); \
     static bool isa_impl(const Value& val) {return (val.term_type() == term_instruction) && (operation == static_cast<const Type&>(val).operation_name());}
     
 #define PSI_TVM_INSTRUCTION_IMPL(Type,Base,Name) \
@@ -124,7 +124,7 @@ namespace Psi {
       ValuePtr<> incoming_value_from(const ValuePtr<Block>& block);
 
     private:
-      Phi(const ValuePtr<>& type, const ValuePtr<Block>& block, const SourceLocation& location);
+      Phi(const ValuePtr<>& type, const SourceLocation& location);
       typedef boost::intrusive::list_member_hook<> PhiListHook;
       PhiListHook m_phi_list_hook;
       std::vector<PhiEdge> m_edges;
@@ -182,7 +182,7 @@ namespace Psi {
       bool m_terminated;
     };
     
-    inline const ValuePtr<Function>& BlockMember::function() {return m_block->function();}
+    inline ValuePtr<Function> BlockMember::function() {return m_block ? m_block->function() : ValuePtr<Function>();}
 
     class Function;
 
@@ -314,6 +314,8 @@ namespace Psi {
       ValuePtr<> result_type_after(const std::vector<ValuePtr<> >& parameters);
       
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type;}
+      
+      virtual bool equals(const HashableValue& value) const;
 
     private:
       FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
@@ -325,6 +327,8 @@ namespace Psi {
       std::vector<ValuePtr<> > m_parameter_types;
       unsigned m_n_phantom;
       ValuePtr<> m_result_type;
+      
+      virtual HashableValue *clone() const;
     };
 
     class FunctionTypeParameter : public Value {

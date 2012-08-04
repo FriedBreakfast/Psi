@@ -51,12 +51,16 @@ namespace Psi {
 
       const ValuePtr<RecursiveType>& recursive() {return m_recursive;}
       const ValuePtr<>& parameter(std::size_t i) {return m_parameters[i];}
+      
+      virtual bool equals(const HashableValue& other) const;
 
     private:
       ApplyValue(Context& context,
                  const ValuePtr<RecursiveType>& recursive,
                  const std::vector<ValuePtr<> >& parameters,
                  const SourceLocation& location);
+      
+      virtual HashableValue* clone() const;
     };
   }
 }

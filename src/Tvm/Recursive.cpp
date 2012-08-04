@@ -86,6 +86,14 @@ namespace Psi {
     m_recursive(recursive),
     m_parameters(parameters) {
     }
+    
+    HashableValue* ApplyValue::clone() const {
+      return ::new ApplyValue(*this);
+    }
+
+    bool ApplyValue::equals(const HashableValue& other) const {
+      PSI_NOT_IMPLEMENTED();
+    }
 
     ValuePtr<ApplyValue> Context::apply_recursive(const ValuePtr<RecursiveType>& recursive,
                                                   const std::vector<ValuePtr<> >& parameters,

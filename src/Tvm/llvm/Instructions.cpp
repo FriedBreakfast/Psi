@@ -29,6 +29,10 @@ namespace Psi {
           llvm::BasicBlock *target = llvm::cast<llvm::BasicBlock>(builder.build_value(insn->target));
           return builder.irbuilder().CreateBr(target);
         }
+        
+        static llvm::Instruction* unreachable_callback(FunctionBuilder& builder, const ValuePtr<Unreachable>&) {
+          return builder.irbuilder().CreateUnreachable();
+        }
 
         static llvm::Instruction* function_call_callback(FunctionBuilder& builder, const ValuePtr<Call>& insn) {
           // Prepare target pointer
@@ -113,6 +117,7 @@ namespace Psi {
             .add<Return>(return_callback)
             .add<ConditionalBranch>(conditional_branch_callback)
             .add<UnconditionalBranch>(unconditional_branch_callback)
+            .add<Unreachable>(unreachable_callback)
             .add<Call>(function_call_callback)
             .add<Load>(load_callback)
             .add<Store>(store_callback)

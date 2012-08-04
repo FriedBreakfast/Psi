@@ -103,7 +103,8 @@ namespace Psi {
     HashableValue::HashableValue(Context& context, TermType term_type, const ValuePtr<>& type,
                                  const HashableValueSetup& setup, const SourceLocation& location)
     : Value(context, term_type, type, setup.source(), location),
-      m_hash(setup.hash()) {
+    m_hash(setup.hash()),
+    m_operation(setup.operation()) {
     }
 
     HashableValue::~HashableValue() {
@@ -186,6 +187,29 @@ namespace Psi {
     Context::~Context() {
       m_all_terms.clear_and_dispose(ValueDisposer());
       PSI_WARNING(m_hash_terms.empty());
+    }
+    
+    namespace {
+      struct HashableValueEquals {
+        bool operator () (const HashableValue& lhs, const HashableValue& rhs) const {
+          if (lhs.operation_name() != rhs.operation_name())
+            return false;
+          return lhs.equals(rhs);
+        }
+      };
+    }
+
+    /**
+     * \brief Get an existing hashable term, or create a new one.
+     */
+    ValuePtr<HashableValue> Context::get_hash_term(const HashableValue& value) {
+      HashTermSetType::insert_commit_data commit_data;
+      std::pair<HashTermSetType::iterator, bool> r = m_hash_terms.insert_check(value, HashableValueHasher(), HashableValueEquals(), commit_data);
+      if (!r.second)
+        return ValuePtr<HashableValue>(&*r.first);
+      ValuePtr<HashableValue> result(value.clone());
+      m_hash_terms.insert_commit(*result, commit_data);
+      return result;
     }
 
 #ifdef PSI_DEBUG

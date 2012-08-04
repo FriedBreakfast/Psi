@@ -17,8 +17,8 @@ namespace Psi {
     PSI_TVM_INSTRUCTION_IMPL(Alloca, Instruction, alloca);
     PSI_TVM_INSTRUCTION_IMPL(MemCpy, Instruction, memcpy);
 
-    Return::Return(const ValuePtr<>& value_, const ValuePtr<Block>& block, const SourceLocation& location)
-    : TerminatorInstruction(operation, block, location),
+    Return::Return(const ValuePtr<>& value_, const SourceLocation& location)
+    : TerminatorInstruction(value_->context(), operation, location),
     value(value_) {
     }
     
@@ -30,13 +30,16 @@ namespace Psi {
         throw TvmUserError("cannot return a phantom value");
     }
 
-    ConditionalBranch::ConditionalBranch(const ValuePtr<>& condition_, const ValuePtr<Block>& true_target_, const ValuePtr<Block>& false_target_, const ValuePtr<Block>& block, const SourceLocation& location)
-    : TerminatorInstruction(operation, block, location),
+    ConditionalBranch::ConditionalBranch(const ValuePtr<>& condition_, const ValuePtr<Block>& true_target_, const ValuePtr<Block>& false_target_, const SourceLocation& location)
+    : TerminatorInstruction(condition_->context(), operation, location),
     condition(condition_),
     true_target(true_target_),
     false_target(false_target_) {
     }
     
+    /**
+     * \todo Need to check that targets are dominated by an appropriate block to jump to.
+     */
     void ConditionalBranch::type_check() {
       if (condition->type() != BooleanType::get(context(), location()))
         throw TvmUserError("first parameter to branch instruction must be of boolean type");
@@ -54,11 +57,14 @@ namespace Psi {
         throw TvmUserError("jump target must be in the same function");
     }
     
-    UnconditionalBranch::UnconditionalBranch(const ValuePtr<Block>& target_, const ValuePtr<Block>& block, const SourceLocation& location)
-    : TerminatorInstruction(operation, block, location),
+    UnconditionalBranch::UnconditionalBranch(const ValuePtr<Block>& target_, const SourceLocation& location)
+    : TerminatorInstruction(target_->context(), operation, location),
     target(target_) {
     }
     
+    /**
+     * \todo Need to check that target is dominated by an appropriate block to jump to.
+     */
     void UnconditionalBranch::type_check() {
       if (!target)
         throw TvmUserError("jump targets may not be null");
@@ -70,8 +76,8 @@ namespace Psi {
         throw TvmUserError("jump target must be in the same function");
     }
     
-    Unreachable::Unreachable(const ValuePtr<Block>& block, const SourceLocation& location)
-    : TerminatorInstruction(operation, block, location) {
+    Unreachable::Unreachable(Context& context, const SourceLocation& location)
+    : TerminatorInstruction(context, operation, location) {
     }
     
     void Unreachable::type_check() {
@@ -87,8 +93,8 @@ namespace Psi {
       }
     }
     
-    Call::Call(const ValuePtr<>& target_, const std::vector<ValuePtr<> >& parameters_, const ValuePtr<Block>& block, const SourceLocation& location)
-    : Instruction(call_type(target, parameters), operation, block, location),
+    Call::Call(const ValuePtr<>& target_, const std::vector<ValuePtr<> >& parameters_, const SourceLocation& location)
+    : Instruction(call_type(target, parameters), operation, location),
     target(target_),
     parameters(parameters_) {
     }
@@ -119,8 +125,8 @@ namespace Psi {
       }
     }
 
-    Store::Store(const ValuePtr<>& value_, const ValuePtr<>& target_, const ValuePtr<Block>& block, const SourceLocation& location)
-    : Instruction(FunctionalBuilder::empty_type(value_->context(), location), operation, block, location),
+    Store::Store(const ValuePtr<>& value_, const ValuePtr<>& target_, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::empty_type(value_->context(), location), operation, location),
     value(value_),
     target(target_) {
     }
@@ -133,8 +139,8 @@ namespace Psi {
         throw TvmUserError("store target type is not a pointer to the type of value");
     }
 
-    Load::Load(const ValuePtr<>& target_, const ValuePtr<Block>& block, const SourceLocation& location)
-    : Instruction(pointer_target_type(target_), operation, block, location),
+    Load::Load(const ValuePtr<>& target_, const SourceLocation& location)
+    : Instruction(pointer_target_type(target_), operation, location),
     target(target_) {
     }
 
@@ -143,8 +149,8 @@ namespace Psi {
         throw TvmUserError("load target type has changed since instruction creation");
     }
     
-    Alloca::Alloca(const ValuePtr<>& element_type_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const ValuePtr<Block>& block, const SourceLocation& location)
-    : Instruction(FunctionalBuilder::pointer_type(element_type, location), operation, block, location),
+    Alloca::Alloca(const ValuePtr<>& element_type_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::pointer_type(element_type, location), operation, location),
     element_type(element_type_),
     count(count_),
     alignment(alignment_) {
@@ -168,8 +174,8 @@ namespace Psi {
         throw TvmUserError("parameter to alloca cannot be phantom");
     }
     
-    MemCpy::MemCpy(const ValuePtr<>& dest_, const ValuePtr<>& src_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const ValuePtr<Block>& block, const SourceLocation& location)
-    : Instruction(FunctionalBuilder::empty_type(dest->context(), location), operation, block, location),
+    MemCpy::MemCpy(const ValuePtr<>& dest_, const ValuePtr<>& src_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::empty_type(dest->context(), location), operation, location),
     dest(dest_),
     src(src_),
     count(count_),

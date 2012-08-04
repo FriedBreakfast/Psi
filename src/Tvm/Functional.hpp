@@ -27,8 +27,6 @@ namespace Psi {
       template<typename> friend class FunctionalTermWithData;
 
     public:
-      const char *operation_name() const {return m_operation;}
-
       /**
        * \brief Build a copy of this term with a new set of parameters.
        * 
@@ -45,26 +43,24 @@ namespace Psi {
 
     protected:
       FunctionalValue(Context& context, const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
-
-    private:
-      const char *m_operation;
     };
     
 #define PSI_TVM_FUNCTIONAL_DECL(Type) \
   public: \
     static const char operation[]; \
     virtual ValuePtr<FunctionalValue> rewrite(RewriteCallback& callback); \
+    virtual bool equals(const HashableValue& rhs) const; \
     virtual void visit(FunctionalValueVisitor& callback); \
     static bool isa_impl(const Value& ptr) {return (ptr.term_type() == term_functional) && (operation == checked_cast<const Type&>(ptr).operation_name());} \
   private: \
     Type(const RewriteCallback& callback, const Type& src); \
-    virtual ValuePtr<FunctionalValue> clone(void *ptr);
+    virtual HashableValue* clone() const;
     
 #define PSI_TVM_FUNCTIONAL_IMPL(Type,Base,Name) \
     const char Type::operation[] = #Name; \
     \
-    ValuePtr<FunctionalValue> Type::clone(void *ptr) { \
-      return ValuePtr<FunctionalValue>(::new (ptr) Type(*this)); \
+    HashableValue* Type::clone() const { \
+      return ::new Type(*this); \
     } \
     \
     ValuePtr<FunctionalValue> Type::rewrite(RewriteCallback& callback) { \
@@ -149,7 +145,6 @@ namespace Psi {
     class SimpleType : public FunctionalValue {
     public:
       SimpleType(Context& context, const HashableValueSetup& hash, const SourceLocation& location);
-      virtual void type_check();
     };
     
     class Constructor : public FunctionalValue {
@@ -160,7 +155,6 @@ namespace Psi {
     class SimpleConstructor : public FunctionalValue {
     public:
       SimpleConstructor(const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
-      virtual void type_check();
     };
     
     class AggregateOp : public FunctionalValue {
