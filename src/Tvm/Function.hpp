@@ -301,7 +301,9 @@ namespace Psi {
      * since the result must be the appropriate term itself).
      */
     class FunctionType : public HashableValue {
+      PSI_TVM_HASHABLE_DECL(FunctionType)
       friend class Context;
+
     public:
       CallingConvention calling_convention() {return m_calling_convention;}
       const ValuePtr<>& result_type() const {return m_result_type;}
@@ -314,8 +316,6 @@ namespace Psi {
       ValuePtr<> result_type_after(const std::vector<ValuePtr<> >& parameters);
       
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type;}
-      
-      virtual bool equals(const HashableValue& value) const;
 
     private:
       FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
@@ -327,8 +327,6 @@ namespace Psi {
       std::vector<ValuePtr<> > m_parameter_types;
       unsigned m_n_phantom;
       ValuePtr<> m_result_type;
-      
-      virtual HashableValue *clone() const;
     };
 
     class FunctionTypeParameter : public Value {

@@ -6,8 +6,6 @@
 
 namespace Psi {
   namespace Tvm {
-    const char ApplyValue::operation[] = "apply";
-
     RecursiveParameter::RecursiveParameter(const ValuePtr<>& type, const SourceLocation& location)
     : Value(type->context(), term_recursive_parameter, type, type->source(), location) {
     }
@@ -74,6 +72,8 @@ namespace Psi {
     ValuePtr<ApplyValue> RecursiveType::apply(const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
       return context().apply_recursive(ValuePtr<RecursiveType>(this), parameters, location);
     }
+    
+    PSI_TVM_HASHABLE_IMPL(ApplyValue, HashableValue, apply)
 
     ApplyValue::ApplyValue(Context& context,
                            const ValuePtr<RecursiveType>& recursive,
@@ -87,14 +87,6 @@ namespace Psi {
     m_parameters(parameters) {
     }
     
-    HashableValue* ApplyValue::clone() const {
-      return ::new ApplyValue(*this);
-    }
-
-    bool ApplyValue::equals(const HashableValue& other) const {
-      PSI_NOT_IMPLEMENTED();
-    }
-
     ValuePtr<ApplyValue> Context::apply_recursive(const ValuePtr<RecursiveType>& recursive,
                                                   const std::vector<ValuePtr<> >& parameters,
                                                   const SourceLocation& location) {

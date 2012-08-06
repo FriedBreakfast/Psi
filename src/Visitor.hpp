@@ -6,6 +6,7 @@
 
 #include <boost/array.hpp>
 #include <boost/type_traits/remove_cv.hpp>
+#include <boost/concept_check.hpp>
 
 /**
  * \file
@@ -43,6 +44,14 @@ namespace Psi {
   template<typename V, typename T>
   void visit(V& v, VisitorTag<T>) {
     T::visit(v);
+  }
+  
+  /**
+   * Utility function for when the name visit is obscured by another function.
+   */
+  template<typename V, typename T>
+  void visit_freefunc(V& v, VisitorTag<T> t) {
+    visit(v, t);
   }
 
   template<typename V, typename A, typename B>

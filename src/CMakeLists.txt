@@ -30,7 +30,6 @@ add_library(psi-tvm SHARED
   Tvm/Number.cpp Tvm/Number.hpp
   ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp
-  Tvm/Rewrite.hpp
   Tvm/Source.cpp
   Tvm/TermOperationMap.hpp
   Tvm/Utility.hpp

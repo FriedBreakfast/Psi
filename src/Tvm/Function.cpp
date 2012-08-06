@@ -2,7 +2,6 @@
 #include "Function.hpp"
 #include "Functional.hpp"
 #include "FunctionalBuilder.hpp"
-#include "Rewrite.hpp"
 #include "Utility.hpp"
 
 #include <boost/next_prior.hpp>
@@ -33,6 +32,8 @@ namespace Psi {
         return hv;
       }
     }
+    
+    PSI_TVM_HASHABLE_IMPL(FunctionType, HashableValue, function)
 
     FunctionType::FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
                                const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, const SourceLocation& location)
@@ -44,34 +45,18 @@ namespace Psi {
     m_result_type(result_type) {
     }
 
-    HashableValue* FunctionType::clone() const {
-      return ::new FunctionType(*this);
-    }
-
-    bool FunctionType::equals(const HashableValue& value) const {
-      PSI_NOT_IMPLEMENTED();
-    }
-
-    class Context::FunctionTypeResolverRewriter {
+    class Context::FunctionTypeResolverRewriter : public RewriteCallback {
       std::vector<ValuePtr<FunctionTypeParameter> > m_parameters;
       std::size_t m_depth;
 
     public:
-      FunctionTypeResolverRewriter(const std::vector<ValuePtr<FunctionTypeParameter> >& parameters)
-      : m_parameters(parameters), m_depth(0) {
+      FunctionTypeResolverRewriter(Context& context, const std::vector<ValuePtr<FunctionTypeParameter> >& parameters)
+      : RewriteCallback(context), m_parameters(parameters), m_depth(0) {
       }
 
-      ValuePtr<> operator () (const ValuePtr<>& term) {
-        switch (term->term_type()) {
-        case term_function_type: {
-          ++m_depth;
-          ValuePtr<> result = rewrite_term_default(*this, term);
-          --m_depth;
-          return result;
-        }
-          
-        case term_function_type_parameter: {
-          ValuePtr<> type = this->operator() (term->type());
+      virtual ValuePtr<> rewrite(const ValuePtr<>& term) {
+        if (ValuePtr<FunctionTypeParameter> parameter = dyn_cast<FunctionTypeParameter>(term)) {
+          ValuePtr<> type = rewrite(term->type());
           for (unsigned i = 0, e = m_parameters.size(); i != e; ++i) {
             if (m_parameters[i] == term)
               return FunctionTypeResolvedParameter::get(type, m_depth, i, m_parameters[i]->location());
@@ -79,10 +64,15 @@ namespace Psi {
           if (type != term->type())
             throw TvmUserError("type of unresolved function parameter cannot depend on type of resolved function parameter");
           return term;
-        }
-        
-        default:
-          return rewrite_term_default(*this, term);
+        } else if (ValuePtr<FunctionType> function_type = dyn_cast<FunctionType>(term)) {
+          ++m_depth;
+          ValuePtr<> result = function_type->rewrite(*this);
+          --m_depth;
+          return result;
+        } else if (ValuePtr<HashableValue> hashable = dyn_cast<HashableValue>(term)) {
+          return hashable->rewrite(*this);
+        } else {
+          return term;
         }
       }
     };
@@ -122,17 +112,12 @@ namespace Psi {
 
       std::vector<ValuePtr<FunctionTypeParameter> > previous_parameters;
       std::vector<ValuePtr<> > resolved_parameter_types;
-      for (unsigned ii = 0, ie = n_phantom; ii != ie; ++ii) {
-        resolved_parameter_types.push_back(FunctionTypeResolverRewriter(previous_parameters)(parameters[ii]->type()));
+      for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
+        resolved_parameter_types.push_back(FunctionTypeResolverRewriter(*this, previous_parameters).rewrite(parameters[ii]->type()));
         previous_parameters.push_back(parameters[ii]);
       }
 
-      for (unsigned ii = n_phantom, ie = parameters.size(); ii != ie; ++ii) {
-        resolved_parameter_types.push_back(FunctionTypeResolverRewriter(previous_parameters)(parameters[ii]->type()));
-        previous_parameters.push_back(parameters[ii]);
-      }
-
-      ValuePtr<> resolved_result_type = FunctionTypeResolverRewriter(previous_parameters)(result_type);
+      ValuePtr<> resolved_result_type = FunctionTypeResolverRewriter(*this, previous_parameters).rewrite(result_type);
       
       return get_functional(FunctionType(calling_convention, resolved_result_type, resolved_parameter_types,
                                          n_phantom, location));
@@ -152,26 +137,30 @@ namespace Psi {
     }
 
     namespace {
-      class ParameterTypeRewriter {
+      class ParameterTypeRewriter : public RewriteCallback {
         std::vector<ValuePtr<> > m_previous;
         std::size_t m_depth;
 
       public:
-        ParameterTypeRewriter(const std::vector<ValuePtr<> >& previous)
-        : m_previous(previous), m_depth(0) {}
+        ParameterTypeRewriter(Context& context, const std::vector<ValuePtr<> >& previous)
+        : RewriteCallback(context), m_previous(previous), m_depth(0) {}
 
-        ValuePtr<> operator () (const ValuePtr<>& term) {
+        virtual ValuePtr<> rewrite(const ValuePtr<>& term) {
           if (ValuePtr<FunctionTypeResolvedParameter> parameter = dyn_cast<FunctionTypeResolvedParameter>(term)) {
             if (parameter->depth() == m_depth)
               return m_previous[parameter->index()];
+            else
+              return parameter->rewrite(*this);
           } else if (ValuePtr<FunctionType> function_type = dyn_cast<FunctionType>(term)) {
             ++m_depth;
-            ValuePtr<> result = rewrite_term_default(*this, function_type);
+            ValuePtr<> result = function_type->rewrite(*this);
             --m_depth;
             return result;
+          } else if (ValuePtr<HashableValue> hashable = dyn_cast<HashableValue>(term)) {
+            return hashable->rewrite(*this);
+          } else {
+            return term;
           }
-
-          return rewrite_term_default(*this, term);
         }
       };
     }
@@ -183,7 +172,7 @@ namespace Psi {
      * the index of the parameter type to get.
      */
     ValuePtr<> FunctionType::parameter_type_after(const std::vector<ValuePtr<> >& previous) {
-      return ParameterTypeRewriter(previous)(parameter_types()[previous.size()]);
+      return ParameterTypeRewriter(context(), previous).rewrite(parameter_types()[previous.size()]);
     }
 
     /**
@@ -193,7 +182,7 @@ namespace Psi {
     ValuePtr<> FunctionType::result_type_after(const std::vector<ValuePtr<> >& parameters) {
       if (parameters.size() != parameter_types().size())
         throw TvmUserError("incorrect number of parameters");
-      return ParameterTypeRewriter(parameters)(result_type());
+      return ParameterTypeRewriter(context(), parameters).rewrite(result_type());
     }
     
     FunctionTypeParameter::FunctionTypeParameter(Context& context, const ValuePtr<>& type, const SourceLocation& location)

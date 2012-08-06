@@ -124,11 +124,11 @@ namespace Psi {
         
         class TrivialRewriteCallback : public RewriteCallback {
         public:
-          TrivialRewriteCallback(Context *context) : RewriteCallback(context) {}
+          TrivialRewriteCallback(Context& context) : RewriteCallback(context) {}
           virtual ValuePtr<> rewrite(const ValuePtr<>&) {
             PSI_FAIL("Primitive type should not require internal rewriting.");
           }
-        } callback(&rewriter.context());
+        } callback(rewriter.context());
         
         return simple_type_helper(rewriter, type->rewrite(callback));
       }
@@ -205,7 +205,7 @@ namespace Psi {
           AggregateLoweringRewriter *m_rewriter;
         public:
           Callback(AggregateLoweringRewriter& rewriter)
-          : RewriteCallback(&rewriter.context()),
+          : RewriteCallback(rewriter.context()),
           m_rewriter(&rewriter) {
           }
 

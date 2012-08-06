@@ -328,6 +328,15 @@ namespace Psi {
       return hashable_setup<T>()(value);
     }
 
+    class RewriteCallback {
+      Context *m_context;
+    public:
+      RewriteCallback(Context& context) : m_context(&context) {}
+      /// \brief Get the context to create rewritten terms in.
+      Context& context() {return *m_context;}
+      virtual ValuePtr<> rewrite(const ValuePtr<>& value) = 0;
+    };    
+
     class HashableValue : public Value {
       friend class Context;
       friend std::size_t Value::hash_value() const;
@@ -342,6 +351,16 @@ namespace Psi {
           || (v.term_type() == term_apply);
       }
       
+      /**
+       * \brief Build a copy of this term with a new set of parameters.
+       * 
+       * \param context Context to create the new term in. This may be
+       * different to the current context of this term.
+       * 
+       * \param callback Callback used to rewrite members.
+       */
+      virtual ValuePtr<HashableValue> rewrite(RewriteCallback& callback) const = 0;
+
       virtual bool equals(const HashableValue& rhs) const = 0;
       const char *operation_name() const {return m_operation;}
       
@@ -353,6 +372,36 @@ namespace Psi {
 
       virtual HashableValue* clone() const = 0;
     };
+
+#define PSI_TVM_HASHABLE_DECL(Type) \
+  public: \
+    static const char operation[]; \
+    template<typename T> static void visit(T& v); \
+    virtual ValuePtr<HashableValue> rewrite(RewriteCallback& callback) const; \
+    virtual bool equals(const HashableValue& rhs) const; \
+  private: \
+    virtual HashableValue* clone() const;
+
+#define PSI_TVM_HASHABLE_IMPL(Type,Base,Name) \
+    const char Type::operation[] = #Name; \
+    \
+    HashableValue* Type::clone() const { \
+      return ::new Type(*this); \
+    } \
+    \
+    ValuePtr<HashableValue> Type::rewrite(RewriteCallback& callback) const { \
+      Type copy(*this); \
+      boost::array<Type*,1> c = {{&copy}}; \
+      RewriteVisitor v(&callback); \
+      visit_members(v, c); \
+      return callback.context().get_functional(copy); \
+    } \
+    \
+    bool Type::equals(const HashableValue& rhs) const { \
+      EqualsVisitor<Type> v(this, &checked_cast<const Type&>(rhs)); \
+      visit_freefunc(v, VisitorTag<Type>()); \
+      return v.is_equal(); \
+    }
 
     /**
      * \brief Base class for globals: these are GlobalVariableTerm and FunctionTerm.
@@ -553,14 +602,91 @@ namespace Psi {
     bool term_unique(const ValuePtr<>& term);
     void print_module(std::ostream&, Module*);
     void print_term(std::ostream&, const ValuePtr<>&);
-
-    class RewriteCallback {
-      Context *m_context;
+    
+    template<typename Derived>
+    class ValuePtrVistorBase {
+      Derived& derived() {
+        return static_cast<Derived&>(*this);
+      }
+      
     public:
-      RewriteCallback(Context *context) : m_context(context) {}
-      /// \brief Get the context to create rewritten terms in.
-      Context& context() {return *m_context;}
-      virtual ValuePtr<> rewrite(const ValuePtr<>& value) = 0;
+      /// Simple types cannot hold references, so we aren't interested in them.
+      template<typename T>
+      void visit_simple(const char*, const boost::array<T*, 1>&) {
+      }
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<T*,1>& obj) {
+        visit_members(*this, obj);
+      }
+
+      /// Simple pointers are assumed to be owned by this object
+      template<typename T>
+      void visit_object(const char*, const boost::array<T**,1>& obj) {
+        if (*obj[0]) {
+          boost::array<T*, 1> star = {{*obj[0]}};
+          visit_callback(*this, NULL, star);
+        }
+      }
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<ValuePtr<T>*,1>& ptr) {
+        derived().visit_ptr(ptr[0]);
+      }
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<const ValuePtr<T>*,1>& ptr) {
+        derived().visit_ptr(ptr[0]);
+      }
+
+      template<typename T>
+      void visit_sequence (const char*, const boost::array<T*,1>& collections) {
+        for (typename T::iterator ii = collections[0]->begin(), ie = collections[0]->end(); ii != ie; ++ii) {
+          boost::array<typename T::value_type*, 1> m = {{&*ii}};
+          visit_callback(*this, NULL, m);
+        }
+      }
+
+      template<typename T>
+      void visit_map(const char*, const boost::array<T*,1>& maps) {
+        for (typename T::iterator ii = maps[0]->begin(), ie = maps[0]->end(); ii != ie; ++ii) {
+#if 0
+          boost::array<const typename T::key_type*, 1> k = {{&ii->first}};
+          visit_object(NULL, k);
+#endif
+          boost::array<typename T::mapped_type*, 1> v = {{&ii->second}};
+          visit_callback(*this, NULL, v);
+        }
+      }
+    };
+
+    class RewriteVisitor : public ValuePtrVistorBase<RewriteVisitor> {
+      RewriteCallback *m_callback;
+    public:
+      RewriteVisitor(RewriteCallback *callback) : m_callback(callback) {}
+      
+      void visit_ptr(ValuePtr<>& ptr) {
+        ptr = m_callback->rewrite(ptr);
+      }
+    };
+    
+    template<typename T>
+    class EqualsVisitor {
+      bool m_is_equal;
+      const T *m_first, *m_second;
+      
+    public:
+      EqualsVisitor(const T *first, const T *second) : m_is_equal(true), m_first(first), m_second(second) {}
+      bool is_equal() const {return m_is_equal;}
+      
+      template<typename U>
+      EqualsVisitor<T>& operator () (const char*, U T::*ptr) {
+        if (m_is_equal) {
+          if (m_first->*ptr != m_second->*ptr)
+            m_is_equal = false;
+        }
+        return *this;
+      }
     };
   }
 }

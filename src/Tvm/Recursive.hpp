@@ -39,28 +39,23 @@ namespace Psi {
     };
 
     class ApplyValue : public HashableValue {
+      PSI_TVM_HASHABLE_DECL(ApplyValue)
       friend class Context;
       ValuePtr<RecursiveType> m_recursive;
       std::vector<ValuePtr<> > m_parameters;
 
     public:
-      static const char operation[];
-      
       std::size_t n_parameters() {return m_parameters.size();}
       ValuePtr<> unpack();
 
       const ValuePtr<RecursiveType>& recursive() {return m_recursive;}
       const ValuePtr<>& parameter(std::size_t i) {return m_parameters[i];}
       
-      virtual bool equals(const HashableValue& other) const;
-
     private:
       ApplyValue(Context& context,
                  const ValuePtr<RecursiveType>& recursive,
                  const std::vector<ValuePtr<> >& parameters,
                  const SourceLocation& location);
-      
-      virtual HashableValue* clone() const;
     };
   }
 }

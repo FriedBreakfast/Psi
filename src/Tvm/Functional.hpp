@@ -2,6 +2,7 @@
 #define HPP_PSI_TVM_FUNCTIONAL
 
 #include "Core.hpp"
+#include "../Visitor.hpp"
 
 #include <boost/functional/hash.hpp>
 #include <boost/concept_check.hpp>
@@ -11,6 +12,13 @@ namespace Psi {
     class FunctionalValueVisitor {
     public:
       virtual void next(const ValuePtr<>& ptr) = 0;
+    };
+    
+    class FunctionalValueVisitorWrapper : public ValuePtrVistorBase<FunctionalValueVisitorWrapper> {
+      FunctionalValueVisitor *m_callback;
+    public:
+      FunctionalValueVisitorWrapper(FunctionalValueVisitor *callback) : m_callback(callback) {}
+      void visit_ptr(const ValuePtr<>& ptr) {m_callback->next(ptr);}
     };
 
     /**
@@ -27,17 +35,7 @@ namespace Psi {
       template<typename> friend class FunctionalTermWithData;
 
     public:
-      /**
-       * \brief Build a copy of this term with a new set of parameters.
-       * 
-       * \param context Context to create the new term in. This may be
-       * different to the current context of this term.
-       * 
-       * \param callback Callback used to rewrite members.
-       */
-      virtual ValuePtr<FunctionalValue> rewrite(RewriteCallback& callback) = 0;
-      
-      virtual void visit(FunctionalValueVisitor& visitor) = 0;
+      virtual void visit(FunctionalValueVisitor& visitor) const = 0;
       
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_functional;}
 
@@ -46,25 +44,18 @@ namespace Psi {
     };
     
 #define PSI_TVM_FUNCTIONAL_DECL(Type) \
+    PSI_TVM_HASHABLE_DECL(Type) \
   public: \
-    static const char operation[]; \
-    virtual ValuePtr<FunctionalValue> rewrite(RewriteCallback& callback); \
-    virtual bool equals(const HashableValue& rhs) const; \
-    virtual void visit(FunctionalValueVisitor& callback); \
-    static bool isa_impl(const Value& ptr) {return (ptr.term_type() == term_functional) && (operation == checked_cast<const Type&>(ptr).operation_name());} \
-  private: \
-    Type(const RewriteCallback& callback, const Type& src); \
-    virtual HashableValue* clone() const;
-    
+    virtual void visit(FunctionalValueVisitor& visitor) const; \
+    static bool isa_impl(const Value& ptr) {return (ptr.term_type() == term_functional) && (operation == checked_cast<const Type&>(ptr).operation_name());}
+
 #define PSI_TVM_FUNCTIONAL_IMPL(Type,Base,Name) \
-    const char Type::operation[] = #Name; \
+    PSI_TVM_HASHABLE_IMPL(Type,Base,Name) \
     \
-    HashableValue* Type::clone() const { \
-      return ::new Type(*this); \
-    } \
-    \
-    ValuePtr<FunctionalValue> Type::rewrite(RewriteCallback& callback) { \
-      return callback.context().get_functional(Type(callback, *this)); \
+    void Type::visit(FunctionalValueVisitor& visitor) const { \
+      FunctionalValueVisitorWrapper vw(&visitor); \
+      boost::array<const Type*,1> c = {{this}}; \
+      visit_members(vw, c); \
     }
 
     class SimpleOp : public FunctionalValue {
