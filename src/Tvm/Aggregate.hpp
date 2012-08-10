@@ -70,6 +70,7 @@ namespace Psi {
     public:
       Metatype(Context& context, const SourceLocation& location);
       static ValuePtr<> get(Context& context, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
     };
 
     /**
@@ -86,6 +87,7 @@ namespace Psi {
       
       MetatypeValue(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
       
       /// \brief Get the size of this type
       const ValuePtr<>& size() const {return m_size;}
@@ -137,6 +139,7 @@ namespace Psi {
     public:
       PointerType(const ValuePtr<>& target_type, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& target_type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the type being pointed to.
       const ValuePtr<>& target_type() const {return m_target_type;}
@@ -153,6 +156,7 @@ namespace Psi {
     public:
       PointerCast(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the pointer being cast
       const ValuePtr<>& pointer() const {return m_pointer;}
@@ -177,6 +181,7 @@ namespace Psi {
     public:
       PointerOffset(const ValuePtr<>& pointer, const ValuePtr<>& offset, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& pointer, const ValuePtr<>& offset, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the original pointer
       const ValuePtr<>& pointer() const {return m_pointer;}
@@ -200,6 +205,7 @@ namespace Psi {
     public:
       ArrayType(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the array element type.
       const ValuePtr<>& element_type() const {return m_element_type;}
@@ -220,7 +226,8 @@ namespace Psi {
     public:
       ArrayValue(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements, const SourceLocation& location);
-      
+      template<typename V> static void visit(V& v);
+
       /// \brief Get the element type in the array.
       const ValuePtr<>& element_type() const {return m_element_type;}
       /// \brief Get the length of the array value.
@@ -241,6 +248,7 @@ namespace Psi {
     public:
       ArrayElement(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the array being subscripted
       const ValuePtr<>& aggregate() const {return m_aggregate;}
@@ -248,8 +256,6 @@ namespace Psi {
       const ValuePtr<>& index() const {return m_index;}
       /// \brief Get the type of array being accessed
       ValuePtr<ArrayType> aggregate_type() const {return value_cast<ArrayType>(aggregate()->type());}
-      
-      static ValuePtr<> get(const ValuePtr<>& aggregate, const ValuePtr<>& index);
       
     private:
       ValuePtr<> m_aggregate;
@@ -265,6 +271,7 @@ namespace Psi {
     public:
       ArrayElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the array being subscripted
       const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
@@ -288,6 +295,7 @@ namespace Psi {
     public:
       StructType(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
       static ValuePtr<StructType> get(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the number of members in the aggregate.
       unsigned n_members() const {return m_members.size();}
@@ -308,6 +316,7 @@ namespace Psi {
     public:
       StructValue(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
       static ValuePtr<> get(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the number of elements in the struct.
       unsigned n_members() const {return m_members.size();}
@@ -328,6 +337,7 @@ namespace Psi {
     public:
       StructElement(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the struct being accessed
       const ValuePtr<>& aggregate() const {return m_aggregate;}
@@ -335,8 +345,6 @@ namespace Psi {
       unsigned index() const {return m_index;}
       /// \brief Get the type of struct being accessed
       ValuePtr<StructType> aggregate_type() const {return value_cast<StructType>(aggregate()->type());}
-      
-      static ValuePtr<StructElement> get(const ValuePtr<>& structure, unsigned index);
 
     private:
       ValuePtr<> m_aggregate;
@@ -352,15 +360,14 @@ namespace Psi {
     public:
       StructElementPtr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location);
-      
+      template<typename V> static void visit(V& v);
+
       /// \brief Get the struct being subscripted
       const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
       /// \brief Get the index
       unsigned index() const {return m_index;}
       /// \brief Get the struct type being subscripted
       ValuePtr<StructType> aggregate_type() const {return value_cast<StructType>(value_cast<PointerType>(aggregate_ptr()->type().get())->target_type());}
-
-      static ValuePtr<StructElementPtr> get(const ValuePtr<>& aggregate_ptr, unsigned index);
       
     private:
       ValuePtr<> m_aggregate_ptr;
@@ -378,6 +385,7 @@ namespace Psi {
     public:
       StructElementOffset(const ValuePtr<>& aggregate_type, unsigned index, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& aggregate_type, unsigned index, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the struct type
       const ValuePtr<StructType>& aggregate_type() const {return m_aggregate_type;}
@@ -400,6 +408,7 @@ namespace Psi {
     public:
       UnionType(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
       static ValuePtr<> get(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the number of members in the aggregate.
       unsigned n_members() const {return m_members.size();}
@@ -407,8 +416,6 @@ namespace Psi {
       const ValuePtr<>& member_type(unsigned i) const {return m_members[i];}
       int index_of_type(const ValuePtr<>& type) const;
       bool contains_type(const ValuePtr<>& type) const;
-
-      static ValuePtr<UnionType> get(Context& context, const std::vector<ValuePtr<> >& elements);
       
     private:
       std::vector<ValuePtr<> > m_members;
@@ -423,13 +430,12 @@ namespace Psi {
     public:
       UnionValue(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the value of whichever element this represents.
       const ValuePtr<>& value() const {return m_value;}
       /// \brief Get the type of this value (overloaded to return a UnionType).
       ValuePtr<UnionType> type() const {return value_cast<UnionType>(Value::type());}
-
-      static ValuePtr<UnionValue> get(const ValuePtr<UnionType>& union_type, const ValuePtr<>& value);
       
     private:
       ValuePtr<> m_value;
@@ -441,13 +447,12 @@ namespace Psi {
     public:
       UnionElement(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the union being accessed
       const ValuePtr<>& aggregate() const {return m_aggregate;}
       /// \brief Get the type of the member being accessed
       const ValuePtr<>& member_type() const {return m_member_type;}
-      
-      static ValuePtr<UnionElement> get(const ValuePtr<>& aggregate, const ValuePtr<>& member_type);
       
     private:
       ValuePtr<> m_aggregate;
@@ -467,6 +472,7 @@ namespace Psi {
     public:
       UnionElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member_type, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member_type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the struct being subscripted
       const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
@@ -474,8 +480,6 @@ namespace Psi {
       const ValuePtr<>& member_type() const {return m_member_type;}
       /// \brief Get the union type being subscripted
       ValuePtr<UnionType> aggregate_type() const {return value_cast<UnionType>(value_cast<PointerType>(aggregate_ptr()->type())->target_type());}
-
-      static ValuePtr<UnionElementPtr> get(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member_type);
       
     private:
       ValuePtr<> m_aggregate_ptr;
@@ -497,6 +501,7 @@ namespace Psi {
     public:
       FunctionSpecialize(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);
       static ValuePtr<> get(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// \brief Get the function being specialized.
       const ValuePtr<>& function() const {return m_function;}

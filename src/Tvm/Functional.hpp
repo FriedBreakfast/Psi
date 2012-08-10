@@ -35,7 +35,7 @@ namespace Psi {
       template<typename> friend class FunctionalTermWithData;
 
     public:
-      virtual void visit(FunctionalValueVisitor& visitor) const = 0;
+      virtual void functional_visit(FunctionalValueVisitor& visitor) const = 0;
       
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_functional;}
 
@@ -46,13 +46,13 @@ namespace Psi {
 #define PSI_TVM_FUNCTIONAL_DECL(Type) \
     PSI_TVM_HASHABLE_DECL(Type) \
   public: \
-    virtual void visit(FunctionalValueVisitor& visitor) const; \
+    virtual void functional_visit(FunctionalValueVisitor& visitor) const; \
     static bool isa_impl(const Value& ptr) {return (ptr.term_type() == term_functional) && (operation == checked_cast<const Type&>(ptr).operation_name());}
 
 #define PSI_TVM_FUNCTIONAL_IMPL(Type,Base,Name) \
     PSI_TVM_HASHABLE_IMPL(Type,Base,Name) \
     \
-    void Type::visit(FunctionalValueVisitor& visitor) const { \
+    void Type::functional_visit(FunctionalValueVisitor& visitor) const { \
       FunctionalValueVisitorWrapper vw(&visitor); \
       boost::array<const Type*,1> c = {{this}}; \
       visit_members(vw, c); \
@@ -74,6 +74,12 @@ namespace Psi {
     public:
       /// \brief Return the single argument to this value
       const ValuePtr<>& parameter() const {return m_parameter;}
+      
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<FunctionalValue>(v);
+        v("parameter", &UnaryOp::m_parameter);
+      }
     };
     
 #define PSI_TVM_UNARY_OP_DECL(name,base) \
@@ -100,6 +106,13 @@ namespace Psi {
       const ValuePtr<>& lhs() const {return m_lhs;}
       const ValuePtr<>& rhs() const {return m_rhs;}
       
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<FunctionalValue>(v);
+        v("lhs", &BinaryOp::m_lhs)
+        ("rhs", &BinaryOp::m_rhs);
+      }
+
     protected:
       BinaryOp(const ValuePtr<>& type, const ValuePtr<>& lhs, const ValuePtr<>& rhs, const HashableValueSetup& hash, const SourceLocation& location);
       BinaryOp(const RewriteCallback& callback, const BinaryOp& src);
@@ -133,7 +146,7 @@ namespace Psi {
       Type(Context& context, const HashableValueSetup& hash, const SourceLocation& location);
     };
     
-    class SimpleType : public FunctionalValue {
+    class SimpleType : public Type {
     public:
       SimpleType(Context& context, const HashableValueSetup& hash, const SourceLocation& location);
     };

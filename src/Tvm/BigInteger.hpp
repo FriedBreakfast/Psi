@@ -5,6 +5,7 @@
 #include <boost/optional.hpp>
 
 #include "../Utility.hpp"
+#include "../Visitor.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -93,6 +94,8 @@ namespace Psi {
       
       boost::optional<unsigned> unsigned_value(bool=false) const;
     };
+    
+    PSI_VISIT_SIMPLE(BigInteger);
   }
 }
 

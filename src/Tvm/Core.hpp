@@ -89,6 +89,8 @@ namespace Psi {
       /// MS __fastcall convention
       cconv_x86_fastcall
     };
+
+    PSI_VISIT_SIMPLE(CallingConvention);
     
     template<typename T=Value>
     class ValuePtr : public boost::intrusive_ptr<T> {
@@ -108,6 +110,71 @@ namespace Psi {
     private:
       Value *m_value;
     };
+
+    template<typename Derived>
+    class ValuePtrVistorBase {
+      Derived& derived() {
+        return static_cast<Derived&>(*this);
+      }
+      
+    public:
+      /// Simple types cannot hold references, so we aren't interested in them.
+      template<typename T>
+      void visit_simple(const char*, const boost::array<T*, 1>&) {
+      }
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<T*,1>& obj) {
+        visit_members(*this, obj);
+      }
+
+      /// Simple pointers are assumed to be owned by this object
+      template<typename T>
+      void visit_object(const char*, const boost::array<T**,1>& obj) {
+        if (*obj[0]) {
+          boost::array<T*, 1> star = {{*obj[0]}};
+          visit_callback(*this, NULL, star);
+        }
+      }
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<ValuePtr<T>*,1>& ptr) {
+        derived().visit_ptr(*ptr[0]);
+      }
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<const ValuePtr<T>*,1>& ptr) {
+        derived().visit_ptr(*ptr[0]);
+      }
+
+      template<typename T>
+      void visit_sequence (const char*, const boost::array<T*,1>& collections) {
+        for (typename T::iterator ii = collections[0]->begin(), ie = collections[0]->end(); ii != ie; ++ii) {
+          boost::array<typename T::value_type*, 1> m = {{&*ii}};
+          visit_callback(*this, NULL, m);
+        }
+      }
+
+      template<typename T>
+      void visit_sequence (const char*, const boost::array<const T*,1>& collections) {
+        for (typename T::const_iterator ii = collections[0]->begin(), ie = collections[0]->end(); ii != ie; ++ii) {
+          boost::array<const typename T::value_type*, 1> m = {{&*ii}};
+          visit_callback(*this, NULL, m);
+        }
+      }
+
+      template<typename T>
+      void visit_map(const char*, const boost::array<T*,1>& maps) {
+        for (typename T::iterator ii = maps[0]->begin(), ie = maps[0]->end(); ii != ie; ++ii) {
+#if 0
+          boost::array<const typename T::key_type*, 1> k = {{&ii->first}};
+          visit_object(NULL, k);
+#endif
+          boost::array<typename T::mapped_type*, 1> v = {{&ii->second}};
+          visit_callback(*this, NULL, v);
+        }
+      }
+    };
     
     /**
      * \brief Base class for all compile- and run-time values.
@@ -120,11 +187,13 @@ namespace Psi {
      */
     class Value {
       friend class Context;
+      friend struct GCIncrementVisitor;
+      friend struct GCDecerementVisitor;
       
       /// Disable general new operator
-      static void* operator new (size_t);
+      static void* operator new (size_t) {PSI_UNREACHABLE();}
       /// Disable placement new
-      static void* operator new (size_t, void*);
+      static void* operator new (size_t, void*) {PSI_UNREACHABLE();}
 
     public:
       virtual ~Value();
@@ -181,6 +250,11 @@ namespace Psi {
 
       std::size_t hash_value() const;
       
+      template<typename V>
+      static void visit(V& v) {
+        v("type", &Value::m_type);
+      }
+      
     private:
       std::size_t m_reference_count;
       Context *m_context;
@@ -192,9 +266,9 @@ namespace Psi {
       boost::intrusive::list_member_hook<> m_value_list_hook;
       
       void destroy();
-      virtual void gc_increment();
-      virtual void gc_decrement();
-      virtual void gc_clear();
+      virtual void gc_increment() = 0;
+      virtual void gc_decrement() = 0;
+      virtual void gc_clear() = 0;
       
       friend void intrusive_ptr_add_ref(Value *self) {
         ++self->m_reference_count;
@@ -209,6 +283,52 @@ namespace Psi {
       Value(Context& context, TermType term_type, const ValuePtr<>& type,
             Value *source, const SourceLocation& location);
     };
+    
+#define PSI_TVM_VALUE_DECL(Type) \
+  private: \
+    virtual void gc_increment(); \
+    virtual void gc_decrement(); \
+    virtual void gc_clear();
+    
+    struct GCIncrementVisitor : ValuePtrVistorBase<GCIncrementVisitor> {
+      template<typename T>
+      void visit_ptr(const ValuePtr<T>& ptr) {
+        ++ptr->m_reference_count;
+      }
+    };
+    
+    struct GCDecerementVisitor : ValuePtrVistorBase<GCDecerementVisitor> {
+      template<typename T>
+      void visit_ptr(const ValuePtr<T>& ptr) {
+        --ptr->m_reference_count;
+      }
+    };
+    
+    struct GCClearVisitor : ValuePtrVistorBase<GCClearVisitor> {
+      template<typename T>
+      void visit_ptr(ValuePtr<T>& ptr) {
+        ptr.reset();
+      }
+    };
+    
+#define PSI_TVM_VALUE_IMPL(Type,Base) \
+    void Type::gc_increment() { \
+      GCIncrementVisitor v; \
+      boost::array<Type*,1> c = {{this}}; \
+      visit_members(v, c); \
+    } \
+    \
+    void Type::gc_decrement() { \
+      GCDecerementVisitor v; \
+      boost::array<Type*,1> c = {{this}}; \
+      visit_members(v, c); \
+    } \
+    \
+    void Type::gc_clear() { \
+      GCClearVisitor v; \
+      boost::array<Type*,1> c = {{this}}; \
+      visit_members(v, c); \
+    }
     
     Value* common_source(Value *t1, Value *t2);
     bool source_dominated(Value *dominator, Value *dominated);
@@ -374,15 +494,17 @@ namespace Psi {
     };
 
 #define PSI_TVM_HASHABLE_DECL(Type) \
+    PSI_TVM_VALUE_DECL(Type) \
   public: \
     static const char operation[]; \
-    template<typename T> static void visit(T& v); \
     virtual ValuePtr<HashableValue> rewrite(RewriteCallback& callback) const; \
     virtual bool equals(const HashableValue& rhs) const; \
   private: \
     virtual HashableValue* clone() const;
 
 #define PSI_TVM_HASHABLE_IMPL(Type,Base,Name) \
+    PSI_TVM_VALUE_IMPL(Type,Base) \
+    \
     const char Type::operation[] = #Name; \
     \
     HashableValue* Type::clone() const { \
@@ -399,7 +521,7 @@ namespace Psi {
     \
     bool Type::equals(const HashableValue& rhs) const { \
       EqualsVisitor<Type> v(this, &checked_cast<const Type&>(rhs)); \
-      visit_freefunc(v, VisitorTag<Type>()); \
+      visit(v); \
       return v.is_equal(); \
     }
 
@@ -428,6 +550,13 @@ namespace Psi {
           (x.term_type() == term_function);
       }
 
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<Value>(v);
+        v("name", &Global::m_name)
+        ("alignment", &Global::m_alignment);
+      }
+
     private:
       Global(Context& context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location);
       boost::intrusive::unordered_set_member_hook<> m_module_member_hook;
@@ -440,6 +569,7 @@ namespace Psi {
      * \brief Global variable.
      */
     class GlobalVariable : public Global {
+      PSI_TVM_VALUE_DECL(GlobalVariable);
       friend class Module;
 
     public:
@@ -455,6 +585,8 @@ namespace Psi {
       bool constant() const {return m_constant;}
       /// \brief Set whether this global is created in a read only section
       void set_constant(bool is_const) {m_constant = is_const;}
+      
+      template<typename V> static void visit(V& v);
       
     private:
       GlobalVariable(Context& context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location);
@@ -602,71 +734,15 @@ namespace Psi {
     bool term_unique(const ValuePtr<>& term);
     void print_module(std::ostream&, Module*);
     void print_term(std::ostream&, const ValuePtr<>&);
-    
-    template<typename Derived>
-    class ValuePtrVistorBase {
-      Derived& derived() {
-        return static_cast<Derived&>(*this);
-      }
-      
-    public:
-      /// Simple types cannot hold references, so we aren't interested in them.
-      template<typename T>
-      void visit_simple(const char*, const boost::array<T*, 1>&) {
-      }
-
-      template<typename T>
-      void visit_object(const char*, const boost::array<T*,1>& obj) {
-        visit_members(*this, obj);
-      }
-
-      /// Simple pointers are assumed to be owned by this object
-      template<typename T>
-      void visit_object(const char*, const boost::array<T**,1>& obj) {
-        if (*obj[0]) {
-          boost::array<T*, 1> star = {{*obj[0]}};
-          visit_callback(*this, NULL, star);
-        }
-      }
-
-      template<typename T>
-      void visit_object(const char*, const boost::array<ValuePtr<T>*,1>& ptr) {
-        derived().visit_ptr(ptr[0]);
-      }
-
-      template<typename T>
-      void visit_object(const char*, const boost::array<const ValuePtr<T>*,1>& ptr) {
-        derived().visit_ptr(ptr[0]);
-      }
-
-      template<typename T>
-      void visit_sequence (const char*, const boost::array<T*,1>& collections) {
-        for (typename T::iterator ii = collections[0]->begin(), ie = collections[0]->end(); ii != ie; ++ii) {
-          boost::array<typename T::value_type*, 1> m = {{&*ii}};
-          visit_callback(*this, NULL, m);
-        }
-      }
-
-      template<typename T>
-      void visit_map(const char*, const boost::array<T*,1>& maps) {
-        for (typename T::iterator ii = maps[0]->begin(), ie = maps[0]->end(); ii != ie; ++ii) {
-#if 0
-          boost::array<const typename T::key_type*, 1> k = {{&ii->first}};
-          visit_object(NULL, k);
-#endif
-          boost::array<typename T::mapped_type*, 1> v = {{&ii->second}};
-          visit_callback(*this, NULL, v);
-        }
-      }
-    };
 
     class RewriteVisitor : public ValuePtrVistorBase<RewriteVisitor> {
       RewriteCallback *m_callback;
     public:
       RewriteVisitor(RewriteCallback *callback) : m_callback(callback) {}
       
-      void visit_ptr(ValuePtr<>& ptr) {
-        ptr = m_callback->rewrite(ptr);
+      template<typename T>
+      void visit_ptr(ValuePtr<T>& ptr) {
+        ptr = value_cast<T>(m_callback->rewrite(ptr));
       }
     };
     
@@ -679,8 +755,8 @@ namespace Psi {
       EqualsVisitor(const T *first, const T *second) : m_is_equal(true), m_first(first), m_second(second) {}
       bool is_equal() const {return m_is_equal;}
       
-      template<typename U>
-      EqualsVisitor<T>& operator () (const char*, U T::*ptr) {
+      template<typename Base, typename U>
+      EqualsVisitor<T>& operator () (const char*, U Base::*ptr) {
         if (m_is_equal) {
           if (m_first->*ptr != m_second->*ptr)
             m_is_equal = false;

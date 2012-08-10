@@ -353,7 +353,7 @@ namespace Psi {
         };
         
         MyVisitor my_visitor(this);
-        value_cast<Instruction>(term)->visit(my_visitor);
+        value_cast<Instruction>(term)->instruction_visit(my_visitor);
         break;
       }
       
@@ -394,7 +394,7 @@ namespace Psi {
         };
         
         MyVisitor my_visitor(this);
-        value_cast<FunctionalValue>(term)->visit(my_visitor);
+        value_cast<FunctionalValue>(term)->functional_visit(my_visitor);
         
         if (TermDefinitionList *dl = term_definition_list(term))
           dl->push_back(term);
@@ -636,7 +636,7 @@ namespace Psi {
         };
         
         MyVisitor my_visitor(this, term->operation_name(), bracket);
-        term->visit(my_visitor);
+        term->functional_visit(my_visitor);
         
         if (my_visitor.empty()) {
           *m_output << term->operation_name();
@@ -662,7 +662,7 @@ namespace Psi {
       };
       
       MyVisitor my_visitor(this);
-      term->visit(my_visitor);
+      term->instruction_visit(my_visitor);
       *m_output << ";\n";
     }
     

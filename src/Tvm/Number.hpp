@@ -60,6 +60,7 @@ namespace Psi {
       IntegerType(Context& context, Width width, bool is_signed, const SourceLocation& location);
       static ValuePtr<IntegerType> get(Context& context, Width width, bool is_signed, const SourceLocation& location);
       static ValuePtr<IntegerType> get_intptr(Context& context, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       static unsigned value_bits(IntegerType::Width width);
       
@@ -67,6 +68,8 @@ namespace Psi {
       Width m_width;
       bool m_is_signed;
     };
+
+    PSI_VISIT_SIMPLE(IntegerType::Width);
 
     class IntegerValue : public SimpleConstructor {
       PSI_TVM_FUNCTIONAL_DECL(IntegerValue)
@@ -85,6 +88,7 @@ namespace Psi {
       IntegerValue(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location);
       static ValuePtr<IntegerValue> get(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location);
       static ValuePtr<IntegerValue> get_intptr(Context& context, unsigned n, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
     };
 
     class FloatType : public SimpleType {
@@ -109,6 +113,8 @@ namespace Psi {
     private:
       Width m_width;
     };
+    
+    PSI_VISIT_SIMPLE(FloatType::Width);
 
     class FloatValue : public SimpleConstructor {
       PSI_TVM_FUNCTIONAL_DECL(FloatValue)
@@ -119,7 +125,7 @@ namespace Psi {
     private:
       FloatType::Width m_width;
       unsigned m_exponent;
-      char m_mantissa[mantissa_width];
+      boost::array<char, mantissa_width> m_mantissa;
       
     public:
       /// \brief Get the type of this term cast to FloatType::Ptr
@@ -127,6 +133,7 @@ namespace Psi {
 
       FloatValue(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location);
       static ValuePtr<FloatValue> get(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
     };
     
     /**
@@ -181,6 +188,7 @@ namespace Psi {
 
       Select(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location);
       static ValuePtr<Select> get(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
     private:
       ValuePtr<> m_condition;

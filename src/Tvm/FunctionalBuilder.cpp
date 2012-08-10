@@ -178,7 +178,7 @@ namespace Psi {
      * \param index Index into the array.
      */
     ValuePtr<> FunctionalBuilder::array_element(const ValuePtr<>& array, const ValuePtr<>& index, const SourceLocation& location) {
-      const ValuePtr<>& result = ArrayElement::get(array, index);
+      const ValuePtr<>& result = ArrayElement::get(array, index, location);
       
       if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(array)) {
         if (ValuePtr<IntegerValue> index_val = dyn_cast<IntegerValue>(index)) {
@@ -212,7 +212,7 @@ namespace Psi {
      * \param index Index of the member to get a value for.
      */
     ValuePtr<> FunctionalBuilder::struct_element(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
-      const ValuePtr<>& result = StructElement::get(aggregate, index);
+      const ValuePtr<>& result = StructElement::get(aggregate, index, location);
       
       if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(aggregate)) {
         return struct_val->member_value(index);
@@ -230,7 +230,7 @@ namespace Psi {
      * \param member_type Type of the member whose value is returned.
      */
     ValuePtr<> FunctionalBuilder::union_element(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location) {
-      const ValuePtr<>& result = UnionElement::get(aggregate, member_type);
+      const ValuePtr<>& result = UnionElement::get(aggregate, member_type, location);
       
       if (ValuePtr<UnionValue> union_val = dyn_cast<UnionValue>(aggregate)) {
         const ValuePtr<>& value = union_val->value();
@@ -297,7 +297,7 @@ namespace Psi {
      * \param index Index of member to get a pointer to.
      */
     ValuePtr<> FunctionalBuilder::struct_element_ptr(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
-      const ValuePtr<>& result = StructElementPtr::get(aggregate, index);
+      const ValuePtr<>& result = StructElementPtr::get(aggregate, index, location);
       
       if (isa<UndefinedValue>(aggregate))
         return undef(result->type(), location);
@@ -313,7 +313,7 @@ namespace Psi {
      * \param type Member type to get a pointer to.
      */
     ValuePtr<> FunctionalBuilder::union_element_ptr(const ValuePtr<>& aggregate, const ValuePtr<>& type, const SourceLocation& location) {
-      const ValuePtr<>& result = UnionElementPtr::get(aggregate, type);
+      const ValuePtr<>& result = UnionElementPtr::get(aggregate, type, location);
       
       if (isa<UndefinedValue>(aggregate))
         return undef(result->type(), location);
@@ -449,7 +449,7 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, unsigned value, const SourceLocation& location) {
       return IntegerValue::get(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value), location);
     }
-
+    
     /**
      * Parse an integer value and return and integer constant.
      * 
@@ -469,7 +469,23 @@ namespace Psi {
       bv.parse(value, negative, base);
       return IntegerValue::get(context, width, is_signed, bv, location);
     }
-    
+
+    ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const std::string& value, const SourceLocation& location) {
+      return int_value(context, width, is_signed, value, false, 10, location);
+    }
+
+    ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const std::string& value, bool negative, const SourceLocation& location) {
+      return int_value(context, width, is_signed, value, negative, 10, location);
+    }
+
+    ValuePtr<> FunctionalBuilder::int_value(const ValuePtr<IntegerType>& type, const std::string& value, const SourceLocation& location) {
+      return int_value(type->context(), type->width(), type->is_signed(), value, false, 10, location);
+    }
+
+    ValuePtr<> FunctionalBuilder::int_value(const ValuePtr<IntegerType>& type, const std::string& value, bool negative, const SourceLocation& location) {
+      return int_value(type->context(), type->width(), type->is_signed(), value, negative, 10, location);
+    }
+
     /**
      * \brief Get a constant integer value.
      * 

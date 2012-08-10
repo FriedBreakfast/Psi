@@ -7,6 +7,7 @@
 #include <boost/array.hpp>
 #include <boost/type_traits/remove_cv.hpp>
 #include <boost/concept_check.hpp>
+#include <boost/unordered_map.hpp>
 
 /**
  * \file
@@ -69,20 +70,29 @@ namespace Psi {
   }
 
   template<typename V, typename T, typename D>
-  void visit_callback(V& callback, const char *name, VisitorTag<T>, const D& objects) {callback.visit_object(name, objects);}
-
-  template<typename V, typename D>
-  void visit_callback(V& callback, const char *name, VisitorTag<bool>, const D& values) {callback.visit_simple(name, values);}
-  template<typename V, typename D>
-  void visit_callback(V& callback, const char *name, VisitorTag<char>, const D& values) {callback.visit_simple(name, values);}
-  template<typename V, typename D>
-  void visit_callback(V& callback, const char *name, VisitorTag<unsigned>, const D& values) {callback.visit_simple(name, values);}
+  void visit_callback_impl(V& callback, const char *name, VisitorTag<T>, const D& objects) {callback.visit_object(name, objects);}
+  
+#define PSI_VISIT_SIMPLE(T)  \
+  template<typename V, typename D> \
+  void visit_callback_impl(V& callback, const char *name, VisitorTag<T>, const D& values) { \
+    callback.visit_simple(name, values); \
+  }
+  
+  PSI_VISIT_SIMPLE(bool)
+  PSI_VISIT_SIMPLE(char)
+  PSI_VISIT_SIMPLE(unsigned)
+  PSI_VISIT_SIMPLE(std::string)
 
   template<typename V, typename T, typename A, typename D>
-  void visit_callback(V& callback, const char *name, VisitorTag<PSI_STD::vector<T,A> >, const D& values) {callback.visit_sequence(name, values);}
-
+  void visit_callback_impl(V& callback, const char *name, VisitorTag<PSI_STD::vector<T,A> >, const D& values) {callback.visit_sequence(name, values);}
   template<typename V, typename K, typename O, typename C, typename A, typename D>
-  void visit_callback(V& callback, const char *name, VisitorTag<PSI_STD::map<K, O, C, A> >, const D& values) {callback.visit_map(name, values);}
+  void visit_callback_impl(V& callback, const char *name, VisitorTag<PSI_STD::map<K, O, C, A> >, const D& values) {callback.visit_map(name, values);}
+  template<typename V, typename K, typename T, typename H, typename P, typename A, typename D>
+  void visit_callback_impl(V& callback, const char *name, VisitorTag<boost::unordered_map<K, T, H, P, A> >, const D& values) {callback.visit_map(name, values);}
+  template<typename V, typename K, typename T, typename H, typename P, typename A, typename D>
+  void visit_callback_impl(V& callback, const char *name, VisitorTag<boost::unordered_multimap<K, T, H, P, A> >, const D& values) {callback.visit_map(name, values);}
+  template<typename V, typename T, std::size_t N, typename D>
+  void visit_callback_impl(V& callback, const char *name, VisitorTag<boost::array<T,N> >, const D& values) {callback.visit_sequence(name, values);}
 
   template<typename V, typename T, std::size_t N>
   void visit_callback(V& callback, const char *name, const boost::array<T*,N>& values) {
@@ -90,7 +100,7 @@ namespace Psi {
     for (std::size_t i = 0; i != N; ++i)
       PSI_ASSERT(values[i]);
 #endif
-    visit_callback(callback, name, visitor_tag<T>(), values);
+    visit_callback_impl(callback, name, visitor_tag<T>(), values);
   }
 
   /**

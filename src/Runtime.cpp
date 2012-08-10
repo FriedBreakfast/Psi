@@ -35,7 +35,7 @@ namespace Psi {
       m_c.data = null_str;
     }
   }
-
+  
   void String::init(const char *s, std::size_t n) {
     m_c.length = n;
     if (m_c.length) {
@@ -57,6 +57,10 @@ namespace Psi {
 
   String::String(const char *s, std::size_t n) {
     init(s, n);
+  }
+
+  String::String(const std::string& s) {
+    init(s.c_str(), s.size());
   }
 
   String::~String() {

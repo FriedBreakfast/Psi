@@ -151,6 +151,14 @@ namespace Psi {
       m_value = value;
     }
     
+    template<typename V>
+    void GlobalVariable::visit(V& v) {
+      visit_base<Global>(v);
+      v("value", &GlobalVariable::m_value);
+    }
+    
+    PSI_TVM_VALUE_IMPL(GlobalVariable, Global);
+    
     /**
      * \brief Create a new global term.
      */

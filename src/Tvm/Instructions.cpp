@@ -6,17 +6,6 @@
 
 namespace Psi {
   namespace Tvm {
-    PSI_TVM_INSTRUCTION_IMPL(Return, TerminatorInstruction, return);
-    PSI_TVM_INSTRUCTION_IMPL(ConditionalBranch, TerminatorInstruction, cond_br);
-    PSI_TVM_INSTRUCTION_IMPL(UnconditionalBranch, TerminatorInstruction, br);
-    PSI_TVM_INSTRUCTION_IMPL(Unreachable, TerminatorInstruction, unreachable);
-    
-    PSI_TVM_INSTRUCTION_IMPL(Call, Instruction, call);
-    PSI_TVM_INSTRUCTION_IMPL(Store, Instruction, store);
-    PSI_TVM_INSTRUCTION_IMPL(Load, Instruction, load);
-    PSI_TVM_INSTRUCTION_IMPL(Alloca, Instruction, alloca);
-    PSI_TVM_INSTRUCTION_IMPL(MemCpy, Instruction, memcpy);
-
     Return::Return(const ValuePtr<>& value_, const SourceLocation& location)
     : TerminatorInstruction(value_->context(), operation, location),
     value(value_) {
@@ -29,6 +18,18 @@ namespace Psi {
       if (value->phantom())
         throw TvmUserError("cannot return a phantom value");
     }
+    
+    std::vector<ValuePtr<Block> > Return::successors() {
+      return std::vector<ValuePtr<Block> >();
+    }
+    
+    template<typename V>
+    void Return::visit(V& v) {
+      visit_base<TerminatorInstruction>(v);
+      v("value", &Return::value);
+    }
+
+    PSI_TVM_INSTRUCTION_IMPL(Return, TerminatorInstruction, return);
 
     ConditionalBranch::ConditionalBranch(const ValuePtr<>& condition_, const ValuePtr<Block>& true_target_, const ValuePtr<Block>& false_target_, const SourceLocation& location)
     : TerminatorInstruction(condition_->context(), operation, location),
@@ -56,7 +57,24 @@ namespace Psi {
       if ((true_target->function() != function()) || (false_target->function() != function()))
         throw TvmUserError("jump target must be in the same function");
     }
+
+    std::vector<ValuePtr<Block> > ConditionalBranch::successors() {
+      std::vector<ValuePtr<Block> > r;
+      r.push_back(true_target);
+      r.push_back(false_target);
+      return r;
+    }
+
+    template<typename V>
+    void ConditionalBranch::visit(V& v) {
+      visit_base<TerminatorInstruction>(v);
+      v("condition", &ConditionalBranch::condition)
+      ("true_target", &ConditionalBranch::true_target)
+      ("false_target", &ConditionalBranch::false_target);
+    }
     
+    PSI_TVM_INSTRUCTION_IMPL(ConditionalBranch, TerminatorInstruction, cond_br);
+
     UnconditionalBranch::UnconditionalBranch(const ValuePtr<Block>& target_, const SourceLocation& location)
     : TerminatorInstruction(target_->context(), operation, location),
     target(target_) {
@@ -75,6 +93,20 @@ namespace Psi {
       if (target->function() != function())
         throw TvmUserError("jump target must be in the same function");
     }
+
+    std::vector<ValuePtr<Block> > UnconditionalBranch::successors() {
+      std::vector<ValuePtr<Block> > r;
+      r.push_back(target);
+      return r;
+    }
+    
+    template<typename V>
+    void UnconditionalBranch::visit(V& v) {
+      visit_base<TerminatorInstruction>(v);
+      v("target", &UnconditionalBranch::target);
+    }
+
+    PSI_TVM_INSTRUCTION_IMPL(UnconditionalBranch, TerminatorInstruction, br);
     
     Unreachable::Unreachable(Context& context, const SourceLocation& location)
     : TerminatorInstruction(context, operation, location) {
@@ -82,7 +114,18 @@ namespace Psi {
     
     void Unreachable::type_check() {
     }
+
+    template<typename V>
+    void Unreachable::visit(V& v) {
+      visit_base<TerminatorInstruction>(v);
+    }
+
+    std::vector<ValuePtr<Block> > Unreachable::successors() {
+      return std::vector<ValuePtr<Block> >();
+    }
     
+    PSI_TVM_INSTRUCTION_IMPL(Unreachable, TerminatorInstruction, unreachable);
+
     namespace {
       ValuePtr<> call_type(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters) {
         ValuePtr<FunctionType> target_type = dyn_cast<FunctionType>(target->type());
@@ -112,7 +155,16 @@ namespace Psi {
           throw TvmUserError("cannot pass phantom value to non-phantom function parameter");
       }
     }
+
+    template<typename V>
+    void Call::visit(V& v) {
+      visit_base<Instruction>(v);
+      v("target", &Call::target)
+      ("parameters", &Call::parameters);
+    }
     
+    PSI_TVM_INSTRUCTION_IMPL(Call, Instruction, call);
+
     namespace {
       /**
        * Get the pointed-to type from a pointer.
@@ -139,6 +191,15 @@ namespace Psi {
         throw TvmUserError("store target type is not a pointer to the type of value");
     }
 
+    template<typename V>
+    void Store::visit(V& v) {
+      visit_base<Instruction>(v);
+      v("value", &Store::value)
+      ("target", &Store::target);
+    }
+
+    PSI_TVM_INSTRUCTION_IMPL(Store, Instruction, store);
+
     Load::Load(const ValuePtr<>& target_, const SourceLocation& location)
     : Instruction(pointer_target_type(target_), operation, location),
     target(target_) {
@@ -148,7 +209,15 @@ namespace Psi {
       if (type() != pointer_target_type(target))
         throw TvmUserError("load target type has changed since instruction creation");
     }
-    
+
+    template<typename V>
+    void Load::visit(V& v) {
+      visit_base<Instruction>(v);
+      v("target", &Load::target);
+    }
+
+    PSI_TVM_INSTRUCTION_IMPL(Load, Instruction, load);
+
     Alloca::Alloca(const ValuePtr<>& element_type_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
     : Instruction(FunctionalBuilder::pointer_type(element_type, location), operation, location),
     element_type(element_type_),
@@ -174,6 +243,16 @@ namespace Psi {
         throw TvmUserError("parameter to alloca cannot be phantom");
     }
     
+    template<typename V>
+    void Alloca::visit(V& v) {
+      visit_base<Instruction>(v);
+      v("element_type", &Alloca::element_type)
+      ("count", &Alloca::count)
+      ("alignment", &Alloca::alignment);
+    }
+
+    PSI_TVM_INSTRUCTION_IMPL(Alloca, Instruction, alloca);
+    
     MemCpy::MemCpy(const ValuePtr<>& dest_, const ValuePtr<>& src_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
     : Instruction(FunctionalBuilder::empty_type(dest->context(), location), operation, location),
     dest(dest_),
@@ -193,5 +272,16 @@ namespace Psi {
       if (count->type() != size_type || (alignment && (alignment->type() != size_type)))
         throw TvmUserError("third and fourth parameters to memcpy instruction must be uintptr");
     }
+    
+    template<typename V>
+    void MemCpy::visit(V& v) {
+      visit_base<Instruction>(v);
+      v("dest", &MemCpy::dest)
+      ("src", &MemCpy::src)
+      ("count", &MemCpy::count)
+      ("alignment", &MemCpy::alignment);
+    }
+
+    PSI_TVM_INSTRUCTION_IMPL(MemCpy, Instruction, memcpy);
   }
 }

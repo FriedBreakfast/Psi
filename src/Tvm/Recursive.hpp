@@ -8,6 +8,7 @@ namespace Psi {
     class ApplyValue;
 
     class RecursiveParameter : public Value {
+      PSI_TVM_VALUE_DECL(RecursiveParameter);
       friend class Context;
       RecursiveParameter(const ValuePtr<>& type, const SourceLocation& location);
     };
@@ -20,6 +21,7 @@ namespace Psi {
      * normal and then call #resolve to finalize the type.
      */
     class RecursiveType : public Value {
+      PSI_TVM_VALUE_DECL(RecursiveType)
       friend class Context;
       ValuePtr<> m_result;
       std::vector<ValuePtr<RecursiveParameter> > m_parameters;
@@ -31,6 +33,8 @@ namespace Psi {
       std::size_t n_parameters() {return m_parameters.size();}
       const ValuePtr<RecursiveParameter>& parameter(std::size_t i) {return m_parameters[i];}
       const ValuePtr<> result() {return m_result;}
+      
+      template<typename V> static void visit(V& v);
 
     private:
       RecursiveType(const ValuePtr<>& result_type, Value *source,
@@ -50,6 +54,8 @@ namespace Psi {
 
       const ValuePtr<RecursiveType>& recursive() {return m_recursive;}
       const ValuePtr<>& parameter(std::size_t i) {return m_parameters[i];}
+
+      template<typename V> static void visit(V& v);
       
     private:
       ApplyValue(Context& context,

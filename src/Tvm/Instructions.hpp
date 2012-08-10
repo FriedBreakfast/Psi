@@ -56,20 +56,6 @@ namespace Psi {
       virtual std::vector<ValuePtr<Block> > successors();
     };
     
-    inline bool TerminatorInstruction::isa_impl(const Value& ptr) {
-      const Instruction *insn = dyn_cast<Instruction>(&ptr);
-      if (!insn)
-        return false;
-      
-      const char *op = insn->operation_name();
-      if ((op == ConditionalBranch::operation)
-        || (op == UnconditionalBranch::operation)
-        || (op == Unreachable::operation))
-        return true;
-      
-      return false;
-    }
-
     /**
      * \brief Function call instruction.
      * 

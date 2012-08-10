@@ -35,6 +35,22 @@ namespace Psi {
       virtual void next(ValuePtr<>& ptr) = 0;
     };
     
+    class InstructionVisitorWrapper : public ValuePtrVistorBase<InstructionVisitorWrapper> {
+      InstructionVisitor *m_callback;
+    public:
+      InstructionVisitorWrapper(InstructionVisitor *callback) : m_callback(callback) {}
+
+      void visit_ptr(ValuePtr<>& ptr) {
+        m_callback->next(ptr);
+      }
+
+      template<typename T> void visit_ptr(ValuePtr<T>& ptr) {
+        ValuePtr<> copy(ptr);
+        m_callback->next(copy);
+        ptr = value_cast<T>(copy);
+      }
+    };
+
     /**
      * \brief Instruction term. Per-instruction funtionality is
      * created by implementing InstructionTermBackend and wrapping
@@ -45,7 +61,7 @@ namespace Psi {
       
     public:
       const char *operation_name() const {return m_operation;}
-      virtual void visit(InstructionVisitor& visitor) = 0;
+      virtual void instruction_visit(InstructionVisitor& visitor) = 0;
       
       static bool isa_impl(const Value& ptr) {
         return ptr.term_type() == term_instruction;
@@ -89,14 +105,24 @@ namespace Psi {
     }
     
 #define PSI_TVM_INSTRUCTION_DECL(Type) \
+    PSI_TVM_VALUE_DECL(Type) \
   public: \
     static const char operation[]; \
     virtual void type_check(); \
-    virtual void visit(InstructionVisitor& callback); \
+    virtual void instruction_visit(InstructionVisitor& callback); \
+    template<typename V> static void visit(V& v); \
     static bool isa_impl(const Value& val) {return (val.term_type() == term_instruction) && (operation == static_cast<const Type&>(val).operation_name());}
     
 #define PSI_TVM_INSTRUCTION_IMPL(Type,Base,Name) \
-    const char Type::operation[] = #Name;
+    PSI_TVM_VALUE_IMPL(Type,Base) \
+    \
+    const char Type::operation[] = #Name; \
+    \
+    void Type::instruction_visit(InstructionVisitor& visitor) { \
+      InstructionVisitorWrapper vw(&visitor); \
+      boost::array<Type*,1> c = {{this}}; \
+      visit_members(vw, c); \
+    }
 
     /**
      * Describes incoming edges for Phi nodes.
@@ -106,6 +132,12 @@ namespace Psi {
       ValuePtr<> value;
     };
 
+    template<typename V>
+    void visit(V& v, VisitorTag<PhiEdge>) {
+      v("block", &PhiEdge::block)
+      ("value", &PhiEdge::value);
+    }
+
     /**
      * \brief Phi node. These are used to unify values from different
      * predecessors on entry to a block.
@@ -113,6 +145,7 @@ namespace Psi {
      * \sa http://en.wikipedia.org/wiki/Static_single_assignment_form
      */
     class Phi : public BlockMember {
+      PSI_TVM_VALUE_DECL(Phi)
       friend class Block;
 
     public:
@@ -122,6 +155,8 @@ namespace Psi {
       
       /// \brief Get the value from a specific source block.
       ValuePtr<> incoming_value_from(const ValuePtr<Block>& block);
+      
+      template<typename V> static void visit(V& v);
 
     private:
       Phi(const ValuePtr<>& type, const SourceLocation& location);
@@ -136,6 +171,7 @@ namespace Psi {
      * value of this term is the label used to jump to this block.
      */
     class Block : public Value {
+      PSI_TVM_VALUE_DECL(Block);
       friend class Function;
 
     public:
@@ -166,6 +202,8 @@ namespace Psi {
       
       static ValuePtr<Block> common_dominator(const ValuePtr<Block>&, const ValuePtr<Block>&);
       static bool isa_impl(const Value& v) {return v.term_type() == term_block;}
+      
+      template<typename V> static void visit(V& v);
 
     private:
       Block(const ValuePtr<Function>& function, const ValuePtr<Block>& dominator,
@@ -187,6 +225,7 @@ namespace Psi {
     class Function;
 
     class FunctionParameter : public Value {
+      PSI_TVM_VALUE_DECL(FunctionParameter);
       friend class Function;
     public:
       const ValuePtr<Function>& function() {return m_function;}
@@ -195,6 +234,8 @@ namespace Psi {
       static bool isa_impl(const Value& ptr) {
         return ptr.term_type() == term_function_parameter;
       }
+
+      template<typename V> static void visit(V& v);
 
     private:
       FunctionParameter(Context& context, const ValuePtr<Function>& function, const ValuePtr<>& type, bool phantom, const SourceLocation& location);
@@ -206,6 +247,7 @@ namespace Psi {
      * \brief Function.
      */
     class Function : public Global {
+      PSI_TVM_VALUE_DECL(Function);
       friend class Module;
     public:
       typedef boost::unordered_multimap<ValuePtr<>, std::string> TermNameMap;
@@ -217,16 +259,16 @@ namespace Psi {
        */
       ValuePtr<FunctionType> function_type() const;
 
-      std::size_t n_parameters() const;
+      std::size_t n_parameters() const {return m_parameters.size();}
       /** \brief Get a function parameter. */
-      ValuePtr<FunctionParameter> parameter(std::size_t n) const;
+      const ValuePtr<FunctionParameter>& parameter(std::size_t n) const {return m_parameters[n];}
 
       /**
        * Get the return type of this function, as viewed from inside the
        * function (i.e., with parameterized types replaced by parameters
        * to this function).
        */
-      ValuePtr<> result_type() const;
+      const ValuePtr<>& result_type() const {return m_result_type;}
 
       const ValuePtr<Block>& entry() {return m_entry;}
       void set_entry(const ValuePtr<Block>& block);
@@ -257,12 +299,18 @@ namespace Psi {
        */
       void exception_personality(const std::string& v) {m_exception_personality = v;}
 
+      template<typename V> static void visit(V& v);
+
     private:
-      Function(Context *context, const ValuePtr<FunctionType>& type, const std::string& name,
+      Function(Context& context, const ValuePtr<FunctionType>& type, const std::string& name,
                Module *module, const SourceLocation& location);
+      void create_parameters();
+
       TermNameMap m_name_map;
       std::string m_exception_personality;
       ValuePtr<Block> m_entry;
+      std::vector<ValuePtr<FunctionParameter> > m_parameters;
+      ValuePtr<> m_result_type;
     };
 
     /**
@@ -290,6 +338,8 @@ namespace Psi {
       unsigned index() const {return m_index;}
       
       static ValuePtr<FunctionTypeResolvedParameter> get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
+
+      template<typename V> static void visit(V& v);
     };
 
     /**
@@ -316,6 +366,7 @@ namespace Psi {
       ValuePtr<> result_type_after(const std::vector<ValuePtr<> >& parameters);
       
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type;}
+      template<typename V> static void visit(V& v);
 
     private:
       FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
@@ -323,13 +374,17 @@ namespace Psi {
                    const SourceLocation& location);
 
       CallingConvention m_calling_convention;
-
       std::vector<ValuePtr<> > m_parameter_types;
       unsigned m_n_phantom;
       ValuePtr<> m_result_type;
     };
+    
+    inline ValuePtr<FunctionType> Function::function_type() const {
+      return value_cast<FunctionType>(type());
+    }
 
     class FunctionTypeParameter : public Value {
+      PSI_TVM_VALUE_DECL(FunctionTypeParameter);
       friend class Context;
       FunctionTypeParameter(Context& context, const ValuePtr<>& type, const SourceLocation& location);
     public:

@@ -2,6 +2,7 @@
 #include "Function.hpp"
 #include "Functional.hpp"
 #include "FunctionalBuilder.hpp"
+#include "Instructions.hpp"
 #include "Utility.hpp"
 
 #include <boost/next_prior.hpp>
@@ -9,8 +10,6 @@
 
 namespace Psi {
   namespace Tvm {
-    PSI_TVM_FUNCTIONAL_IMPL(FunctionTypeResolvedParameter, SimpleOp, function_type_resolved_parameter)
-
     ValuePtr<FunctionTypeResolvedParameter> FunctionTypeResolvedParameter::get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location) {
       return type->context().get_functional(FunctionTypeResolvedParameter(type, depth, index, location));
     }void insert(const ValuePtr<Instruction>& instruction);
@@ -21,6 +20,15 @@ namespace Psi {
     m_index(index) {
     }
     
+    template<typename V>
+    void FunctionTypeResolvedParameter::visit(V& v) {
+      visit_base<SimpleOp>(v);
+      v("depth", &FunctionTypeResolvedParameter::m_depth)
+      ("index", &FunctionTypeResolvedParameter::m_index);
+    }
+    
+    PSI_TVM_FUNCTIONAL_IMPL(FunctionTypeResolvedParameter, SimpleOp, function_type_resolved_parameter)
+
     namespace {
       static const char function_type_operation[] = "function_type";
       
@@ -32,8 +40,6 @@ namespace Psi {
         return hv;
       }
     }
-    
-    PSI_TVM_HASHABLE_IMPL(FunctionType, HashableValue, function)
 
     FunctionType::FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
                                const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, const SourceLocation& location)
@@ -184,10 +190,23 @@ namespace Psi {
         throw TvmUserError("incorrect number of parameters");
       return ParameterTypeRewriter(context(), parameters).rewrite(result_type());
     }
+
+    template<typename V>
+    void FunctionType::visit(V& v) {
+      visit_base<HashableValue>(v);
+      v("calling_convention", &FunctionType::m_calling_convention)
+      ("parameter_type", &FunctionType::m_parameter_types)
+      ("n_phantom", &FunctionType::m_n_phantom)
+      ("result_type", &FunctionType::m_result_type);
+    }
+
+    PSI_TVM_HASHABLE_IMPL(FunctionType, HashableValue, function)
     
     FunctionTypeParameter::FunctionTypeParameter(Context& context, const ValuePtr<>& type, const SourceLocation& location)
     : Value(context, term_function_type_parameter, type, this, location) {
     }
+    
+    PSI_TVM_VALUE_IMPL(FunctionTypeParameter, Value);
 
     ValuePtr<FunctionTypeParameter> Context::new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location) {
       return ValuePtr<FunctionTypeParameter>(new FunctionTypeParameter(*this, type, location));
@@ -215,6 +234,20 @@ namespace Psi {
         throw TvmUserError("instruction jump target dominator block may not have run");
     }
     
+    bool TerminatorInstruction::isa_impl(const Value& ptr) {
+      const Instruction *insn = dyn_cast<Instruction>(&ptr);
+      if (!insn)
+        return false;
+      
+      const char *op = insn->operation_name();
+      if ((op == ConditionalBranch::operation)
+        || (op == UnconditionalBranch::operation)
+        || (op == Unreachable::operation))
+        return true;
+      
+      return false;
+    }
+
     /**
      * \brief Check whether this block is dominated by another.
      *
@@ -309,6 +342,16 @@ namespace Psi {
         result.push_back(m_landing_pad);
       return result;
     }
+    
+    template<typename V>
+    void Block::visit(V& v) {
+      visit_base<Value>(v);
+      v("function", &Block::m_function)
+      ("dominator", &Block::m_dominator)
+      ("landing_pad", &Block::m_landing_pad);
+    }
+
+    PSI_TVM_VALUE_IMPL(Block, Value)
 
     /**
      * \brief Add a value for a phi term along an incoming edge.
@@ -352,6 +395,14 @@ namespace Psi {
       }
       throw TvmUserError("Incoming block not found in PHI node");
     }
+    
+    template<typename V>
+    void Phi::visit(V& v) {
+      visit_base<Value>(v);
+      v("edges", &Phi::m_edges);
+    }
+
+    PSI_TVM_VALUE_IMPL(Phi, Value)
 
     /**
      * \brief Create a new Phi node.
@@ -386,14 +437,42 @@ namespace Psi {
     m_function(function) {
       PSI_ASSERT(!type->parameterized());
     }
+    
+    template<typename V>
+    void FunctionParameter::visit(V& v) {
+      visit_base<Value>(v);
+      v("function", &FunctionParameter::m_function);
+    }
+    
+    PSI_TVM_VALUE_IMPL(FunctionParameter, Value);
 
     /**
      * \brief Create a new function.
      */
     ValuePtr<Function> Module::new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location) {
-      ValuePtr<Function> result(::new Function(&context(), type, name, this, location));
+      ValuePtr<Function> result(::new Function(context(), type, name, this, location));
+      result->create_parameters();
       add_member(result);
       return result;
+    }
+    
+    Function::Function(Context& context, const ValuePtr<FunctionType>& type, const std::string& name, Module* module, const SourceLocation& location)
+    : Global(context, term_function, type, name, module, location) {
+    }
+    
+    void Function::create_parameters() {
+      ValuePtr<Function> f(this);
+      ValuePtr<FunctionType> ft = function_type();
+      std::vector<ValuePtr<> > previous;
+      unsigned n_phantom = ft->n_phantom();
+
+      for (unsigned ii = 0, ie = ft->parameter_types().size(); ii != ie; ++ii) {
+        ValuePtr<> t = ft->parameter_type_after(previous);
+        ValuePtr<FunctionParameter> p(::new FunctionParameter(context(), f, t, ii < n_phantom, f->location()));
+        previous.push_back(p);
+        m_parameters.push_back(p);
+      }
+      m_result_type = ft->result_type_after(previous);
     }
 
     /**
@@ -464,6 +543,18 @@ namespace Psi {
       
       return blocks;
     }
+
+    template<typename V>
+    void Function::visit(V& v) {
+      visit_base<Global>(v);
+      v("parameters", &Function::m_parameters)
+      ("result_type", &Function::m_result_type)
+      ("entry", &Function::m_entry)
+      ("exception_personality", &Function::m_exception_personality)
+      ("name_map", &Function::m_name_map);
+    }
+    
+    PSI_TVM_VALUE_IMPL(Function, Global);
 
     /**
      * \brief Return an insert point which is just after the given source term.

@@ -9,6 +9,8 @@ namespace Psi {
     RecursiveParameter::RecursiveParameter(const ValuePtr<>& type, const SourceLocation& location)
     : Value(type->context(), term_recursive_parameter, type, type->source(), location) {
     }
+    
+    PSI_TVM_VALUE_IMPL(RecursiveParameter, Value);
 
     /**
      * \brief Create a new parameter for a recursive term.
@@ -68,13 +70,20 @@ namespace Psi {
     void RecursiveType::resolve(const ValuePtr<>& term) {
       return context().resolve_recursive(ValuePtr<RecursiveType>(this), term);
     }
+    
+    template<typename V>
+    void RecursiveType::visit(V& v) {
+      visit_base<Value>(v);
+      v("result", &RecursiveType::m_result)
+      ("parameters", &RecursiveType::m_parameters);
+    }
+    
+    PSI_TVM_VALUE_IMPL(RecursiveType, Value)
 
     ValuePtr<ApplyValue> RecursiveType::apply(const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
       return context().apply_recursive(ValuePtr<RecursiveType>(this), parameters, location);
     }
     
-    PSI_TVM_HASHABLE_IMPL(ApplyValue, HashableValue, apply)
-
     ApplyValue::ApplyValue(Context& context,
                            const ValuePtr<RecursiveType>& recursive,
                            const std::vector<ValuePtr<> >& parameters,
@@ -96,6 +105,15 @@ namespace Psi {
     ValuePtr<> ApplyValue::unpack() {
       PSI_NOT_IMPLEMENTED();
     }
+
+    template<typename V>
+    void ApplyValue::visit(V& v) {
+      visit_base<HashableValue>(v);
+      v("recursive", &ApplyValue::m_recursive)
+      ("parameters", &ApplyValue::m_parameters);
+    }
+
+    PSI_TVM_HASHABLE_IMPL(ApplyValue, HashableValue, apply)
 
     /**
      * \brief Resolve an opaque term.

@@ -6,14 +6,6 @@
 
 namespace Psi {
   namespace Tvm {
-    PSI_TVM_FUNCTIONAL_IMPL(BooleanType, SimpleType, bool)
-    PSI_TVM_FUNCTIONAL_IMPL(BooleanValue, SimpleConstructor, bool_v)
-    PSI_TVM_FUNCTIONAL_IMPL(IntegerType, SimpleType, int)
-    PSI_TVM_FUNCTIONAL_IMPL(IntegerValue, SimpleConstructor, int_v)
-    PSI_TVM_FUNCTIONAL_IMPL(FloatType, SimpleType, float)
-    PSI_TVM_FUNCTIONAL_IMPL(FloatValue, SimpleType, float_v)
-    PSI_TVM_FUNCTIONAL_IMPL(Select, FunctionalValue, select);
-
     BooleanType::BooleanType(Context& context, const SourceLocation& location)
     : SimpleType(context, hashable_setup<BooleanType>(), location) {
     }
@@ -21,6 +13,8 @@ namespace Psi {
     ValuePtr<BooleanType> BooleanType::get(Context& context, const SourceLocation& location) {
       return context.get_functional(BooleanType(context, location));
     }
+
+    PSI_TVM_FUNCTIONAL_IMPL(BooleanType, SimpleType, bool)
 
     BooleanValue::BooleanValue(Context& context, bool value, const SourceLocation& location)
     : SimpleConstructor(Metatype::get(context, location), hashable_setup<BooleanType>(value), location),
@@ -30,6 +24,8 @@ namespace Psi {
     ValuePtr<BooleanValue> BooleanValue::get(Context& context, bool value, const SourceLocation& location) {
       return context.get_functional(BooleanValue(context, value, location));
     }
+
+    PSI_TVM_FUNCTIONAL_IMPL(BooleanValue, SimpleConstructor, bool_v)
     
     IntegerType::IntegerType(Context& context, Width width, bool is_signed, const SourceLocation& location)
     : SimpleType(context, hashable_setup<IntegerType>(width)(is_signed), location),
@@ -61,6 +57,15 @@ namespace Psi {
       default: PSI_FAIL("unexpected integer width");
       }
     }
+
+    template<typename V>
+    void IntegerType::visit(V& v) {
+      visit_base<SimpleType>(v);
+      v("width", &IntegerType::m_width)
+      ("true_value", &IntegerType::m_is_signed);
+    }
+
+    PSI_TVM_FUNCTIONAL_IMPL(IntegerType, SimpleType, int)
     
     IntegerValue::IntegerValue(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location)
     : SimpleConstructor(IntegerType::get(context, width, is_signed, location), hashable_setup<IntegerValue>(width)(is_signed)(value), location),
@@ -77,6 +82,16 @@ namespace Psi {
       return get(context, IntegerType::iptr, false, BigInteger(std::numeric_limits<unsigned>::digits, n), location);
     }
 
+    template<typename V>
+    void IntegerValue::visit(V& v) {
+      visit_base<SimpleConstructor>(v);
+      v("width", &IntegerValue::m_width)
+      ("true_value", &IntegerValue::m_is_signed)
+      ("mantissa", &IntegerValue::m_value);
+    }
+
+    PSI_TVM_FUNCTIONAL_IMPL(IntegerValue, SimpleConstructor, int_v)
+
     FloatType::FloatType(Context& context, FloatType::Width width, const SourceLocation& location)
     : SimpleType(context, hashable_setup<FloatType>(width), location),
     m_width(width) {
@@ -85,6 +100,8 @@ namespace Psi {
     ValuePtr<FloatType> FloatType::get(Context& context, Width width, const SourceLocation& location) {
       return context.get_functional(FloatType(context, width, location));
     }
+
+    PSI_TVM_FUNCTIONAL_IMPL(FloatType, SimpleType, float)
     
     FloatValue::FloatValue(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location)
     : SimpleConstructor(FloatType::get(context, width, location), hashable_setup<FloatValue>(width)(exponent), location),
@@ -96,6 +113,16 @@ namespace Psi {
     ValuePtr<FloatValue> FloatValue::get(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location) {
       return FloatValue::get(context, width, exponent, mantissa, location);
     }
+
+    template<typename V>
+    void FloatValue::visit(V& v) {
+      visit_base<SimpleConstructor>(v);
+      v("width", &FloatValue::m_width)
+      ("true_value", &FloatValue::m_exponent)
+      ("mantissa", &FloatValue::m_mantissa);
+    }
+
+    PSI_TVM_FUNCTIONAL_IMPL(FloatValue, SimpleType, float_v)
     
     IntegerUnaryOp::IntegerUnaryOp(const ValuePtr<>& arg, const HashableValueSetup& setup, const SourceLocation& location)
     : UnaryOp(arg->type(), arg, setup, location) {
@@ -152,5 +179,15 @@ namespace Psi {
     ValuePtr<Select> Select::get(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location) {
       return condition->context().get_functional(Select(condition, true_value, false_value, location));
     }
+    
+    template<typename V>
+    void Select::visit(V& v) {
+      visit_base<FunctionalValue>(v);
+      v("condition", &Select::m_condition)
+      ("true_value", &Select::m_true_value)
+      ("false_value", &Select::m_false_value);
+    }
+    
+    PSI_TVM_FUNCTIONAL_IMPL(Select, FunctionalValue, select);
   }
 }

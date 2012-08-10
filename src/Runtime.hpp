@@ -248,8 +248,7 @@ namespace Psi {
   bool operator == (const String& lhs, const std::string& rhs);
   bool operator == (const std::string& lhs, const String& rhs);
   
-  template<typename V, typename D>
-  void visit_callback(V& callback, const char *name, VisitorTag<String>, const D& objects) {callback.visit_simple(name, objects);}
+  PSI_VISIT_SIMPLE(String)
 
   std::ostream& operator << (std::ostream&, const String&);
   
