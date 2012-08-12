@@ -14,9 +14,10 @@
 #include "Core.hpp"
 #include "../Utility.hpp"
 #include "../ParserUtility.hpp"
+#include "../SourceLocation.hpp"
 
-#define YYSTYPE Value
-#define YYLTYPE Psi::Tvm::Parser::Location
+#define YYSTYPE ParserValue
+#define YYLTYPE Psi::PhysicalSourceLocation
 
 /**
  * I need to use yytype_int16 before it is defined in the generated
@@ -38,7 +39,7 @@ using namespace Psi::Tvm::Parser;
 using namespace Psi::Tvm::ParserUtility;
 
 namespace {
-  struct Value {
+  struct ParserValue {
     CallingConvention calling_convention;
     boost::shared_ptr<UniqueList<Token> > tokens;
     boost::shared_ptr<UniqueList<Expression> > expressions;
@@ -173,21 +174,21 @@ global: function | constant | global_variable;
 global_variable:
 GLOBAL expression {
   UniquePtr<Expression> type(list_to_ptr($2));
-  $$ = list_one<GlobalElement>(new GlobalVariable(@$, false, type));
+  $$ = list_one<GlobalElement>(new Parser::GlobalVariable(@$, false, type));
 }
 | GLOBAL expression expression {
   UniquePtr<Expression> type(list_to_ptr($2));
   UniquePtr<Expression> value(list_to_ptr($3));
-  $$ = list_one<GlobalElement>(new GlobalVariable(@$, false, type, value));
+  $$ = list_one<GlobalElement>(new Parser::GlobalVariable(@$, false, type, value));
 }
 | GLOBAL CONST expression {
   UniquePtr<Expression> type(list_to_ptr($3));
-  $$ = list_one<GlobalElement>(new GlobalVariable(@$, true, type));
+  $$ = list_one<GlobalElement>(new Parser::GlobalVariable(@$, true, type));
 }
 | GLOBAL CONST expression expression {
   UniquePtr<Expression> type(list_to_ptr($3));
   UniquePtr<Expression> value(list_to_ptr($4));
-  $$ = list_one<GlobalElement>(new GlobalVariable(@$, true, type, value));
+  $$ = list_one<GlobalElement>(new Parser::GlobalVariable(@$, true, type, value));
 }
 ;
 
@@ -199,14 +200,14 @@ constant: DEFINE root_expression {
 function:
 function_type {
   UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($1)));
-  $$ = list_one<GlobalElement>(new Function(@$, ft));
+  $$ = list_one<GlobalElement>(new Parser::Function(@$, ft));
 }
 | function_type '{' statement_list block_list '}' {
   UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($1)));
   UniqueList<Block> blocks;
   blocks.push_back(*new Block(@3, false, *$3));
   blocks.splice(blocks.end(), *$4);
-  $$ = list_one<GlobalElement>(new Function(@$, ft, blocks));
+  $$ = list_one<GlobalElement>(new Parser::Function(@$, ft, blocks));
 }
 ;
 
@@ -453,7 +454,7 @@ namespace {
 
       boost::unordered_map<char, LiteralType>::const_iterator it;
       std::string literal_text;
-      Location literal_loc(*llocp);
+      PhysicalSourceLocation literal_loc(*llocp);
       if (text[0] == 'u') {
         it = unsigned_literals.find(text[1]);
         if (it == unsigned_literals.end())
@@ -483,21 +484,21 @@ namespace {
 namespace Psi {
   namespace Tvm {
     namespace Parser {
-      Element::Element(const Location& location_) : location(location_) {
+      Element::Element(const PhysicalSourceLocation& location_) : location(location_) {
       }
 
-      Token::Token(const Location& location_, const std::string& text_)
+      Token::Token(const PhysicalSourceLocation& location_, const std::string& text_)
         : Element(location_), text(text_) {
       }
 
-      Expression::Expression(const Location& location_, ExpressionType expression_type_)
+      Expression::Expression(const PhysicalSourceLocation& location_, ExpressionType expression_type_)
         : Element(location_), expression_type(expression_type_) {
       }
 
       Expression::~Expression() {
       }
 
-      NameExpression::NameExpression(const Location& location_, UniquePtr<Token>& name_)
+      NameExpression::NameExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_)
         : Expression(location_, expression_name) {
         name.swap(name_);
       }
@@ -505,7 +506,7 @@ namespace Psi {
       NameExpression::~NameExpression() {
       }
 
-      PhiNode::PhiNode(const Location& location_, UniquePtr<Token>& label_, UniquePtr<Expression>& expression_)
+      PhiNode::PhiNode(const PhysicalSourceLocation& location_, UniquePtr<Token>& label_, UniquePtr<Expression>& expression_)
         : Element(location_) {
         label.swap(label_);
         expression.swap(expression_);
@@ -514,7 +515,7 @@ namespace Psi {
       PhiNode::~PhiNode() {
       }
 
-      PhiExpression::PhiExpression(const Location& location_, UniquePtr<Expression>& type_, UniqueList<PhiNode>& nodes_)
+      PhiExpression::PhiExpression(const PhysicalSourceLocation& location_, UniquePtr<Expression>& type_, UniqueList<PhiNode>& nodes_)
         : Expression(location_, expression_phi) {
         type.swap(type_);
         nodes.swap(nodes_);
@@ -523,7 +524,7 @@ namespace Psi {
       PhiExpression::~PhiExpression() {
       }
 
-      CallExpression::CallExpression(const Location& location_, UniquePtr<Token>& target_,
+      CallExpression::CallExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& target_,
                                      UniqueList<Expression>& terms_)
         : Expression(location_, expression_call) {
         target.swap(target_);
@@ -533,7 +534,7 @@ namespace Psi {
       CallExpression::~CallExpression() {
       }
 
-      FunctionTypeExpression::FunctionTypeExpression(const Location& location_,
+      FunctionTypeExpression::FunctionTypeExpression(const PhysicalSourceLocation& location_,
                                                      CallingConvention calling_convention_,
                                                      UniqueList<NamedExpression>& phantom_parameters_,
                                                      UniqueList<NamedExpression>& parameters_,
@@ -548,7 +549,7 @@ namespace Psi {
       FunctionTypeExpression::~FunctionTypeExpression() {
       }
 
-      LiteralExpression::LiteralExpression(const Location& location_, LiteralType literal_type_, UniquePtr<Token>& value_)
+      LiteralExpression::LiteralExpression(const PhysicalSourceLocation& location_, LiteralType literal_type_, UniquePtr<Token>& value_)
         : Expression(location_, expression_literal),
           literal_type(literal_type_) {
         value.swap(value_);
@@ -557,13 +558,13 @@ namespace Psi {
       LiteralExpression::~LiteralExpression() {
       }
 
-      NamedExpression::NamedExpression(const Location& location_, UniquePtr<Token>& name_, UniquePtr<Expression>& expression_)
+      NamedExpression::NamedExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, UniquePtr<Expression>& expression_)
         : Element(location_) {
         name.swap(name_);
         expression.swap(expression_);
       }
 
-      NamedExpression::NamedExpression(const Location& location_, UniquePtr<Expression>& expression_)
+      NamedExpression::NamedExpression(const PhysicalSourceLocation& location_, UniquePtr<Expression>& expression_)
         : Element(location_) {
         expression.swap(expression_);
       }
@@ -571,7 +572,7 @@ namespace Psi {
       NamedExpression::~NamedExpression() {
       }
 
-      Block::Block(const Location& location_, bool landing_pad_, UniquePtr<Token>& name_,
+      Block::Block(const PhysicalSourceLocation& location_, bool landing_pad_, UniquePtr<Token>& name_,
                    UniquePtr<Token>& dominator_name_,
                    UniqueList<NamedExpression>& statements_)
         : Element(location_),
@@ -581,7 +582,7 @@ namespace Psi {
         statements.swap(statements_);
       }
 
-      Block::Block(const Location& location_, bool landing_pad_,
+      Block::Block(const PhysicalSourceLocation& location_, bool landing_pad_,
                    UniqueList<NamedExpression>& statements_)
         : Element(location_),
         landing_pad(landing_pad_) {
@@ -591,20 +592,20 @@ namespace Psi {
       Block::~Block() {
       }
 
-      GlobalElement::GlobalElement(const Location& location_, GlobalType global_type_)
+      GlobalElement::GlobalElement(const PhysicalSourceLocation& location_, GlobalType global_type_)
         : Element(location_), global_type(global_type_) {
       }
 
       GlobalElement::~GlobalElement() {
       }
 
-      Function::Function(const Location& location_,
+      Function::Function(const PhysicalSourceLocation& location_,
                          UniquePtr<FunctionTypeExpression>& type_)
         : GlobalElement(location_, global_function) {
         type.swap(type_);
       }
 
-      Function::Function(const Location& location_,
+      Function::Function(const PhysicalSourceLocation& location_,
                          UniquePtr<FunctionTypeExpression>& type_,
                          UniqueList<Block>& blocks_)
         : GlobalElement(location_, global_function) {
@@ -615,7 +616,7 @@ namespace Psi {
       Function::~Function() {
       }
 
-      GlobalVariable::GlobalVariable(const Location& location_,
+      GlobalVariable::GlobalVariable(const PhysicalSourceLocation& location_,
                                      bool constant_,
                                      UniquePtr<Expression>& type_)
         : GlobalElement(location_, global_variable),
@@ -623,7 +624,7 @@ namespace Psi {
         type.swap(type_);
       }
 
-      GlobalVariable::GlobalVariable(const Location& location_,
+      GlobalVariable::GlobalVariable(const PhysicalSourceLocation& location_,
                                      bool constant_,
                                      UniquePtr<Expression>& type_,
                                      UniquePtr<Expression>& value_)
@@ -636,7 +637,7 @@ namespace Psi {
       GlobalVariable::~GlobalVariable() {
       }
 
-      GlobalDefine::GlobalDefine(const Location& location_,
+      GlobalDefine::GlobalDefine(const PhysicalSourceLocation& location_,
                      UniquePtr<Expression>& value_)
         : GlobalElement(location_, global_define) {
         value.swap(value_);
@@ -645,7 +646,7 @@ namespace Psi {
       GlobalDefine::~GlobalDefine() {
       }
 
-      NamedGlobalElement::NamedGlobalElement(const Location& location_, UniquePtr<Token>& name_, UniquePtr<GlobalElement>& value_)
+      NamedGlobalElement::NamedGlobalElement(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, UniquePtr<GlobalElement>& value_)
         : Element(location_) {
         name.swap(name_);
         value.swap(value_);

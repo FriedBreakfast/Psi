@@ -1,5 +1,7 @@
 #include "SourceLocation.hpp"
 
+#include <sstream>
+
 namespace Psi {
   bool LogicalSourceLocation::Key::operator < (const Key& other) const {
     if (index) {

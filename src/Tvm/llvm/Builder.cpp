@@ -485,14 +485,14 @@ namespace Psi {
 
 extern "C" boost::shared_ptr<Psi::Tvm::Jit> tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory) {
   llvm::InitializeNativeTarget();
-  std::string host = llvm::sys::getHostTriple();
+  std::string host = llvm::sys::getDefaultTargetTriple();
 
   std::string error_msg;
   const llvm::Target *target = llvm::TargetRegistry::lookupTarget(host, error_msg);
   if (!target)
     throw Psi::Tvm::LLVM::BuildError("Could not get LLVM target: " + error_msg);
 
-  boost::shared_ptr<llvm::TargetMachine> tm(target->createTargetMachine(host, "", ""));
+  boost::shared_ptr<llvm::TargetMachine> tm(target->createTargetMachine(host, "", "", llvm::TargetOptions()));
   if (!tm)
     throw Psi::Tvm::LLVM::BuildError("Failed to create target machine");
   
