@@ -1,6 +1,7 @@
 #include "FunctionalBuilder.hpp"
 #include "Aggregate.hpp"
 #include "Number.hpp"
+#include "Function.hpp"
 
 namespace Psi {
   namespace Tvm {

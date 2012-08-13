@@ -6,7 +6,9 @@
 #include "Recursive.hpp"
 #include "Utility.hpp"
 
+#ifdef PSI_DEBUG
 #include <iostream>
+#endif
 
 namespace Psi {
   namespace Tvm {
@@ -44,6 +46,7 @@ namespace Psi {
     m_type(type),
     m_source(source),
     m_location(location) {
+      PSI_ASSERT(m_context);
 
       PSI_ASSERT(!source ||
         (source->term_type() == term_global_variable) ||
@@ -55,16 +58,17 @@ namespace Psi {
         (source->term_type() == term_function_parameter));
 
       if (!type) {
-        if (term_type != term_recursive) {
-          m_category = category_metatype;
-          PSI_ASSERT(term_type == term_functional);
-        } else {
+        if (term_type == term_recursive) {
           m_category = category_recursive;
+        } else {
+          PSI_ASSERT((term_type == term_functional) || (term_type == term_apply) || (term_type == term_function_type));
+          m_category = category_undetermined;
         }
       } else {
         if (m_context != type->m_context)
           throw TvmUserError("context mismatch between term and its type");
 
+        PSI_ASSERT(type->m_category != category_undetermined);
         switch (type->m_category) {
         case category_metatype: m_category = category_type; break;
         case category_type: m_category = category_value; break;
@@ -76,6 +80,31 @@ namespace Psi {
     }
 
     Value::~Value() {
+      if (m_value_list_hook.is_linked())
+        m_context->m_value_list.erase(m_context->m_value_list.iterator_to(*this));
+    }
+
+    /**
+     * \brief Set the type of this value.
+     * 
+     * This should only be used for values about to be moved onto the heap.
+     */
+    void Value::set_type(const ValuePtr<>& type, Value *source) {
+      PSI_ASSERT(m_category == category_undetermined);
+      PSI_ASSERT(!m_type);
+
+      if (!type) {
+        PSI_ASSERT(m_term_type == term_functional);
+        m_category = category_metatype;
+      } else if (type->category() == category_metatype) {
+        m_category = category_type;
+      } else {
+        PSI_ASSERT(type->category() == category_type);
+        m_category = category_value;
+      }
+
+      m_type = type;
+      m_source = source;
     }
     
     void Value::destroy() {
@@ -89,27 +118,36 @@ namespace Psi {
         return boost::hash_value(this);
     }
     
+#ifdef PSI_DEBUG
     /**
      * Dump this term to stderr.
      */
     void Value::dump() {
       print_term(std::cerr, ValuePtr<>(this));
     }
+#endif
     
     std::size_t Context::HashableValueHasher::operator() (const HashableValue& h) const {
       return h.m_hash;
     }
 
-    HashableValue::HashableValue(Context& context, TermType term_type, const ValuePtr<>& type,
-                                 const HashableValueSetup& setup, const SourceLocation& location)
-    : Value(context, term_type, type, setup.source(), location),
-    m_hash(setup.hash()),
-    m_operation(setup.operation()) {
+    HashableValue::HashableValue(Context& context, TermType term_type, const SourceLocation& location)
+    : Value(context, term_type, ValuePtr<>(), NULL, location),
+    m_hash(0),
+    m_operation(NULL) {
+    }
+    
+    HashableValue::HashableValue(const HashableValue& src)
+    : Value(src.context(), src.term_type(), ValuePtr<>(), NULL, src.location()),
+    m_hash(src.m_hash),
+    m_operation(src.m_operation) {
     }
 
     HashableValue::~HashableValue() {
-      Context::HashTermSetType& hs = context().m_hash_terms;
-      hs.erase(hs.iterator_to(*this));
+      if (m_hashable_set_hook.is_linked()) {
+        Context::HashTermSetType& hs = context().m_hash_value_set;
+        hs.erase(hs.iterator_to(*this));
+      }
     }
 
     /**
@@ -182,7 +220,7 @@ namespace Psi {
 
     Context::Context()
       : m_hash_term_buckets(initial_hash_term_buckets),
-        m_hash_terms(HashTermSetType::bucket_traits(m_hash_term_buckets.get(), initial_hash_term_buckets)) {
+        m_hash_value_set(HashTermSetType::bucket_traits(m_hash_term_buckets.get(), initial_hash_term_buckets)) {
     }
 
     struct Context::ValueDisposer {
@@ -193,47 +231,67 @@ namespace Psi {
     };
 
     Context::~Context() {
-      m_all_terms.clear_and_dispose(ValueDisposer());
-      PSI_WARNING(m_hash_terms.empty());
+      m_value_list.clear_and_dispose(ValueDisposer());
+      PSI_WARNING(m_hash_value_set.empty());
     }
     
     namespace {
-      struct HashableValueEquals {
-        bool operator () (const HashableValue& lhs, const HashableValue& rhs) const {
-          if (lhs.operation_name() != rhs.operation_name())
-            return false;
-          return lhs.equals(rhs);
+      struct HashableEqualsData {
+        std::size_t hash;
+        const char *operation;
+        const HashableValue *value;
+      };
+
+      struct HashableSetupHasher {
+        std::size_t operator () (const HashableEqualsData& arg) const {
+          return arg.hash;
         }
       };
     }
+    
+    struct Context::HashableSetupEquals {
+      bool operator () (const HashableEqualsData& lhs, const HashableValue& rhs) const {
+        if (lhs.hash != rhs.m_hash)
+          return false;
+        if (lhs.operation != rhs.m_operation)
+          return false;
+        return lhs.value->equals_impl(rhs);
+      }
+    };
 
     /**
      * \brief Get an existing hashable term, or create a new one.
      */
     ValuePtr<HashableValue> Context::get_hash_term(const HashableValue& value) {
+      std::pair<const char*, std::size_t> hash = value.hash_impl();
+      HashableEqualsData data;
+      data.hash = hash.second;
+      data.operation = hash.first;
+      data.value = &value;
+
       HashTermSetType::insert_commit_data commit_data;
-      std::pair<HashTermSetType::iterator, bool> r = m_hash_terms.insert_check(value, HashableValueHasher(), HashableValueEquals(), commit_data);
+      std::pair<HashTermSetType::iterator, bool> r = m_hash_value_set.insert_check(data, HashableSetupHasher(), HashableSetupEquals(), commit_data);
       if (!r.second)
         return ValuePtr<HashableValue>(&*r.first);
+
       ValuePtr<HashableValue> result(value.clone());
-      m_hash_terms.insert_commit(*result, commit_data);
+      result->set_type(result->check_type(), result->source_impl());
+      result->m_operation = hash.first;
+      result->m_hash = hash.second;
+      m_hash_value_set.insert_commit(*result, commit_data);
       return result;
     }
 
 #ifdef PSI_DEBUG
     /**
-     * Dump the contents of hash_terms to the specified stream.
-     */
-    void Context::print_hash_terms(std::ostream& output) {
-      for (HashTermSetType::iterator it = m_hash_terms.begin(); it != m_hash_terms.end(); ++it)
-        output << &*it << '\n';
-    }
-
-    /**
      * Dump the contents of the hash_terms table to stderr.
      */
     void Context::dump_hash_terms() {
-      print_hash_terms(std::cerr);
+      for (HashTermSetType::iterator it = m_hash_value_set.begin(); it != m_hash_value_set.end(); ++it) {
+        std::cerr << &*it << ": " << it->m_hash << "\n";
+        it->dump();
+        std::cerr << '\n';
+      }
     }
 #endif
 
@@ -264,12 +322,14 @@ namespace Psi {
         throw TvmUserError("Duplicate module member name");
     }
     
+#ifdef PSI_DEBUG
     /**
      * Dump all symbols in this module to stderr.
      */
     void Module::dump() {
       print_module(std::cerr, this);
     }
+#endif
     
     /**
      * Return whether a term is unique, i.e. it is not functional so

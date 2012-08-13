@@ -23,6 +23,8 @@ namespace Psi {
       /// \brief Get the function the block this is in is part of
       ValuePtr<Function> function();
 
+      template<typename V> static void visit(V& v) {visit_base<Value>(v);}
+
     protected:
       BlockMember(TermType term_type, const ValuePtr<>& type,
                   Value* source, const SourceLocation& location);
@@ -34,6 +36,8 @@ namespace Psi {
     public:
       virtual void next(ValuePtr<>& ptr) = 0;
     };
+    
+    class Instruction;
     
     class InstructionVisitorWrapper : public ValuePtrVistorBase<InstructionVisitorWrapper> {
       InstructionVisitor *m_callback;
@@ -49,6 +53,8 @@ namespace Psi {
         m_callback->next(copy);
         ptr = value_cast<T>(copy);
       }
+
+      template<typename T> bool do_visit_base(VisitorTag<T>) {return !boost::is_same<T,Instruction>::value;}
     };
 
     /**
@@ -63,9 +69,8 @@ namespace Psi {
       const char *operation_name() const {return m_operation;}
       virtual void instruction_visit(InstructionVisitor& visitor) = 0;
       
-      static bool isa_impl(const Value& ptr) {
-        return ptr.term_type() == term_instruction;
-      }
+      static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_instruction;}
+      template<typename V> static void visit(V& v) {visit_base<BlockMember>(v);}
       
       virtual void type_check() = 0;
 
@@ -92,6 +97,7 @@ namespace Psi {
       virtual std::vector<ValuePtr<Block> > successors() = 0;
       
       static bool isa_impl(const Value& ptr);
+      template<typename V> static void visit(V& v) {visit_base<Instruction>(v);}
     };
 
     template<typename T>
@@ -316,10 +322,11 @@ namespace Psi {
     /**
      * \brief Term type appearing in dependent types of completed function types.
      */
-    class FunctionTypeResolvedParameter : public SimpleOp {
+    class FunctionTypeResolvedParameter : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(FunctionTypeResolvedParameter)
       
     private:
+      ValuePtr<> m_parameter_type;
       unsigned m_depth;
       unsigned m_index;
       
@@ -338,8 +345,6 @@ namespace Psi {
       unsigned index() const {return m_index;}
       
       static ValuePtr<FunctionTypeResolvedParameter> get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
-
-      template<typename V> static void visit(V& v);
     };
 
     /**
@@ -366,7 +371,6 @@ namespace Psi {
       ValuePtr<> result_type_after(const std::vector<ValuePtr<> >& parameters);
       
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type;}
-      template<typename V> static void visit(V& v);
 
     private:
       FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
@@ -379,16 +383,15 @@ namespace Psi {
       ValuePtr<> m_result_type;
     };
     
-    inline ValuePtr<FunctionType> Function::function_type() const {
-      return value_cast<FunctionType>(type());
-    }
-
     class FunctionTypeParameter : public Value {
       PSI_TVM_VALUE_DECL(FunctionTypeParameter);
+    private:
       friend class Context;
       FunctionTypeParameter(Context& context, const ValuePtr<>& type, const SourceLocation& location);
+      ValuePtr<> m_parameter_type;
     public:
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type_parameter;}
+      template<typename V> static void visit(V& v);
     };
 
     /**

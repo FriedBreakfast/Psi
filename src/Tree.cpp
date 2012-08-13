@@ -132,6 +132,11 @@ namespace Psi {
     Anonymous::Anonymous(const TreePtr<Term>& type, const SourceLocation& location)
     : Term(&vtable, type, location) {
     }
+    
+    template<typename V>
+    void Anonymous::visit(V& v) {
+      visit_base<Term>(v);
+    }
 
     Parameter::Parameter(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -157,6 +162,11 @@ namespace Psi {
     Global::Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location)
     : Term(vptr, type, location) {
     }
+    
+    template<typename V>
+    void Global::visit(V& v) {
+      visit_base<Term>(v);
+    }
 
     ExternalGlobal::ExternalGlobal(CompileContext& compile_context, const SourceLocation& location)
     : Global(&vtable, compile_context, location) {
@@ -165,6 +175,12 @@ namespace Psi {
     ExternalGlobal::ExternalGlobal(const TreePtr<Term>& type, const String& symbol, const SourceLocation& location)
     : Global(&vtable, type, location),
     m_symbol(symbol) {
+    }
+
+    template<typename Visitor>
+    void ExternalGlobal::visit(Visitor& v) {
+      visit_base<Global>(v);
+      v("symbol", &ExternalGlobal::m_symbol);
     }
 
     FunctionType::FunctionType(CompileContext& compile_context, const SourceLocation& location)
@@ -189,6 +205,13 @@ namespace Psi {
       }
 
       result_type = result_type_->parameterize(location, list_from_stl(arguments_copy));
+    }
+    
+    template<typename Visitor>
+    void FunctionType::visit(Visitor& v) {
+      visit_base<Type>(v);
+      v("result_type", &FunctionType::result_type)
+      ("argument_types", &FunctionType::argument_types);
     }
 
     template<typename Key, typename Value>
@@ -388,6 +411,11 @@ namespace Psi {
     
     Metatype::Metatype(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
+    }
+
+    template<typename V>
+    void Metatype::visit(V& v) {
+      visit_base<Term>(v);
     }
 
     BottomType::BottomType(CompileContext& compile_context, const SourceLocation& location)

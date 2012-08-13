@@ -13,7 +13,7 @@
 
 namespace Psi {
   namespace Tvm {
-    class BooleanType : public SimpleType {
+    class BooleanType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(BooleanType)
       
     public:
@@ -21,7 +21,7 @@ namespace Psi {
       static ValuePtr<BooleanType> get(Context& context, const SourceLocation& location);
     };
 
-    class BooleanValue : public SimpleConstructor {
+    class BooleanValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(BooleanValue)
       
     private:
@@ -35,7 +35,7 @@ namespace Psi {
       static ValuePtr<BooleanValue> get(Context& context, bool value, const SourceLocation& location);
     };
 
-    class IntegerType : public SimpleType {
+    class IntegerType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(IntegerType)
       
     public:
@@ -60,7 +60,6 @@ namespace Psi {
       IntegerType(Context& context, Width width, bool is_signed, const SourceLocation& location);
       static ValuePtr<IntegerType> get(Context& context, Width width, bool is_signed, const SourceLocation& location);
       static ValuePtr<IntegerType> get_intptr(Context& context, const SourceLocation& location);
-      template<typename V> static void visit(V& v);
 
       static unsigned value_bits(IntegerType::Width width);
       
@@ -71,7 +70,7 @@ namespace Psi {
 
     PSI_VISIT_SIMPLE(IntegerType::Width);
 
-    class IntegerValue : public SimpleConstructor {
+    class IntegerValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(IntegerValue)
       
     private:
@@ -88,10 +87,9 @@ namespace Psi {
       IntegerValue(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location);
       static ValuePtr<IntegerValue> get(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location);
       static ValuePtr<IntegerValue> get_intptr(Context& context, unsigned n, const SourceLocation& location);
-      template<typename V> static void visit(V& v);
     };
 
-    class FloatType : public SimpleType {
+    class FloatType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(FloatType)
 
     public:
@@ -116,7 +114,7 @@ namespace Psi {
     
     PSI_VISIT_SIMPLE(FloatType::Width);
 
-    class FloatValue : public SimpleConstructor {
+    class FloatValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(FloatValue)
 
     public:
@@ -133,7 +131,6 @@ namespace Psi {
 
       FloatValue(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location);
       static ValuePtr<FloatValue> get(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location);
-      template<typename V> static void visit(V& v);
     };
     
     /**
@@ -141,7 +138,10 @@ namespace Psi {
      */
     class IntegerUnaryOp : public UnaryOp {
     protected:
-      IntegerUnaryOp(const ValuePtr<>& arg, const HashableValueSetup& setup, const SourceLocation& location);
+      IntegerUnaryOp(const ValuePtr<>& arg, const SourceLocation& location);
+      virtual ValuePtr<> check_type() const;
+    public:
+      template<typename V> static void visit(V& v);
     };
 
     PSI_TVM_UNARY_OP_DECL(IntegerNegative, IntegerUnaryOp)
@@ -152,9 +152,11 @@ namespace Psi {
      */
     class IntegerBinaryOp : public BinaryOp {
     protected:
-      IntegerBinaryOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const HashableValueSetup& setup, const SourceLocation& location);
+      IntegerBinaryOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
+      virtual ValuePtr<> check_type() const;
+    public:
+      template<typename V> static void visit(V& v);
     };
-    
     
     PSI_TVM_BINARY_OP_DECL(IntegerAdd, IntegerBinaryOp);
     PSI_TVM_BINARY_OP_DECL(IntegerMultiply, IntegerBinaryOp);
@@ -165,7 +167,10 @@ namespace Psi {
     
     class IntegerCompareOp : public BinaryOp {
     protected:
-      IntegerCompareOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const HashableValueSetup& setup, const SourceLocation& location);
+      IntegerCompareOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
+      virtual ValuePtr<> check_type() const;
+    public:
+      template<typename V> static void visit(V& v);
     };
     
     PSI_TVM_BINARY_OP_DECL(IntegerCompareEq, IntegerCompareOp);
@@ -188,7 +193,6 @@ namespace Psi {
 
       Select(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location);
       static ValuePtr<Select> get(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location);
-      template<typename V> static void visit(V& v);
 
     private:
       ValuePtr<> m_condition;

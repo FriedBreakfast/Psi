@@ -218,7 +218,7 @@ namespace Psi {
           blocks.push_back(std::make_pair(*it, llvm_bb));
         }
 
-        std::tr1::unordered_map<ValuePtr<Phi>, llvm::PHINode*> phi_node_map;
+        boost::unordered_map<ValuePtr<Phi>, llvm::PHINode*> phi_node_map;
         
         // Set up exception handling personality routine
         llvm::Constant *eh_personality;
@@ -283,7 +283,7 @@ namespace Psi {
         }
 
         // Set up LLVM phi node incoming edges
-        for (std::tr1::unordered_map<ValuePtr<Phi>, llvm::PHINode*>::iterator it = phi_node_map.begin(), ie = phi_node_map.end(); it != ie; ++it) {
+        for (boost::unordered_map<ValuePtr<Phi>, llvm::PHINode*>::iterator it = phi_node_map.begin(), ie = phi_node_map.end(); it != ie; ++it) {
           for (std::vector<PhiEdge>::const_iterator ji = it->first->edges().begin(), je = it->first->edges().end(); ji != je; ++ji) {
             const PhiEdge& edge = *ji;
             PSI_ASSERT(m_value_terms.find(edge.block) != m_value_terms.end());

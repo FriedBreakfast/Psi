@@ -349,7 +349,7 @@ namespace Psi {
           DisassemblerContext *m_self;
         public:
           MyVisitor(DisassemblerContext *self) : m_self(self) {}
-          virtual void next(ValuePtr<>& v) {m_self->setup_term(v);}
+          virtual void next(ValuePtr<>& v) {if (v) m_self->setup_term(v);}
         };
         
         MyVisitor my_visitor(this);
@@ -390,7 +390,7 @@ namespace Psi {
           DisassemblerContext *m_self;
         public:
           MyVisitor(DisassemblerContext *self) : m_self(self) {}
-          virtual void next(const ValuePtr<>& v) {m_self->setup_term(v);}
+          virtual void next(const ValuePtr<>& v) {if (v) m_self->setup_term(v);}
         };
         
         MyVisitor my_visitor(this);
@@ -419,6 +419,11 @@ namespace Psi {
     }
     
     void DisassemblerContext::print_term(const ValuePtr<>& term, bool bracket) {
+      if (!term) {
+        *m_output << "NULL";
+        return;
+      }
+      
       TermNameMap::iterator name_it = m_names.find(term);
       if (name_it != m_names.end()) {
         *m_output << name_it->second->name;

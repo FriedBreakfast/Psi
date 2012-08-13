@@ -7,7 +7,14 @@
 namespace Psi {
   namespace Tvm {
     RecursiveParameter::RecursiveParameter(const ValuePtr<>& type, const SourceLocation& location)
-    : Value(type->context(), term_recursive_parameter, type, type->source(), location) {
+    : Value(type->context(), term_recursive_parameter, type, type->source(), location),
+    m_recursive_parameter_type(type) {
+    }
+    
+    template<typename V>
+    void RecursiveParameter::visit(V& v) {
+      visit_base<Value>(v);
+      v("recursive_parameter_type", &RecursiveParameter::m_recursive_parameter_type);
     }
     
     PSI_TVM_VALUE_IMPL(RecursiveParameter, Value);
@@ -85,13 +92,10 @@ namespace Psi {
     }
     
     ApplyValue::ApplyValue(Context& context,
-                           const ValuePtr<RecursiveType>& recursive,
+                           const ValuePtr<>& recursive,
                            const std::vector<ValuePtr<> >& parameters,
                            const SourceLocation& location)
-    : HashableValue(context, term_apply,
-                    recursive->type(),
-                    hashable_setup<ApplyValue>(recursive)(parameters),
-                    location),
+    : HashableValue(context, term_apply, location),
     m_recursive(recursive),
     m_parameters(parameters) {
     }
@@ -111,6 +115,12 @@ namespace Psi {
       visit_base<HashableValue>(v);
       v("recursive", &ApplyValue::m_recursive)
       ("parameters", &ApplyValue::m_parameters);
+    }
+    
+    ValuePtr<> ApplyValue::check_type() const {
+      if (!isa<RecursiveType>(m_recursive))
+        throw TvmUserError("Parameter to apply is not a recursive type");
+      return m_recursive->type();
     }
 
     PSI_TVM_HASHABLE_IMPL(ApplyValue, HashableValue, apply)

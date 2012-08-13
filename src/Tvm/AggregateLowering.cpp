@@ -161,6 +161,7 @@ namespace Psi {
       }
       
       static LoweredType default_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionalValue>& type) {
+        PSI_ASSERT(type);
         if (type->source()) {
           return parameter_type_rewrite(rewriter, type);
         } else {

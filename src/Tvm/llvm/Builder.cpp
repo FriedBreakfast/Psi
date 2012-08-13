@@ -310,7 +310,7 @@ namespace Psi {
        * \brief Get the global variable specified by the given term.
        */
       llvm::GlobalValue* ModuleBuilder::build_global(const ValuePtr<Global>& term) {
-        std::tr1::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator it = m_global_terms.find(term);
+        boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator it = m_global_terms.find(term);
         if (it == m_global_terms.end())
           throw BuildError("Cannot find global term");
         return it->second;
@@ -403,7 +403,7 @@ namespace Psi {
       }
       
       void LLVMJit::remove_module(Module *module) {
-        std::tr1::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
+        boost::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
         if (it == m_modules.end())
           throw BuildError("module not present");
         m_llvm_engine->removeModule(it->second.module);
@@ -418,11 +418,11 @@ namespace Psi {
       
       void* LLVMJit::get_symbol(const ValuePtr<Global>& global) {
         Module *module = global->module();
-        std::tr1::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
+        boost::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
         if (it == m_modules.end())
           throw BuildError("Module does not appear to be available in this JIT");
         
-        std::tr1::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator jt = it->second.globals.find(global);
+        boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator jt = it->second.globals.find(global);
         PSI_ASSERT(jt != it->second.globals.end());
         
         return m_llvm_engine->getPointerToGlobal(jt->second);

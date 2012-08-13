@@ -4,7 +4,7 @@
 #include <limits>
 #include <deque>
 #include <exception>
-#include <tr1/unordered_map>
+#include <boost/unordered_map.hpp>
 
 #include <llvm/LLVMContext.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
@@ -49,7 +49,7 @@ namespace Psi {
       
       struct ModuleMapping {
         llvm::Module *module;
-        std::tr1::unordered_map<ValuePtr<Global>, llvm::GlobalValue*> globals;
+        boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*> globals;
       };
 
       class TargetCallback {
@@ -111,15 +111,15 @@ namespace Psi {
         llvm::Module *m_llvm_module;
         TargetCallback *m_target_callback;
 
-        typedef std::tr1::unordered_map<ValuePtr<>, llvm::Type*> TypeTermMap;
+        typedef boost::unordered_map<ValuePtr<>, llvm::Type*> TypeTermMap;
         TypeTermMap m_type_terms;
 
         llvm::Type* build_type_internal(const ValuePtr<FunctionalValue>& term);
 
-        typedef std::tr1::unordered_map<ValuePtr<Global>, llvm::GlobalValue*> GlobalTermMap;
+        typedef boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*> GlobalTermMap;
         GlobalTermMap m_global_terms;
 
-        typedef std::tr1::unordered_map<ValuePtr<>, llvm::Constant*> ConstantTermMap;
+        typedef boost::unordered_map<ValuePtr<>, llvm::Constant*> ConstantTermMap;
         ConstantTermMap m_constant_terms;
 
         llvm::Constant* build_constant_internal(const ValuePtr<FunctionalValue>& term);
@@ -132,7 +132,7 @@ namespace Psi {
         friend class ModuleBuilder;
 
       public:
-        typedef std::tr1::unordered_map<ValuePtr<>, llvm::Value*> ValueTermMap;
+        typedef boost::unordered_map<ValuePtr<>, llvm::Value*> ValueTermMap;
 
         ~FunctionBuilder();
         
@@ -196,7 +196,7 @@ namespace Psi {
         llvm::LLVMContext m_llvm_context;
         boost::shared_ptr<TargetCallback> m_target_fixes;
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
-        std::tr1::unordered_map<Module*, ModuleMapping> m_modules;
+        boost::unordered_map<Module*, ModuleMapping> m_modules;
 #ifdef PSI_DEBUG
         boost::shared_ptr<llvm::JITEventListener> m_debug_listener;
 #endif

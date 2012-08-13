@@ -1,34 +1,53 @@
 #include "Aggregate.hpp"
 #include "FunctionalBuilder.hpp"
 #include "Number.hpp"
+#include "Function.hpp"
 
 #include <limits>
 
 namespace Psi {
   namespace Tvm {
     BooleanType::BooleanType(Context& context, const SourceLocation& location)
-    : SimpleType(context, hashable_setup<BooleanType>(), location) {
+    : Type(context, location) {
+    }
+    
+    template<typename V>
+    void BooleanType::visit(V& v) {
+      visit_base<Type>(v);
+    }
+    
+    ValuePtr<> BooleanType::check_type() const {
+      return Metatype::get(context(), location());
     }
     
     ValuePtr<BooleanType> BooleanType::get(Context& context, const SourceLocation& location) {
       return context.get_functional(BooleanType(context, location));
     }
 
-    PSI_TVM_FUNCTIONAL_IMPL(BooleanType, SimpleType, bool)
+    PSI_TVM_FUNCTIONAL_IMPL(BooleanType, Type, bool)
 
     BooleanValue::BooleanValue(Context& context, bool value, const SourceLocation& location)
-    : SimpleConstructor(Metatype::get(context, location), hashable_setup<BooleanType>(value), location),
+    : Constructor(context, location),
     m_value(value) {
     }
     
     ValuePtr<BooleanValue> BooleanValue::get(Context& context, bool value, const SourceLocation& location) {
       return context.get_functional(BooleanValue(context, value, location));
     }
+    
+    template<typename V>
+    void BooleanValue::visit(V& v) {
+      visit_base<Constructor>(v);
+    }
+    
+    ValuePtr<> BooleanValue::check_type() const {
+      return BooleanType::get(context(), location());
+    }
 
-    PSI_TVM_FUNCTIONAL_IMPL(BooleanValue, SimpleConstructor, bool_v)
+    PSI_TVM_FUNCTIONAL_IMPL(BooleanValue, Constructor, bool_v)
     
     IntegerType::IntegerType(Context& context, Width width, bool is_signed, const SourceLocation& location)
-    : SimpleType(context, hashable_setup<IntegerType>(width)(is_signed), location),
+    : Type(context, location),
     m_width(width),
     m_is_signed(is_signed) {
     }
@@ -60,15 +79,19 @@ namespace Psi {
 
     template<typename V>
     void IntegerType::visit(V& v) {
-      visit_base<SimpleType>(v);
+      visit_base<Type>(v);
       v("width", &IntegerType::m_width)
       ("true_value", &IntegerType::m_is_signed);
     }
+    
+    ValuePtr<> IntegerType::check_type() const {
+      return Metatype::get(context(), location());
+    }
 
-    PSI_TVM_FUNCTIONAL_IMPL(IntegerType, SimpleType, int)
+    PSI_TVM_FUNCTIONAL_IMPL(IntegerType, Type, int)
     
     IntegerValue::IntegerValue(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location)
-    : SimpleConstructor(IntegerType::get(context, width, is_signed, location), hashable_setup<IntegerValue>(width)(is_signed)(value), location),
+    : Constructor(context, location),
     m_width(width),
     m_is_signed(is_signed),
     m_value(value) {
@@ -84,27 +107,41 @@ namespace Psi {
 
     template<typename V>
     void IntegerValue::visit(V& v) {
-      visit_base<SimpleConstructor>(v);
+      visit_base<Constructor>(v);
       v("width", &IntegerValue::m_width)
       ("true_value", &IntegerValue::m_is_signed)
-      ("mantissa", &IntegerValue::m_value);
+      ("value", &IntegerValue::m_value);
+    }
+    
+    ValuePtr<> IntegerValue::check_type() const {
+      return IntegerType::get(context(), m_width, m_is_signed, location());
     }
 
-    PSI_TVM_FUNCTIONAL_IMPL(IntegerValue, SimpleConstructor, int_v)
+    PSI_TVM_FUNCTIONAL_IMPL(IntegerValue, Constructor, int_v)
 
     FloatType::FloatType(Context& context, FloatType::Width width, const SourceLocation& location)
-    : SimpleType(context, hashable_setup<FloatType>(width), location),
+    : Type(context, location),
     m_width(width) {
     }
 
     ValuePtr<FloatType> FloatType::get(Context& context, Width width, const SourceLocation& location) {
       return context.get_functional(FloatType(context, width, location));
     }
+    
+    template<typename V>
+    void FloatType::visit(V& v) {
+      visit_base<Type>(v);
+      v("width", &FloatType::m_width);
+    }
+    
+    ValuePtr<> FloatType::check_type() const {
+      return Metatype::get(context(), location());
+    }
 
-    PSI_TVM_FUNCTIONAL_IMPL(FloatType, SimpleType, float)
+    PSI_TVM_FUNCTIONAL_IMPL(FloatType, Type, float)
     
     FloatValue::FloatValue(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location)
-    : SimpleConstructor(FloatType::get(context, width, location), hashable_setup<FloatValue>(width)(exponent), location),
+    : Constructor(context, location),
     m_width(width),
     m_exponent(exponent) {
       PSI_NOT_IMPLEMENTED();
@@ -116,39 +153,78 @@ namespace Psi {
 
     template<typename V>
     void FloatValue::visit(V& v) {
-      visit_base<SimpleConstructor>(v);
+      visit_base<Constructor>(v);
       v("width", &FloatValue::m_width)
       ("true_value", &FloatValue::m_exponent)
       ("mantissa", &FloatValue::m_mantissa);
     }
-
-    PSI_TVM_FUNCTIONAL_IMPL(FloatValue, SimpleType, float_v)
     
-    IntegerUnaryOp::IntegerUnaryOp(const ValuePtr<>& arg, const HashableValueSetup& setup, const SourceLocation& location)
-    : UnaryOp(arg->type(), arg, setup, location) {
-      if (!isa<IntegerType>(arg->type()))
+    ValuePtr<> FloatValue::check_type() const {
+      return FloatType::get(context(), m_width, location());
+    }
+
+    PSI_TVM_FUNCTIONAL_IMPL(FloatValue, Type, float_v)
+    
+    IntegerUnaryOp::IntegerUnaryOp(const ValuePtr<>& arg, const SourceLocation& location)
+    : UnaryOp(arg, location) {
+    }
+    
+    ValuePtr<> IntegerUnaryOp::check_type() const {
+      if (!isa<IntegerType>(parameter()->type()))
         throw TvmUserError("Argument to integer unary operation must have integer type");
+      return parameter()->type();
     }
     
-    IntegerBinaryOp::IntegerBinaryOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const HashableValueSetup& setup, const SourceLocation& location)
-    : BinaryOp(lhs->type(), lhs, rhs, setup, location) {
-      if (!isa<IntegerType>(lhs->type()))
+    template<typename V>
+    void IntegerUnaryOp::visit(V& v) {
+      visit_base<UnaryOp>(v);
+    }
+    
+    IntegerBinaryOp::IntegerBinaryOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location)
+    : BinaryOp(lhs, rhs, location) {
+    }
+    
+    ValuePtr<> IntegerBinaryOp::check_type() const {
+      if (!isa<IntegerType>(lhs()->type()))
         throw TvmUserError("Argument to integer binary operation must have integer type");
-      if (lhs->type() != rhs->type())
+      if (lhs()->type() != rhs()->type())
         throw TvmUserError("Both parameters to integer binary operation must have the same type");
+      return lhs()->type();
+    }
+    
+    template<typename V>
+    void IntegerBinaryOp::visit(V& v) {
+      visit_base<BinaryOp>(v);
     }
 
-    IntegerCompareOp::IntegerCompareOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const HashableValueSetup& setup, const SourceLocation& location)
-    : BinaryOp(BooleanType::get(lhs->context(), location), lhs, rhs, setup, location) {
-      if (!isa<IntegerType>(lhs->type()))
+    IntegerCompareOp::IntegerCompareOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location)
+    : BinaryOp(lhs, rhs, location) {
+    }
+    
+    ValuePtr<> IntegerCompareOp::check_type() const {
+      if (!isa<IntegerType>(lhs()->type()))
         throw TvmUserError("Argument to integer compare operation must have integer type");
-      if (lhs->type() != rhs->type())
+      if (lhs()->type() != rhs()->type())
         throw TvmUserError("Both parameters to integer compare operation must have the same type");
+      return lhs()->type();
+    }
+    
+    template<typename V>
+    void IntegerCompareOp::visit(V& v) {
+      visit_base<BinaryOp>(v);
     }
 
-#define IMPLEMENT_INT_BINARY(name,op_name) PSI_TVM_BINARY_OP_IMPL(name,IntegerBinaryOp,op_name)
-#define IMPLEMENT_INT_UNARY(name,op_name) PSI_TVM_UNARY_OP_IMPL(name,IntegerUnaryOp,op_name)
-#define IMPLEMENT_INT_COMPARE(name,op_name) PSI_TVM_BINARY_OP_IMPL(name,IntegerCompareOp,op_name)
+#define IMPLEMENT_INT_BINARY(name,op_name) \
+  ValuePtr<> name::check_type() const {return IntegerBinaryOp::check_type();} \
+  PSI_TVM_BINARY_OP_IMPL(name,IntegerBinaryOp,op_name)
+
+#define IMPLEMENT_INT_UNARY(name,op_name) \
+  ValuePtr<> name::check_type() const {return IntegerUnaryOp::check_type();} \
+  PSI_TVM_UNARY_OP_IMPL(name,IntegerUnaryOp,op_name)
+
+#define IMPLEMENT_INT_COMPARE(name,op_name) \
+  ValuePtr<> name::check_type() const {return IntegerCompareOp::check_type();} \
+  PSI_TVM_BINARY_OP_IMPL(name,IntegerCompareOp,op_name)
 
     IMPLEMENT_INT_BINARY(IntegerAdd, add)
     IMPLEMENT_INT_BINARY(IntegerMultiply, mul)
@@ -166,14 +242,10 @@ namespace Psi {
     IMPLEMENT_INT_COMPARE(IntegerCompareLe, cmp_le)
 
     Select::Select(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location)
-    : FunctionalValue(condition->context(), true_value->type(), hashable_setup<Select>(condition)(true_value)(false_value), location),
+    : FunctionalValue(condition->context(), location),
     m_condition(condition),
     m_true_value(true_value),
     m_false_value(false_value) {
-      if (!isa<BooleanType>(m_condition->type()))
-        throw TvmUserError("Condition parameter to select must be a boolean");
-      if (m_true_value->type() != m_false_value->type())
-        throw TvmUserError("Second and third parameters to select must have the same type");
     }
 
     ValuePtr<Select> Select::get(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location) {
@@ -186,6 +258,14 @@ namespace Psi {
       v("condition", &Select::m_condition)
       ("true_value", &Select::m_true_value)
       ("false_value", &Select::m_false_value);
+    }
+    
+    ValuePtr<> Select::check_type() const {
+      if (!isa<BooleanType>(m_condition->type()))
+        throw TvmUserError("Condition parameter to select must be a boolean");
+      if (m_true_value->type() != m_false_value->type())
+        throw TvmUserError("Second and third parameters to select must have the same type");
+      return m_true_value->type();
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(Select, FunctionalValue, select);

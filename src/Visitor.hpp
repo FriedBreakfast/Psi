@@ -46,14 +46,6 @@ namespace Psi {
   void visit(V& v, VisitorTag<T>) {
     T::visit(v);
   }
-  
-  /**
-   * Utility function for when the name visit is obscured by another function.
-   */
-  template<typename V, typename T>
-  void visit_freefunc(V& v, VisitorTag<T> t) {
-    visit(v, t);
-  }
 
   template<typename V, typename A, typename B>
   void visit(V& v, VisitorTag<PSI_STD::pair<A,B> >) {
@@ -66,7 +58,7 @@ namespace Psi {
    */
   template<typename T, typename V>
   void visit_base(V& v) {
-    visit(v, VisitorTag<T>());
+    visit_base_hook(v, visitor_tag<T>());
   }
 
   template<typename V, typename T, typename D>
@@ -129,13 +121,21 @@ namespace Psi {
     : m_objects(objects), m_callback(callback) {
     }
     
-    template<typename Base, typename U>
-    ThisType& operator () (const char *name, U Base::* member) {
+    template<typename U>
+    ThisType& operator () (const char *name, U ObjectType::* member) {
       boost::array<typename CopyConst<ObjectType, U>::type*, arity> values;
       for (std::size_t ii = 0; ii != arity; ++ii)
         values[ii] = &(m_objects[ii]->*member);
       visit_callback(*m_callback, name, values);
       return *this;
+    }
+    
+    template<typename T>
+    friend void visit_base_hook(ObjectVisitor<ObjectType, Callback, N>& v, VisitorTag<T>) {
+      boost::array<typename CopyConst<ObjectType, T>::type*, arity> values;
+      for (std::size_t ii = 0; ii != arity; ++ii)
+        values[ii] = v.m_objects[ii];
+      v.m_callback->visit_base(values);
     }
   };
 

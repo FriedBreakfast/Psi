@@ -15,36 +15,31 @@ namespace Psi {
     }void insert(const ValuePtr<Instruction>& instruction);
     
     FunctionTypeResolvedParameter::FunctionTypeResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location)
-    : SimpleOp(type, hashable_setup<FunctionTypeResolvedParameter>(type), location),
+    : FunctionalValue(type->context(), location),
+    m_parameter_type(type),
     m_depth(depth),
     m_index(index) {
     }
     
     template<typename V>
     void FunctionTypeResolvedParameter::visit(V& v) {
-      visit_base<SimpleOp>(v);
-      v("depth", &FunctionTypeResolvedParameter::m_depth)
+      visit_base<FunctionalValue>(v);
+      v("parameter_type", &FunctionTypeResolvedParameter::m_parameter_type)
+      ("depth", &FunctionTypeResolvedParameter::m_depth)
       ("index", &FunctionTypeResolvedParameter::m_index);
+    }
+    
+    ValuePtr<> FunctionTypeResolvedParameter::check_type() const {
+      if (!m_parameter_type->is_type())
+        throw TvmUserError("First argument to function_type_resolved_parameter is not a type");
+      return m_parameter_type;
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(FunctionTypeResolvedParameter, SimpleOp, function_type_resolved_parameter)
 
-    namespace {
-      static const char function_type_operation[] = "function_type";
-      
-      HashableValueSetup function_type_hashable_setup(CallingConvention calling_convention, const ValuePtr<>& result_type, const std::vector<ValuePtr<> >& parameter_types) {
-        HashableValueSetup hv = HashableValueSetup(function_type_operation)(result_type);
-        hv.combine(calling_convention);
-        for (std::vector<ValuePtr<> >::const_iterator ii = parameter_types.begin(), ie = parameter_types.end(); ii != ie; ++ii)
-          hv.combine(*ii);
-        return hv;
-      }
-    }
-
     FunctionType::FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
                                const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, const SourceLocation& location)
-    : HashableValue(result_type->context(), term_function_type, Metatype::get(result_type->context(), location),
-                    function_type_hashable_setup(calling_convention, result_type, parameter_types), location),
+    : HashableValue(result_type->context(), term_function_type, location),
     m_calling_convention(calling_convention),
     m_parameter_types(parameter_types),
     m_n_phantom(n_phantom),
@@ -199,11 +194,24 @@ namespace Psi {
       ("n_phantom", &FunctionType::m_n_phantom)
       ("result_type", &FunctionType::m_result_type);
     }
+    
+    ValuePtr<> FunctionType::check_type() const {
+      for (std::vector<ValuePtr<> >::const_iterator ii = m_parameter_types.begin(), ie = m_parameter_types.end(); ii != ie; ++ii)
+        if (!(*ii)->is_type())
+          throw TvmUserError("Function argument type is not a type");
+      return Metatype::get(context(), location());
+    }
 
     PSI_TVM_HASHABLE_IMPL(FunctionType, HashableValue, function)
     
     FunctionTypeParameter::FunctionTypeParameter(Context& context, const ValuePtr<>& type, const SourceLocation& location)
-    : Value(context, term_function_type_parameter, type, this, location) {
+    : Value(context, term_function_type_parameter, type, this, location),
+    m_parameter_type(type) {
+    }
+    
+    template<typename V>
+    void FunctionTypeParameter::visit(V& v) {
+      visit_base<Value>(v);
     }
     
     PSI_TVM_VALUE_IMPL(FunctionTypeParameter, Value);
@@ -473,6 +481,10 @@ namespace Psi {
         m_parameters.push_back(p);
       }
       m_result_type = ft->result_type_after(previous);
+    }
+
+    ValuePtr<FunctionType> Function::function_type() const {
+      return value_cast<FunctionType>(value_cast<PointerType>(type())->target_type());
     }
 
     /**

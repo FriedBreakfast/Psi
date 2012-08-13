@@ -20,6 +20,7 @@ namespace Psi {
 
       Anonymous(CompileContext& compile_context, const SourceLocation& location);
       Anonymous(const TreePtr<Term>& type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
     };
     
     class Parameter : public Term {
@@ -28,13 +29,12 @@ namespace Psi {
 
       Parameter(CompileContext& compile_context, const SourceLocation& location);
       Parameter(const TreePtr<Term>& type, unsigned depth, unsigned index, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       /// Parameter depth (number of enclosing parameter scopes between this parameter and its own scope).
       unsigned depth;
       /// Index of this parameter in its scope.
       unsigned index;
-
-      template<typename Visitor> static void visit(Visitor& v);
     };
     
     class Implementation : public Tree {
@@ -65,6 +65,7 @@ namespace Psi {
       static const SIVtable vtable;
       Global(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
       Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
     };
     
     class ExternalGlobal : public Global {
@@ -74,12 +75,7 @@ namespace Psi {
       static const TermVtable vtable;
       ExternalGlobal(CompileContext& compile_context, const SourceLocation& location);
       ExternalGlobal(const TreePtr<Term>& type, const String& symbol, const SourceLocation& location);
-
-      template<typename Visitor>
-      static void visit(Visitor& v) {
-        visit_base<Global>(v);
-        v("symbol", &ExternalGlobal::m_symbol);
-      }
+      template<typename V> static void visit(V& v);
     };
     
     /**
@@ -134,6 +130,7 @@ namespace Psi {
 
       Namespace(CompileContext& compile_context, const SourceLocation& location);
       Namespace(const PSI_STD::vector<TreePtr<Statement> >& statements, CompileContext& compile_context, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
     };
 
     /**
@@ -215,6 +212,7 @@ namespace Psi {
       static TreePtr<Term> value(CompileContext& compile_context, const SourceLocation& location);
 
       BottomType(CompileContext&, const SourceLocation&);
+      template<typename V> static void visit(V& v);
     };
 
     /**
@@ -229,6 +227,7 @@ namespace Psi {
       static TreePtr<Term> value(CompileContext& compile_context, const SourceLocation& location);
 
       EmptyType(CompileContext&, const SourceLocation&);
+      template<typename V> static void visit(V& v);
     };
 
     /**
@@ -239,6 +238,7 @@ namespace Psi {
       static const TermVtable vtable;
       NullValue(CompileContext& compile_context, const SourceLocation& location);
       NullValue(const TreePtr<Term>& type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
     };
 
     /**
@@ -251,6 +251,7 @@ namespace Psi {
       static const TermVtable vtable;
       StructType(CompileContext& compile_context, const SourceLocation& location);
       StructType(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       PSI_STD::vector<TreePtr<Term> > members;
     };
@@ -263,6 +264,7 @@ namespace Psi {
       static const TermVtable vtable;
       StructValue(CompileContext& compile_context, const SourceLocation& location);
       StructValue(const TreePtr<StructType>& type, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       PSI_STD::vector<TreePtr<Term> > members;
     };
@@ -278,6 +280,7 @@ namespace Psi {
       static const TermVtable vtable;
       UnionType(CompileContext& compile_context, const SourceLocation& location);
       UnionType(CompileContext& compile_context, const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& members);
+      template<typename V> static void visit(V& v);
 
       PSI_STD::vector<TreePtr<Term> > members;
     };
@@ -288,19 +291,13 @@ namespace Psi {
 
       FunctionType(CompileContext& compile_context, const SourceLocation& location);
       FunctionType(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Anonymous> >& arguments, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
 
       TreePtr<Term> argument_type_after(const SourceLocation& location, const List<TreePtr<Term> >& arguments) const;
       TreePtr<Term> result_type_after(const SourceLocation& location, const List<TreePtr<Term> >& arguments) const;
       
       TreePtr<Term> result_type;
       PSI_STD::vector<TreePtr<Term> > argument_types;
-
-      template<typename Visitor>
-      static void visit(Visitor& v) {
-        visit_base<Type>(v);
-        v("result_type", &FunctionType::result_type)
-        ("argument_types", &FunctionType::argument_types);
-      }
     };
 
     class Function : public Global {
@@ -358,6 +355,7 @@ namespace Psi {
       
       IfThenElse(CompileContext& compile_context, const SourceLocation& location);
       IfThenElse(const TreePtr<Term>& condition, const TreePtr<Term>& true_value, const TreePtr<Term>& false_value, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
       
       TreePtr<Term> condition;
       TreePtr<Term> true_value;
@@ -375,6 +373,7 @@ namespace Psi {
       
       JumpGroupEntry(CompileContext& compile_context, const SourceLocation& location);
       JumpGroupEntry(const TreePtr<Term>& value, const TreePtr<Anonymous>& argument, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
       
       TreePtr<Term> value;
       TreePtr<Anonymous> argument;
@@ -394,6 +393,7 @@ namespace Psi {
       
       JumpGroup(CompileContext& compile_context, const SourceLocation& location);
       JumpGroup(const TreePtr<Term>& initial, const PSI_STD::vector<TreePtr<JumpGroupEntry> >& values, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
       
       TreePtr<Term> initial;
       PSI_STD::vector<TreePtr<JumpGroupEntry> > entries;
@@ -410,6 +410,7 @@ namespace Psi {
       
       JumpTo(CompileContext& compile_context, const SourceLocation& location);
       JumpTo(const TreePtr<JumpGroupEntry>& target, const TreePtr<Term>& argument, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
       
       TreePtr<JumpGroupEntry> target;
       TreePtr<Term> argument;
@@ -476,6 +477,7 @@ namespace Psi {
       
       ExternalFunction(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
       ExternalFunction(const TermVtable *vptr, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
       static TreePtr<> interface_search_impl(ExternalFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
     };
     

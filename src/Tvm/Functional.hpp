@@ -19,6 +19,7 @@ namespace Psi {
     public:
       FunctionalValueVisitorWrapper(FunctionalValueVisitor *callback) : m_callback(callback) {}
       void visit_ptr(const ValuePtr<>& ptr) {m_callback->next(ptr);}
+      template<typename T> bool do_visit_base(VisitorTag<T>) {return !boost::is_same<T,FunctionalValue>::value;}
     };
 
     /**
@@ -38,16 +39,17 @@ namespace Psi {
       virtual void functional_visit(FunctionalValueVisitor& visitor) const = 0;
       
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_functional;}
+      template<typename V> static void visit(V& v) {visit_base<HashableValue>(v);}
 
     protected:
-      FunctionalValue(Context& context, const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
+      FunctionalValue(Context& context, const SourceLocation& location);
     };
     
 #define PSI_TVM_FUNCTIONAL_DECL(Type) \
     PSI_TVM_HASHABLE_DECL(Type) \
   public: \
     virtual void functional_visit(FunctionalValueVisitor& visitor) const; \
-    static bool isa_impl(const Value& ptr) {return (ptr.term_type() == term_functional) && (operation == checked_cast<const Type&>(ptr).operation_name());}
+    static bool isa_impl(const Value& ptr) {return (ptr.term_type() == term_functional) && (operation == checked_cast<const FunctionalValue&>(ptr).operation_name());}
 
 #define PSI_TVM_FUNCTIONAL_IMPL(Type,Base,Name) \
     PSI_TVM_HASHABLE_IMPL(Type,Base,Name) \
@@ -58,15 +60,9 @@ namespace Psi {
       visit_members(vw, c); \
     }
 
-    class SimpleOp : public FunctionalValue {
-    public:
-      SimpleOp(const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
-    };
-    
     class UnaryOp : public FunctionalValue {
     protected:
-      UnaryOp(const ValuePtr<>& type, const ValuePtr<>& parameter, const HashableValueSetup& hash, const SourceLocation& location);
-      UnaryOp(const RewriteCallback& callback, const UnaryOp& src);
+      UnaryOp(const ValuePtr<>& parameter, const SourceLocation& location);
       
     private:
       ValuePtr<> m_parameter;
@@ -94,11 +90,16 @@ namespace Psi {
 #define PSI_TVM_UNARY_OP_IMPL(name,base,op_name) \
     PSI_TVM_FUNCTIONAL_IMPL(name,base,op_name) \
     name::name(const ValuePtr<>& arg, const SourceLocation& location) \
-    : base(arg, hashable_setup<name>(), location) { \
+    : base(arg, location) { \
     } \
     \
     ValuePtr<> name::get(const ValuePtr<>& arg, const SourceLocation& location) { \
       return arg->context().get_functional(name(arg, location)); \
+    } \
+    \
+    template<typename V> \
+    void name::visit(V& v) { \
+      visit_base<base>(v); \
     }
     
     class BinaryOp : public FunctionalValue {
@@ -114,7 +115,7 @@ namespace Psi {
       }
 
     protected:
-      BinaryOp(const ValuePtr<>& type, const ValuePtr<>& lhs, const ValuePtr<>& rhs, const HashableValueSetup& hash, const SourceLocation& location);
+      BinaryOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
       BinaryOp(const RewriteCallback& callback, const BinaryOp& src);
       
     private:
@@ -125,7 +126,6 @@ namespace Psi {
 #define PSI_TVM_BINARY_OP_DECL(name,base) \
     class name : public base { \
       PSI_TVM_FUNCTIONAL_DECL(name) \
-      \
     public: \
       name(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location); \
       static ValuePtr<> get(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location); \
@@ -134,36 +134,37 @@ namespace Psi {
 #define PSI_TVM_BINARY_OP_IMPL(name,base,op_name) \
     PSI_TVM_FUNCTIONAL_IMPL(name,base,op_name) \
     name::name(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) \
-    : base(lhs, rhs, hashable_setup<name>(), location) { \
+    : base(lhs, rhs, location) { \
     } \
     \
     ValuePtr<> name::get(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) { \
       return lhs->context().get_functional(name(lhs, rhs, location)); \
+    } \
+    \
+    template<typename V> \
+    void name::visit(V& v) { \
+      visit_base<base>(v); \
     }
     
     class Type : public FunctionalValue {
     public:
-      Type(Context& context, const HashableValueSetup& hash, const SourceLocation& location);
-    };
-    
-    class SimpleType : public Type {
+      Type(Context& context, const SourceLocation& location);
     public:
-      SimpleType(Context& context, const HashableValueSetup& hash, const SourceLocation& location);
+      template<typename V> static void visit(V& v) {visit_base<FunctionalValue>(v);}
     };
     
     class Constructor : public FunctionalValue {
     protected:
-      Constructor(const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
-    };
-    
-    class SimpleConstructor : public FunctionalValue {
+      Constructor(Context& context, const SourceLocation& location);
     public:
-      SimpleConstructor(const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
+      template<typename V> static void visit(V& v) {visit_base<FunctionalValue>(v);}
     };
     
     class AggregateOp : public FunctionalValue {
     protected:
-      AggregateOp(const ValuePtr<>& type, const HashableValueSetup& hash, const SourceLocation& location);
+      AggregateOp(Context& context, const SourceLocation& location);
+    public:
+      template<typename V> static void visit(V& v) {visit_base<FunctionalValue>(v);}
     };
   }
 }

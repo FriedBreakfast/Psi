@@ -269,6 +269,17 @@ namespace Psi {
       }
 
     public:
+      template<typename T>
+      void visit_base(const boost::array<T*,1>& c) {
+        if (derived().do_visit_base(VisitorTag<T>()))
+          visit_members(derived(), c);
+      }
+      
+      template<typename T>
+      bool do_visit_base(VisitorTag<T>) {
+        return true;
+      }
+
       /// Simple types cannot hold references, so we aren't interested in them.
       template<typename T>
       void visit_simple(const char*, const boost::array<T*, 1>&) {
@@ -517,6 +528,8 @@ namespace Psi {
       void complete();
       bool match(const TreePtr<Tree>& value, const List<TreePtr<Term> >& wildcards, unsigned depth=0);
       bool match(const TreePtr<Tree>& value);
+      
+      template<typename V> static void visit(V& v) {visit_base<TreeBase>(v);}
     };
 
     template<typename T> T* TreePtr<T>::get() const {
@@ -574,6 +587,16 @@ namespace Psi {
 
       MatchVisitor(const List<TreePtr<Term> >& wildcards, unsigned depth)
       : m_wildcards(wildcards), m_depth(depth), result(true) {}
+
+      template<typename T>
+      void visit_base(const boost::array<T*,2>& c) {
+        visit_members(*this, c);
+      }
+      
+      template<typename T>
+      bool do_visit_base(VisitorTag<T>) {
+        return true;
+      }
 
       template<typename T>
       void visit_simple(const char*, const boost::array<T*, 2>& obj) {
@@ -930,11 +953,18 @@ namespace Psi {
     template<typename Derived>
     class RewriteVisitorBase {
       bool m_changed;
+      
+      Derived& derived() {return *static_cast<Derived*>(this);}
 
     public:
       RewriteVisitorBase() : m_changed(false) {}
 
       bool changed() const {return m_changed;}
+
+      template<typename T>
+      void visit_base(const boost::array<T*,2>& c) {
+        visit_members(derived(), c);
+      }
 
       template<typename T>
       void visit_simple(const char*, const boost::array<const T*, 2>& obj) {
@@ -948,7 +978,7 @@ namespace Psi {
 
       template<typename T>
       void visit_object(const char*, const boost::array<const TreePtr<T>*, 2>& ptr) {
-        *const_cast<TreePtr<T>*>(ptr[0]) = static_cast<Derived*>(this)->visit_tree_ptr(*ptr[1]);
+        *const_cast<TreePtr<T>*>(ptr[0]) = derived().visit_tree_ptr(*ptr[1]);
         if (*ptr[0] != *ptr[1])
           m_changed = true;
       }
@@ -1076,6 +1106,7 @@ namespace Psi {
     public:
       static const SIVtable vtable;
       Type(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
+      template<typename Visitor> static void visit(Visitor& v);
     };
 
 #define PSI_COMPILER_TYPE(derived,name,super) PSI_COMPILER_TERM(derived,name,super)
@@ -1087,6 +1118,7 @@ namespace Psi {
     public:
       static const TermVtable vtable;
       Metatype(CompileContext& compile_context, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
     };
 
     /// \brief Is this a type?

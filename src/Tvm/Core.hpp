@@ -106,9 +106,6 @@ namespace Psi {
         BaseType::operator = (src);
         return *this;
       }
-      
-    private:
-      Value *m_value;
     };
 
     template<typename Derived>
@@ -118,6 +115,12 @@ namespace Psi {
       }
       
     public:
+      template<typename T>
+      void visit_base(const boost::array<T*,1>& c) {
+        if (derived().do_visit_base(visitor_tag<T>()))
+          visit_members(derived(), c);
+      }
+
       /// Simple types cannot hold references, so we aren't interested in them.
       template<typename T>
       void visit_simple(const char*, const boost::array<T*, 1>&) {
@@ -202,7 +205,8 @@ namespace Psi {
         category_metatype,
         category_type,
         category_value,
-        category_recursive
+        category_recursive,
+        category_undetermined ///< Used for hashable values whose category is determined when they are moved onto the heap
       };
 
       /// \brief The low level type of this term.
@@ -246,7 +250,9 @@ namespace Psi {
       /** \brief Get the location this value originated from */
       const SourceLocation& location() const {return m_location;}
       
+#ifdef PSI_DEBUG
       void dump();
+#endif
 
       std::size_t hash_value() const;
       
@@ -259,7 +265,7 @@ namespace Psi {
       std::size_t m_reference_count;
       Context *m_context;
       unsigned char m_term_type;
-      unsigned char m_category : 2;
+      unsigned char m_category;
       ValuePtr<> m_type;
       Value *m_source;
       SourceLocation m_location;
@@ -282,6 +288,8 @@ namespace Psi {
     protected:
       Value(Context& context, TermType term_type, const ValuePtr<>& type,
             Value *source, const SourceLocation& location);
+      
+      void set_type(const ValuePtr<>& type, Value *source);
     };
     
 #define PSI_TVM_VALUE_DECL(Type) \
@@ -295,6 +303,8 @@ namespace Psi {
       void visit_ptr(const ValuePtr<T>& ptr) {
         ++ptr->m_reference_count;
       }
+      
+      template<typename T> bool do_visit_base(VisitorTag<T>) {return true;}
     };
     
     struct GCDecerementVisitor : ValuePtrVistorBase<GCDecerementVisitor> {
@@ -302,6 +312,8 @@ namespace Psi {
       void visit_ptr(const ValuePtr<T>& ptr) {
         --ptr->m_reference_count;
       }
+
+      template<typename T> bool do_visit_base(VisitorTag<T>) {return true;}
     };
     
     struct GCClearVisitor : ValuePtrVistorBase<GCClearVisitor> {
@@ -309,6 +321,8 @@ namespace Psi {
       void visit_ptr(ValuePtr<T>& ptr) {
         ptr.reset();
       }
+
+      template<typename T> bool do_visit_base(VisitorTag<T>) {return true;}
     };
     
 #define PSI_TVM_VALUE_IMPL(Type,Base) \
@@ -350,7 +364,7 @@ namespace Psi {
     
     template<typename T>
     bool isa(const Value *ptr) {
-      return T::isa_impl(*ptr);
+      return !ptr || T::isa_impl(*ptr);
     }
     
     template<typename T, typename U>
@@ -379,74 +393,13 @@ namespace Psi {
      */
     class OperationSetup {
       const char *m_operation;
-      Value *m_source;
       
     public:
-      explicit OperationSetup(const char *operation)
-      : m_operation(operation) {
-      }
-      
-      void combine(const ValuePtr<>& ptr) {
-        m_source = common_source(m_source, ptr->source());
-      }
-      
-      template<typename T>
-      OperationSetup operator () (const T& x) const {
-        OperationSetup copy(*this);
-        copy.combine(x);
-        return copy;
-      }
-
+      explicit OperationSetup(const char *operation) : m_operation(operation) {}
       const char *operation() const {return m_operation;}
-      Value *source() const {return m_source;}
-    };
-
-    class HashableValueSetup {
-      OperationSetup m_base;
-      std::size_t m_hash;
-      
-      template<typename T> void base_combine(const T&) {}
-      template<typename T> void base_combine(const ValuePtr<T>& ptr) {m_base.combine(ptr);}
-      
-    public:
-      explicit HashableValueSetup(const char *operation)
-      : m_base(operation),
-      m_hash(boost::hash_value(operation)) {
-      }
-      
-      template<typename T>
-      void combine(T& x) {
-        boost::hash_combine(m_hash, x);
-        base_combine(x);
-      }
-      
-      template<typename T>
-      void combine(const std::vector<T>& x) {
-        for (typename std::vector<T>::const_iterator ii = x.begin(), ie = x.end(); ii != ie; ++ii)
-          combine(*ii);
-      }
-      
-      template<typename T>
-      HashableValueSetup operator () (const T& x) const {
-        HashableValueSetup copy(*this);
-        copy.combine(x);
-        return copy;
-      }
-      
-      std::size_t hash() const {return m_hash;}
-      const char *operation() const {return m_base.operation();}
-      Value *source() const {return m_base.source();}
     };
     
-    template<typename T>
-    HashableValueSetup hashable_setup() {
-      return HashableValueSetup(T::operation);
-    }
-
-    template<typename T, typename U>
-    HashableValueSetup hashable_setup(const U& value) {
-      return hashable_setup<T>()(value);
-    }
+    template<typename T> OperationSetup operation_setup() {return OperationSetup(T::operation);}
 
     class RewriteCallback {
       Context *m_context;
@@ -462,15 +415,19 @@ namespace Psi {
       friend std::size_t Value::hash_value() const;
 
     protected:
-      HashableValue(Context& context, TermType term_type, const ValuePtr<>& type, const HashableValueSetup& setup, const SourceLocation& location);
+      HashableValue(Context& context, TermType term_type, const SourceLocation& location);
       virtual ~HashableValue();
 
     public:
+      HashableValue(const HashableValue& src);
+      
       static bool isa_impl(const Value& v) {
         return (v.term_type() == term_functional) || (v.term_type() == term_function_type)
           || (v.term_type() == term_apply);
       }
       
+      template<typename V> static void visit(V& v) {visit_base<Value>(v);}
+
       /**
        * \brief Build a copy of this term with a new set of parameters.
        * 
@@ -481,7 +438,6 @@ namespace Psi {
        */
       virtual ValuePtr<HashableValue> rewrite(RewriteCallback& callback) const = 0;
 
-      virtual bool equals(const HashableValue& rhs) const = 0;
       const char *operation_name() const {return m_operation;}
       
     private:
@@ -490,16 +446,25 @@ namespace Psi {
       std::size_t m_hash;
       const char *m_operation;
 
+      virtual ValuePtr<> check_type() const = 0;
+      virtual bool equals_impl(const HashableValue& rhs) const = 0;
+      virtual std::pair<const char*,std::size_t> hash_impl() const = 0;
+      virtual Value* source_impl() const = 0;
       virtual HashableValue* clone() const = 0;
     };
 
 #define PSI_TVM_HASHABLE_DECL(Type) \
     PSI_TVM_VALUE_DECL(Type) \
+  private: \
+    virtual ValuePtr<> check_type() const; \
   public: \
     static const char operation[]; \
     virtual ValuePtr<HashableValue> rewrite(RewriteCallback& callback) const; \
-    virtual bool equals(const HashableValue& rhs) const; \
+    template<typename V> static void visit(V& v); \
   private: \
+    virtual bool equals_impl(const HashableValue& rhs) const; \
+    virtual std::pair<const char*, std::size_t> hash_impl() const; \
+    virtual Value* source_impl() const; \
     virtual HashableValue* clone() const;
 
 #define PSI_TVM_HASHABLE_IMPL(Type,Base,Name) \
@@ -519,10 +484,23 @@ namespace Psi {
       return callback.context().get_functional(copy); \
     } \
     \
-    bool Type::equals(const HashableValue& rhs) const { \
+    bool Type::equals_impl(const HashableValue& rhs) const { \
       EqualsVisitor<Type> v(this, &checked_cast<const Type&>(rhs)); \
       visit(v); \
       return v.is_equal(); \
+    } \
+    \
+    std::pair<const char*, std::size_t> Type::hash_impl() const { \
+      HashVisitor<Type> v(Type::operation, this); \
+      visit(v); \
+      return std::make_pair(Type::operation, v.hash()); \
+    } \
+    \
+    Value* Type::source_impl() const { \
+      SourceVisitor v; \
+      boost::array<const Value*,1> c = {{this}}; \
+      visit_members(v, c); \
+      return v.source(); \
     }
 
     /**
@@ -637,7 +615,9 @@ namespace Psi {
       /// \brief Get the name of this module
       const std::string& name() {return m_name;}
       
+#ifdef PSI_DEBUG
       void dump();
+#endif
       
       ValuePtr<Global> get_member(const std::string& name);
       ValuePtr<GlobalVariable> new_global_variable(const std::string& name, const ValuePtr<>& type, const SourceLocation& location);
@@ -652,12 +632,14 @@ namespace Psi {
      * not duplicated.
      */
     class Context {
+      friend class Value;
       friend class HashableValue;
       friend class Function;
       friend class Block;
       friend class Module;
 
       struct ValueDisposer;
+      struct HashableSetupEquals;
       struct HashableValueHasher {std::size_t operator () (const HashableValue&) const;};
 
       typedef boost::intrusive::unordered_set<HashableValue,
@@ -671,13 +653,12 @@ namespace Psi {
 
       static const std::size_t initial_hash_term_buckets = 64;
       UniqueArray<HashTermSetType::bucket_type> m_hash_term_buckets;
-      HashTermSetType m_hash_terms;
+      HashTermSetType m_hash_value_set;
 
-      TermListType m_all_terms;
+      TermListType m_value_list;
 
 #ifdef PSI_DEBUG
       void dump_hash_terms();
-      void print_hash_terms(std::ostream& output);
 #endif
 
     public:
@@ -739,11 +720,8 @@ namespace Psi {
       RewriteCallback *m_callback;
     public:
       RewriteVisitor(RewriteCallback *callback) : m_callback(callback) {}
-      
-      template<typename T>
-      void visit_ptr(ValuePtr<T>& ptr) {
-        ptr = value_cast<T>(m_callback->rewrite(ptr));
-      }
+      void visit_ptr(ValuePtr<>& ptr) {ptr = m_callback->rewrite(ptr);}
+      template<typename T> bool do_visit_base(VisitorTag<T>) {return !boost::is_same<T,HashableValue>::value;}
     };
     
     template<typename T>
@@ -755,13 +733,69 @@ namespace Psi {
       EqualsVisitor(const T *first, const T *second) : m_is_equal(true), m_first(first), m_second(second) {}
       bool is_equal() const {return m_is_equal;}
       
-      template<typename Base, typename U>
-      EqualsVisitor<T>& operator () (const char*, U Base::*ptr) {
+      template<typename U>
+      EqualsVisitor<T>& operator () (const char*, U T::*ptr) {
         if (m_is_equal) {
           if (m_first->*ptr != m_second->*ptr)
             m_is_equal = false;
         }
         return *this;
+      }
+      
+      friend void visit_base_hook(EqualsVisitor<T>&, VisitorTag<HashableValue>) {}
+      
+      template<typename Base>
+      friend void visit_base_hook(EqualsVisitor<T>& v, VisitorTag<Base>) {
+        EqualsVisitor<Base> nv(v.m_first, v.m_second);
+        Base::visit(nv);
+      }
+    };
+    
+    using boost::hash_value;
+
+    template<typename T, std::size_t N>
+    std::size_t hash_value(const boost::array<T,N>& x) {
+      std::size_t h = 0;
+      for (unsigned i = 0; i != N; ++i) {
+        std::size_t c = hash_value(x[i]);
+        boost::hash_combine(h,c);
+      }
+      return h;
+    }
+    
+    template<typename T>
+    class HashVisitor {
+      std::size_t m_hash;
+      const T *m_ptr;
+      
+    public:
+      HashVisitor(const char *operation, const T *ptr) : m_hash(boost::hash_value(operation)), m_ptr(ptr) {}
+      std::size_t hash() const {return m_hash;}
+      
+      template<typename Base, typename U>
+      HashVisitor<T>& operator () (const char*, U Base::*ptr) {
+        std::size_t c = hash_value(m_ptr->*ptr);
+        boost::hash_combine(m_hash, c);
+        return *this;
+      }
+      
+      friend void visit_base_hook(HashVisitor<T>&, VisitorTag<HashableValue>) {}
+      
+      template<typename Base>
+      friend void visit_base_hook(HashVisitor<T>& v, VisitorTag<Base>) {
+        Base::visit(v);
+      }
+    };
+
+    class SourceVisitor : public ValuePtrVistorBase<SourceVisitor> {
+      Value *m_source;
+      
+    public:
+      SourceVisitor() : m_source(NULL) {}
+      Value *source() const {return m_source;}
+      
+      void visit_ptr(const ValuePtr<>& ptr) {
+        m_source = common_source(m_source, ptr.get());
       }
     };
   }

@@ -71,6 +71,7 @@ namespace Psi {
       
     public:
       ResultType call(UserParameter parameter, const ValuePtr<TermType>& term) const {
+        PSI_ASSERT(term);
         typename CallbackMapType::const_iterator it = m_callback_map.find(term->operation_name());
         if (it != m_callback_map.end()) {
           return it->second->call(parameter, term);
