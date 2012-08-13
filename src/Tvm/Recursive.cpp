@@ -68,7 +68,7 @@ namespace Psi {
       std::vector<ValuePtr<RecursiveParameter> > child_parameters;
       for (std::vector<ValuePtr<> >::const_iterator ii = parameters.begin(), ie = parameters.end(); ii != ie; ++ii)
         child_parameters.push_back(new_recursive_parameter(*ii, location));
-      return ValuePtr<RecursiveType>(new RecursiveType(result_type, source, child_parameters, location));
+      return ValuePtr<RecursiveType>(::new RecursiveType(result_type, source, child_parameters, location));
     }
 
     /**

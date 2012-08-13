@@ -306,6 +306,7 @@ namespace Psi {
       void exception_personality(const std::string& v) {m_exception_personality = v;}
 
       template<typename V> static void visit(V& v);
+      static bool isa_impl(const Value& v) {return v.term_type() == term_function;}
 
     private:
       Function(Context& context, const ValuePtr<FunctionType>& type, const std::string& name,

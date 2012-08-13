@@ -98,7 +98,7 @@ namespace Psi {
       
     public:
       ValuePtr() {}
-      explicit ValuePtr(T *ptr) : BaseType(ptr) {}
+      explicit ValuePtr(T *ptr) : BaseType(ptr) {PSI_ASSERT(reinterpret_cast<intptr_t>(ptr) <= 0x700000000000);}
       template<typename U>
       ValuePtr(const ValuePtr<U>& src) : BaseType(src) {}
 
@@ -194,9 +194,9 @@ namespace Psi {
       friend struct GCDecerementVisitor;
       
       /// Disable general new operator
-      static void* operator new (size_t) {PSI_UNREACHABLE();}
+      static void* operator new (size_t) {PSI_FAIL("Value::new should never be called");}
       /// Disable placement new
-      static void* operator new (size_t, void*) {PSI_UNREACHABLE();}
+      static void* operator new (size_t, void*) {PSI_FAIL("Value::new should never be called");}
 
     public:
       virtual ~Value();
@@ -565,6 +565,7 @@ namespace Psi {
       void set_constant(bool is_const) {m_constant = is_const;}
       
       template<typename V> static void visit(V& v);
+      static bool isa_impl(const Value& v) {return v.term_type() == term_global_variable;}
       
     private:
       GlobalVariable(Context& context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location);

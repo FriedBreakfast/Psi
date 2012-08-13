@@ -217,7 +217,7 @@ namespace Psi {
     PSI_TVM_VALUE_IMPL(FunctionTypeParameter, Value);
 
     ValuePtr<FunctionTypeParameter> Context::new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location) {
-      return ValuePtr<FunctionTypeParameter>(new FunctionTypeParameter(*this, type, location));
+      return ValuePtr<FunctionTypeParameter>(::new FunctionTypeParameter(*this, type, location));
     }
 
     BlockMember::BlockMember(TermType term_type, const ValuePtr<>& type,
@@ -321,21 +321,28 @@ namespace Psi {
       if (m_terminated && !insert_before)
         throw TvmUserError("cannot add instruction at end of already terminated block");
       
-      if (insert_before && (insert_before->block() != this))
-        throw TvmUserError("instruction specified as insertion point is not part of this block");
+      InstructionList::iterator insert_before_it;
+      bool terminator = false;
+      if (insert_before) {
+        if (insert_before->block() != this)
+          throw TvmUserError("instruction specified as insertion point is not part of this block");
 
-      InstructionList::iterator insert_before_it = std::find(m_instructions.begin(), m_instructions.end(), insert_before);
-      if (insert_before_it == m_instructions.end())
-        throw TvmUserError("instruction specified as insertion point cannot be found in this block");
+        insert_before_it = std::find(m_instructions.begin(), m_instructions.end(), insert_before);
+        if (insert_before_it == m_instructions.end())
+          throw TvmUserError("instruction specified as insertion point cannot be found in this block");
 
-      ValuePtr<TerminatorInstruction> term = dyn_cast<TerminatorInstruction>(insn);
-      if (term)
-        throw TvmUserError("terminating instruction cannot be inserted other than at the end of a block");
+        if (isa<TerminatorInstruction>(insn))
+          throw TvmUserError("terminating instruction cannot be inserted other than at the end of a block");
+      } else {
+        insert_before_it = m_instructions.end();
+        if (isa<TerminatorInstruction>(insn))
+          terminator = true;
+      }
 
       m_instructions.insert(insert_before_it, insn);
       insn->m_block = ValuePtr<Block>(this);
       
-      if (term)
+      if (terminator)
         m_terminated = true;
     }
     

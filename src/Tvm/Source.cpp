@@ -137,7 +137,7 @@ namespace Psi {
             else if (i2 == ii->get())
               return i1;
           }
-          PSI_UNREACHABLE();
+          PSI_FAIL("Unreachable");
         } else if (b1->dominated_by(b2))
           return i1;
         else if (b2->dominated_by(b1))
@@ -366,7 +366,7 @@ namespace Psi {
                 else if (dominated_insn == ii->get())
                   return false;
               }
-              PSI_UNREACHABLE();
+              PSI_FAIL("Unreachable");
             } else {
               return dominated_insn->block()->dominated_by(dominator_insn->block());
             }

@@ -72,7 +72,7 @@ namespace Psi {
         case TreeCallback::state_running:
           update_chain(ptr_cb);
           RunningTreeCallback::throw_circular_dependency(ptr_cb);
-          PSI_UNREACHABLE();
+          PSI_FAIL("Previous line should have thrown an exception");
 
         case TreeCallback::state_finished:
           break;
