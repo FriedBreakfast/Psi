@@ -98,13 +98,17 @@ namespace Psi {
       
     public:
       ValuePtr() {}
-      explicit ValuePtr(T *ptr) : BaseType(ptr) {PSI_ASSERT(reinterpret_cast<intptr_t>(ptr) <= 0x700000000000);}
+      explicit ValuePtr(T *ptr) : BaseType(ptr) {}
       template<typename U>
       ValuePtr(const ValuePtr<U>& src) : BaseType(src) {}
 
       template<typename U> ValuePtr& operator = (const ValuePtr<U>& src) {
         BaseType::operator = (src);
         return *this;
+      }
+      
+      friend std::size_t hash_value(const ValuePtr<T>& v) {
+        return v ? v->hash_value() : 0;
       }
     };
 
@@ -498,7 +502,7 @@ namespace Psi {
     \
     Value* Type::source_impl() const { \
       SourceVisitor v; \
-      boost::array<const Value*,1> c = {{this}}; \
+      boost::array<const Type*,1> c = {{this}}; \
       visit_members(v, c); \
       return v.source(); \
     }
@@ -736,10 +740,8 @@ namespace Psi {
       
       template<typename U>
       EqualsVisitor<T>& operator () (const char*, U T::*ptr) {
-        if (m_is_equal) {
-          if (m_first->*ptr != m_second->*ptr)
-            m_is_equal = false;
-        }
+        if (m_is_equal)
+          m_is_equal = (m_first->*ptr == m_second->*ptr);
         return *this;
       }
       
@@ -747,8 +749,12 @@ namespace Psi {
       
       template<typename Base>
       friend void visit_base_hook(EqualsVisitor<T>& v, VisitorTag<Base>) {
-        EqualsVisitor<Base> nv(v.m_first, v.m_second);
-        Base::visit(nv);
+        if (v.m_is_equal) {
+          EqualsVisitor<Base> nv(v.m_first, v.m_second);
+          Base::visit(nv);
+          if (!nv.is_equal())
+            v.m_is_equal = false;
+        }
       }
     };
     
@@ -796,8 +802,11 @@ namespace Psi {
       Value *source() const {return m_source;}
       
       void visit_ptr(const ValuePtr<>& ptr) {
-        m_source = common_source(m_source, ptr.get());
+        if (ptr)
+          m_source = common_source(m_source, ptr->source());
       }
+
+      template<typename T> bool do_visit_base(VisitorTag<T>) const {return !boost::is_same<T,HashableValue>::value;}
     };
   }
 }

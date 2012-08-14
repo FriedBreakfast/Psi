@@ -81,7 +81,7 @@ namespace Psi {
     void IntegerType::visit(V& v) {
       visit_base<Type>(v);
       v("width", &IntegerType::m_width)
-      ("true_value", &IntegerType::m_is_signed);
+      ("is_signed", &IntegerType::m_is_signed);
     }
     
     ValuePtr<> IntegerType::check_type() const {
@@ -102,18 +102,20 @@ namespace Psi {
     }
     
     ValuePtr<IntegerValue> IntegerValue::get_intptr(Context& context, unsigned n, const SourceLocation& location) {
-      return get(context, IntegerType::iptr, false, BigInteger(std::numeric_limits<unsigned>::digits, n), location);
+      return get(context, IntegerType::iptr, false, BigInteger(IntegerType::value_bits(IntegerType::iptr), n), location);
     }
 
     template<typename V>
     void IntegerValue::visit(V& v) {
       visit_base<Constructor>(v);
       v("width", &IntegerValue::m_width)
-      ("true_value", &IntegerValue::m_is_signed)
+      ("is_signed", &IntegerValue::m_is_signed)
       ("value", &IntegerValue::m_value);
     }
     
     ValuePtr<> IntegerValue::check_type() const {
+      if (m_value.bits() != IntegerType::value_bits(m_width))
+        throw TvmUserError("Wrong number of bits supplied to integer constant");
       return IntegerType::get(context(), m_width, m_is_signed, location());
     }
 
@@ -206,7 +208,7 @@ namespace Psi {
         throw TvmUserError("Argument to integer compare operation must have integer type");
       if (lhs()->type() != rhs()->type())
         throw TvmUserError("Both parameters to integer compare operation must have the same type");
-      return lhs()->type();
+      return BooleanType::get(context(), location());
     }
     
     template<typename V>

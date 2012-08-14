@@ -67,14 +67,16 @@ namespace Psi {
 
         static llvm::Instruction* alloca_callback(FunctionBuilder& builder, const ValuePtr<Alloca>& term) {
           llvm::Type *stored_type = builder.module_builder()->build_type(term->element_type);
-          llvm::Value *count = builder.build_value(term->count);
-          llvm::Value *alignment = builder.build_value(term->alignment);
+          llvm::Value *count = term->count ? builder.build_value(term->count) : NULL;
+          llvm::Value *alignment = term->alignment ? builder.build_value(term->alignment) : NULL;
           llvm::AllocaInst *inst = builder.irbuilder().CreateAlloca(stored_type, count);
           
-          if (llvm::ConstantInt *const_alignment = llvm::dyn_cast<llvm::ConstantInt>(alignment)) {
-            inst->setAlignment(const_alignment->getValue().getZExtValue());
-          } else {
-            inst->setAlignment(builder.unknown_alloca_align());
+          if (alignment) {
+            if (llvm::ConstantInt *const_alignment = llvm::dyn_cast<llvm::ConstantInt>(alignment)) {
+              inst->setAlignment(const_alignment->getValue().getZExtValue());
+            } else {
+              inst->setAlignment(builder.unknown_alloca_align());
+            }
           }
           
           return inst;

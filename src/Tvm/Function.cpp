@@ -465,6 +465,7 @@ namespace Psi {
      * \brief Create a new function.
      */
     ValuePtr<Function> Module::new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location) {
+      PSI_ASSERT(type);
       ValuePtr<Function> result(::new Function(context(), type, name, this, location));
       result->create_parameters();
       add_member(result);
@@ -553,10 +554,8 @@ namespace Psi {
       for (std::size_t i = 0; i != blocks.size(); ++i) {
         std::vector<ValuePtr<Block> > successors = blocks[i]->successors();
         for (std::vector<ValuePtr<Block> >::iterator it = successors.begin(); it != successors.end(); ++it) {
-          if (visited_blocks.find((*it)->dominator()) != visited_blocks.end()) {
-            if (visited_blocks.insert(*it).second)
-              blocks.push_back(*it);
-          }
+          if (visited_blocks.insert(*it).second)
+            blocks.push_back(*it);
         }
       }
       

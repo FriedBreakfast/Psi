@@ -220,7 +220,7 @@ namespace Psi {
     }
     
     ValuePtr<> PointerOffset::check_type() const {
-      if (!isa<PointerType>(m_pointer))
+      if (!isa<PointerType>(m_pointer->type()))
         throw TvmUserError("first argument to offset is not a pointer");
       ValuePtr<IntegerType> int_ty = dyn_cast<IntegerType>(m_offset->type());
       if (!int_ty || (int_ty->width() != IntegerType::iptr))

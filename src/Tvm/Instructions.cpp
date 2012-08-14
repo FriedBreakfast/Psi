@@ -128,7 +128,11 @@ namespace Psi {
 
     namespace {
       ValuePtr<> call_type(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters) {
-        ValuePtr<FunctionType> target_type = dyn_cast<FunctionType>(target->type());
+        ValuePtr<PointerType> ptr_type = dyn_cast<PointerType>(target->type());
+        if (!ptr_type)
+          throw TvmUserError("Function call target is not a pointer");
+        
+        ValuePtr<FunctionType> target_type = dyn_cast<FunctionType>(ptr_type->target_type());
         if (!target_type)
           throw TvmUserError("Function call target does not have function type");
         
@@ -137,7 +141,7 @@ namespace Psi {
     }
     
     Call::Call(const ValuePtr<>& target_, const std::vector<ValuePtr<> >& parameters_, const SourceLocation& location)
-    : Instruction(call_type(target, parameters), operation, location),
+    : Instruction(call_type(target_, parameters_), operation, location),
     target(target_),
     parameters(parameters_) {
     }
@@ -219,7 +223,7 @@ namespace Psi {
     PSI_TVM_INSTRUCTION_IMPL(Load, Instruction, load);
 
     Alloca::Alloca(const ValuePtr<>& element_type_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
-    : Instruction(FunctionalBuilder::pointer_type(element_type, location), operation, location),
+    : Instruction(FunctionalBuilder::pointer_type(element_type_, location), operation, location),
     element_type(element_type_),
     count(count_),
     alignment(alignment_) {
@@ -254,7 +258,7 @@ namespace Psi {
     PSI_TVM_INSTRUCTION_IMPL(Alloca, Instruction, alloca);
     
     MemCpy::MemCpy(const ValuePtr<>& dest_, const ValuePtr<>& src_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
-    : Instruction(FunctionalBuilder::empty_type(dest->context(), location), operation, location),
+    : Instruction(FunctionalBuilder::empty_type(dest_->context(), location), operation, location),
     dest(dest_),
     src(src_),
     count(count_),

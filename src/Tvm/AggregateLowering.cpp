@@ -353,7 +353,7 @@ namespace Psi {
         ValuePtr<> base_value = rewriter.rewrite_value_stack(term->pointer());
         ValuePtr<> offset = rewriter.rewrite_value_stack(term->offset());
         
-        LoweredType ty = rewriter.rewrite_type(term->type()->target_type());
+        LoweredType ty = rewriter.rewrite_type(term->pointer_type()->target_type());
         if (ty.heap_type() && !rewriter.pass().pointer_arithmetic_to_bytes) {
           ValuePtr<> cast_base = FunctionalBuilder::pointer_cast(base_value, ty.heap_type(), term->location());
           ValuePtr<> ptr = FunctionalBuilder::pointer_offset(cast_base, offset, term->location());

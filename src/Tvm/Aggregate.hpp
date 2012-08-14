@@ -167,7 +167,7 @@ namespace Psi {
       /// \brief Get the offset
       const ValuePtr<>& offset() const {return m_offset;}
       /// \brief Get the type of this pointer, cast to a pointer type.
-      ValuePtr<PointerType> type() const {return value_cast<PointerType>(m_pointer);}
+      ValuePtr<PointerType> pointer_type() const {return value_cast<PointerType>(m_pointer->type());}
       /// \brief Get the target type of this operations type.
       const ValuePtr<>& target_type() const {return value_cast<PointerType>(Value::type().get())->target_type();}
 

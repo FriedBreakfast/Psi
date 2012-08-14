@@ -172,7 +172,7 @@ namespace Psi {
         setup_function(function);
         build_unique_names();
         print_definitions(m_global_definitions, "", true);
-        print_term_definition(function);
+        print_function(function);
         break;
       }
       
@@ -353,7 +353,9 @@ namespace Psi {
         };
         
         MyVisitor my_visitor(this);
-        value_cast<Instruction>(term)->instruction_visit(my_visitor);
+        ValuePtr<Instruction> insn = value_cast<Instruction>(term);
+        insn->instruction_visit(my_visitor);
+        m_local_definitions[insn->block()].push_back(insn);
         break;
       }
       
@@ -505,11 +507,11 @@ namespace Psi {
         ValuePtr<Function> function = parameter->function();
         for (unsigned ii = 0, ie = function->n_parameters(); ii != ie; ++ii) {
           if (parameter == function->parameter(ii)) {
-            *m_output << boost::format("[function parameter %d]") % ii;
+            *m_output << "[function parameter " << ii << "]\n";
             return;
           }
         }
-        *m_output << "[invalid function parameter]";
+        *m_output << "[invalid function parameter]\n";
         return;
       }
       
