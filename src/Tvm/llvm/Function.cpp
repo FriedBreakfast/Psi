@@ -202,16 +202,15 @@ namespace Psi {
         // Set up parameters
         llvm::Function::ArgumentListType::iterator ii = m_llvm_function->getArgumentList().begin(), ie = m_llvm_function->getArgumentList().end();
         for (std::size_t in = function()->function_type()->n_phantom(); ii != ie; ++ii, ++in) {
-          ValuePtr<FunctionParameter> param = m_function->parameter(in);
+          ValuePtr<FunctionParameter> param = m_function->parameters().at(in);
           llvm::Value *value = &*ii;
           value->setName(term_name(param));
           m_value_terms.insert(std::make_pair(param, value));
         }
 
         // create llvm blocks
-        std::vector<ValuePtr<Block> > sorted_blocks = m_function->topsort_blocks();
         std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> > blocks;
-        for (std::vector<ValuePtr<Block> >::iterator it = sorted_blocks.begin(); it != sorted_blocks.end(); ++it) {
+        for (Function::BlockList::const_iterator it = m_function->blocks().begin(), ie = m_function->blocks().end(); it != ie; ++it) {
           llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(module_builder()->llvm_context(), term_name(*it), m_llvm_function);
           std::pair<ValueTermMap::iterator, bool> insert_result = m_value_terms.insert(std::make_pair(*it, llvm_bb));
           PSI_ASSERT(insert_result.second);
@@ -236,8 +235,7 @@ namespace Psi {
           PSI_ASSERT(it->second->empty());
 
           // Set up phi terms
-          const Block::PhiList& phi_list = it->first->phi_nodes();
-          for (Block::PhiList::const_iterator jt = phi_list.begin(), je = phi_list.end(); jt != je; ++jt) {
+          for (Block::PhiList::const_iterator jt = it->first->phi_nodes().begin(), je = it->first->phi_nodes().end(); jt != je; ++jt) {
             const ValuePtr<Phi>& phi = *jt;
             llvm::Type *llvm_ty = module_builder()->build_type(phi->type());
             llvm::PHINode *llvm_phi = irbuilder().CreatePHI(llvm_ty, phi->edges().size(), term_name(phi));
@@ -271,8 +269,7 @@ namespace Psi {
           }
 
           // Build instructions!
-          const Block::InstructionList& insn_list = it->first->instructions();
-          for (Block::InstructionList::const_iterator jt = insn_list.begin(), je = insn_list.end(); jt != je; ++jt) {
+          for (Block::InstructionList::const_iterator jt = it->first->instructions().begin(), je = it->first->instructions().end(); jt != je; ++jt) {
             const ValuePtr<Instruction>& insn = *jt;
             llvm::Value *r = build_value_instruction(insn);
             m_value_terms.insert(std::make_pair(insn, r));

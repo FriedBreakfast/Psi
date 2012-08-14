@@ -33,28 +33,28 @@ namespace Psi {
       }
 
       Value* common_source_global_block(Global *g, Block *b) {
-        if (g->module() == b->function()->module())
+        if (g->module() == b->function_ptr()->module())
           return b;
         else
           return common_source_fail();
       }
 
       Value* common_source_global_phi(Global *g, BlockMember *p) {
-        if (g->module() == p->block()->function()->module())
+        if (g->module() == p->block_ptr()->function_ptr()->module())
           return p;
         else
           return common_source_fail();
       }
       
       Value* common_source_global_instruction(Global* g, Instruction *i) {
-        if (g->module() == i->block()->function()->module())
+        if (g->module() == i->block_ptr()->function_ptr()->module())
           return i;
         else
           return common_source_fail();
       }
       
       Value* common_source_global_parameter(Global *g, FunctionParameter *p) {
-        if (g->module() == p->function()->module())
+        if (g->module() == p->function_ptr()->module())
           return p;
         else
           return common_source_fail();
@@ -65,28 +65,28 @@ namespace Psi {
       }
       
       Value* common_source_block_block(Block *b1, Block *b2) {
-        if (b1->function() == b2->function())
+        if (b1->function_ptr() == b2->function_ptr())
           return b1;
         else
           return common_source_fail();
       }
 
       Value* common_source_block_phi(Block *b, BlockMember *p) {
-        if (p->block()->function() == b->function())
+        if (p->block_ptr()->function_ptr() == b->function_ptr())
           return p;
         else
           return common_source_fail();
       }
       
       Value* common_source_block_instruction(Block *b, Instruction *i) {
-        if (b->function() == i->block()->function())
+        if (b->function_ptr() == i->block_ptr()->function_ptr())
           return i;
         else
           return common_source_fail();
       }
       
       Value* common_source_block_parameter(Block *b, FunctionParameter *p) {
-        if (b->function() == p->function())
+        if (b->function_ptr() == p->function_ptr())
           return p;
         else
           return common_source_fail();
@@ -97,7 +97,7 @@ namespace Psi {
       }
 
       Value *common_source_phi_phi(BlockMember *p1, BlockMember *p2) {
-        const ValuePtr<Block>& b1 = p1->block(), b2 = p2->block();
+        Block *b1 = p1->block_ptr(), *b2 = p2->block_ptr();
         if (b1->dominated_by(b2))
           return p1;
         else if (b2->dominated_by(b1))
@@ -107,8 +107,8 @@ namespace Psi {
       }
       
       Value *common_source_phi_instruction(BlockMember *p, Instruction *i) {
-        const ValuePtr<Block>& b = p->block();
-        if (i->block()->dominated_by(b))
+        Block *b = p->block_ptr();
+        if (i->block_ptr()->dominated_by(b))
           return i;
         else if (b->dominated_by(i->block()))
           return p;
@@ -117,7 +117,7 @@ namespace Psi {
       }
       
       Value *common_source_phi_parameter(BlockMember *p, FunctionParameter *pa) {
-        if (p->block()->function() == pa->function())
+        if (p->block_ptr()->function_ptr() == pa->function_ptr())
           return pa->phantom() ? static_cast<Value*>(pa) : p;
         else
           return common_source_fail();
@@ -128,16 +128,9 @@ namespace Psi {
       }
 
       Value* common_source_instruction_instruction(Instruction *i1, Instruction *i2) {
-        const ValuePtr<Block>& b1 = i1->block(), b2 = i2->block();
+        Block *b1 = i1->block_ptr(), *b2 = i2->block_ptr();
         if (b1 == b2) {
-          const Block::InstructionList& insn_list = b1->instructions();
-          for (Block::InstructionList::const_iterator ii = insn_list.begin(), ie = insn_list.end(); ii != ie; ++ii) {
-            if (i1 == ii->get())
-              return i2;
-            else if (i2 == ii->get())
-              return i1;
-          }
-          PSI_FAIL("Unreachable");
+          return b1->instructions().before(*i1, *i2) ? i2 : i1;
         } else if (b1->dominated_by(b2))
           return i1;
         else if (b2->dominated_by(b1))
@@ -147,7 +140,7 @@ namespace Psi {
       }
 
       Value* common_source_instruction_parameter(Instruction *i, FunctionParameter *p) {
-        if (i->block()->function() == p->function())
+        if (i->block_ptr()->function_ptr() == p->function_ptr())
           return p->phantom() ? static_cast<Value*>(p) : i;
         else
           return common_source_fail();
@@ -158,7 +151,7 @@ namespace Psi {
       }
       
       Value* common_source_parameter_parameter(FunctionParameter *p1, FunctionParameter *p2) {
-        if (p1->function() != p2->function())
+        if (p1->function_ptr() != p2->function_ptr())
           return common_source_fail();
         
         return p1->phantom() ? p1 : p2;
@@ -318,28 +311,28 @@ namespace Psi {
         }
 
         case term_block: {
-          const ValuePtr<Function>& function = value_cast<Block>(dominator)->function();
+          Function *function = value_cast<Block>(dominator)->function_ptr();
           switch (dominated->term_type()) {
           default: return false;
-          case term_block: return function == value_cast<Block>(dominated)->function();
+          case term_block: return function == value_cast<Block>(dominated)->function_ptr();
           case term_catch_clause:
-          case term_phi: return function == value_cast<BlockMember>(dominated)->block()->function();
-          case term_instruction: return function == value_cast<Instruction>(dominated)->block()->function();
+          case term_phi: return function == value_cast<BlockMember>(dominated)->block_ptr()->function_ptr();
+          case term_instruction: return function == value_cast<Instruction>(dominated)->block_ptr()->function_ptr();
           case term_function_parameter: return value_cast<FunctionParameter>(dominated)->phantom() &&
-            (value_cast<FunctionParameter>(dominated)->function() == function);
+            (value_cast<FunctionParameter>(dominated)->function_ptr() == function);
           }
         }
         
         case term_phi: {
-          const ValuePtr<Block>& block = value_cast<Phi>(dominator)->block();
+          Block *block = value_cast<Phi>(dominator)->block_ptr();
           switch (dominated->term_type()) {
           default: return false;
-          case term_block: return block->function() == value_cast<Block>(dominated)->function();
+          case term_block: return block->function_ptr() == value_cast<Block>(dominated)->function_ptr();
           case term_catch_clause:
-          case term_phi: return value_cast<BlockMember>(dominated)->block()->dominated_by(block);
-          case term_instruction: return value_cast<Instruction>(dominated)->block()->dominated_by(block);
+          case term_phi: return value_cast<BlockMember>(dominated)->block_ptr()->dominated_by(block);
+          case term_instruction: return value_cast<Instruction>(dominated)->block_ptr()->dominated_by(block);
           case term_function_parameter: return value_cast<FunctionParameter>(dominated)->phantom() &&
-            (value_cast<FunctionParameter>(dominated)->function() == block->function());
+            (value_cast<FunctionParameter>(dominated)->function_ptr() == block->function_ptr());
           }
         }
           
@@ -350,29 +343,21 @@ namespace Psi {
           case term_phi:
           case term_catch_clause: {
             BlockMember *cast_dominated = value_cast<BlockMember>(dominated);
-            if (cast_dominated->block() == dominator_insn->block())
+            if (cast_dominated->block_ptr() == dominator_insn->block_ptr())
               return false;
             else
-              return cast_dominated->block()->dominated_by(dominator_insn->block());
+              return cast_dominated->block_ptr()->dominated_by(dominator_insn->block_ptr());
           }
           case term_instruction: {
             Instruction *dominated_insn = value_cast<Instruction>(dominated);
-            if (dominator_insn->block() == dominated_insn->block()) {
-              const ValuePtr<Block>& block = dominator_insn->block();
-              const Block::InstructionList& insn_list = block->instructions();
-              for (Block::InstructionList::const_iterator ii = insn_list.begin(), ie = insn_list.end(); ii != ie; ++ii) {
-                if (dominator_insn == ii->get())
-                  return true;
-                else if (dominated_insn == ii->get())
-                  return false;
-              }
-              PSI_FAIL("Unreachable");
+            if (dominator_insn->block_ptr() == dominated_insn->block_ptr()) {
+              return dominated_insn->block_ptr()->instructions().before(*dominated_insn, *dominated_insn);
             } else {
-              return dominated_insn->block()->dominated_by(dominator_insn->block());
+              return dominated_insn->block_ptr()->dominated_by(dominator_insn->block_ptr());
             }
           }
           case term_function_parameter: return value_cast<FunctionParameter>(dominated)->phantom() &&
-            (value_cast<FunctionParameter>(dominated)->function() == dominator_insn->block()->function());
+            (value_cast<FunctionParameter>(dominated)->function_ptr() == dominator_insn->block_ptr()->function_ptr());
           }
         }
           
@@ -388,5 +373,3 @@ namespace Psi {
     }
   }
 }
-
-

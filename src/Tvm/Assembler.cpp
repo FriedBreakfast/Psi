@@ -197,23 +197,22 @@ namespace Psi {
         LogicalSourceLocationPtr logical_location = function->location().logical;
         
         ValuePtr<Block> entry = function->new_block(function->location());
-        function->set_entry(entry);
         blocks.push_back(entry);
 
-        std::size_t n = 0;
+        Function::ParameterList::const_iterator param = function->parameters().begin();
         for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->phantom_parameters.begin();
-             it != function_def.type->phantom_parameters.end(); ++it, ++n) {
+             it != function_def.type->phantom_parameters.end(); ++it, ++param) {
           if (it->name) {
-            my_context.put(it->name->text, function->parameter(n));
-            function->add_term_name(function->parameter(n), it->name->text);
+            my_context.put(it->name->text, *param);
+            function->add_term_name(*param, it->name->text);
           }
         }
 
         for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->parameters.begin();
-             it != function_def.type->parameters.end(); ++it, ++n) {
+             it != function_def.type->parameters.end(); ++it, ++param) {
           if (it->name) {
-            my_context.put(it->name->text, function->parameter(n));
-            function->add_term_name(function->parameter(n), it->name->text);
+            my_context.put(it->name->text, *param);
+            function->add_term_name(*param, it->name->text);
           }
         }
 

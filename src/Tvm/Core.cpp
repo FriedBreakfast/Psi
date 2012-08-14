@@ -77,6 +77,9 @@ namespace Psi {
           throw TvmInternalError("type of a term cannot be a value or recursive, it must be metatype or a type");
         }
       }
+      
+      if (m_category != category_undetermined)
+        context.m_value_list.push_back(*this);
     }
 
     Value::~Value() {
@@ -105,6 +108,7 @@ namespace Psi {
 
       m_type = type;
       m_source = source;
+      m_context->m_value_list.push_back(*this);
     }
     
     void Value::destroy() {
@@ -225,13 +229,22 @@ namespace Psi {
 
     struct Context::ValueDisposer {
       void operator () (Value *t) const {
-        t->gc_clear();
-        operator delete (t);
+        PSI_WARNING(t->m_reference_count == 1);
+        intrusive_ptr_release(t);
       }
     };
 
     Context::~Context() {
+      // Increment refcount to ensure nothing is destroyed yet
+      for (TermListType::iterator ii = m_value_list.begin(), ie = m_value_list.end(); ii != ie; ++ii)
+        ++ii->m_reference_count;
+
+      // Release all internal references
+      for (TermListType::iterator ii = m_value_list.begin(), ie = m_value_list.end(); ii != ie; ++ii)
+        ii->gc_clear();
+        
       m_value_list.clear_and_dispose(ValueDisposer());
+
       PSI_WARNING(m_hash_value_set.empty());
     }
     

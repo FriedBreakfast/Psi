@@ -111,7 +111,7 @@ namespace Psi {
         LowerFunctionHelperResult helper_result = lower_function_helper(runner, source_function->function_type());
         int sret = helper_result.sret ? 1 : 0;
         for (std::size_t i = 0; i != helper_result.n_passed_parameters; ++i)
-          helper_result.parameter_handlers[i]->unpack(runner, source_function->parameter(i+helper_result.n_phantom), target_function->parameter(i + sret), target_function->location());
+          helper_result.parameter_handlers[i]->unpack(runner, source_function->parameters().at(i+helper_result.n_phantom), target_function->parameters().at(i + sret), target_function->location());
       }
       
       ValuePtr<> TargetCommon::convert_value(const ValuePtr<>& value, const ValuePtr<>& type) {
@@ -351,7 +351,7 @@ namespace Psi {
         }
 
         virtual ValuePtr<Instruction> return_pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& value, const SourceLocation& location) const {
-          ValuePtr<> sret_parameter = builder.new_function()->parameter(0);
+          ValuePtr<> sret_parameter = builder.new_function()->parameters().at(0);
           builder.store_value(value, sret_parameter, location);
           return builder.builder().return_(sret_parameter, location);
         }

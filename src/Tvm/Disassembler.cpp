@@ -208,33 +208,26 @@ namespace Psi {
     }
 
     void DisassemblerContext::setup_function(const ValuePtr<Function>& function) {
-      for (unsigned ii = 0, ie = function->n_parameters(); ii != ie; ++ii)
-        setup_term_definition(function->parameter(ii));
+      for (Function::ParameterList::const_iterator ii = function->parameters().begin(), ie = function->parameters().end(); ii != ie; ++ii)
+        setup_term_definition(*ii);
       
       setup_term(function->result_type());
 
-      if (function->entry()) {
-        std::vector<ValuePtr<Block> > blocks = function->topsort_blocks();
-        for (std::vector<ValuePtr<Block> >::iterator ii = blocks.begin(), ie = blocks.end(); ii != ie; ++ii) {
-          const ValuePtr<Block>& block = *ii;
+      for (Function::BlockList::const_iterator ii = function->blocks().begin(), ie = function->blocks().end(); ii != ie; ++ii) {
+        const ValuePtr<Block>& block = *ii;
 
-          setup_term_name(block);
+        setup_term_name(block);
 
-          for (Block::PhiList::const_iterator ji = block->phi_nodes().begin(), je = block->phi_nodes().end(); ji != je; ++ji)
-            m_names.insert(std::make_pair(*ji, make_term_name(*ji, function)));
-          
-          for (Block::InstructionList::const_iterator ji = block->instructions().begin(), je = block->instructions().end(); ji != je; ++ji)
-            m_names.insert(std::make_pair(*ji, make_term_name(*ji, function)));
+        for (Block::PhiList::const_iterator ji = block->phi_nodes().begin(), je = block->phi_nodes().end(); ji != je; ++ji)
+          m_names.insert(std::make_pair(*ji, make_term_name(*ji, function)));
+        
+        for (Block::InstructionList::const_iterator ji = block->instructions().begin(), je = block->instructions().end(); ji != je; ++ji)
+          m_names.insert(std::make_pair(*ji, make_term_name(*ji, function)));
 
-          for (std::vector<ValuePtr<Block> >::iterator ji = blocks.begin(), je = blocks.end(); ji != je; ++ji) {
-            setup_term_name(*ji);
-            setup_block_instructions(*ji);
-          }
-          
-          for (std::vector<ValuePtr<Block> >::iterator ji = blocks.begin(), je = blocks.end(); ji != je; ++ji) {
-            setup_term_name(*ji);
-            setup_block_phis(*ji);
-          }
+        for (Function::BlockList::const_iterator ji = function->blocks().begin(), je = function->blocks().end(); ji != je; ++ji) {
+          setup_term_name(*ji);
+          setup_block_instructions(*ji);
+          setup_block_phis(*ji);
         }
       }
     }
@@ -282,7 +275,7 @@ namespace Psi {
 
         case term_function_parameter:
           function = value_cast<FunctionParameter>(term->source())->function();
-          block = function->entry();
+          block = function->blocks().front();
           break;
 
         default: PSI_FAIL("unexpected source term type");
@@ -505,9 +498,10 @@ namespace Psi {
       case term_function_parameter: {
         ValuePtr<FunctionParameter> parameter = value_cast<FunctionParameter>(term);
         ValuePtr<Function> function = parameter->function();
-        for (unsigned ii = 0, ie = function->n_parameters(); ii != ie; ++ii) {
-          if (parameter == function->parameter(ii)) {
-            *m_output << "[function parameter " << ii << "]\n";
+        unsigned n = 0;
+        for (Function::ParameterList::const_iterator ii = function->parameters().begin(), ie = function->parameters().end(); ii != ie; ++ii, ++n) {
+          if (parameter == *ii) {
+            *m_output << "[function parameter " << n << "]\n";
             return;
           }
         }
@@ -524,7 +518,7 @@ namespace Psi {
     }
    
     void DisassemblerContext::print_function_type_term(const ValuePtr<FunctionType>& term, const ValuePtr<Function>& use_names) {
-      PSI_ASSERT(!use_names || (term->parameter_types().size() == use_names->n_parameters()));
+      PSI_ASSERT(!use_names || (term->parameter_types().size() == use_names->parameters().size()));
 
       *m_output << "function (";
       
@@ -542,7 +536,7 @@ namespace Psi {
         
         std::string name;
         if (use_names) {
-          name = m_names.find(use_names->parameter(ii))->second->name;
+          name = m_names.find(use_names->parameters().at(ii))->second->name;
         } else {
           name = str(name_formatter % (parameter_name_base + ii));
         }
@@ -694,8 +688,7 @@ namespace Psi {
       print_function_type_term(term->function_type(), term);
       *m_output << " {\n";
       
-      std::vector<ValuePtr<Block> > blocks = term->topsort_blocks();
-      for (std::vector<ValuePtr<Block> >::iterator ii = blocks.begin(), ie = blocks.end(); ii != ie; ++ii)
+      for (Function::BlockList::const_iterator ii = term->blocks().begin(), ie = term->blocks().end(); ii != ie; ++ii)
         print_block(*ii, m_local_definitions[*ii]);
       
       *m_output << "};\n";

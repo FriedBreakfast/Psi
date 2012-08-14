@@ -153,6 +153,11 @@ namespace Psi {
       void visit_object(const char*, const boost::array<const ValuePtr<T>*,1>& ptr) {
         derived().visit_ptr(*ptr[0]);
       }
+      
+      template<typename T>
+      void visit_value_list(const char*, const boost::array<T*,1>& ptr) {
+        derived().visit_ptr_list(*ptr[0]);
+      }
 
       template<typename T>
       void visit_sequence (const char*, const boost::array<T*,1>& collections) {
@@ -308,6 +313,12 @@ namespace Psi {
         ++ptr->m_reference_count;
       }
       
+      template<typename T>
+      void visit_ptr_list(T& list) {
+        for (typename T::const_iterator ii = list.begin(), ie = list.end(); ii != ie; ++ii)
+          visit_ptr(*ii);
+      }
+
       template<typename T> bool do_visit_base(VisitorTag<T>) {return true;}
     };
     
@@ -317,6 +328,12 @@ namespace Psi {
         --ptr->m_reference_count;
       }
 
+      template<typename T>
+      void visit_ptr_list(T& list) {
+        for (typename T::const_iterator ii = list.begin(), ie = list.end(); ii != ie; ++ii)
+          visit_ptr(*ii);
+      }
+
       template<typename T> bool do_visit_base(VisitorTag<T>) {return true;}
     };
     
@@ -324,6 +341,11 @@ namespace Psi {
       template<typename T>
       void visit_ptr(ValuePtr<T>& ptr) {
         ptr.reset();
+      }
+      
+      template<typename T>
+      void visit_ptr_list(T& list) {
+        list.clear();
       }
 
       template<typename T> bool do_visit_base(VisitorTag<T>) {return true;}

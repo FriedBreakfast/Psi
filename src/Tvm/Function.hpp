@@ -11,6 +11,119 @@ namespace Psi {
     class FunctionType;
     class Block;
     
+    template<typename T, boost::intrusive::list_member_hook<> T::*member_hook>
+    class ValueList {
+      typedef boost::intrusive::list<T,
+                                     boost::intrusive::member_hook<T, boost::intrusive::list_member_hook<>, member_hook>,
+                                     boost::intrusive::constant_time_size<false> > BaseList;
+
+      mutable BaseList m_base;
+
+    public:
+      class iterator
+      : public boost::iterator_facade<iterator, const ValuePtr<T>, boost::bidirectional_traversal_tag> {
+        typedef boost::iterator_facade<iterator, const ValuePtr<T>, boost::bidirectional_traversal_tag> BaseAdaptorType;
+
+        ValuePtr<T> m_value_ptr;
+        typename BaseList::iterator m_base, m_end;
+        
+      public:
+        iterator() {}
+        explicit iterator(typename BaseList::iterator base, typename BaseList::iterator end) : m_base(base), m_end(end) {reset_ptr();}
+        
+      private:
+        friend class boost::iterator_core_access;
+        
+        void reset_ptr() {
+          if (m_base != m_end)
+            m_value_ptr.reset(&*m_base);
+        }
+
+        const ValuePtr<T>& dereference() const {
+          return m_value_ptr;
+        }
+        
+        bool equal(const iterator& y) const {
+          return m_base == y.m_base;
+        }
+        
+        void increment() {
+          ++m_base;
+          reset_ptr();
+        }
+        
+        void decrement() {
+          --m_base;
+          reset_ptr();
+        }
+      };
+      
+      typedef iterator const_iterator;
+      
+      bool empty() const {return m_base.empty();}
+      const_iterator begin() const {return const_iterator(m_base.begin(), m_base.end());}
+      const_iterator end() const {return const_iterator(m_base.end(), m_base.end());}
+      const_iterator iterator_to(const ValuePtr<T>& x) const {return const_iterator(m_base.iterator_to(*x), m_base.end());}
+      std::size_t size() const {return m_base.size();}
+      
+      ValuePtr<T> at(std::size_t n) const {
+        typename BaseList::iterator it = m_base.begin();
+        std::advance(it, n);
+        return ValuePtr<T>(&*it);
+      }
+      
+      ValuePtr<T> front() const {return ValuePtr<T>(&m_base.front());}
+      ValuePtr<T> back() const {return ValuePtr<T>(&m_base.back());}
+      
+      void insert(const ValuePtr<T>& ptr, T& elem) {
+        m_base.insert(ptr ? m_base.iterator_to(*ptr) : m_base.end(), elem);
+        intrusive_ptr_add_ref(&elem);
+      }
+      
+      void push_back(T& elem) {
+        m_base.push_back(elem);
+        intrusive_ptr_add_ref(&elem);
+      }
+
+      /**
+       * \brief Check whether one element comes before another in this list.
+       * 
+       * Used by common_source() and source_dominated(), and shouldn't really be used
+       * elsewhere.
+       * 
+       * Assumes that both items are members of this list.
+       */
+      bool before(const T& first, const T& second) const {
+        for (typename BaseList::const_iterator ii = m_base.begin(), ie = m_base.end(); ii != ie; ++ii) {
+          if (&*ii == &first)
+            return true;
+          else if (&*ii == &second)
+            return false;
+        }
+        PSI_FAIL("Unreachable");
+      }
+      
+    private:
+      struct ElementDisposer {
+        void operator () (T *v) {
+          v->list_release();
+          intrusive_ptr_release(v);
+        }
+      };
+
+    public:
+      void clear() {
+        m_base.clear_and_dispose(ElementDisposer());
+      }
+      
+      ~ValueList() {
+        clear();
+      }
+    };
+    
+    template<typename V, typename T, boost::intrusive::list_member_hook<> T::* member, typename D>
+    void visit_callback_impl(V& callback, const char *name, VisitorTag<ValueList<T, member> >, const D& values) {callback.visit_value_list(name, values);}
+    
     /**
      * \brief Base class for terms which belong to a block.
      */
@@ -19,7 +132,9 @@ namespace Psi {
 
     public:
       /// \brief Get the block this term is part of.
-      const ValuePtr<Block>& block() {return m_block;}
+      ValuePtr<Block> block() {return ValuePtr<Block>(m_block);}
+      /// \brief Get a raw pointer to the block this term is part of.
+      Block* block_ptr() {return m_block;}
       /// \brief Get the function the block this is in is part of
       ValuePtr<Function> function();
 
@@ -29,7 +144,10 @@ namespace Psi {
       BlockMember(TermType term_type, const ValuePtr<>& type,
                   Value* source, const SourceLocation& location);
       
-      ValuePtr<Block> m_block;
+    private:
+      template<typename T, boost::intrusive::list_member_hook<> T::*> friend class ValueList;
+      void list_release() {m_block = NULL;}
+      Block *m_block;
     };
     
     class InstructionVisitor {
@@ -80,8 +198,7 @@ namespace Psi {
 
     private:
       const char *m_operation;
-      typedef boost::intrusive::list_member_hook<> InstructionListHook;
-      InstructionListHook m_instruction_list_hook;
+      boost::intrusive::list_member_hook<> m_instruction_list_hook;
     };
     
     /**
@@ -166,13 +283,11 @@ namespace Psi {
 
     private:
       Phi(const ValuePtr<>& type, const SourceLocation& location);
-      typedef boost::intrusive::list_member_hook<> PhiListHook;
-      PhiListHook m_phi_list_hook;
       std::vector<PhiEdge> m_edges;
+      boost::intrusive::list_member_hook<> m_phi_list_hook;
     };
 
     /**
-
      * \brief Block (list of instructions) inside a function. The
      * value of this term is the label used to jump to this block.
      */
@@ -181,8 +296,8 @@ namespace Psi {
       friend class Function;
 
     public:
-      typedef std::vector<ValuePtr<Instruction> > InstructionList;
-      typedef std::vector<ValuePtr<Phi> > PhiList;
+      typedef ValueList<Instruction, &Instruction::m_instruction_list_hook> InstructionList;
+      typedef ValueList<Phi, &Phi::m_phi_list_hook> PhiList;
 
       ValuePtr<Phi> insert_phi(const ValuePtr<>& type, const SourceLocation& location);
       void insert_instruction(const ValuePtr<Instruction>& insn, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
@@ -193,7 +308,9 @@ namespace Psi {
       /** \brief Whether this block has been terminated so no more instructions can be added. */
       bool terminated() {return m_terminated;}
       /** \brief Get the function which contains this block. */
-      const ValuePtr<Function>& function() {return m_function;}
+      ValuePtr<Function> function() {return ValuePtr<Function>(m_function);}
+      /** \brief Get a raw pointer to the function which contains this block. */
+      Function* function_ptr() {return m_function;}
       /** \brief Get a pointer to the dominating block. */
       const ValuePtr<Block>& dominator() {return m_dominator;}
       /** \brief Get this block's catch list (this will be NULL for a regular block). */
@@ -204,7 +321,8 @@ namespace Psi {
       std::vector<ValuePtr<Block> > successors();
 
       bool check_available(const ValuePtr<>& term, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
-      bool dominated_by(const ValuePtr<Block>& block);
+      bool dominated_by(Block *block);
+      bool dominated_by(const ValuePtr<Block>& block) {return dominated_by(block.get());}
       
       static ValuePtr<Block> common_dominator(const ValuePtr<Block>&, const ValuePtr<Block>&);
       static bool isa_impl(const Value& v) {return v.term_type() == term_block;}
@@ -212,18 +330,21 @@ namespace Psi {
       template<typename V> static void visit(V& v);
 
     private:
-      Block(const ValuePtr<Function>& function, const ValuePtr<Block>& dominator,
+      Block(Function *function, const ValuePtr<Block>& dominator,
             bool is_landing_pad, const ValuePtr<Block>& landing_pad,
             const SourceLocation& location);
       InstructionList m_instructions;
       PhiList m_phi_nodes;
       
-      ValuePtr<Function> m_function;
+      Function *m_function;
       ValuePtr<Block> m_dominator;
       ValuePtr<Block> m_landing_pad;
       
       bool m_is_landing_pad;
       bool m_terminated;
+      template<typename T, boost::intrusive::list_member_hook<> T::*> friend class ValueList;
+      boost::intrusive::list_member_hook<> m_block_list_hook;
+      void list_release() {m_function = NULL;}
     };
     
     inline ValuePtr<Function> BlockMember::function() {return m_block ? m_block->function() : ValuePtr<Function>();}
@@ -234,7 +355,8 @@ namespace Psi {
       PSI_TVM_VALUE_DECL(FunctionParameter);
       friend class Function;
     public:
-      const ValuePtr<Function>& function() {return m_function;}
+      ValuePtr<Function> function() {return ValuePtr<Function>(m_function);}
+      Function *function_ptr() {return m_function;}
       bool parameter_phantom() {return m_phantom;}
       
       static bool isa_impl(const Value& ptr) {
@@ -244,9 +366,13 @@ namespace Psi {
       template<typename V> static void visit(V& v);
 
     private:
-      FunctionParameter(Context& context, const ValuePtr<Function>& function, const ValuePtr<>& type, bool phantom, const SourceLocation& location);
+      FunctionParameter(Context& context, Function *function, const ValuePtr<>& type, bool phantom, const SourceLocation& location);
       bool m_phantom;
-      ValuePtr<Function> m_function;
+
+      void list_release() {m_function = NULL;}
+      Function *m_function;
+      boost::intrusive::list_member_hook<> m_parameter_list_hook;
+      template<typename T, boost::intrusive::list_member_hook<> T::*> friend class ValueList;
     };
 
     /**
@@ -257,6 +383,8 @@ namespace Psi {
       friend class Module;
     public:
       typedef boost::unordered_multimap<ValuePtr<>, std::string> TermNameMap;
+      typedef ValueList<FunctionParameter, &FunctionParameter::m_parameter_list_hook> ParameterList;
+      typedef ValueList<Block, &Block::m_block_list_hook> BlockList;
 
       /**
        * Get the type of this function. This returns the raw function
@@ -265,9 +393,8 @@ namespace Psi {
        */
       ValuePtr<FunctionType> function_type() const;
 
-      std::size_t n_parameters() const {return m_parameters.size();}
-      /** \brief Get a function parameter. */
-      const ValuePtr<FunctionParameter>& parameter(std::size_t n) const {return m_parameters[n];}
+      /** \brief Get the parameters for this funtion */
+      const ParameterList& parameters() const {return m_parameters;}
 
       /**
        * Get the return type of this function, as viewed from inside the
@@ -276,8 +403,7 @@ namespace Psi {
        */
       const ValuePtr<>& result_type() const {return m_result_type;}
 
-      const ValuePtr<Block>& entry() {return m_entry;}
-      void set_entry(const ValuePtr<Block>& block);
+      const BlockList& blocks() {return m_blocks;}
 
       ValuePtr<Block> new_block(const SourceLocation& location,
                                 const ValuePtr<Block>& dominator=ValuePtr<Block>(),
@@ -288,7 +414,6 @@ namespace Psi {
 
       void add_term_name(const ValuePtr<>& term, const std::string& name);
       const TermNameMap& term_name_map() {return m_name_map;}
-      std::vector<ValuePtr<Block> > topsort_blocks();
       
       /**
        * \brief Get the exception handling personality of this function.
@@ -311,13 +436,12 @@ namespace Psi {
     private:
       Function(Context& context, const ValuePtr<FunctionType>& type, const std::string& name,
                Module *module, const SourceLocation& location);
-      void create_parameters();
 
       TermNameMap m_name_map;
       std::string m_exception_personality;
-      ValuePtr<Block> m_entry;
-      std::vector<ValuePtr<FunctionParameter> > m_parameters;
       ValuePtr<> m_result_type;
+      ParameterList m_parameters;
+      BlockList m_blocks;
     };
 
     /**

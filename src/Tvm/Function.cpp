@@ -12,7 +12,7 @@ namespace Psi {
   namespace Tvm {
     ValuePtr<FunctionTypeResolvedParameter> FunctionTypeResolvedParameter::get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location) {
       return type->context().get_functional(FunctionTypeResolvedParameter(type, depth, index, location));
-    }void insert(const ValuePtr<Instruction>& instruction);
+    }
     
     FunctionTypeResolvedParameter::FunctionTypeResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location)
     : FunctionalValue(type->context(), location),
@@ -222,7 +222,8 @@ namespace Psi {
 
     BlockMember::BlockMember(TermType term_type, const ValuePtr<>& type,
                              Value* source, const SourceLocation& location)
-    : Value(type->context(), term_type, type, source, location) {
+    : Value(type->context(), term_type, type, source, location),
+    m_block(NULL) {
     }
 
     Instruction::Instruction(const ValuePtr<>& type, const char *operation, const SourceLocation& location)
@@ -263,17 +264,17 @@ namespace Psi {
      * dominator block refers to the function entry, i.e. before the
      * entry block is run, and therefore eveything is dominated by it.
      */
-    bool Block::dominated_by(const ValuePtr<Block>& block) {
+    bool Block::dominated_by(Block *block) {
       if (!block)
         return true;
 
-      for (ValuePtr<Block> b(this); b; b = b->dominator()) {
+      for (Block *b = this; b; b = b->m_dominator.get()) {
         if (block == b)
           return true;
       }
       return false;
     }
-
+    
     /**
      * \brief Find the latest block which dominates both of the specified blocks.
      * 
@@ -321,26 +322,20 @@ namespace Psi {
       if (m_terminated && !insert_before)
         throw TvmUserError("cannot add instruction at end of already terminated block");
       
-      InstructionList::iterator insert_before_it;
       bool terminator = false;
       if (insert_before) {
         if (insert_before->block() != this)
           throw TvmUserError("instruction specified as insertion point is not part of this block");
 
-        insert_before_it = std::find(m_instructions.begin(), m_instructions.end(), insert_before);
-        if (insert_before_it == m_instructions.end())
-          throw TvmUserError("instruction specified as insertion point cannot be found in this block");
-
         if (isa<TerminatorInstruction>(insn))
           throw TvmUserError("terminating instruction cannot be inserted other than at the end of a block");
       } else {
-        insert_before_it = m_instructions.end();
         if (isa<TerminatorInstruction>(insn))
           terminator = true;
       }
 
-      m_instructions.insert(insert_before_it, insn);
-      insn->m_block = ValuePtr<Block>(this);
+      m_instructions.insert(insert_before, *insn);
+      insn->m_block = this;
       
       if (terminator)
         m_terminated = true;
@@ -363,7 +358,9 @@ namespace Psi {
       visit_base<Value>(v);
       v("function", &Block::m_function)
       ("dominator", &Block::m_dominator)
-      ("landing_pad", &Block::m_landing_pad);
+      ("landing_pad", &Block::m_landing_pad)
+      ("instructions", &Block::m_instructions)
+      ("phi_nodes", &Block::m_phi_nodes);
     }
 
     PSI_TVM_VALUE_IMPL(Block, Value)
@@ -431,12 +428,12 @@ namespace Psi {
      */
     ValuePtr<Phi> Block::insert_phi(const ValuePtr<>& type, const SourceLocation& location) {
       ValuePtr<Phi> phi(::new Phi(type, location));
-      phi->m_block = ValuePtr<Block>(this);
-      m_phi_nodes.push_back(phi);
+      m_phi_nodes.push_back(*phi);
+      phi->m_block = this;
       return phi;
     }
 
-    Block::Block(const ValuePtr<Function>& function, const ValuePtr<Block>& dominator,
+    Block::Block(Function *function, const ValuePtr<Block>& dominator,
                  bool is_landing_pad, const ValuePtr<Block>& landing_pad, const SourceLocation& location)
     : Value(function->context(), term_block, BlockType::get(function->context(), location), this, location),
     m_function(function),
@@ -446,7 +443,7 @@ namespace Psi {
     m_terminated(false) {
     }
 
-    FunctionParameter::FunctionParameter(Context& context, const ValuePtr<Function>& function, const ValuePtr<>& type, bool phantom, const SourceLocation& location)
+    FunctionParameter::FunctionParameter(Context& context, Function *function, const ValuePtr<>& type, bool phantom, const SourceLocation& location)
     : Value(context, term_function_parameter, type, this, location),
     m_phantom(phantom),
     m_function(function) {
@@ -456,7 +453,6 @@ namespace Psi {
     template<typename V>
     void FunctionParameter::visit(V& v) {
       visit_base<Value>(v);
-      v("function", &FunctionParameter::m_function);
     }
     
     PSI_TVM_VALUE_IMPL(FunctionParameter, Value);
@@ -467,46 +463,26 @@ namespace Psi {
     ValuePtr<Function> Module::new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location) {
       PSI_ASSERT(type);
       ValuePtr<Function> result(::new Function(context(), type, name, this, location));
-      result->create_parameters();
       add_member(result);
       return result;
     }
     
     Function::Function(Context& context, const ValuePtr<FunctionType>& type, const std::string& name, Module* module, const SourceLocation& location)
     : Global(context, term_function, type, name, module, location) {
-    }
-    
-    void Function::create_parameters() {
-      ValuePtr<Function> f(this);
-      ValuePtr<FunctionType> ft = function_type();
-      std::vector<ValuePtr<> > previous;
-      unsigned n_phantom = ft->n_phantom();
 
-      for (unsigned ii = 0, ie = ft->parameter_types().size(); ii != ie; ++ii) {
-        ValuePtr<> t = ft->parameter_type_after(previous);
-        ValuePtr<FunctionParameter> p(::new FunctionParameter(context(), f, t, ii < n_phantom, f->location()));
+      std::vector<ValuePtr<> > previous;
+      unsigned n_phantom = type->n_phantom();
+
+      for (unsigned ii = 0, ie = type->parameter_types().size(); ii != ie; ++ii) {
+        ValuePtr<FunctionParameter> p(::new FunctionParameter(context, this, type->parameter_type_after(previous), ii < n_phantom, location));
+        m_parameters.push_back(*p);
         previous.push_back(p);
-        m_parameters.push_back(p);
       }
-      m_result_type = ft->result_type_after(previous);
+      m_result_type = type->result_type_after(previous);
     }
 
     ValuePtr<FunctionType> Function::function_type() const {
       return value_cast<FunctionType>(value_cast<PointerType>(type())->target_type());
-    }
-
-    /**
-     * \brief Set the entry point for a function.
-     *
-     * If a function has no entry point, it will be treated as
-     * external. Once an entry point has been set, it cannot be
-     * changed.
-     */
-    void Function::set_entry(const ValuePtr<Block>& block) {
-      if (m_entry)
-        throw TvmUserError("Cannot change the entry point of a function once it is set");
-      
-      m_entry = block;
     }
 
     /**
@@ -516,7 +492,9 @@ namespace Psi {
      * are available in this block.
      */
     ValuePtr<Block> Function::new_block(const SourceLocation& location, const ValuePtr<Block>& dominator, const ValuePtr<Block>& landing_pad) {
-      return ValuePtr<Block>(::new Block(ValuePtr<Function>(this), dominator, false, landing_pad, location));
+      ValuePtr<Block> b(::new Block(this, dominator, false, landing_pad, location));
+      m_blocks.push_back(*b);
+      return b;
     }
 
     /**
@@ -526,7 +504,9 @@ namespace Psi {
      * are available in this block.
      */
     ValuePtr<Block> Function::new_landing_pad(const SourceLocation& location, const ValuePtr<Block>& dominator, const ValuePtr<Block>& landing_pad) {
-      return ValuePtr<Block>(::new Block(ValuePtr<Function>(this), dominator, true, landing_pad, location));
+      ValuePtr<Block> b(::new Block(this, dominator, true, landing_pad, location));
+      m_blocks.push_back(*b);
+      return b;
     }
 
     /**
@@ -536,40 +516,14 @@ namespace Psi {
       m_name_map.insert(std::make_pair(term, name));
     }
 
-    /**
-     * Topologically sort blocks in this function so that the result is a
-     * list of all blocks in the function where each block that appears
-     * is guaranteed to appear after its dominating block.
-     * 
-     * In addition, the first block in the resulting list will always
-     * be the function entry.
-     */
-    std::vector<ValuePtr<Block> > Function::topsort_blocks() {
-      std::vector<ValuePtr<Block> > blocks;
-      boost::unordered_set<ValuePtr<Block> > visited_blocks;
-
-      blocks.push_back(entry());
-      visited_blocks.insert(entry());
-      
-      for (std::size_t i = 0; i != blocks.size(); ++i) {
-        std::vector<ValuePtr<Block> > successors = blocks[i]->successors();
-        for (std::vector<ValuePtr<Block> >::iterator it = successors.begin(); it != successors.end(); ++it) {
-          if (visited_blocks.insert(*it).second)
-            blocks.push_back(*it);
-        }
-      }
-      
-      return blocks;
-    }
-
     template<typename V>
     void Function::visit(V& v) {
       visit_base<Global>(v);
       v("parameters", &Function::m_parameters)
       ("result_type", &Function::m_result_type)
-      ("entry", &Function::m_entry)
       ("exception_personality", &Function::m_exception_personality)
-      ("name_map", &Function::m_name_map);
+      ("name_map", &Function::m_name_map)
+      ("blocks", &Function::m_blocks);
     }
     
     PSI_TVM_VALUE_IMPL(Function, Global);
@@ -587,7 +541,7 @@ namespace Psi {
       // switch statements allow some weird stuff...
       {
       case term_function:
-        block = value_cast<Function>(source)->entry();
+        block = value_cast<Function>(source)->blocks().front();
         goto block_function_common;
 
       case term_block:
@@ -595,23 +549,18 @@ namespace Psi {
         goto block_function_common;
       
       block_function_common:
-        const Block::InstructionList& insn_list = block->instructions();
-        if (insn_list.empty())
+        if (block->instructions().empty())
           return InstructionInsertPoint(block);
         else
-          return InstructionInsertPoint(insn_list.front());
+          return InstructionInsertPoint(*block->instructions().begin());
       }
 
       case term_instruction: {
         ValuePtr<Instruction> insn = value_cast<Instruction>(source);
         ValuePtr<Block> block = insn->block();
-        const Block::InstructionList& insn_list = block->instructions();
-        Block::InstructionList::const_iterator insn_it =
-          std::find(insn_list.begin(), insn_list.end(), insn);
-        if (insn_it == insn_list.end())
-          throw TvmUserError("instruction cannot be found in this block");
+        Block::InstructionList::const_iterator insn_it = block->instructions().iterator_to(insn);
         ++insn_it;
-        if (insn_it == insn_list.end())
+        if (insn_it == block->instructions().end())
           return InstructionInsertPoint(block);
         else
           return InstructionInsertPoint(*insn_it);

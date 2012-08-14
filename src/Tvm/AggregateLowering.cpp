@@ -550,9 +550,8 @@ namespace Psi {
     AggregateLoweringPass::FunctionRunner::FunctionRunner(AggregateLoweringPass* pass, const ValuePtr<Function>& old_function)
     : AggregateLoweringRewriter(pass), m_old_function(old_function) {
       m_new_function = pass->target_callback->lower_function(*pass, old_function);
-      if (old_function->entry()) {
-        ValuePtr<Block> new_entry = new_function()->new_block(old_function->entry()->location());
-        new_function()->set_entry(new_entry);
+      if (!old_function->blocks().empty()) {
+        ValuePtr<Block> new_entry = new_function()->new_block(old_function->blocks().front()->location());
         builder().set_insert_point(new_entry);
         pass->target_callback->lower_function_entry(*this, old_function, new_function());
       }
@@ -699,16 +698,15 @@ namespace Psi {
        * function and decide whether a new entry block is necessary in case
        * the user jumps back to the start of the function.
        */
-      ValuePtr<Block> prolog_block = new_function()->entry();
+      ValuePtr<Block> prolog_block = new_function()->blocks().front();
       if (!prolog_block)
         return; // This is an external function
 
-      std::vector<ValuePtr<Block> > old_sorted_blocks = old_function()->topsort_blocks();
       std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > > sorted_blocks;
       
       // Set up block mapping for all blocks except the entry block,
       // which has already been handled
-      for (std::vector<ValuePtr<Block> >::iterator ii = old_sorted_blocks.begin(), ie = old_sorted_blocks.end(); ii != ie; ++ii) {
+      for (Function::BlockList::const_iterator ii = old_function()->blocks().begin(), ie = old_function()->blocks().end(); ii != ie; ++ii) {
         ValuePtr<Block> dominator = (*ii)->dominator() ? rewrite_block((*ii)->dominator()) : prolog_block;
         ValuePtr<Block> new_block = new_function()->new_block((*ii)->location(), dominator);
         sorted_blocks.push_back(std::make_pair(*ii, new_block));
@@ -716,7 +714,7 @@ namespace Psi {
       }
       
       // Jump from prolog block to entry block
-      InstructionBuilder(prolog_block).br(rewrite_block(old_sorted_blocks.front()), prolog_block->location());
+      InstructionBuilder(prolog_block).br(rewrite_block(old_function()->blocks().front()), prolog_block->location());
       
       // Generate PHI nodes and convert instructions!
       for (std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > >::iterator ii = sorted_blocks.begin(), ie = sorted_blocks.end(); ii != ie; ++ii) {
@@ -724,25 +722,23 @@ namespace Psi {
         const ValuePtr<Block>& new_block = ii->second;
 
         // Generate PHI nodes
-        const Block::PhiList& phi_list = old_block->phi_nodes();
-        for (Block::PhiList::const_iterator ji = phi_list.begin(), je = phi_list.end(); ji != je; ++ji)
+        for (Block::PhiList::const_iterator ji = old_block->phi_nodes().begin(), je = old_block->phi_nodes().end(); ji != je; ++ji)
           create_phi_node(new_block, *ji);
 
         // Create instructions
-        const Block::InstructionList& insn_list = old_block->instructions();
         m_builder.set_insert_point(new_block);
-        for (Block::InstructionList::const_iterator ji = insn_list.begin(), je = insn_list.end(); ji != je; ++ji) {
-          LoweredValue value = InstructionTermRewriter::callback_map.call(*this, *ji);
+        for (Block::InstructionList::const_iterator ji = old_block->instructions().begin(), je = old_block->instructions().end(); ji != je; ++ji) {
+          const ValuePtr<Instruction>& insn = *ji;
+          LoweredValue value = InstructionTermRewriter::callback_map.call(*this, insn);
           if (value.value())
-            m_value_map[*ji] = value;
+            m_value_map[insn] = value;
         }
       }
       
       // Populate preexisting PHI nodes with values
       for (std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > >::iterator ii = sorted_blocks.begin(), ie = sorted_blocks.end(); ii != ie; ++ii) {
         ValuePtr<Block> old_block = ii->first;
-        const Block::PhiList& phi_list = old_block->phi_nodes();
-        for (Block::PhiList::const_iterator ji = phi_list.begin(), je = phi_list.end(); ji != je; ++ji) {
+        for (Block::PhiList::const_iterator ji = old_block->phi_nodes().begin(), je = old_block->phi_nodes().end(); ji != je; ++ji) {
           const ValuePtr<Phi>& phi_node = *ji;
 
           std::vector<PhiEdge> edges;
@@ -910,7 +906,7 @@ namespace Psi {
       case term_instruction: insert_block = value_cast<Instruction>(value->source())->block(); break;
       case term_phi: insert_block = value_cast<Phi>(value->source())->block(); break;
       case term_block: insert_block.reset(value_cast<Block>(value->source())); break;
-      case term_function_parameter: insert_block = value_cast<FunctionParameter>(value->source())->function()->entry(); break;
+      case term_function_parameter: insert_block = value_cast<FunctionParameter>(value->source())->function()->blocks().front(); break;
       default: PSI_FAIL("unexpected term type");
       }
       
@@ -1024,7 +1020,7 @@ namespace Psi {
       
       for (TypePhiMapType::iterator ii = m_generated_phi_terms.begin(), ie = m_generated_phi_terms.end(); ii != ie; ++ii) {
         // Find block to create alloca's for current type
-        ValuePtr<Block> type_block = new_function()->entry();
+        ValuePtr<Block> type_block = new_function()->blocks().front();
         if (Value *source = ii->first->source()) {
           switch (source->term_type()) {
           case term_instruction: type_block = rewrite_block(value_cast<Instruction>(source)->block()); break;
