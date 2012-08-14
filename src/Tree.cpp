@@ -20,11 +20,15 @@ namespace Psi {
         m_compile_context->m_gc_list.erase(m_compile_context->m_gc_list.iterator_to(*this));
     }
     
+    const SIVtable Object::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Object", NULL);
+
     TreeBase::TreeBase(const TreeBaseVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
     : Object(PSI_COMPILER_VPTR_UP(Object, vptr), compile_context),
     m_location(location) {
     }
     
+    const SIVtable TreeBase::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeBase", &Object::vtable);
+
     Tree::Tree(const TreeVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
     : TreeBase(PSI_COMPILER_VPTR_UP(TreeBase, vptr), compile_context, location) {
     }
@@ -99,9 +103,13 @@ namespace Psi {
       return match(value, list_from_stl(wildcards));
     }
 
+    const SIVtable Tree::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Tree", &TreeBase::vtable);
+
     TreeCallback::TreeCallback(const TreeCallbackVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
     : TreeBase(PSI_COMPILER_VPTR_UP(TreeBase, vptr), compile_context, location), m_state(state_ready) {
     }
+
+    const SIVtable TreeCallback::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeCallback", &TreeBase::vtable);
 
     Term::Term(const TermVtable *vptr, const TreePtr<Term>& type_, const SourceLocation& location)
     : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), type_.compile_context(), location),
@@ -121,9 +129,13 @@ namespace Psi {
         return TreePtr<>();
     }
 
+    const SIVtable Term::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Term", Tree);
+
     Type::Type(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
     : Term(vptr, compile_context.builtins().metatype, location) {
     }
+
+    const SIVtable Type::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Type", Term);
 
     Anonymous::Anonymous(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -137,6 +149,8 @@ namespace Psi {
     void Anonymous::visit(V& v) {
       visit_base<Term>(v);
     }
+
+    const TermVtable Anonymous::vtable = PSI_COMPILER_TERM(Anonymous, "psi.compiler.Anonymous", Term);
 
     Parameter::Parameter(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -155,6 +169,8 @@ namespace Psi {
       ("index", &Parameter::index);
     }
 
+    const TermVtable Parameter::vtable = PSI_COMPILER_TERM(Parameter, "psi.compiler.Parameter", Term);
+
     Global::Global(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location)
     : Term(vptr, compile_context, location) {
     }
@@ -167,6 +183,8 @@ namespace Psi {
     void Global::visit(V& v) {
       visit_base<Term>(v);
     }
+
+    const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
 
     ExternalGlobal::ExternalGlobal(CompileContext& compile_context, const SourceLocation& location)
     : Global(&vtable, compile_context, location) {
@@ -182,6 +200,8 @@ namespace Psi {
       visit_base<Global>(v);
       v("symbol", &ExternalGlobal::m_symbol);
     }
+
+    const TermVtable ExternalGlobal::vtable = PSI_COMPILER_TERM(ExternalGlobal, "psi.compiler.ExternalGlobal", Global);
 
     FunctionType::FunctionType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
@@ -263,6 +283,8 @@ namespace Psi {
       return type;
     }
 
+    const TermVtable FunctionType::vtable = PSI_COMPILER_TERM(FunctionType, "psi.compiler.FunctionType", Type);
+
     Function::Function(CompileContext& compile_context, const SourceLocation& location)
     : Global(&vtable, compile_context, location) {
     }
@@ -284,6 +306,8 @@ namespace Psi {
       ("body", &Function::body);
     }
 
+    const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", Term);
+
     TryFinally::TryFinally(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
     }
@@ -299,6 +323,8 @@ namespace Psi {
       v("try_expr", &TryFinally::try_expr)
       ("finally_expr", &TryFinally::finally_expr);
     }
+
+    const TermVtable TryFinally::vtable = PSI_COMPILER_TERM(TryFinally, "psi.compiler.TryFinally", Term);
 
     Statement::Statement(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -318,6 +344,8 @@ namespace Psi {
       visit_base<Term>(v);
       v("value", &Statement::value);
     }
+
+    const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
     
     StatementList::StatementList(const TermVtable* vptr, CompileContext& compile_context, const SourceLocation& location)
     : Term(vptr, compile_context, location) {
@@ -335,6 +363,8 @@ namespace Psi {
       v("statements", &StatementList::statements);
     }
 
+    const SIVtable StatementList::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.StatementList", Term);
+
     Block::Block(CompileContext& compile_context, const SourceLocation& location)
     : StatementList(&vtable, compile_context, location) {
     }
@@ -343,6 +373,8 @@ namespace Psi {
     : StatementList(&vtable, tree_attribute(value_, &Term::type), statements_, location),
     value(value_) {
     }
+
+    const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", StatementList);
 
     template<typename Visitor>
     void Block::visit(Visitor& v) {
@@ -357,6 +389,13 @@ namespace Psi {
     Namespace::Namespace(const PSI_STD::vector<TreePtr<Statement> >& statements, CompileContext& compile_context, const SourceLocation& location)
     : StatementList(&vtable, compile_context.builtins().empty_type, statements, location) {
     }
+    
+    template<typename V>
+    void Namespace::visit(V& v) {
+      visit_base<StatementList>(v);
+    }
+
+    const TermVtable Namespace::vtable = PSI_COMPILER_TERM(Namespace, "psi.compiler.Namespace", StatementList);
 
     Interface::Interface(CompileContext& compile_context, const SourceLocation& location)
     : Tree(&vtable, compile_context, location) {
@@ -368,6 +407,16 @@ namespace Psi {
     compile_time_type(compile_time_type_),
     run_time_type(run_time_type_) {
     }
+    
+    template<typename V>
+    void Interface::visit(V& v) {
+      visit_base<Tree>(v);
+      v("n_parameters", &Interface::n_parameters)
+      ("compile_time_type", &Interface::compile_time_type)
+      ("run_time_type", &Interface::run_time_type);
+    }
+
+    const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", Tree);
 
     Implementation::Implementation(CompileContext& compile_context, const SourceLocation& location)
     : Tree(&vtable, compile_context, location) {
@@ -408,6 +457,8 @@ namespace Psi {
 
       return true;
     }
+
+    const TreeVtable Implementation::vtable = PSI_COMPILER_TREE(Implementation, "psi.compiler.Implementation", Tree);
     
     Metatype::Metatype(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -418,9 +469,18 @@ namespace Psi {
       visit_base<Term>(v);
     }
 
+    const TermVtable Metatype::vtable = PSI_COMPILER_TERM(Metatype, "psi.compiler.Metatype", Term);
+
     BottomType::BottomType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
     }
+    
+    template<typename V>
+    void BottomType::visit(V& v) {
+      visit_base<Type>(v);
+    }
+    
+    const TermVtable BottomType::vtable = PSI_COMPILER_TERM(BottomType, "psi.compiler.BottomType", Type);
 
     EmptyType::EmptyType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
@@ -429,6 +489,13 @@ namespace Psi {
     TreePtr<Term> EmptyType::value(CompileContext& compile_context, const SourceLocation& location) {
       return TreePtr<Term>(new NullValue(compile_context.builtins().empty_type, location));
     }
+    
+    template<typename V>
+    void EmptyType::visit(V& v) {
+      visit_base<Type>(v);
+    }
+
+    const TermVtable EmptyType::vtable = PSI_COMPILER_TERM(EmptyType, "psi.compiler.EmptyType", Type);
 
     NullValue::NullValue(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -438,6 +505,13 @@ namespace Psi {
     : Term(&vtable, type, location) {
     }
     
+    template<typename V>
+    void NullValue::visit(V& v) {
+      visit_base<Term>(v);
+    }
+
+    const TermVtable NullValue::vtable = PSI_COMPILER_TERM(NullValue, "psi.compiler.NullValue", Term);
+    
     StructType::StructType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
     }
@@ -446,6 +520,14 @@ namespace Psi {
     : Type(&vtable, compile_context, location),
     members(members_) {
     }
+    
+    template<typename V>
+    void StructType::visit(V& v) {
+      visit_base<Type>(v);
+      v("members", &StructType::members);
+    }
+
+    const TermVtable StructType::vtable = PSI_COMPILER_TERM(StructType, "psi.compiler.StructType", Term);
 
     StructValue::StructValue(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -455,6 +537,14 @@ namespace Psi {
     : Term(&vtable, type, location),
     members(members_) {
     }
+    
+    template<typename V>
+    void StructValue::visit(V& v) {
+      visit_base<Term>(v);
+      v("members", &StructValue::members);
+    }
+
+    const TermVtable StructValue::vtable = PSI_COMPILER_TERM(StructValue, "psi.compiler.StructValue", Term);
 
     GenericType::GenericType(const TreePtr<Term>& member_,
                              const PSI_STD::vector<TreePtr<Anonymous> >& parameters_,
@@ -471,6 +561,8 @@ namespace Psi {
       v("member", &GenericType::member)
       ("implementations", &GenericType::implementations);
     }
+
+    const TreeVtable GenericType::vtable = PSI_COMPILER_TREE(GenericType, "psi.compiler.GenericType", Tree);
 
     TypeInstance::TypeInstance(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -508,6 +600,8 @@ namespace Psi {
       return TreePtr<>();
     }
 
+    const TermVtable TypeInstance::vtable = PSI_COMPILER_TERM(TypeInstance, "psi.compiler.TypeInstance", Term);
+
     TypeInstanceValue::TypeInstanceValue(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
     }
@@ -522,6 +616,8 @@ namespace Psi {
       visit_base<Term>(v);
       v("member_value", &TypeInstanceValue::m_member_value);
     }
+
+    const TermVtable TypeInstanceValue::vtable = PSI_COMPILER_TERM(TypeInstanceValue, "psi.compiler.TypeInstanceValue", Term);
     
     IfThenElse::IfThenElse(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -554,16 +650,17 @@ namespace Psi {
     true_value(true_value_),
     false_value(false_value_) {
     }
-
-    TreePtr<Term> FunctionCall::get_type(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
-      TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(target->type);
-      if (!ft)
-        target.compile_context().error_throw(location, "Target of function call does not have function type");
-
-      PSI_STD::vector<TreePtr<Term> >& nc_arguments = const_cast<PSI_STD::vector<TreePtr<Term> >&>(arguments);
-      return ft->result_type_after(location, list_from_stl(nc_arguments));
-    }
     
+    template<typename V>
+    void IfThenElse::visit(V& v) {
+      visit_base<Term>(v);
+      v("condition", &IfThenElse::condition)
+      ("true_value", &IfThenElse::true_value)
+      ("false_value", &IfThenElse::false_value);
+    }
+
+    const TermVtable IfThenElse::vtable = PSI_COMPILER_TERM(IfThenElse, "psi.compiler.IfThenElse", Term);
+
     JumpGroupEntry::JumpGroupEntry(CompileContext& compile_context, const SourceLocation& location)
     : Tree(&vtable, compile_context, location) {
     }
@@ -574,6 +671,15 @@ namespace Psi {
     argument(argument_) {
     }
     
+    template<typename V>
+    void JumpGroupEntry::visit(V& v) {
+      visit_base<Tree>(v);
+      v("value", &JumpGroupEntry::value)
+      ("argument", &JumpGroupEntry::argument);
+    }
+    
+    const TreeVtable JumpGroupEntry::vtable = PSI_COMPILER_TREE(JumpGroupEntry, "psi.compiler.JumpGroupEntry", Tree);
+
     JumpGroup::JumpGroup(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
     }
@@ -608,6 +714,15 @@ namespace Psi {
     entries(entries_) {
     }
     
+    template<typename V>
+    void JumpGroup::visit(V& v) {
+      visit_base<Term>(v);
+      v("initial", &JumpGroup::initial)
+      ("entries", &JumpGroup::entries);
+    }
+
+    const TermVtable JumpGroup::vtable = PSI_COMPILER_TERM(JumpGroup, "psi.compiler.JumpGroup", Term);
+    
     JumpTo::JumpTo(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable , compile_context, location) {
     }
@@ -617,6 +732,15 @@ namespace Psi {
     target(target_),
     argument(argument_) {
     }
+    
+    template<typename V>
+    void JumpTo::visit(V& v) {
+      visit_base<Term>(v);
+      v("target", &JumpTo::target)
+      ("argument", &JumpTo::argument);
+    }
+
+    const TermVtable JumpTo::vtable = PSI_COMPILER_TERM(JumpTo, "psi.compiler.JumpTo", Term);
 
     FunctionCall::FunctionCall(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -628,11 +752,22 @@ namespace Psi {
     arguments(arguments_) {
     }
 
+    TreePtr<Term> FunctionCall::get_type(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
+      TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(target->type);
+      if (!ft)
+        target.compile_context().error_throw(location, "Target of function call does not have function type");
+
+      PSI_STD::vector<TreePtr<Term> >& nc_arguments = const_cast<PSI_STD::vector<TreePtr<Term> >&>(arguments);
+      return ft->result_type_after(location, list_from_stl(nc_arguments));
+    }
+    
     template<typename Visitor>
     void FunctionCall::visit(Visitor& v) {
       visit_base<Term>(v);
       v("target", &FunctionCall::target);
     }
+
+    const TermVtable FunctionCall::vtable = PSI_COMPILER_TERM(FunctionCall, "psi.compiler.FunctionCall", Term);
 
     BuiltinType::BuiltinType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
@@ -647,6 +782,8 @@ namespace Psi {
       visit_base<Type>(v);
       v("name", &BuiltinType::name);
     }
+
+    const TermVtable BuiltinType::vtable = PSI_COMPILER_TERM(BuiltinType, "psi.compiler.BuiltinType", Term);
     
     class BuiltinTypeClassMember : public ClassMemberInfoCallback {
     public:
@@ -701,6 +838,8 @@ namespace Psi {
       v("constructor", &BuiltinValue::constructor)
       ("data", &BuiltinValue::data);
     }
+
+    const TermVtable BuiltinValue::vtable = PSI_COMPILER_TERM(BuiltinValue, "psi.compiler.BuiltinValue", Term);
 
     ExternalFunction::ExternalFunction(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
     : Term(vptr, compile_context, location) {
@@ -775,6 +914,13 @@ namespace Psi {
       return TreePtr<>();
     }
     
+    template<typename V>
+    void ExternalFunction::visit(V& v) {
+      visit_base<Term>(v);
+    }
+    
+    const SIVtable ExternalFunction::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ExternalFunction", Term);
+    
     BuiltinFunction::BuiltinFunction(CompileContext& compile_context, const SourceLocation& location)
     : ExternalFunction(&vtable, compile_context, location) {
     }
@@ -789,6 +935,8 @@ namespace Psi {
       visit_base<ExternalFunction>(v);
       v("name", &BuiltinFunction::name);
     }
+
+    const TermVtable BuiltinFunction::vtable = PSI_COMPILER_TERM(BuiltinFunction, "psi.compiler.BuiltinFunction", ExternalFunction);
 
     CFunction::CFunction(CompileContext& compile_context, const SourceLocation& location)
     : ExternalFunction(&vtable, compile_context, location) {
@@ -805,65 +953,9 @@ namespace Psi {
       v("name", &CFunction::name);
     }
 
-    const SIVtable Object::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Object", NULL);
-    const SIVtable TreeBase::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeBase", &Object::vtable);
-    const SIVtable TreeCallback::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeCallback", &TreeBase::vtable);
-    const SIVtable Tree::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Tree", &TreeBase::vtable);
-
-    const SIVtable Term::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Term", Tree);
-    const SIVtable Type::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Type", Term);
+    const TermVtable CFunction::vtable = PSI_COMPILER_TERM(CFunction, "psi.compiler.CFunction", ExternalFunction);
 
     const SIVtable EvaluateContext::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.EvaluateContext", Tree);
     const SIVtable Macro::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Macro", Tree);
-
-    const TermVtable Anonymous::vtable = PSI_COMPILER_TERM(Anonymous, "psi.compiler.Anonymous", Term);
-    const TermVtable Parameter::vtable = PSI_COMPILER_TERM(Parameter, "psi.compiler.Parameter", Term);
-    const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", Tree);
-    const TreeVtable Implementation::vtable = PSI_COMPILER_TREE(Implementation, "psi.compiler.Implementation", Tree);
-
-    const TermVtable FunctionType::vtable = PSI_COMPILER_TERM(FunctionType, "psi.compiler.FunctionType", Type);
-    const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", Term);
-
-    const TermVtable Metatype::vtable = PSI_COMPILER_TERM(Metatype, "psi.compiler.Metatype", Term);
-    const TermVtable BottomType::vtable = PSI_COMPILER_TERM(BottomType, "psi.compiler.BottomType", Type);
-    const TermVtable EmptyType::vtable = PSI_COMPILER_TERM(EmptyType, "psi.compiler.EmptyType", Type);
-    const TermVtable NullValue::vtable = PSI_COMPILER_TERM(NullValue, "psi.compiler.NullValue", Term);
-
-    const TermVtable StructType::vtable = PSI_COMPILER_TERM(StructType, "psi.compiler.StructType", Term);
-    const TermVtable StructValue::vtable = PSI_COMPILER_TERM(StructValue, "psi.compiler.StructValue", Term);
-
-    const TreeVtable GenericType::vtable = PSI_COMPILER_TREE(GenericType, "psi.compiler.GenericType", Tree);
-    const TermVtable TypeInstance::vtable = PSI_COMPILER_TERM(TypeInstance, "psi.compiler.TypeInstance", Term);
-    const TermVtable TypeInstanceValue::vtable = PSI_COMPILER_TERM(TypeInstanceValue, "psi.compiler.TypeInstanceValue", Term);
-    
-    const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
-    const TermVtable ExternalGlobal::vtable = PSI_COMPILER_TERM(ExternalGlobal, "psi.compiler.ExternalGlobal", Global);
-
-    /**
-     * \name Function entries.
-     */
-    ///@{
-    const SIVtable StatementList::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.StatementList", Term);
-    const TermVtable Namespace::vtable = PSI_COMPILER_TERM(Namespace, "psi.compiler.Namespace", StatementList);
-    const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", StatementList);
-    const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
-    const TermVtable TryFinally::vtable = PSI_COMPILER_TERM(TryFinally, "psi.compiler.TryFinally", Term);
-    
-    const TermVtable IfThenElse::vtable = PSI_COMPILER_TERM(IfThenElse, "psi.compiler.IfThenElse", Term);
-    
-    const TreeVtable JumpGroupEntry::vtable = PSI_COMPILER_TREE(JumpGroupEntry, "psi.compiler.JumpGroupEntry", Tree);
-    const TermVtable JumpGroup::vtable = PSI_COMPILER_TERM(JumpGroup, "psi.compiler.JumpGroup", Term);
-    const TermVtable JumpTo::vtable = PSI_COMPILER_TERM(JumpTo, "psi.compiler.JumpTo", Term);
-
-    const TermVtable FunctionCall::vtable = PSI_COMPILER_TERM(FunctionCall, "psi.compiler.FunctionCall", Term);
-    ///@}
-    
-    const SIVtable ExternalFunction::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ExternalFunction", Term);
-    
-    const TermVtable BuiltinType::vtable = PSI_COMPILER_TERM(BuiltinType, "psi.compiler.BuiltinType", Term);
-    const TermVtable BuiltinFunction::vtable = PSI_COMPILER_TERM(BuiltinFunction, "psi.compiler.BuiltinFunction", ExternalFunction);
-    const TermVtable BuiltinValue::vtable = PSI_COMPILER_TERM(BuiltinValue, "psi.compiler.BuiltinValue", Term);
-    
-    const TermVtable CFunction::vtable = PSI_COMPILER_TERM(CFunction, "psi.compiler.CFunction", ExternalFunction);
   }
 }

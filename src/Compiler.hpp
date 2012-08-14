@@ -245,6 +245,8 @@ namespace Psi {
       ~Object();
 
       CompileContext& compile_context() const {return *m_compile_context;}
+      
+      template<typename V> static void visit(V&) {}
     };
     
     template<typename T>
@@ -1106,7 +1108,7 @@ namespace Psi {
     public:
       static const SIVtable vtable;
       Type(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
-      template<typename Visitor> static void visit(Visitor& v);
+      template<typename Visitor> static void visit(Visitor& v) {visit_base<Term>(v);}
     };
 
 #define PSI_COMPILER_TYPE(derived,name,super) PSI_COMPILER_TERM(derived,name,super)
@@ -1200,6 +1202,8 @@ namespace Psi {
                         const SourceLocation& location) {
         return tree_from_base_take<Term>(derived_vptr(this)->dot(this, value.raw_get(), &parameter, evaluate_context.raw_get(), &location));
       }
+      
+      template<typename V> static void visit(V& v) {visit_base<Tree>(v);}
     };
 
     /**
@@ -1259,6 +1263,8 @@ namespace Psi {
       LookupResult<TreePtr<Term> > lookup(const String& name, const SourceLocation& location) {
         return lookup(name, location, TreePtr<EvaluateContext>(this));
       }
+      
+      template<typename V> static void visit(V& v) {visit_base<Tree>(v);}
     };
 
     /**
@@ -1372,13 +1378,7 @@ namespace Psi {
       /// \brief If the target of this interface is a run-time value, this gives the type of that value, otherwise it should be NULL.
       TreePtr<Term> run_time_type;
       
-      template<typename Visitor>
-      static void visit(Visitor& v) {
-        visit_base<Tree>(v);
-        v("n_parameters", &Interface::n_parameters)
-        ("compile_time_type", &Interface::compile_time_type)
-        ("run_time_type", &Interface::run_time_type);
-      }
+      template<typename Visitor> static void visit(Visitor& v);
     };
     
     struct BuiltinTypes {
