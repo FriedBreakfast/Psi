@@ -41,13 +41,6 @@ namespace Psi {
     }
 
     /**
-     * \brief Get the current insertion point.
-     */
-    const InstructionInsertPoint& InstructionBuilder::insert_point() const {
-      return m_insert_point;
-    }
-    
-    /**
      * Set the insert point.
      */
     void InstructionBuilder::set_insert_point(const InstructionInsertPoint& ip) {
@@ -236,6 +229,29 @@ namespace Psi {
     /// \copydoc InstructionBuilder::memcpy(const ValuePtr<>&,const ValuePtr<>&,const ValuePtr<>&)
     ValuePtr<Instruction> InstructionBuilder::memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, unsigned count, const SourceLocation& location) {
       return memcpy(dest, src, FunctionalBuilder::size_value(dest->context(), count, location), ValuePtr<>(), location);
+    }
+    
+    /**
+     * \brief Whether the current block has been terminated.
+     * 
+     * If it has been, then any instruction insertion at the end of the block will fail.
+     * Instructions before the end of the block and PHI nodes can still be generated.
+     */
+    bool InstructionBuilder::is_terminated() {
+      return block()->terminated();
+    }
+    
+    /// \brief Create a PHI node at the start of the current block.
+    ValuePtr<Phi> InstructionBuilder::phi(const ValuePtr<>& type, const SourceLocation& location) {
+      return m_insert_point.block()->insert_phi(type, location);
+    }
+
+    /**
+     * \brief Create a new block whose dominator is the current insertion block.
+     */
+    ValuePtr<Block> InstructionBuilder::new_block(const SourceLocation& location) {
+      const ValuePtr<Block>& dominator = m_insert_point.block();
+      return dominator->function()->new_block(location, dominator);
     }
   }
 }

@@ -53,6 +53,7 @@ if(BUILD_TESTING)
 
   set_target_properties(psi-tvm-test PROPERTIES COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
   target_link_libraries(psi-tvm-test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} psi-tvm debug psi-assert)
+  add_dependencies(psi-tvm-test psi-tvm-llvm)
 
   add_test(psi-tvm-test psi-tvm-test)
 endif()
@@ -93,19 +94,18 @@ add_library(psi-compiler SHARED
   ExpressionCompiler.cpp
   Function.cpp Function.hpp
   Interface.cpp
-  FunctionLower.cpp FunctionLower.hpp
   GarbageCollection.hpp
   Macros.cpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
   Platform.cpp Platform.hpp
   Tree.cpp Tree.hpp
-  TreePattern.hpp
+  TvmLowering.cpp
   Utility.cpp Utility.hpp
   Visitor.hpp
   ${PSI_COMPILER_SOURCES}
 )
 
-target_link_libraries(psi-compiler psi-compiler-common debug psi-assert)
+target_link_libraries(psi-compiler psi-compiler-common psi-tvm debug psi-assert)
 if (UNIX)
   target_link_libraries(psi-compiler -ldl)
 endif()
@@ -114,7 +114,7 @@ set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" 
 target_link_libraries(psi-tvm-llvm ${LLVM_LIBS} debug psi-assert)
 
 add_executable(psi Main.cpp)
-target_link_libraries(psi psi-compiler psi-tvm debug psi-assert)
+target_link_libraries(psi psi-compiler)
 
 #install(TARGETS psi
 #  LIBRARY DESTINATION lib

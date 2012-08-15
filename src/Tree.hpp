@@ -284,6 +284,14 @@ namespace Psi {
 
       PSI_STD::vector<TreePtr<Term> > members;
     };
+    
+    enum FunctionParameterMode {
+    };
+    
+    struct FunctionParameterType {
+      FunctionParameterMode mode;
+      TreePtr<Term> type;
+    };
 
     class FunctionType : public Type {
     public:

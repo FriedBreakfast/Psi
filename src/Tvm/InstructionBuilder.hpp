@@ -26,7 +26,12 @@ namespace Psi {
       
       /// \name Insert point control
       ///@{
-      const InstructionInsertPoint& insert_point() const;
+    
+      /// \brief Get the current insertion point.
+      const InstructionInsertPoint& insert_point() const {return m_insert_point;}
+      /// \brief Get the block containing the current insertion block.
+      const ValuePtr<Block>& block() const {return insert_point().block();}
+
       void set_insert_point(const InstructionInsertPoint&);
       void set_insert_point(const ValuePtr<Block>&);
       void set_insert_point(const ValuePtr<Instruction>&);
@@ -52,6 +57,10 @@ namespace Psi {
       ValuePtr<Instruction> memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const SourceLocation& location);
       ValuePtr<Instruction> memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, unsigned count, const SourceLocation& location);
       ///@}
+      
+      bool is_terminated();
+      ValuePtr<Phi> phi(const ValuePtr<>& type, const SourceLocation& location);
+      ValuePtr<Block> new_block(const SourceLocation& location);
     };
   }
 }

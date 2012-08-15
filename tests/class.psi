@@ -7,3 +7,7 @@ y : int;
 z:namespace [
 t : int;
 ];
+
+main:function() [
+];
+
