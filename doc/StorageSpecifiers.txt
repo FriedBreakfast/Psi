@@ -1,0 +1,88 @@
+\page storage_specifiers Storage specifiers
+
+Local variables and parameters have storage specifiers.
+These specify whether a variable should be copied or moved in various situations, and whether it is passed by reference or by value.
+Aggregate members do not have these specifiers: they must be handled manually, that is, references should be translated to pointers.
+
+Function arguments may have the following storage specifiers, inspired by C++.
+However, for us the distinction between l-value and r-value references is simply the behaviour of object moving and copying choices.
+There is no notion of const vs. non-const references.
+
+<dl>
+<dt>Input</dt>
+<dd>Used when a function with either not modify an object or will modify it in a way useful to the caller.
+Note that a pure input parameter is not distinguished from an input/output parameter.</dd>
+<dt>Output</dt>
+<dd>A pure output parameter. It is an error if this is a temporary since the function call is not useful unless this result is captured.</dd>
+<dt>R-value</dt>
+<dd>Used when a function will modify the object destructively so that the caller should use a copy if it would like to use the object again.
+This is used (as in C++ r-value references) to implement efficient transfer of resources between objects without needless copying.</dd>
+<dt>Dependent value</dt>
+<dd>Used for passing dependent type information.
+This currently must be passed in virtual registers since it must be visible to TVMs type system.
+Only simple types may be passed this way because object copying and moving semantics cannot be implemented.</dd>
+</dl>
+
+Function return values can have the following specifiers:
+
+<dl>
+<dt>By value</dt>
+<dd>The value is returned to the caller in the caller's stack space.</dd>
+<dt>L-value reference</dt>
+<dd>A reference to an object.
+The caller may explicitly modify the object but should not modify it implicitly by passing it as an R-value reference to another function.</dd>
+<dt>R-value reference</dt>
+<dd>A reference to an object.
+The caller may implicitly and explicitly modify the object.</dd>
+</dl>
+
+Local storage specifiers break down into two categories, which are:
+
+<dl>
+<dt>L-value local</dt>
+<dd>Covers all local variables not covered by other cases.</dd>
+<dt>R-value</dt>
+<dd>Covers all cases where ownership of the object contents can be given up. These are:
+<ul>
+<li>R-value reference returned by a function which has not been bound to a name.</li>
+<li>Local variables about to go out of scope. This generalises temporary variables.</li>
+</ul>
+<dt>Dependent value</dt>
+<dd>Can be used for dependent type parameters.
+Can only be used for simple types.</dd>
+</dl>
+
+Local and parameter storage specifiers lead to the following parameter passing behaviour:
+
+<table>
+<tr><td colspan="2" rowspan="2" style="border:0em"></td><th colspan="4">Parameter storage</th></tr>
+<tr><th>Input</th><th>Output</th><th>R-value</th><th>Dependent value</th></tr>
+<tr><th rowspan="3">Local storage</th>
+<th>L-value</th><td>Reference</td><td>Reference</td><td>Copy</td><td>Error</td>
+</tr>
+<tr><th>R-value</th><td>Reference</td><td>Error</td><td>Reference</td><td>Error</td></tr>
+<tr><th>Dependent value</td><td>Bit-wise copy</td><td>Error</td><td>Bit-wise copy</td><td>By value</td></tr>
+</table>
+
+Some explanations:
+
+<ul>
+<li>It is an error to use a dependent parameter for output since they are part of the type system and cannot be modified.</li>
+<li>It is an error to use an r-value for output since it is expected that an r-value will not accessible after the call, and hence the output data cannot be accessed.</li>
+<li>Copy for a dependent value is always equivalent to bit wise copy since the type must be simple.</li>
+</ul>
+
+For return values:
+
+<table>
+<tr><td colspan="2" rowspan="2" style="border:0em"></td><th colspan="3">Return storage</th></tr>
+<tr><th>By value</th><th>L-value reference</th><th>R-value reference</th></tr>
+<tr><th rowspan="4">Local storage</th>
+<th>L-value (reference)</th><td>Copy</td><td>Reference</td><td>Error</td></tr>
+<tr><th>R-value (local)</th><td>Move</td><td>Error</td><td>Error</td></tr>
+<tr><th>R-value (reference)</th><td>Move</td><td>Error</td><td>Error</td></tr>
+<tr><th>Dependent value</td><td>Error</td><td>Error</td><td>Error</td></tr>
+</table>
+
+Local values are those allocated on the function stack and about to be destroyed, therefore it is an error to return a reference to them.
+L-value locals do not exist at function exit because they fall into the case of "local variables about to go out of scope", and therefore are r-values.
