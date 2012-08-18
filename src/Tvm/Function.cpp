@@ -230,6 +230,14 @@ namespace Psi {
     : BlockMember(term_instruction, type, this, location),
     m_operation(operation) {
     }
+    
+    /**
+     * \brief Remove this instruction from its block.
+     */
+    void Instruction::remove() {
+      PSI_ASSERT(block_ptr() && m_instruction_list_hook.is_linked());
+      block_ptr()->erase_instruction(*this);
+    }
 
     TerminatorInstruction::TerminatorInstruction(Context& context, const char* operation, const SourceLocation& location)
     : Instruction(EmptyType::get(context, location), operation, location) {
@@ -319,7 +327,7 @@ namespace Psi {
       if (insn->m_block)
         throw TvmUserError("Instruction has already been inserted into a block");
 
-      if (m_terminated && !insert_before)
+      if (terminated() && !insert_before)
         throw TvmUserError("cannot add instruction at end of already terminated block");
       
       bool terminator = false;
@@ -336,18 +344,25 @@ namespace Psi {
 
       m_instructions.insert(insert_before, *insn);
       insn->m_block = this;
-      
-      if (terminator)
-        m_terminated = true;
     }
     
+    void Block::erase_phi(Phi& phi) {
+      PSI_ASSERT(phi.block_ptr() == this);
+      m_phi_nodes.erase(phi);
+    }
+    
+    void Block::erase_instruction(Instruction& instruction) {
+      PSI_ASSERT(instruction.block_ptr() == this);
+      m_instructions.erase(instruction);
+    }
+
     /**
      * \brief Get the list of blocks which this one can exit to (including exceptions)
      */
     std::vector<ValuePtr<Block> > Block::successors() {
       std::vector<ValuePtr<Block> > result;
-      if (m_terminated)
-        result = dyn_cast<TerminatorInstruction>(m_instructions.back())->successors();
+      if (ValuePtr<TerminatorInstruction> terminator = dyn_cast<TerminatorInstruction>(m_instructions.back()))
+        result = terminator->successors();
       if (m_landing_pad)
         result.push_back(m_landing_pad);
       return result;
@@ -408,6 +423,14 @@ namespace Psi {
       throw TvmUserError("Incoming block not found in PHI node");
     }
     
+    /**
+     * \brief Remove from its block.
+     */
+    void Phi::remove() {
+      PSI_ASSERT(block_ptr() && m_phi_list_hook.is_linked());
+      block_ptr()->erase_phi(*this);
+    }
+    
     template<typename V>
     void Phi::visit(V& v) {
       visit_base<Value>(v);
@@ -439,8 +462,7 @@ namespace Psi {
     m_function(function),
     m_dominator(dominator),
     m_landing_pad(landing_pad),
-    m_is_landing_pad(is_landing_pad),
-    m_terminated(false) {
+    m_is_landing_pad(is_landing_pad) {
     }
 
     FunctionParameter::FunctionParameter(Context& context, Function *function, const ValuePtr<>& type, bool phantom, const SourceLocation& location)

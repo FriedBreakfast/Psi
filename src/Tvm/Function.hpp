@@ -80,6 +80,12 @@ namespace Psi {
         intrusive_ptr_add_ref(&elem);
       }
       
+      void erase(T& elem) {
+        m_base.erase(m_base.iterator_to(elem));
+        elem.list_release();
+        intrusive_ptr_release(&elem);
+      }
+      
       void push_back(T& elem) {
         m_base.push_back(elem);
         intrusive_ptr_add_ref(&elem);
@@ -187,6 +193,8 @@ namespace Psi {
       const char *operation_name() const {return m_operation;}
       virtual void instruction_visit(InstructionVisitor& visitor) = 0;
       
+      void remove();
+      
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_instruction;}
       template<typename V> static void visit(V& v) {visit_base<BlockMember>(v);}
       
@@ -278,7 +286,9 @@ namespace Psi {
       
       /// \brief Get the value from a specific source block.
       ValuePtr<> incoming_value_from(const ValuePtr<Block>& block);
-      
+
+      void remove();
+
       template<typename V> static void visit(V& v);
 
     private:
@@ -294,6 +304,7 @@ namespace Psi {
     class Block : public Value {
       PSI_TVM_VALUE_DECL(Block);
       friend class Function;
+      friend class Instruction;
 
     public:
       typedef ValueList<Instruction, &Instruction::m_instruction_list_hook> InstructionList;
@@ -301,12 +312,15 @@ namespace Psi {
 
       ValuePtr<Phi> insert_phi(const ValuePtr<>& type, const SourceLocation& location);
       void insert_instruction(const ValuePtr<Instruction>& insn, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
+      
+      void erase_phi(Phi& phi);
+      void erase_instruction(Instruction& instruction);
 
       const InstructionList& instructions() const {return m_instructions;}
       const PhiList& phi_nodes() const {return m_phi_nodes;}
 
       /** \brief Whether this block has been terminated so no more instructions can be added. */
-      bool terminated() {return m_terminated;}
+      bool terminated() {return m_instructions.empty() && isa<TerminatorInstruction>(m_instructions.back());}
       /** \brief Get the function which contains this block. */
       ValuePtr<Function> function() {return ValuePtr<Function>(m_function);}
       /** \brief Get a raw pointer to the function which contains this block. */
@@ -341,7 +355,6 @@ namespace Psi {
       ValuePtr<Block> m_landing_pad;
       
       bool m_is_landing_pad;
-      bool m_terminated;
       template<typename T, boost::intrusive::list_member_hook<> T::*> friend class ValueList;
       boost::intrusive::list_member_hook<> m_block_list_hook;
       void list_release() {m_function = NULL;}

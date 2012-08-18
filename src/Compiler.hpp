@@ -539,16 +539,26 @@ namespace Psi {
       PSI_ASSERT(!t || si_is_a(t, reinterpret_cast<const SIVtable*>(&T::vtable)));
       return static_cast<T*>(t);
     };
+    
+    template<typename T>
+    bool tree_isa(Tree *ptr) {
+      return si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable));
+    }
+    
+    template<typename T, typename U>
+    bool tree_isa(const TreePtr<U>& ptr) {
+      return tree_isa<T>(ptr.get());
+    }
 
     template<typename T>
     T* tree_cast(Tree *ptr) {
-      PSI_ASSERT(si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)));
+      PSI_ASSERT(tree_isa<T>(ptr));
       return static_cast<T*>(ptr);
     }
 
     template<typename T>
     T* dyn_tree_cast(Tree *ptr) {
-      return si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable)) ? static_cast<T*>(ptr) : 0;
+      return tree_isa<T>(ptr) ? static_cast<T*>(ptr) : 0;
     }
 
     template<typename T, typename U>

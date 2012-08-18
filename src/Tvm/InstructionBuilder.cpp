@@ -77,6 +77,15 @@ namespace Psi {
     }
     
     /**
+     * \brief Create a return instruction returning void.
+     * 
+     * "Void" in this context means a struct with no members (this is the same as LLVM).
+     */
+    ValuePtr<Instruction> InstructionBuilder::return_void(const SourceLocation& location) {
+      return return_(FunctionalBuilder::empty_value(block()->context(), location), location);
+    }
+    
+    /**
      * \brief Jump to a block.
      * 
      * \param target Block to jump to. This must be a block value

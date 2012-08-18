@@ -40,6 +40,7 @@ namespace Psi {
       /// \name Control flow
       ///@{
       ValuePtr<Instruction> return_(const ValuePtr<>& value, const SourceLocation& location);
+      ValuePtr<Instruction> return_void(const SourceLocation& location);
       ValuePtr<Instruction> br(const ValuePtr<Block>& target, const SourceLocation& location);
       ValuePtr<Instruction> cond_br(const ValuePtr<>& condition, const ValuePtr<Block>& true_target, const ValuePtr<Block>& false_target, const SourceLocation& location);
       ValuePtr<Instruction> call(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);

@@ -10,6 +10,7 @@ namespace Psi {
 #ifdef PSI_DEBUG
 #define PSI_ASSERT_MSG(cond,msg) ((cond) ? void() : Psi::assert_fail(PSI_DEBUG_LOCATION(), #cond, msg))
 #define PSI_ASSERT(cond) ((cond) ? void() : Psi::assert_fail(PSI_DEBUG_LOCATION(), #cond, NULL))
+#define PSI_ASSERT_BLOCK(init,cond) do {init; PSI_ASSERT(cond);} while(false)
 #define PSI_FAIL(msg) (Psi::assert_fail(PSI_DEBUG_LOCATION(), NULL, msg))
 #define PSI_NOT_IMPLEMENTED() (Psi::assert_fail(PSI_DEBUG_LOCATION(), NULL, "Not implemented"))
 #define PSI_WARNING(cond) (cond ? void() : Psi::warning_fail(PSI_DEBUG_LOCATION(), #cond, NULL))
