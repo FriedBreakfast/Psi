@@ -9,6 +9,8 @@
 
 namespace Psi {
   namespace Compiler {
+
+class Function;
     /**
      * Anonymous term. Has a type but no defined value.
      *
@@ -316,12 +318,43 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Term> > members;
     };
     
-    enum FunctionParameterMode {
+    /**
+     * \brief Storage modes for function parameters.
+     * 
+     * \see \ref storage_specifiers
+     */
+    enum ParameterMode {
+      parameter_mode_input, ///< Input parameter
+      parameter_mode_output, ///< Output parameter
+      parameter_mode_io, ///< Input/Output parameter
+      parameter_mode_rvalue, ///< R-value reference
+      parameter_mode_functional ///< Funtional value
     };
     
+    PSI_VISIT_SIMPLE(ParameterMode);
+    
+    /**
+     * \brief Storage modes for function return values and jump parameters.
+     * *
+     * \see \ref storage_specifiers
+     */
+    enum ResultMode {
+      result_mode_by_value, ///< By value
+      result_mode_rvalue, ///< R-value reference
+      result_mode_lvalue ///< L-value reference
+    };
+    
+    PSI_VISIT_SIMPLE(ResultMode);
+    
     struct FunctionParameterType {
-      FunctionParameterMode mode;
+      ParameterMode mode;
       TreePtr<Term> type;
+      
+      template<typename V>
+      static void visit(V& v) {
+        v("mode", &FunctionParameterType::mode)
+        ("type", &FunctionParameterType::type);
+      }
     };
 
     class FunctionType : public Type {
@@ -329,14 +362,15 @@ namespace Psi {
       static const TermVtable vtable;
 
       FunctionType(CompileContext& compile_context, const SourceLocation& location);
-      FunctionType(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Anonymous> >& arguments, const SourceLocation& location);
+      FunctionType(ResultMode result_mode, const TreePtr<Term>& result_type, const std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >& arguments, const SourceLocation& location);
       template<typename V> static void visit(V& v);
 
       TreePtr<Term> argument_type_after(const SourceLocation& location, const List<TreePtr<Term> >& arguments) const;
       TreePtr<Term> result_type_after(const SourceLocation& location, const List<TreePtr<Term> >& arguments) const;
       
+      ResultMode result_mode;
       TreePtr<Term> result_type;
-      PSI_STD::vector<TreePtr<Term> > argument_types;
+      PSI_STD::vector<FunctionParameterType> argument_types;
     };
     
     class JumpTarget;
@@ -346,8 +380,9 @@ namespace Psi {
       static const TermVtable vtable;
       
       Function(CompileContext& compile_context, const SourceLocation& location);
-      Function(const TreePtr<Term>& result_type,
-               const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
+      Function(ResultMode result_mode,
+               const TreePtr<Term>& result_type,
+               const std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >& arguments,
                const TreePtr<Term>& body,
                const SourceLocation& location);
 
@@ -415,10 +450,11 @@ namespace Psi {
       static const TreeVtable vtable;
       
       JumpTarget(CompileContext& compile_context, const SourceLocation& location);
-      JumpTarget(const TreePtr<Term>& value, const TreePtr<Anonymous>& argument, const SourceLocation& location);
+      JumpTarget(const TreePtr<Term>& value, ResultMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
       
       TreePtr<Term> value;
+      ResultMode argument_mode;
       TreePtr<Anonymous> argument;
     };
     

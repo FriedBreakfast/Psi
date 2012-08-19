@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
     
     // Create main function
     TreePtr<Term> main_result(new EmptyType(compile_context, init_location));
-    TreePtr<Function> main_function(new Function(main_result, default_, init_tree, init_location));
+    TreePtr<Function> main_function(new Function(result_mode_by_value, main_result, default_, init_tree, init_location));
     
     void (*main_ptr) ();
     *reinterpret_cast<void**>(&main_ptr) = compile_context.jit_compile(main_function);

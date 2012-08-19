@@ -7,6 +7,7 @@ Aggregate members do not have these specifiers: they must be handled manually, t
 Function arguments may have the following storage specifiers, inspired by C++.
 However, for us the distinction between l-value and r-value references is simply the behaviour of object moving and copying choices.
 There is no notion of const vs. non-const references.
+Function argument storage is described by Psi::Compiler::ParameterMode.
 
 <dl>
 <dt>Input</dt>
@@ -26,6 +27,7 @@ Only simple types may be passed this way because object copying and moving seman
 </dl>
 
 Function return values can have the following specifiers:
+Return value storage is described by Psi::Compiler::ResultMode.
 
 <dl>
 <dt>By value</dt>

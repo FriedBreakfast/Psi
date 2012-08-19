@@ -16,7 +16,9 @@ namespace Psi {
       String keyword;
 
       /// \brief List of additional C function arguments
-      PSI_STD::vector<TreePtr<Anonymous> > extra_arguments;
+      PSI_STD::vector<std::pair<ParameterMode, TreePtr<Anonymous> > > extra_arguments;
+      /// \brief Main argument mode
+      ParameterMode argument_mode;
       /// \brief Main argument.
       TreePtr<Anonymous> argument;
       /// \brief Handler used to interpret the argument.
@@ -27,6 +29,7 @@ namespace Psi {
         v("category", &ArgumentPassingInfo::category)
         ("keyword", &ArgumentPassingInfo::keyword)
         ("extra_arguments", &ArgumentPassingInfo::extra_arguments)
+        ("argument_mode", &ArgumentPassingInfo::argument_mode)
         ("argument", &ArgumentPassingInfo::argument)
         ("handler", &ArgumentPassingInfo::handler);
       }

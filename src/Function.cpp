@@ -152,6 +152,8 @@ namespace Psi {
     struct FunctionInfo {
       /// \brief C type.
       TreePtr<FunctionType> type;
+      /// \brief Result mode.
+      ResultMode result_mode;
       /// \brief Result type, using Anonymous arguments in \c passing_info for values.
       TreePtr<Term> result_type;
       /// \brief How to translate user-specified arguments to C-type arguments
@@ -181,7 +183,7 @@ namespace Psi {
       Parser::ArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(arguments);
 
       FunctionInfo result;
-      PSI_STD::vector<TreePtr<Anonymous> > type_arguments;
+      std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > > type_arguments;
 
       TreePtr<EvaluateContext> argument_context = evaluate_context;
       for (std::vector<SharedPtr<Parser::NamedExpression> >::const_iterator ii = parsed_arguments.arguments.begin(), ie = parsed_arguments.arguments.end(); ii != ie; ++ii) {
@@ -204,7 +206,7 @@ namespace Psi {
         ArgumentPassingInfo passing_info = passing_info_callback->argument_passing_info();
 
         type_arguments.insert(type_arguments.end(), passing_info.extra_arguments.begin(), passing_info.extra_arguments.end());
-        type_arguments.push_back(passing_info.argument);
+        type_arguments.push_back(std::make_pair(passing_info.argument_mode, passing_info.argument));
 
         if (named_expr.name) {
           result.names[expr_name] = result.passing_info.size();
@@ -214,15 +216,17 @@ namespace Psi {
         result.passing_info.push_back(passing_info);
       }
 
+      PSI_NOT_IMPLEMENTED(); // Sort out result.result_mode
       if (parsed_arguments.return_type) {
         result.result_type = compile_expression(parsed_arguments.return_type, argument_context, location.logical);
         if (!result.result_type->is_type())
           compile_context.error_throw(location, "Function result type expression does not evaluate to a type");
       } else {
         result.result_type = compile_context.builtins().empty_type;
+        result.result_mode = result_mode_by_value;
       }
 
-      result.type.reset(new FunctionType(result.result_type, type_arguments, location));
+      result.type.reset(new FunctionType(result.result_mode, result.result_type, type_arguments, location));
 
       return result;
     }
@@ -296,7 +300,7 @@ namespace Psi {
 
         // Append generated arguments to previous argument list.
         for (std::size_t ji = 0, je = ii->extra_arguments.size(); ji != je; ++ji) {
-          ArgumentAssignment aa = {ii->extra_arguments[ji], current_arguments[ji]};
+          ArgumentAssignment aa = {ii->extra_arguments[ji].second, current_arguments[ji]};
           previous_arguments.push_back(aa);
         }
 
@@ -386,10 +390,10 @@ namespace Psi {
 
       FunctionInfo common = compile_function_common(parameters->text, compile_context, evaluate_context, location);
 
-      PSI_STD::vector<TreePtr<Anonymous> > argument_trees;
+      std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > > argument_trees;
       for (PSI_STD::vector<ArgumentPassingInfo>::iterator ii = common.passing_info.begin(), ie = common.passing_info.end(); ii != ie; ++ii) {
         argument_trees.insert(argument_trees.end(), ii->extra_arguments.begin(), ii->extra_arguments.end());
-        argument_trees.push_back(ii->argument);
+        argument_trees.push_back(std::make_pair(ii->argument_mode, ii->argument));
       }
 
       PSI_STD::map<String, TreePtr<Term> > argument_values;
@@ -399,7 +403,7 @@ namespace Psi {
       TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(compile_context, location, argument_values, evaluate_context);
       TreePtr<Term> body_tree = tree_callback<Term>(compile_context, location, FunctionBodyCompiler(body_context, body));
 
-      TreePtr<Function> func(new Function(common.result_type, argument_trees, body_tree, location));
+      TreePtr<Function> func(new Function(common.result_mode, common.result_type, argument_trees, body_tree, location));
 
       // Create macro to interpret function arguments
       return function_invoke_macro(common, func, location);

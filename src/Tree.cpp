@@ -210,8 +210,9 @@ namespace Psi {
     /**
      * \todo Generate function type lazily.
      */
-    FunctionType::FunctionType(const TreePtr<Term>& result_type_, const PSI_STD::vector<TreePtr<Anonymous> >& arguments, const SourceLocation& location)
-    : Type(&vtable, result_type_.compile_context(), location) {
+    FunctionType::FunctionType(ResultMode result_mode_, const TreePtr<Term>& result_type_, const std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >& arguments, const SourceLocation& location)
+    : Type(&vtable, result_type_.compile_context(), location),
+    result_mode(result_mode_) {
       /*
        * I haven't written a method to slice a list yet and since I want an error should the arguments forward
        * reference, I copy the argument list so I can have a "short" version.
@@ -219,9 +220,12 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Anonymous> > arguments_copy;
       arguments_copy.reserve(arguments.size());
       argument_types.reserve(arguments.size());
-      for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
-        argument_types.push_back((*ii)->type->parameterize(location, list_from_stl(arguments_copy)));
-        arguments_copy.push_back(*ii);
+      for (std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >::const_iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
+        FunctionParameterType parameter_type;
+        parameter_type.mode = ii->first;
+        parameter_type.type = ii->second->type->parameterize(location, list_from_stl(arguments_copy));
+        argument_types.push_back(parameter_type);
+        arguments_copy.push_back(ii->second);
       }
 
       result_type = result_type_->parameterize(location, list_from_stl(arguments_copy));
@@ -265,7 +269,7 @@ namespace Psi {
       if (previous.size() >= argument_types.size())
         compile_context().error_throw(location, "Too many arguments passed to function");
 
-      TreePtr<Term> type = argument_types[previous.size()]->type->specialize(location, previous);
+      TreePtr<Term> type = argument_types[previous.size()].type->specialize(location, previous);
       if (!type->is_type())
         compile_context().error_throw(location, "Rewritten function argument type is not a type");
 
@@ -289,14 +293,16 @@ namespace Psi {
     : Global(&vtable, compile_context, location) {
     }
     
-    Function::Function(const TreePtr<Term>& result_type_,
-                       const PSI_STD::vector<TreePtr<Anonymous> >& arguments_,
+    Function::Function(ResultMode result_mode_,
+                       const TreePtr<Term>& result_type_,
+                       const std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >& arguments_,
                        const TreePtr<Term>& body_,
                        const SourceLocation& location)
-    : Global(&vtable, TreePtr<Term>(new FunctionType(result_type_, arguments_, location)), location),
-    arguments(arguments_),
+    : Global(&vtable, TreePtr<Term>(new FunctionType(result_mode_, result_type_, arguments_, location)), location),
     result_type(result_type_),
     body(body_) {
+      for (std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >::const_iterator ii = arguments_.begin(), ie = arguments_.end(); ii != ie; ++ii)
+        arguments.push_back(ii->second);
     }
 
     template<typename Visitor> void Function::visit(Visitor& v) {
@@ -720,9 +726,10 @@ namespace Psi {
     : Tree(&vtable, compile_context, location) {
     }
     
-    JumpTarget::JumpTarget(const TreePtr<Term>& value_, const TreePtr<Anonymous>& argument_, const SourceLocation& location)
+    JumpTarget::JumpTarget(const TreePtr<Term>& value_, ResultMode argument_mode_, const TreePtr<Anonymous>& argument_, const SourceLocation& location)
     : Tree(&vtable, value.compile_context(), location),
     value(value_),
+    argument_mode(argument_mode_),
     argument(argument_) {
     }
     
@@ -909,10 +916,11 @@ namespace Psi {
     }
     
     TreePtr<Term> ExternalFunction::get_type(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& argument_types, const SourceLocation& location) {
-      PSI_STD::vector<TreePtr<Anonymous> > arguments;
+      PSI_NOT_IMPLEMENTED(); // Have I got the parameter and result mode handling right?
+      std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > > arguments;
       for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = argument_types.begin(), ie = argument_types.end(); ii != ie; ++ii)
-        arguments.push_back(TreePtr<Anonymous>(new Anonymous(*ii, location)));
-      return TreePtr<Term>(new FunctionType(result_type, arguments, location));
+        arguments.push_back(std::make_pair(parameter_mode_input, TreePtr<Anonymous>(new Anonymous(*ii, location))));
+      return TreePtr<Term>(new FunctionType(result_mode_by_value, result_type, arguments, location));
     }
     
     class ExternalFunctionInvokeMacro : public Macro {

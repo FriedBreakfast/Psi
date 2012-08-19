@@ -289,6 +289,7 @@ namespace Psi {
 
       void remove();
 
+      static bool isa_impl(const Value& v) {return v.term_type() == term_phi;}
       template<typename V> static void visit(V& v);
 
     private:
