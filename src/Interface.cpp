@@ -1,4 +1,5 @@
 #include "Compiler.hpp"
+#include "Interface.hpp"
 
 namespace Psi {
   namespace Compiler {
@@ -15,6 +16,7 @@ namespace Psi {
                                          const List<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
+        PSI_NOT_IMPLEMENTED();
       }
     };
 
@@ -44,6 +46,7 @@ namespace Psi {
                                          const List<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
+        PSI_NOT_IMPLEMENTED();
       }
     };
 
@@ -73,6 +76,7 @@ namespace Psi {
                                          const List<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
+        PSI_NOT_IMPLEMENTED();
       }
     };
 
@@ -85,5 +89,7 @@ namespace Psi {
       TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(new ImplementationDefineMacro(compile_context, location)));
       return make_macro_term(compile_context, location, m);
     }
+
+    const SIVtable TypeConstructorInfoCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.TypeConstructorInfo", Tree);
   }
 }
