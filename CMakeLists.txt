@@ -19,7 +19,7 @@ execute_process(COMMAND ${LLVM_CONFIG} --ldflags OUTPUT_VARIABLE LLVM_LDFLAGS OU
 execute_process(COMMAND ${LLVM_CONFIG} --libs OUTPUT_VARIABLE LLVM_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 if(LLVM_CXX_FLAGS MATCHES "-fno-exceptions" OR LLVM_CXX_FLAGS MATCHES "-fno-rtti")
-  message(SEND_ERROR "LLVM must be built with REQUIRES_EH=1 and REQUIRES_RTTI=1 set")
+  message(SEND_ERROR "LLVM must be built with REQUIRES_EH=1 and REQUIRES_RTTI=1 set\nBuild LLVM using: env REQUIRES_EH=1 REQUIRES_RTTI=1 sh -c './configure && make install'")
 endif()
 
 # Set up useful GCC flags
@@ -42,13 +42,24 @@ endif()
 find_package(Boost 1.36.0 REQUIRED unit_test_framework)
 find_package(BISON REQUIRED)
 
+add_custom_target(doc)
+
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
-  add_custom_target(doc
-    rm -rf doc/html
+  add_custom_target(doxygen-doc
+    rm -rf doc-doxygen
     COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile
+    COMMAND mv doc-doxygen-tmp/html doc-doxygen
+    COMMAND rmdir doc-doxygen-tmp
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} VERBATIM)
+  add_dependencies(doc doxygen-doc)
+endif()
+
+find_program(SPHINX_BUILD NAMES sphinx-build)
+if(NOT {$SPHINX_BUILD} STREQUAL "SPHINX_BUILD-NOTFOUND")
+  add_custom_target(sphinx-doc ${SPHINX_BUILD} ${CMAKE_CURRENT_SOURCE_DIR}/doc-sphinx ${CMAKE_CURRENT_BINARY_DIR}/doc-sphinx VERBATIM)
+  add_dependencies(doc sphinx-doc)
 endif()
 
 enable_testing()

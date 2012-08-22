@@ -164,6 +164,7 @@ namespace Psi {
         ("sub", BinaryOpCallback(&FunctionalBuilder::sub))
         ("mul", BinaryOpCallback(&FunctionalBuilder::mul))
         ("div", BinaryOpCallback(&FunctionalBuilder::div))
+        ("neg", UnaryOpCallback(&FunctionalBuilder::neg))
         ("array", BinaryOpCallback(&FunctionalBuilder::array_type))
         ("array_v", TermPlusArrayCallback(&FunctionalBuilder::array_value))
         ("array_el", BinaryOpCallback(&FunctionalBuilder::array_element))
