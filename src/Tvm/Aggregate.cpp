@@ -156,6 +156,14 @@ namespace Psi {
     
     PSI_TVM_UNARY_OP_IMPL(UndefinedValue, UnaryOp, undef);
     
+    ValuePtr<> ZeroValue::check_type() const {
+      if (!parameter()->is_type())
+        throw TvmUserError("Argument to zero must be a type");
+      return parameter();
+    }
+    
+    PSI_TVM_UNARY_OP_IMPL(ZeroValue, UnaryOp, zero);
+    
     PointerType::PointerType(const ValuePtr<>& target_type, const SourceLocation& location)
     : Type(target_type->context(), location),
     m_target_type(target_type) {

@@ -72,6 +72,17 @@ namespace Psi {
       return UndefinedValue::get(type, location);
     }
 
+    /// \brief Get an zero value of the specified type.
+    ValuePtr<> FunctionalBuilder::zero(const ValuePtr<>& type, const SourceLocation& location) {
+      if (ValuePtr<IntegerType> int_ty = dyn_cast<IntegerType>(type)) {
+        return int_value(int_ty, 0, location);
+      } else if (ValuePtr<FloatType> float_ty = dyn_cast<FloatType>(type)) {
+        PSI_FAIL("float zero not implemented");
+      } else {
+        return ZeroValue::get(type, location);
+      }
+    }
+    
     /**
      * \brief Get a the type of a pointer to a type.
      * 
@@ -191,6 +202,8 @@ namespace Psi {
         }
       } else if (isa<UndefinedValue>(array) || isa<UndefinedValue>(index)) {
         return undef(result->type(), location);
+      } else if (isa<ZeroValue>(array)) {
+        return zero(result->type(), location);
       }
       
       return result;
@@ -219,6 +232,8 @@ namespace Psi {
         return struct_val->member_value(index);
       } else if (isa<UndefinedValue>(aggregate)) {
         return undef(result->type(), location);
+      } else if (isa<ZeroValue>(aggregate)) {
+        return zero(result->type(), location);
       }
       
       return result;
@@ -239,6 +254,8 @@ namespace Psi {
           return value;
       } else if (isa<UndefinedValue>(aggregate)) {
         return undef(result->type(), location);
+      } else if (isa<ZeroValue>(aggregate)) {
+        return zero(result->type(), location);
       }
       
       return result;
