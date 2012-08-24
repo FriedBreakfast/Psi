@@ -112,6 +112,13 @@ namespace Psi {
      * are not completely well defined).
      */
     PSI_TVM_UNARY_OP_DECL(UndefinedValue, UnaryOp)
+    
+    /**
+     * \brief Zero-initialized value.
+     * 
+     * A value of any type which is zero.
+     */
+    PSI_TVM_UNARY_OP_DECL(ZeroValue, UnaryOp)
 
     /**
      * \brief A pointer type.

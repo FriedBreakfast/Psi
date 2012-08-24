@@ -170,11 +170,11 @@ class FunctionLowering {
   
   TypeConstructorInfo type_constructor_info(const TreePtr<Term>& type);
   bool is_primitive(const TreePtr<Term>& type);
-  void default_construct(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location);
-  void copy_construct(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
-  void move_construct(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
-  void move_construct_destroy(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
-  void destroy(const TreePtr<Term>& type, const Tvm::ValuePtr<>& ptr, const SourceLocation& location);
+  void default_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location);
+  void copy_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
+  void move_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
+  void move_construct_destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
+  void destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& ptr, const SourceLocation& location);
   
   Tvm::ValuePtr<> as_functional(const Variable& var, const SourceLocation& location);
   
@@ -183,6 +183,9 @@ class FunctionLowering {
   VariableResult run_if_then_else(Scope& scope, const TreePtr<IfThenElse>& if_then_else, const Variable& slot, Scope& following_scope);
   VariableResult run_jump_group(Scope& scope, const TreePtr<JumpGroup>& jump_group, const Variable& slot, Scope& following_scope);
   VariableResult run_jump(Scope& scope, const TreePtr<JumpTo>& jump_to, const Variable& slot, Scope& following_scope);
+  VariableResult run_call(Scope& scope, const TreePtr<FunctionCall>& call, const Variable& slot, Scope& following_scope);
+  
+  Tvm::ValuePtr<> run_functional(Scope& scope, const TreePtr<Term>& term);
   
   typedef std::vector<std::pair<Tvm::ValuePtr<Tvm::Block>, VariableResult> > MergeExitList;
   static bool merge_exit_list_entry_bottom(const MergeExitList::value_type& el);
@@ -356,7 +359,7 @@ void FunctionLowering::exit_to(Scope& from, const TreePtr<JumpTarget>& target, c
         }
 
         builder().set_insert_point(next_block);
-        destroy(scope->m_variable.type(), scope->m_variable.value(), variable_location);
+        destroy(*scope, scope->m_variable.type(), scope->m_variable.value(), variable_location);
         
         JumpData jd;
         jd.block = next_block;
@@ -516,7 +519,7 @@ FunctionLowering::VariableResult FunctionLowering::run_jump_group(Scope& scope, 
       VariableResult entry_variable_result;
       switch ((*ii)->argument_mode) {
       case result_mode_by_value: {
-        move_construct_destroy((*ii)->argument->type, entry_variable.stack_slot(), jd.storage, (*ii)->location());
+        move_construct_destroy(scope, (*ii)->argument->type, entry_variable.stack_slot(), jd.storage, (*ii)->location());
         entry_variable_result = VariableResult::on_stack();
         break;
       }
@@ -566,7 +569,7 @@ FunctionLowering::VariableResult FunctionLowering::run_jump(Scope& scope, const 
         
     case local_lvalue_ref:
       switch (jump_to->target->argument_mode) {
-      case result_mode_by_value: copy_construct(var.type(), ei.second, var.value(), jump_to->location()); break;
+      case result_mode_by_value: copy_construct(scope, var.type(), ei.second, var.value(), jump_to->location()); break;
       case result_mode_lvalue:
       case result_mode_rvalue: result_value = var.value(); break;
       default: PSI_FAIL("unknown enum value");
@@ -575,7 +578,7 @@ FunctionLowering::VariableResult FunctionLowering::run_jump(Scope& scope, const 
       
     case local_rvalue_ref:
       switch (jump_to->target->argument_mode) {
-      case result_mode_by_value: move_construct(var.type(), ei.second, var.value(), jump_to->location()); break;
+      case result_mode_by_value: move_construct(scope, var.type(), ei.second, var.value(), jump_to->location()); break;
       case result_mode_lvalue: compile_context().error_throw(scope.location(), "Cannot implicitly convert lvalue reference to rvalue reference"); break;
       case result_mode_rvalue: result_value = var.value(); break;
       default: PSI_FAIL("unknown enum value");
@@ -598,6 +601,13 @@ FunctionLowering::VariableResult FunctionLowering::run_jump(Scope& scope, const 
   exit_to(scope, jump_to->target, jump_to->location(), result_value);
   
   return VariableResult::bottom();
+}
+
+/**
+ * \brief Lower a function call.
+ */
+void FunctionLowering::run_call(Scope& scope, const TreePtr<FunctionCall>& call, const Variable& var, Scope& following_scope) {
+  PSI_NOT_IMPLEMENTED();
 }
 
 bool FunctionLowering::merge_exit_list_entry_bottom(const MergeExitList::value_type& el) {
@@ -663,8 +673,8 @@ FunctionLowering::VariableResult FunctionLowering::merge_exit(Scope& scope, cons
       for (MergeExitList::const_iterator ii = values.begin(), ie = values.end(); ii != ie; ++ii) {
         switch (ii->second.storage()) {
         case local_stack: break;
-        case local_lvalue_ref: copy_construct(slot.type(), slot.stack_slot(), ii->second.value(), scope.location()); break;
-        case local_rvalue_ref: move_construct(slot.type(), slot.stack_slot(), ii->second.value(), scope.location()); break;
+        case local_lvalue_ref: copy_construct(scope, slot.type(), slot.stack_slot(), ii->second.value(), scope.location()); break;
+        case local_rvalue_ref: move_construct(scope, slot.type(), slot.stack_slot(), ii->second.value(), scope.location()); break;
         case local_functional: builder().store(ii->second.value(), slot.stack_slot(), scope.location()); break;
         default: PSI_FAIL("unknown enum value");
         }
@@ -707,7 +717,7 @@ FunctionLowering::VariableResult FunctionLowering::variable_assign(Scope& scope,
     case local_functional: return VariableResult::in_register(local_functional, as_functional(src, location));
     case local_lvalue_ref: return VariableResult::in_register(local_lvalue_ref, src.value());
     case local_rvalue_ref: compile_context().error_throw(location, "Local storage inference failed: cannot implicitly convert l-value to r-value", CompileError::error_internal);
-    case local_stack: copy_construct(dest.type(), dest.value(), src.value(), location); return VariableResult::on_stack();
+    case local_stack: copy_construct(scope, dest.type(), dest.value(), src.value(), location); return VariableResult::on_stack();
     default: PSI_FAIL("unknown enum value");
     }
     
@@ -719,9 +729,9 @@ FunctionLowering::VariableResult FunctionLowering::variable_assign(Scope& scope,
     
     case local_stack:
       if (going_out_of_scope(scope, src, following_scope))
-        move_construct(dest.type(), dest.value(), src.value(), location);
+        move_construct(scope, dest.type(), dest.value(), src.value(), location);
       else
-        copy_construct(dest.type(), dest.value(), src.value(), location);
+        copy_construct(scope, dest.type(), dest.value(), src.value(), location);
       return VariableResult::on_stack();
 
     default: PSI_FAIL("unknown enum value");
@@ -740,9 +750,9 @@ FunctionLowering::VariableResult FunctionLowering::variable_assign(Scope& scope,
     
     case local_stack:
       if (going_out_of_scope(scope, src, following_scope))
-        move_construct(dest.type(), dest.value(), src.value(), location);
+        move_construct(scope, dest.type(), dest.value(), src.value(), location);
       else
-        copy_construct(dest.type(), dest.value(), src.value(), location);
+        copy_construct(scope, dest.type(), dest.value(), src.value(), location);
       return VariableResult::on_stack();
 
     default: PSI_FAIL("unknown enum value");
@@ -793,26 +803,48 @@ bool FunctionLowering::is_primitive(const TreePtr<Term>& type) {
 }
 
 /// \brief Generate default constructor call
-void FunctionLowering::default_construct(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location) {
+void FunctionLowering::default_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location) {
   TypeConstructorInfo tci = type_constructor_info(type);
+  if (tci.primitive) {
+    // Should this be undef?
+    builder().store(Tvm::FunctionalBuilder::zero(Tvm::value_cast<Tvm::PointerType>(dest->type())->target_type(), location), dest, location);
+  } else {
+    PSI_NOT_IMPLEMENTED();
+  }
 }
 
 /// \brief Generate copy constructor call
-void FunctionLowering::copy_construct(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {  
+void FunctionLowering::copy_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {  
   TypeConstructorInfo tci = type_constructor_info(type);
-  PSI_NOT_IMPLEMENTED();
+  if (tci.primitive) {
+    Tvm::ValuePtr<> value = builder().load(src, location);
+    builder().store(value, dest, location);
+  } else {
+    TreePtr<FunctionCall> call;
+    Variable call_var(call->type, scope);
+    call_var.assign(run_call(scope, call, call_var, scope));
+    if (call_var.storage() != local_functional)
+      compile_context().error_throw(location, "Copy constructor has non-primitive result");
+  }
 }
 
 /// \brief Generate move constructor call
-void FunctionLowering::move_construct(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {
+void FunctionLowering::move_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {
   TypeConstructorInfo tci = type_constructor_info(type);
-  PSI_NOT_IMPLEMENTED();
+  if (tci.primitive) {
+    Tvm::ValuePtr<> value = builder().load(src, location);
+    builder().store(value, dest, location);
+  } else {
+    builder().call(run_functional(scope, tci.move_constructor, location), dest, src, location);
+  }
 }
 
 ///  \brief Generate destructor call
-void FunctionLowering::destroy(const TreePtr<Term>& type, const Tvm::ValuePtr<>& ptr, const SourceLocation& location) {
+void FunctionLowering::destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& ptr, const SourceLocation& location) {
   TypeConstructorInfo tci = type_constructor_info(type);
-  PSI_NOT_IMPLEMENTED();
+  if (!tci.primitive) {
+    builder().call(run_functional(scope, tci.destructor, location), ptr, location);
+  }
 }
 
 /**
@@ -821,9 +853,9 @@ void FunctionLowering::destroy(const TreePtr<Term>& type, const Tvm::ValuePtr<>&
  * It is expected that this can be optimised by merging the two calls. However, currently
  * this is not done and this funtion simply calls move_construct() followed by destroy().
  */
-void FunctionLowering::move_construct_destroy(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {
-  move_construct(type, dest, src, location);
-  destroy(type, src, location);
+void FunctionLowering::move_construct_destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {
+  move_construct(scope, type, dest, src, location);
+  destroy(scope, type, src, location);
 }
 }
 }
