@@ -1,7 +1,7 @@
 Syntax
 ======
 
-.. _psi-tvm-numerical_constants:
+.. _psi.tvm.numerical_constants:
 
 Numerical constants
 -------------------

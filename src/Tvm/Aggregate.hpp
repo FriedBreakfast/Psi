@@ -24,7 +24,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(EmptyType)
     public:
       EmptyType(Context& context, const SourceLocation& location);
-      static ValuePtr<EmptyType> get(Context& context, const SourceLocation& location);
     };
     
     /**
@@ -34,8 +33,62 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(EmptyValue)
     public:
       EmptyValue(Context& context, const SourceLocation& location);
-      static ValuePtr<EmptyValue> get(Context& context, const SourceLocation& location);
     };
+    
+    /**
+     * \brief Type which enables single dispatch.
+     */
+    class BaseType : public Type {
+      PSI_TVM_FUNCTIONAL_DECL(BaseType)
+    public:
+    };
+
+    /**
+     * \brief Pointer type which enables single dispatch.
+     */
+    class BasePtr : public Type {
+      PSI_TVM_FUNCTIONAL_DECL(BasePtr)
+      
+      ValuePtr<BaseType> m_base_type;
+      
+    public:
+      BasePtr(const ValuePtr<BaseType>& base_type, const SourceLocation& location);
+      const ValuePtr<BaseType>& base_type() const {return m_base_type;}
+    };
+
+    /**
+     * \brief Pointer-to-member type.
+     */
+    class Member : public Type {
+      PSI_TVM_FUNCTIONAL_DECL(Member)
+      
+      ValuePtr<> m_outer_type;
+      ValuePtr<> m_inner_type;
+      
+    public:
+      Member(const ValuePtr<>& outer_type, const ValuePtr<>& inner_type, const SourceLocation& location);
+      const ValuePtr<>& outer_type() {return m_outer_type;}
+      const ValuePtr<>& inner_type() {return m_inner_type;}
+    };
+    
+    /**
+     * \brief Interior pointer type.
+     */
+    class MemberPtr : public Type {
+      PSI_TVM_FUNCTIONAL_DECL(MemberPtr)
+      
+      ValuePtr<Member> m_member;
+      
+    public:
+      MemberPtr(const ValuePtr<Member>& member, const SourceLocation& location);
+      const ValuePtr<Member>& member() const {return m_member;}
+    };
+    
+    PSI_TVM_UNARY_OP_DECL(MemberInner, UnaryOp)
+    PSI_TVM_UNARY_OP_DECL(MemberOuter, UnaryOp)
+    PSI_TVM_BINARY_OP_DECL(MemberApply, BinaryOp)
+    PSI_TVM_BINARY_OP_DECL(MemberApplyPtr, BinaryOp)
+    PSI_TVM_BINARY_OP_DECL(MemberCombine, BinaryOp)
     
     /**
      * \brief The type of a BlockTerm.
@@ -44,7 +97,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(BlockType)      
     public:
       BlockType(Context& context, const SourceLocation& location);
-      static ValuePtr<BlockType> get(Context& context, const SourceLocation& location);
     };
     
     /**
@@ -56,7 +108,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(ByteType)
     public:
       ByteType(Context& context, const SourceLocation& location);
-      static ValuePtr<ByteType> get(Context& context, const SourceLocation& location);
     };
 
     /**
@@ -69,7 +120,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(Metatype)
     public:
       Metatype(Context& context, const SourceLocation& location);
-      static ValuePtr<> get(Context& context, const SourceLocation& location);
     };
 
     /**
@@ -85,7 +135,6 @@ namespace Psi {
     public:
       
       MetatypeValue(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location);
       
       /// \brief Get the size of this type
       const ValuePtr<>& size() const {return m_size;}
@@ -127,7 +176,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(PointerType)
     public:
       PointerType(const ValuePtr<>& target_type, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& target_type, const SourceLocation& location);
 
       /// \brief Get the type being pointed to.
       const ValuePtr<>& target_type() const {return m_target_type;}
@@ -143,7 +191,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(PointerCast)
     public:
       PointerCast(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const SourceLocation& location);
 
       /// \brief Get the pointer being cast
       const ValuePtr<>& pointer() const {return m_pointer;}
@@ -167,7 +214,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(PointerOffset)
     public:
       PointerOffset(const ValuePtr<>& pointer, const ValuePtr<>& offset, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& pointer, const ValuePtr<>& offset, const SourceLocation& location);
 
       /// \brief Get the original pointer
       const ValuePtr<>& pointer() const {return m_pointer;}
@@ -190,7 +236,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(ArrayType)
     public:
       ArrayType(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
 
       /// \brief Get the array element type.
       const ValuePtr<>& element_type() const {return m_element_type;}
@@ -210,7 +255,6 @@ namespace Psi {
       
     public:
       ArrayValue(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements, const SourceLocation& location);
 
       /// \brief Get the element type in the array.
       const ValuePtr<>& element_type() const {return m_element_type;}
@@ -231,7 +275,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(ArrayElement)
     public:
       ArrayElement(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location);
 
       /// \brief Get the array being subscripted
       const ValuePtr<>& aggregate() const {return m_aggregate;}
@@ -253,7 +296,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(ArrayElementPtr)
     public:
       ArrayElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location);
 
       /// \brief Get the array being subscripted
       const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
@@ -276,7 +318,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(StructType)
     public:
       StructType(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
-      static ValuePtr<StructType> get(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
 
       /// \brief Get the number of members in the aggregate.
       unsigned n_members() const {return m_members.size();}
@@ -296,7 +337,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(StructValue)
     public:
       StructValue(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
-      static ValuePtr<> get(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
 
       /// \brief Get the number of elements in the struct.
       unsigned n_members() const {return m_members.size();}
@@ -316,7 +356,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(StructElement)
     public:
       StructElement(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location);
 
       /// \brief Get the struct being accessed
       const ValuePtr<>& aggregate() const {return m_aggregate;}
@@ -338,7 +377,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(StructElementPtr)
     public:
       StructElementPtr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location);
 
       /// \brief Get the struct being subscripted
       const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
@@ -362,14 +400,11 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(StructElementOffset)
     public:
       StructElementOffset(const ValuePtr<>& aggregate_type, unsigned index, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& aggregate_type, unsigned index, const SourceLocation& location);
 
       /// \brief Get the struct type
       ValuePtr<StructType> aggregate_type() const {return value_cast<StructType>(m_aggregate_type);}
       /// \brief Get the index of the member we're getting the offset of
       unsigned index() const {return m_index;}
-      
-      static ValuePtr<StructElementOffset> get(const ValuePtr<StructType>& aggregate_type, unsigned index);
       
     private:
       ValuePtr<> m_aggregate_type;
@@ -384,7 +419,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(UnionType)
     public:
       UnionType(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
-      static ValuePtr<> get(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
 
       /// \brief Get the number of members in the aggregate.
       unsigned n_members() const {return m_members.size();}
@@ -405,7 +439,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(UnionValue)
     public:
       UnionValue(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location);
 
       /// \brief Get the value of whichever element this represents.
       const ValuePtr<>& value() const {return m_value;}
@@ -422,7 +455,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(UnionElement)
     public:
       UnionElement(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location);
 
       /// \brief Get the union being accessed
       const ValuePtr<>& aggregate() const {return m_aggregate;}
@@ -446,7 +478,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(UnionElementPtr)
     public:
       UnionElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member_type, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member_type, const SourceLocation& location);
 
       /// \brief Get the struct being subscripted
       const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
@@ -474,7 +505,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(FunctionSpecialize)
     public:
       FunctionSpecialize(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);
-      static ValuePtr<> get(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);
 
       /// \brief Get the function being specialized.
       const ValuePtr<>& function() const {return m_function;}

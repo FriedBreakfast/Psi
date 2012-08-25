@@ -730,7 +730,7 @@ namespace Psi {
                                             const SourceLocation& location);
 
       void resolve_recursive(const ValuePtr<RecursiveType>& recursive, const ValuePtr<>& to);
-
+      
     private:
       Context(const Context&);
 

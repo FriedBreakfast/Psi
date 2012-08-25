@@ -7,12 +7,12 @@ namespace Psi {
   namespace Tvm {
     /// \brief Get the metatype, the type of types.
     ValuePtr<> FunctionalBuilder::type_type(Context& context, const SourceLocation& location) {
-      return Metatype::get(context, location);
+      return context.get_functional(Metatype(context, location));
     }
     
     /// \brief Create a type just from its size and alignment
     ValuePtr<> FunctionalBuilder::type_value(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location) {
-      return MetatypeValue::get(size, alignment, location);
+      return size->context().get_functional(MetatypeValue(size, alignment, location));
     }
     
     /// \brief Get the size of a type.
@@ -21,7 +21,7 @@ namespace Psi {
         return mt->size();
       }
       
-      const ValuePtr<>& result = MetatypeSize::get(type, location);
+      const ValuePtr<>& result = type->context().get_functional(MetatypeSize(type, location));
       
       if (isa<UndefinedValue>(type))
         return undef(result->type(), location);
@@ -34,7 +34,7 @@ namespace Psi {
       if (ValuePtr<MetatypeValue> mt = dyn_cast<MetatypeValue>(type))
         return mt->alignment();
 
-      const ValuePtr<>& result = MetatypeAlignment::get(type, location);
+      const ValuePtr<>& result = type->context().get_functional(MetatypeAlignment(type, location));
       
       if (isa<UndefinedValue>(type))
         return undef(result->type(), location);
@@ -44,32 +44,32 @@ namespace Psi {
 
     /// \brief Get the type of blocks
     ValuePtr<> FunctionalBuilder::block_type(Context& context, const SourceLocation& location) {
-      return BlockType::get(context, location);
+      return context.get_functional(BlockType(context, location));
     }
     
     /// \brief Get the empty type
     ValuePtr<> FunctionalBuilder::empty_type(Context& context, const SourceLocation& location) {
-      return EmptyType::get(context, location);
+      return context.get_functional(EmptyType(context, location));
     }
     
     /// \brief Get the unique value of the empty type
     ValuePtr<> FunctionalBuilder::empty_value(Context& context, const SourceLocation& location) {
-      return EmptyValue::get(context, location);
+      return context.get_functional(EmptyValue(context, location));
     }
     
     /// \brief Get the byte type
     ValuePtr<> FunctionalBuilder::byte_type(Context& context, const SourceLocation& location) {
-      return ByteType::get(context, location);
+      return context.get_functional(ByteType(context, location));
     }
     
     /// \brief Get the pointer-to-byte type
     ValuePtr<> FunctionalBuilder::byte_pointer_type(Context& context, const SourceLocation& location) {
-      return PointerType::get(ByteType::get(context, location), location);
+      return pointer_type(byte_type(context, location), location);
     }
     
     /// \brief Get an undefined value of the specified type.
     ValuePtr<> FunctionalBuilder::undef(const ValuePtr<>& type, const SourceLocation& location) {
-      return UndefinedValue::get(type, location);
+      return type->context().get_functional(UndefinedValue(type, location));
     }
 
     /// \brief Get an zero value of the specified type.
@@ -79,7 +79,7 @@ namespace Psi {
       } else if (ValuePtr<FloatType> float_ty = dyn_cast<FloatType>(type)) {
         PSI_FAIL("float zero not implemented");
       } else {
-        return ZeroValue::get(type, location);
+        return type->context().get_functional(ZeroValue(type, location));
       }
     }
     
@@ -89,7 +89,7 @@ namespace Psi {
      * \param target Type being pointed to.
      */
     ValuePtr<> FunctionalBuilder::pointer_type(const ValuePtr<>& target, const SourceLocation& location) {
-      return PointerType::get(target, location);
+      return target->context().get_functional(PointerType(target, location));
     }
     
     /**
@@ -100,7 +100,7 @@ namespace Psi {
      * \param length The array length.
      */
     ValuePtr<> FunctionalBuilder::array_type(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location) {
-      return ArrayType::get(element_type, length, location);
+      return element_type->context().get_functional(ArrayType(element_type, length, location));
     }
     
     /// \copydoc FunctionalBuilder::array_type(Term*,Term*)
@@ -116,7 +116,7 @@ namespace Psi {
      * \param elements List of types of members of the struct.
      */
     ValuePtr<> FunctionalBuilder::struct_type(Context& context, const std::vector<ValuePtr<> >& elements, const SourceLocation& location) {
-      return StructType::get(context, elements, location);
+      return context.get_functional(StructType(context, elements, location));
     }
     
     /**
@@ -127,9 +127,46 @@ namespace Psi {
      * \param elements List of types of members of the union.
      */
     ValuePtr<> FunctionalBuilder::union_type(Context& context, const std::vector<ValuePtr<> >& elements, const SourceLocation& location) {
-      return UnionType::get(context, elements, location);
+      return context.get_functional(UnionType(context, elements, location));
     }
     
+    /**
+     * \brief Get a pointer to member type.
+     */
+    ValuePtr<Member> FunctionalBuilder::member(const ValuePtr<>& outer, const ValuePtr<>& inner, const SourceLocation& location) {
+      return outer->context().get_functional(Member(outer, inner, location));
+    }
+    
+    /**
+     * \brief Get an interior pointer type.
+     */
+    ValuePtr<MemberPtr> FunctionalBuilder::member_ptr(const ValuePtr<Member>& offset, const SourceLocation& location) {
+      return offset->context().get_functional(MemberPtr(offset, location));
+    }
+    
+    ValuePtr<> FunctionalBuilder::member_apply(const ValuePtr<>& ptr, const ValuePtr<>& offset, const SourceLocation& location) {
+      return ptr->context().get_functional(MemberApply(ptr, offset, location));
+    }
+    
+    ValuePtr<> FunctionalBuilder::member_apply_ptr(const ValuePtr<>& ptr, const ValuePtr<>& offset, const SourceLocation& location) {
+      return ptr->context().get_functional(MemberApplyPtr(ptr, offset, location));
+    }
+    
+    /**
+     * \brief Combine to member pointers.
+     */
+    ValuePtr<> FunctionalBuilder::member_combine(const ValuePtr<>& offset1, const ValuePtr<>& offset2, const SourceLocation& location) {
+      return offset1->context().get_functional(MemberCombine(offset1, offset2, location));
+    }
+    
+    ValuePtr<> FunctionalBuilder::member_inner(const ValuePtr<>& ptr, const SourceLocation& location) {
+      return ptr->context().get_functional(MemberInner(ptr, location));
+    }
+    
+    ValuePtr<> FunctionalBuilder::member_outer(const ValuePtr<>& ptr, const SourceLocation& location) {
+      return ptr->context().get_functional(MemberOuter(ptr, location));
+    }
+
     /**
      * Construct an array value.
      * 
@@ -139,7 +176,7 @@ namespace Psi {
      * \param elements Values of array elements.
      */
     ValuePtr<> FunctionalBuilder::array_value(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements, const SourceLocation& location) {
-      return ArrayValue::get(element_type, elements, location);
+      return element_type->context().get_functional(ArrayValue(element_type, elements, location));
     }
     
     /**
@@ -151,7 +188,7 @@ namespace Psi {
      * type will be inferred from the types of these elements.
      */
     ValuePtr<> FunctionalBuilder::struct_value(Context& context, const std::vector<ValuePtr<> >& elements, const SourceLocation& location) {
-      return StructValue::get(context, elements, location);
+      return context.get_functional(StructValue(context, elements, location));
     }
     
     /**
@@ -166,13 +203,11 @@ namespace Psi {
      * 
      * \param value Value for an element of the union.
      */
-    ValuePtr<> FunctionalBuilder::union_value(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location) {
-      const ValuePtr<>& result = UnionValue::get(value_cast<UnionType>(type), value, location);
-      
+    ValuePtr<> FunctionalBuilder::union_value(const ValuePtr<UnionType>& type, const ValuePtr<>& value, const SourceLocation& location) {
       if (isa<UndefinedValue>(value))
         return undef(type, location);
       
-      return result;
+      return type->context().get_functional(UnionValue(type, value, location));
     }
     
     /**
@@ -190,8 +225,8 @@ namespace Psi {
      * \param index Index into the array.
      */
     ValuePtr<> FunctionalBuilder::array_element(const ValuePtr<>& array, const ValuePtr<>& index, const SourceLocation& location) {
-      const ValuePtr<>& result = ArrayElement::get(array, index, location);
-      
+      ValuePtr<> result = array->context().get_functional(ArrayElement(array, index, location));
+
       if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(array)) {
         if (ValuePtr<IntegerValue> index_val = dyn_cast<IntegerValue>(index)) {
           boost::optional<unsigned> index_ui = index_val->value().unsigned_value();
@@ -226,7 +261,7 @@ namespace Psi {
      * \param index Index of the member to get a value for.
      */
     ValuePtr<> FunctionalBuilder::struct_element(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
-      const ValuePtr<>& result = StructElement::get(aggregate, index, location);
+      const ValuePtr<>& result = aggregate->context().get_functional(StructElement(aggregate, index, location));
       
       if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(aggregate)) {
         return struct_val->member_value(index);
@@ -246,7 +281,7 @@ namespace Psi {
      * \param member_type Type of the member whose value is returned.
      */
     ValuePtr<> FunctionalBuilder::union_element(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location) {
-      const ValuePtr<>& result = UnionElement::get(aggregate, member_type, location);
+      const ValuePtr<>& result = aggregate->context().get_functional(UnionElement(aggregate, member_type, location));
       
       if (ValuePtr<UnionValue> union_val = dyn_cast<UnionValue>(aggregate)) {
         const ValuePtr<>& value = union_val->value();
@@ -288,7 +323,7 @@ namespace Psi {
      * \param index Index of element to get.
      */
     ValuePtr<> FunctionalBuilder::array_element_ptr(const ValuePtr<>& array, const ValuePtr<>& index, const SourceLocation& location) {
-      ValuePtr<> result = ArrayElementPtr::get(array, index, location);
+      ValuePtr<> result = array->context().get_functional(ArrayElementPtr(array, index, location));
       
       if (isa<UndefinedValue>(array) || isa<UndefinedValue>(index))
         return undef(result->type(), location);
@@ -315,7 +350,7 @@ namespace Psi {
      * \param index Index of member to get a pointer to.
      */
     ValuePtr<> FunctionalBuilder::struct_element_ptr(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
-      const ValuePtr<>& result = StructElementPtr::get(aggregate, index, location);
+      const ValuePtr<>& result = aggregate->context().get_functional(StructElementPtr(aggregate, index, location));
       
       if (isa<UndefinedValue>(aggregate))
         return undef(result->type(), location);
@@ -331,7 +366,7 @@ namespace Psi {
      * \param type Member type to get a pointer to.
      */
     ValuePtr<> FunctionalBuilder::union_element_ptr(const ValuePtr<>& aggregate, const ValuePtr<>& type, const SourceLocation& location) {
-      const ValuePtr<>& result = UnionElementPtr::get(aggregate, type, location);
+      const ValuePtr<>& result = aggregate->context().get_functional(UnionElementPtr(aggregate, type, location));
       
       if (isa<UndefinedValue>(aggregate))
         return undef(result->type(), location);
@@ -369,7 +404,7 @@ namespace Psi {
      * \param index Index of member to get the offset of.
      */
     ValuePtr<> FunctionalBuilder::struct_element_offset(const ValuePtr<>& type, unsigned index, const SourceLocation& location) {
-      return StructElementOffset::get(type, index, location);
+      return type->context().get_functional(StructElementOffset(type, index, location));
     }
     
     /**
@@ -390,11 +425,14 @@ namespace Psi {
         else
           break;
       }
-      ValuePtr<PointerType> base_type = value_cast<PointerType>(my_ptr->type());
+      ValuePtr<PointerType> base_type = dyn_cast<PointerType>(my_ptr->type());
+      if (!base_type)
+        throw TvmUserError("Target of pointer_cast is not a pointer");
+
       if (base_type->target_type() == result_type) {
         return my_ptr;
       } else {
-        const ValuePtr<>& result = PointerCast::get(my_ptr, result_type, location);
+        const ValuePtr<>& result = ptr->context().get_functional(PointerCast(my_ptr, result_type, location));
         
         if (isa<UndefinedValue>(my_ptr))
           return undef(result->type(), location);
@@ -412,7 +450,7 @@ namespace Psi {
      * pointed-to type.
      */
     ValuePtr<> FunctionalBuilder::pointer_offset(const ValuePtr<>& ptr, const ValuePtr<>& offset, const SourceLocation& location) {
-      const ValuePtr<>& result = PointerOffset::get(ptr, offset, location);
+      const ValuePtr<>& result = ptr->context().get_functional(PointerOffset(ptr, offset, location));
       
       if (isa<UndefinedValue>(ptr) || isa<UndefinedValue>(offset))
         return undef(result->type(), location);
@@ -422,7 +460,7 @@ namespace Psi {
 
     /// \copydoc FunctionalBuilder::pointer_offset(Term*,Term*)
     ValuePtr<> FunctionalBuilder::pointer_offset(const ValuePtr<>& ptr, unsigned offset, const SourceLocation& location) {
-      const ValuePtr<>& result = PointerOffset::get(ptr, size_value(ptr->context(), offset, location), location);
+      const ValuePtr<>& result = ptr->context().get_functional(PointerOffset(ptr, size_value(ptr->context(), offset, location), location));
       
       if (!offset)
         return ptr;
@@ -565,6 +603,8 @@ namespace Psi {
        */
       template<typename CommutativeOp, typename ConstType, typename ConstCombiner>
       ValuePtr<> commutative_simplify(ValuePtr<> lhs, ValuePtr<> rhs, const ConstCombiner& const_combiner, const SourceLocation& location) {
+        Context& context = lhs->context();
+
         ValuePtr<ConstType> const_lhs = dyn_cast<ConstType>(lhs), const_rhs = dyn_cast<ConstType>(rhs);
         if (const_lhs && const_rhs) {
           return const_combiner(const_lhs, const_rhs, location);
@@ -577,9 +617,9 @@ namespace Psi {
           
           if (ValuePtr<CommutativeOp> com_op_rhs = dyn_cast<CommutativeOp>(rhs))
             if (ValuePtr<ConstType> const_rhs_lhs = dyn_cast<ConstType>(com_op_rhs->lhs()))
-              return CommutativeOp::get(const_combiner(const_lhs, const_rhs_lhs, location), com_op_rhs->rhs(), location);
+              return context.get_functional(CommutativeOp(const_combiner(const_lhs, const_rhs_lhs, location), com_op_rhs->rhs(), location));
 
-          return CommutativeOp::get(const_lhs, rhs, location);
+          return context.get_functional(CommutativeOp(const_lhs, rhs, location));
         } else {
           PSI_ASSERT(!const_lhs && !const_rhs);
           ValuePtr<CommutativeOp> com_op_lhs = dyn_cast<CommutativeOp>(lhs), com_op_rhs = dyn_cast<CommutativeOp>(rhs);
@@ -587,14 +627,14 @@ namespace Psi {
           ValuePtr<ConstType> const_rhs_lhs = com_op_rhs ? dyn_cast<ConstType>(com_op_rhs->lhs()) : ValuePtr<ConstType>();
           
           if (const_lhs_lhs && const_rhs_lhs) {
-            return CommutativeOp::get(const_combiner(const_lhs_lhs, const_rhs_lhs, location),
-                                      CommutativeOp::get(com_op_lhs->rhs(), com_op_rhs->rhs(), location), location);
+            return context.get_functional(CommutativeOp(const_combiner(const_lhs_lhs, const_rhs_lhs, location),
+                                                        context.get_functional(CommutativeOp(com_op_lhs->rhs(), com_op_rhs->rhs(), location)), location));
           } else if (const_lhs_lhs) {
-            return CommutativeOp::get(const_lhs_lhs, CommutativeOp::get(com_op_lhs->rhs(), rhs, location), location);
+            return context.get_functional(CommutativeOp(const_lhs_lhs, context.get_functional(CommutativeOp(com_op_lhs->rhs(), rhs, location)), location));
           } else if (const_rhs_lhs) {
-            return CommutativeOp::get(const_rhs_lhs, CommutativeOp::get(lhs, com_op_rhs->rhs(), location), location);
+            return context.get_functional(CommutativeOp(const_rhs_lhs, context.get_functional(CommutativeOp(lhs, com_op_rhs->rhs(), location)), location));
           } else {
-            return CommutativeOp::get(lhs, rhs, location);
+            return context.get_functional(CommutativeOp(lhs, rhs, location));
           }
         }
       }
@@ -649,12 +689,12 @@ namespace Psi {
     
     /// \brief Get an integer multiply operation.
     ValuePtr<> FunctionalBuilder::mul(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
-      return IntegerMultiply::get(lhs, rhs, location);
+      return lhs->context().get_functional(IntegerMultiply(lhs, rhs, location));
     }
     
     /// \brief Get an integer division operation.
     ValuePtr<> FunctionalBuilder::div(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
-      return IntegerDivide::get(lhs, rhs, location);
+      return lhs->context().get_functional(IntegerDivide(lhs, rhs, location));
     }
     
     /// \brief Get an integer negation operation
@@ -668,7 +708,7 @@ namespace Psi {
         value.negative(int_val->value());
         return int_value(int_val->type(), value, location);
       } else {
-        return IntegerNegative::get(parameter, location);
+        return parameter->context().get_functional(IntegerNegative(parameter, location));
       }
     }      
     
@@ -710,7 +750,7 @@ namespace Psi {
         value.bit_not(int_val->value());
         return int_value(int_val->type(), value, location);
       } else {
-        return BitNot::get(parameter, location);
+        return parameter->context().get_functional(BitNot(parameter, location));
       }
     }
     
@@ -792,7 +832,7 @@ namespace Psi {
           return FunctionalBuilder::bool_value(int_ty->context(), cmp(cmp_val, 0), location);
         }
         
-        return Op::get(lhs, rhs, location);
+        return lhs->context().get_functional(Op(lhs, rhs, location));
       }
     }
 
@@ -889,7 +929,7 @@ namespace Psi {
         return function;
       }
       
-      return FunctionSpecialize::get(function, parameters, location);
+      return function->context().get_functional(FunctionSpecialize(function, parameters, location));
     }
     
     /**

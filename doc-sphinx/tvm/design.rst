@@ -32,6 +32,39 @@ Instructions execute at a definite time, depend on machine state and may return 
 different value if executed with the same parameters more than once.
 ``alloca`` is an example.
 
+.. _psi.tvm.phantom_values:
+
+Phantom values
+--------------
+
+.. _psi.tvm.virtual_functions:
+
+Virtual functions
+-----------------
+
+Virtual function calls are performed using a combination of member pointers and base pointers.
+For a single dispatch scenario, the following code can be used::
+
+  %vtable = recursive (%derived : type, %offset : member %derived (apply %base %derived)) > struct 
+    (pointer (function (member_ptr %offset) > i8))
+  ;
+  
+  %base = base %derived %offset > struct
+    (pointer (apply %vtable %derived %offset))
+  ;
+  
+  %func = function (%obj : base_ptr %base) > i8 {
+    %derived = unbase %base;
+    %vptr = load (struct_ep (member_inner %derived_ptr) #i0);
+    %callback = load (struct_ep %vptr #i0);
+    %val = call %callback %derived;
+  };
+
+See:
+
+* :ref:`psi.tvm.instructions.member_ptr`
+* :ref:`psi.tvm.instructions.base_ptr`
+
 Exceptions
 ----------
 
@@ -49,7 +82,7 @@ This could allow arithmetic overflows and NULL pointer errors to be handled by t
 exception handling mechanism, however the current implementation is based on LLVM so
 in fact only function calls may raise exceptions.
 
-.. _psi-tvm-type_lowering:
+.. _psi.tvm.type_lowering:
 
 Type lowering
 -------------

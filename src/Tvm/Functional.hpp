@@ -84,17 +84,12 @@ namespace Psi {
       \
     public: \
       name(const ValuePtr<>& arg, const SourceLocation& location); \
-      static ValuePtr<> get(const ValuePtr<>& arg, const SourceLocation& location); \
     };
 
 #define PSI_TVM_UNARY_OP_IMPL(name,base,op_name) \
     PSI_TVM_FUNCTIONAL_IMPL(name,base,op_name) \
     name::name(const ValuePtr<>& arg, const SourceLocation& location) \
     : base(arg, location) { \
-    } \
-    \
-    ValuePtr<> name::get(const ValuePtr<>& arg, const SourceLocation& location) { \
-      return arg->context().get_functional(name(arg, location)); \
     } \
     \
     template<typename V> \
@@ -128,17 +123,12 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(name) \
     public: \
       name(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location); \
-      static ValuePtr<> get(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location); \
     };
     
 #define PSI_TVM_BINARY_OP_IMPL(name,base,op_name) \
     PSI_TVM_FUNCTIONAL_IMPL(name,base,op_name) \
     name::name(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) \
     : base(lhs, rhs, location) { \
-    } \
-    \
-    ValuePtr<> name::get(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) { \
-      return lhs->context().get_functional(name(lhs, rhs, location)); \
     } \
     \
     template<typename V> \

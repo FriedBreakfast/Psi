@@ -199,7 +199,7 @@ namespace Psi {
       for (std::vector<ValuePtr<> >::const_iterator ii = m_parameter_types.begin(), ie = m_parameter_types.end(); ii != ie; ++ii)
         if (!(*ii)->is_type())
           throw TvmUserError("Function argument type is not a type");
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
 
     PSI_TVM_HASHABLE_IMPL(FunctionType, HashableValue, function)
@@ -240,7 +240,7 @@ namespace Psi {
     }
 
     TerminatorInstruction::TerminatorInstruction(Context& context, const char* operation, const SourceLocation& location)
-    : Instruction(EmptyType::get(context, location), operation, location) {
+    : Instruction(FunctionalBuilder::empty_type(context, location), operation, location) {
     }
 
     /**
@@ -330,16 +330,12 @@ namespace Psi {
       if (terminated() && !insert_before)
         throw TvmUserError("cannot add instruction at end of already terminated block");
       
-      bool terminator = false;
       if (insert_before) {
         if (insert_before->block() != this)
           throw TvmUserError("instruction specified as insertion point is not part of this block");
 
         if (isa<TerminatorInstruction>(insn))
           throw TvmUserError("terminating instruction cannot be inserted other than at the end of a block");
-      } else {
-        if (isa<TerminatorInstruction>(insn))
-          terminator = true;
       }
 
       m_instructions.insert(insert_before, *insn);
@@ -458,7 +454,7 @@ namespace Psi {
 
     Block::Block(Function *function, const ValuePtr<Block>& dominator,
                  bool is_landing_pad, const ValuePtr<Block>& landing_pad, const SourceLocation& location)
-    : Value(function->context(), term_block, BlockType::get(function->context(), location), this, location),
+    : Value(function->context(), term_block, FunctionalBuilder::block_type(function->context(), location), this, location),
     m_function(function),
     m_dominator(dominator),
     m_landing_pad(landing_pad),

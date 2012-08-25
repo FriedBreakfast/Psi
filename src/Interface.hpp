@@ -31,6 +31,8 @@ struct TypeConstructorInfo {
   TreePtr<Term> move_constructor;
   /// \brief Copy constructor
   TreePtr<Term> copy_constructor;
+  /// \brief Parameter passed to all of these functions.
+  TreePtr<Term> parameter;
   
   template<typename V>
   static void visit(V& v) {
@@ -38,7 +40,8 @@ struct TypeConstructorInfo {
     ("destructor", &TypeConstructorInfo::destructor)
     ("default_constructor", &TypeConstructorInfo::default_constructor)
     ("move_constructor", &TypeConstructorInfo::move_constructor)
-    ("copy_constructor", &TypeConstructorInfo::copy_constructor);
+    ("copy_constructor", &TypeConstructorInfo::copy_constructor)
+    ("parameter", &TypeConstructorInfo::parameter);
   }
 };
 

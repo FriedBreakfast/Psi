@@ -299,6 +299,7 @@ root_expression:
 NUMBER
 | id_expression
 | bracket_expression
+| function_type
 | '(' root_expression ')' {$$ = $2;}
 ;
 

@@ -3,17 +3,11 @@
 #include "Function.hpp"
 #include "FunctionalBuilder.hpp"
 #include "Utility.hpp"
-#include <boost/concept_check.hpp>
-#include <boost/concept_check.hpp>
 
 namespace Psi {
   namespace Tvm {
     Metatype::Metatype(Context& context, const SourceLocation& location)
     : FunctionalValue(context, location) {
-    }
-    
-    ValuePtr<> Metatype::get(Context& context, const SourceLocation& location) {
-      return context.get_functional(Metatype(context, location));
     }
     
     ValuePtr<> Metatype::check_type() const {
@@ -34,17 +28,13 @@ namespace Psi {
     m_alignment(alignment) {
     }
 
-    ValuePtr<> MetatypeValue::get(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location) {
-      return size->context().get_functional(MetatypeValue(size, alignment, location));
-    }
-    
     ValuePtr<> MetatypeValue::check_type() const {
       ValuePtr<> intptr_type = IntegerType::get_intptr(context(), location());
       if (m_size->type() != intptr_type)
         throw TvmUserError("first parameter to type_v must be intptr");
       if (m_alignment->type() != intptr_type)
         throw TvmUserError("second parameter to type_v must be intptr");
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
     
     template<typename V>
@@ -57,7 +47,7 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(MetatypeValue, Constructor, type_v)
 
     ValuePtr<> MetatypeSize::check_type() const {
-      if (parameter()->type() != Metatype::get(context(), location()))
+      if (parameter()->type() != FunctionalBuilder::type_type(context(), location()))
         throw TvmUserError("Parameter to sizeof must be a type");
       return IntegerType::get_intptr(context(), location());
     }
@@ -65,7 +55,7 @@ namespace Psi {
     PSI_TVM_UNARY_OP_IMPL(MetatypeSize, UnaryOp, sizeof)
 
     ValuePtr<> MetatypeAlignment::check_type() const {
-      if (parameter()->type() != Metatype::get(context(), location()))
+      if (parameter()->type() != FunctionalBuilder::type_type(context(), location()))
         throw TvmUserError("Parameter to sizeof must be a type");
       return IntegerType::get_intptr(context(), location());
     }
@@ -77,7 +67,7 @@ namespace Psi {
     }
     
     ValuePtr<> EmptyType::check_type() const {
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
     
     template<typename V>
@@ -85,18 +75,10 @@ namespace Psi {
       visit_base<Type>(v);
     }
 
-    ValuePtr<EmptyType> EmptyType::get(Context& context, const SourceLocation& location) {
-      return context.get_functional(EmptyType(context, location));
-    }
-    
     PSI_TVM_FUNCTIONAL_IMPL(EmptyType, Type, empty)
 
     EmptyValue::EmptyValue(Context& context, const SourceLocation& location)
     : Constructor(context, location) {
-    }
-    
-    ValuePtr<EmptyValue> EmptyValue::get(Context& context, const SourceLocation& location) {
-      return context.get_functional(EmptyValue(context, location));
     }
     
     template<typename V>
@@ -105,8 +87,14 @@ namespace Psi {
     }
     
     ValuePtr<> EmptyValue::check_type() const {
-      return EmptyType::get(context(), location());
+      return context().get_functional(EmptyType(context(), location()));
     }
+
+    PSI_TVM_UNARY_OP_IMPL(MemberInner, UnaryOp, member_inner)
+    PSI_TVM_UNARY_OP_IMPL(MemberOuter, UnaryOp, member_outer)
+    PSI_TVM_BINARY_OP_IMPL(MemberApply, BinaryOp, member_apply)
+    PSI_TVM_BINARY_OP_IMPL(MemberApplyPtr, BinaryOp, member_apply_ptr)
+    PSI_TVM_BINARY_OP_IMPL(MemberCombine, BinaryOp, member_combine)
 
     PSI_TVM_FUNCTIONAL_IMPL(EmptyValue, Constructor, empty_v)
     
@@ -115,16 +103,12 @@ namespace Psi {
     }
     
     ValuePtr<> BlockType::check_type() const {
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
     
     template<typename V>
     void BlockType::visit(V& v) {
       visit_base<Type>(v);
-    }
-
-    ValuePtr<BlockType> BlockType::get(Context& context, const SourceLocation& location) {
-      return context.get_functional(BlockType(context, location));
     }
 
     PSI_TVM_FUNCTIONAL_IMPL(BlockType, Type, block)
@@ -133,17 +117,13 @@ namespace Psi {
     : Type(context, location) {
     }
     
-    ValuePtr<ByteType> ByteType::get(Context& context, const SourceLocation& location) {
-      return context.get_functional(ByteType(context, location));
-    }
-    
     template<typename V>
     void ByteType::visit(V& v) {
       visit_base<Type>(v);
     }
     
     ValuePtr<> ByteType::check_type() const {
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
 
     PSI_TVM_FUNCTIONAL_IMPL(ByteType, Type, byte)
@@ -169,10 +149,6 @@ namespace Psi {
     m_target_type(target_type) {
     }
     
-    ValuePtr<> PointerType::get(const ValuePtr<>& target_type, const SourceLocation& location) {
-      return target_type->context().get_functional(PointerType(target_type, location));
-    }
-    
     template<typename V>
     void PointerType::visit(V& v) {
       visit_base<Type>(v);
@@ -182,7 +158,7 @@ namespace Psi {
     ValuePtr<> PointerType::check_type() const {
       if (!m_target_type->is_type())
         throw TvmUserError("pointer argument must be a type");
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(PointerType, Type, pointer)
@@ -191,10 +167,6 @@ namespace Psi {
     : AggregateOp(pointer->context(), location),
     m_pointer(pointer),
     m_target_type(target_type) {
-    }
-    
-    ValuePtr<> PointerCast::get(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const SourceLocation& location) {
-      return pointer->context().get_functional(PointerCast(pointer, target_type, location));
     }
     
     template<typename V>
@@ -209,7 +181,7 @@ namespace Psi {
         throw TvmUserError("first argument to cast is not a pointer");
       if (!m_target_type->is_type())
         throw TvmUserError("second argument to cast is not a type");
-      return PointerType::get(m_target_type, location());
+      return context().get_functional(PointerType(m_target_type, location()));
     }
 
     PSI_TVM_FUNCTIONAL_IMPL(PointerCast, AggregateOp, cast)
@@ -238,25 +210,10 @@ namespace Psi {
 
     PSI_TVM_FUNCTIONAL_IMPL(PointerOffset, AggregateOp, offset)
     
-    /**
-     * Get an offset term.
-     * 
-     * \param ptr Pointer to offset from.
-     * 
-     * \param offset Offset in units of the pointed-to type.
-     */
-    ValuePtr<> PointerOffset::get(const ValuePtr<>& pointer, const ValuePtr<>& offset, const SourceLocation& location) {
-      return pointer->context().get_functional(PointerOffset(pointer, offset, location));
-    }
-    
     ArrayType::ArrayType(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location)
     : Type(element_type->context(), location),
     m_element_type(element_type),
     m_length(length) {
-    }
-    
-    ValuePtr<> ArrayType::get(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location) {
-      return element_type->context().get_functional(ArrayType(element_type, length, location));
     }
 
     template<typename V>
@@ -269,7 +226,7 @@ namespace Psi {
     ValuePtr<> ArrayType::check_type() const {
       if (m_length->type() != IntegerType::get_intptr(context(), location()))
         throw TvmUserError("Array length must be an intptr");
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(ArrayType, Type, array);
@@ -280,10 +237,6 @@ namespace Psi {
     m_elements(elements) {
     }
 
-    ValuePtr<> ArrayValue::get(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements, const SourceLocation& location) {
-      return element_type->context().get_functional(ArrayValue(element_type, elements, location));
-    }
-    
     template<typename V>
     void ArrayValue::visit(V& v) {
       visit_base<Constructor>(v);
@@ -300,7 +253,7 @@ namespace Psi {
           throw TvmUserError("array value element is of the wrong type");
       }
       
-      return ArrayType::get(m_element_type, IntegerValue::get_intptr(m_element_type->context(), m_elements.size(), location()), location());
+      return FunctionalBuilder::array_type(m_element_type, IntegerValue::get_intptr(m_element_type->context(), m_elements.size(), location()), location());
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(ArrayValue, Constructor, array_v)
@@ -311,10 +264,6 @@ namespace Psi {
     m_index(index) {
     }
 
-    ValuePtr<> ArrayElement::get(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location) {
-      return aggregate->context().get_functional(ArrayElement(aggregate, index, location));
-    }
-    
     template<typename V>
     void ArrayElement::visit(V& v) {
       visit_base<AggregateOp>(v);
@@ -339,10 +288,6 @@ namespace Psi {
     m_index(index) {
     }
 
-    ValuePtr<> ArrayElementPtr::get(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location) {
-      return aggregate_ptr->context().get_functional(ArrayElementPtr(aggregate_ptr, index, location));
-    }
-    
     template<typename V>
     void ArrayElementPtr::visit(V& v) {
       visit_base<AggregateOp>(v);
@@ -356,7 +301,7 @@ namespace Psi {
 
       if (ValuePtr<PointerType> ptr_ty = dyn_cast<PointerType>(m_aggregate_ptr->type()))
         if (ValuePtr<ArrayType> ty = dyn_cast<ArrayType>(ptr_ty->target_type()))
-          return PointerType::get(ty->element_type(), location());
+          return FunctionalBuilder::pointer_type(ty->element_type(), location());
 
       throw TvmUserError("first parameter to array_ep does not have pointer to array type");
     }
@@ -366,10 +311,6 @@ namespace Psi {
     StructType::StructType(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location)
     : Type(context, location),
     m_members(members) {
-    }
-
-    ValuePtr<StructType> StructType::get(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location) {
-      return context.get_functional(StructType(context, members, location));
     }
 
     template<typename V>
@@ -383,7 +324,7 @@ namespace Psi {
         if (!(*ii)->is_type())
           throw TvmUserError("struct argument is not a type");
       }
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(StructType, Type, struct)
@@ -393,10 +334,6 @@ namespace Psi {
     m_members(members) {
     }
 
-    ValuePtr<> StructValue::get(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location) {
-      return context.get_functional(StructValue(context, members, location));
-    }
-    
     template<typename V>
     void StructValue::visit(V& v) {
       visit_base<Constructor>(v);
@@ -407,7 +344,7 @@ namespace Psi {
       std::vector<ValuePtr<> > member_types;
       for (std::vector<ValuePtr<> >::const_iterator ii = m_members.begin(), ie = m_members.end(); ii != ie; ++ii)
         member_types.push_back((*ii)->type());
-      return StructType::get(context(), member_types, location());
+      return FunctionalBuilder::struct_type(context(), member_types, location());
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(StructValue, Constructor, struct_v)
@@ -418,10 +355,6 @@ namespace Psi {
     m_index(index) {
     }
 
-    ValuePtr<> StructElement::get(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
-      return aggregate->context().get_functional(StructElement(aggregate, index, location));
-    }
-    
     template<typename V>
     void StructElement::visit(V& v) {
       visit_base<AggregateOp>(v);
@@ -446,10 +379,6 @@ namespace Psi {
     m_index(index) {
     }
 
-    ValuePtr<> StructElementPtr::get(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location) {
-      return aggregate_ptr->context().get_functional(StructElementPtr(aggregate_ptr, index, location));
-    }
-    
     template<typename V>
     void StructElementPtr::visit(V& v) {
       visit_base<AggregateOp>(v);
@@ -468,7 +397,7 @@ namespace Psi {
       
       if (m_index >= ty->n_members())
         throw TvmUserError("struct_el member index out of range");
-      return PointerType::get(ty->member_type(m_index), location());
+      return FunctionalBuilder::pointer_type(ty->member_type(m_index), location());
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(StructElementPtr, AggregateOp, struct_ep)
@@ -479,10 +408,6 @@ namespace Psi {
     m_index(index) {
     }
     
-    ValuePtr<> StructElementOffset::get(const ValuePtr<>& aggregate_type, unsigned index, const SourceLocation& location) {
-      return aggregate_type->context().get_functional(StructElementOffset(aggregate_type, index, location));
-    }
-
     template<typename V>
     void StructElementOffset::visit(V& v) {
       visit_base<AggregateOp>(v);
@@ -506,10 +431,6 @@ namespace Psi {
     m_members(members) {
     }
     
-    ValuePtr<> UnionType::get(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location) {
-      return context.get_functional(UnionType(context, members, location));
-    }
-
     /// \brief Get the index of the specified type in this union,
     /// or -1 if the type is not present.
     int UnionType::index_of_type(const ValuePtr<>& type) const {
@@ -537,7 +458,7 @@ namespace Psi {
         if (!(*ii)->is_type())
           throw TvmUserError("union argument is not a type");
       }
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
         
     PSI_TVM_FUNCTIONAL_IMPL(UnionType, Type, union)
@@ -546,10 +467,6 @@ namespace Psi {
     : Constructor(type->context(), location),
     m_union_type(type),
     m_value(value) {
-    }
-    
-    ValuePtr<> UnionValue::get(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location) {
-      return type->context().get_functional(UnionValue(type, value, location));
     }
     
     template<typename V>
@@ -573,10 +490,6 @@ namespace Psi {
     : AggregateOp(aggregate->context(), location),
     m_aggregate(aggregate),
     m_member_type(member_type) {
-    }
-    
-    ValuePtr<> UnionElement::get(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location) {
-      return aggregate->context().get_functional(UnionElement(aggregate, member_type, location));
     }
     
     template<typename V>
@@ -605,10 +518,6 @@ namespace Psi {
     m_member_type(member_type) {
     }
     
-    ValuePtr<> UnionElementPtr::get(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member_type, const SourceLocation& location) {
-      return aggregate_ptr->context().get_functional(UnionElementPtr(aggregate_ptr, member_type, location));
-    }
-    
     template<typename V>
     void UnionElementPtr::visit(V& v) {
       visit_base<AggregateOp>(v);
@@ -628,7 +537,7 @@ namespace Psi {
       if (!union_ty->contains_type(m_member_type))
         throw TvmUserError("second argument to union_el is not a member of the type of the first");
       
-      return PointerType::get(m_member_type, location());
+      return FunctionalBuilder::pointer_type(m_member_type, location());
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(UnionElementPtr, AggregateOp, union_ep)
@@ -678,10 +587,6 @@ namespace Psi {
       ("parameters", &FunctionSpecialize::m_parameters);
     }
     
-    ValuePtr<> FunctionSpecialize::get(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
-      return function->context().get_functional(FunctionSpecialize(function, parameters, location));
-    }
-
     PSI_TVM_FUNCTIONAL_IMPL(FunctionSpecialize, FunctionalValue, specialize)
   }
 }

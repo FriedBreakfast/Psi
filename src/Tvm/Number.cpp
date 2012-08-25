@@ -17,7 +17,7 @@ namespace Psi {
     }
     
     ValuePtr<> BooleanType::check_type() const {
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
     
     ValuePtr<BooleanType> BooleanType::get(Context& context, const SourceLocation& location) {
@@ -85,7 +85,7 @@ namespace Psi {
     }
     
     ValuePtr<> IntegerType::check_type() const {
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
 
     PSI_TVM_FUNCTIONAL_IMPL(IntegerType, Type, int)
@@ -137,7 +137,7 @@ namespace Psi {
     }
     
     ValuePtr<> FloatType::check_type() const {
-      return Metatype::get(context(), location());
+      return FunctionalBuilder::type_type(context(), location());
     }
 
     PSI_TVM_FUNCTIONAL_IMPL(FloatType, Type, float)
