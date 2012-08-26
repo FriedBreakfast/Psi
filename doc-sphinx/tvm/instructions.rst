@@ -3,41 +3,10 @@ Instructions
 
 Note that the notation ``{name}`` denotes an expression, ``{`` and ``}`` are not part of the syntax.
 
-Functional operations
----------------------
-
 Types
-^^^^^
+-----
 
 Primitive types, and operations for constructing aggregate types.
-
-.. _psi.tvm.instructions.base:
-
-base
-""""
-
-``base {derived} {offset} > {type}``
-
-Base type.
-This allows for single dispatch to be implemented.
-
-``{derived}``, ``{offset}``
-  Variable identifiers used in ``{type}`` to refer to the derived type and the
-  offset from the derived type to the base type respectively.
-``{type}``
-  Data visible in the base type.
-
-.. _psi.tvm.instructions.base_ptr:
-
-base_ptr
-""""""""
-
-``base_ptr {base}``
-
-Pointer to a parameterized type.
-
-``{base}``
-  Base type, must be a :ref:`psi.tvm.instructions.base`.
 
 bool
 """"
@@ -83,6 +52,8 @@ Signed integer types of various bit widths.
 ``iptr`` has a platform dependent bit width, equal to the width of a pointer.
 Since type-checking is performed in a platform independent way, this type is
 not equivalent to any of the other types.
+
+.. _psi.tvm.instructions.member:
 
 member
 """"""
@@ -178,11 +149,9 @@ Note that the old C-style trick for getting parts of integers::
 Is valid even at the virtual register level.
 Obviously the results are not portable though.
 
-Aggregate operations
-^^^^^^^^^^^^^^^^^^^^
 
-Operations for constructing and manipulating aggregate types in virtual registers,
-and manipulating pointers to aggregate types.
+Higher types
+------------
 
 apply
 """""
@@ -195,19 +164,47 @@ Specialize a recursive type.
   A ``recursive`` type or value.
 ``{parameters...}```
   A list of parameters to specialize the generic type with.
+  
+  
+.. _psi.tvm.instructions.exists:
 
-  .. _psi.tvm.instructions.unbase:
+exists
+""""""
 
-derived
-"""""""
+``exists ({parameters...}) > {result}``
 
-``derived {ptr}``
+Turn an expression with a specific type into a generic one.
 
-Get the derived type of a :ref:`psi.tvm.instructions.base_ptr`.
-See :ref:`psi.tvm.instructions.unbase`.
+specialize
+""""""""""
 
-``{ptr}``
-  Base pointer, of type :ref:`psi.tvm.instructions.base_ptr`.
+Eliminate phantom parameters from a function pointer.
+
+.. _psi.tvm.instructions.unwrap:
+
+unwrap
+""""""
+
+``unwrap {e}``
+
+Take an :ref:`psi.tvm.instructions.exists` value and extract the target value.
+
+.. _psi.tvm.instructions.unwrap_param:
+
+unwrap_param
+""""""""""""
+
+``unwrap_param {e} {n}``
+
+The parameter implicitly applied by :ref:`psi.tvm.instructions.unwrap` to create
+the result value.
+
+
+Aggregate operations
+--------------------
+
+Operations for constructing and manipulating aggregate types in virtual registers,
+and manipulating pointers to aggregate types.
 
 empty_v
 """""""
@@ -215,83 +212,6 @@ empty_v
 ``empty_v``
 
 Value of the empty type.
-
-member_apply
-""""""""""""
-
-``member_apply {ptr} {member}``
-
-Use a member pointer to get a pointer to the inner value from the outer value.
-
-``{ptr}``
-  A pointer, of type ``pointer {t1}``.
-``{member}``
-  A pointer to member, which must be of type ``member {t1} {t2}``.
-  
-The result of this operation is a ``pointer {t2}``.
-
-.. _psi.tvm.instructions.member_apply_ptr:
-
-member_apply_ptr
-""""""""""""""""
-
-``member_apply_ptr {ptr} {member}``
-
-Use a member pointer to get a ``member_ptr`` from the outer value.
-
-``{ptr}``
-  A pointer, of type ``pointer {t1}``.
-``{member}``
-  A pointer to member, which must be of type ``member {t1} {t2}``.
-
-The result of this operation is a ``member_ptr {member}``.
-
-member_combine
-""""""""""""""
-
-``member_combine {m1} {m2}``
-
-Combine two member pointers to a single one.
-
-``{m1}``
-  First member pointer.
-  This should have type ``member {t1} {t2}``.
-``{m2}``
-  Second member pointer.
-  This should have type ``member {t2} {t3}``.
-  
-Given the types of each parameter, the result of this operation will have type ``member {t1} {t3}``.
-
-.. _psi.tvm.instructions.member_inner:
-
-member_inner
-""""""""""""""""
-
-``member_inner {mp}``
-
-Take a ``member_ptr`` and return a pointer to the inner type.
-
-``{mp}``
-  A ``member_ptr`` value.
-  
-If ``{mp}`` has type ``member_ptr {member}``, and then ``{member}`` has type ``member {t1} {t2}``,
-``member_inner {mp}`` has type ``pointer {t2}``.
-This operation works (produces a non-phantom result) even if ``{member}`` is a phantom value.
-
-.. _psi.tvm.instructions.member_outer:
-
-member_outer
-""""""""""""""""
-
-``member_outer {mp}``
-
-``{mp}``
-  A ``member_ptr`` value.
-
-If ``{mp}`` has type ``member_ptr {member}``, and then ``{member}`` has type ``member {t1} {t2}``,
-``member_inner {mp}`` has type ``pointer {t1}``.
-Note that it will often be the case that ``{member}`` is a phantom value, since this mechanism is present to implement :ref:`virtual functions <psi.tvm.virtual_functions>`.
-In this case the result of this operation will also be a phantom value.
 
 pointer_cast
 """"""""""""
@@ -322,9 +242,6 @@ Add an offset to a pointer.
   This should have type ``iptr``.
   Note that this is measure in units of the pointed-to type, not bytes.
 
-specialize
-""""""""""
-
 struct_el
 """""""""
 
@@ -333,33 +250,6 @@ struct_ep
 
 struct_v
 """"""""
-
-.. _psi.tvm.instructions.unapply:
-
-unapply
-"""""""
-
-``unapply {ptr}``
-
-Turn a pointer to a specialized type into a generic pointer.
-
-``{ptr}``
-  Pointer to a ``recursive`` type.
-
-If ``{ptr}`` is ``apply {r} ...``, the result will a ``base_ptr {r}``.
-
-unbase
-""""""
-
-``unbase {ptr}``
-
-Unwrap a :ref:`psi.tvm.instructions.base_ptr` to give a :ref:`psi.tvm.instructions.member_ptr`.
-See :ref:`psi.tvm.instructions.derived`.
-
-``{ptr}``
-  A :ref:`psi.tvm.instructions.base_ptr`.
-
-.. _psi.tvm.instructions.derived:
 
 undef
 """""
@@ -390,10 +280,105 @@ Zero-initialized value of any type.
 
 ``{type}``
   Result type of this operation.
+
+
+Member pointers
+---------------
+
+member_apply
+""""""""""""
+
+``member_apply {ptr} {member}``
+
+Use a member pointer to get a pointer to the inner value from the outer value.
+
+``{ptr}``
+  A pointer, of type ``pointer {t1}``.
+``{member}``
+  A pointer to member, which must be of type ``member {t1} {t2}``.
   
+The result of this operation is a ``pointer {t2}``.
+
+member_combine
+""""""""""""""
+
+``member_combine {m1} {m2}``
+
+Combine two member pointers to a single one.
+
+``{m1}``
+  First member pointer.
+  This should have type ``member {t1} {t2}``.
+``{m2}``
+  Second member pointer.
+  This should have type ``member {t2} {t3}``.
+  
+Given the types of each parameter, the result of this operation will have type ``member {t1} {t3}``.
+
+.. _psi.tvm.instructions.member_inner:
+
+member_inner
+""""""""""""
+
+``member_inner {mp}``
+
+Take a ``member_ptr`` and return a pointer to the inner type.
+
+``{mp}``
+  A ``member_ptr`` value.
+  
+If ``{mp}`` has type ``member_ptr {member}``, and then ``{member}`` has type ``member {t1} {t2}``,
+``member_inner {mp}`` has type ``pointer {t2}``.
+This operation works (produces a non-phantom result) even if ``{member}`` is a phantom value.
+
+.. _psi.tvm.instructions.member_outer:
+
+member_outer
+""""""""""""
+
+``member_outer {mp}``
+
+``{mp}``
+  A ``member_ptr`` value.
+
+If ``{mp}`` has type ``member_ptr {member}``, and then ``{member}`` has type ``member {t1} {t2}``,
+``member_inner {mp}`` has type ``pointer {t1}``.
+Note that it will often be the case that ``{member}`` is a phantom value, since this mechanism is present to implement :ref:`virtual functions <psi.tvm.virtual_functions>`.
+In this case the result of this operation will also be a phantom value.
+
+.. _psi.tvm.instructions.member_ptr_apply:
+
+member_ptr_apply
+""""""""""""""""
+
+``member_ptr_apply {ptr} {member}``
+
+Use a member pointer to get a ``member_ptr`` from the outer value.
+
+``{ptr}``
+  A pointer, of type ``pointer {t1}``.
+``{member}``
+  A pointer to member, which must be of type ``member {t1} {t2}``.
+
+The result of this operation is a ``member_ptr {member}``.
+
+member_ptr_combine
+""""""""""""""""""
+
+``member_ptr_combine {ptr} {member}``
+
+Combine a :ref:`psi.tvm.instructions.member_ptr` with a :ref:`psi.tvm.instructions.member`
+to produce a new :ref:`psi.tvm.instructions.member_ptr`.
+
+``{ptr}``
+  A :ref:`psi.tvm.instructions.member_ptr`. Must have type ``member_ptr {t1} {t2}``.
+``{member}``
+  A member offset. Must have type ``member {t2} {t3}``.
+  
+Given these type assignments, the result has type ``member_ptr {t1} {t3}``.
 
 Arithmetic
-^^^^^^^^^^
+----------
 
 Global constants and numerical expressions.
 Note that numerical constants are covered in :ref:`psi.tvm.numerical_constants`
@@ -439,8 +424,10 @@ Boolean true value.
 Instructions
 ------------
 
+These operations must occur in a definite sequence since they may read or modify memory.
+
 alloca
-^^^^^^
+""""""
 
 ``alloca {type} [{count} [{alignment}]]``
 
@@ -456,7 +443,7 @@ Allocate storage for a type on the stack.
   then the minimum alignment for ``{type}``. Defaults to 0.
 
 br
-^^
+""
 
 ``br {block}``
 
@@ -471,7 +458,7 @@ see :ref:`psi.tvm.instructions.cond_br`
   Name of a block in this function.
   
 call
-^^^^
+""""
 
 ``call {target} {args...}``
 
@@ -486,7 +473,7 @@ Invoke a function.
 .. _psi.tvm.instructions.cond_br:
 
 cond_br
-^^^^^^^
+"""""""
 
 ``cond_br {cond} {iftrue} {iffalse}``
   
@@ -500,7 +487,7 @@ Continue execution at a location dependent on a boolean value.
   Block to jump to if ``{cond}`` is false.
 
 load
-^^^^
+""""
 
 ``load {ptr}``
   
@@ -511,7 +498,7 @@ Load a value from memory into a virtual register.
   A value which is a pointer.
 
 memcpy
-^^^^^^
+""""""
 
 ``memcpy {dest} {src} {count} [{alignment}]``
 
@@ -532,7 +519,7 @@ Copy a sequence of values from one memory location to another.
   It exists to facilitate :ref:`type lowering <psi.tvm.type_lowering>`.
 
 phi
-^^^
+"""
 
 ``phi {type}: {block} > {value}, ...``
 
@@ -547,7 +534,7 @@ This is a Φ node of SSA form.
   of this phi node on entering the current block from ``{block}``.
 
 return
-^^^^^^
+""""""
 
 ``return {value}``
   
@@ -557,7 +544,7 @@ Exit the current function, using ``{value}`` as the result of this function.
   Value to return from the current function.
 
 store
-^^^^^
+"""""
 
 ``store {value} {dest}``
   
@@ -570,7 +557,7 @@ Write a value from a virtual register to memory.
   If ``{value}`` has type ``{ty}``, ``{dest}`` must have type ``pointer {ty}``.
 
 unreachable
-^^^^^^^^^^^
+"""""""""""
 
 ``unreachable``
 

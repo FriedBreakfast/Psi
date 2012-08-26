@@ -5,6 +5,7 @@ Welcome to Psi's documentation!
    :maxdepth: 2
 
    tvm/index
+   internals/index
 
 
 Indices and tables

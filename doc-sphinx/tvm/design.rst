@@ -49,21 +49,24 @@ For a single dispatch scenario, the following code can be used::
     (pointer (function (member_ptr %offset) > i8))
   ;
   
-  %base = base %derived %offset > struct
+  %base = recursive (%derived : type, %offset : member %derived (apply %base %derived)) > struct
     (pointer (apply %vtable %derived %offset))
   ;
   
-  %func = function (%obj : base_ptr %base) > i8 {
-    %derived = unbase %base;
-    %vptr = load (struct_ep (member_inner %derived_ptr) #i0);
+  %func = function (%obj_wrapped : exists (%derived : type, %offset : member %derived (apply %base %derived)) > member_ptr %offset) > i8 {
+    %obj = unwrap %obj_wrapped;
+    %derived = unwrap_param %obj_wrapped #i0;
+    %offset = unwrap_param %obj_wrapped #i1;
+    %vptr = load (struct_ep (member_inner %obj) #i0);
     %callback = load (struct_ep %vptr #i0);
-    %val = call %callback %derived;
+    %val = call %callback %obj;
   };
 
 See:
 
 * :ref:`psi.tvm.instructions.member_ptr`
-* :ref:`psi.tvm.instructions.base_ptr`
+* :ref:`psi.tvm.instructions.exists`
+* :ref:`psi.tvm.instructions.unwrap`
 
 Exceptions
 ----------

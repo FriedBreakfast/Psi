@@ -1,13 +1,15 @@
+.. _psi.tvm:
+
 TVM
 ===
 
 .. toctree::
    :maxdepth: 2
-   :glob:
 
    design
    syntax
    instructions
+   glossary
 
 Introduction
 ------------
