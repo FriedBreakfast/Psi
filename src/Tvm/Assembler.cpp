@@ -3,6 +3,7 @@
 #include "Function.hpp"
 #include "Functional.hpp"
 #include "FunctionalBuilder.hpp"
+#include "Recursive.hpp"
 #include "Number.hpp"
 
 #include <cstring>
@@ -96,6 +97,10 @@ namespace Psi {
           PSI_FAIL("invalid literal type");
         }
       }
+      
+      ValuePtr<> build_exists(AssemblerContext& context, const Parser::ExistsExpression& expression, const LogicalSourceLocationPtr& logical_location) {
+        PSI_NOT_IMPLEMENTED();
+      }
 
       ValuePtr<> build_expression(AssemblerContext& context, const Parser::Expression& expression, const LogicalSourceLocationPtr& logical_location) {
         switch(expression.expression_type) {
@@ -110,19 +115,22 @@ namespace Psi {
 
         case Parser::expression_literal:
           return build_literal(context, checked_cast<const Parser::LiteralExpression&>(expression), logical_location);
+          
+        case Parser::expression_exists:
+          return build_exists(context, checked_cast<const Parser::ExistsExpression&>(expression), logical_location);
 
         default:
           PSI_FAIL("invalid expression type");
         }
       }
 
-      std::vector<ValuePtr<FunctionTypeParameter> > build_function_parameters(AssemblerContext& context,
+      std::vector<ValuePtr<ParameterPlaceholder> > build_function_parameters(AssemblerContext& context,
                                                                               const UniqueList<Parser::NamedExpression>& parameters,
                                                                               const LogicalSourceLocationPtr& logical_location) {
-        std::vector<ValuePtr<FunctionTypeParameter> > result;
+        std::vector<ValuePtr<ParameterPlaceholder> > result;
         for (UniqueList<Parser::NamedExpression>::const_iterator it = parameters.begin(); it != parameters.end(); ++it) {
           ValuePtr<> param_type = build_expression(context, *it->expression, logical_location);
-          ValuePtr<FunctionTypeParameter> param = context.context().new_function_type_parameter(param_type, SourceLocation(it->location, logical_location));
+          ValuePtr<ParameterPlaceholder> param = context.context().new_function_type_parameter(param_type, SourceLocation(it->location, logical_location));
           if (it->name)
             context.put(it->name->text, param);
           result.push_back(param);
@@ -133,12 +141,12 @@ namespace Psi {
       ValuePtr<FunctionType> build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type, const LogicalSourceLocationPtr& logical_location) {
         AssemblerContext my_context(&context);
 
-        std::vector<ValuePtr<FunctionTypeParameter> > phantom_parameters =
+        std::vector<ValuePtr<ParameterPlaceholder> > phantom_parameters =
           build_function_parameters(my_context, function_type.phantom_parameters, logical_location);
           
         unsigned n_phantom = phantom_parameters.size();
 
-        std::vector<ValuePtr<FunctionTypeParameter> > parameters =
+        std::vector<ValuePtr<ParameterPlaceholder> > parameters =
           build_function_parameters(my_context, function_type.parameters, logical_location);
           
         parameters.insert(parameters.begin(), phantom_parameters.begin(), phantom_parameters.end());
@@ -147,6 +155,33 @@ namespace Psi {
 
         return context.context().get_function_type(function_type.calling_convention, result_type, parameters, n_phantom,
                                                    SourceLocation(function_type.location, logical_location));
+      }
+      
+      void build_recursive_parameters(AssemblerContext& context, RecursiveType::ParameterList& output, bool phantom,
+                                      const UniqueList<Parser::NamedExpression>& parameters, const LogicalSourceLocationPtr& logical_location) {
+        for (UniqueList<Parser::NamedExpression>::const_iterator it = parameters.begin(), ie = parameters.end(); it != ie; ++it) {
+          ValuePtr<> param_type = build_expression(context, *it->expression, logical_location);
+          ValuePtr<RecursiveParameter> param = RecursiveParameter::create(param_type, phantom, SourceLocation(it->location, logical_location));
+          if (it->name)
+            context.put(it->name->text, param);
+          output.push_back(*param);
+        }
+      }
+
+      ValuePtr<RecursiveType> build_recursive_type(AssemblerContext& context, const Parser::RecursiveType& recursive_type, const LogicalSourceLocationPtr& logical_location) {
+        AssemblerContext my_context(&context);
+        
+        RecursiveType::ParameterList parameters;
+        build_recursive_parameters(my_context, parameters, true, recursive_type.phantom_parameters, logical_location);
+        build_recursive_parameters(my_context, parameters, false, recursive_type.parameters, logical_location);
+        
+        ValuePtr<> result_type;
+        if (recursive_type.result_type)
+          result_type = build_expression(my_context, *recursive_type.result_type, logical_location);
+        else
+          result_type = FunctionalBuilder::type_type(my_context.context(), SourceLocation(recursive_type.location, logical_location));
+
+        return RecursiveType::create(result_type, parameters, NULL, SourceLocation(recursive_type.location, logical_location));
       }
 
       ValuePtr<> build_instruction_expression(AssemblerContext& context, InstructionBuilder& builder, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& logical_location) {
@@ -304,6 +339,10 @@ namespace Psi {
           global_var->set_constant(var.constant);
           asmct.put(it->name->text, global_var);
           result[it->name->text] = global_var;
+        } else if (it->value->global_type == Parser::global_recursive) {
+          const Parser::RecursiveType& rec = checked_cast<const Parser::RecursiveType&>(*it->value);
+          ValuePtr<RecursiveType> recursive_ty = Assembler::build_recursive_type(asmct, rec, location);
+          result[it->name->text] = recursive_ty;
         } else {
           const Parser::GlobalDefine& def = checked_cast<const Parser::GlobalDefine&>(*it->value);
           PSI_ASSERT(it->value->global_type == Parser::global_define);
@@ -317,19 +356,27 @@ namespace Psi {
         if (it->value->global_type == Parser::global_define)
           continue;
 
-        ValuePtr<Global> ptr = result[it->name->text];
+        ValuePtr<> ptr = result[it->name->text];
         PSI_ASSERT(ptr);
-        if (it->value->global_type == Parser::global_function) {
-          const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
-          ValuePtr<Function> function = value_cast<Function>(ptr);
-          if (!def.blocks.empty())
-            Assembler::build_function(asmct, function, def);
+        if (ValuePtr<Global> global_ptr = dyn_cast<Global>(ptr)) {
+          if (it->value->global_type == Parser::global_function) {
+            const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
+            ValuePtr<Function> function = value_cast<Function>(ptr);
+            if (!def.blocks.empty())
+              Assembler::build_function(asmct, function, def);
+          } else {
+            PSI_ASSERT(it->value->global_type == Parser::global_variable);
+            const Parser::GlobalVariable& var = checked_cast<const Parser::GlobalVariable&>(*it->value);
+            ValuePtr<GlobalVariable> global_var = value_cast<GlobalVariable>(ptr);
+            ValuePtr<> value = Assembler::build_expression(asmct, *var.value, global_var->location().logical);
+            global_var->set_value(value);
+          }
+        } else if (ValuePtr<RecursiveType> rec_ptr = dyn_cast<RecursiveType>(ptr)) {
+          const Parser::RecursiveType& rec = checked_cast<const Parser::RecursiveType&>(*it->value);
+          PSI_NOT_IMPLEMENTED(); // Need to create context with recursive parameters
+          rec_ptr->resolve(Assembler::build_expression(asmct, *rec.result, rec_ptr->location().logical));
         } else {
-          PSI_ASSERT(it->value->global_type == Parser::global_variable);
-          const Parser::GlobalVariable& var = checked_cast<const Parser::GlobalVariable&>(*it->value);
-          ValuePtr<GlobalVariable> global_var = value_cast<GlobalVariable>(ptr);
-          ValuePtr<> value = Assembler::build_expression(asmct, *var.value, global_var->location().logical);
-          global_var->set_value(value);
+          PSI_FAIL("unexpected term type");
         }
       }
 

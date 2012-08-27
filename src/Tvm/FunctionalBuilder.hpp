@@ -47,7 +47,8 @@ namespace Psi {
       //@{
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const SourceLocation& location);
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location);
-      static ValuePtr<> upref(const ValuePtr<>& member, const ValuePtr<>& parent, const SourceLocation& location);
+      static ValuePtr<> upref(Context& context, const SourceLocation& location);
+      static ValuePtr<> upref_cons(const ValuePtr<>& member, const ValuePtr<>& parent, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, unsigned length, const SourceLocation& location);
       static ValuePtr<> struct_type(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);

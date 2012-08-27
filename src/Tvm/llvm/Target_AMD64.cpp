@@ -185,7 +185,7 @@ namespace Psi {
             ValuePtr<> metatype_struct = FunctionalBuilder::struct_type(element->context(), std::vector<ValuePtr<> >(2, size_type), element->location());
             return get_element_info(rewriter, metatype_struct);
           } else {
-            PSI_ASSERT_MSG(!dyn_cast<FunctionTypeParameter>(element) && !dyn_cast<FunctionParameter>(element),
+            PSI_ASSERT_MSG(!dyn_cast<ParameterPlaceholder>(element) && !dyn_cast<FunctionParameter>(element),
                            "low-level parameter type should not depend on function type parameters");
             PSI_FAIL("unknown type");
           }

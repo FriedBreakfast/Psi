@@ -303,6 +303,7 @@ namespace Psi {
         case term_instruction: function = value_cast<Instruction>(term->source())->block()->function(); break;
         case term_function_parameter: function = value_cast<FunctionParameter>(term->source())->function(); break;
         case term_function_type_parameter: return;
+        case term_recursive_parameter: return;
         default: PSI_FAIL("unexpected source term type");
         }
       }

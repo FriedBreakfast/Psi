@@ -133,7 +133,7 @@ namespace Psi {
       ValuePtr<Member> member_type;
       if (!m_member || !(member_type = dyn_cast<Member>(m_member->type())))
         throw TvmUserError("Second parameter to element_ptr is not a member pointer");
-      return FunctionalBuilder::pointer_type(member_type->inner_type(), FunctionalBuilder::upref(m_member, ptr_type->upref(), location()), location());
+      return FunctionalBuilder::pointer_type(member_type->inner_type(), FunctionalBuilder::upref_cons(m_member, ptr_type->upref(), location()), location());
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(ElementPtr, AggregateOp, element_ptr)
@@ -228,28 +228,43 @@ namespace Psi {
     
     PSI_TVM_FUNCTIONAL_IMPL(PointerType, Type, pointer)
     
-    UpwardReference::UpwardReference(const ValuePtr<>& member, const ValuePtr<>& next, const SourceLocation& location)
+    UpwardReference::UpwardReference(Context& context, const SourceLocation& location)
+    : Type(context, location) {
+    }
+
+    ValuePtr<> UpwardReference::check_type() const {
+      return FunctionalBuilder::type_type(context(), location());
+    }
+    
+    template<typename V>
+    void UpwardReference::visit(V& v) {
+      visit_base<Type>(v);
+    }
+
+    PSI_TVM_FUNCTIONAL_IMPL(UpwardReference, Type, upref)
+    
+    UpwardReferenceCons::UpwardReferenceCons(const ValuePtr<>& member, const ValuePtr<>& next, const SourceLocation& location)
     : AggregateOp(member->context(), location),
     m_member(member),
     m_next(next) {
     }
 
     template<typename V>
-    void UpwardReference::visit(V& v) {
+    void UpwardReferenceCons::visit(V& v) {
       visit_base<AggregateOp>(v);
-      v("member", &UpwardReference::m_member)
-      ("next", &UpwardReference::m_next);
+      v("member", &UpwardReferenceCons::m_member)
+      ("next", &UpwardReferenceCons::m_next);
     }
     
-    ValuePtr<> UpwardReference::check_type() const {
+    ValuePtr<> UpwardReferenceCons::check_type() const {
       if (!m_member || !isa<Member>(m_member->type()))
         throw TvmUserError("First argument to upref is not a member");
-      if (m_next && !isa<UpwardReference>(m_next))
+      if (m_next && !isa<UpwardReferenceCons>(m_next))
         throw TvmUserError("Second argument to upref is not another upref");
-      return ValuePtr<>();
+      return FunctionalBuilder::upref(context(), location());
     }
 
-    PSI_TVM_FUNCTIONAL_IMPL(UpwardReference, AggregateOp, upref)
+    PSI_TVM_FUNCTIONAL_IMPL(UpwardReferenceCons, AggregateOp, upref_cons)
     
     PointerCast::PointerCast(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location)
     : AggregateOp(pointer->context(), location),
@@ -617,10 +632,10 @@ namespace Psi {
         throw TvmUserError("Too many parameters given to specialize");
 
       std::vector<ValuePtr<> > apply_parameters(m_parameters);
-      std::vector<ValuePtr<FunctionTypeParameter> > new_parameters;
+      std::vector<ValuePtr<ParameterPlaceholder> > new_parameters;
       while (apply_parameters.size() < function_type->parameter_types().size()) {
         ValuePtr<> previous_type = function_type->parameter_type_after(apply_parameters);
-        ValuePtr<FunctionTypeParameter> param =
+        ValuePtr<ParameterPlaceholder> param =
           function_type->context().new_function_type_parameter(previous_type, previous_type->location());
         apply_parameters.push_back(param);
         new_parameters.push_back(param);

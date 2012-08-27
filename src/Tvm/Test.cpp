@@ -54,7 +54,7 @@ namespace Psi {
         AssemblerResult::iterator it = r.find(name);
         BOOST_REQUIRE(it != r.end());
         m_jit->add_module(&module);
-        void *result = m_jit->get_symbol(it->second);
+        void *result = m_jit->get_symbol(value_cast<Global>(it->second));
         return result;
       }
     }

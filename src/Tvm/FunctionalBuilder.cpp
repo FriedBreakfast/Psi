@@ -103,10 +103,17 @@ namespace Psi {
     }
     
     /**
+     * \brief Get the type of upward references.
+     */
+    ValuePtr<> FunctionalBuilder::upref(Context& context, const SourceLocation& location) {
+      return context.get_functional(UpwardReference(context, location));
+    }
+    
+    /**
      * \brief Get an upward reference descriptor.
      */
-    ValuePtr<> FunctionalBuilder::upref(const ValuePtr<>& member, const ValuePtr<>& parent, const SourceLocation& location) {
-      return member->context().get_functional(UpwardReference(member, parent, location));
+    ValuePtr<> FunctionalBuilder::upref_cons(const ValuePtr<>& member, const ValuePtr<>& parent, const SourceLocation& location) {
+      return member->context().get_functional(UpwardReferenceCons(member, parent, location));
     }
 
     /**

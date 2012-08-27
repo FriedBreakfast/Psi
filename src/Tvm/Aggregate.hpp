@@ -100,11 +100,18 @@ namespace Psi {
       ValuePtr<> m_member;
     };
     
-    class UpwardReference : public AggregateOp {
+    class UpwardReference : public Type {
       PSI_TVM_FUNCTIONAL_DECL(UpwardReference)
       
     public:
-      UpwardReference(const ValuePtr<>& member, const ValuePtr<>& next, const SourceLocation& location);
+      UpwardReference(Context& context, const SourceLocation& location);
+    };
+    
+    class UpwardReferenceCons : public AggregateOp {
+      PSI_TVM_FUNCTIONAL_DECL(UpwardReference)
+      
+    public:
+      UpwardReferenceCons(const ValuePtr<>& member, const ValuePtr<>& next, const SourceLocation& location);
       
       /// \brief Get the current member pointer.
       const ValuePtr<>& member() const {return m_member;}
@@ -205,7 +212,7 @@ namespace Psi {
 
       /// \brief Get the type being pointed to.
       const ValuePtr<>& target_type() const {return m_target_type;}
-      ValuePtr<UpwardReference> upref() const {return value_cast<UpwardReference>(m_upref);}
+      ValuePtr<UpwardReferenceCons> upref() const {return value_cast<UpwardReferenceCons>(m_upref);}
 
     private:
       ValuePtr<> m_target_type;
@@ -225,7 +232,7 @@ namespace Psi {
       /// \brief Get the target type of the cast
       const ValuePtr<>& target_type() const {return m_target_type;}
       /// \brief Get the upward reference type to cast to.
-      ValuePtr<UpwardReference> upref() const {return value_cast<UpwardReference>(m_upref);}
+      ValuePtr<UpwardReferenceCons> upref() const {return value_cast<UpwardReferenceCons>(m_upref);}
       
     private:
       ValuePtr<> m_pointer;

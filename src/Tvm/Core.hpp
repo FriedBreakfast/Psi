@@ -72,8 +72,7 @@ namespace Psi {
       term_phi, ///< Phi: \copybrief Phi
       term_function_type, ///< FunctionType: \copybrief FunctionType
       term_function_type_parameter, ///< FunctionTypeParameter: \copybrief FunctionTypeParameter
-      term_functional, ///< Functional: \copybrief Functional
-      term_catch_clause ///< CatchClause: \copybrief CatchClause
+      term_functional ///< Functional: \copybrief Functional
     };
 
     /**
@@ -602,7 +601,7 @@ namespace Psi {
 
     class FunctionalValue;
     class FunctionType;
-    class FunctionTypeParameter;
+    class ParameterPlaceholder;
     class Function;
     class ApplyValue;
     class RecursiveType;
@@ -709,7 +708,7 @@ namespace Psi {
 
       ValuePtr<FunctionType> get_function_type(CallingConvention calling_convention,
                                                const ValuePtr<>& result,
-                                               const std::vector<ValuePtr<FunctionTypeParameter> >& parameters,
+                                               const std::vector<ValuePtr<ParameterPlaceholder> >& parameters,
                                                unsigned n_phantom,
                                                const SourceLocation& location);
 
@@ -718,23 +717,14 @@ namespace Psi {
                                                      const std::vector<ValuePtr<> >& parameter_types,
                                                      const SourceLocation& location);
 
-      ValuePtr<FunctionTypeParameter> new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location);
+      ValuePtr<ParameterPlaceholder> new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location);
 
       ValuePtr<ApplyValue> apply_recursive(const ValuePtr<RecursiveType>& recursive,
                                            const std::vector<ValuePtr<> >& parameters,
                                            const SourceLocation& location);
 
-      ValuePtr<RecursiveType> new_recursive(const ValuePtr<>& result,
-                                            const std::vector<ValuePtr<> >& parameters,
-                                            Value *source,
-                                            const SourceLocation& location);
-
-      void resolve_recursive(const ValuePtr<RecursiveType>& recursive, const ValuePtr<>& to);
-      
     private:
       Context(const Context&);
-
-      ValuePtr<RecursiveParameter> new_recursive_parameter(const ValuePtr<>& type, const SourceLocation& location);
 
       class FunctionTypeResolverRewriter;
     };

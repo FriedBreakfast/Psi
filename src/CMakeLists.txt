@@ -33,6 +33,7 @@ add_library(psi-tvm SHARED
   Tvm/Source.cpp
   Tvm/TermOperationMap.hpp
   Tvm/Utility.hpp
+  Tvm/ValueList.hpp
 )
 
 target_link_libraries(psi-tvm psi-compiler-common debug psi-assert)

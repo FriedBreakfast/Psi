@@ -48,6 +48,7 @@ namespace Psi {
 
       ValuePtr<> build_expression(AssemblerContext& context, const Parser::Expression& expression, const LogicalSourceLocationPtr& location);
       ValuePtr<FunctionType> build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type, const LogicalSourceLocationPtr& location);
+      ValuePtr<RecursiveType> build_recursive_type(AssemblerContext& context,  const Parser::RecursiveType& recursive_type, const LogicalSourceLocationPtr& location);
       void build_function(AssemblerContext& context, const ValuePtr<Function>& function, const Parser::Function& function_def);
       ValuePtr<> build_call_expression(AssemblerContext& context, const Parser::Expression& expression, const LogicalSourceLocationPtr& location);
 
@@ -58,7 +59,7 @@ namespace Psi {
       extern const boost::unordered_map<std::string, InstructionTermCallback> instruction_ops;
     }
 
-    typedef boost::unordered_map<std::string, ValuePtr<Global> > AssemblerResult;
+    typedef boost::unordered_map<std::string, ValuePtr<> > AssemblerResult;
 
     AssemblerResult build(Module&, const boost::intrusive::list<Parser::NamedGlobalElement>&);
     AssemblerResult parse_and_build(Module&, const char*, const char*);

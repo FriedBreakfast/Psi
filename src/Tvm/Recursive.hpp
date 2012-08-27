@@ -2,6 +2,7 @@
 #define HPP_PSI_TVM_RECURSIVE
 
 #include "Core.hpp"
+#include "ValueList.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -10,10 +11,29 @@ namespace Psi {
     class RecursiveParameter : public Value {
       PSI_TVM_VALUE_DECL(RecursiveParameter);
       friend class Context;
-      RecursiveParameter(const ValuePtr<>& type, const SourceLocation& location);
-      ValuePtr<> m_recursive_parameter_type;
+      friend class RecursiveType;
+
     public:
+      ValuePtr<RecursiveType> recursive() {return ValuePtr<RecursiveType>(m_recursive);}
+      RecursiveType *recursive_ptr() {return m_recursive;}
+      bool parameter_phantom() {return m_phantom;}
+      
+      static bool isa_impl(const Value& ptr) {
+        return ptr.term_type() == term_recursive_parameter;
+      }
+
       template<typename V> static void visit(V& v);
+
+      static ValuePtr<RecursiveParameter> create(const ValuePtr<>& type, bool phantom, const SourceLocation& location);
+
+    private:
+      RecursiveParameter(Context& context, const ValuePtr<>& type, bool phantom, const SourceLocation& location);
+      bool m_phantom;
+
+      void list_release() {m_recursive = NULL;}
+      RecursiveType *m_recursive;
+      boost::intrusive::list_member_hook<> m_parameter_list_hook;
+      template<typename T, boost::intrusive::list_member_hook<> T::*> friend class ValueList;
     };
 
     /**
@@ -25,25 +45,28 @@ namespace Psi {
      */
     class RecursiveType : public Value {
       PSI_TVM_VALUE_DECL(RecursiveType)
-      friend class Context;
-      ValuePtr<> m_result;
-      std::vector<ValuePtr<RecursiveParameter> > m_parameters;
 
     public:
-      void resolve(const ValuePtr<>& term);
-      ValuePtr<ApplyValue> apply(const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);
+      typedef ValueList<RecursiveParameter, &RecursiveParameter::m_parameter_list_hook> ParameterList;
+      
+      static ValuePtr<RecursiveType> create(const ValuePtr<>& result_type,
+                                            RecursiveType::ParameterList& parameters,
+                                            Value *source,
+                                            const SourceLocation& location);
 
-      std::size_t n_parameters() {return m_parameters.size();}
-      const ValuePtr<RecursiveParameter>& parameter(std::size_t i) {return m_parameters[i];}
+      void resolve(const ValuePtr<>& term);
+      const ParameterList& parameters() const {return m_parameters;}
       const ValuePtr<> result() {return m_result;}
       
       static bool isa_impl(const Value& v) {return v.term_type() == term_recursive;}
       template<typename V> static void visit(V& v);
 
     private:
-      RecursiveType(const ValuePtr<>& result_type, Value *source,
-                    const std::vector<ValuePtr<RecursiveParameter> >& parameters,
-                    const SourceLocation& location);
+      RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, Value *source, const SourceLocation& location);
+
+      ValuePtr<> m_result_type;
+      ValuePtr<> m_result;
+      ParameterList m_parameters;
     };
 
     class ApplyValue : public HashableValue {
@@ -53,17 +76,15 @@ namespace Psi {
       std::vector<ValuePtr<> > m_parameters;
 
     public:
+      ApplyValue(const ValuePtr<>& recursive,
+                 const std::vector<ValuePtr<> >& parameters,
+                 const SourceLocation& location);
+
       std::size_t n_parameters() {return m_parameters.size();}
       ValuePtr<> unpack();
 
       ValuePtr<RecursiveType> recursive() {return value_cast<RecursiveType>(m_recursive);}
       const ValuePtr<>& parameter(std::size_t i) {return m_parameters[i];}
-
-    private:
-      ApplyValue(Context& context,
-                 const ValuePtr<>& recursive,
-                 const std::vector<ValuePtr<> >& parameters,
-                 const SourceLocation& location);
     };
   }
 }

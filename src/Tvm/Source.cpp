@@ -1,5 +1,6 @@
 #include "Utility.hpp"
 #include "Function.hpp"
+#include "Recursive.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -12,15 +13,19 @@ namespace Psi {
     bool Value::phantom() const {
       if (FunctionParameter *parameter = dyn_cast<FunctionParameter>(source()))
         return parameter->parameter_phantom();
+      else if (RecursiveParameter *rp = dyn_cast<RecursiveParameter>(source()))
+        return rp->parameter_phantom();
       return false;
     }
     
     /// \brief Whether this is part of a function type (i.e. it contains function type parameters)
     bool Value::parameterized() const {
-      return source() && isa<FunctionTypeParameter>(source());
+      return source() && isa<ParameterPlaceholder>(source());
     }
 
     namespace {
+      Value* common_source_fail() PSI_ATTRIBUTE((PSI_NORETURN));
+      
       Value* common_source_fail() {
         throw TvmUserError("cannot find common term source");
       }
@@ -60,7 +65,7 @@ namespace Psi {
           return common_source_fail();
       }
       
-      Value* common_source_global_type_parameter(Global*, FunctionTypeParameter *p) {
+      Value* common_source_global_type_parameter(Global*, ParameterPlaceholder *p) {
         return p;
       }
       
@@ -92,7 +97,7 @@ namespace Psi {
           return common_source_fail();
       }
 
-      Value* common_source_block_type_parameter(Block*, FunctionTypeParameter *p) {
+      Value* common_source_block_type_parameter(Block*, ParameterPlaceholder *p) {
         return p;
       }
 
@@ -123,7 +128,7 @@ namespace Psi {
           return common_source_fail();
       }
       
-      Value *common_source_phi_type_parameter(BlockMember*, FunctionTypeParameter *pa) {
+      Value *common_source_phi_type_parameter(BlockMember*, ParameterPlaceholder *pa) {
         return pa;
       }
 
@@ -146,7 +151,7 @@ namespace Psi {
           return common_source_fail();
       }
 
-      Value* common_source_instruction_type_parameter(Instruction*, FunctionTypeParameter *p) {
+      Value* common_source_instruction_type_parameter(Instruction*, ParameterPlaceholder *p) {
         return p;
       }
       
@@ -157,12 +162,39 @@ namespace Psi {
         return p1->phantom() ? p1 : p2;
       }
       
-      Value* common_source_parameter_type_parameter(FunctionParameter*, FunctionTypeParameter *p) {
+      Value* common_source_parameter_type_parameter(FunctionParameter*, ParameterPlaceholder *p) {
         return p;
       }
       
-      Value* common_source_type_parameter_type_parameter(FunctionTypeParameter *p, FunctionTypeParameter*) {
+      Value* common_source_type_parameter_type_parameter(ParameterPlaceholder *p, ParameterPlaceholder*) {
         return p;
+      }
+      
+      Value* recursive_base_source(RecursiveParameter *p) {
+        Value *v = p;
+        while (v && (v->term_type() == term_recursive_parameter))
+          v = value_cast<RecursiveParameter>(v)->recursive_ptr()->source();
+        return v;
+      }
+      
+      Value* common_source_recursive_parameter_recursive_parameter(RecursiveParameter *p1, RecursiveParameter *p2) {
+        Value *v = p2;
+        while (v->term_type() == term_recursive_parameter) {
+          RecursiveParameter *vp = value_cast<RecursiveParameter>(v);
+          if (vp->recursive_ptr() == p1->recursive_ptr())
+            return p2;
+          v = vp->recursive_ptr()->source();
+        }
+        
+        v = p1;
+        while (v->term_type() == term_recursive_parameter) {
+          RecursiveParameter *vp = value_cast<RecursiveParameter>(v);
+          if (vp->recursive_ptr() == p2->recursive_ptr())
+            return p1;
+          v = vp->recursive_ptr()->source();
+        }
+        
+        common_source_fail();
       }
     }
     
@@ -172,19 +204,41 @@ namespace Psi {
      */
     Value* common_source(Value *t1, Value *t2) {
       if (t1 && t2) {
+        // Phantom terms ALWAYS win
+        if (t1->phantom())
+          return t1;
+        else if (t2->phantom())
+          return t2;
+        
+        // Easiest to handle RecursiveParameter case separately
+        if (t1->term_type() == term_recursive_parameter) {
+          if (t2->term_type() == term_recursive_parameter) {
+            return common_source_recursive_parameter_recursive_parameter(value_cast<RecursiveParameter>(t1), value_cast<RecursiveParameter>(t2));
+          } else {
+            Value *t1b = recursive_base_source(value_cast<RecursiveParameter>(t1));
+            if (common_source(t1b, t2) != t1b)
+              common_source_fail();
+            return t1;
+          }
+        } else if (t2->term_type() == term_recursive_parameter) {
+          Value *t2b = recursive_base_source(value_cast<RecursiveParameter>(t2));
+          if (common_source(t1, t2b) != t2b)
+            common_source_fail();
+          return t2;
+        }
+        
         switch (t1->term_type()) {
         case term_global_variable:
         case term_function:
           switch (t2->term_type()) {
-            case term_global_variable:
-            case term_function: return common_source_global_global(value_cast<Global>(t1), value_cast<Global>(t2));
-            case term_block: return common_source_global_block(value_cast<Global>(t1), value_cast<Block>(t2));
-            case term_catch_clause:
-            case term_phi: return common_source_global_phi(value_cast<Global>(t1), value_cast<BlockMember>(t2));
-            case term_instruction: return common_source_global_instruction(value_cast<Global>(t1), value_cast<Instruction>(t2));
-            case term_function_parameter: return common_source_global_parameter(value_cast<Global>(t1), value_cast<FunctionParameter>(t2));
-            case term_function_type_parameter: return common_source_global_type_parameter(value_cast<Global>(t1), value_cast<FunctionTypeParameter>(t2));
-            default: PSI_FAIL("unexpected term type");
+          case term_global_variable:
+          case term_function: return common_source_global_global(value_cast<Global>(t1), value_cast<Global>(t2));
+          case term_block: return common_source_global_block(value_cast<Global>(t1), value_cast<Block>(t2));
+          case term_phi: return common_source_global_phi(value_cast<Global>(t1), value_cast<BlockMember>(t2));
+          case term_instruction: return common_source_global_instruction(value_cast<Global>(t1), value_cast<Instruction>(t2));
+          case term_function_parameter: return common_source_global_parameter(value_cast<Global>(t1), value_cast<FunctionParameter>(t2));
+          case term_function_type_parameter: return common_source_global_type_parameter(value_cast<Global>(t1), value_cast<ParameterPlaceholder>(t2));
+          default: PSI_FAIL("unexpected term type");
           }
 
         case term_block:
@@ -192,25 +246,22 @@ namespace Psi {
           case term_global_variable:
           case term_function: return common_source_global_block(value_cast<Global>(t2), value_cast<Block>(t1));
           case term_block: return common_source_block_block(value_cast<Block>(t1), value_cast<Block>(t2));
-          case term_catch_clause:
           case term_phi: return common_source_block_phi(value_cast<Block>(t1), value_cast<BlockMember>(t2));
           case term_instruction: return common_source_block_instruction(value_cast<Block>(t1), value_cast<Instruction>(t2));
           case term_function_parameter: return common_source_block_parameter(value_cast<Block>(t1), value_cast<FunctionParameter>(t2));
-          case term_function_type_parameter: return common_source_block_type_parameter(value_cast<Block>(t1), value_cast<FunctionTypeParameter>(t2));
+          case term_function_type_parameter: return common_source_block_type_parameter(value_cast<Block>(t1), value_cast<ParameterPlaceholder>(t2));
           default: PSI_FAIL("unexpected term type");
           }
 
-        case term_catch_clause:
         case term_phi:
           switch (t2->term_type()) {
           case term_global_variable:
           case term_function: return common_source_global_phi(value_cast<Global>(t2), value_cast<BlockMember>(t1));
           case term_block: return common_source_block_phi(value_cast<Block>(t2), value_cast<BlockMember>(t1));
-          case term_catch_clause:
           case term_phi: return common_source_phi_phi(value_cast<BlockMember>(t1), value_cast<BlockMember>(t2));
           case term_instruction: return common_source_phi_instruction(value_cast<BlockMember>(t1), value_cast<Instruction>(t2));
           case term_function_parameter: return common_source_phi_parameter(value_cast<BlockMember>(t1), value_cast<FunctionParameter>(t2));
-          case term_function_type_parameter: return common_source_phi_type_parameter(value_cast<BlockMember>(t1), value_cast<FunctionTypeParameter>(t2));
+          case term_function_type_parameter: return common_source_phi_type_parameter(value_cast<BlockMember>(t1), value_cast<ParameterPlaceholder>(t2));
           default: PSI_FAIL("unexpected term type");
           }
 
@@ -219,11 +270,10 @@ namespace Psi {
           case term_global_variable:
           case term_function: return common_source_global_instruction(value_cast<Global>(t2), value_cast<Instruction>(t1));
           case term_block: return common_source_block_instruction(value_cast<Block>(t2), value_cast<Instruction>(t1));
-          case term_catch_clause:
           case term_phi: return common_source_phi_instruction(value_cast<Phi>(t2), value_cast<Instruction>(t1));
           case term_instruction: return common_source_instruction_instruction(value_cast<Instruction>(t1), value_cast<Instruction>(t2));
           case term_function_parameter: return common_source_instruction_parameter(value_cast<Instruction>(t1), value_cast<FunctionParameter>(t2));
-          case term_function_type_parameter: return common_source_instruction_type_parameter(value_cast<Instruction>(t1), value_cast<FunctionTypeParameter>(t2));
+          case term_function_type_parameter: return common_source_instruction_type_parameter(value_cast<Instruction>(t1), value_cast<ParameterPlaceholder>(t2));
           default: PSI_FAIL("unexpected term type");
           }
           
@@ -232,24 +282,22 @@ namespace Psi {
           case term_global_variable:
           case term_function: return common_source_global_parameter(value_cast<Global>(t2), value_cast<FunctionParameter>(t1));
           case term_block: return common_source_block_parameter(value_cast<Block>(t2), value_cast<FunctionParameter>(t1));
-          case term_catch_clause:
           case term_phi: return common_source_phi_parameter(value_cast<BlockMember>(t2), value_cast<FunctionParameter>(t1));
           case term_instruction: return common_source_instruction_parameter(value_cast<Instruction>(t1), value_cast<FunctionParameter>(t2));
           case term_function_parameter: return common_source_parameter_parameter(value_cast<FunctionParameter>(t1), value_cast<FunctionParameter>(t2));
-          case term_function_type_parameter: return common_source_parameter_type_parameter(value_cast<FunctionParameter>(t1), value_cast<FunctionTypeParameter>(t2));
+          case term_function_type_parameter: return common_source_parameter_type_parameter(value_cast<FunctionParameter>(t1), value_cast<ParameterPlaceholder>(t2));
           default: PSI_FAIL("unexpected term type");
           }
           
         case term_function_type_parameter:
           switch (t2->term_type()) {
           case term_global_variable:
-          case term_function: return common_source_global_type_parameter(value_cast<Global>(t2), value_cast<FunctionTypeParameter>(t1));
-          case term_block: return common_source_block_type_parameter(value_cast<Block>(t2), value_cast<FunctionTypeParameter>(t1));
-          case term_catch_clause:
-          case term_phi: return common_source_phi_type_parameter(value_cast<BlockMember>(t2), value_cast<FunctionTypeParameter>(t1));
-          case term_instruction: return common_source_instruction_type_parameter(value_cast<Instruction>(t1), value_cast<FunctionTypeParameter>(t2));
-          case term_function_parameter: return common_source_parameter_type_parameter(value_cast<FunctionParameter>(t1), value_cast<FunctionTypeParameter>(t2));
-          case term_function_type_parameter: return common_source_type_parameter_type_parameter(value_cast<FunctionTypeParameter>(t1), value_cast<FunctionTypeParameter>(t2));
+          case term_function: return common_source_global_type_parameter(value_cast<Global>(t2), value_cast<ParameterPlaceholder>(t1));
+          case term_block: return common_source_block_type_parameter(value_cast<Block>(t2), value_cast<ParameterPlaceholder>(t1));
+          case term_phi: return common_source_phi_type_parameter(value_cast<BlockMember>(t2), value_cast<ParameterPlaceholder>(t1));
+          case term_instruction: return common_source_instruction_type_parameter(value_cast<Instruction>(t1), value_cast<ParameterPlaceholder>(t2));
+          case term_function_parameter: return common_source_parameter_type_parameter(value_cast<FunctionParameter>(t1), value_cast<ParameterPlaceholder>(t2));
+          case term_function_type_parameter: return common_source_type_parameter_type_parameter(value_cast<ParameterPlaceholder>(t1), value_cast<ParameterPlaceholder>(t2));
           default: PSI_FAIL("unexpected term type");
           }
 
@@ -277,6 +325,26 @@ namespace Psi {
         if (dominated->term_type() == term_function_type_parameter)
           return true;
         
+        if (dominated->phantom())
+          return true;
+        
+        // Easiest to handle RecursiveParameter case separately
+        if (dominator->term_type() == term_recursive_parameter) {
+          if (dominated->term_type() == term_recursive_parameter) {
+            Value *v = dominated;
+            RecursiveType *r = value_cast<RecursiveParameter>(dominator)->recursive_ptr();
+            while (v->term_type() == term_recursive_parameter) {
+              RecursiveParameter *rp = value_cast<RecursiveParameter>(v);
+              if (rp->recursive_ptr() == r)
+                return true;
+            }
+          }
+          
+          return false;
+        } else if (dominated->term_type() == term_recursive_parameter) {
+          return source_dominated(dominator, recursive_base_source(value_cast<RecursiveParameter>(dominated)));
+        }
+
         switch (dominator->term_type()) {
         case term_global_variable:
         case term_function: {
@@ -286,7 +354,6 @@ namespace Psi {
           case term_global_variable:
           case term_function: return module == value_cast<Global>(dominated)->module();
           case term_block: return module == value_cast<Block>(dominated)->function()->module();
-          case term_catch_clause:
           case term_phi: return module == value_cast<BlockMember>(dominated)->block()->function()->module();
           case term_instruction: return module == value_cast<Instruction>(dominated)->block()->function()->module();
           case term_function_parameter: return module == value_cast<FunctionParameter>(dominated)->function()->module();
@@ -303,7 +370,6 @@ namespace Psi {
           switch (dominated->term_type()) {
           default: return false;
           case term_block: return function == value_cast<Block>(dominated)->function();
-          case term_catch_clause:
           case term_phi: return function == value_cast<BlockMember>(dominated)->block()->function();
           case term_instruction: return function == value_cast<Instruction>(dominated)->block()->function();
           case term_function_parameter: return function == value_cast<FunctionParameter>(dominated)->function();
@@ -315,7 +381,6 @@ namespace Psi {
           switch (dominated->term_type()) {
           default: return false;
           case term_block: return function == value_cast<Block>(dominated)->function_ptr();
-          case term_catch_clause:
           case term_phi: return function == value_cast<BlockMember>(dominated)->block_ptr()->function_ptr();
           case term_instruction: return function == value_cast<Instruction>(dominated)->block_ptr()->function_ptr();
           case term_function_parameter: return value_cast<FunctionParameter>(dominated)->phantom() &&
@@ -328,7 +393,6 @@ namespace Psi {
           switch (dominated->term_type()) {
           default: return false;
           case term_block: return block->function_ptr() == value_cast<Block>(dominated)->function_ptr();
-          case term_catch_clause:
           case term_phi: return value_cast<BlockMember>(dominated)->block_ptr()->dominated_by(block);
           case term_instruction: return value_cast<Instruction>(dominated)->block_ptr()->dominated_by(block);
           case term_function_parameter: return value_cast<FunctionParameter>(dominated)->phantom() &&
@@ -340,8 +404,7 @@ namespace Psi {
           Instruction *dominator_insn = value_cast<Instruction>(dominator);
           switch (dominated->term_type()) {
           default: return false;
-          case term_phi:
-          case term_catch_clause: {
+          case term_phi: {
             BlockMember *cast_dominated = value_cast<BlockMember>(dominated);
             if (cast_dominated->block_ptr() == dominator_insn->block_ptr())
               return false;

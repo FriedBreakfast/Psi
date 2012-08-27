@@ -108,9 +108,11 @@ namespace {
 %token OP
 %token NUMBER
 %token FUNCTION "function"
+%token RECURSIVE "recursive"
 %token GLOBAL "global"
 %token DEFINE "define"
 %token PHI "phi"
+%token EXISTS "exists"
 %token BLOCK "block"
 %token LANDING_PAD "landing_pad"
 %token EXTERN "extern"
@@ -135,10 +137,10 @@ namespace {
 }
 
 %type<tokens> ID OP
-%type<expressions> NUMBER expression root_expression id_expression op_expression bracket_expression term_list term_list_nonempty function_type statement_expression
+%type<expressions> NUMBER expression root_expression id_expression op_expression term_list term_list_nonempty function_type statement_expression exists_expression
 %type<blocks> block_list block_list_nonempty block
 %type<named_expressions> statement_list statement parameter_list parameter_list_nonempty parameter
-%type<globals> root global function constant global_variable
+%type<globals> root global function constant recursive global_variable
 %type<named_globals> global_list global_list_nonempty global_def
 %type<phi_nodes> phi_node phi_node_list
 %type<calling_convention> calling_convention
@@ -169,7 +171,7 @@ linkage:
 | EXTERN
 ;
 
-global: function | constant | global_variable;
+global: function | constant | global_variable | recursive;
 
 global_variable:
 GLOBAL expression {
@@ -196,6 +198,27 @@ constant: DEFINE root_expression {
   UniquePtr<Expression> value(list_to_ptr($2));
   $$ = list_one<GlobalElement>(new GlobalDefine(@$, value));
 };
+
+recursive:
+RECURSIVE '(' parameter_list ')' '>' expression {
+  UniqueList<NamedExpression> phantom_parameters;
+  UniquePtr<Expression> result_type, result(list_to_ptr($6));
+  $$ = list_one<GlobalElement>(new Parser::RecursiveType(@$, phantom_parameters, *$3, result_type, result));
+}
+| RECURSIVE '(' parameter_list ')' '>' expression '>' expression {
+  UniqueList<NamedExpression> phantom_parameters;
+  UniquePtr<Expression> result_type(list_to_ptr($6)), result(list_to_ptr($8));
+  $$ = list_one<GlobalElement>(new Parser::RecursiveType(@$, phantom_parameters, *$3, result_type, result));
+}
+| RECURSIVE '(' parameter_list '|' parameter_list ')' '>' expression {
+  UniquePtr<Expression> result_type, result(list_to_ptr($8));
+  $$ = list_one<GlobalElement>(new Parser::RecursiveType(@$, *$3, *$5, result_type, result));
+}
+| RECURSIVE '(' parameter_list '|' parameter_list ')' '>' expression '>' expression {
+  UniquePtr<Expression> result_type(list_to_ptr($8)), result(list_to_ptr($10));
+  $$ = list_one<GlobalElement>(new Parser::RecursiveType(@$, *$3, *$5, result_type, result));
+}
+;
 
 function:
 function_type {
@@ -296,11 +319,15 @@ PHI expression ':' phi_node_list {
 ;
 
 root_expression:
-NUMBER
+'(' root_expression ')' {$$ = $2;}
+| NUMBER
 | id_expression
-| bracket_expression
 | function_type
-| '(' root_expression ')' {$$ = $2;}
+| exists_expression
+| OP term_list {
+  UniquePtr<Token> op(list_to_ptr($1));
+  $$ = list_one<Expression>(new CallExpression(@$, op, *$2));
+}
 ;
 
 id_expression: ID {
@@ -314,13 +341,10 @@ op_expression: OP {
   $$ = list_one<Expression>(new CallExpression(@$, op, terms));
 };
 
-bracket_expression:
-OP term_list {
-  UniquePtr<Token> op(list_to_ptr($1));
-  $$ = list_one<Expression>(new CallExpression(@$, op, *$2));
-}
-| function_type
-;
+exists_expression: EXISTS '(' parameter_list ')' '>' expression {
+  UniquePtr<Expression> result(list_to_ptr($6));
+  $$ = list_one<Expression>(new ExistsExpression(@$, *$3, result));
+};
 
 term_list: {$$ = list_empty<Expression>();} | term_list_nonempty;
 
@@ -354,6 +378,8 @@ namespace {
     ("global", GLOBAL)
     ("function", FUNCTION)
     ("phi", PHI)
+    ("recursive", RECURSIVE)
+    ("exists", EXISTS)
     ("cc_c", CC_C);
 
   const boost::unordered_map<char, LiteralType> signed_literals =
@@ -504,16 +530,10 @@ namespace Psi {
         name.swap(name_);
       }
 
-      NameExpression::~NameExpression() {
-      }
-
       PhiNode::PhiNode(const PhysicalSourceLocation& location_, UniquePtr<Token>& label_, UniquePtr<Expression>& expression_)
         : Element(location_) {
         label.swap(label_);
         expression.swap(expression_);
-      }
-
-      PhiNode::~PhiNode() {
       }
 
       PhiExpression::PhiExpression(const PhysicalSourceLocation& location_, UniquePtr<Expression>& type_, UniqueList<PhiNode>& nodes_)
@@ -522,17 +542,11 @@ namespace Psi {
         nodes.swap(nodes_);
       }
 
-      PhiExpression::~PhiExpression() {
-      }
-
       CallExpression::CallExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& target_,
                                      UniqueList<Expression>& terms_)
         : Expression(location_, expression_call) {
         target.swap(target_);
         terms.swap(terms_);
-      }
-
-      CallExpression::~CallExpression() {
       }
 
       FunctionTypeExpression::FunctionTypeExpression(const PhysicalSourceLocation& location_,
@@ -546,17 +560,19 @@ namespace Psi {
         parameters.swap(parameters_);
         result_type.swap(result_type_);
       }
-
-      FunctionTypeExpression::~FunctionTypeExpression() {
+      
+      ExistsExpression::ExistsExpression(const PhysicalSourceLocation& location_,
+                                         UniqueList<NamedExpression>& parameters_,
+                                         UniquePtr<Expression>& result_)
+      : Expression(location_, expression_exists) {
+        parameters.swap(parameters_);
+        result.swap(result_);
       }
 
       LiteralExpression::LiteralExpression(const PhysicalSourceLocation& location_, LiteralType literal_type_, UniquePtr<Token>& value_)
         : Expression(location_, expression_literal),
           literal_type(literal_type_) {
         value.swap(value_);
-      }
-
-      LiteralExpression::~LiteralExpression() {
       }
 
       NamedExpression::NamedExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, UniquePtr<Expression>& expression_)
@@ -568,9 +584,6 @@ namespace Psi {
       NamedExpression::NamedExpression(const PhysicalSourceLocation& location_, UniquePtr<Expression>& expression_)
         : Element(location_) {
         expression.swap(expression_);
-      }
-
-      NamedExpression::~NamedExpression() {
       }
 
       Block::Block(const PhysicalSourceLocation& location_, bool landing_pad_, UniquePtr<Token>& name_,
@@ -588,9 +601,6 @@ namespace Psi {
         : Element(location_),
         landing_pad(landing_pad_) {
         statements.swap(statements_);
-      }
-
-      Block::~Block() {
       }
 
       GlobalElement::GlobalElement(const PhysicalSourceLocation& location_, GlobalType global_type_)
@@ -614,9 +624,6 @@ namespace Psi {
         blocks.swap(blocks_);
       }
 
-      Function::~Function() {
-      }
-
       GlobalVariable::GlobalVariable(const PhysicalSourceLocation& location_,
                                      bool constant_,
                                      UniquePtr<Expression>& type_)
@@ -635,25 +642,28 @@ namespace Psi {
         value.swap(value_);
       }
 
-      GlobalVariable::~GlobalVariable() {
-      }
-
       GlobalDefine::GlobalDefine(const PhysicalSourceLocation& location_,
                      UniquePtr<Expression>& value_)
         : GlobalElement(location_, global_define) {
         value.swap(value_);
       }
-
-      GlobalDefine::~GlobalDefine() {
+      
+      RecursiveType::RecursiveType(const PhysicalSourceLocation& location_,
+                                   UniqueList<NamedExpression>& phantom_parameters_,
+                                   UniqueList<NamedExpression>& parameters_,
+                                   UniquePtr<Expression>& result_type_,
+                                   UniquePtr<Expression>& result_)
+      : GlobalElement(location_, global_recursive) {
+        phantom_parameters.swap(phantom_parameters_);
+        parameters.swap(parameters_);
+        result_type.swap(result_type_);
+        result.swap(result_);
       }
 
       NamedGlobalElement::NamedGlobalElement(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, UniquePtr<GlobalElement>& value_)
         : Element(location_) {
         name.swap(name_);
         value.swap(value_);
-      }
-
-      NamedGlobalElement::~NamedGlobalElement() {
       }
     }
 

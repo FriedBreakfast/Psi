@@ -196,10 +196,14 @@ Eliminate phantom parameters from a function pointer, thus reducing the general 
 recursive
 """""""""
 
-``recursive [({parameters})] > {result}``
+``recursive [({parameters})] > [{type} >] {result}``
 
 Construct a recursive type.
 This is not an instruction but a global declaration, and is the only way a type can contain references to itself (i.e. self pointers), since this is how a type is named.
+
+``{type}``
+  The type of the expression ``{result}``.
+  If not given, this defaults to ``type``, since usually a recursive type rather than a recursive value is desired.
 
 .. _psi.tvm.instructions.unwrap:
 

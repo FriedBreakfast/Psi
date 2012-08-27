@@ -47,16 +47,16 @@ namespace Psi {
     }
 
     class Context::FunctionTypeResolverRewriter : public RewriteCallback {
-      std::vector<ValuePtr<FunctionTypeParameter> > m_parameters;
+      std::vector<ValuePtr<ParameterPlaceholder> > m_parameters;
       std::size_t m_depth;
 
     public:
-      FunctionTypeResolverRewriter(Context& context, const std::vector<ValuePtr<FunctionTypeParameter> >& parameters)
+      FunctionTypeResolverRewriter(Context& context, const std::vector<ValuePtr<ParameterPlaceholder> >& parameters)
       : RewriteCallback(context), m_parameters(parameters), m_depth(0) {
       }
 
       virtual ValuePtr<> rewrite(const ValuePtr<>& term) {
-        if (ValuePtr<FunctionTypeParameter> parameter = dyn_cast<FunctionTypeParameter>(term)) {
+        if (ValuePtr<ParameterPlaceholder> parameter = dyn_cast<ParameterPlaceholder>(term)) {
           ValuePtr<> type = rewrite(term->type());
           for (unsigned i = 0, e = m_parameters.size(); i != e; ++i) {
             if (m_parameters[i] == term)
@@ -106,12 +106,12 @@ namespace Psi {
      */
     ValuePtr<FunctionType> Context::get_function_type(CallingConvention calling_convention,
                                                       const ValuePtr<>& result_type,
-                                                      const std::vector<ValuePtr<FunctionTypeParameter> >& parameters,
+                                                      const std::vector<ValuePtr<ParameterPlaceholder> >& parameters,
                                                       unsigned n_phantom,
                                                       const SourceLocation& location) {
       PSI_ASSERT(n_phantom <= parameters.size());
 
-      std::vector<ValuePtr<FunctionTypeParameter> > previous_parameters;
+      std::vector<ValuePtr<ParameterPlaceholder> > previous_parameters;
       std::vector<ValuePtr<> > resolved_parameter_types;
       for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
         resolved_parameter_types.push_back(FunctionTypeResolverRewriter(*this, previous_parameters).rewrite(parameters[ii]->type()));
@@ -131,7 +131,7 @@ namespace Psi {
                                                             const ValuePtr<>& result_type,
                                                             const std::vector<ValuePtr<> >& parameter_types,
                                                             const SourceLocation& location) {
-      std::vector<ValuePtr<FunctionTypeParameter> > parameters(parameter_types.size());
+      std::vector<ValuePtr<ParameterPlaceholder> > parameters(parameter_types.size());
       for (std::size_t i = 0; i < parameter_types.size(); ++i)
         parameters[i] = new_function_type_parameter(parameter_types[i], parameter_types[i]->location());
       return get_function_type(calling_convention, result_type, parameters, 0, location);
@@ -204,20 +204,20 @@ namespace Psi {
 
     PSI_TVM_HASHABLE_IMPL(FunctionType, HashableValue, function)
     
-    FunctionTypeParameter::FunctionTypeParameter(Context& context, const ValuePtr<>& type, const SourceLocation& location)
+    ParameterPlaceholder::ParameterPlaceholder(Context& context, const ValuePtr<>& type, const SourceLocation& location)
     : Value(context, term_function_type_parameter, type, this, location),
     m_parameter_type(type) {
     }
     
     template<typename V>
-    void FunctionTypeParameter::visit(V& v) {
+    void ParameterPlaceholder::visit(V& v) {
       visit_base<Value>(v);
     }
     
-    PSI_TVM_VALUE_IMPL(FunctionTypeParameter, Value);
+    PSI_TVM_VALUE_IMPL(ParameterPlaceholder, Value);
 
-    ValuePtr<FunctionTypeParameter> Context::new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location) {
-      return ValuePtr<FunctionTypeParameter>(::new FunctionTypeParameter(*this, type, location));
+    ValuePtr<ParameterPlaceholder> Context::new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location) {
+      return ValuePtr<ParameterPlaceholder>(::new ParameterPlaceholder(*this, type, location));
     }
 
     BlockMember::BlockMember(TermType term_type, const ValuePtr<>& type,

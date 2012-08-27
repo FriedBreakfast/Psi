@@ -161,6 +161,8 @@ namespace Psi {
         ("byte", NullaryOpCallback(&FunctionalBuilder::byte_type))
         ("pointer", UnaryOpCallback(&FunctionalBuilder::pointer_type))
         ("member", BinaryOpCallback(&FunctionalBuilder::member))
+        ("upref", NullaryOpCallback(&FunctionalBuilder::upref))
+        ("upref_cons", BinaryOpCallback(&FunctionalBuilder::upref_cons))
         ("element_ptr", BinaryOpCallback(&FunctionalBuilder::element_ptr))
         ("outer_ptr", UnaryOpCallback(&FunctionalBuilder::outer_ptr))
         ("add", BinaryOpCallback(&FunctionalBuilder::add))

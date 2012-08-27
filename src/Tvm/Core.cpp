@@ -55,7 +55,8 @@ namespace Psi {
         (source->term_type() == term_phi) ||
         (source->term_type() == term_instruction) ||
         (source->term_type() == term_function_type_parameter) ||
-        (source->term_type() == term_function_parameter));
+        (source->term_type() == term_function_parameter) ||
+        (source->term_type() == term_recursive_parameter));
 
       if (!type) {
         if (term_type == term_recursive) {

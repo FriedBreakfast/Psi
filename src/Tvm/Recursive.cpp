@@ -6,39 +6,50 @@
 
 namespace Psi {
   namespace Tvm {
-    RecursiveParameter::RecursiveParameter(const ValuePtr<>& type, const SourceLocation& location)
-    : Value(type->context(), term_recursive_parameter, type, type->source(), location),
-    m_recursive_parameter_type(type) {
+    RecursiveParameter::RecursiveParameter(Context& context, const ValuePtr<>& type, bool phantom, const SourceLocation& location)
+    : Value(context, term_recursive_parameter, type, this, location),
+    m_phantom(phantom),
+    m_recursive(NULL) {
+      PSI_ASSERT(!type->parameterized());
     }
     
     template<typename V>
     void RecursiveParameter::visit(V& v) {
       visit_base<Value>(v);
-      v("recursive_parameter_type", &RecursiveParameter::m_recursive_parameter_type);
+    }
+    
+    ValuePtr<RecursiveParameter> RecursiveParameter::create(const ValuePtr<>& type, bool phantom, const SourceLocation& location) {
+      return ValuePtr<RecursiveParameter>(::new RecursiveParameter(type->context(), type, phantom, location));
     }
     
     PSI_TVM_VALUE_IMPL(RecursiveParameter, Value);
 
-    /**
-     * \brief Create a new parameter for a recursive term.
-     *
-     * \param type The term's type.
-     *
-     * \param phantom Whether this term should be created as a phantom
-     * term. This mechanism is used to inform the compiler which
-     * parameters can have phantom values in them without making the
-     * overall value a phantom (unless it is always a phantom).
-     */
-    ValuePtr<RecursiveParameter> Context::new_recursive_parameter(const ValuePtr<>& type, const SourceLocation& location) {
-      return ValuePtr<RecursiveParameter>(::new RecursiveParameter(type, location));
-    }
+    RecursiveType::RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, Value *source, const SourceLocation& location)
+    : Value(result_type->context(), term_recursive, ValuePtr<>(), source, location),
+    m_result_type(result_type) {
+      m_parameters.swap(parameters);
+      
+      if (source && source->phantom())
+        throw TvmUserError("Recursive types cannot be phantom");
 
-    RecursiveType::RecursiveType(const ValuePtr<>& result_type, Value *source,
-                                 const std::vector<ValuePtr<RecursiveParameter> >& parameters,
-                                 const SourceLocation& location)
-    : Value(result_type->context(), term_recursive, result_type, source, location),
-    m_result(result_type),
-    m_parameters(parameters) {
+      Value *test_source = m_parameters.front().get();
+      bool phantom_finished = true;
+      for (RecursiveType::ParameterList::const_iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
+        if ((*ii)->phantom()) {
+          if (phantom_finished)
+            throw TvmUserError("Phantom parameters must come before all others in a parameter list");
+        } else {
+          phantom_finished = true;
+        }
+
+        (*ii)->m_recursive = this;
+
+        if (!source_dominated((*ii)->source(), test_source))
+          throw TvmUserError("source specified for recursive term is not dominated by parameter block");
+      }
+
+      if (!source_dominated(result_type->source(), test_source))
+        throw TvmUserError("source specified for recursive term is not dominated by result type block");
     }
 
     /**
@@ -48,34 +59,33 @@ namespace Psi {
      * considered phantom; in this case the value assigned to this
      * term may itself be a phantom.
      */
-    ValuePtr<RecursiveType> Context::new_recursive(const ValuePtr<>& result_type,
-                                                   const std::vector<ValuePtr<> >& parameters,
-                                                   Value *source,
-                                                   const SourceLocation& location) {
-      if (source_dominated(result_type->source(), source))
-        goto throw_dominator;
-
-      for (std::vector<ValuePtr<> >::const_iterator ii = parameters.begin(), ie = parameters.end(); ii != ie; ++ii) {
-        if (source_dominated((*ii)->source(), source))
-          goto throw_dominator;
-      }
-
-      if (false) {
-      throw_dominator:
-        throw TvmUserError("source specified for recursive term is not dominated by parameter and result type blocks");
-      }
-
-      std::vector<ValuePtr<RecursiveParameter> > child_parameters;
-      for (std::vector<ValuePtr<> >::const_iterator ii = parameters.begin(), ie = parameters.end(); ii != ie; ++ii)
-        child_parameters.push_back(new_recursive_parameter(*ii, location));
-      return ValuePtr<RecursiveType>(::new RecursiveType(result_type, source, child_parameters, location));
+    ValuePtr<RecursiveType> RecursiveType::create(const ValuePtr<>& result_type,
+                                                  RecursiveType::ParameterList& parameters,
+                                                  Value *source,
+                                                  const SourceLocation& location) {
+      return ValuePtr<RecursiveType>(::new RecursiveType(result_type, parameters, source, location));
     }
 
     /**
      * \brief Resolve this term to its actual value.
      */
-    void RecursiveType::resolve(const ValuePtr<>& term) {
-      return context().resolve_recursive(ValuePtr<RecursiveType>(this), term);
+    void RecursiveType::resolve(const ValuePtr<>& to) {
+      if (type() != to->type())
+        throw TvmUserError("mismatch between recursive term type and resolving term type");
+
+      if (to->parameterized())
+        throw TvmUserError("cannot resolve recursive term to parameterized term");
+
+      if (m_result)
+        throw TvmUserError("resolving a recursive term which has already been resolved");
+
+      if (!source_dominated(to->source(), source()))
+        throw TvmUserError("term used to resolve recursive term is not in scope");
+
+      if (to->phantom())
+        throw TvmUserError("Recursive type cannot be resolved to a phantom term");
+      
+      m_result = to;
     }
     
     template<typename V>
@@ -87,27 +97,20 @@ namespace Psi {
     
     PSI_TVM_VALUE_IMPL(RecursiveType, Value)
 
-    ValuePtr<ApplyValue> RecursiveType::apply(const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
-      return context().apply_recursive(ValuePtr<RecursiveType>(this), parameters, location);
-    }
-    
-    ApplyValue::ApplyValue(Context& context,
-                           const ValuePtr<>& recursive,
+    ApplyValue::ApplyValue(const ValuePtr<>& recursive,
                            const std::vector<ValuePtr<> >& parameters,
                            const SourceLocation& location)
-    : HashableValue(context, term_apply, location),
+    : HashableValue(recursive->context(), term_apply, location),
     m_recursive(recursive),
     m_parameters(parameters) {
     }
-    
-    ValuePtr<ApplyValue> Context::apply_recursive(const ValuePtr<RecursiveType>& recursive,
-                                                  const std::vector<ValuePtr<> >& parameters,
-                                                  const SourceLocation& location) {
-      return get_functional(ApplyValue(*this, recursive, parameters, location));
-    }
 
     ValuePtr<> ApplyValue::unpack() {
+      ValuePtr<> result;
       PSI_NOT_IMPLEMENTED();
+      // Check that the source originally computed by apply operation would still be valid for the new result,
+      // so that the source analysis is not broken
+      PSI_ASSERT(source_dominated(result->source(), source()));
     }
 
     template<typename V>
@@ -124,30 +127,5 @@ namespace Psi {
     }
 
     PSI_TVM_HASHABLE_IMPL(ApplyValue, HashableValue, apply)
-
-    /**
-     * \brief Resolve an opaque term.
-     */
-    void Context::resolve_recursive(const ValuePtr<RecursiveType>& recursive, const ValuePtr<>& to) {
-      if (recursive->type() != to->type())
-        throw TvmUserError("mismatch between recursive term type and resolving term type");
-
-      if (to->parameterized())
-        throw TvmUserError("cannot resolve recursive term to parameterized term");
-
-      if (to->term_type() == term_apply)
-        throw TvmUserError("cannot resolve recursive term to apply term, since this leads to an infinite loop in the code generator");
-
-      if (recursive->result())
-        throw TvmUserError("resolving a recursive term which has already been resolved");
-
-      if (!source_dominated(to->source(), recursive->source()))
-        throw TvmUserError("term used to resolve recursive term is not in scope");
-
-      if (to->phantom() && !recursive->phantom())
-        throw TvmUserError("non-phantom recursive term cannot be resolved to a phantom term");
-      
-      recursive->m_result = to;
-    }
   }
 }
