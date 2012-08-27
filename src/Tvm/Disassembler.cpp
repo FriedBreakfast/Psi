@@ -249,7 +249,7 @@ namespace Psi {
       case term_function:
       case term_block:
       case term_phi:
-      case term_function_type_parameter:
+      case term_parameter_placeholder:
       case term_function_parameter:
         PSI_FAIL("term type should not go in definition lists");
         
@@ -271,7 +271,7 @@ namespace Psi {
         case term_phi: block = value_cast<Phi>(term->source())->block(); break;
         case term_instruction: block = value_cast<Instruction>(term->source())->block(); break;
 
-        case term_function_type_parameter: return NULL;
+        case term_parameter_placeholder: return NULL;
 
         case term_function_parameter:
           function = value_cast<FunctionParameter>(term->source())->function();
@@ -302,7 +302,7 @@ namespace Psi {
         case term_phi: function = value_cast<Phi>(term->source())->block()->function(); break;
         case term_instruction: function = value_cast<Instruction>(term->source())->block()->function(); break;
         case term_function_parameter: function = value_cast<FunctionParameter>(term->source())->function(); break;
-        case term_function_type_parameter: return;
+        case term_parameter_placeholder: return;
         case term_recursive_parameter: return;
         default: PSI_FAIL("unexpected source term type");
         }
@@ -602,7 +602,7 @@ namespace Psi {
         default: PSI_FAIL("unknown integer width");
         }
         *m_output << width;
-      } else if (ValuePtr<FunctionTypeResolvedParameter> resolved_param = dyn_cast<FunctionTypeResolvedParameter>(term)) {
+      } else if (ValuePtr<ResolvedParameter> resolved_param = dyn_cast<ResolvedParameter>(term)) {
         ParameterNameList::reverse_iterator it = m_parameter_names.rbegin();
         if (resolved_param->depth() < m_parameter_names.size()) {
           std::advance(it, resolved_param->depth());

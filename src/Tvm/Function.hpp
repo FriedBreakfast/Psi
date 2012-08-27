@@ -343,7 +343,7 @@ namespace Psi {
     /**
      * \brief Term type appearing in dependent types of completed function types.
      */
-    class FunctionTypeResolvedParameter : public FunctionalValue {
+    class ResolvedParameter : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(FunctionTypeResolvedParameter)
       
     private:
@@ -352,7 +352,7 @@ namespace Psi {
       unsigned m_index;
       
     public:
-      FunctionTypeResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
+      ResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
 
       /// \brief Get the depth of this parameter relative to the
       /// function type it is part of.
@@ -365,7 +365,7 @@ namespace Psi {
       /// function.
       unsigned index() const {return m_index;}
       
-      static ValuePtr<FunctionTypeResolvedParameter> get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
+      static ValuePtr<ResolvedParameter> get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
     };
 
     /**
@@ -405,6 +405,35 @@ namespace Psi {
     };
     
     /**
+     * \brief Type which implements the notion of unknown or partially known types.
+     * 
+     * Used to implement virtual function calls with a type safe derived parameter.
+     * 
+     * \note This is implemented next to FunctionType because they work in a
+     * similar way, not because they are particularly conceptually related.
+     */
+    class Exists : public HashableValue {
+      PSI_TVM_HASHABLE_DECL(Exists)
+      friend class Context;
+
+    public:
+      const ValuePtr<>& result() const {return m_result;}
+      /// \brief Get the vector parameter types.
+      const std::vector<ValuePtr<> >& parameter_types() const {return m_parameter_types;}
+
+      ValuePtr<> parameter_type_after(const std::vector<ValuePtr<> >& previous);
+      ValuePtr<> result_after(const std::vector<ValuePtr<> >& parameters);
+      
+      static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_exists;}
+
+    private:
+      Exists(const ValuePtr<>& result, const std::vector<ValuePtr<> >& parameter_types, const SourceLocation& location);
+
+      std::vector<ValuePtr<> > m_parameter_types;
+      ValuePtr<> m_result;
+    };
+    
+    /**
      * \brief Placeholder used for parameters during type setup.
      * 
      * This is used by function type, recursive and exists.
@@ -416,7 +445,7 @@ namespace Psi {
       ParameterPlaceholder(Context& context, const ValuePtr<>& type, const SourceLocation& location);
       ValuePtr<> m_parameter_type;
     public:
-      static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type_parameter;}
+      static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_parameter_placeholder;}
       template<typename V> static void visit(V& v);
     };
 

@@ -55,6 +55,26 @@ namespace Psi {
         }
       };
       
+      struct UnaryOrBinaryCallback {
+        typedef UnaryOpCallback::GetterType UnaryGetterType;
+        typedef BinaryOpCallback::GetterType BinaryGetterType;
+        
+        UnaryGetterType unary_getter;
+        BinaryGetterType binary_getter;
+        
+        UnaryOrBinaryCallback(UnaryGetterType unary_getter_, BinaryGetterType binary_getter_) : unary_getter(unary_getter_), binary_getter(binary_getter_) {}
+        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
+          if ((expression.terms.size() != 1) && (expression.terms.size() != 2))
+            throw TvmUserError(str(boost::format("%s: 1 or 2 parameters expected") % name));
+
+          std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
+          if (parameters.size() == 1)
+            return unary_getter(parameters[0], SourceLocation(expression.location, location));
+          else
+            return binary_getter(parameters[0], parameters[1], SourceLocation(expression.location, location));
+        }
+      };
+      
       struct ContextArrayCallback {
         typedef ValuePtr<> (*GetterType) (Context&,const std::vector<ValuePtr<> >&,const SourceLocation&);
         GetterType getter;
@@ -159,10 +179,10 @@ namespace Psi {
         ("empty", NullaryOpCallback(&FunctionalBuilder::empty_type))
         ("empty_v", NullaryOpCallback(&FunctionalBuilder::empty_value))
         ("byte", NullaryOpCallback(&FunctionalBuilder::byte_type))
-        ("pointer", UnaryOpCallback(&FunctionalBuilder::pointer_type))
+        ("pointer", UnaryOrBinaryCallback(&FunctionalBuilder::pointer_type, &FunctionalBuilder::pointer_type))
         ("member", BinaryOpCallback(&FunctionalBuilder::member))
         ("upref", NullaryOpCallback(&FunctionalBuilder::upref))
-        ("upref_cons", BinaryOpCallback(&FunctionalBuilder::upref_cons))
+        ("upref_cons", UnaryOrBinaryCallback(&FunctionalBuilder::upref_cons, &FunctionalBuilder::upref_cons))
         ("element_ptr", BinaryOpCallback(&FunctionalBuilder::element_ptr))
         ("outer_ptr", UnaryOpCallback(&FunctionalBuilder::outer_ptr))
         ("add", BinaryOpCallback(&FunctionalBuilder::add))
@@ -186,7 +206,8 @@ namespace Psi {
         ("union_ep", BinaryOpCallback(&FunctionalBuilder::union_element_ptr))
         ("specialize", TermPlusArrayCallback(&FunctionalBuilder::specialize))
         ("pointer_cast", BinaryOpCallback(&FunctionalBuilder::pointer_cast))
-        ("pointer_offset", BinaryOpCallback(&FunctionalBuilder::pointer_offset));
+        ("pointer_offset", BinaryOpCallback(&FunctionalBuilder::pointer_offset))
+        ("apply", TermPlusArrayCallback(&FunctionalBuilder::apply));
 
       struct NullaryInstructionCallback {
         typedef ValuePtr<Instruction> (InstructionBuilder::*CreateType) (const SourceLocation&);

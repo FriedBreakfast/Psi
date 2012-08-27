@@ -54,7 +54,7 @@ namespace Psi {
         "  (pointer (apply %vtable %tag))\n"
         ");\n"
         "\n"
-        "%func = function (%obj_wrapped : exists (%tag : member) > (pointer (apply %base %tag) %tag)) > i32 {\n"
+        "%func = function (%obj_wrapped : exists (%tag : upref) > (pointer (apply %base %tag) %tag)) > i32 {\n"
         "  %obj = unwrap %obj_wrapped;\n"
         "  %tag = unwrap_param %obj_wrapped #i0;\n"
         "  %vptr = load (struct_ep %obj #i0);\n"

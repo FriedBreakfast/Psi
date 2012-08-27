@@ -71,8 +71,9 @@ namespace Psi {
       term_function_parameter, ///< FunctionParameter: \copybrief FunctionParameter
       term_phi, ///< Phi: \copybrief Phi
       term_function_type, ///< FunctionType: \copybrief FunctionType
-      term_function_type_parameter, ///< FunctionTypeParameter: \copybrief FunctionTypeParameter
-      term_functional ///< Functional: \copybrief Functional
+      term_parameter_placeholder, ///< ParameterPlaceholder: \copybrief ParameterPlaceholder
+      term_functional, ///< Functional: \copybrief Functional
+      term_exists ///< Exists: \copybrief Exists
     };
 
     /**
@@ -601,6 +602,7 @@ namespace Psi {
 
     class FunctionalValue;
     class FunctionType;
+    class Exists;
     class ParameterPlaceholder;
     class Function;
     class ApplyValue;
@@ -717,7 +719,11 @@ namespace Psi {
                                                      const std::vector<ValuePtr<> >& parameter_types,
                                                      const SourceLocation& location);
 
-      ValuePtr<ParameterPlaceholder> new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location);
+      ValuePtr<Exists> get_exists(const ValuePtr<>& result,
+                                  const std::vector<ValuePtr<ParameterPlaceholder> >& parameters,
+                                  const SourceLocation& location);
+
+      ValuePtr<ParameterPlaceholder> new_placeholder_parameter(const ValuePtr<>& type, const SourceLocation& location);
 
       ValuePtr<ApplyValue> apply_recursive(const ValuePtr<RecursiveType>& recursive,
                                            const std::vector<ValuePtr<> >& parameters,
@@ -726,7 +732,7 @@ namespace Psi {
     private:
       Context(const Context&);
 
-      class FunctionTypeResolverRewriter;
+      class ParameterResolverRewriter;
     };
 
     bool term_unique(const ValuePtr<>& term);

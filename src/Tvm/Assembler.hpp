@@ -51,6 +51,9 @@ namespace Psi {
       ValuePtr<RecursiveType> build_recursive_type(AssemblerContext& context,  const Parser::RecursiveType& recursive_type, const LogicalSourceLocationPtr& location);
       void build_function(AssemblerContext& context, const ValuePtr<Function>& function, const Parser::Function& function_def);
       ValuePtr<> build_call_expression(AssemblerContext& context, const Parser::Expression& expression, const LogicalSourceLocationPtr& location);
+      std::vector<ValuePtr<ParameterPlaceholder> > build_parameters(AssemblerContext& context,
+                                                                    const UniqueList<Parser::NamedExpression>& parameters,
+                                                                    const LogicalSourceLocationPtr& logical_location);
 
       typedef boost::function<ValuePtr<>(const std::string&,AssemblerContext&,const Parser::CallExpression&,const LogicalSourceLocationPtr&)> FunctionalTermCallback;
       typedef boost::function<ValuePtr<Instruction>(const std::string&,InstructionBuilder&,AssemblerContext&,const Parser::CallExpression&,const LogicalSourceLocationPtr&)> InstructionTermCallback;

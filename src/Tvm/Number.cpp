@@ -20,19 +20,11 @@ namespace Psi {
       return FunctionalBuilder::type_type(context(), location());
     }
     
-    ValuePtr<BooleanType> BooleanType::get(Context& context, const SourceLocation& location) {
-      return context.get_functional(BooleanType(context, location));
-    }
-
     PSI_TVM_FUNCTIONAL_IMPL(BooleanType, Type, bool)
 
     BooleanValue::BooleanValue(Context& context, bool value, const SourceLocation& location)
     : Constructor(context, location),
     m_value(value) {
-    }
-    
-    ValuePtr<BooleanValue> BooleanValue::get(Context& context, bool value, const SourceLocation& location) {
-      return context.get_functional(BooleanValue(context, value, location));
     }
     
     template<typename V>
@@ -41,7 +33,7 @@ namespace Psi {
     }
     
     ValuePtr<> BooleanValue::check_type() const {
-      return BooleanType::get(context(), location());
+      return FunctionalBuilder::bool_type(context(), location());
     }
 
     PSI_TVM_FUNCTIONAL_IMPL(BooleanValue, Constructor, bool_v)
@@ -50,14 +42,6 @@ namespace Psi {
     : Type(context, location),
     m_width(width),
     m_is_signed(is_signed) {
-    }
-    
-    ValuePtr<IntegerType> IntegerType::get(Context& context, Width width, bool is_signed, const SourceLocation& location) {
-      return context.get_functional(IntegerType(context, width, is_signed, location));
-    }
-
-    ValuePtr<IntegerType> IntegerType::get_intptr(Context& context, const SourceLocation& location) {
-      return get(context, iptr, false, location);
     }
     
     /**
@@ -97,14 +81,6 @@ namespace Psi {
     m_value(value) {
     }
     
-    ValuePtr<IntegerValue> IntegerValue::get(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location) {
-      return context.get_functional(IntegerValue(context, width, is_signed, value, location));
-    }
-    
-    ValuePtr<IntegerValue> IntegerValue::get_intptr(Context& context, unsigned n, const SourceLocation& location) {
-      return get(context, IntegerType::iptr, false, BigInteger(IntegerType::value_bits(IntegerType::iptr), n), location);
-    }
-
     template<typename V>
     void IntegerValue::visit(V& v) {
       visit_base<Constructor>(v);
@@ -116,7 +92,7 @@ namespace Psi {
     ValuePtr<> IntegerValue::check_type() const {
       if (m_value.bits() != IntegerType::value_bits(m_width))
         throw TvmUserError("Wrong number of bits supplied to integer constant");
-      return IntegerType::get(context(), m_width, m_is_signed, location());
+      return FunctionalBuilder::int_type(context(), m_width, m_is_signed, location());
     }
 
     PSI_TVM_FUNCTIONAL_IMPL(IntegerValue, Constructor, int_v)
@@ -126,10 +102,6 @@ namespace Psi {
     m_width(width) {
     }
 
-    ValuePtr<FloatType> FloatType::get(Context& context, Width width, const SourceLocation& location) {
-      return context.get_functional(FloatType(context, width, location));
-    }
-    
     template<typename V>
     void FloatType::visit(V& v) {
       visit_base<Type>(v);
@@ -149,10 +121,6 @@ namespace Psi {
       PSI_NOT_IMPLEMENTED();
     }
     
-    ValuePtr<FloatValue> FloatValue::get(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location) {
-      return FloatValue::get(context, width, exponent, mantissa, location);
-    }
-
     template<typename V>
     void FloatValue::visit(V& v) {
       visit_base<Constructor>(v);
@@ -162,7 +130,7 @@ namespace Psi {
     }
     
     ValuePtr<> FloatValue::check_type() const {
-      return FloatType::get(context(), m_width, location());
+      return FunctionalBuilder::float_type(context(), m_width, location());
     }
 
     PSI_TVM_FUNCTIONAL_IMPL(FloatValue, Type, float_v)
@@ -208,7 +176,7 @@ namespace Psi {
         throw TvmUserError("Argument to integer compare operation must have integer type");
       if (lhs()->type() != rhs()->type())
         throw TvmUserError("Both parameters to integer compare operation must have the same type");
-      return BooleanType::get(context(), location());
+      return FunctionalBuilder::bool_type(context(), location());
     }
     
     template<typename V>
@@ -250,10 +218,6 @@ namespace Psi {
     m_false_value(false_value) {
     }
 
-    ValuePtr<Select> Select::get(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location) {
-      return condition->context().get_functional(Select(condition, true_value, false_value, location));
-    }
-    
     template<typename V>
     void Select::visit(V& v) {
       visit_base<FunctionalValue>(v);

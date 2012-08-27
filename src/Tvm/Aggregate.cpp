@@ -29,7 +29,7 @@ namespace Psi {
     }
 
     ValuePtr<> MetatypeValue::check_type() const {
-      ValuePtr<> intptr_type = IntegerType::get_intptr(context(), location());
+      ValuePtr<> intptr_type = FunctionalBuilder::size_type(context(), location());
       if (m_size->type() != intptr_type)
         throw TvmUserError("first parameter to type_v must be intptr");
       if (m_alignment->type() != intptr_type)
@@ -49,7 +49,7 @@ namespace Psi {
     ValuePtr<> MetatypeSize::check_type() const {
       if (parameter()->type() != FunctionalBuilder::type_type(context(), location()))
         throw TvmUserError("Parameter to sizeof must be a type");
-      return IntegerType::get_intptr(context(), location());
+      return FunctionalBuilder::size_type(context(), location());
     }
     
     PSI_TVM_UNARY_OP_IMPL(MetatypeSize, UnaryOp, sizeof)
@@ -57,7 +57,7 @@ namespace Psi {
     ValuePtr<> MetatypeAlignment::check_type() const {
       if (parameter()->type() != FunctionalBuilder::type_type(context(), location()))
         throw TvmUserError("Parameter to sizeof must be a type");
-      return IntegerType::get_intptr(context(), location());
+      return FunctionalBuilder::size_type(context(), location());
     }
     
     PSI_TVM_UNARY_OP_IMPL(MetatypeAlignment, UnaryOp, alignof)
@@ -329,7 +329,7 @@ namespace Psi {
     }
     
     ValuePtr<> ArrayType::check_type() const {
-      if (m_length->type() != IntegerType::get_intptr(context(), location()))
+      if (m_length->type() != FunctionalBuilder::size_type(context(), location()))
         throw TvmUserError("Array length must be an intptr");
       return FunctionalBuilder::type_type(context(), location());
     }
@@ -358,7 +358,7 @@ namespace Psi {
           throw TvmUserError("array value element is of the wrong type");
       }
       
-      return FunctionalBuilder::array_type(m_element_type, IntegerValue::get_intptr(m_element_type->context(), m_elements.size(), location()), location());
+      return FunctionalBuilder::array_type(m_element_type, FunctionalBuilder::size_value(m_element_type->context(), m_elements.size(), location()), location());
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(ArrayValue, Constructor, array_v)
@@ -377,7 +377,7 @@ namespace Psi {
     }
     
     ValuePtr<> ArrayElement::check_type() const {
-      if (m_index->type() != IntegerType::get_intptr(context(), location()))
+      if (m_index->type() != FunctionalBuilder::size_type(context(), location()))
         throw TvmUserError("second parameter to array_el is not an intptr");
       ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(m_aggregate->type());
       if (!array_ty)
@@ -404,7 +404,7 @@ namespace Psi {
       ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(m_array_type);
       if (!array_ty)
         throw TvmUserError("First argument to array_m is NULL");
-      if (m_index->type() != IntegerType::get_intptr(context(), location()))
+      if (m_index->type() != FunctionalBuilder::size_type(context(), location()))
         throw TvmUserError("second parameter to array_ep is not an intptr");
       return FunctionalBuilder::member(m_array_type, array_ty->element_type(), location());
     }
@@ -636,7 +636,7 @@ namespace Psi {
       while (apply_parameters.size() < function_type->parameter_types().size()) {
         ValuePtr<> previous_type = function_type->parameter_type_after(apply_parameters);
         ValuePtr<ParameterPlaceholder> param =
-          function_type->context().new_function_type_parameter(previous_type, previous_type->location());
+          function_type->context().new_placeholder_parameter(previous_type, previous_type->location());
         apply_parameters.push_back(param);
         new_parameters.push_back(param);
       }

@@ -2,6 +2,7 @@
 #include "Aggregate.hpp"
 #include "Number.hpp"
 #include "Function.hpp"
+#include "Recursive.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -114,6 +115,11 @@ namespace Psi {
      */
     ValuePtr<> FunctionalBuilder::upref_cons(const ValuePtr<>& member, const ValuePtr<>& parent, const SourceLocation& location) {
       return member->context().get_functional(UpwardReferenceCons(member, parent, location));
+    }
+
+    /// \copydoc FunctionalBuilder::upref_cons
+    ValuePtr<> FunctionalBuilder::upref_cons(const ValuePtr<>& member, const SourceLocation& location) {
+      return upref_cons(member, ValuePtr<>(), location);
     }
 
     /**
@@ -498,17 +504,17 @@ namespace Psi {
     
     /// \brief Get the boolean type
     ValuePtr<> FunctionalBuilder::bool_type(Context& context, const SourceLocation& location) {
-      return BooleanType::get(context, location);
+      return context.get_functional(BooleanType(context, location));
     }
     
     /// \brief Get a constant boolean value.
     ValuePtr<> FunctionalBuilder::bool_value(Context& context, bool value, const SourceLocation& location) {
-      return BooleanValue::get(context, value, location);
+      return context.get_functional(BooleanValue(context, value, location));
     }
     
     /// \brief Get an integer type
     ValuePtr<> FunctionalBuilder::int_type(Context& context, IntegerType::Width width, bool is_signed, const SourceLocation& location) {
-      return IntegerType::get(context, width, is_signed, location);
+      return context.get_functional(IntegerType(context, width, is_signed, location));
     }
     
     /// \brief Get the intptr type
@@ -526,12 +532,12 @@ namespace Psi {
      * \param value Value of the integer to get.
      */    
     ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, int value, const SourceLocation& location) {
-      return IntegerValue::get(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value), location);
+      return int_value(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value), location);
     }
 
     /// \copydoc FunctionalBuilder::int_value(Term*,int)
     ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, unsigned value, const SourceLocation& location) {
-      return IntegerValue::get(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value), location);
+      return int_value(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value), location);
     }
     
     /**
@@ -551,7 +557,7 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const std::string& value, bool negative, unsigned base, const SourceLocation& location) {
       BigInteger bv(IntegerType::value_bits(width));
       bv.parse(value, negative, base);
-      return IntegerValue::get(context, width, is_signed, bv, location);
+      return int_value(context, width, is_signed, bv, location);
     }
 
     ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const std::string& value, const SourceLocation& location) {
@@ -576,7 +582,7 @@ namespace Psi {
      * \param value Value of the integer to create.
      */
     ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location) {
-      return IntegerValue::get(context, width, is_signed, value, location);
+      return context.get_functional(IntegerValue(context, width, is_signed, value, location));
     }
     
     /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,int)
@@ -596,7 +602,7 @@ namespace Psi {
     
     /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,const BigInteger&)
     ValuePtr<> FunctionalBuilder::int_value(const ValuePtr<IntegerType>& type, const BigInteger& value, const SourceLocation& location) {
-      return IntegerValue::get(type->context(), type->width(), type->is_signed(), value, location);
+      return int_value(type->context(), type->width(), type->is_signed(), value, location);
     }
 
     /**
@@ -930,7 +936,7 @@ namespace Psi {
      * \param if_false Value of this operation if \c condition is false.
      */
     ValuePtr<> FunctionalBuilder::select(const ValuePtr<>& condition, const ValuePtr<>& if_true, const ValuePtr<>& if_false, const SourceLocation& location) {
-      ValuePtr<> result = Select::get(condition, if_true, if_false, location);
+      ValuePtr<> result = condition->context().get_functional(Select(condition, if_true, if_false, location));
       if (if_true == if_false)
         return if_true;
       if (ValuePtr<BooleanValue> bool_val = dyn_cast<BooleanValue>(condition))
@@ -964,7 +970,14 @@ namespace Psi {
      * Get a floating point type.
      */
     ValuePtr<> FunctionalBuilder::float_type(Context& context, FloatType::Width width, const SourceLocation& location) {
-      return FloatType::get(context, width, location);
+      return context.get_functional(FloatType(context, width, location));
+    }
+
+    /**
+     * \brief Specialize a recursive type.
+     */
+    ValuePtr<> FunctionalBuilder::apply(const ValuePtr<>& recursive, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
+      return recursive->context().get_functional(ApplyValue(recursive, parameters, location));
     }
   }
 }

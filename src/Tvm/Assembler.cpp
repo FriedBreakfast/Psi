@@ -99,7 +99,14 @@ namespace Psi {
       }
       
       ValuePtr<> build_exists(AssemblerContext& context, const Parser::ExistsExpression& expression, const LogicalSourceLocationPtr& logical_location) {
-        PSI_NOT_IMPLEMENTED();
+        AssemblerContext my_context(&context);
+
+        std::vector<ValuePtr<ParameterPlaceholder> > parameters =
+          build_parameters(my_context, expression.parameters, logical_location);
+          
+        ValuePtr<> result = build_expression(my_context, *expression.result, logical_location);
+
+        return context.context().get_exists(result, parameters, SourceLocation(expression.location, logical_location));
       }
 
       ValuePtr<> build_expression(AssemblerContext& context, const Parser::Expression& expression, const LogicalSourceLocationPtr& logical_location) {
@@ -124,13 +131,13 @@ namespace Psi {
         }
       }
 
-      std::vector<ValuePtr<ParameterPlaceholder> > build_function_parameters(AssemblerContext& context,
-                                                                              const UniqueList<Parser::NamedExpression>& parameters,
-                                                                              const LogicalSourceLocationPtr& logical_location) {
+      std::vector<ValuePtr<ParameterPlaceholder> > build_parameters(AssemblerContext& context,
+                                                                    const UniqueList<Parser::NamedExpression>& parameters,
+                                                                    const LogicalSourceLocationPtr& logical_location) {
         std::vector<ValuePtr<ParameterPlaceholder> > result;
         for (UniqueList<Parser::NamedExpression>::const_iterator it = parameters.begin(); it != parameters.end(); ++it) {
           ValuePtr<> param_type = build_expression(context, *it->expression, logical_location);
-          ValuePtr<ParameterPlaceholder> param = context.context().new_function_type_parameter(param_type, SourceLocation(it->location, logical_location));
+          ValuePtr<ParameterPlaceholder> param = context.context().new_placeholder_parameter(param_type, SourceLocation(it->location, logical_location));
           if (it->name)
             context.put(it->name->text, param);
           result.push_back(param);
@@ -142,12 +149,12 @@ namespace Psi {
         AssemblerContext my_context(&context);
 
         std::vector<ValuePtr<ParameterPlaceholder> > phantom_parameters =
-          build_function_parameters(my_context, function_type.phantom_parameters, logical_location);
+          build_parameters(my_context, function_type.phantom_parameters, logical_location);
           
         unsigned n_phantom = phantom_parameters.size();
 
         std::vector<ValuePtr<ParameterPlaceholder> > parameters =
-          build_function_parameters(my_context, function_type.parameters, logical_location);
+          build_parameters(my_context, function_type.parameters, logical_location);
           
         parameters.insert(parameters.begin(), phantom_parameters.begin(), phantom_parameters.end());
 

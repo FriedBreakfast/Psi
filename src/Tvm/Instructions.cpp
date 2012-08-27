@@ -42,7 +42,7 @@ namespace Psi {
      * \todo Need to check that targets are dominated by an appropriate block to jump to.
      */
     void ConditionalBranch::type_check() {
-      if (condition->type() != BooleanType::get(context(), location()))
+      if (condition->type() != FunctionalBuilder::bool_type(context(), location()))
         throw TvmUserError("first parameter to branch instruction must be of boolean type");
 
       if (condition->phantom())

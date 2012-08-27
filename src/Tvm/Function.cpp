@@ -10,11 +10,11 @@
 
 namespace Psi {
   namespace Tvm {
-    ValuePtr<FunctionTypeResolvedParameter> FunctionTypeResolvedParameter::get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location) {
-      return type->context().get_functional(FunctionTypeResolvedParameter(type, depth, index, location));
+    ValuePtr<ResolvedParameter> ResolvedParameter::get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location) {
+      return type->context().get_functional(ResolvedParameter(type, depth, index, location));
     }
     
-    FunctionTypeResolvedParameter::FunctionTypeResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location)
+    ResolvedParameter::ResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location)
     : FunctionalValue(type->context(), location),
     m_parameter_type(type),
     m_depth(depth),
@@ -22,20 +22,20 @@ namespace Psi {
     }
     
     template<typename V>
-    void FunctionTypeResolvedParameter::visit(V& v) {
+    void ResolvedParameter::visit(V& v) {
       visit_base<FunctionalValue>(v);
-      v("parameter_type", &FunctionTypeResolvedParameter::m_parameter_type)
-      ("depth", &FunctionTypeResolvedParameter::m_depth)
-      ("index", &FunctionTypeResolvedParameter::m_index);
+      v("parameter_type", &ResolvedParameter::m_parameter_type)
+      ("depth", &ResolvedParameter::m_depth)
+      ("index", &ResolvedParameter::m_index);
     }
     
-    ValuePtr<> FunctionTypeResolvedParameter::check_type() const {
+    ValuePtr<> ResolvedParameter::check_type() const {
       if (!m_parameter_type->is_type())
         throw TvmUserError("First argument to function_type_resolved_parameter is not a type");
       return m_parameter_type;
     }
     
-    PSI_TVM_FUNCTIONAL_IMPL(FunctionTypeResolvedParameter, SimpleOp, function_type_resolved_parameter)
+    PSI_TVM_FUNCTIONAL_IMPL(ResolvedParameter, SimpleOp, resolved_parameter)
 
     FunctionType::FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
                                const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, const SourceLocation& location)
@@ -46,12 +46,12 @@ namespace Psi {
     m_result_type(result_type) {
     }
 
-    class Context::FunctionTypeResolverRewriter : public RewriteCallback {
+    class Context::ParameterResolverRewriter : public RewriteCallback {
       std::vector<ValuePtr<ParameterPlaceholder> > m_parameters;
       std::size_t m_depth;
 
     public:
-      FunctionTypeResolverRewriter(Context& context, const std::vector<ValuePtr<ParameterPlaceholder> >& parameters)
+      ParameterResolverRewriter(Context& context, const std::vector<ValuePtr<ParameterPlaceholder> >& parameters)
       : RewriteCallback(context), m_parameters(parameters), m_depth(0) {
       }
 
@@ -60,7 +60,7 @@ namespace Psi {
           ValuePtr<> type = rewrite(term->type());
           for (unsigned i = 0, e = m_parameters.size(); i != e; ++i) {
             if (m_parameters[i] == term)
-              return FunctionTypeResolvedParameter::get(type, m_depth, i, m_parameters[i]->location());
+              return ResolvedParameter::get(type, m_depth, i, m_parameters[i]->location());
           }
           if (type != term->type())
             throw TvmUserError("type of unresolved function parameter cannot depend on type of resolved function parameter");
@@ -114,11 +114,11 @@ namespace Psi {
       std::vector<ValuePtr<ParameterPlaceholder> > previous_parameters;
       std::vector<ValuePtr<> > resolved_parameter_types;
       for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
-        resolved_parameter_types.push_back(FunctionTypeResolverRewriter(*this, previous_parameters).rewrite(parameters[ii]->type()));
+        resolved_parameter_types.push_back(ParameterResolverRewriter(*this, previous_parameters).rewrite(parameters[ii]->type()));
         previous_parameters.push_back(parameters[ii]);
       }
 
-      ValuePtr<> resolved_result_type = FunctionTypeResolverRewriter(*this, previous_parameters).rewrite(result_type);
+      ValuePtr<> resolved_result_type = ParameterResolverRewriter(*this, previous_parameters).rewrite(result_type);
       
       return get_functional(FunctionType(calling_convention, resolved_result_type, resolved_parameter_types,
                                          n_phantom, location));
@@ -133,7 +133,7 @@ namespace Psi {
                                                             const SourceLocation& location) {
       std::vector<ValuePtr<ParameterPlaceholder> > parameters(parameter_types.size());
       for (std::size_t i = 0; i < parameter_types.size(); ++i)
-        parameters[i] = new_function_type_parameter(parameter_types[i], parameter_types[i]->location());
+        parameters[i] = new_placeholder_parameter(parameter_types[i], parameter_types[i]->location());
       return get_function_type(calling_convention, result_type, parameters, 0, location);
     }
 
@@ -147,7 +147,7 @@ namespace Psi {
         : RewriteCallback(context), m_previous(previous), m_depth(0) {}
 
         virtual ValuePtr<> rewrite(const ValuePtr<>& term) {
-          if (ValuePtr<FunctionTypeResolvedParameter> parameter = dyn_cast<FunctionTypeResolvedParameter>(term)) {
+          if (ValuePtr<ResolvedParameter> parameter = dyn_cast<ResolvedParameter>(term)) {
             if (parameter->depth() == m_depth)
               return m_previous[parameter->index()];
             else
@@ -190,7 +190,7 @@ namespace Psi {
     void FunctionType::visit(V& v) {
       visit_base<HashableValue>(v);
       v("calling_convention", &FunctionType::m_calling_convention)
-      ("parameter_type", &FunctionType::m_parameter_types)
+      ("parameter_types", &FunctionType::m_parameter_types)
       ("n_phantom", &FunctionType::m_n_phantom)
       ("result_type", &FunctionType::m_result_type);
     }
@@ -203,9 +203,69 @@ namespace Psi {
     }
 
     PSI_TVM_HASHABLE_IMPL(FunctionType, HashableValue, function)
+
+    Exists::Exists(const ValuePtr<>& result, const std::vector<ValuePtr<> >& parameter_types, const SourceLocation& location)
+    : HashableValue(result->context(), term_exists, location),
+    m_parameter_types(parameter_types),
+    m_result(result) {
+    }
+
+    /**
+     * Get an exists expression.
+     */
+    ValuePtr<Exists> Context::get_exists(const ValuePtr<>& result,
+                                         const std::vector<ValuePtr<ParameterPlaceholder> >& parameters,
+                                         const SourceLocation& location) {
+      std::vector<ValuePtr<ParameterPlaceholder> > previous_parameters;
+      std::vector<ValuePtr<> > resolved_parameter_types;
+      for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
+        resolved_parameter_types.push_back(ParameterResolverRewriter(*this, previous_parameters).rewrite(parameters[ii]->type()));
+        previous_parameters.push_back(parameters[ii]);
+      }
+
+      ValuePtr<> resolved_result = ParameterResolverRewriter(*this, previous_parameters).rewrite(result);
+      
+      return get_functional(Exists(resolved_result, resolved_parameter_types, location));
+    }
+
+    /**
+     * Get the type of a parameter, given previous parameters.
+     *
+     * \param previous Earlier parameters. Length of this array gives
+     * the index of the parameter type to get.
+     */
+    ValuePtr<> Exists::parameter_type_after(const std::vector<ValuePtr<> >& previous) {
+      return ParameterTypeRewriter(context(), previous).rewrite(parameter_types()[previous.size()]);
+    }
+
+    /**
+     * Get the return type of a function of this type, given previous
+     * parameters.
+     */
+    ValuePtr<> Exists::result_after(const std::vector<ValuePtr<> >& parameters) {
+      if (parameters.size() != parameter_types().size())
+        throw TvmUserError("incorrect number of parameters");
+      return ParameterTypeRewriter(context(), parameters).rewrite(m_result);
+    }
+
+    template<typename V>
+    void Exists::visit(V& v) {
+      visit_base<HashableValue>(v);
+      v("parameter_types", &Exists::m_parameter_types)
+      ("result", &Exists::m_result);
+    }
+    
+    ValuePtr<> Exists::check_type() const {
+      for (std::vector<ValuePtr<> >::const_iterator ii = m_parameter_types.begin(), ie = m_parameter_types.end(); ii != ie; ++ii)
+        if (!(*ii)->is_type())
+          throw TvmUserError("Exists argument type is not a type");
+      return FunctionalBuilder::type_type(context(), location());
+    }
+
+    PSI_TVM_HASHABLE_IMPL(Exists, HashableValue, function)
     
     ParameterPlaceholder::ParameterPlaceholder(Context& context, const ValuePtr<>& type, const SourceLocation& location)
-    : Value(context, term_function_type_parameter, type, this, location),
+    : Value(context, term_parameter_placeholder, type, this, location),
     m_parameter_type(type) {
     }
     
@@ -216,7 +276,7 @@ namespace Psi {
     
     PSI_TVM_VALUE_IMPL(ParameterPlaceholder, Value);
 
-    ValuePtr<ParameterPlaceholder> Context::new_function_type_parameter(const ValuePtr<>& type, const SourceLocation& location) {
+    ValuePtr<ParameterPlaceholder> Context::new_placeholder_parameter(const ValuePtr<>& type, const SourceLocation& location) {
       return ValuePtr<ParameterPlaceholder>(::new ParameterPlaceholder(*this, type, location));
     }
 

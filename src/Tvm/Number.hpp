@@ -18,7 +18,6 @@ namespace Psi {
       
     public:
       BooleanType(Context& context, const SourceLocation& location);
-      static ValuePtr<BooleanType> get(Context& context, const SourceLocation& location);
     };
 
     class BooleanValue : public Constructor {
@@ -31,8 +30,6 @@ namespace Psi {
       BooleanValue(Context& context, bool value, const SourceLocation& location);
       /// \brief Get the value of this constant.
       bool value() const {return m_value;}
-
-      static ValuePtr<BooleanValue> get(Context& context, bool value, const SourceLocation& location);
     };
 
     class IntegerType : public Type {
@@ -58,8 +55,6 @@ namespace Psi {
       unsigned bits() const {return value_bits(m_width);}
       
       IntegerType(Context& context, Width width, bool is_signed, const SourceLocation& location);
-      static ValuePtr<IntegerType> get(Context& context, Width width, bool is_signed, const SourceLocation& location);
-      static ValuePtr<IntegerType> get_intptr(Context& context, const SourceLocation& location);
 
       static unsigned value_bits(IntegerType::Width width);
       
@@ -85,8 +80,6 @@ namespace Psi {
       ValuePtr<IntegerType> type() const {return value_cast<IntegerType>(Value::type());}
 
       IntegerValue(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location);
-      static ValuePtr<IntegerValue> get(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location);
-      static ValuePtr<IntegerValue> get_intptr(Context& context, unsigned n, const SourceLocation& location);
     };
 
     class FloatType : public Type {
@@ -106,7 +99,6 @@ namespace Psi {
       Width width() const {return m_width;}
 
       FloatType(Context& context, Width width, const SourceLocation& location);
-      static ValuePtr<FloatType> get(Context& context, Width width, const SourceLocation& location);
       
     private:
       Width m_width;
@@ -130,7 +122,6 @@ namespace Psi {
       ValuePtr<FloatType> type() const {return value_cast<FloatType>(Value::type());}
 
       FloatValue(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location);
-      static ValuePtr<FloatValue> get(Context& context, FloatType::Width width, unsigned exponent, const char *mantissa, const SourceLocation& location);
     };
     
     /**
@@ -192,7 +183,6 @@ namespace Psi {
       const ValuePtr<>& false_value() const {return m_false_value;}
 
       Select(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location);
-      static ValuePtr<Select> get(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location);
 
     private:
       ValuePtr<> m_condition;

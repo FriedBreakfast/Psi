@@ -48,6 +48,7 @@ namespace Psi {
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const SourceLocation& location);
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location);
       static ValuePtr<> upref(Context& context, const SourceLocation& location);
+      static ValuePtr<> upref_cons(const ValuePtr<>& member, const SourceLocation& location);
       static ValuePtr<> upref_cons(const ValuePtr<>& member, const ValuePtr<>& parent, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, unsigned length, const SourceLocation& location);
@@ -155,8 +156,7 @@ namespace Psi {
       static ValuePtr<> select(const ValuePtr<>&, const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> specialize(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
       
-      static ValuePtr<> catch_type(Context&, const SourceLocation& location);
-      static ValuePtr<> catch_(const ValuePtr<>&,unsigned, const SourceLocation& location);
+      static ValuePtr<> apply(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
     };
   }
 }
