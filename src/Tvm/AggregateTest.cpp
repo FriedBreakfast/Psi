@@ -19,7 +19,7 @@ namespace Psi {
       const char *src =
         "%s = define struct i32 i32;\n"
         "%f = function (%a:pointer %s) > (pointer %s) {\n"
-        " return (outer_ptr (struct_ep %a #i0));\n"
+        " return (outer_ptr (struct_ep %a #i1));\n"
         "};\n";
 
       typedef void* (*FunctionType) (void*);

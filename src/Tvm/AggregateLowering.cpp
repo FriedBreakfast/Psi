@@ -233,14 +233,14 @@ namespace Psi {
       }
       
       static LoweredValue element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
+        ValuePtr<> base = rewriter.rewrite_value_stack(term->pointer());
         if (ValuePtr<ArrayMember> array_m = dyn_cast<ArrayMember>(term->member())) {
-          return LoweredValue(array_ptr_offset(rewriter, array_m->array_type(), term->pointer(), array_m->index(), term->location()), true);
+          return LoweredValue(array_ptr_offset(rewriter, array_m->array_type(), base, array_m->index(), term->location()), true);
         } else if (ValuePtr<StructMember> struct_m = dyn_cast<StructMember>(term->member())) {
-          return LoweredValue(struct_ptr_offset(rewriter, struct_m->struct_type(), term->pointer(), struct_m->index(), term->location()), true);
+          return LoweredValue(struct_ptr_offset(rewriter, struct_m->struct_type(), base, struct_m->index(), term->location()), true);
         } else if (ValuePtr<UnionMember> union_m = dyn_cast<UnionMember>(term->member())) {
-          return LoweredValue(rewriter.rewrite_value_stack(term->pointer()), true);
+          return LoweredValue(base, true);
         } else {
-          ValuePtr<> base = rewriter.rewrite_value_stack(term->pointer());
           PSI_ASSERT(base->type() == FunctionalBuilder::byte_pointer_type(rewriter.context(), term->location()));
           return LoweredValue(FunctionalBuilder::pointer_offset(base, rewriter.rewrite_value_stack(term->member()), term->location()), true);
         }
@@ -248,11 +248,20 @@ namespace Psi {
       
       static LoweredValue outer_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<OuterPtr>& term) {
         ValuePtr<PointerType> ptr_ty = value_cast<PointerType>(term->pointer()->type());
-        ValuePtr<> base = rewriter.rewrite_value_stack(term->pointer());
+        ValuePtr<> base = FunctionalBuilder::pointer_cast(rewriter.rewrite_value_stack(term->pointer()),
+                                                          FunctionalBuilder::byte_type(rewriter.context(), term->location()),
+                                                          term->location());
         ValuePtr<> offset = FunctionalBuilder::neg(rewriter.rewrite_value_stack(ptr_ty->upref()->member()), term->location());
         return LoweredValue(FunctionalBuilder::pointer_offset(base, offset, term->location()), true);
       }
 
+      /**
+       * Get a pointer to an array element from an array pointer.
+       * 
+       * This is common to both array_element_rewrite() and element_ptr_rewrite().
+       * 
+       * \param base Pointer to array. This must have already been lowered.
+       */
       static ValuePtr<> array_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayType>& array_ty, const ValuePtr<>& base, const ValuePtr<>& index, const SourceLocation& location) {
         LoweredType array_ty_l = rewriter.rewrite_type(array_ty);
         if (array_ty_l.heap_type()) {
@@ -288,6 +297,13 @@ namespace Psi {
         return LoweredValue(FunctionalBuilder::mul(element_size, term->index(), term->location()), true);
       }
       
+      /**
+       * Get a pointer to an array element from an array pointer.
+       * 
+       * This is common to both struct_element_rewrite() and element_ptr_rewrite().
+       * 
+       * \param base Pointer to struct. This must have already been lowered.
+       */
       static ValuePtr<> struct_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<StructType>& struct_ty, const ValuePtr<>& base, unsigned index, const SourceLocation& location) {
         LoweredType struct_ty_rewritten = rewriter.rewrite_type(struct_ty);
         if (struct_ty_rewritten.heap_type()) {
