@@ -606,7 +606,7 @@ FunctionLowering::VariableResult FunctionLowering::run_jump(Scope& scope, const 
 /**
  * \brief Lower a function call.
  */
-void FunctionLowering::run_call(Scope& scope, const TreePtr<FunctionCall>& call, const Variable& var, Scope& following_scope) {
+FunctionLowering::VariableResult FunctionLowering::run_call(Scope& scope, const TreePtr<FunctionCall>& call, const Variable& var, Scope& following_scope) {
   PSI_NOT_IMPLEMENTED();
 }
 
@@ -820,11 +820,13 @@ void FunctionLowering::copy_construct(Scope& scope, const TreePtr<Term>& type, c
     Tvm::ValuePtr<> value = builder().load(src, location);
     builder().store(value, dest, location);
   } else {
+#if 0
     TreePtr<FunctionCall> call;
     Variable call_var(call->type, scope);
     call_var.assign(run_call(scope, call, call_var, scope));
     if (call_var.storage() != local_functional)
       compile_context().error_throw(location, "Copy constructor has non-primitive result");
+#endif
   }
 }
 
@@ -835,7 +837,7 @@ void FunctionLowering::move_construct(Scope& scope, const TreePtr<Term>& type, c
     Tvm::ValuePtr<> value = builder().load(src, location);
     builder().store(value, dest, location);
   } else {
-    builder().call(run_functional(scope, tci.move_constructor, location), dest, src, location);
+    //builder().call(run_functional(scope, tci.move_constructor, location), dest, src, location);
   }
 }
 
@@ -843,7 +845,7 @@ void FunctionLowering::move_construct(Scope& scope, const TreePtr<Term>& type, c
 void FunctionLowering::destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& ptr, const SourceLocation& location) {
   TypeConstructorInfo tci = type_constructor_info(type);
   if (!tci.primitive) {
-    builder().call(run_functional(scope, tci.destructor, location), ptr, location);
+    //builder().call(run_functional(scope, tci.destructor, location), ptr, location);
   }
 }
 

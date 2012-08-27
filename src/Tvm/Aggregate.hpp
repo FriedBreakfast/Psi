@@ -36,27 +36,6 @@ namespace Psi {
     };
     
     /**
-     * \brief Type which enables single dispatch.
-     */
-    class BaseType : public Type {
-      PSI_TVM_FUNCTIONAL_DECL(BaseType)
-    public:
-    };
-
-    /**
-     * \brief Pointer type which enables single dispatch.
-     */
-    class BasePtr : public Type {
-      PSI_TVM_FUNCTIONAL_DECL(BasePtr)
-      
-      ValuePtr<BaseType> m_base_type;
-      
-    public:
-      BasePtr(const ValuePtr<BaseType>& base_type, const SourceLocation& location);
-      const ValuePtr<BaseType>& base_type() const {return m_base_type;}
-    };
-
-    /**
      * \brief Pointer-to-member type.
      */
     class Member : public Type {
@@ -72,23 +51,70 @@ namespace Psi {
     };
     
     /**
-     * \brief Interior pointer type.
+     * \brief Aggregate member access when using pointers.
+     * 
+     * \see ArrayMember, StructMember, UnionMember
      */
-    class MemberPtr : public Type {
-      PSI_TVM_FUNCTIONAL_DECL(MemberPtr)
-      
-      ValuePtr<Member> m_member;
+    class ElementPtr : public AggregateOp {
+      PSI_TVM_FUNCTIONAL_DECL(ElementPtr)
       
     public:
-      MemberPtr(const ValuePtr<Member>& member, const SourceLocation& location);
-      const ValuePtr<Member>& member() const {return m_member;}
+      ElementPtr(const ValuePtr<>& pointer, const ValuePtr<>& member, const SourceLocation& location);
+      
+      /// \brief Get the pointer being subscripted
+      const ValuePtr<>& pointer() const {return m_pointer;}
+      /// \brief Get the member being accessed
+      const ValuePtr<>& member() const {return m_member;}
+      
+    private:
+      ValuePtr<> m_pointer;
+      ValuePtr<> m_member;
     };
     
-    PSI_TVM_UNARY_OP_DECL(MemberInner, UnaryOp)
-    PSI_TVM_UNARY_OP_DECL(MemberOuter, UnaryOp)
-    PSI_TVM_BINARY_OP_DECL(MemberApply, BinaryOp)
-    PSI_TVM_BINARY_OP_DECL(MemberApplyPtr, BinaryOp)
-    PSI_TVM_BINARY_OP_DECL(MemberCombine, BinaryOp)
+    class OuterPtr : public AggregateOp {
+      PSI_TVM_FUNCTIONAL_DECL(OuterPtr)
+      
+    public:
+      OuterPtr(const ValuePtr<>& pointer, const SourceLocation& location);
+      
+      /// \brief Get the pointer
+      const ValuePtr<>& pointer() const {return m_pointer;}
+      
+    private:
+      ValuePtr<> m_pointer;
+    };
+    
+    /**
+     * \brief Map a member pointer to a byte offset.
+     */
+    class MemberOffset : public AggregateOp {
+      PSI_TVM_FUNCTIONAL_DECL(MemberOffset)
+      
+    public:
+      MemberOffset(const ValuePtr<>& member, const SourceLocation& location);
+      
+      /// \brief Get the member.
+      const ValuePtr<>& member() const {return m_member;}
+      
+    private:
+      ValuePtr<> m_member;
+    };
+    
+    class UpwardReference : public AggregateOp {
+      PSI_TVM_FUNCTIONAL_DECL(UpwardReference)
+      
+    public:
+      UpwardReference(const ValuePtr<>& member, const ValuePtr<>& next, const SourceLocation& location);
+      
+      /// \brief Get the current member pointer.
+      const ValuePtr<>& member() const {return m_member;}
+      /// \brief Get the next upref in the chain.
+      const ValuePtr<>& next() const {return m_next;}
+      
+    private:
+      ValuePtr<> m_member;
+      ValuePtr<> m_next;
+    };
     
     /**
      * \brief The type of a BlockTerm.
@@ -175,13 +201,15 @@ namespace Psi {
     class PointerType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(PointerType)
     public:
-      PointerType(const ValuePtr<>& target_type, const SourceLocation& location);
+      PointerType(const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location);
 
       /// \brief Get the type being pointed to.
       const ValuePtr<>& target_type() const {return m_target_type;}
+      ValuePtr<UpwardReference> upref() const {return value_cast<UpwardReference>(m_upref);}
 
     private:
       ValuePtr<> m_target_type;
+      ValuePtr<> m_upref;
     };
 
     /**
@@ -190,16 +218,19 @@ namespace Psi {
     class PointerCast : public AggregateOp {
       PSI_TVM_FUNCTIONAL_DECL(PointerCast)
     public:
-      PointerCast(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const SourceLocation& location);
+      PointerCast(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location);
 
       /// \brief Get the pointer being cast
       const ValuePtr<>& pointer() const {return m_pointer;}
       /// \brief Get the target type of the cast
       const ValuePtr<>& target_type() const {return m_target_type;}
+      /// \brief Get the upward reference type to cast to.
+      ValuePtr<UpwardReference> upref() const {return value_cast<UpwardReference>(m_upref);}
       
     private:
       ValuePtr<> m_pointer;
       ValuePtr<> m_target_type;
+      ValuePtr<> m_upref;
     };
     
     /**
@@ -289,25 +320,20 @@ namespace Psi {
     };
 
     /**
-     * \brief Get a pointer to an element of an array
-     * from a pointer to an array.
+     * \brief Array member pointer.
      */
-    class ArrayElementPtr : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(ArrayElementPtr)
+    class ArrayMember : public AggregateOp {
+      PSI_TVM_FUNCTIONAL_DECL(ArrayMember)
     public:
-      ArrayElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location);
+      ArrayMember(const ValuePtr<>& array_type, const ValuePtr<>& index, const SourceLocation& location);
 
       /// \brief Get the array being subscripted
-      const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
+      ValuePtr<ArrayType> array_type() const {return value_cast<ArrayType>(m_array_type);}
       /// \brief Get the index
       const ValuePtr<>& index() const {return m_index;}
-      /// \brief Get the array type being subscripted
-      ValuePtr<ArrayType> aggregate_type() const {return value_cast<ArrayType>(value_cast<PointerType>(aggregate_ptr()->type().get())->target_type());}
-      
-      static ValuePtr<ArrayElementPtr> get(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index);
       
     private:
-      ValuePtr<> m_aggregate_ptr;
+      ValuePtr<> m_array_type;
       ValuePtr<> m_index;
     };
 
@@ -373,41 +399,18 @@ namespace Psi {
      * \brief Get a pointer to a member of a struct from a
      * pointer to the struct.
      */
-    class StructElementPtr : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(StructElementPtr)
+    class StructMember : public AggregateOp {
+      PSI_TVM_FUNCTIONAL_DECL(StructMember)
     public:
-      StructElementPtr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location);
+      StructMember(const ValuePtr<>& struct_type, unsigned index, const SourceLocation& location);
 
       /// \brief Get the struct being subscripted
-      const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
+      ValuePtr<StructType> struct_type() const {return value_cast<StructType>(m_struct_type);}
       /// \brief Get the index
       unsigned index() const {return m_index;}
-      /// \brief Get the struct type being subscripted
-      ValuePtr<StructType> aggregate_type() const {return value_cast<StructType>(value_cast<PointerType>(aggregate_ptr()->type().get())->target_type());}
       
     private:
-      ValuePtr<> m_aggregate_ptr;
-      unsigned m_index;
-    };
-
-    /**
-     * \brief Get the offset of a struct member
-     * 
-     * This should be considered an internal operation, and not be
-     * created by the user.
-     */
-    class StructElementOffset : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(StructElementOffset)
-    public:
-      StructElementOffset(const ValuePtr<>& aggregate_type, unsigned index, const SourceLocation& location);
-
-      /// \brief Get the struct type
-      ValuePtr<StructType> aggregate_type() const {return value_cast<StructType>(m_aggregate_type);}
-      /// \brief Get the index of the member we're getting the offset of
-      unsigned index() const {return m_index;}
-      
-    private:
-      ValuePtr<> m_aggregate_type;
+      ValuePtr<> m_struct_type;
       unsigned m_index;
     };
 
@@ -474,20 +477,18 @@ namespace Psi {
      * entirely equivalent to PointerCast, but I put it in
      * because it's semantically different.
      */
-    class UnionElementPtr : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(UnionElementPtr)
+    class UnionMember : public AggregateOp {
+      PSI_TVM_FUNCTIONAL_DECL(UnionMember)
     public:
-      UnionElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member_type, const SourceLocation& location);
+      UnionMember(const ValuePtr<>& union_type, const ValuePtr<>& member_type, const SourceLocation& location);
 
       /// \brief Get the struct being subscripted
-      const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
+      ValuePtr<UnionType> union_type() const {return value_cast<UnionType>(m_union_type);}
       /// \brief Get the index
       const ValuePtr<>& member_type() const {return m_member_type;}
-      /// \brief Get the union type being subscripted
-      ValuePtr<UnionType> aggregate_type() const {return value_cast<UnionType>(value_cast<PointerType>(aggregate_ptr()->type())->target_type());}
       
     private:
-      ValuePtr<> m_aggregate_ptr;
+      ValuePtr<> m_union_type;
       ValuePtr<> m_member_type;
     };
 

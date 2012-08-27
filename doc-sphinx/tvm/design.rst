@@ -45,21 +45,21 @@ Virtual functions
 Virtual function calls are performed using a combination of member pointers and base pointers.
 For a single dispatch scenario, the following code can be used::
 
-  %vtable = recursive (%derived : type, %offset : member %derived (apply %base %derived)) > struct 
-    (pointer (function (member_ptr %offset) > i8))
+  %vtable = recursive (%tag : member) > struct 
+    (pointer (function (pointer (apply %base %tag) %tag) > i8))
   ;
   
-  %base = recursive (%derived : type, %offset : member %derived (apply %base %derived)) > struct
-    (pointer (apply %vtable %derived %offset))
+  %base = recursive (%tag : member) > struct
+    (pointer (apply %vtable %tag))
   ;
   
-  %func = function (%obj_wrapped : exists (%derived : type, %offset : member %derived (apply %base %derived)) > member_ptr %offset) > i8 {
+  %func = function (%obj_wrapped : exists (%tag : member) > pointer (apply %base %tag) %tag) > i8 {
     %obj = unwrap %obj_wrapped;
-    %derived = unwrap_param %obj_wrapped #i0;
-    %offset = unwrap_param %obj_wrapped #i1;
-    %vptr = load (struct_ep (member_inner %obj) #i0);
+    %tag = unwrap_param %obj_wrapped #i0;
+    %vptr = load (struct_ep %obj #i0);
     %callback = load (struct_ep %vptr #i0);
     %val = call %callback %obj;
+    return %val;
   };
 
 See:

@@ -79,6 +79,18 @@ namespace Psi {
      * A function pass which removes aggregate operations by rewriting
      * them in terms of pointer offsets, so that later stages need not
      * handle them.
+     * 
+     * A note on pointer handling: I do not traverse pointer types during
+     * type lowering. This breaks a potentially hazardous reference cycle
+     * introduced by having dependent types: it is possible to have a
+     * type such as:
+     * 
+     * \code r = recursive (%n:iptr) > pointer (apply r (add %n #ip1)); \endcode
+     * 
+     * This would lead to an infinite recursion. On the stack, pointers may
+     * be byte pointers or other pointer types: I do not generate type casts
+     * before they are required so the pointed-to type should not be depended
+     * upon.
      */
     class AggregateLoweringPass : public ModuleRewriter {
     public:

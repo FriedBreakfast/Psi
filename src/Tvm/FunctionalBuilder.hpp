@@ -3,7 +3,6 @@
 
 #include "../Utility.hpp"
 
-#include "Aggregate.hpp"
 #include "Core.hpp"
 #include "Number.hpp"
 
@@ -47,29 +46,19 @@ namespace Psi {
       /// \name Aggregate types
       //@{
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const SourceLocation& location);
+      static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location);
+      static ValuePtr<> upref(const ValuePtr<>& member, const ValuePtr<>& parent, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, unsigned length, const SourceLocation& location);
       static ValuePtr<> struct_type(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
       static ValuePtr<> union_type(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
       //@}
       
-      /// \name Base and member pointers
-      //@{
-      static ValuePtr<> base_ptr(const ValuePtr<>& base, const SourceLocation& location);
-      static ValuePtr<Member> member(const ValuePtr<>& outer, const ValuePtr<>& inner, const SourceLocation& location);
-      static ValuePtr<MemberPtr> member_ptr(const ValuePtr<Member>& offset, const SourceLocation& location);
-      static ValuePtr<> member_apply(const ValuePtr<>& ptr, const ValuePtr<>& offset, const SourceLocation& location);
-      static ValuePtr<> member_apply_ptr(const ValuePtr<>& ptr, const ValuePtr<>& offset, const SourceLocation& location);
-      static ValuePtr<> member_combine(const ValuePtr<>& offset1, const ValuePtr<>& offset2, const SourceLocation& location);
-      static ValuePtr<> member_inner(const ValuePtr<>& ptr, const SourceLocation& location);
-      static ValuePtr<> member_outer(const ValuePtr<>& ptr, const SourceLocation& location);
-      //@}
-      
       /// \name Aggregate values
       //@{
       static ValuePtr<> array_value(const ValuePtr<>&,const std::vector<ValuePtr<> >&, const SourceLocation& location);
       static ValuePtr<> struct_value(Context&,const std::vector<ValuePtr<> >&, const SourceLocation& location);
-      static ValuePtr<> union_value(const ValuePtr<UnionType>&,const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> union_value(const ValuePtr<>&,const ValuePtr<>&, const SourceLocation& location);
       //@}
       
       /// \name Aggregate element access
@@ -83,6 +72,13 @@ namespace Psi {
       
       /// \name Aggregate pointer functions
       //@{
+      static ValuePtr<> element_ptr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member, const SourceLocation& location);
+      static ValuePtr<> outer_ptr(const ValuePtr<>& base, const SourceLocation& location);
+      static ValuePtr<> member(const ValuePtr<>& outer, const ValuePtr<>& inner, const SourceLocation& location);
+      static ValuePtr<> array_member(const ValuePtr<>& array_ty, const ValuePtr<>& index, const SourceLocation& location);
+      static ValuePtr<> struct_member(const ValuePtr<>& struct_ty, unsigned index, const SourceLocation& location);
+      static ValuePtr<> union_member(const ValuePtr<>& union_ty, const ValuePtr<>& member_ty, const SourceLocation& location);
+
       static ValuePtr<> array_element_ptr(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> array_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
       static ValuePtr<> struct_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
@@ -90,10 +86,9 @@ namespace Psi {
       static ValuePtr<> union_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
       //@}
       
-      static ValuePtr<> struct_element_offset(const ValuePtr<>&, unsigned, const SourceLocation& location);
-      
       /// \name Pointer operations
       //@{
+      static ValuePtr<> pointer_cast(const ValuePtr<>&, const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> pointer_cast(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> pointer_offset(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> pointer_offset(const ValuePtr<>&, unsigned, const SourceLocation& location);

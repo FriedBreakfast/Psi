@@ -8,6 +8,18 @@ Types
 
 Primitive types, and operations for constructing aggregate types.
 
+array
+"""""
+
+``array {t} {n}``
+
+Array type.
+
+``{t}``
+  Type of each element in the array.
+``{n}``
+  Length.
+
 bool
 """"
 
@@ -68,30 +80,22 @@ This allows a pointer to a ``{type2}`` to be obtained from a pointer to a ``{typ
 ``{type2}``
   A type which is a member of ``{type1}``.
 
-.. _psi.tvm.instructions.member_ptr:
-
-member_ptr
-""""""""""
-
-``member_ptr {member}``
-
-An interior pointer to a data structure.
-This is a restricted variation of a pointer which allows retrieval of the outer data structure from the inner one given the offset.
-
-``{member}``
-  Must be a value of type ``member``.
-
 .. _psi.tvm.instructions.pointer:
 
 pointer
 """""""
 
-``pointer {type}``
-  
+``pointer {type} [{upwards}]``
+
 A reference to a value in memory of type ``{type}``.
 
 ``{type}``
   Pointed-to type.
+``{upwards}``
+  A trail of how this pointer was obtained, which allows reverse member lookup to be performed.
+  If this is empty, it is assumed to be ``exists (%t) > %t``.
+
+.. _psi.tvm.instructions.struct:
 
 struct
 """"""
@@ -162,9 +166,8 @@ Specialize a recursive type.
 
 ``{recursive}``
   A ``recursive`` type or value.
-``{parameters...}```
+``{parameters...}``
   A list of parameters to specialize the generic type with.
-  
   
 .. _psi.tvm.instructions.exists:
 
@@ -174,11 +177,29 @@ exists
 ``exists ({parameters...}) > {result}``
 
 Turn an expression with a specific type into a generic one.
+The parameter list may be empty, although this would be unusual since then the ``exists`` term would serve no purpose.
 
 specialize
 """"""""""
 
-Eliminate phantom parameters from a function pointer.
+``specialize {f} {parameters...}``
+
+Eliminate phantom parameters from a function pointer, thus reducing the general function to a more specific case.
+
+``{f}``
+  Function pointer.
+``{parameters..}``
+  Parameter list. This list must be shorter than the number of phantom parameters to the function.
+
+.. _psi.tvm.instructions.recursive:
+
+recursive
+"""""""""
+
+``recursive [({parameters})] > {result}``
+
+Construct a recursive type.
+This is not an instruction but a global declaration, and is the only way a type can contain references to itself (i.e. self pointers), since this is how a type is named.
 
 .. _psi.tvm.instructions.unwrap:
 
@@ -187,7 +208,7 @@ unwrap
 
 ``unwrap {e}``
 
-Take an :ref:`psi.tvm.instructions.exists` value and extract the target value.
+Take an expression whose type is a :ref:`psi.tvm.instructions.exists` value and extract the target value.
 
 .. _psi.tvm.instructions.unwrap_param:
 
@@ -199,12 +220,80 @@ unwrap_param
 The parameter implicitly applied by :ref:`psi.tvm.instructions.unwrap` to create
 the result value.
 
+upref
+"""""
+
+``upref {m} [{n}]``
+
+Upward reference, describing the data structure containing a pointer.
+
+``{m}``
+  Member.
+``{n}``
+  Another upref.
 
 Aggregate operations
 --------------------
 
 Operations for constructing and manipulating aggregate types in virtual registers,
 and manipulating pointers to aggregate types.
+
+array_el
+""""""""
+
+``array_el {arr} {n}``
+
+Get the *n*\th element of an array.
+
+array_ep
+""""""""
+
+``array_ep {ptr} {n}``
+
+Alias for ``element_ptr {ptr} (array_m {ty} {n})``, where ``{ty}`` is an array type and ``{n}`` is the index.
+
+.. _psi.tvm.instructions.array_m:
+
+array_m
+"""""""
+
+``array_m {ty} {n}``
+
+Construct a member pointer into an array.
+
+``{ty}``
+  An array type.
+``{n}``
+  Array index.
+
+array_v
+"""""""
+
+``array_v {ty} {elements...}``
+
+Array value constructor.
+
+``{ty}``
+  Array element type.
+  This argument is required so that the array type is known when it has no elements.
+``{elements...}``
+  List of values of type ``{ty}``.
+  The array length is inferred from the length of this list.
+
+element_ptr
+"""""""""""
+
+``element_ptr {ptr} {member}``
+
+Get a pointer to a member of an aggregate structure.
+
+``{ptr}``
+  Pointer to outer structure.
+``{member}``
+  Member pointer.
+  This should be obtained via :ref:`psi.tvm.instructions.array_m`, :ref:`psi.tvm.instructions.struct_m` or :ref:`psi.tvm.instructions.union_m`.
+  
+The reason that ``{member}`` is not simply a number is to allow the type system to correctly type check the :ref:`psi.tvm.instructions.outer_ptr` instruction.
 
 empty_v
 """""""
@@ -213,10 +302,35 @@ empty_v
 
 Value of the empty type.
 
+.. _psi.tvm.instructions.outer_ptr:
+
+member_offset
+"""""""""""""
+
+``member_offset {m}``
+
+Translate a member pointer to a byte offset.
+
+``{m}``
+  Member pointer.
+  
+.. note:: This should not normally be used in TVM input unless doing low level pointer manipulation, since it strips type information away.
+
+outer_ptr
+"""""""""
+
+``outer_ptr {ptr}``
+
+Get a pointer to the data structure containing ``{ptr}``.
+In order to work, the type of ``{ptr}`` must be sufficiently visible that the second argument to :ref:`psi.tvm.instructions.pointer` is known.
+
+``{ptr}``
+  Pointer to interior of a data structure.
+
 pointer_cast
 """"""""""""
 
-``pointer_cast {ptr} {type}``
+``pointer_cast {ptr} {type} [{upwards}]``
 
 Cast a pointer to a different pointer type.
 The result type of this instruction is ``pointer {type}``.
@@ -227,6 +341,8 @@ The result type of this instruction is ``pointer {type}``.
 ``{type}``
   Type to cast the pointer to.
   Note that this is not a pointer type itself unless the result is a pointer to a pointer.
+``{upwards}``
+  Upref list for the new pointer.
 
 pointer_offset
 """"""""""""""
@@ -248,6 +364,24 @@ struct_el
 struct_ep
 """""""""
 
+``struct_ep {ptr} {n}``
+
+This is an alias for ``element_ptr {ptr} (struct_m {ty} {n})`` where ``{ty}`` is the type pointed to by ``ptr``.
+
+.. _psi.tvm.instructions.struct_m:
+
+struct_m
+""""""""
+
+``struct_m {ty} {n}``
+
+Structure member pointer.
+
+``{ty}``
+  A :ref:`psi.tvm.instructions.struct` type.
+``{n}``
+  Index into ``{ty}``.
+
 struct_v
 """"""""
 
@@ -268,6 +402,11 @@ union_el
 union_ep
 """"""""
 
+.. _psi.tvm.instructions.union_m:
+
+union_m
+"""""""
+
 union_v
 """""""
 
@@ -281,101 +420,6 @@ Zero-initialized value of any type.
 ``{type}``
   Result type of this operation.
 
-
-Member pointers
----------------
-
-member_apply
-""""""""""""
-
-``member_apply {ptr} {member}``
-
-Use a member pointer to get a pointer to the inner value from the outer value.
-
-``{ptr}``
-  A pointer, of type ``pointer {t1}``.
-``{member}``
-  A pointer to member, which must be of type ``member {t1} {t2}``.
-  
-The result of this operation is a ``pointer {t2}``.
-
-member_combine
-""""""""""""""
-
-``member_combine {m1} {m2}``
-
-Combine two member pointers to a single one.
-
-``{m1}``
-  First member pointer.
-  This should have type ``member {t1} {t2}``.
-``{m2}``
-  Second member pointer.
-  This should have type ``member {t2} {t3}``.
-  
-Given the types of each parameter, the result of this operation will have type ``member {t1} {t3}``.
-
-.. _psi.tvm.instructions.member_inner:
-
-member_inner
-""""""""""""
-
-``member_inner {mp}``
-
-Take a ``member_ptr`` and return a pointer to the inner type.
-
-``{mp}``
-  A ``member_ptr`` value.
-  
-If ``{mp}`` has type ``member_ptr {member}``, and then ``{member}`` has type ``member {t1} {t2}``,
-``member_inner {mp}`` has type ``pointer {t2}``.
-This operation works (produces a non-phantom result) even if ``{member}`` is a phantom value.
-
-.. _psi.tvm.instructions.member_outer:
-
-member_outer
-""""""""""""
-
-``member_outer {mp}``
-
-``{mp}``
-  A ``member_ptr`` value.
-
-If ``{mp}`` has type ``member_ptr {member}``, and then ``{member}`` has type ``member {t1} {t2}``,
-``member_inner {mp}`` has type ``pointer {t1}``.
-Note that it will often be the case that ``{member}`` is a phantom value, since this mechanism is present to implement :ref:`virtual functions <psi.tvm.virtual_functions>`.
-In this case the result of this operation will also be a phantom value.
-
-.. _psi.tvm.instructions.member_ptr_apply:
-
-member_ptr_apply
-""""""""""""""""
-
-``member_ptr_apply {ptr} {member}``
-
-Use a member pointer to get a ``member_ptr`` from the outer value.
-
-``{ptr}``
-  A pointer, of type ``pointer {t1}``.
-``{member}``
-  A pointer to member, which must be of type ``member {t1} {t2}``.
-
-The result of this operation is a ``member_ptr {member}``.
-
-member_ptr_combine
-""""""""""""""""""
-
-``member_ptr_combine {ptr} {member}``
-
-Combine a :ref:`psi.tvm.instructions.member_ptr` with a :ref:`psi.tvm.instructions.member`
-to produce a new :ref:`psi.tvm.instructions.member_ptr`.
-
-``{ptr}``
-  A :ref:`psi.tvm.instructions.member_ptr`. Must have type ``member_ptr {t1} {t2}``.
-``{member}``
-  A member offset. Must have type ``member {t2} {t3}``.
-  
-Given these type assignments, the result has type ``member_ptr {t1} {t3}``.
 
 Arithmetic
 ----------

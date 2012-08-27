@@ -87,11 +87,28 @@ namespace Psi {
      * \brief Get a the type of a pointer to a type.
      * 
      * \param target Type being pointed to.
+     * \param upref Origin of this pointer.
+     */
+    ValuePtr<> FunctionalBuilder::pointer_type(const ValuePtr<>& target, const ValuePtr<>& upref, const SourceLocation& location) {
+      return target->context().get_functional(PointerType(target, upref, location));
+    }
+
+    /**
+     * \brief Get a the type of a pointer to a type.
+     * 
+     * \param target Type being pointed to.
      */
     ValuePtr<> FunctionalBuilder::pointer_type(const ValuePtr<>& target, const SourceLocation& location) {
-      return target->context().get_functional(PointerType(target, location));
+      return pointer_type(target, ValuePtr<>(), location);
     }
     
+    /**
+     * \brief Get an upward reference descriptor.
+     */
+    ValuePtr<> FunctionalBuilder::upref(const ValuePtr<>& member, const ValuePtr<>& parent, const SourceLocation& location) {
+      return member->context().get_functional(UpwardReference(member, parent, location));
+    }
+
     /**
      * \brief Get an array type.
      * 
@@ -131,40 +148,57 @@ namespace Psi {
     }
     
     /**
+     * \brief Get an element_ptr operation.
+     * 
+     * \param aggregate_ptr Pointer to an aggregate value.
+     * \param member Which member of the aggregate to get a pointer to.
+     */
+    ValuePtr<> FunctionalBuilder::element_ptr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member, const SourceLocation& location) {
+      ValuePtr<> result = aggregate_ptr->context().get_functional(ElementPtr(aggregate_ptr, member, location));
+      if (isa<UndefinedValue>(aggregate_ptr) || isa<UndefinedValue>(member))
+        return undef(result->type(), location);
+      return result;
+    }
+    
+    /**
+     * \brief Get an outer_ptr operation.
+     */
+    ValuePtr<> FunctionalBuilder::outer_ptr(const ValuePtr<>& base, const SourceLocation& location) {
+      ValuePtr<> result = base->context().get_functional(OuterPtr(base, location));
+      if (isa<UndefinedValue>(result))
+        return undef(result->type(), location);
+      return result;
+    }
+
+    /**
      * \brief Get a pointer to member type.
      */
-    ValuePtr<Member> FunctionalBuilder::member(const ValuePtr<>& outer, const ValuePtr<>& inner, const SourceLocation& location) {
+    ValuePtr<> FunctionalBuilder::member(const ValuePtr<>& outer, const ValuePtr<>& inner, const SourceLocation& location) {
       return outer->context().get_functional(Member(outer, inner, location));
     }
     
     /**
-     * \brief Get an interior pointer type.
+     * \brief Get a member pointer for an array.
      */
-    ValuePtr<MemberPtr> FunctionalBuilder::member_ptr(const ValuePtr<Member>& offset, const SourceLocation& location) {
-      return offset->context().get_functional(MemberPtr(offset, location));
-    }
-    
-    ValuePtr<> FunctionalBuilder::member_apply(const ValuePtr<>& ptr, const ValuePtr<>& offset, const SourceLocation& location) {
-      return ptr->context().get_functional(MemberApply(ptr, offset, location));
-    }
-    
-    ValuePtr<> FunctionalBuilder::member_apply_ptr(const ValuePtr<>& ptr, const ValuePtr<>& offset, const SourceLocation& location) {
-      return ptr->context().get_functional(MemberApplyPtr(ptr, offset, location));
+    ValuePtr<> FunctionalBuilder::array_member(const ValuePtr<>& array_ty, const ValuePtr<>& index, const SourceLocation& location) {
+      ValuePtr<> result = array_ty->context().get_functional(ArrayMember(array_ty, index, location));
+      if (isa<UndefinedValue>(index))
+        return undef(result->type(), location);
+      return result;
     }
     
     /**
-     * \brief Combine to member pointers.
+     * \brief Get a member pointer for an array.
      */
-    ValuePtr<> FunctionalBuilder::member_combine(const ValuePtr<>& offset1, const ValuePtr<>& offset2, const SourceLocation& location) {
-      return offset1->context().get_functional(MemberCombine(offset1, offset2, location));
+    ValuePtr<> FunctionalBuilder::struct_member(const ValuePtr<>& struct_ty, unsigned index, const SourceLocation& location) {
+      return struct_ty->context().get_functional(StructMember(struct_ty, index, location));
     }
     
-    ValuePtr<> FunctionalBuilder::member_inner(const ValuePtr<>& ptr, const SourceLocation& location) {
-      return ptr->context().get_functional(MemberInner(ptr, location));
-    }
-    
-    ValuePtr<> FunctionalBuilder::member_outer(const ValuePtr<>& ptr, const SourceLocation& location) {
-      return ptr->context().get_functional(MemberOuter(ptr, location));
+    /**
+     * \brief Get a member pointer for an array.
+     */
+    ValuePtr<> FunctionalBuilder::union_member(const ValuePtr<>& union_ty, const ValuePtr<>& member_ty, const SourceLocation& location) {
+      return union_ty->context().get_functional(UnionMember(union_ty, member_ty, location));
     }
 
     /**
@@ -203,7 +237,7 @@ namespace Psi {
      * 
      * \param value Value for an element of the union.
      */
-    ValuePtr<> FunctionalBuilder::union_value(const ValuePtr<UnionType>& type, const ValuePtr<>& value, const SourceLocation& location) {
+    ValuePtr<> FunctionalBuilder::union_value(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location) {
       if (isa<UndefinedValue>(value))
         return undef(type, location);
       
@@ -315,6 +349,15 @@ namespace Psi {
       return union_element(aggregate, union_ty->member_type(index), location);
     }
     
+    namespace {
+      ValuePtr<> pointer_target_type(const ValuePtr<>& ptr) {
+        ValuePtr<PointerType> ptr_ty = dyn_cast<PointerType>(ptr->type());
+        if (!ptr_ty)
+          throw TvmUserError("Parameter is not a pointer");
+        return ptr_ty->target_type();
+      }
+    }
+    
     /**
      * \brief Get a pointer to an array element.
      * 
@@ -323,12 +366,7 @@ namespace Psi {
      * \param index Index of element to get.
      */
     ValuePtr<> FunctionalBuilder::array_element_ptr(const ValuePtr<>& array, const ValuePtr<>& index, const SourceLocation& location) {
-      ValuePtr<> result = array->context().get_functional(ArrayElementPtr(array, index, location));
-      
-      if (isa<UndefinedValue>(array) || isa<UndefinedValue>(index))
-        return undef(result->type(), location);
-      
-      return result;
+      return element_ptr(array, array_member(pointer_target_type(array), index, location), location);
     }
     
     /**
@@ -350,12 +388,7 @@ namespace Psi {
      * \param index Index of member to get a pointer to.
      */
     ValuePtr<> FunctionalBuilder::struct_element_ptr(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
-      const ValuePtr<>& result = aggregate->context().get_functional(StructElementPtr(aggregate, index, location));
-      
-      if (isa<UndefinedValue>(aggregate))
-        return undef(result->type(), location);
-      
-      return result;
+      return element_ptr(aggregate, struct_member(pointer_target_type(aggregate), index, location), location);
     }
     
     /**
@@ -366,12 +399,7 @@ namespace Psi {
      * \param type Member type to get a pointer to.
      */
     ValuePtr<> FunctionalBuilder::union_element_ptr(const ValuePtr<>& aggregate, const ValuePtr<>& type, const SourceLocation& location) {
-      const ValuePtr<>& result = aggregate->context().get_functional(UnionElementPtr(aggregate, type, location));
-      
-      if (isa<UndefinedValue>(aggregate))
-        return undef(result->type(), location);
-      
-      return result;
+      return element_ptr(aggregate, union_member(pointer_target_type(aggregate), type, location), location);
     }
     
     /**
@@ -397,17 +425,6 @@ namespace Psi {
     }
     
     /**
-     * \brief Get the offset of a struct element.
-     * 
-     * \param type Struct type being examined.
-     * 
-     * \param index Index of member to get the offset of.
-     */
-    ValuePtr<> FunctionalBuilder::struct_element_offset(const ValuePtr<>& type, unsigned index, const SourceLocation& location) {
-      return type->context().get_functional(StructElementOffset(type, index, location));
-    }
-    
-    /**
      * \brief Cast a pointer from one type to another.
      * 
      * \param ptr Original pointer.
@@ -415,7 +432,7 @@ namespace Psi {
      * \param result_type Type of pointed-to type of the new pointer (and
      * hence not necessarily a pointer type itself).
      */
-    ValuePtr<> FunctionalBuilder::pointer_cast(const ValuePtr<>& ptr, const ValuePtr<>& result_type, const SourceLocation& location) {
+    ValuePtr<> FunctionalBuilder::pointer_cast(const ValuePtr<>& ptr, const ValuePtr<>& result_type, const ValuePtr<>& upref, const SourceLocation& location) {
       ValuePtr<> my_ptr = ptr;
       // Try to get to the lowest pointer if multiple casts are involved
       while (true) {
@@ -429,16 +446,20 @@ namespace Psi {
       if (!base_type)
         throw TvmUserError("Target of pointer_cast is not a pointer");
 
-      if (base_type->target_type() == result_type) {
+      if ((base_type->target_type() == result_type) && (base_type->upref() == upref)) {
         return my_ptr;
       } else {
-        const ValuePtr<>& result = ptr->context().get_functional(PointerCast(my_ptr, result_type, location));
+        const ValuePtr<>& result = ptr->context().get_functional(PointerCast(my_ptr, result_type, upref, location));
         
         if (isa<UndefinedValue>(my_ptr))
           return undef(result->type(), location);
         
         return result;
       }
+    }
+    
+    ValuePtr<> FunctionalBuilder::pointer_cast(const ValuePtr<>& ptr, const ValuePtr<>& result_type, const SourceLocation& location) {
+      return pointer_cast(ptr, result_type, ValuePtr<>(), location);
     }
     
     /**

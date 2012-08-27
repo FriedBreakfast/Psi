@@ -24,28 +24,6 @@ namespace Psi {
         return parameters;
       }
       
-      template<typename T>
-      struct AsmCast {
-        static ValuePtr<T> impl(const std::string& name, const ValuePtr<>& ptr) {
-          ValuePtr<T> t = dyn_cast<T>(ptr);
-          if (!t)
-            throw TvmUserError(str(boost::format("%s: expected argument to be a %s") % name % T::operation));
-          return t;
-        }
-      };
-      
-      template<>
-      struct AsmCast<Value> {
-        static ValuePtr<> impl(const std::string&, const ValuePtr<>& ptr) {
-          return ptr;
-        }
-      };
-      
-      template<typename T>
-      ValuePtr<T> asm_cast(const std::string& name, const ValuePtr<>& ptr) {
-        return AsmCast<T>::impl(name, ptr);
-      }
-      
       struct NullaryOpCallback {
         typedef ValuePtr<> (*GetterType) (Context&,const SourceLocation&);
         GetterType getter;
@@ -56,39 +34,26 @@ namespace Psi {
         }
       };
       
-      template<typename A=Value, typename R=Value>
       struct UnaryOpCallback {
-        typedef ValuePtr<R> (*GetterType) (const ValuePtr<A>&,const SourceLocation&);
+        typedef ValuePtr<> (*GetterType) (const ValuePtr<>&,const SourceLocation&);
         GetterType getter;
         UnaryOpCallback(GetterType getter_) : getter(getter_) {}
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           check_n_terms(name, 1, expression);
-          ValuePtr<> arg = build_expression(context, expression.terms.front(), location);
-          return getter(asm_cast<A>(name, arg), SourceLocation(expression.location, location));
+          return getter(build_expression(context, expression.terms.front(), location), SourceLocation(expression.location, location));
         }
       };
 
-      template<typename A, typename R>
-      UnaryOpCallback<A,R> unary_op(ValuePtr<R> (*getter) (const ValuePtr<A>&,const SourceLocation&)) {
-        return UnaryOpCallback<A,R>(getter);
-      }
-
-      template<typename A, typename B, typename R>
       struct BinaryOpCallback {
-        typedef ValuePtr<R> (*GetterType) (const ValuePtr<A>&,const ValuePtr<B>&,const SourceLocation&);
+        typedef ValuePtr<> (*GetterType) (const ValuePtr<>&,const ValuePtr<>&,const SourceLocation&);
         GetterType getter;
         BinaryOpCallback(GetterType getter_) : getter(getter_) {}
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           check_n_terms(name, 2, expression);
           std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
-          return getter(asm_cast<A>(name, parameters[0]), asm_cast<B>(name, parameters[1]), SourceLocation(expression.location, location));
+          return getter(parameters[0], parameters[1], SourceLocation(expression.location, location));
         }
       };
-      
-      template<typename A, typename B, typename R>
-      BinaryOpCallback<A,B,R> binary_op(ValuePtr<R> (*getter) (const ValuePtr<A>&,const ValuePtr<B>&,const SourceLocation&)) {
-        return BinaryOpCallback<A,B,R>(getter);
-      }
       
       struct ContextArrayCallback {
         typedef ValuePtr<> (*GetterType) (Context&,const std::vector<ValuePtr<> >&,const SourceLocation&);
@@ -130,7 +95,7 @@ namespace Psi {
           const Parser::LiteralExpression& index_literal = checked_cast<const Parser::LiteralExpression&>(index);
           unsigned index_int = boost::lexical_cast<unsigned>(index_literal.value->text);
           
-          return FunctionalBuilder::struct_element(aggregate, index_int, SourceLocation(expression.location, location));
+          return getter(aggregate, index_int, SourceLocation(expression.location, location));
         }
       };
 
@@ -194,29 +159,32 @@ namespace Psi {
         ("empty", NullaryOpCallback(&FunctionalBuilder::empty_type))
         ("empty_v", NullaryOpCallback(&FunctionalBuilder::empty_value))
         ("byte", NullaryOpCallback(&FunctionalBuilder::byte_type))
-        ("pointer", unary_op(&FunctionalBuilder::pointer_type))
-        ("add", binary_op(&FunctionalBuilder::add))
-        ("sub", binary_op(&FunctionalBuilder::sub))
-        ("mul", binary_op(&FunctionalBuilder::mul))
-        ("div", binary_op(&FunctionalBuilder::div))
-        ("neg", unary_op(&FunctionalBuilder::neg))
-        ("undef", unary_op(&FunctionalBuilder::undef))
-        ("zero", unary_op(&FunctionalBuilder::zero))
-        ("array", binary_op(&FunctionalBuilder::array_type))
+        ("pointer", UnaryOpCallback(&FunctionalBuilder::pointer_type))
+        ("member", BinaryOpCallback(&FunctionalBuilder::member))
+        ("element_ptr", BinaryOpCallback(&FunctionalBuilder::element_ptr))
+        ("outer_ptr", UnaryOpCallback(&FunctionalBuilder::outer_ptr))
+        ("add", BinaryOpCallback(&FunctionalBuilder::add))
+        ("sub", BinaryOpCallback(&FunctionalBuilder::sub))
+        ("mul", BinaryOpCallback(&FunctionalBuilder::mul))
+        ("div", BinaryOpCallback(&FunctionalBuilder::div))
+        ("neg", UnaryOpCallback(&FunctionalBuilder::neg))
+        ("undef", UnaryOpCallback(&FunctionalBuilder::undef))
+        ("zero", UnaryOpCallback(&FunctionalBuilder::zero))
+        ("array", BinaryOpCallback(&FunctionalBuilder::array_type))
         ("array_v", TermPlusArrayCallback(&FunctionalBuilder::array_value))
-        ("array_el", binary_op(&FunctionalBuilder::array_element))
-        ("array_ep", binary_op(&FunctionalBuilder::array_element_ptr))
+        ("array_el", BinaryOpCallback(&FunctionalBuilder::array_element))
+        ("array_ep", BinaryOpCallback(&FunctionalBuilder::array_element_ptr))
         ("struct", ContextArrayCallback(&FunctionalBuilder::struct_type))
         ("struct_v", ContextArrayCallback(&FunctionalBuilder::struct_value))
         ("struct_el", StructElementCallback(&FunctionalBuilder::struct_element))
         ("struct_ep", StructElementCallback(&FunctionalBuilder::struct_element_ptr))
         ("union", ContextArrayCallback(&FunctionalBuilder::union_type))
-        ("union_v", binary_op(&FunctionalBuilder::union_value))
-        ("union_el", binary_op(&FunctionalBuilder::union_element))
-        ("union_ep", binary_op(&FunctionalBuilder::union_element_ptr))
+        ("union_v", BinaryOpCallback(&FunctionalBuilder::union_value))
+        ("union_el", BinaryOpCallback(&FunctionalBuilder::union_element))
+        ("union_ep", BinaryOpCallback(&FunctionalBuilder::union_element_ptr))
         ("specialize", TermPlusArrayCallback(&FunctionalBuilder::specialize))
-        ("pointer_cast", binary_op(&FunctionalBuilder::pointer_cast))
-        ("pointer_offset", binary_op(&FunctionalBuilder::pointer_offset));
+        ("pointer_cast", BinaryOpCallback(&FunctionalBuilder::pointer_cast))
+        ("pointer_offset", BinaryOpCallback(&FunctionalBuilder::pointer_offset));
 
       struct NullaryInstructionCallback {
         typedef ValuePtr<Instruction> (InstructionBuilder::*CreateType) (const SourceLocation&);

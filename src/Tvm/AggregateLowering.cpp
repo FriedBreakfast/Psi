@@ -14,6 +14,10 @@
 namespace Psi {
   namespace Tvm {
     struct AggregateLoweringPass::TypeTermRewriter {
+      static LoweredType member_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<Member>& term) {
+        return rewriter.rewrite_type(FunctionalBuilder::size_type(rewriter.context(), term->location()));
+      }
+      
       static LoweredType array_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayType>& term) {
         ValuePtr<> length = rewriter.rewrite_value_stack(term->length());
         LoweredType element_type = rewriter.rewrite_type(term->element_type());
@@ -177,6 +181,7 @@ namespace Psi {
           .add<ArrayType>(array_type_rewrite)
           .add<StructType>(struct_type_rewrite)
           .add<UnionType>(union_type_rewrite)
+          .add<Member>(member_rewrite)
           .add<Metatype>(metatype_rewrite)
           .add<MetatypeValue>(unknown_type_rewrite)
           .add<PointerType>(pointer_type_rewrite);
@@ -226,8 +231,35 @@ namespace Psi {
           return LoweredValue(rewriter.store_value(term, term->location()), false);
         }
       }
+      
+      static LoweredValue element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
+        if (ValuePtr<ArrayMember> array_m = dyn_cast<ArrayMember>(term->member())) {
+          return LoweredValue(array_ptr_offset(rewriter, array_m->array_type(), term->pointer(), array_m->index(), term->location()), true);
+        } else if (ValuePtr<StructMember> struct_m = dyn_cast<StructMember>(term->member())) {
+          return LoweredValue(struct_ptr_offset(rewriter, struct_m->struct_type(), term->pointer(), struct_m->index(), term->location()), true);
+        } else if (ValuePtr<UnionMember> union_m = dyn_cast<UnionMember>(term->member())) {
+          return LoweredValue(rewriter.rewrite_value_stack(term->pointer()), true);
+        } else {
+          ValuePtr<> base = rewriter.rewrite_value_stack(term->pointer());
+          PSI_ASSERT(base->type() == FunctionalBuilder::byte_pointer_type(rewriter.context(), term->location()));
+          return LoweredValue(FunctionalBuilder::pointer_offset(base, rewriter.rewrite_value_stack(term->member()), term->location()), true);
+        }
+      }
+      
+      static LoweredValue outer_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<OuterPtr>& term) {
+        ValuePtr<PointerType> ptr_ty = value_cast<PointerType>(term->pointer()->type());
+        ValuePtr<> base = rewriter.rewrite_value_stack(term->pointer());
+        ValuePtr<> offset = FunctionalBuilder::neg(rewriter.rewrite_value_stack(ptr_ty->upref()->member()), term->location());
+        return LoweredValue(FunctionalBuilder::pointer_offset(base, offset, term->location()), true);
+      }
 
       static ValuePtr<> array_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayType>& array_ty, const ValuePtr<>& base, const ValuePtr<>& index, const SourceLocation& location) {
+        LoweredType array_ty_l = rewriter.rewrite_type(array_ty);
+        if (array_ty_l.heap_type()) {
+          ValuePtr<> array_ptr = FunctionalBuilder::pointer_cast(base, array_ty_l.heap_type(), location);
+          return FunctionalBuilder::array_element_ptr(array_ptr, index, location);
+        }
+
         LoweredType element_ty = rewriter.rewrite_type(array_ty->element_type());
         if (element_ty.heap_type()) {
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(base, element_ty.heap_type(), location);
@@ -250,16 +282,10 @@ namespace Psi {
           return rewriter.load_value(term, element_ptr, term->location());
         }
       }
-
-      static LoweredValue array_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayElementPtr>& term) {
-        ValuePtr<> array_ptr = rewriter.rewrite_value_stack(term->aggregate_ptr());
-        ValuePtr<> index = rewriter.rewrite_value_stack(term->index());
-        
-        LoweredType array_ty = rewriter.rewrite_type(term->aggregate_type());
-        if (array_ty.heap_type())
-          return LoweredValue(FunctionalBuilder::array_element_ptr(array_ptr, index, term->location()), true);
-        
-        return LoweredValue(array_ptr_offset(rewriter, term->aggregate_type(), array_ptr, index, term->location()), true);
+      
+      static LoweredValue array_member_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayMember>& term) {
+        ValuePtr<> element_size = rewriter.rewrite_value_stack(FunctionalBuilder::type_size(term->array_type()->element_type(), term->location()));
+        return LoweredValue(FunctionalBuilder::mul(element_size, term->index(), term->location()), true);
       }
       
       static ValuePtr<> struct_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<StructType>& struct_ty, const ValuePtr<>& base, unsigned index, const SourceLocation& location) {
@@ -270,7 +296,7 @@ namespace Psi {
         }
         
         PSI_ASSERT(base->type() == FunctionalBuilder::byte_pointer_type(rewriter.context(), location));
-        ValuePtr<> offset = rewriter.rewrite_value_stack(FunctionalBuilder::struct_element_offset(struct_ty, index, location));
+        ValuePtr<> offset = rewriter.rewrite_value_stack(FunctionalBuilder::struct_member(struct_ty, index, location));
         return FunctionalBuilder::pointer_offset(base, offset, location);
       }
       
@@ -284,18 +310,8 @@ namespace Psi {
         }
       }
 
-      static LoweredValue struct_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<StructElementPtr>& term) {
-        ValuePtr<> struct_ptr = rewriter.rewrite_value_stack(term->aggregate_ptr());
-        
-        LoweredType struct_ty = rewriter.rewrite_type(term->aggregate_type());
-        if (struct_ty.heap_type())
-          return LoweredValue(FunctionalBuilder::struct_element_ptr(struct_ptr, term->index(), term->location()), true);
-        
-        return LoweredValue(struct_ptr_offset(rewriter, term->aggregate_type(), struct_ptr, term->index(), term->location()), true);
-      }
-      
-      static LoweredValue struct_element_offset_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<StructElementOffset>& term) {
-        ValuePtr<StructType> struct_ty = term->aggregate_type();
+      static LoweredValue struct_member_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<StructMember>& term) {
+        ValuePtr<StructType> struct_ty = term->struct_type();
 
         ValuePtr<> offset = FunctionalBuilder::size_value(rewriter.context(), 0, term->location());
         
@@ -323,22 +339,9 @@ namespace Psi {
           return rewriter.load_value(term, union_val.value(), term->location());
         }
       }
-
-      static LoweredValue union_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<UnionElementPtr>& term) {
-        ValuePtr<> union_ptr = rewriter.rewrite_value_stack(term->aggregate_ptr());
-        
-        LoweredType member_type = rewriter.rewrite_type(term->type());
-        LoweredType union_ty = rewriter.rewrite_type(term->aggregate_type());
-        if (union_ty.heap_type()) {
-          PSI_ASSERT(member_type.heap_type());
-          return LoweredValue(FunctionalBuilder::union_element_ptr(union_ptr, member_type.heap_type(), term->location()), true);
-        }
-        
-        if (member_type.heap_type()) {
-          return LoweredValue(FunctionalBuilder::pointer_cast(union_ptr, member_type.heap_type(), term->location()), true);
-        } else {
-          return LoweredValue(FunctionalBuilder::pointer_cast(union_ptr, FunctionalBuilder::byte_type(rewriter.context(), term->location()), term->location()), true);
-        }
+      
+      static LoweredValue union_member_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<UnionMember>& term) {
+        return LoweredValue(FunctionalBuilder::size_value(rewriter.context(), 0, term->location()), true);
       }
       
       static LoweredValue metatype_size_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<MetatypeSize>& term) {
@@ -384,16 +387,17 @@ namespace Psi {
           .add<EmptyType>(type_rewrite)
           .add<ByteType>(type_rewrite)
           .add<MetatypeValue>(type_rewrite)
+          .add<ElementPtr>(element_ptr_rewrite)
+          .add<OuterPtr>(outer_ptr_rewrite)
           .add<ArrayValue>(aggregate_value_rewrite)
           .add<StructValue>(aggregate_value_rewrite)
           .add<UnionValue>(aggregate_value_rewrite)
           .add<ArrayElement>(array_element_rewrite)
           .add<StructElement>(struct_element_rewrite)
           .add<UnionElement>(union_element_rewrite)
-          .add<ArrayElementPtr>(array_element_ptr_rewrite)
-          .add<StructElementPtr>(struct_element_ptr_rewrite)
-          .add<UnionElementPtr>(union_element_ptr_rewrite)
-          .add<StructElementOffset>(struct_element_offset_rewrite)
+          .add<ArrayMember>(array_member_rewrite)
+          .add<StructMember>(struct_member_rewrite)
+          .add<UnionMember>(union_member_rewrite)
           .add<MetatypeSize>(metatype_size_rewrite)
           .add<MetatypeAlignment>(metatype_alignment_rewrite)
           .add<PointerOffset>(pointer_offset_rewrite)
@@ -665,7 +669,7 @@ namespace Psi {
         PSI_ASSERT(ptr->type() == FunctionalBuilder::byte_pointer_type(context(), location));
         ValuePtr<> result;
         for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
-          ValuePtr<> offset = rewrite_value_stack(FunctionalBuilder::struct_element_offset(struct_ty, i, location));
+          ValuePtr<> offset = rewrite_value_stack(FunctionalBuilder::struct_member(struct_ty, i, location));
           ValuePtr<> member_ptr = FunctionalBuilder::pointer_offset(ptr, offset, location);
           result = store_value(FunctionalBuilder::struct_element(value, i, location), member_ptr, location);
         }
@@ -1165,10 +1169,10 @@ namespace Psi {
           //offset += pass().target_callback->type_size_alignment() * rewrite_value_integer();
         } else if (ValuePtr<PointerCast> ptr_cast = dyn_cast<PointerCast>(origin)) {
           origin = ptr_cast->pointer();
-        } else if (ValuePtr<StructElementPtr> struct_el = dyn_cast<StructElementPtr>(origin)) {
-          origin = struct_el->aggregate_ptr();
-        } else if (ValuePtr<UnionElementPtr> union_el = dyn_cast<UnionElementPtr>(origin)) {
-          origin = union_el->aggregate_ptr();
+        } else if (ValuePtr<ElementPtr> element_ptr = dyn_cast<ElementPtr>(origin)) {
+          origin = element_ptr->pointer();
+        } else if (ValuePtr<OuterPtr> outer_ptr = dyn_cast<OuterPtr>(origin)) {
+          origin = outer_ptr->pointer();
         } else if (isa<GlobalVariable>(origin)) {
           break;
         } else {
