@@ -157,6 +157,7 @@ namespace Psi {
       static ValuePtr<> specialize(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
       
       static ValuePtr<> apply(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
+      static ValuePtr<> unrecurse(const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> unwrap(const ValuePtr<>& value, const SourceLocation& location);
       static ValuePtr<> unwrap_param(const ValuePtr<>& value, unsigned index, const SourceLocation& location);
     };

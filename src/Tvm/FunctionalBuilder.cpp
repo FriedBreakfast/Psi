@@ -980,6 +980,10 @@ namespace Psi {
       return recursive->context().get_functional(ApplyValue(recursive, parameters, location));
     }
     
+    ValuePtr<> FunctionalBuilder::unrecurse(const ValuePtr<>& recursive_ptr, const SourceLocation& location) {
+      return recursive_ptr->context().get_functional(Unrecurse(recursive_ptr, location));
+    }
+    
     ValuePtr<> FunctionalBuilder::unwrap(const ValuePtr<>& value, const SourceLocation& location) {
       return value->context().get_functional(Unwrap(value, location));
     }

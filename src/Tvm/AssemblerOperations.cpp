@@ -208,6 +208,7 @@ namespace Psi {
         ("pointer_cast", BinaryOpCallback(&FunctionalBuilder::pointer_cast))
         ("pointer_offset", BinaryOpCallback(&FunctionalBuilder::pointer_offset))
         ("apply", TermPlusArrayCallback(&FunctionalBuilder::apply))
+        ("unrecurse", UnaryOpCallback(&FunctionalBuilder::unrecurse))
         ("unwrap", UnaryOpCallback(&FunctionalBuilder::unwrap))
         ("unwrap_param", TermPlusIndexCallback(&FunctionalBuilder::unwrap_param));
 

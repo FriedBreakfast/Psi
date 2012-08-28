@@ -205,6 +205,19 @@ This is not an instruction but a global declaration, and is the only way a type 
   The type of the expression ``{result}``.
   If not given, this defaults to ``type``, since usually a recursive type rather than a recursive value is desired.
 
+.. _psi.tvm.instructions.unrecurse:
+
+unrecurse
+"""""""""
+
+``unrecurse {ptr}``
+
+Change a pointer to a recursive type to a pointer to the inner type.
+
+``{ptr}``
+  Pointer to a recursive type.
+  This must therefor have type ``pointer (apply ...)``.
+
 .. _psi.tvm.instructions.unwrap:
 
 unwrap

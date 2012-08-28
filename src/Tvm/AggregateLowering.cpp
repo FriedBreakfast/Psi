@@ -1,5 +1,6 @@
 #include "AggregateLowering.hpp"
 #include "Aggregate.hpp"
+#include "Recursive.hpp"
 #include "Instructions.hpp"
 #include "InstructionBuilder.hpp"
 #include "FunctionalBuilder.hpp"
@@ -307,7 +308,7 @@ namespace Psi {
       static ValuePtr<> struct_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<StructType>& struct_ty, const ValuePtr<>& base, unsigned index, const SourceLocation& location) {
         LoweredType struct_ty_rewritten = rewriter.rewrite_type(struct_ty);
         if (struct_ty_rewritten.heap_type()) {
-          ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(base, struct_ty, location);
+          ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(base, struct_ty_rewritten.heap_type(), location);
           return FunctionalBuilder::struct_element_ptr(cast_ptr, index, location);
         }
         
@@ -388,6 +389,14 @@ namespace Psi {
       static LoweredValue pointer_cast_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<PointerCast>& term) {
         return rewriter.rewrite_value(term->pointer());
       }
+      
+      static LoweredValue unwrap_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<Unwrap>& term) {
+        return rewriter.rewrite_value(term->value());
+      }
+      
+      static LoweredValue unrecurse_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<Unrecurse>& term) {
+        return rewriter.rewrite_value(term->recursive_ptr());
+      }
 
       typedef TermOperationMap<FunctionalValue, LoweredValue, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
@@ -417,7 +426,9 @@ namespace Psi {
           .add<MetatypeSize>(metatype_size_rewrite)
           .add<MetatypeAlignment>(metatype_alignment_rewrite)
           .add<PointerOffset>(pointer_offset_rewrite)
-          .add<PointerCast>(pointer_cast_rewrite);
+          .add<PointerCast>(pointer_cast_rewrite)
+          .add<Unwrap>(unwrap_rewrite)
+          .add<Unrecurse>(unrecurse_rewrite);
       }
     };
 
@@ -1211,6 +1222,12 @@ namespace Psi {
       TypeMapType::iterator type_it = m_type_map.find(type);
       if (type_it != m_type_map.end())
         return type_it->second;
+      
+      if (ValuePtr<Exists> exists = dyn_cast<Exists>(type)) {
+        if (!isa<PointerType>(exists->result()))
+          throw TvmUserError("Value of type exists is not a pointer");
+        return rewrite_type(FunctionalBuilder::byte_pointer_type(context(), exists->location()));
+      }
       
       LoweredType result = TypeTermRewriter::callback_map.call(*this, value_cast<FunctionalValue>(type));
       PSI_ASSERT(result.valid());

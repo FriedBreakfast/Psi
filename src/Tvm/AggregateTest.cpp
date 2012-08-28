@@ -56,9 +56,10 @@ namespace Psi {
         "\n"
         "%func = function (%obj_wrapped : exists (%tag : upref) > (pointer (apply %base %tag) %tag)) > i32 {\n"
         "  %obj = unwrap %obj_wrapped;\n"
-        "  %tag = unwrap_param %obj_wrapped #i0;\n"
-        "  %vptr = load (struct_ep %obj #i0);\n"
-        "  %callback = load (struct_ep %vptr #i0);\n"
+        "  %obj_s = unrecurse %obj;\n"
+        "  %vptr = load (struct_ep %obj_s #i0);\n"
+        "  %vptr_s = unrecurse %vptr;\n"
+        "  %callback = load (struct_ep %vptr_s #i0);\n"
         "  %val = call %callback %obj;\n"
         "  return %val;\n"
         "};\n";

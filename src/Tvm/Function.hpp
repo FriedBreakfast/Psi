@@ -203,7 +203,7 @@ namespace Psi {
       const PhiList& phi_nodes() const {return m_phi_nodes;}
 
       /** \brief Whether this block has been terminated so no more instructions can be added. */
-      bool terminated() {return m_instructions.empty() && isa<TerminatorInstruction>(m_instructions.back());}
+      bool terminated() {return !m_instructions.empty() && isa<TerminatorInstruction>(m_instructions.back());}
       /** \brief Get the function which contains this block. */
       ValuePtr<Function> function() {return ValuePtr<Function>(m_function);}
       /** \brief Get a raw pointer to the function which contains this block. */

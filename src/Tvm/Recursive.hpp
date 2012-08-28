@@ -3,6 +3,7 @@
 
 #include "Core.hpp"
 #include "ValueList.hpp"
+#include "Functional.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -86,6 +87,18 @@ namespace Psi {
 
       ValuePtr<RecursiveType> recursive() {return value_cast<RecursiveType>(m_recursive);}
       const std::vector<ValuePtr<> >& parameters() const {return m_parameters;}
+    };
+    
+    class Unrecurse : public FunctionalValue {
+      PSI_TVM_FUNCTIONAL_DECL(Unrecurse)
+      
+      ValuePtr<> m_recursive_ptr;
+      
+    public:
+      Unrecurse(const ValuePtr<>& recursive_ptr, const SourceLocation& location);
+      
+      /// \brief Pointer to a recursive type.
+      const ValuePtr<>& recursive_ptr() const {return m_recursive_ptr;}
     };
   }
 }

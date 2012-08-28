@@ -58,11 +58,12 @@ namespace Psi {
       void print_term(const ValuePtr<>&,bool);
       void print_term_definition(const ValuePtr<>&,bool=false);
       void print_functional_term(const ValuePtr<FunctionalValue>&,bool);
-      void print_apply_term(const ValuePtr<ApplyValue>& apply, bool bracket);
       void print_instruction_term(const ValuePtr<Instruction>&);
       void print_phi_term(const ValuePtr<Phi>&);
       void print_function(const ValuePtr<Function>&);
-      void print_function_type_term(const ValuePtr<FunctionType>&, const ValuePtr<Function>& =ValuePtr<Function>());
+      void print_function_type_term(const ValuePtr<FunctionType>&, bool bracket, const ValuePtr<Function>& =ValuePtr<Function>());
+      void print_apply_term(const ValuePtr<ApplyValue>& apply, bool bracket);
+      void print_exists(const ValuePtr<Exists>& term, bool bracket);
       void print_recursive(const ValuePtr<RecursiveType>& recursive);
       void print_definitions(const TermDefinitionList&, const char* ="", bool=false);
       void print_block(const ValuePtr<Block>&, const TermDefinitionList&);
@@ -409,6 +410,14 @@ namespace Psi {
           dl->push_back(term);
         break;
       }
+      
+      case term_exists: {
+        ValuePtr<Exists> exists = value_cast<Exists>(term);
+        setup_term(exists->result());
+        if (TermDefinitionList *dl = term_definition_list(term))
+          dl->push_back(term);
+        break;
+      }
         
       case term_recursive_parameter: {
         setup_term(term->type());
@@ -469,7 +478,7 @@ namespace Psi {
       case term_function_type: {
         if (bracket)
           *m_output << '(';
-        print_function_type_term(value_cast<FunctionType>(term));
+        print_function_type_term(value_cast<FunctionType>(term), bracket);
         if (bracket)
           *m_output << ')';
         break;
@@ -478,6 +487,11 @@ namespace Psi {
       case term_apply: {
         print_apply_term(value_cast<ApplyValue>(term), bracket);
         break;
+      }
+
+      case term_exists: {
+        print_exists(value_cast<Exists>(term), bracket);
+        return;
       }
         
       default:
@@ -500,7 +514,7 @@ namespace Psi {
       case term_function_type: {
         if (global)
           *m_output << "define ";
-        print_function_type_term(value_cast<FunctionType>(term));
+        print_function_type_term(value_cast<FunctionType>(term), false);
         *m_output << ";\n";
         break;
       }
@@ -554,6 +568,14 @@ namespace Psi {
         return;
       }
       
+      case term_exists: {
+        if (global)
+          *m_output << "define ";
+        print_exists(value_cast<Exists>(term), false);
+        *m_output << ";\n";
+        return;
+      }
+      
       case term_recursive: {
         print_recursive(value_cast<RecursiveType>(term));
         return;
@@ -564,8 +586,11 @@ namespace Psi {
       }
     }
    
-    void DisassemblerContext::print_function_type_term(const ValuePtr<FunctionType>& term, const ValuePtr<Function>& use_names) {
+    void DisassemblerContext::print_function_type_term(const ValuePtr<FunctionType>& term, bool bracket, const ValuePtr<Function>& use_names) {
       PSI_ASSERT(!use_names || (term->parameter_types().size() == use_names->parameters().size()));
+      
+      if (bracket)
+        *m_output << '(';
 
       *m_output << "function (";
       
@@ -600,8 +625,46 @@ namespace Psi {
       
       m_parameter_names.pop_back();
       m_parameter_name_index = parameter_name_base;
+      
+      if (bracket)
+        *m_output << ')';
     }
     
+    void DisassemblerContext::print_exists(const ValuePtr<Exists>& term, bool bracket) {
+      if (bracket)
+        *m_output << '(';
+      *m_output << "exists (";
+      
+      unsigned n_parameters = term->parameter_types().size();
+      unsigned parameter_name_base = m_parameter_name_index;
+      m_parameter_name_index += n_parameters;
+      
+      boost::format name_formatter("%%%s");
+      
+      m_parameter_names.push_back(ParameterNameList::value_type());
+      ParameterNameList::value_type& name_list = m_parameter_names.back();
+      for (unsigned ii = 0; ii != n_parameters; ++ii) {
+        if (ii)
+          *m_output << ", ";
+        
+        std::string name = str(name_formatter % (parameter_name_base + ii));
+        *m_output << name << " : ";
+        print_term(term->parameter_types()[ii], false);
+        
+        name_list.push_back(name);
+      }
+      
+      *m_output << ") > ";
+      
+      print_term(term->result(), true);
+      
+      m_parameter_names.pop_back();
+      m_parameter_name_index = parameter_name_base;
+      
+      if (bracket)
+        *m_output << ')';
+    }
+
     void DisassemblerContext::print_functional_term(const ValuePtr<FunctionalValue>& term, bool bracket) {
       if (ValuePtr<BooleanValue> bool_value = dyn_cast<BooleanValue>(term)) {
         *m_output << (bool_value->value() ? "true" : "false");

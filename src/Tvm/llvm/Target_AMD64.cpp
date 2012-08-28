@@ -184,6 +184,11 @@ namespace Psi {
             ValuePtr<> size_type = FunctionalBuilder::size_type(element->context(), element->location());
             ValuePtr<> metatype_struct = FunctionalBuilder::struct_type(element->context(), std::vector<ValuePtr<> >(2, size_type), element->location());
             return get_element_info(rewriter, metatype_struct);
+          } else if (ValuePtr<Exists> exists = dyn_cast<Exists>(element)) {
+            if (isa<PointerType>(exists->result()))
+              return primitive_element_info(exists->result(), amd64_integer);
+            else
+              throw BuildError("function parameter has exists type but is not a pointer");
           } else {
             PSI_ASSERT_MSG(!dyn_cast<ParameterPlaceholder>(element) && !dyn_cast<FunctionParameter>(element),
                            "low-level parameter type should not depend on function type parameters");
