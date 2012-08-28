@@ -70,7 +70,7 @@ namespace Psi {
      * \brief Resolve this term to its actual value.
      */
     void RecursiveType::resolve(const ValuePtr<>& to) {
-      if (type() != to->type())
+      if (m_result_type != to->type())
         throw TvmUserError("mismatch between recursive term type and resolving term type");
 
       if (to->parameterized())
@@ -79,7 +79,11 @@ namespace Psi {
       if (m_result)
         throw TvmUserError("resolving a recursive term which has already been resolved");
 
-      if (!source_dominated(to->source(), source()))
+      Value *to_source = to->source();
+      if (RecursiveParameter *rp = dyn_cast<RecursiveParameter>(to_source))
+        to_source = rp->recursive_ptr()->source();
+
+      if (!source_dominated(to_source, source()))
         throw TvmUserError("term used to resolve recursive term is not in scope");
 
       if (to->phantom())
@@ -96,6 +100,35 @@ namespace Psi {
     }
     
     PSI_TVM_VALUE_IMPL(RecursiveType, Value)
+    
+    class RecursiveParameterResolverRewriter : public RewriteCallback {
+      ValuePtr<RecursiveType> m_recursive;
+      const std::vector<ValuePtr<> > *m_parameters;
+
+    public:
+      RecursiveParameterResolverRewriter(const ValuePtr<RecursiveType>& recursive, const std::vector<ValuePtr<> > *parameters)
+      : RewriteCallback(recursive->context()), m_recursive(recursive), m_parameters(parameters) {
+      }
+
+      virtual ValuePtr<> rewrite(const ValuePtr<>& term) {
+        ValuePtr<RecursiveParameter> parameter = dyn_cast<RecursiveParameter>(term);
+        if (parameter && (parameter->recursive_ptr() == m_recursive.get())) {
+          std::size_t index = 0;
+          for (RecursiveType::ParameterList::const_iterator ii = m_recursive->parameters().begin(), ie = m_recursive->parameters().end(); ii != ie; ++ii, ++index) {
+            if (parameter == *ii)
+              return m_parameters->at(index);
+          }
+          
+          PSI_FAIL("unreachable");
+        }
+        
+        if (ValuePtr<HashableValue> hashable = dyn_cast<HashableValue>(term)) {
+          return hashable->rewrite(*this);
+        } else {
+          return term;
+        }
+      }
+    };
 
     ApplyValue::ApplyValue(const ValuePtr<>& recursive,
                            const std::vector<ValuePtr<> >& parameters,
@@ -106,11 +139,15 @@ namespace Psi {
     }
 
     ValuePtr<> ApplyValue::unpack() {
-      ValuePtr<> result;
-      PSI_NOT_IMPLEMENTED();
+      if (!recursive()->result())
+        throw TvmUserError("Cannot unpack recursive term which has not been assigned");
+
+      ValuePtr<> result = RecursiveParameterResolverRewriter(recursive(), &m_parameters).rewrite(recursive()->result());
       // Check that the source originally computed by apply operation would still be valid for the new result,
       // so that the source analysis is not broken
       PSI_ASSERT(source_dominated(result->source(), source()));
+      
+      return result;
     }
 
     template<typename V>
@@ -121,9 +158,24 @@ namespace Psi {
     }
     
     ValuePtr<> ApplyValue::check_type() const {
-      if (!isa<RecursiveType>(m_recursive))
+      ValuePtr<RecursiveType> recursive = dyn_cast<RecursiveType>(m_recursive);
+      if (!recursive)
         throw TvmUserError("Parameter to apply is not a recursive type");
-      return m_recursive->type();
+      
+      if (m_parameters.size() != recursive->parameters().size())
+        throw TvmUserError("Wrong number of parameters passed to apply");
+      
+      RecursiveParameterResolverRewriter rewriter(recursive, &m_parameters);
+      std::vector<ValuePtr<> >::const_iterator ii = m_parameters.begin(), ie = m_parameters.end();
+      RecursiveType::ParameterList::const_iterator ji = recursive->parameters().begin(), je = recursive->parameters().end();
+      for (; ii != ie; ++ii, ++ji) {
+        PSI_ASSERT(ji != je);
+        if ((*ii)->type() != rewriter.rewrite((*ji)->type()))
+          throw TvmUserError("Parameter to apply has the wrong type");
+      }
+      PSI_ASSERT(ji == je);
+      
+      return rewriter.rewrite(recursive->result_type());
     }
 
     PSI_TVM_HASHABLE_IMPL(ApplyValue, HashableValue, apply)

@@ -434,6 +434,41 @@ namespace Psi {
     };
     
     /**
+     * \brief Used to unwrap a value whose type is an exists term.
+     */
+    class Unwrap : public FunctionalValue {
+      PSI_TVM_FUNCTIONAL_DECL(Unwrap)
+      
+    public:
+      Unwrap(const ValuePtr<>& value, const SourceLocation& location);
+
+      /// \brief value must have an "exists" type
+      const ValuePtr<>& value() const {return m_value;}
+      
+    private:
+      ValuePtr<> m_value;
+    };
+    
+    /**
+     * \brief Used to replace exists parameters in unwrapped values.
+     */
+    class UnwrapParameter : public FunctionalValue {
+      PSI_TVM_FUNCTIONAL_DECL(UnwrapParameter)
+      
+    public:
+      UnwrapParameter(const ValuePtr<>& value, unsigned index, const SourceLocation& location);
+      
+      /// \brief value must have an "exists" type
+      const ValuePtr<>& value() const {return m_value;}
+      /// \brief Index of exists parameter this corresponds to.
+      unsigned index() const {return m_index;}
+
+    private:
+      ValuePtr<> m_value;
+      unsigned m_index;
+    };
+    
+    /**
      * \brief Placeholder used for parameters during type setup.
      * 
      * This is used by function type, recursive and exists.

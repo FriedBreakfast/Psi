@@ -62,7 +62,7 @@ namespace Psi {
         if (term_type == term_recursive) {
           m_category = category_recursive;
         } else {
-          PSI_ASSERT((term_type == term_functional) || (term_type == term_apply) || (term_type == term_function_type));
+          PSI_ASSERT((term_type == term_functional) || (term_type == term_apply) || (term_type == term_function_type) || (term_type == term_exists));
           m_category = category_undetermined;
         }
       } else {

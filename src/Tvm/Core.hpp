@@ -731,8 +731,6 @@ namespace Psi {
 
     private:
       Context(const Context&);
-
-      class ParameterResolverRewriter;
     };
 
     bool term_unique(const ValuePtr<>& term);

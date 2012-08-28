@@ -55,8 +55,9 @@ namespace Psi {
                                             const SourceLocation& location);
 
       void resolve(const ValuePtr<>& term);
+      const ValuePtr<>& result_type() {return m_result_type;}
       const ParameterList& parameters() const {return m_parameters;}
-      const ValuePtr<> result() {return m_result;}
+      const ValuePtr<>& result() {return m_result;}
       
       static bool isa_impl(const Value& v) {return v.term_type() == term_recursive;}
       template<typename V> static void visit(V& v);
@@ -84,7 +85,7 @@ namespace Psi {
       ValuePtr<> unpack();
 
       ValuePtr<RecursiveType> recursive() {return value_cast<RecursiveType>(m_recursive);}
-      const ValuePtr<>& parameter(std::size_t i) {return m_parameters[i];}
+      const std::vector<ValuePtr<> >& parameters() const {return m_parameters;}
     };
   }
 }

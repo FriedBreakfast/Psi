@@ -99,10 +99,10 @@ namespace Psi {
         }
       };
       
-      struct StructElementCallback {
+      struct TermPlusIndexCallback {
         typedef ValuePtr<> (*GetterType) (const ValuePtr<>&,unsigned,const SourceLocation&);
         GetterType getter;
-        StructElementCallback(GetterType getter_) : getter(getter_) {}
+        TermPlusIndexCallback(GetterType getter_) : getter(getter_) {}
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           check_n_terms(name, 2, expression);
           
@@ -198,8 +198,8 @@ namespace Psi {
         ("array_ep", BinaryOpCallback(&FunctionalBuilder::array_element_ptr))
         ("struct", ContextArrayCallback(&FunctionalBuilder::struct_type))
         ("struct_v", ContextArrayCallback(&FunctionalBuilder::struct_value))
-        ("struct_el", StructElementCallback(&FunctionalBuilder::struct_element))
-        ("struct_ep", StructElementCallback(&FunctionalBuilder::struct_element_ptr))
+        ("struct_el", TermPlusIndexCallback(&FunctionalBuilder::struct_element))
+        ("struct_ep", TermPlusIndexCallback(&FunctionalBuilder::struct_element_ptr))
         ("union", ContextArrayCallback(&FunctionalBuilder::union_type))
         ("union_v", BinaryOpCallback(&FunctionalBuilder::union_value))
         ("union_el", BinaryOpCallback(&FunctionalBuilder::union_element))
@@ -207,7 +207,9 @@ namespace Psi {
         ("specialize", TermPlusArrayCallback(&FunctionalBuilder::specialize))
         ("pointer_cast", BinaryOpCallback(&FunctionalBuilder::pointer_cast))
         ("pointer_offset", BinaryOpCallback(&FunctionalBuilder::pointer_offset))
-        ("apply", TermPlusArrayCallback(&FunctionalBuilder::apply));
+        ("apply", TermPlusArrayCallback(&FunctionalBuilder::apply))
+        ("unwrap", UnaryOpCallback(&FunctionalBuilder::unwrap))
+        ("unwrap_param", TermPlusIndexCallback(&FunctionalBuilder::unwrap_param));
 
       struct NullaryInstructionCallback {
         typedef ValuePtr<Instruction> (InstructionBuilder::*CreateType) (const SourceLocation&);

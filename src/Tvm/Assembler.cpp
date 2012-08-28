@@ -349,6 +349,7 @@ namespace Psi {
         } else if (it->value->global_type == Parser::global_recursive) {
           const Parser::RecursiveType& rec = checked_cast<const Parser::RecursiveType&>(*it->value);
           ValuePtr<RecursiveType> recursive_ty = Assembler::build_recursive_type(asmct, rec, location);
+          asmct.put(it->name->text, recursive_ty);
           result[it->name->text] = recursive_ty;
         } else {
           const Parser::GlobalDefine& def = checked_cast<const Parser::GlobalDefine&>(*it->value);
@@ -380,8 +381,19 @@ namespace Psi {
           }
         } else if (ValuePtr<RecursiveType> rec_ptr = dyn_cast<RecursiveType>(ptr)) {
           const Parser::RecursiveType& rec = checked_cast<const Parser::RecursiveType&>(*it->value);
-          PSI_NOT_IMPLEMENTED(); // Need to create context with recursive parameters
-          rec_ptr->resolve(Assembler::build_expression(asmct, *rec.result, rec_ptr->location().logical));
+          Assembler::AssemblerContext rct(&asmct);
+          RecursiveType::ParameterList::const_iterator ii = rec_ptr->parameters().begin(), ie = rec_ptr->parameters().end();
+          UniqueList<Parser::NamedExpression>::const_iterator ji = rec.phantom_parameters.begin(), je = rec.phantom_parameters.end();
+          for (; ii != ie; ++ii, ++ji) {
+            if (ji == je) {
+              PSI_ASSERT(je == rec.phantom_parameters.end());
+              ji = rec.parameters.begin();
+              je = rec.parameters.end();
+            }
+            rct.put(ji->name->text, *ii);
+          }
+
+          rec_ptr->resolve(Assembler::build_expression(rct, *rec.result, rec_ptr->location().logical));
         } else {
           PSI_FAIL("unexpected term type");
         }

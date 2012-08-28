@@ -979,5 +979,16 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::apply(const ValuePtr<>& recursive, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
       return recursive->context().get_functional(ApplyValue(recursive, parameters, location));
     }
+    
+    ValuePtr<> FunctionalBuilder::unwrap(const ValuePtr<>& value, const SourceLocation& location) {
+      return value->context().get_functional(Unwrap(value, location));
+    }
+    
+    /**
+     * \brief Create an unwrap parameter.
+     */
+    ValuePtr<> FunctionalBuilder::unwrap_param(const ValuePtr<>& value, unsigned index, const SourceLocation& location) {
+      return value->context().get_functional(UnwrapParameter(value, index, location));
+    }
   }
 }

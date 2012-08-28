@@ -46,7 +46,7 @@ namespace Psi {
     m_result_type(result_type) {
     }
 
-    class Context::ParameterResolverRewriter : public RewriteCallback {
+    class ParameterResolverRewriter : public RewriteCallback {
       std::vector<ValuePtr<ParameterPlaceholder> > m_parameters;
       std::size_t m_depth;
 
@@ -68,6 +68,11 @@ namespace Psi {
         } else if (ValuePtr<FunctionType> function_type = dyn_cast<FunctionType>(term)) {
           ++m_depth;
           ValuePtr<> result = function_type->rewrite(*this);
+          --m_depth;
+          return result;
+        } else if (ValuePtr<Exists> exists = dyn_cast<Exists>(term)) {
+          ++m_depth;
+          ValuePtr<> result = exists->rewrite(*this);
           --m_depth;
           return result;
         } else if (ValuePtr<HashableValue> hashable = dyn_cast<HashableValue>(term)) {
@@ -264,6 +269,61 @@ namespace Psi {
 
     PSI_TVM_HASHABLE_IMPL(Exists, HashableValue, function)
     
+    Unwrap::Unwrap(const ValuePtr<>& value, const SourceLocation& location)
+    : FunctionalValue(value->context(), location),
+    m_value(value) {
+    }
+    
+    template<typename V>
+    void Unwrap::visit(V& v) {
+      visit_base<FunctionalValue>(v);
+      v("value", &Unwrap::m_value);
+    }
+    
+    ValuePtr<> Unwrap::check_type() const {
+      ValuePtr<Exists> exists;
+      if (!m_value || !(exists = dyn_cast<Exists>(m_value->type())))
+        throw TvmUserError("unwrap parameter does not have exists type");
+
+      std::vector<ValuePtr<> > parameters;
+      for (unsigned ii = 0, ie = exists->parameter_types().size(); ii != ie; ++ii)
+        parameters.push_back(FunctionalBuilder::unwrap_param(m_value, ii, location()));
+
+      return exists->result_after(parameters);
+    }
+    
+    PSI_TVM_FUNCTIONAL_IMPL(Unwrap, FunctionalValue, unwrap)
+    
+    UnwrapParameter::UnwrapParameter(const ValuePtr<>& value, unsigned index, const SourceLocation& location)
+    : FunctionalValue(value->context(), location),
+    m_value(value),
+    m_index(index) {
+    }
+    
+    template<typename V>
+    void UnwrapParameter::visit(V& v) {
+      visit_base<FunctionalValue>(v);
+      v("value", &UnwrapParameter::m_value)
+      ("index", &UnwrapParameter::m_index);
+    }    
+    
+    ValuePtr<> UnwrapParameter::check_type() const {
+      ValuePtr<Exists> exists;
+      if (!m_value || !(exists = dyn_cast<Exists>(m_value->type())))
+        throw TvmUserError("unwrap parameter does not have exists type");
+      
+      if (m_index >= exists->parameter_types().size())
+        throw TvmUserError("unwrap_param index out of range");
+
+      std::vector<ValuePtr<> > parameters;
+      for (unsigned ii = 0, ie = m_index; ii != ie; ++ii)
+        parameters.push_back(FunctionalBuilder::unwrap_param(m_value, ii, location()));
+
+      return exists->parameter_type_after(parameters);
+    }
+    
+    PSI_TVM_FUNCTIONAL_IMPL(UnwrapParameter, FunctionalValue, unwrap_param)
+
     ParameterPlaceholder::ParameterPlaceholder(Context& context, const ValuePtr<>& type, const SourceLocation& location)
     : Value(context, term_parameter_placeholder, type, this, location),
     m_parameter_type(type) {
