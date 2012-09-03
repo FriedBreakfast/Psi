@@ -59,21 +59,16 @@ namespace Psi {
           return builder.irbuilder().CreateExtractValue(aggregate, index);
         }
         
-        static llvm::Value* element_ptr_callback(FunctionBuilder& builder, const ValuePtr<ElementPtr>& term) {
-          llvm::Value *aggregate_ptr = builder.build_value(term->pointer());
-          if (ValuePtr<StructMember> struct_m = dyn_cast<StructMember>(term->member())) {
-            PSI_ASSERT_BLOCK(llvm::PointerType *ptr_ty = llvm::dyn_cast<llvm::PointerType>(aggregate_ptr->getType()),
-                             ptr_ty && llvm::isa<llvm::StructType>(ptr_ty->getElementType()));
-            return builder.irbuilder().CreateStructGEP(aggregate_ptr, struct_m->index());
-          } else if (ValuePtr<ArrayMember> array_m = dyn_cast<ArrayMember>(term->member())) {
-            PSI_ASSERT_BLOCK(llvm::PointerType *ptr_ty = llvm::dyn_cast<llvm::PointerType>(aggregate_ptr->getType()),
-                             ptr_ty && llvm::isa<llvm::ArrayType>(ptr_ty->getElementType()));
-            llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.module_builder()->llvm_context());
-            llvm::Value *indices[2] = {llvm::ConstantInt::get(i32_ty, 0), builder.build_value(array_m->index())};
-            return builder.irbuilder().CreateInBoundsGEP(aggregate_ptr, indices);
-          } else {
-            PSI_FAIL("unreachable");
-          }
+        static llvm::Value* struct_element_ptr_callback(FunctionBuilder& builder, const ValuePtr<StructElementPtr>& term) {
+          llvm::Value *aggregate_ptr = builder.build_value(term->aggregate_ptr());
+          return builder.irbuilder().CreateStructGEP(aggregate_ptr, term->index());
+        }
+        
+        static llvm::Value* array_element_ptr_callback(FunctionBuilder& builder, const ValuePtr<ArrayElementPtr>& term) {
+          llvm::Value *aggregate_ptr = builder.build_value(term->aggregate_ptr());
+          llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.module_builder()->llvm_context());
+          llvm::Value *indices[2] = {llvm::ConstantInt::get(i32_ty, 0), builder.build_value(term->index())};
+          return builder.irbuilder().CreateInBoundsGEP(aggregate_ptr, indices);
         }
         
         static llvm::Value* select_value_callback(FunctionBuilder& builder, const ValuePtr<Select>& term) {
@@ -149,7 +144,8 @@ namespace Psi {
             .add<PointerCast>(pointer_cast_callback)
             .add<PointerOffset>(pointer_offset_callback)
             .add<StructElement>(struct_element_callback)
-            .add<ElementPtr>(element_ptr_callback)
+            .add<StructElementPtr>(struct_element_ptr_callback)
+            .add<ArrayElementPtr>(array_element_ptr_callback)
             .add<Select>(select_value_callback)
             .add<IntegerAdd>(IntegerBinaryOpHandler(&IRBuilder::CreateNUWAdd, &IRBuilder::CreateNSWAdd))
             .add<IntegerMultiply>(IntegerBinaryOpHandler(&IRBuilder::CreateNUWMul, &IRBuilder::CreateNSWMul))

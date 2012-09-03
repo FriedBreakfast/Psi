@@ -93,7 +93,7 @@ A reference to a value in memory of type ``{type}``.
   Pointed-to type.
 ``{upwards}``
   A trail of how this pointer was obtained, which allows reverse member lookup to be performed.
-  If this is empty, it is assumed to be ``exists (%t) > %t``.
+  This should have type :ref:`psi.tvm.instructions.upref`.
 
 .. _psi.tvm.instructions.struct:
 
@@ -128,6 +128,8 @@ Unsigned integer types of various bit widths.
 ``uiptr`` has a platform dependent bit width, equal to the width of a pointer.
 Since type-checking is performed in a platform independent way, this type is
 not equivalent to any of the other types.
+
+.. _psi.tvm.instructions.union:
 
 union
 """""
@@ -205,19 +207,6 @@ This is not an instruction but a global declaration, and is the only way a type 
   The type of the expression ``{result}``.
   If not given, this defaults to ``type``, since usually a recursive type rather than a recursive value is desired.
 
-.. _psi.tvm.instructions.unrecurse:
-
-unrecurse
-"""""""""
-
-``unrecurse {ptr}``
-
-Change a pointer to a recursive type to a pointer to the inner type.
-
-``{ptr}``
-  Pointer to a recursive type.
-  This must therefor have type ``pointer (apply ...)``.
-
 .. _psi.tvm.instructions.unwrap:
 
 unwrap
@@ -237,17 +226,16 @@ unwrap_param
 The parameter implicitly applied by :ref:`psi.tvm.instructions.unwrap` to create
 the result value.
 
+.. _psi.tvm.instructions.upref:
+
 upref
 """""
 
-``upref {m} [{n}]``
+``upref``
 
-Upward reference, describing the data structure containing a pointer.
+Upward reference.
+This is the type of the second argument to :ref:`psi.tvm.instructions.pointer`.
 
-``{m}``
-  Member.
-``{n}``
-  Another upref.
 
 Aggregate operations
 --------------------
@@ -267,21 +255,28 @@ array_ep
 
 ``array_ep {ptr} {n}``
 
-Alias for ``element_ptr {ptr} (array_m {ty} {n})``, where ``{ty}`` is an array type and ``{n}`` is the index.
+Get a pointer to an array element.
 
-.. _psi.tvm.instructions.array_m:
+``{ptr}``
+  Pointer to an array.
+``{n}``
+  Array index.
 
-array_m
-"""""""
+.. _psi.tvm.instructions.array_up:
 
-``array_m {ty} {n}``
+array_up
+""""""""
 
-Construct a member pointer into an array.
+``array_up {ty} {n} {next}``
+
+Array upward reference.
 
 ``{ty}``
   An array type.
 ``{n}``
   Array index.
+``{next}``
+  Next upward reference.
 
 array_v
 """""""
@@ -297,21 +292,6 @@ Array value constructor.
   List of values of type ``{ty}``.
   The array length is inferred from the length of this list.
 
-element_ptr
-"""""""""""
-
-``element_ptr {ptr} {member}``
-
-Get a pointer to a member of an aggregate structure.
-
-``{ptr}``
-  Pointer to outer structure.
-``{member}``
-  Member pointer.
-  This should be obtained via :ref:`psi.tvm.instructions.array_m`, :ref:`psi.tvm.instructions.struct_m` or :ref:`psi.tvm.instructions.union_m`.
-  
-The reason that ``{member}`` is not simply a number is to allow the type system to correctly type check the :ref:`psi.tvm.instructions.outer_ptr` instruction.
-
 empty_v
 """""""
 
@@ -320,18 +300,6 @@ empty_v
 Value of the empty type.
 
 .. _psi.tvm.instructions.outer_ptr:
-
-member_offset
-"""""""""""""
-
-``member_offset {m}``
-
-Translate a member pointer to a byte offset.
-
-``{m}``
-  Member pointer.
-  
-.. note:: This should not normally be used in TVM input unless doing low level pointer manipulation, since it strips type information away.
 
 outer_ptr
 """""""""
@@ -378,26 +346,35 @@ Add an offset to a pointer.
 struct_el
 """""""""
 
+.. _psi.tvm.instructions.struct_ep:
+
 struct_ep
 """""""""
 
 ``struct_ep {ptr} {n}``
 
-This is an alias for ``element_ptr {ptr} (struct_m {ty} {n})`` where ``{ty}`` is the type pointed to by ``ptr``.
+Pointer to :ref:`psi.tvm.instructions.struct` member.
 
-.. _psi.tvm.instructions.struct_m:
+``{ptr}``
+  Pointer to a ``struct``.
+``{n}``
+  Member index.
 
-struct_m
-""""""""
+.. _psi.tvm.instructions.struct_up:
 
-``struct_m {ty} {n}``
+struct_up
+"""""""""
 
-Structure member pointer.
+``struct_up {ty} {idx} {next}``
+
+Structure upward reference.
 
 ``{ty}``
   A :ref:`psi.tvm.instructions.struct` type.
-``{n}``
+``{idx}``
   Index into ``{ty}``.
+``{next}``
+  Next upward reference.
 
 struct_v
 """"""""
@@ -416,13 +393,26 @@ The compiler is allowed to make any assumption whatsoever about the contents of 
 union_el
 """"""""
 
+.. _psi.tvm.instructions.union_ep:
+
 union_ep
 """"""""
 
-.. _psi.tvm.instructions.union_m:
+.. _psi.tvm.instructions.union_up:
 
-union_m
-"""""""
+union_up
+""""""""
+
+``union_up {ty} {idx} {next}``
+
+Structure upward reference.
+
+``{ty}``
+  A :ref:`psi.tvm.instructions.union` type.
+``{idx}``
+  Index into ``{ty}``.
+``{next}``
+  Next upward reference.
 
 union_v
 """""""

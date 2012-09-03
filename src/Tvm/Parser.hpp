@@ -196,6 +196,21 @@ namespace Psi {
         UniquePtr<Token> name;
         UniquePtr<GlobalElement> value;
       };
+
+      /**
+       * \brief Checks if a character is a "token" character.
+       *
+       * A token character is alphanumeric or underscore, so this is
+       * equivalent the following in the C locale:
+       *
+       * \code isalpha(c) || isdigit(c) || c == '_' || (c == '-') || (c == '%') \endcode
+       */
+      inline bool token_char(char c) {
+        return ((c >= 'A') && (c <= 'Z')) ||
+          ((c >= 'a') && (c <= 'z')) ||
+          ((c >= '0') && (c <= '9')) ||
+          (c == '_') || (c == '-') || (c == '\\');
+      }
     }
 
     void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin, const char *end);

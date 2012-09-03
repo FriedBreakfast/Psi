@@ -182,28 +182,15 @@ namespace Psi {
     }
 
     PSI_TVM_HASHABLE_IMPL(ApplyValue, HashableValue, apply)
-    
-    Unrecurse::Unrecurse(const ValuePtr<>& recursive_ptr, const SourceLocation& location)
-    : FunctionalValue(recursive_ptr->context(), location),
-    m_recursive_ptr(recursive_ptr) {
-    }
 
-    template<typename V>
-    void Unrecurse::visit(V& v) {
-      visit_base<FunctionalValue>(v);
-      v("recursive_ptr", &Unrecurse::m_recursive_ptr);
+    /**
+     * \brief Unwrap any instances of apply/recursive.
+     */
+    ValuePtr<> unrecurse(const ValuePtr<>& value) {
+      ValuePtr<> ptr = value;
+      while (ValuePtr<ApplyValue> ap = dyn_cast<ApplyValue>(ptr))
+        ptr = ap->unpack();
+      return ptr;
     }
-    
-    ValuePtr<> Unrecurse::check_type() const {
-      ValuePtr<PointerType> ptr_type = dyn_cast<PointerType>(m_recursive_ptr->type());
-      if (!ptr_type)
-        throw TvmUserError("unrecurse parameter is not a pointer");
-      ValuePtr<ApplyValue> apply = dyn_cast<ApplyValue>(ptr_type->target_type());
-      if (!apply)
-        throw TvmUserError("unrecurse parameter is not a pointer to an apply term");
-      return FunctionalBuilder::pointer_type(apply->unpack(), location());
-    }
-    
-    PSI_TVM_FUNCTIONAL_IMPL(Unrecurse, FunctionalValue, unrecurse)
   }
 }

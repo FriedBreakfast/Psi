@@ -109,18 +109,6 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::upref(Context& context, const SourceLocation& location) {
       return context.get_functional(UpwardReference(context, location));
     }
-    
-    /**
-     * \brief Get an upward reference descriptor.
-     */
-    ValuePtr<> FunctionalBuilder::upref_cons(const ValuePtr<>& member, const ValuePtr<>& parent, const SourceLocation& location) {
-      return member->context().get_functional(UpwardReferenceCons(member, parent, location));
-    }
-
-    /// \copydoc FunctionalBuilder::upref_cons
-    ValuePtr<> FunctionalBuilder::upref_cons(const ValuePtr<>& member, const SourceLocation& location) {
-      return upref_cons(member, ValuePtr<>(), location);
-    }
 
     /**
      * \brief Get an array type.
@@ -161,18 +149,62 @@ namespace Psi {
     }
     
     /**
-     * \brief Get an element_ptr operation.
+     * \brief Get a struct_ep operation.
      * 
      * \param aggregate_ptr Pointer to an aggregate value.
      * \param member Which member of the aggregate to get a pointer to.
      */
-    ValuePtr<> FunctionalBuilder::element_ptr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member, const SourceLocation& location) {
-      ValuePtr<> result = aggregate_ptr->context().get_functional(ElementPtr(aggregate_ptr, member, location));
-      if (isa<UndefinedValue>(aggregate_ptr) || isa<UndefinedValue>(member))
+    ValuePtr<> FunctionalBuilder::struct_element_ptr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location) {
+      ValuePtr<> result = aggregate_ptr->context().get_functional(StructElementPtr(aggregate_ptr, index, location));
+      if (isa<UndefinedValue>(aggregate_ptr))
+        return undef(result->type(), location);
+      return result;
+    }
+
+    /**
+     * \brief Get a struct_eo operation.
+     */
+    ValuePtr<> FunctionalBuilder::struct_element_offset(const ValuePtr<>& struct_ty, unsigned index, const SourceLocation& location) {
+      return struct_ty->context().get_functional(StructElementOffset(struct_ty, index, location));
+    }
+    
+    /**
+     * \brief Get an array_ep operation.
+     * 
+     * \param aggregate_ptr Pointer to an aggregate value.
+     * \param member Which member of the aggregate to get a pointer to.
+     */
+    ValuePtr<> FunctionalBuilder::array_element_ptr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location) {
+      ValuePtr<> result = aggregate_ptr->context().get_functional(ArrayElementPtr(aggregate_ptr, index, location));
+      if (isa<UndefinedValue>(aggregate_ptr) || isa<UndefinedValue>(index))
         return undef(result->type(), location);
       return result;
     }
     
+    /**
+     * \brief Get a pointer to an array element.
+     * 
+     * \param aggregate Pointer to an array.
+     * 
+     * \param index Index of element to get.
+     */
+    ValuePtr<> FunctionalBuilder::array_element_ptr(const ValuePtr<>& array, unsigned index, const SourceLocation& location) {
+      return array_element_ptr(array, size_value(array->context(), index, location), location);
+    }
+
+    /**
+     * \brief Get a union_ep operation.
+     * 
+     * \param aggregate_ptr Pointer to an aggregate value.
+     * \param member Which member of the aggregate to get a pointer to.
+     */
+    ValuePtr<> FunctionalBuilder::union_element_ptr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location) {
+      ValuePtr<> result = aggregate_ptr->context().get_functional(UnionElementPtr(aggregate_ptr, index, location));
+      if (isa<UndefinedValue>(aggregate_ptr))
+        return undef(result->type(), location);
+      return result;
+    }
+
     /**
      * \brief Get an outer_ptr operation.
      */
@@ -182,19 +214,12 @@ namespace Psi {
         return undef(result->type(), location);
       return result;
     }
-
-    /**
-     * \brief Get a pointer to member type.
-     */
-    ValuePtr<> FunctionalBuilder::member(const ValuePtr<>& outer, const ValuePtr<>& inner, const SourceLocation& location) {
-      return outer->context().get_functional(Member(outer, inner, location));
-    }
     
     /**
      * \brief Get a member pointer for an array.
      */
-    ValuePtr<> FunctionalBuilder::array_member(const ValuePtr<>& array_ty, const ValuePtr<>& index, const SourceLocation& location) {
-      ValuePtr<> result = array_ty->context().get_functional(ArrayMember(array_ty, index, location));
+    ValuePtr<> FunctionalBuilder::array_upref(const ValuePtr<>& array_ty, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location) {
+      ValuePtr<> result = array_ty->context().get_functional(ArrayUpwardReference(array_ty, index, next, location));
       if (isa<UndefinedValue>(index))
         return undef(result->type(), location);
       return result;
@@ -203,15 +228,15 @@ namespace Psi {
     /**
      * \brief Get a member pointer for an array.
      */
-    ValuePtr<> FunctionalBuilder::struct_member(const ValuePtr<>& struct_ty, unsigned index, const SourceLocation& location) {
-      return struct_ty->context().get_functional(StructMember(struct_ty, index, location));
+    ValuePtr<> FunctionalBuilder::struct_upref(const ValuePtr<>& struct_ty, unsigned index, const ValuePtr<>& next, const SourceLocation& location) {
+      return struct_ty->context().get_functional(StructUpwardReference(struct_ty, index, next, location));
     }
     
     /**
      * \brief Get a member pointer for an array.
      */
-    ValuePtr<> FunctionalBuilder::union_member(const ValuePtr<>& union_ty, const ValuePtr<>& member_ty, const SourceLocation& location) {
-      return union_ty->context().get_functional(UnionMember(union_ty, member_ty, location));
+    ValuePtr<> FunctionalBuilder::union_upref(const ValuePtr<>& union_ty, unsigned index, const ValuePtr<>& next, const SourceLocation& location) {
+      return union_ty->context().get_functional(UnionUpwardReference(union_ty, index, next, location));
     }
 
     /**
@@ -369,72 +394,6 @@ namespace Psi {
           throw TvmUserError("Parameter is not a pointer");
         return ptr_ty->target_type();
       }
-    }
-    
-    /**
-     * \brief Get a pointer to an array element.
-     * 
-     * \param aggregate Pointer to an array.
-     * 
-     * \param index Index of element to get.
-     */
-    ValuePtr<> FunctionalBuilder::array_element_ptr(const ValuePtr<>& array, const ValuePtr<>& index, const SourceLocation& location) {
-      return element_ptr(array, array_member(pointer_target_type(array), index, location), location);
-    }
-    
-    /**
-     * \brief Get a pointer to an array element.
-     * 
-     * \param aggregate Pointer to an array.
-     * 
-     * \param index Index of element to get.
-     */
-    ValuePtr<> FunctionalBuilder::array_element_ptr(const ValuePtr<>& array, unsigned index, const SourceLocation& location) {
-      return array_element_ptr(array, size_value(array->context(), index, location), location);
-    }
-    
-    /**
-     * \brief Get a pointer to a struct member.
-     * 
-     * \param aggregate Pointer to a struct.
-     * 
-     * \param index Index of member to get a pointer to.
-     */
-    ValuePtr<> FunctionalBuilder::struct_element_ptr(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
-      return element_ptr(aggregate, struct_member(pointer_target_type(aggregate), index, location), location);
-    }
-    
-    /**
-     * \brief Get a pointer to a union member.
-     * 
-     * \param aggregate Pointer to a union.
-     * 
-     * \param type Member type to get a pointer to.
-     */
-    ValuePtr<> FunctionalBuilder::union_element_ptr(const ValuePtr<>& aggregate, const ValuePtr<>& type, const SourceLocation& location) {
-      return element_ptr(aggregate, union_member(pointer_target_type(aggregate), type, location), location);
-    }
-    
-    /**
-     * \brief Get a pointer to a union member.
-     * 
-     * This looks up the type of the member specified and forwards to
-     * union_element_ptr(Term*,Term*).
-     * 
-     * \param aggregate Pointer to a union.
-     * 
-     * \param index Index of member to get a pointer to.
-     */
-    ValuePtr<> FunctionalBuilder::union_element_ptr(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
-      ValuePtr<PointerType> union_ptr_ty = dyn_cast<PointerType>(aggregate->type());
-      if (!union_ptr_ty)
-        throw TvmUserError("union_ep aggregate parameter is not a pointer");
-      ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(union_ptr_ty->target_type());
-      if (!union_ty)
-        throw TvmUserError("union_ep aggregate parameter is not a pointer to a union");
-      if (index >= union_ty->n_members())
-        throw TvmUserError("union member index out of range");
-      return union_element_ptr(aggregate, union_ty->member_type(index), location);
     }
     
     /**
@@ -978,10 +937,6 @@ namespace Psi {
      */
     ValuePtr<> FunctionalBuilder::apply(const ValuePtr<>& recursive, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
       return recursive->context().get_functional(ApplyValue(recursive, parameters, location));
-    }
-    
-    ValuePtr<> FunctionalBuilder::unrecurse(const ValuePtr<>& recursive_ptr, const SourceLocation& location) {
-      return recursive_ptr->context().get_functional(Unrecurse(recursive_ptr, location));
     }
     
     ValuePtr<> FunctionalBuilder::unwrap(const ValuePtr<>& value, const SourceLocation& location) {

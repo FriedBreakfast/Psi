@@ -48,8 +48,6 @@ namespace Psi {
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const SourceLocation& location);
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location);
       static ValuePtr<> upref(Context& context, const SourceLocation& location);
-      static ValuePtr<> upref_cons(const ValuePtr<>& member, const SourceLocation& location);
-      static ValuePtr<> upref_cons(const ValuePtr<>& member, const ValuePtr<>& parent, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, unsigned length, const SourceLocation& location);
       static ValuePtr<> struct_type(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
@@ -74,18 +72,18 @@ namespace Psi {
       
       /// \name Aggregate pointer functions
       //@{
-      static ValuePtr<> element_ptr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& member, const SourceLocation& location);
       static ValuePtr<> outer_ptr(const ValuePtr<>& base, const SourceLocation& location);
-      static ValuePtr<> member(const ValuePtr<>& outer, const ValuePtr<>& inner, const SourceLocation& location);
-      static ValuePtr<> array_member(const ValuePtr<>& array_ty, const ValuePtr<>& index, const SourceLocation& location);
-      static ValuePtr<> struct_member(const ValuePtr<>& struct_ty, unsigned index, const SourceLocation& location);
-      static ValuePtr<> union_member(const ValuePtr<>& union_ty, const ValuePtr<>& member_ty, const SourceLocation& location);
 
       static ValuePtr<> array_element_ptr(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> array_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
       static ValuePtr<> struct_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
-      static ValuePtr<> union_element_ptr(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> union_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
+
+      static ValuePtr<> struct_element_offset(const ValuePtr<>&, unsigned, const SourceLocation& location);
+      
+      static ValuePtr<> array_upref(const ValuePtr<>&, const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> struct_upref(const ValuePtr<>&, unsigned, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> union_upref(const ValuePtr<>&, unsigned, const ValuePtr<>&, const SourceLocation& location);
       //@}
       
       /// \name Pointer operations
@@ -157,7 +155,6 @@ namespace Psi {
       static ValuePtr<> specialize(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
       
       static ValuePtr<> apply(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
-      static ValuePtr<> unrecurse(const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> unwrap(const ValuePtr<>& value, const SourceLocation& location);
       static ValuePtr<> unwrap_param(const ValuePtr<>& value, unsigned index, const SourceLocation& location);
     };

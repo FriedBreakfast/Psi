@@ -87,19 +87,20 @@ namespace Psi {
 
       ValuePtr<RecursiveType> recursive() {return value_cast<RecursiveType>(m_recursive);}
       const std::vector<ValuePtr<> >& parameters() const {return m_parameters;}
+      
+      static bool isa_impl(const Value& v) {return v.term_type() == term_apply;}
     };
     
-    class Unrecurse : public FunctionalValue {
-      PSI_TVM_FUNCTIONAL_DECL(Unrecurse)
-      
-      ValuePtr<> m_recursive_ptr;
-      
-    public:
-      Unrecurse(const ValuePtr<>& recursive_ptr, const SourceLocation& location);
-      
-      /// \brief Pointer to a recursive type.
-      const ValuePtr<>& recursive_ptr() const {return m_recursive_ptr;}
-    };
+    ValuePtr<> unrecurse(const ValuePtr<>& value);
+    
+    /**
+     * \brief Combines unrecurse and dyn_cast.
+     * 
+     * Just because it's used to often.
+     */
+    template<typename T> ValuePtr<T> dyn_unrecurse(const ValuePtr<>& value) {
+      return dyn_cast<T>(unrecurse(value));
+    }
   }
 }
 

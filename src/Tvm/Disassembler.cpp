@@ -3,6 +3,7 @@
 #include "Number.hpp"
 #include "Instructions.hpp"
 #include "Recursive.hpp"
+#include "Parser.hpp"
 
 #include <list>
 
@@ -15,6 +16,13 @@
 namespace Psi {
   namespace Tvm {
     class DisassemblerContext {
+    public:
+      struct TermNamePrinter {
+        const std::string *name;
+        TermNamePrinter(const std::string *name_) : name(name_) {}
+      };
+
+    private:
       struct TermName {
         std::string name;
         ValuePtr<Function> context;
@@ -53,7 +61,7 @@ namespace Psi {
       void setup_term_name(const ValuePtr<>&);
       TermDefinitionList* term_definition_list(const ValuePtr<>&);
       void build_unique_names();
-      const std::string& name(const ValuePtr<>&);
+      TermNamePrinter name(const ValuePtr<>&);
 
       void print_term(const ValuePtr<>&,bool);
       void print_term_definition(const ValuePtr<>&,bool=false);
@@ -75,6 +83,17 @@ namespace Psi {
       void run_module(Module*);
       void run_term(const ValuePtr<>&);
     };
+
+    std::ostream& operator << (std::ostream& os, const DisassemblerContext::TermNamePrinter& printer) {
+      for (std::string::const_iterator ii = printer.name->begin(), ie = printer.name->end(); ii != ie; ++ii) {
+        if (Parser::token_char(*ii))
+          os << *ii;
+        else
+          os << '%' << (((unsigned(*ii) & 0xF0) >> 8) + '0') << ((unsigned(*ii) & 0xF) + '0');
+      }
+      
+      return os;
+    }
 
     DisassemblerContext::TermName::TermName(const std::string& name_, const ValuePtr<Function>& context_, bool anonymous_)
     : name(name_), context(context_), anonymous(anonymous_) {
@@ -114,7 +133,7 @@ namespace Psi {
       
       return lhs->name < rhs->name;
     }
-
+    
     void DisassemblerContext::build_unique_names() {
       std::vector<boost::shared_ptr<TermName> > names;
       for (TermNameMap::const_iterator ii = m_names.begin(), ie = m_names.end(); ii != ie; ++ii)
@@ -147,10 +166,10 @@ namespace Psi {
       }
     }
 
-    const std::string& DisassemblerContext::name(const ValuePtr<>& term) {
+    DisassemblerContext::TermNamePrinter DisassemblerContext::name(const ValuePtr<>& term) {
       TermNameMap::iterator it = m_names.find(term);
       PSI_ASSERT(it != m_names.end());
-      return it->second->name;
+      return TermNamePrinter(&it->second->name);
     }
 
     void DisassemblerContext::run_module(Module *module) {

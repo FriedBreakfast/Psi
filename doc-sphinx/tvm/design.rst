@@ -45,26 +45,57 @@ Virtual functions
 Virtual function calls are performed using a combination of member pointers and base pointers.
 For a single dispatch scenario, the following code can be used::
 
-  %vtable = recursive (%tag : member) > struct 
-    (pointer (function (pointer (apply %base %tag) %tag) > i8))
-  ;
+  %vtable = recursive (%tag : upref) > (struct
+    (pointer (function (pointer (apply %base %tag) %tag) > i32))
+  );
   
-  %base = recursive (%tag : member) > struct
+  %base = recursive (%tag : upref) > (struct
     (pointer (apply %vtable %tag))
-  ;
+  );
   
-  %func = function (%obj_wrapped : exists (%tag : member) > pointer (apply %base %tag) %tag) > i8 {
+  %func = function (%obj_wrapped : exists (%tag : upref) > (pointer (apply %base %tag) %tag)) > i32 {
     %obj = unwrap %obj_wrapped;
-    %tag = unwrap_param %obj_wrapped #i0;
     %vptr = load (struct_ep %obj #i0);
     %callback = load (struct_ep %vptr #i0);
     %val = call %callback %obj;
     return %val;
   };
+  
+This second example shows how to implement full single inheritance, including extending the type and vtable at the same time::
+
+  %vtable = recursive (%vtag : upref, %tag : upref) > (struct
+    (pointer (function (pointer (apply %base %vtag %tag) %tag) > i32))
+  );
+  
+  %vtable_derived = recursive (%vtag : upref, %tag : upref) > (struct
+    (apply %vtable (struct_up (apply %vtable_derived %vtag %tag) #i0 %vtag) %tag)
+    (pointer (function (pointer (apply %derived %vtag %tag) %tag) > i32))
+  );
+  
+  %base = recursive (%vtag : upref, %tag : upref) > (struct
+    (pointer (apply %vtable %vtag %tag) %vtag)
+    i32
+  );
+  
+  %derived = recursive (%vtag : upref, %tag : upref) > (struct
+    (apply %base (struct_up (apply %vtable_derived %vtag %tag) #i0 %vtag) (struct_up (apply %derived %vtag %tag) #i0 %tag))
+    i32
+  );
+  
+  %func = function (%obj_wrapped : exists (%vtag : upref, %tag : upref) > (pointer (apply %derived %vtag %tag) %tag)) > i32 {
+    %obj = unwrap %obj_wrapped;
+    %vptr_base = load (struct_ep (struct_ep %obj #i0) #i0);
+    %vptr = outer_ptr %vptr_base;
+    %callback1 = load (struct_ep %vptr #i1);
+    %callback2 = load (struct_ep (struct_ep %vptr #i0) #i0);
+    %val1 = call %callback1 %obj;
+    %val2 = call %callback2 %obj;
+    return (add %val1 %val2);
+  };
 
 See:
 
-* :ref:`psi.tvm.instructions.member_ptr`
+* :ref:`psi.tvm.instructions.outer_ptr`
 * :ref:`psi.tvm.instructions.exists`
 * :ref:`psi.tvm.instructions.unwrap`
 
