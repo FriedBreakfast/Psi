@@ -47,19 +47,19 @@ add_custom_target(doc)
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
-  add_custom_target(doxygen-doc
+  add_custom_target(doc-doxygen
     rm -rf doc-doxygen
     COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile
     COMMAND mv doc-doxygen-tmp/html doc-doxygen
     COMMAND rmdir doc-doxygen-tmp
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} VERBATIM)
-  add_dependencies(doc doxygen-doc)
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  add_dependencies(doc doc-doxygen)
 endif()
 
 find_program(SPHINX_BUILD NAMES sphinx-build)
 if(NOT {$SPHINX_BUILD} STREQUAL "SPHINX_BUILD-NOTFOUND")
-  add_custom_target(sphinx-doc ${SPHINX_BUILD} ${CMAKE_CURRENT_SOURCE_DIR}/doc-sphinx ${CMAKE_CURRENT_BINARY_DIR}/doc-sphinx VERBATIM)
-  add_dependencies(doc sphinx-doc)
+  add_custom_target(doc-sphinx ${SPHINX_BUILD} ${CMAKE_CURRENT_SOURCE_DIR}/doc-sphinx ${CMAKE_CURRENT_BINARY_DIR}/doc-sphinx)
+  add_dependencies(doc doc-sphinx)
 endif()
 
 enable_testing()

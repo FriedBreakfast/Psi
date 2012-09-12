@@ -76,6 +76,8 @@ namespace Psi {
     public:
       /// \brief Get the value of this constant.
       const BigInteger& value() const {return m_value;}
+      /// \brief Get the width of this constant.
+      IntegerType::Width width() const {return m_width;}
       /// \brief Get the type of this term cast to IntegerType::Ptr
       ValuePtr<IntegerType> type() const {return value_cast<IntegerType>(Value::type());}
 
@@ -189,6 +191,8 @@ namespace Psi {
       ValuePtr<> m_true_value;
       ValuePtr<> m_false_value;
     };
+    
+    unsigned size_to_unsigned(const ValuePtr<>& value);
   }
 }
 

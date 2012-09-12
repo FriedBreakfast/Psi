@@ -92,7 +92,8 @@ namespace Psi {
       bool operator != (const BigInteger& x) const {return (bits() != x.bits()) || (cmp_unsigned(x) != 0);}
       friend std::size_t hash_value(const BigInteger&);
       
-      boost::optional<unsigned> unsigned_value(bool=false) const;
+      boost::optional<unsigned> unsigned_value(bool is_signed=false) const;
+      unsigned unsigned_value_checked(bool is_signed=false) const;
     };
     
     PSI_VISIT_SIMPLE(BigInteger);

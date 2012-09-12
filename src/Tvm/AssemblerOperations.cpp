@@ -119,30 +119,7 @@ namespace Psi {
         }
       };
       
-      struct FixedUprefCallback {
-        typedef ValuePtr<> (*GetterType) (const ValuePtr<>&,unsigned,const ValuePtr<>&,const SourceLocation&);
-        GetterType getter;
-        FixedUprefCallback(GetterType getter_) : getter(getter_) {}
-        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
-          if ((expression.terms.size() != 2) && (expression.terms.size() != 3))
-            throw AssemblerError("wrong number of arguments to " + name);
-          
-          ValuePtr<> type = build_expression(context, expression.terms.front(), location);
-          const Parser::LiteralExpression& index_literal = checked_cast<const Parser::LiteralExpression&>(*boost::next(expression.terms.begin(), 1));
-          unsigned index = boost::lexical_cast<unsigned>(index_literal.value->text);
-          
-          ValuePtr<> next;
-          if (expression.terms.size() == 3)
-            next = build_expression(context, *boost::next(expression.terms.begin(), 2), location);
-
-          return getter(type, index, next, SourceLocation(expression.location, location));
-        }
-      };
-
-      struct VariableUprefCallback {
-        typedef ValuePtr<> (*GetterType) (const ValuePtr<>&,const ValuePtr<>&,const ValuePtr<>&,const SourceLocation&);
-        GetterType getter;
-        VariableUprefCallback(GetterType getter_) : getter(getter_) {}
+      struct UprefCallback {
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           if ((expression.terms.size() != 2) && (expression.terms.size() != 3))
             throw AssemblerError("wrong number of arguments to " + name);
@@ -154,7 +131,7 @@ namespace Psi {
           if (expression.terms.size() == 3)
             next = build_expression(context, *boost::next(expression.terms.begin(), 2), location);
 
-          return getter(type, index, next, SourceLocation(expression.location, location));
+          return FunctionalBuilder::upref(type, index, next, SourceLocation(expression.location, location));
         }
       };
 
@@ -219,7 +196,8 @@ namespace Psi {
         ("empty_v", NullaryOpCallback(&FunctionalBuilder::empty_value))
         ("byte", NullaryOpCallback(&FunctionalBuilder::byte_type))
         ("pointer", UnaryOrBinaryCallback(&FunctionalBuilder::pointer_type, &FunctionalBuilder::pointer_type))
-        ("upref", NullaryOpCallback(&FunctionalBuilder::upref))
+        ("upref_type", NullaryOpCallback(&FunctionalBuilder::upref_type))
+        ("upref", UprefCallback())
         ("outer_ptr", UnaryOpCallback(&FunctionalBuilder::outer_ptr))
         ("add", BinaryOpCallback(&FunctionalBuilder::add))
         ("sub", BinaryOpCallback(&FunctionalBuilder::sub))
@@ -230,19 +208,12 @@ namespace Psi {
         ("zero", UnaryOpCallback(&FunctionalBuilder::zero))
         ("array", BinaryOpCallback(&FunctionalBuilder::array_type))
         ("array_v", TermPlusArrayCallback(&FunctionalBuilder::array_value))
-        ("array_el", BinaryOpCallback(&FunctionalBuilder::array_element))
-        ("array_ep", BinaryOpCallback(&FunctionalBuilder::array_element_ptr))
-        ("array_up", VariableUprefCallback(&FunctionalBuilder::array_upref))
         ("struct", ContextArrayCallback(&FunctionalBuilder::struct_type))
         ("struct_v", ContextArrayCallback(&FunctionalBuilder::struct_value))
-        ("struct_el", TermPlusIndexCallback(&FunctionalBuilder::struct_element))
-        ("struct_ep", TermPlusIndexCallback(&FunctionalBuilder::struct_element_ptr))
-        ("struct_up", FixedUprefCallback(&FunctionalBuilder::struct_upref))
         ("union", ContextArrayCallback(&FunctionalBuilder::union_type))
         ("union_v", BinaryOpCallback(&FunctionalBuilder::union_value))
-        ("union_el", BinaryOpCallback(&FunctionalBuilder::union_element))
-        ("union_ep", TermPlusIndexCallback(&FunctionalBuilder::union_element_ptr))
-        ("union_up", FixedUprefCallback(&FunctionalBuilder::union_upref))
+        ("element", BinaryOpCallback(&FunctionalBuilder::element_value))
+        ("gep", BinaryOpCallback(&FunctionalBuilder::element_ptr))
         ("specialize", TermPlusArrayCallback(&FunctionalBuilder::specialize))
         ("pointer_cast", BinaryOpCallback(&FunctionalBuilder::pointer_cast))
         ("pointer_offset", BinaryOpCallback(&FunctionalBuilder::pointer_offset))

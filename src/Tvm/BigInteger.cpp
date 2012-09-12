@@ -561,5 +561,15 @@ namespace Psi {
       
       return unsigned(m_words[0]);
     }
+    
+    /**
+     * \brief Calls unsigned_value and throws an exception if the value is out of range.
+     */
+    unsigned int BigInteger::unsigned_value_checked(bool is_signed) const {
+      boost::optional<unsigned> v = unsigned_value(is_signed);
+      if (!v)
+        throw TvmUserError("Big integer value out of range for unsigned conversion");
+      return *v;
+    }
   }
 }

@@ -226,14 +226,14 @@ unwrap_param
 The parameter implicitly applied by :ref:`psi.tvm.instructions.unwrap` to create
 the result value.
 
-.. _psi.tvm.instructions.upref:
+.. _psi.tvm.instructions.upref_type:
 
-upref
-"""""
+upref_type
+""""""""""
 
-``upref``
+``upref_type``
 
-Upward reference.
+Type of upward references.
 This is the type of the second argument to :ref:`psi.tvm.instructions.pointer`.
 
 
@@ -292,12 +292,36 @@ Array value constructor.
   List of values of type ``{ty}``.
   The array length is inferred from the length of this list.
 
+element
+"""""""
+
+``element {agg} {idx}``
+
+Get the value of an aggregate member.
+
+``{agg}``
+  An aggregate value.
+``{idx}``
+  Member index.
+
 empty_v
 """""""
 
 ``empty_v``
 
 Value of the empty type.
+
+gep
+"""
+
+``gep {ptr} {idx}``
+
+Get a pointer to an element of an aggregate from a pointer to the aggregate.
+
+``{ptr}``
+  Pointer to an aggregate.
+``{idx}``
+  Index of member to get pointer to. Must be a ``uiptr``.
 
 .. _psi.tvm.instructions.outer_ptr:
 
@@ -343,39 +367,6 @@ Add an offset to a pointer.
   This should have type ``iptr``.
   Note that this is measure in units of the pointed-to type, not bytes.
 
-struct_el
-"""""""""
-
-.. _psi.tvm.instructions.struct_ep:
-
-struct_ep
-"""""""""
-
-``struct_ep {ptr} {n}``
-
-Pointer to :ref:`psi.tvm.instructions.struct` member.
-
-``{ptr}``
-  Pointer to a ``struct``.
-``{n}``
-  Member index.
-
-.. _psi.tvm.instructions.struct_up:
-
-struct_up
-"""""""""
-
-``struct_up {ty} {idx} {next}``
-
-Structure upward reference.
-
-``{ty}``
-  A :ref:`psi.tvm.instructions.struct` type.
-``{idx}``
-  Index into ``{ty}``.
-``{next}``
-  Next upward reference.
-
 struct_v
 """"""""
 
@@ -390,32 +381,21 @@ The compiler is allowed to make any assumption whatsoever about the contents of 
 ``{type}``
   Result type of this operation.
 
-union_el
-""""""""
+.. _psi.tvm.instructions.upref:
 
-.. _psi.tvm.instructions.union_ep:
+upref
+"""""
 
-union_ep
-""""""""
-
-.. _psi.tvm.instructions.union_up:
-
-union_up
-""""""""
-
-``union_up {ty} {idx} {next}``
+``upref {ty} {idx} {next}``
 
 Structure upward reference.
 
 ``{ty}``
-  A :ref:`psi.tvm.instructions.union` type.
+  An aggregate type.
 ``{idx}``
   Index into ``{ty}``.
 ``{next}``
   Next upward reference.
-
-union_v
-"""""""
 
 zero
 """"

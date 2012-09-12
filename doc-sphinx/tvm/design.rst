@@ -45,49 +45,49 @@ Virtual functions
 Virtual function calls are performed using a combination of member pointers and base pointers.
 For a single dispatch scenario, the following code can be used::
 
-  %vtable = recursive (%tag : upref) > (struct
+  %vtable = recursive (%tag : upref_type) > (struct
     (pointer (function (pointer (apply %base %tag) %tag) > i32))
   );
   
-  %base = recursive (%tag : upref) > (struct
+  %base = recursive (%tag : upref_type) > (struct
     (pointer (apply %vtable %tag))
   );
   
-  %func = function (%obj_wrapped : exists (%tag : upref) > (pointer (apply %base %tag) %tag)) > i32 {
+  %func = function (%obj_wrapped : exists (%tag : upref_type) > (pointer (apply %base %tag) %tag)) > i32 {
     %obj = unwrap %obj_wrapped;
-    %vptr = load (struct_ep %obj #i0);
-    %callback = load (struct_ep %vptr #i0);
+    %vptr = load (gep %obj #up0);
+    %callback = load (gep %vptr #up0);
     %val = call %callback %obj;
     return %val;
   };
   
 This second example shows how to implement full single inheritance, including extending the type and vtable at the same time::
 
-  %vtable = recursive (%vtag : upref, %tag : upref) > (struct
+  %vtable = recursive (%vtag : upref_type, %tag : upref_type) > (struct
     (pointer (function (pointer (apply %base %vtag %tag) %tag) > i32))
   );
   
-  %vtable_derived = recursive (%vtag : upref, %tag : upref) > (struct
-    (apply %vtable (struct_up (apply %vtable_derived %vtag %tag) #i0 %vtag) %tag)
+  %vtable_derived = recursive (%vtag : upref_type, %tag : upref_type) > (struct
+    (apply %vtable (upref (apply %vtable_derived %vtag %tag) #up0 %vtag) %tag)
     (pointer (function (pointer (apply %derived %vtag %tag) %tag) > i32))
   );
   
-  %base = recursive (%vtag : upref, %tag : upref) > (struct
+  %base = recursive (%vtag : upref_type, %tag : upref_type) > (struct
     (pointer (apply %vtable %vtag %tag) %vtag)
     i32
   );
   
-  %derived = recursive (%vtag : upref, %tag : upref) > (struct
-    (apply %base (struct_up (apply %vtable_derived %vtag %tag) #i0 %vtag) (struct_up (apply %derived %vtag %tag) #i0 %tag))
+  %derived = recursive (%vtag : upref_type, %tag : upref_type) > (struct
+    (apply %base (upref (apply %vtable_derived %vtag %tag) #up0 %vtag) (upref (apply %derived %vtag %tag) #up0 %tag))
     i32
   );
   
-  %func = function (%obj_wrapped : exists (%vtag : upref, %tag : upref) > (pointer (apply %derived %vtag %tag) %tag)) > i32 {
+  %func = function (%obj_wrapped : exists (%vtag : upref_type, %tag : upref_type) > (pointer (apply %derived %vtag %tag) %tag)) > i32 {
     %obj = unwrap %obj_wrapped;
-    %vptr_base = load (struct_ep (struct_ep %obj #i0) #i0);
+    %vptr_base = load (gep (gep %obj #up0) #up0);
     %vptr = outer_ptr %vptr_base;
-    %callback1 = load (struct_ep %vptr #i1);
-    %callback2 = load (struct_ep (struct_ep %vptr #i0) #i0);
+    %callback1 = load (gep %vptr #up1);
+    %callback2 = load (gep (gep %vptr #up0) #up0);
     %val1 = call %callback1 %obj;
     %val2 = call %callback2 %obj;
     return (add %val1 %val2);

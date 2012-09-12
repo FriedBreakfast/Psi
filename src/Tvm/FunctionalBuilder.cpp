@@ -106,10 +106,20 @@ namespace Psi {
     /**
      * \brief Get the type of upward references.
      */
-    ValuePtr<> FunctionalBuilder::upref(Context& context, const SourceLocation& location) {
-      return context.get_functional(UpwardReference(context, location));
+    ValuePtr<> FunctionalBuilder::upref_type(Context& context, const SourceLocation& location) {
+      return context.get_functional(UpwardReferenceType(context, location));
     }
-
+    
+    /**
+     * \brief Get an upward reference.
+     */
+    ValuePtr<> FunctionalBuilder::upref(const ValuePtr<>& outer_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location) {
+      ValuePtr<> result = outer_type->context().get_functional(UpwardReference(outer_type, index, next, location));
+      if (isa<UndefinedValue>(index))
+        return undef(result->type(), location);
+      return result;
+    }
+    
     /**
      * \brief Get an array type.
      * 
@@ -147,19 +157,6 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::union_type(Context& context, const std::vector<ValuePtr<> >& elements, const SourceLocation& location) {
       return context.get_functional(UnionType(context, elements, location));
     }
-    
-    /**
-     * \brief Get a struct_ep operation.
-     * 
-     * \param aggregate_ptr Pointer to an aggregate value.
-     * \param member Which member of the aggregate to get a pointer to.
-     */
-    ValuePtr<> FunctionalBuilder::struct_element_ptr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location) {
-      ValuePtr<> result = aggregate_ptr->context().get_functional(StructElementPtr(aggregate_ptr, index, location));
-      if (isa<UndefinedValue>(aggregate_ptr))
-        return undef(result->type(), location);
-      return result;
-    }
 
     /**
      * \brief Get a struct_eo operation.
@@ -174,35 +171,22 @@ namespace Psi {
      * \param aggregate_ptr Pointer to an aggregate value.
      * \param member Which member of the aggregate to get a pointer to.
      */
-    ValuePtr<> FunctionalBuilder::array_element_ptr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location) {
-      ValuePtr<> result = aggregate_ptr->context().get_functional(ArrayElementPtr(aggregate_ptr, index, location));
+    ValuePtr<> FunctionalBuilder::element_ptr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location) {
+      ValuePtr<> result = aggregate_ptr->context().get_functional(ElementPtr(aggregate_ptr, index, location));
       if (isa<UndefinedValue>(aggregate_ptr) || isa<UndefinedValue>(index))
         return undef(result->type(), location);
       return result;
     }
     
     /**
-     * \brief Get a pointer to an array element.
+     * \brief Get a pointer to an aggregate element.
      * 
-     * \param aggregate Pointer to an array.
+     * \param aggregate Pointer to an aggregate.
      * 
      * \param index Index of element to get.
      */
-    ValuePtr<> FunctionalBuilder::array_element_ptr(const ValuePtr<>& array, unsigned index, const SourceLocation& location) {
-      return array_element_ptr(array, size_value(array->context(), index, location), location);
-    }
-
-    /**
-     * \brief Get a union_ep operation.
-     * 
-     * \param aggregate_ptr Pointer to an aggregate value.
-     * \param member Which member of the aggregate to get a pointer to.
-     */
-    ValuePtr<> FunctionalBuilder::union_element_ptr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location) {
-      ValuePtr<> result = aggregate_ptr->context().get_functional(UnionElementPtr(aggregate_ptr, index, location));
-      if (isa<UndefinedValue>(aggregate_ptr))
-        return undef(result->type(), location);
-      return result;
+    ValuePtr<> FunctionalBuilder::element_ptr(const ValuePtr<>& array, unsigned index, const SourceLocation& location) {
+      return element_ptr(array, size_value(array->context(), index, location), location);
     }
 
     /**
@@ -213,30 +197,6 @@ namespace Psi {
       if (isa<UndefinedValue>(result))
         return undef(result->type(), location);
       return result;
-    }
-    
-    /**
-     * \brief Get a member pointer for an array.
-     */
-    ValuePtr<> FunctionalBuilder::array_upref(const ValuePtr<>& array_ty, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location) {
-      ValuePtr<> result = array_ty->context().get_functional(ArrayUpwardReference(array_ty, index, next, location));
-      if (isa<UndefinedValue>(index))
-        return undef(result->type(), location);
-      return result;
-    }
-    
-    /**
-     * \brief Get a member pointer for an array.
-     */
-    ValuePtr<> FunctionalBuilder::struct_upref(const ValuePtr<>& struct_ty, unsigned index, const ValuePtr<>& next, const SourceLocation& location) {
-      return struct_ty->context().get_functional(StructUpwardReference(struct_ty, index, next, location));
-    }
-    
-    /**
-     * \brief Get a member pointer for an array.
-     */
-    ValuePtr<> FunctionalBuilder::union_upref(const ValuePtr<>& union_ty, unsigned index, const ValuePtr<>& next, const SourceLocation& location) {
-      return union_ty->context().get_functional(UnionUpwardReference(union_ty, index, next, location));
     }
 
     /**
@@ -296,100 +256,47 @@ namespace Psi {
      * 
      * \param index Index into the array.
      */
-    ValuePtr<> FunctionalBuilder::array_element(const ValuePtr<>& array, const ValuePtr<>& index, const SourceLocation& location) {
-      ValuePtr<> result = array->context().get_functional(ArrayElement(array, index, location));
+    ValuePtr<> FunctionalBuilder::element_value(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location) {
+      ValuePtr<> result = aggregate->context().get_functional(ElementValue(aggregate, index, location));
 
-      if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(array)) {
-        if (ValuePtr<IntegerValue> index_val = dyn_cast<IntegerValue>(index)) {
-          boost::optional<unsigned> index_ui = index_val->value().unsigned_value();
-          if (index_ui && (*index_ui < array_val->length()))
+      if (isa<UndefinedValue>(aggregate) || isa<UndefinedValue>(index)) {
+        return undef(result->type(), location);
+      } else if (isa<ZeroValue>(aggregate)) {
+        return zero(result->type(), location);
+      } else if (ValuePtr<IntegerValue> index_val = dyn_cast<IntegerValue>(index)) {
+        boost::optional<unsigned> index_ui = index_val->value().unsigned_value();
+        if (!index_ui)
+          throw TvmUserError("aggregate index out of range");
+        
+        if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(aggregate)) {
+          if (*index_ui < struct_val->n_members())
+            return struct_val->member_value(*index_ui);
+          else
+            throw TvmUserError("struct element index out of range");
+        } else if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(aggregate)) {
+          if (*index_ui < array_val->length())
             return array_val->value(*index_ui);
           else
-            throw TvmUserError("array index out of range");
+            throw TvmUserError("array element index out of range");
         }
-      } else if (isa<UndefinedValue>(array) || isa<UndefinedValue>(index)) {
-        return undef(result->type(), location);
-      } else if (isa<ZeroValue>(array)) {
-        return zero(result->type(), location);
       }
       
       return result;
     }
     
     /**
-     * \brief Get the value of an array element.
+     * \brief Get the value of an aggregate element.
      * 
      * \param array Array being subscripted.
      * \param index Index into the array.
      */
-    ValuePtr<> FunctionalBuilder::array_element(const ValuePtr<>& array, unsigned index, const SourceLocation& location) {
-      return array_element(array, size_value(array->context(), index, location), location);
-    }
-    
-    /**
-     * \brief Get the value of a struct member.
-     * 
-     * \param aggregate Struct being subscripted.
-     * \param index Index of the member to get a value for.
-     */
-    ValuePtr<> FunctionalBuilder::struct_element(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
-      const ValuePtr<>& result = aggregate->context().get_functional(StructElement(aggregate, index, location));
-      
-      if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(aggregate)) {
-        return struct_val->member_value(index);
-      } else if (isa<UndefinedValue>(aggregate)) {
-        return undef(result->type(), location);
-      } else if (isa<ZeroValue>(aggregate)) {
-        return zero(result->type(), location);
-      }
-      
-      return result;
-    }
-    
-    /**
-     * \brief Get the value of a union member.
-     * 
-     * \param aggregate Union being subscripted.
-     * \param member_type Type of the member whose value is returned.
-     */
-    ValuePtr<> FunctionalBuilder::union_element(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location) {
-      const ValuePtr<>& result = aggregate->context().get_functional(UnionElement(aggregate, member_type, location));
-      
-      if (ValuePtr<UnionValue> union_val = dyn_cast<UnionValue>(aggregate)) {
-        const ValuePtr<>& value = union_val->value();
-        if (member_type == value->type())
-          return value;
-      } else if (isa<UndefinedValue>(aggregate)) {
-        return undef(result->type(), location);
-      } else if (isa<ZeroValue>(aggregate)) {
-        return zero(result->type(), location);
-      }
-      
-      return result;
-    }
-    
-    /**
-     * \brief Get the value of a struct member.
-     * 
-     * This version of the function translates the index into a type in
-     * constructing the operation. Different members with the same type
-     * will therefore be considered equivalent.
-     * 
-     * \param aggregate Union being subscripted.
-     * \param index Index of the member to get a value for.
-     */
-    ValuePtr<> FunctionalBuilder::union_element(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
-      ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(aggregate->type());
-      if (!union_ty)
-        throw TvmUserError("union_el aggregate parameter is not a union");
-      if (index >= union_ty->n_members())
-        throw TvmUserError("union member index out of range");
-      return union_element(aggregate, union_ty->member_type(index), location);
+    ValuePtr<> FunctionalBuilder::element_value(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
+      return element_value(aggregate, size_value(aggregate->context(), index, location), location);
     }
     
     namespace {
       ValuePtr<> pointer_target_type(const ValuePtr<>& ptr) {
-        ValuePtr<PointerType> ptr_ty = dyn_cast<PointerType>(ptr->type());
+        ValuePtr<PointerType> ptr_ty = dyn_unrecurse<PointerType>(ptr->type());
         if (!ptr_ty)
           throw TvmUserError("Parameter is not a pointer");
         return ptr_ty->target_type();

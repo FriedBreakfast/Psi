@@ -2,11 +2,26 @@
 #include "FunctionalBuilder.hpp"
 #include "Number.hpp"
 #include "Function.hpp"
+#include "Recursive.hpp"
 
 #include <limits>
 
 namespace Psi {
   namespace Tvm {
+    /**
+     * \brief Convert a constant size value to an unsigned integer.
+     */
+    unsigned size_to_unsigned(const ValuePtr<>& value) {
+      ValuePtr<IntegerValue> val = dyn_unrecurse<IntegerValue>(value);
+      if (!val)
+        throw TvmUserError("value is not a constant integer");
+      
+      if (val->width() != IntegerType::iptr)
+        throw TvmUserError("value is a constant integer but has the wrong width");
+      
+      return val->value().unsigned_value_checked();
+    }
+
     BooleanType::BooleanType(Context& context, const SourceLocation& location)
     : Type(context, location) {
     }

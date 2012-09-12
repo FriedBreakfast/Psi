@@ -51,11 +51,33 @@ namespace Psi {
     /**
      * \brief Type of upward references.
      */
-    class UpwardReference : public Type {
+    class UpwardReferenceType : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(UpwardReference)
       
     public:
-      UpwardReference(Context& context, const SourceLocation& location);
+      UpwardReferenceType(Context& context, const SourceLocation& location);
+    };
+    
+    /**
+     * \brief Upward reference value.
+     */
+    class UpwardReference : public FunctionalValue {
+      PSI_TVM_FUNCTIONAL_DECL(UpwardReference)
+      
+    public:
+      UpwardReference(const ValuePtr<>& outer_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location);
+      
+      /// \brief The outer type of this reference.
+      const ValuePtr<>& outer_type() const {return m_outer_type;}
+      /// \brief The index into the outer type to which we have a pointer.
+      const ValuePtr<>& index() const {return m_index;}
+      /// \brief Next upward reference in the chain.
+      const ValuePtr<>& next() const {return m_next;}
+      
+    private:
+      ValuePtr<> m_outer_type;
+      ValuePtr<> m_index;
+      ValuePtr<> m_next;
     };
     
     /**
@@ -243,63 +265,6 @@ namespace Psi {
       std::vector<ValuePtr<> > m_elements;
     };
 
-    /// \brief Get the value of an array element
-    class ArrayElement : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(ArrayElement)
-    public:
-      ArrayElement(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location);
-
-      /// \brief Get the array being subscripted
-      const ValuePtr<>& aggregate() const {return m_aggregate;}
-      /// \brief Get the index
-      const ValuePtr<>& index() const {return m_index;}
-      /// \brief Get the type of array being accessed
-      ValuePtr<ArrayType> aggregate_type() const {return value_cast<ArrayType>(aggregate()->type());}
-      
-    private:
-      ValuePtr<> m_aggregate;
-      ValuePtr<> m_index;
-    };
-
-    /**
-     * \brief Array member pointer.
-     */
-    class ArrayElementPtr : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(ArrayMember)
-    public:
-      ArrayElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location);
-
-      /// \brief Get the array being subscripted
-      const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
-      /// \brief Get the index
-      const ValuePtr<>& index() const {return m_index;}
-      
-    private:
-      ValuePtr<> m_aggregate_ptr;
-      ValuePtr<> m_index;
-    };
-    
-    /**
-     * \brief Array upward reference.
-     */
-    class ArrayUpwardReference : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(ArrayUpwardReference)
-    public:
-      ArrayUpwardReference(const ValuePtr<>& array_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location);
-
-      /// \brief Get the array being subscripted
-      const ValuePtr<>& array_type() const {return m_array_type;}
-      /// \brief Get the index
-      const ValuePtr<>& index() const {return m_index;}
-      /// \brief Next entry in the upref chain.
-      ValuePtr<> next() const {return m_next;}
-      
-    private:
-      ValuePtr<> m_array_type;
-      ValuePtr<> m_index;
-      ValuePtr<> m_next;
-    };
-
     /**
      * \brief The struct type, which contains a series of values of different types.
      */
@@ -340,43 +305,6 @@ namespace Psi {
       std::vector<ValuePtr<> > m_members;
     };
 
-    /// \brief Get the value of a struct member
-    class StructElement : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(StructElement)
-    public:
-      StructElement(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location);
-
-      /// \brief Get the struct being accessed
-      const ValuePtr<>& aggregate() const {return m_aggregate;}
-      /// \brief Get the index of the member being accessed
-      unsigned index() const {return m_index;}
-      /// \brief Get the type of struct being accessed
-      ValuePtr<StructType> aggregate_type() const {return value_cast<StructType>(aggregate()->type());}
-
-    private:
-      ValuePtr<> m_aggregate;
-      unsigned m_index;
-    };
-    
-    /**
-     * \brief Get a pointer to a member of a struct from a
-     * pointer to the struct.
-     */
-    class StructElementPtr : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(StructElementPtr)
-    public:
-      StructElementPtr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location);
-
-      /// \brief Get the struct being subscripted
-      const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
-      /// \brief Index of the member being retrieved.
-      unsigned index() const {return m_index;}
-      
-    private:
-      ValuePtr<> m_aggregate_ptr;
-      unsigned m_index;
-    };
-
     /**
      * \brief Get the offset of a struct member
      * 
@@ -396,28 +324,6 @@ namespace Psi {
     private:
       ValuePtr<> m_struct_type;
       unsigned m_index;
-    };
-
-    /**
-     * \brief Struct upward reference.
-     */
-    class StructUpwardReference : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(StructUpwardReference)
-    public:
-      StructUpwardReference(const ValuePtr<>& struct_type, unsigned index, const ValuePtr<>& next,
-                            const SourceLocation& location);
-
-      /// \brief Get the struct being subscripted
-      const ValuePtr<>& struct_type() const {return m_struct_type;}
-      /// \brief Get the index
-      unsigned index() const {return m_index;}
-      /// \brief Next upward reference in the chain.
-      ValuePtr<> next() const {return m_next;}
-      
-    private:
-      ValuePtr<> m_struct_type;
-      unsigned m_index;
-      ValuePtr<> m_next;
     };
 
     /**
@@ -459,20 +365,22 @@ namespace Psi {
       ValuePtr<> m_value;
     };
 
-    /// \brief Get the value of a union member
-    class UnionElement : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(UnionElement)
+    /**
+     * \brief Get the value of an element of an aggregate from an aggregate value.
+     */
+    class ElementValue : public AggregateOp {
+      PSI_TVM_FUNCTIONAL_DECL(ElementValue)
     public:
-      UnionElement(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location);
+      ElementValue(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location);
 
-      /// \brief Get the union being accessed
+      /// \brief Get the aggregate being accessed
       const ValuePtr<>& aggregate() const {return m_aggregate;}
-      /// \brief Get the type of the member being accessed
-      const ValuePtr<>& member_type() const {return m_member_type;}
+      /// \brief Get the index of the member being accessed
+      const ValuePtr<>& index() const {return m_index;}
       
     private:
       ValuePtr<> m_aggregate;
-      ValuePtr<> m_member_type;
+      ValuePtr<> m_index;
     };
 
     /**
@@ -483,40 +391,19 @@ namespace Psi {
      * entirely equivalent to PointerCast, but I put it in
      * because it's semantically different.
      */
-    class UnionElementPtr : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(UnionElementPtr)
+    class ElementPtr : public AggregateOp {
+      PSI_TVM_FUNCTIONAL_DECL(ElementPtr)
     public:
-      UnionElementPtr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location);
+      ElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location);
 
-      /// \brief Get the union being subscripted
+      /// \brief Get the aggregate being accessed
       const ValuePtr<>& aggregate_ptr() const {return m_aggregate_ptr;}
       /// \brief Index of the member being retrieved.
-      unsigned index() const {return m_index;}
+      const ValuePtr<>& index() const {return m_index;}
       
     private:
       ValuePtr<> m_aggregate_ptr;
-      unsigned m_index;
-    };
-
-    /**
-     * \brief Union upward reference.
-     */
-    class UnionUpwardReference : public AggregateOp {
-      PSI_TVM_FUNCTIONAL_DECL(UnionMember)
-    public:
-      UnionUpwardReference(const ValuePtr<>& union_type, unsigned index, const ValuePtr<>& next, const SourceLocation& location);
-
-      /// \brief Get the struct being subscripted
-      const ValuePtr<>& union_type() const {return m_union_type;}
-      /// \brief Index of the member being retrieved.
-      unsigned index() const {return m_index;}
-      /// \brief Next element in the upward reference chain.
-      const ValuePtr<>& next() const {return m_next;}
-      
-    private:
-      ValuePtr<> m_union_type;
-      unsigned m_index;
-      ValuePtr<> m_next;
+      ValuePtr<> m_index;
     };
     
     /**

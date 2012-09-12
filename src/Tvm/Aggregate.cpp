@@ -111,12 +111,8 @@ namespace Psi {
       if (!ptr_type->upref())
         throw TvmUserError("Parameter to outer_ptr does not have a visible upward reference");
       
-      if (ValuePtr<StructUpwardReference> struct_up = dyn_cast<StructUpwardReference>(ptr_type->upref()))
-        return FunctionalBuilder::pointer_type(struct_up->struct_type(), struct_up->next(), location());
-      else if (ValuePtr<ArrayUpwardReference> array_up = dyn_cast<ArrayUpwardReference>(ptr_type->upref()))
-        return FunctionalBuilder::pointer_type(array_up->array_type(), array_up->next(), location());
-      else if (ValuePtr<UnionUpwardReference> union_up = dyn_cast<UnionUpwardReference>(ptr_type->upref()))
-        return FunctionalBuilder::pointer_type(union_up->union_type(), union_up->next(), location());
+      if (ValuePtr<UpwardReference> up = dyn_unrecurse<UpwardReference>(ptr_type->upref()))
+        return FunctionalBuilder::pointer_type(up->outer_type(), up->next(), location());
       else
         throw TvmInternalError("Unrecognised upward reference type");
     }
@@ -190,20 +186,41 @@ namespace Psi {
     
     PSI_TVM_FUNCTIONAL_IMPL(PointerType, Type, pointer)
     
-    UpwardReference::UpwardReference(Context& context, const SourceLocation& location)
-    : Type(context, location) {
+    UpwardReferenceType::UpwardReferenceType(Context& context, const SourceLocation& location)
+    : FunctionalValue(context, location) {
     }
 
+    ValuePtr<> UpwardReferenceType::check_type() const {
+      return ValuePtr<>();
+    }
+    
+    template<typename V>
+    void UpwardReferenceType::visit(V& v) {
+      visit_base<FunctionalValue>(v);
+    }
+
+    PSI_TVM_FUNCTIONAL_IMPL(UpwardReferenceType, FunctionalValue, upref_type)
+    
+    UpwardReference::UpwardReference(const ValuePtr<>& outer_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location)
+    : FunctionalValue(outer_type->context(), location),
+    m_outer_type(outer_type),
+    m_index(index),
+    m_next(next) {
+    }
+    
     ValuePtr<> UpwardReference::check_type() const {
-      return FunctionalBuilder::type_type(context(), location());
+      return FunctionalBuilder::upref_type(context(), location());
     }
     
     template<typename V>
     void UpwardReference::visit(V& v) {
-      visit_base<Type>(v);
+      visit_base<FunctionalValue>(v);
+      v("outer_type", &UpwardReference::m_outer_type)
+      ("index", &UpwardReference::m_index)
+      ("next", &UpwardReference::m_next);
     }
 
-    PSI_TVM_FUNCTIONAL_IMPL(UpwardReference, Type, upref)
+    PSI_TVM_FUNCTIONAL_IMPL(UpwardReference, FunctionalValue, upref)
     
     PointerCast::PointerCast(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location)
     : AggregateOp(pointer->context(), location),
@@ -300,86 +317,7 @@ namespace Psi {
       return FunctionalBuilder::array_type(m_element_type, FunctionalBuilder::size_value(m_element_type->context(), m_elements.size(), location()), location());
     }
     
-    PSI_TVM_FUNCTIONAL_IMPL(ArrayValue, Constructor, array_v)
-    
-    ArrayElement::ArrayElement(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location)
-    : AggregateOp(aggregate->context(), location),
-    m_aggregate(aggregate),
-    m_index(index) {
-    }
-
-    template<typename V>
-    void ArrayElement::visit(V& v) {
-      visit_base<AggregateOp>(v);
-      v("aggregate", &ArrayElement::m_aggregate)
-      ("index", &ArrayElement::m_index);
-    }
-    
-    ValuePtr<> ArrayElement::check_type() const {
-      if (m_index->type() != FunctionalBuilder::size_type(context(), location()))
-        throw TvmUserError("second parameter to array_el is not an intptr");
-      ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(m_aggregate->type());
-      if (!array_ty)
-        throw TvmUserError("first parameter to array_el is not an array");
-      return array_ty->element_type();
-    }
-    
-    PSI_TVM_FUNCTIONAL_IMPL(ArrayElement, AggregateOp, array_el)
-    
-    ArrayElementPtr::ArrayElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location)
-    : AggregateOp(aggregate_ptr->context(), location),
-    m_aggregate_ptr(aggregate_ptr),
-    m_index(index) {
-    }
-
-    template<typename V>
-    void ArrayElementPtr::visit(V& v) {
-      visit_base<AggregateOp>(v);
-      v("aggregate_ptr", &ArrayElementPtr::m_aggregate_ptr)
-      ("index", &ArrayElementPtr::m_index);
-    }
-    
-    ValuePtr<> ArrayElementPtr::check_type() const {
-      ValuePtr<PointerType> ptr_ty = dyn_unrecurse<PointerType>(m_aggregate_ptr->type());
-      if (!ptr_ty)
-        throw TvmUserError("First argument to array_ep is not a pointer");
-      ValuePtr<ArrayType> array_ty = dyn_unrecurse<ArrayType>(ptr_ty->target_type());
-      if (!array_ty)
-        throw TvmUserError("First argument to array_ep is not a pointer to an array");
-      if (unrecurse(m_index->type()) != FunctionalBuilder::size_type(context(), location()))
-        throw TvmUserError("second parameter to array_ep is not an intptr");
-      return FunctionalBuilder::pointer_type(array_ty->element_type(),
-                                             FunctionalBuilder::array_upref(array_ty, m_index, ptr_ty->upref(), location()),
-                                             location());
-    }
-    
-    PSI_TVM_FUNCTIONAL_IMPL(ArrayElementPtr, AggregateOp, array_ep)
-    
-    ArrayUpwardReference::ArrayUpwardReference(const ValuePtr<>& array_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location)
-    : AggregateOp(array_type->context(), location),
-    m_array_type(array_type),
-    m_index(index),
-    m_next(next) {
-    }
-
-    template<typename V>
-    void ArrayUpwardReference::visit(V& v) {
-      visit_base<AggregateOp>(v);
-      v("array_type", &ArrayUpwardReference::m_array_type)
-      ("index", &ArrayUpwardReference::m_index)
-      ("next", &ArrayUpwardReference::m_next);
-    }
-    
-    ValuePtr<> ArrayUpwardReference::check_type() const {
-      ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(m_array_type);
-      if (!array_ty)
-        throw TvmUserError("First argument to array_ep is NULL");
-      if (m_index->type() != FunctionalBuilder::size_type(context(), location()))
-        throw TvmUserError("second parameter to array_ep is not an intptr");
-      return FunctionalBuilder::upref(context(), location());
-    }
-    
-    PSI_TVM_FUNCTIONAL_IMPL(ArrayUpwardReference, AggregateOp, array_up)
+    PSI_TVM_FUNCTIONAL_IMPL(ArrayValue, Constructor, array_v)    
     
     StructType::StructType(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location)
     : Type(context, location),
@@ -421,82 +359,6 @@ namespace Psi {
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(StructValue, Constructor, struct_v)
-    
-    StructElement::StructElement(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location)
-    : AggregateOp(aggregate->context(), location),
-    m_aggregate(aggregate),
-    m_index(index) {
-    }
-
-    template<typename V>
-    void StructElement::visit(V& v) {
-      visit_base<AggregateOp>(v);
-      v("aggregate", &StructElement::m_aggregate)
-      ("index", &StructElement::m_index);
-    }
-    
-    ValuePtr<> StructElement::check_type() const {
-      ValuePtr<StructType> ty = dyn_cast<StructType>(m_aggregate->type());
-      if (!ty)
-        throw TvmUserError("parameter to struct_el does not have struct type");
-      if (m_index >= ty->n_members())
-        throw TvmUserError("struct_el member index out of range");
-      return ty->member_type(m_index);
-    }
-    
-    PSI_TVM_FUNCTIONAL_IMPL(StructElement, AggregateOp, struct_el)
-    
-    StructElementPtr::StructElementPtr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location)
-    : AggregateOp(aggregate_ptr->context(), location),
-    m_aggregate_ptr(aggregate_ptr),
-    m_index(index) {
-    }
-
-    template<typename V>
-    void StructElementPtr::visit(V& v) {
-      visit_base<AggregateOp>(v);
-      v("struct_type", &StructElementPtr::m_aggregate_ptr)
-      ("index", &StructElementPtr::m_index);
-    }
-    
-    ValuePtr<> StructElementPtr::check_type() const {
-      ValuePtr<PointerType> ptr_ty = dyn_unrecurse<PointerType>(m_aggregate_ptr->type());
-      if (!ptr_ty)
-        throw TvmUserError("First argument to struct_ep is not a pointer");
-      ValuePtr<StructType> struct_ty = dyn_unrecurse<StructType>(ptr_ty->target_type());
-      if (!struct_ty)
-        throw TvmUserError("First argument to struct_ep is not a pointer to a struct");
-      
-      if (m_index >= struct_ty->n_members())
-        throw TvmUserError("struct_ep index out of range");
-
-      return FunctionalBuilder::pointer_type(struct_ty->member_type(m_index),
-                                             FunctionalBuilder::struct_upref(struct_ty, m_index, ptr_ty->upref(), location()),
-                                             location());
-    }
-    
-    PSI_TVM_FUNCTIONAL_IMPL(StructElementPtr, AggregateOp, struct_ep)
-    
-    StructUpwardReference::StructUpwardReference(const ValuePtr<>& struct_type, unsigned index, const ValuePtr<>& next, const SourceLocation& location)
-    : AggregateOp(struct_type->context(), location),
-    m_struct_type(struct_type),
-    m_index(index),
-    m_next(next) {
-    }
-
-    template<typename V>
-    void StructUpwardReference::visit(V& v) {
-      visit_base<AggregateOp>(v);
-      v("struct_type", &StructUpwardReference::m_struct_type)
-      ("index", &StructUpwardReference::m_index)
-      ("next", &StructUpwardReference::m_next);
-    }
-    
-    ValuePtr<> StructUpwardReference::check_type() const {
-      return FunctionalBuilder::upref(context(), location());
-    }
-    
-    PSI_TVM_FUNCTIONAL_IMPL(StructUpwardReference, AggregateOp, struct_up)
 
     StructElementOffset::StructElementOffset(const ValuePtr<>& struct_type, unsigned index, const SourceLocation& location)
     : AggregateOp(struct_type->context(), location),
@@ -581,84 +443,80 @@ namespace Psi {
       return m_union_type;
     }
         
-    PSI_TVM_FUNCTIONAL_IMPL(UnionValue, Constructor, union_v)
-    
-    UnionElement::UnionElement(const ValuePtr<>& aggregate, const ValuePtr<>& member_type, const SourceLocation& location)
+    PSI_TVM_FUNCTIONAL_IMPL(UnionValue, Constructor, union_v)    
+
+    ElementValue::ElementValue(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location)
     : AggregateOp(aggregate->context(), location),
     m_aggregate(aggregate),
-    m_member_type(member_type) {
+    m_index(index) {
     }
-    
+
     template<typename V>
-    void UnionElement::visit(V& v) {
+    void ElementValue::visit(V& v) {
       visit_base<AggregateOp>(v);
-      v("aggregate", &UnionElement::m_aggregate)
-      ("member_type", &UnionElement::m_member_type);
+      v("aggregate", &ElementValue::m_aggregate)
+      ("index", &ElementValue::m_index);
     }
     
-    ValuePtr<> UnionElement::check_type() const {
-      ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(m_aggregate->type());
-      if (!union_ty)
-        throw TvmUserError("first argument to union_el must have union type");
-
-      if (!union_ty->contains_type(m_member_type))
-        throw TvmUserError("second argument to union_el is not a member of the type of the first");
-      
-      return m_member_type;
-    }
+    namespace {
+      ValuePtr<> element_value_type(const Value& self, const ValuePtr<>& aggregate_type, const ValuePtr<>& index) {
+        if (unrecurse(index->type()) != FunctionalBuilder::size_type(self.context(), self.location()))
+          throw TvmUserError("element member index is not an intptr");
         
-    PSI_TVM_FUNCTIONAL_IMPL(UnionElement, AggregateOp, union_el)
-
-    UnionElementPtr::UnionElementPtr(const ValuePtr<>& aggregate_ptr, unsigned index, const SourceLocation& location)
+        ValuePtr<> unrec_aggregate = unrecurse(aggregate_type);
+        if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(unrec_aggregate)) {
+          unsigned idx = size_to_unsigned(index);
+          if (idx < struct_ty->n_members())
+            return struct_ty->member_type(idx);
+          else
+            throw TvmUserError("struct gep index out of range");
+        } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(unrec_aggregate)) {
+          return array_ty->element_type();
+        } else if (ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(unrec_aggregate)) {
+          unsigned idx = size_to_unsigned(index);
+          if (idx < union_ty->n_members())
+            return union_ty->member_type(idx);
+          else
+            throw TvmUserError("union gep index out of range");
+        } else {
+          throw TvmUserError("parameter to gep or element is not a recognised aggregate type");
+        }
+      }
+    }
+    
+    ValuePtr<> ElementValue::check_type() const {
+      return element_value_type(*this, m_aggregate->type(), m_index);
+    }
+    
+    PSI_TVM_FUNCTIONAL_IMPL(ElementValue, AggregateOp, element)
+    
+    ElementPtr::ElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location)
     : AggregateOp(aggregate_ptr->context(), location),
     m_aggregate_ptr(aggregate_ptr),
     m_index(index) {
     }
-    
+
     template<typename V>
-    void UnionElementPtr::visit(V& v) {
+    void ElementPtr::visit(V& v) {
       visit_base<AggregateOp>(v);
-      v("aggregate_ptr", &UnionElementPtr::m_aggregate_ptr)
-      ("index", &UnionElementPtr::m_index);
+      v("aggregate_ptr", &ElementPtr::m_aggregate_ptr)
+      ("index", &ElementPtr::m_index);
     }
     
-    ValuePtr<> UnionElementPtr::check_type() const {
+    ValuePtr<> ElementPtr::check_type() const {
       ValuePtr<PointerType> ptr_ty = dyn_unrecurse<PointerType>(m_aggregate_ptr->type());
       if (!ptr_ty)
-        throw TvmUserError("First argument to union_ep is not a pointer");
-      ValuePtr<UnionType> union_ty = dyn_unrecurse<UnionType>(ptr_ty->target_type());
-      if (!union_ty)
-        throw TvmUserError("First argument to union_ep is not a pointer to a union");
-      if (m_index >= union_ty->n_members())
-        throw TvmUserError("union_ep index out of range");
+        throw TvmUserError("First argument to gep is not a pointer");
+      
+      if (unrecurse(m_index->type()) != FunctionalBuilder::size_type(context(), location()))
+        throw TvmUserError("second parameter to gep is not an intptr");
 
-      return FunctionalBuilder::pointer_type(union_ty->member_type(m_index),
-                                             FunctionalBuilder::union_upref(union_ty, m_index, ptr_ty->upref(), location()),
+      return FunctionalBuilder::pointer_type(element_value_type(*this, ptr_ty->target_type(), m_index),
+                                             FunctionalBuilder::upref(ptr_ty->target_type(), m_index, ptr_ty->upref(), location()),
                                              location());
     }
     
-    PSI_TVM_FUNCTIONAL_IMPL(UnionElementPtr, AggregateOp, union_ep)
-    
-    UnionUpwardReference::UnionUpwardReference(const ValuePtr<>& union_type, unsigned index, const ValuePtr<>& next, const SourceLocation& location)
-    : AggregateOp(union_type->context(), location),
-    m_union_type(union_type),
-    m_index(index),
-    m_next(next) {
-    }
-    
-    template<typename V>
-    void UnionUpwardReference::visit(V& v) {
-      visit_base<AggregateOp>(v);
-      v("union_type", &UnionUpwardReference::m_union_type)
-      ("index", &UnionUpwardReference::m_index)
-      ("next", &UnionUpwardReference::m_next);
-    }
-    
-    ValuePtr<> UnionUpwardReference::check_type() const {
-      return FunctionalBuilder::upref(context(), location());
-    }
-    
-    PSI_TVM_FUNCTIONAL_IMPL(UnionUpwardReference, AggregateOp, union_up)
+    PSI_TVM_FUNCTIONAL_IMPL(ElementPtr, AggregateOp, gep)
 
     FunctionSpecialize::FunctionSpecialize(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location)
     : FunctionalValue(function->context(), location),

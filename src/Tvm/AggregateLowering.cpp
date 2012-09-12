@@ -152,8 +152,8 @@ namespace Psi {
         ValuePtr<> size, alignment;
         if (rewriter.pass().remove_only_unknown) {
           ValuePtr<> rewritten = rewriter.rewrite_value_stack(type);
-          size = FunctionalBuilder::struct_element(rewritten, 0, type->location());
-          alignment = FunctionalBuilder::struct_element(rewritten, 1, type->location());
+          size = FunctionalBuilder::element_value(rewritten, 0, type->location());
+          alignment = FunctionalBuilder::element_value(rewritten, 1, type->location());
         } else {
           size = rewriter.lookup_value_stack(FunctionalBuilder::type_size(type, type->location()));
           alignment = rewriter.lookup_value_stack(FunctionalBuilder::type_alignment(type, type->location()));
@@ -234,14 +234,15 @@ namespace Psi {
                                                           FunctionalBuilder::byte_type(rewriter.context(), term->location()),
                                                           term->location());
         
-        ValuePtr<> up = ptr_ty->upref(), offset;
-        if (ValuePtr<StructUpwardReference> struct_up = dyn_cast<StructUpwardReference>(up)) {
-          offset = rewriter.rewrite_value_stack(FunctionalBuilder::struct_element_offset(struct_up->struct_type(), struct_up->index(), term->location()));
-        } else if (ValuePtr<ArrayUpwardReference> array_up = dyn_cast<ArrayUpwardReference>(up)) {
-          offset = FunctionalBuilder::mul(rewriter.rewrite_value_stack(array_up->index()),
-                                          rewriter.rewrite_type(array_up->array_type()).size(),
+        ValuePtr<UpwardReference> up = dyn_unrecurse<UpwardReference>(ptr_ty->upref());
+        ValuePtr<> offset;
+        if (ValuePtr<StructType> struct_ty = dyn_unrecurse<StructType>(up->outer_type())) {
+          offset = rewriter.rewrite_value_stack(FunctionalBuilder::struct_element_offset(struct_ty, size_to_unsigned(up->index()), term->location()));
+        } else if (ValuePtr<ArrayType> array_ty = dyn_unrecurse<ArrayType>(up)) {
+          offset = FunctionalBuilder::mul(rewriter.rewrite_value_stack(up->index()),
+                                          rewriter.rewrite_type(array_ty->element_type()).size(),
                                           term->location());
-        } else if (ValuePtr<UnionUpwardReference> union_up = dyn_cast<UnionUpwardReference>(up)) {
+        } else if (ValuePtr<UnionType> union_ty = dyn_unrecurse<UnionType>(up)) {
           return LoweredValue(base, true);
         } else {
           throw TvmInternalError("Upward reference cannot be unfolded");
@@ -256,13 +257,18 @@ namespace Psi {
        * 
        * This is common to both array_element_rewrite() and element_ptr_rewrite().
        * 
+       * \param unchecked_array_ty Array type. This must not have been lowered.
        * \param base Pointer to array. This must have already been lowered.
        */
-      static ValuePtr<> array_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayType>& array_ty, const ValuePtr<>& base, const ValuePtr<>& index, const SourceLocation& location) {
+      static ValuePtr<> array_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<>& unchecked_array_ty, const ValuePtr<>& base, const ValuePtr<>& index, const SourceLocation& location) {
+        ValuePtr<ArrayType> array_ty = dyn_unrecurse<ArrayType>(unchecked_array_ty);
+        if (!array_ty)
+          throw TvmUserError("array type argument did not evaluate to an array type");
+
         LoweredType array_ty_l = rewriter.rewrite_type(array_ty);
         if (array_ty_l.heap_type()) {
           ValuePtr<> array_ptr = FunctionalBuilder::pointer_cast(base, array_ty_l.heap_type(), location);
-          return FunctionalBuilder::array_element_ptr(array_ptr, index, location);
+          return FunctionalBuilder::element_ptr(array_ptr, index, location);
         }
 
         LoweredType element_ty = rewriter.rewrite_type(array_ty->element_type());
@@ -277,18 +283,18 @@ namespace Psi {
         return FunctionalBuilder::pointer_offset(base, offset, location);
       }
 
-      static LoweredValue array_element_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayElement>& term) {
+      static LoweredValue array_element_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementValue>& term) {
         ValuePtr<> index = rewriter.rewrite_value_stack(term->aggregate());
         LoweredValue array_val = rewriter.rewrite_value(term->aggregate());
         if (array_val.on_stack()) {
-          return LoweredValue(FunctionalBuilder::array_element(array_val.value(), index, term->location()), true);
+          return LoweredValue(FunctionalBuilder::element_value(array_val.value(), index, term->location()), true);
         } else {
-          ValuePtr<> element_ptr = array_ptr_offset(rewriter, term->aggregate_type(), array_val.value(), index, term->location());
+          ValuePtr<> element_ptr = array_ptr_offset(rewriter, term->aggregate()->type(), array_val.value(), index, term->location());
           return rewriter.load_value(term, element_ptr, term->location());
         }
       }
       
-      static LoweredValue array_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayElementPtr>& term) {
+      static LoweredValue array_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
         ValuePtr<> array_ptr = rewriter.rewrite_value_stack(term->aggregate_ptr());
         ValuePtr<> index = rewriter.rewrite_value_stack(term->index());
         
@@ -296,11 +302,7 @@ namespace Psi {
         if (!pointer_type)
           throw TvmUserError("array_ep argument did not evaluate to a pointer");
         
-        ValuePtr<ArrayType> array_type = dyn_unrecurse<ArrayType>(pointer_type->target_type());
-        if (!array_type)
-          throw TvmUserError("array_ep argument did not evaluate to a pointer to an array");
-        
-        return LoweredValue(array_ptr_offset(rewriter, array_type, array_ptr, index, term->location()), true);
+        return LoweredValue(array_ptr_offset(rewriter, pointer_type->target_type(), array_ptr, index, term->location()), true);
       }
       
       /**
@@ -310,11 +312,15 @@ namespace Psi {
        * 
        * \param base Pointer to struct. This must have already been lowered.
        */
-      static ValuePtr<> struct_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<StructType>& struct_ty, const ValuePtr<>& base, unsigned index, const SourceLocation& location) {
+      static ValuePtr<> struct_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<>& unchecked_struct_ty, const ValuePtr<>& base, unsigned index, const SourceLocation& location) {
+        ValuePtr<StructType> struct_ty = dyn_unrecurse<StructType>(unchecked_struct_ty);
+        if (!struct_ty)
+          throw TvmInternalError("struct type value did not evaluate to a struct type");
+
         LoweredType struct_ty_rewritten = rewriter.rewrite_type(struct_ty);
         if (struct_ty_rewritten.heap_type()) {
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(base, struct_ty_rewritten.heap_type(), location);
-          return FunctionalBuilder::struct_element_ptr(cast_ptr, index, location);
+          return FunctionalBuilder::element_ptr(cast_ptr, index, location);
         }
         
         PSI_ASSERT(base->type() == FunctionalBuilder::byte_pointer_type(rewriter.context(), location));
@@ -322,28 +328,24 @@ namespace Psi {
         return FunctionalBuilder::pointer_offset(base, offset, location);
       }
       
-      static LoweredValue struct_element_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<StructElement>& term) {
+      static LoweredValue struct_element_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementValue>& term) {
         LoweredValue struct_val = rewriter.rewrite_value(term->aggregate());
         if (struct_val.on_stack()) {
-          return LoweredValue(FunctionalBuilder::struct_element(struct_val.value(), term->index(), term->location()), true);
+          return LoweredValue(FunctionalBuilder::element_value(struct_val.value(), size_to_unsigned(term->index()), term->location()), true);
         } else {
-          ValuePtr<> member_ptr = struct_ptr_offset(rewriter, term->aggregate_type(), struct_val.value(), term->index(), term->location());
+          ValuePtr<> member_ptr = struct_ptr_offset(rewriter, term->aggregate()->type(), struct_val.value(), size_to_unsigned(term->index()), term->location());
           return rewriter.load_value(term, member_ptr, term->location());
         }
       }
 
-      static LoweredValue struct_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<StructElementPtr>& term) {
+      static LoweredValue struct_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
         ValuePtr<> struct_ptr = rewriter.rewrite_value_stack(term->aggregate_ptr());
         
         ValuePtr<PointerType> pointer_type = dyn_unrecurse<PointerType>(term->aggregate_ptr()->type());
         if (!pointer_type)
           throw TvmUserError("struct_ep argument did not evaluate to a pointer");
         
-        ValuePtr<StructType> struct_type = dyn_unrecurse<StructType>(pointer_type->target_type());
-        if (!struct_type)
-          throw TvmUserError("struct_ep argument did not evaluate to a pointer to a struct");
-        
-        return LoweredValue(struct_ptr_offset(rewriter, struct_type, struct_ptr, term->index(), term->location()), true);
+        return LoweredValue(struct_ptr_offset(rewriter, pointer_type->target_type(), struct_ptr, size_to_unsigned(term->index()), term->location()), true);
       }
 
       static LoweredValue struct_element_offset_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<StructElementOffset>& term) {
@@ -367,18 +369,17 @@ namespace Psi {
         return LoweredValue(offset, true);
       }
 
-      static LoweredValue union_element_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<UnionElement>& term) {
+      static LoweredValue union_element_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementValue>& term) {
         LoweredValue union_val = rewriter.rewrite_value(term->aggregate());
         if (union_val.on_stack()) {
-          ValuePtr<> member_type = rewriter.rewrite_value_stack(term->member_type());
-          return LoweredValue(FunctionalBuilder::union_element(union_val.value(), member_type, term->location()), true);
+          return LoweredValue(FunctionalBuilder::element_value(union_val.value(), term->index(), term->location()), true);
         } else {
           LoweredType member_ty = rewriter.rewrite_type(term->type());
           return rewriter.load_value(term, union_val.value(), term->location());
         }
       }
 
-      static LoweredValue union_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<UnionElementPtr>& term) {
+      static LoweredValue union_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
         return LoweredValue(rewriter.rewrite_value_stack(term->aggregate_ptr()), true);
       }
 
@@ -418,6 +419,34 @@ namespace Psi {
       static LoweredValue apply_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ApplyValue>& term) {
         return rewriter.rewrite_value(term->unpack());
       }
+      
+      static LoweredValue element_value_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementValue>& term) {
+        ValuePtr<> ty = term->aggregate()->type();
+        if (dyn_unrecurse<StructType>(ty))
+          return struct_element_rewrite(rewriter, term);
+        else if (dyn_unrecurse<ArrayType>(ty))
+          return array_element_rewrite(rewriter, term);
+        else if (dyn_unrecurse<UnionType>(ty))
+          return union_element_rewrite(rewriter, term);
+        else
+          throw TvmUserError("element_value aggregate argument is not an aggregate type");
+      }
+      
+      static LoweredValue element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
+        ValuePtr<PointerType> ptr_ty = dyn_unrecurse<PointerType>(term->aggregate_ptr()->type());
+        if (!ptr_ty)
+          throw TvmUserError("element_ptr aggregate argument is not a pointer");
+
+        ValuePtr<> ty = ptr_ty->target_type();
+        if (dyn_unrecurse<StructType>(ty))
+          return struct_element_ptr_rewrite(rewriter, term);
+        else if (dyn_unrecurse<ArrayType>(ty))
+          return array_element_ptr_rewrite(rewriter, term);
+        else if (dyn_unrecurse<UnionType>(ty))
+          return union_element_ptr_rewrite(rewriter, term);
+        else
+          throw TvmUserError("element_value aggregate argument is not an aggregate type");
+      }
 
       typedef TermOperationMap<FunctionalValue, LoweredValue, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
@@ -437,19 +466,15 @@ namespace Psi {
           .add<ArrayValue>(aggregate_value_rewrite)
           .add<StructValue>(aggregate_value_rewrite)
           .add<UnionValue>(aggregate_value_rewrite)
-          .add<ArrayElement>(array_element_rewrite)
-          .add<ArrayElementPtr>(array_element_ptr_rewrite)
-          .add<StructElement>(struct_element_rewrite)
-          .add<StructElementPtr>(struct_element_ptr_rewrite)
           .add<StructElementOffset>(struct_element_offset_rewrite)
-          .add<UnionElement>(union_element_rewrite)
-          .add<UnionElementPtr>(union_element_ptr_rewrite)
           .add<MetatypeSize>(metatype_size_rewrite)
           .add<MetatypeAlignment>(metatype_alignment_rewrite)
           .add<PointerOffset>(pointer_offset_rewrite)
           .add<PointerCast>(pointer_cast_rewrite)
           .add<Unwrap>(unwrap_rewrite)
-          .add<ApplyValue>(apply_rewrite);
+          .add<ApplyValue>(apply_rewrite)
+          .add<ElementValue>(element_value_rewrite)
+          .add<ElementPtr>(element_ptr_rewrite);
       }
     };
 
@@ -719,7 +744,7 @@ namespace Psi {
         for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
           ValuePtr<> offset = rewrite_value_stack(FunctionalBuilder::struct_element_offset(struct_ty, i, location));
           ValuePtr<> member_ptr = FunctionalBuilder::pointer_offset(ptr, offset, location);
-          result = store_value(FunctionalBuilder::struct_element(value, i, location), member_ptr, location);
+          result = store_value(FunctionalBuilder::element_value(value, i, location), member_ptr, location);
         }
         return result;
       }
@@ -875,7 +900,7 @@ namespace Psi {
       
       if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(load_term->type())) {
         for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
-          load_value(FunctionalBuilder::struct_element(load_term, i, location),
+          load_value(FunctionalBuilder::element_value(load_term, i, location),
                      FunctionalTermRewriter::struct_ptr_offset(*this, struct_ty, ptr, i, location), location);
         }
         // struct loads have no value because they should not be accessed directly
@@ -1001,7 +1026,7 @@ namespace Psi {
       
       if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(phi_term->type())) {
         for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i)
-          create_phi_node(block, FunctionalBuilder::struct_element(phi_term, i, phi_term->location()));
+          create_phi_node(block, FunctionalBuilder::element_value(phi_term, i, phi_term->location()));
       } else if (isa<Metatype>(phi_term->type())) {
         create_phi_node(block, FunctionalBuilder::type_size(phi_term, phi_term->location()));
         create_phi_node(block, FunctionalBuilder::type_alignment(phi_term, phi_term->location()));
@@ -1034,9 +1059,9 @@ namespace Psi {
           for (unsigned ji = 0, je = incoming_edges.size(); ji != je; ++ji) {
             PhiEdge& child_edge = child_incoming_edges[ji];
             child_edge.block = incoming_edges[ji].block;
-            child_edge.value = FunctionalBuilder::struct_element(incoming_edges[ji].value, ii, incoming_edges[ji].value->location());
+            child_edge.value = FunctionalBuilder::element_value(incoming_edges[ji].value, ii, incoming_edges[ji].value->location());
           }
-          populate_phi_node(FunctionalBuilder::struct_element(phi_term, ii, phi_term->location()), child_incoming_edges);
+          populate_phi_node(FunctionalBuilder::element_value(phi_term, ii, phi_term->location()), child_incoming_edges);
         }
       } else if (isa<Metatype>(phi_term->type())) {
         std::vector<PhiEdge> child_incoming_edges(incoming_edges.size());
@@ -1219,12 +1244,8 @@ namespace Psi {
           //offset += pass().target_callback->type_size_alignment() * rewrite_value_integer();
         } else if (ValuePtr<PointerCast> ptr_cast = dyn_cast<PointerCast>(origin)) {
           origin = ptr_cast->pointer();
-        } else if (ValuePtr<StructElementPtr> struct_element_ptr = dyn_cast<StructElementPtr>(origin)) {
-          origin = struct_element_ptr->aggregate_ptr();
-        } else if (ValuePtr<ArrayElementPtr> array_element_ptr = dyn_cast<ArrayElementPtr>(origin)) {
-          origin = array_element_ptr->aggregate_ptr();
-        } else if (ValuePtr<UnionElementPtr> union_element_ptr = dyn_cast<UnionElementPtr>(origin)) {
-          origin = union_element_ptr->aggregate_ptr();
+        } else if (ValuePtr<ElementPtr> element_ptr = dyn_cast<ElementPtr>(origin)) {
+          origin = element_ptr->aggregate_ptr();
         } else if (ValuePtr<OuterPtr> outer_ptr = dyn_cast<OuterPtr>(origin)) {
           origin = outer_ptr->pointer();
         } else if (isa<GlobalVariable>(origin)) {

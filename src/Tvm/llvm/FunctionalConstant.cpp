@@ -79,17 +79,25 @@ namespace Psi {
           return llvm::ConstantExpr::getInBoundsGetElementPtr(ptr, offset);
         }
         
-        static llvm::Constant* struct_element_callback(ModuleBuilder& builder, const ValuePtr<StructElement>& term) {
+        static llvm::Constant* element_value_callback(ModuleBuilder& builder, const ValuePtr<ElementValue>& term) {
           llvm::Constant *aggregate = builder.build_constant(term->aggregate());
-          unsigned indices[] = {term->index()};
+          unsigned indices[] = {builder.build_constant_integer(term->index()).getZExtValue()};
           return llvm::ConstantExpr::getExtractValue(aggregate, indices);
         }
         
-        static llvm::Constant* struct_element_ptr_callback(ModuleBuilder& builder, const ValuePtr<StructElementPtr>& term) {
+        static llvm::Constant* element_ptr_callback(ModuleBuilder& builder, const ValuePtr<ElementPtr>& term) {
           llvm::Constant *aggregate_ptr = builder.build_constant(term->aggregate_ptr());
           llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.llvm_context());
-          llvm::Constant *indices[] = {llvm::ConstantInt::get(i32_ty, 0), llvm::ConstantInt::get(i32_ty, term->index())};
-          return llvm::ConstantExpr::getInBoundsGetElementPtr(aggregate_ptr, indices);
+
+          // Need to ensure the index is i32 for a struct because this is required by LLVM
+          llvm::Constant *idx;
+          if (llvm::isa<llvm::StructType>(llvm::cast<llvm::PointerType>(aggregate_ptr->getType())->getElementType()))
+            idx = llvm::ConstantInt::get(i32_ty, builder.build_constant_integer(term->index()));
+          else
+            idx = builder.build_constant(term->index());
+
+          llvm::Constant *indices[] = {llvm::ConstantInt::get(i32_ty, 0), idx};
+          return llvm::ConstantExpr::getGetElementPtr(aggregate_ptr, indices);
         }
         
         static llvm::Constant* struct_element_offset_callback(ModuleBuilder& builder, const ValuePtr<StructElementOffset>& term) {
@@ -98,13 +106,6 @@ namespace Psi {
           uint64_t value = layout->getElementOffset(term->index());
           llvm::Type *size_type = builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context());
           return llvm::ConstantInt::get(size_type, value);
-        }
-        
-        static llvm::Constant* array_element_ptr_callback(ModuleBuilder& builder, const ValuePtr<ArrayElementPtr>& term) {
-          llvm::Constant *aggregate_ptr = builder.build_constant(term->aggregate_ptr());
-          llvm::Type *i32_ty = llvm::Type::getInt32Ty(builder.llvm_context());
-          llvm::Constant *indices[] = {llvm::ConstantInt::get(i32_ty, 0), builder.build_constant(term->index())};
-          return llvm::ConstantExpr::getInBoundsGetElementPtr(aggregate_ptr, indices);
         }
         
         static llvm::Constant* select_value_callback(ModuleBuilder& builder, const ValuePtr<Select>& term) {
@@ -191,10 +192,9 @@ namespace Psi {
             .add<FunctionSpecialize>(function_specialize_callback)
             .add<PointerCast>(pointer_cast_callback)
             .add<PointerOffset>(pointer_offset_callback)
-            .add<StructElement>(struct_element_callback)
-            .add<StructElementPtr>(struct_element_ptr_callback)
+            .add<ElementValue>(element_value_callback)
+            .add<ElementPtr>(element_ptr_callback)
             .add<StructElementOffset>(struct_element_offset_callback)
-            .add<ArrayElementPtr>(array_element_ptr_callback)
             .add<Select>(select_value_callback)
             .add<IntegerAdd>(IntegerBinaryOpHandler(&llvm::APInt::operator +))
             .add<IntegerMultiply>(IntegerBinaryOpHandler(&llvm::APInt::operator *))

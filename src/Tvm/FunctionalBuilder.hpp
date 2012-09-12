@@ -47,7 +47,8 @@ namespace Psi {
       //@{
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const SourceLocation& location);
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location);
-      static ValuePtr<> upref(Context& context, const SourceLocation& location);
+      static ValuePtr<> upref_type(Context& context, const SourceLocation& location);
+      static ValuePtr<> upref(const ValuePtr<>& outer_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, unsigned length, const SourceLocation& location);
       static ValuePtr<> struct_type(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
@@ -63,27 +64,16 @@ namespace Psi {
       
       /// \name Aggregate element access
       //@{
-      static ValuePtr<> array_element(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
-      static ValuePtr<> array_element(const ValuePtr<>&, unsigned, const SourceLocation& location);
-      static ValuePtr<> struct_element(const ValuePtr<>&, unsigned, const SourceLocation& location);
-      static ValuePtr<> union_element(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
-      static ValuePtr<> union_element(const ValuePtr<>&, unsigned, const SourceLocation& location);
+      static ValuePtr<> element_value(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> element_value(const ValuePtr<>&, unsigned, const SourceLocation& location);
       //@}
       
       /// \name Aggregate pointer functions
       //@{
       static ValuePtr<> outer_ptr(const ValuePtr<>& base, const SourceLocation& location);
-
-      static ValuePtr<> array_element_ptr(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
-      static ValuePtr<> array_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
-      static ValuePtr<> struct_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
-      static ValuePtr<> union_element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
-
+      static ValuePtr<> element_ptr(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
       static ValuePtr<> struct_element_offset(const ValuePtr<>&, unsigned, const SourceLocation& location);
-      
-      static ValuePtr<> array_upref(const ValuePtr<>&, const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
-      static ValuePtr<> struct_upref(const ValuePtr<>&, unsigned, const ValuePtr<>&, const SourceLocation& location);
-      static ValuePtr<> union_upref(const ValuePtr<>&, unsigned, const ValuePtr<>&, const SourceLocation& location);
       //@}
       
       /// \name Pointer operations
