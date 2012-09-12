@@ -44,6 +44,11 @@ namespace Psi {
       ValuePtr<Instruction> br(const ValuePtr<Block>& target, const SourceLocation& location);
       ValuePtr<Instruction> cond_br(const ValuePtr<>& condition, const ValuePtr<Block>& true_target, const ValuePtr<Block>& false_target, const SourceLocation& location);
       ValuePtr<Instruction> call(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);
+
+      ValuePtr<Instruction> call0(const ValuePtr<>& target, const SourceLocation& location);
+      ValuePtr<Instruction> call1(const ValuePtr<>& target, const ValuePtr<>& p1, const SourceLocation& location);
+      ValuePtr<Instruction> call2(const ValuePtr<>& target, const ValuePtr<>& p1, const ValuePtr<>& p2, const SourceLocation& location);
+      ValuePtr<Instruction> call3(const ValuePtr<>& target, const ValuePtr<>& p1, const ValuePtr<>& p2, const ValuePtr<>& p3, const SourceLocation& location);
       ///@}
       
       /// \name Memory operations

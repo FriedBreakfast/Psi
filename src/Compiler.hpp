@@ -1406,6 +1406,8 @@ namespace Psi {
       TreePtr<Interface> macro_interface;
       /// \brief The argument passing descriptor interface.
       TreePtr<Interface> argument_passing_info_interface;
+      /// \brief Return value descriptor interface.
+      TreePtr<Interface> return_passing_info_interface;
       /// \brief The class member descriptor interface.
       TreePtr<Interface> class_member_info_interface;
     };

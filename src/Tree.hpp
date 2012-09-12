@@ -340,6 +340,7 @@ class Function;
      */
     enum ResultMode {
       result_mode_by_value, ///< By value
+      result_mode_functional, ///< By value, functional
       result_mode_rvalue, ///< R-value reference
       result_mode_lvalue ///< L-value reference
     };

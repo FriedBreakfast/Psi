@@ -1,6 +1,8 @@
 #ifndef HPP_PSI_FUNCTION
 #define HPP_PSI_FUNCTION
 
+#include "Tree.hpp"
+
 namespace Psi {
   namespace Compiler {
     class ArgumentHandler;
@@ -39,7 +41,7 @@ namespace Psi {
     
     struct ArgumentPassingInfoCallbackVtable {
       TreeVtable base;
-      void (*argument_passing_info) (ArgumentPassingInfo*, const ArgumentPassingInfoCallback*);
+      void (*argument_passing_info) (const ArgumentPassingInfoCallback*, ArgumentPassingInfo*);
     };
 
     class ArgumentPassingInfoCallback : public Tree {
@@ -49,7 +51,39 @@ namespace Psi {
       
       ArgumentPassingInfo argument_passing_info() const {
         ResultStorage<ArgumentPassingInfo> result;
-        derived_vptr(this)->argument_passing_info(result.ptr(), this);
+        derived_vptr(this)->argument_passing_info(this, result.ptr());
+        return result.done();
+      }
+    };
+    
+    struct ReturnPassingInfo {
+      /// \brief Return type
+      TreePtr<Term> type;
+      /// \brief Return mode
+      ResultMode mode;
+
+      template<typename V>
+      static void visit(V& v) {
+        v("type", &ReturnPassingInfo::type)
+        ("mode", &ReturnPassingInfo::mode);
+      }
+    };
+    
+    class ReturnPassingInfoCallback;
+    
+    struct ReturnPassingInfoCallbackVtable {
+      TreeVtable base;
+      void (*return_passing_info) (const ReturnPassingInfoCallback*, ReturnPassingInfo*);
+    };
+    
+    class ReturnPassingInfoCallback : public Tree {
+    public:
+      typedef ReturnPassingInfoCallbackVtable VtableType;
+      static const SIVtable vtable;
+      
+      ReturnPassingInfo return_passing_info() const {
+        ResultStorage<ReturnPassingInfo> result;
+        derived_vptr(this)->return_passing_info(this, result.ptr());
         return result.done();
       }
     };

@@ -252,6 +252,7 @@ namespace Psi {
       
       macro_interface.reset(new Interface(compile_context, 1, &Macro::vtable, TreePtr<Term>(), psi_compiler_location.named_child("Macro")));
       argument_passing_info_interface.reset(new Interface(compile_context, 1, &ArgumentPassingInfoCallback::vtable, TreePtr<Term>(), psi_compiler_location.named_child("ArgumentPasser")));
+      return_passing_info_interface.reset(new Interface(compile_context, 1, &ReturnPassingInfoCallback::vtable, TreePtr<Term>(), psi_compiler_location.named_child("ReturnMode")));
       class_member_info_interface.reset(new Interface(compile_context, 1, &ClassMemberInfoCallback::vtable, TreePtr<Term>(), psi_compiler_location.named_child("ClassMemberInfo")));
     }
 

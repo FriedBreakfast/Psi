@@ -1,6 +1,7 @@
 #include "Compiler.hpp"
 #include "Tree.hpp"
 #include "Interface.hpp"
+#include "TypeMapping.hpp"
 
 #include "Tvm/Core.hpp"
 #include "Tvm/InstructionBuilder.hpp"
@@ -168,7 +169,8 @@ class FunctionLowering {
   VariableResult variable_assign(Scope& scope, const Variable& dest, const Variable& src, Scope& following_scope, const SourceLocation& location);
   bool going_out_of_scope(Scope& scope, const Variable& var, Scope& following_scope);
   
-  TypeConstructorInfo type_constructor_info(const TreePtr<Term>& type);
+  Tvm::ValuePtr<> move_constructible_interface(const TreePtr<Term>& type);
+  Tvm::ValuePtr<> copy_constructible_interface(const TreePtr<Term>& type);
   bool is_primitive(const TreePtr<Term>& type);
   void default_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location);
   void copy_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
@@ -496,7 +498,7 @@ FunctionLowering::VariableResult FunctionLowering::run_jump_group(Scope& scope, 
     for (JumpMapType::iterator ii = initial_jump_map.begin(), ie = initial_jump_map.end(); ii != ie; ++ii) {
       if (ii->first->argument && (ii->first->argument_mode == result_mode_by_value)) {
         PSI_ASSERT(!ii->second.storage);
-        ii->second.storage = Tvm::FunctionalBuilder::union_element_ptr(storage, run_type(ii->first->argument->type), ii->first->location());
+        ii->second.storage = Tvm::FunctionalBuilder::element_ptr(storage, run_type(ii->first->argument->type), ii->first->location());
       }
     }
   }
@@ -792,61 +794,70 @@ Tvm::ValuePtr<> FunctionLowering::as_functional(const Variable& var, const Sourc
   }
 }
 
-/// \brief Get constructor function information for a type.
-TypeConstructorInfo FunctionLowering::type_constructor_info(const TreePtr<Term>& type) {
+/// \brief Get a pointer to the CopyConstructible interface for a given type.
+Tvm::ValuePtr<> FunctionLowering::move_constructible_interface(const TreePtr<Term>& type) {
   PSI_NOT_IMPLEMENTED();
 }
 
-/// \brief Detect whether a type is primitive so may live in registers rather than on the stack/heap.
+/// \brief Get a pointer to the CopyConstructible interface for a given type.
+Tvm::ValuePtr<> FunctionLowering::copy_constructible_interface(const TreePtr<Term>& type) {
+  PSI_NOT_IMPLEMENTED();
+}
+
+/**
+ * \brief Determine whether a type is primitive, in which case MoveConstructible an CopyConstructible interfaces can be short-cut.
+ */
 bool FunctionLowering::is_primitive(const TreePtr<Term>& type) {
-  return type_constructor_info(type).primitive;
+  return false;
 }
 
 /// \brief Generate default constructor call
 void FunctionLowering::default_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location) {
-  TypeConstructorInfo tci = type_constructor_info(type);
-  if (tci.primitive) {
+  if (is_primitive(type)) {
     // Should this be undef?
     builder().store(Tvm::FunctionalBuilder::zero(Tvm::value_cast<Tvm::PointerType>(dest->type())->target_type(), location), dest, location);
-  } else {
-    PSI_NOT_IMPLEMENTED();
+    return;
   }
+  
+  Tvm::ValuePtr<> mc = move_constructible_interface(type);
+  Tvm::ValuePtr<> fp = Tvm::FunctionalBuilder::element_ptr(mc, MoveConstructible::m_construct, location);
+  builder().call2(fp, mc, dest, location);
 }
 
 /// \brief Generate copy constructor call
 void FunctionLowering::copy_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {  
-  TypeConstructorInfo tci = type_constructor_info(type);
-  if (tci.primitive) {
+  if (is_primitive(type)) {
     Tvm::ValuePtr<> value = builder().load(src, location);
     builder().store(value, dest, location);
-  } else {
-#if 0
-    TreePtr<FunctionCall> call;
-    Variable call_var(call->type, scope);
-    call_var.assign(run_call(scope, call, call_var, scope));
-    if (call_var.storage() != local_functional)
-      compile_context().error_throw(location, "Copy constructor has non-primitive result");
-#endif
+    return;
   }
+
+  Tvm::ValuePtr<> mc = copy_constructible_interface(type);
+  Tvm::ValuePtr<> fp = Tvm::FunctionalBuilder::element_ptr(mc, CopyConstructible::m_copy, location);
+  builder().call3(fp, mc, dest, src, location);
 }
 
 /// \brief Generate move constructor call
 void FunctionLowering::move_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {
-  TypeConstructorInfo tci = type_constructor_info(type);
-  if (tci.primitive) {
+  if (is_primitive(type)) {
     Tvm::ValuePtr<> value = builder().load(src, location);
     builder().store(value, dest, location);
-  } else {
-    //builder().call(run_functional(scope, tci.move_constructor, location), dest, src, location);
+    return;
   }
+  
+  Tvm::ValuePtr<> mc = move_constructible_interface(type);
+  Tvm::ValuePtr<> fp = Tvm::FunctionalBuilder::element_ptr(mc, MoveConstructible::m_move, location);
+  builder().call3(fp, mc, dest, src, location);
 }
 
 ///  \brief Generate destructor call
 void FunctionLowering::destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& ptr, const SourceLocation& location) {
-  TypeConstructorInfo tci = type_constructor_info(type);
-  if (!tci.primitive) {
-    //builder().call(run_functional(scope, tci.destructor, location), ptr, location);
-  }
+  if (is_primitive(type))
+    return;
+  
+  Tvm::ValuePtr<> mc = move_constructible_interface(type);
+  Tvm::ValuePtr<> fp = Tvm::FunctionalBuilder::element_ptr(mc, MoveConstructible::m_destroy, location);
+  builder().call2(fp, mc, ptr, location);
 }
 
 /**

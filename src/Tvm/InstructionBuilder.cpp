@@ -125,6 +125,36 @@ namespace Psi {
       return insn;
     }
 
+    /// \brief Call a function with no parameters
+    ValuePtr<Instruction> InstructionBuilder::call0(const ValuePtr<>& target, const SourceLocation& location) {
+      std::vector<ValuePtr<> > parameters;
+      return call(target, parameters, location);
+    }
+    
+    /// \brief Call a function with one parameter
+    ValuePtr<Instruction> InstructionBuilder::call1(const ValuePtr<>& target, const ValuePtr<>& p1, const SourceLocation& location) {
+      std::vector<ValuePtr<> > parameters;
+      parameters.push_back(p1);
+      return call(target, parameters, location);
+    }
+    
+    /// \brief Call a function with two parameters
+    ValuePtr<Instruction> InstructionBuilder::call2(const ValuePtr<>& target, const ValuePtr<>& p1, const ValuePtr<>& p2, const SourceLocation& location) {
+      std::vector<ValuePtr<> > parameters;
+      parameters.push_back(p1);
+      parameters.push_back(p2);
+      return call(target, parameters, location);
+    }
+    
+    /// \brief Call a function with three parameters
+    ValuePtr<Instruction> InstructionBuilder::call3(const ValuePtr<>& target, const ValuePtr<>& p1, const ValuePtr<>& p2, const ValuePtr<>& p3, const SourceLocation& location) {
+      std::vector<ValuePtr<> > parameters;
+      parameters.push_back(p1);
+      parameters.push_back(p2);
+      parameters.push_back(p3);
+      return call(target, parameters, location);
+    }
+
     /**
      * \brief Allocate memory for a variable on the stack.
      * 

@@ -916,11 +916,10 @@ namespace Psi {
     }
     
     TreePtr<Term> ExternalFunction::get_type(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& argument_types, const SourceLocation& location) {
-      PSI_NOT_IMPLEMENTED(); // Have I got the parameter and result mode handling right?
       std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > > arguments;
       for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = argument_types.begin(), ie = argument_types.end(); ii != ie; ++ii)
-        arguments.push_back(std::make_pair(parameter_mode_input, TreePtr<Anonymous>(new Anonymous(*ii, location))));
-      return TreePtr<Term>(new FunctionType(result_mode_by_value, result_type, arguments, location));
+        arguments.push_back(std::make_pair(parameter_mode_functional, TreePtr<Anonymous>(new Anonymous(*ii, location))));
+      return TreePtr<Term>(new FunctionType(result_mode_functional, result_type, arguments, location));
     }
     
     class ExternalFunctionInvokeMacro : public Macro {

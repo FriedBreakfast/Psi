@@ -11,6 +11,7 @@
 namespace Psi {
   namespace Compiler {
     const SIVtable ArgumentPassingInfoCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ArgumentPassingInfoCallback", Tree);
+    const SIVtable ReturnPassingInfoCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ReturnPassingInfoCallback", Tree);
 
     class EvaluateContextOneName : public EvaluateContext {
       String m_name;
@@ -216,14 +217,17 @@ namespace Psi {
         result.passing_info.push_back(passing_info);
       }
 
-      PSI_NOT_IMPLEMENTED(); // Sort out result.result_mode
       if (parsed_arguments.return_type) {
-        result.result_type = compile_expression(parsed_arguments.return_type, argument_context, location.logical);
+        TreePtr<Term> result_expr = compile_expression(parsed_arguments.return_type, argument_context, location.logical);
         if (!result.result_type->is_type())
           compile_context.error_throw(location, "Function result type expression does not evaluate to a type");
+        TreePtr<ReturnPassingInfoCallback> return_info_callback = interface_lookup_as<ReturnPassingInfoCallback>(compile_context.builtins().return_passing_info_interface, result_expr, location);
+        ReturnPassingInfo return_info = return_info_callback->return_passing_info();
+        result.result_type = return_info.type;
+        result.result_mode = return_info.mode;
       } else {
         result.result_type = compile_context.builtins().empty_type;
-        result.result_mode = result_mode_by_value;
+        result.result_mode = result_mode_functional;
       }
 
       result.type.reset(new FunctionType(result.result_mode, result.result_type, type_arguments, location));
