@@ -27,8 +27,13 @@ import sys, os
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
   'sphinx.ext.todo',
-  'sphinx.ext.mathjax'
+  'sphinx.ext.mathjax',
+  'sphinxcontrib.doxylink'
   ]
+  
+doxylink = {
+  'psi' : ('${CMAKE_CURRENT_BINARY_DIR}/doxygen-tags.tag', 'doxygen')
+}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

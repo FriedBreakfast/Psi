@@ -7,10 +7,13 @@ Welcome to Psi's documentation!
    tvm/index
    internals/index
 
+.. only:: html
 
-Indices and tables
-==================
+  See also Doxygen C++ documentation, :psi:`Psi`.
+  Also see the `TODO list <doxygen/todo.html>`_.
 
-* :ref:`genindex`
-* :ref:`search`
+  Indices and tables
+  ==================
 
+  * :ref:`genindex`
+  * :ref:`search`
