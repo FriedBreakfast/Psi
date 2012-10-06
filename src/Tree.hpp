@@ -6,11 +6,10 @@
 #include <boost/shared_ptr.hpp>
 
 #include "Compiler.hpp"
+#include "StaticDispatch.hpp"
 
 namespace Psi {
   namespace Compiler {
-
-class Function;
     /**
      * Anonymous term. Has a type but no defined value.
      *
@@ -25,59 +24,28 @@ class Function;
       template<typename V> static void visit(V& v);
     };
     
-    class Parameter : public Term {
-    public:
-      static const TermVtable vtable;
-
-      Parameter(CompileContext& compile_context, const SourceLocation& location);
-      Parameter(const TreePtr<Term>& type, unsigned depth, unsigned index, const SourceLocation& location);
-      template<typename V> static void visit(V& v);
-
-      /// Parameter depth (number of enclosing parameter scopes between this parameter and its own scope).
-      unsigned depth;
-      /// Index of this parameter in its scope.
-      unsigned index;
-    };
-    
-    class Implementation : public Tree {
-    public:
-      static const TreeVtable vtable;
-
-      Implementation(CompileContext& compile_context, const SourceLocation& location);
-      Implementation(CompileContext& compile_context,
-                     const TreePtr<>& value,
-                     const TreePtr<Interface>& interface,
-                     const PSI_STD::vector<TreePtr<Term> >& wildcard_types,
-                     const PSI_STD::vector<TreePtr<Term> >& interface_parameters,
-                     const SourceLocation& location);
-      template<typename Visitor> static void visit(Visitor& v);
-      
-      TreePtr<> value;
-      TreePtr<Interface> interface;
-      /// \brief Pattern match variable types.
-      PSI_STD::vector<TreePtr<Term> > wildcard_types;
-      /// \brief Parameters to the interface type
-      PSI_STD::vector<TreePtr<Term> > interface_parameters;
-
-      bool matches(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters) const;
-    };
-
+    /**
+     * \brief A global variables, which is an element of a Module.
+     */
     class Global : public Term {
     public:
       static const SIVtable vtable;
       Global(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
-      Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location);
+      Global(const VtableType *vptr, const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
+      
+      /// \brief Get the module this global should be built into.
+      TreePtr<Module> module;
     };
     
     class ExternalGlobal : public Global {
-      String m_symbol;
-
     public:
       static const TermVtable vtable;
       ExternalGlobal(CompileContext& compile_context, const SourceLocation& location);
-      ExternalGlobal(const TreePtr<Term>& type, const String& symbol, const SourceLocation& location);
+      ExternalGlobal(const TreePtr<Module>& module, const TreePtr<Term>& type, const String& symbol, const SourceLocation& location);
       template<typename V> static void visit(V& v);
+
+      String symbol;
     };
     
     /**
@@ -92,7 +60,6 @@ class Function;
       Statement(CompileContext& compile_context, const SourceLocation& location);
       Statement(const TreePtr<Term>& value, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
-      static TreePtr<> interface_search_impl(const Statement& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
     };
     
     /**
@@ -110,7 +77,6 @@ class Function;
       StatementRef(CompileContext& compile_context, const SourceLocation& location);
       StatementRef(const TreePtr<Statement>& value, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
-      static TreePtr<> interface_search_impl(const StatementRef& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
     };
     
     /**
@@ -167,21 +133,19 @@ class Function;
     public:
       static const TreeVtable vtable;
 
-      GenericType(CompileContext& compile_context, const SourceLocation& location);
-      GenericType(const TreePtr<Term>& member,
-                  const PSI_STD::vector<TreePtr<Anonymous> >& parameters,
-                  const PSI_STD::vector<TreePtr<Implementation> >& implementations,
+      GenericType(const PSI_STD::vector<TreePtr<Term> >& pattern,
+                  const TreePtr<Term>& member_type,
+                  const PSI_STD::vector<TreePtr<OverloadValue> >& overloads,
                   const SourceLocation& location);
 
       template<typename Visitor> static void visit(Visitor& v);
 
+      /// \brief Parameters pattern.
+      PSI_STD::vector<TreePtr<Term> > pattern;
       /// \brief Single member of this type.
-      TreePtr<Term> member;
-      /// \brief Implementations carried by this type.
-      PSI_STD::vector<TreePtr<Implementation> > implementations;
-
-      TreePtr<GenericType> parameterize(const SourceLocation& location, unsigned depth);
-      TreePtr<> specialize(const SourceLocation& location, unsigned depth);
+      TreePtr<Term> member_type;
+      /// \brief Overloads carried by this type.
+      PSI_STD::vector<TreePtr<OverloadValue> > overloads;
     };
 
     /**
@@ -192,16 +156,16 @@ class Function;
       static const TermVtable vtable;
 
       TypeInstance(CompileContext& compile_context, const SourceLocation& location);
-      TypeInstance(const TreePtr<GenericType>& generic_type,
-                   const PSI_STD::vector<TreePtr<Term> >& parameter_values,
+      TypeInstance(const TreePtr<GenericType>& generic,
+                   const PSI_STD::vector<TreePtr<Term> >& parameters,
                    const SourceLocation& location);
 
-      TreePtr<GenericType> generic_type;
+      /// \brief Generic type this is an instance of.
+      TreePtr<GenericType> generic;
       /// \brief Arguments to parameters in RecursiveType
-      PSI_STD::vector<TreePtr<Term> > parameter_values;
+      PSI_STD::vector<TreePtr<Term> > parameters;
 
       template<typename Visitor> static void visit(Visitor& v);
-      static TreePtr<> interface_search_impl(const TypeInstance& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
     };
 
     /**
@@ -251,13 +215,13 @@ class Function;
     };
 
     /**
-     * \brief Zero initialized value.
+     * \brief Default initialized value.
      */
-    class NullValue : public Term {
+    class DefaultValue : public Term {
     public:
       static const TermVtable vtable;
-      NullValue(CompileContext& compile_context, const SourceLocation& location);
-      NullValue(const TreePtr<Term>& type, const SourceLocation& location);
+      DefaultValue(CompileContext& compile_context, const SourceLocation& location);
+      DefaultValue(const TreePtr<Term>& type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
     };
     
@@ -271,6 +235,7 @@ class Function;
       PointerType(CompileContext& compile_context, const TreePtr<Term>& target_type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
+      /// \brief Get the type referenced by this pointer type.
       TreePtr<Term> target_type;
     };
 
@@ -381,7 +346,8 @@ class Function;
       static const TermVtable vtable;
       
       Function(CompileContext& compile_context, const SourceLocation& location);
-      Function(ResultMode result_mode,
+      Function(const TreePtr<Module>& module,
+               ResultMode result_mode,
                const TreePtr<Term>& result_type,
                const std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >& arguments,
                const TreePtr<Term>& body,
@@ -521,16 +487,14 @@ class Function;
      * This saves having to create a separate tree for each one, at least until later in the compilation process
      * so that a uniform syntax may be used by the user.
      */
-    class BuiltinType : public Type {
+    class PrimitiveType : public Type {
     public:
       static const TermVtable vtable;
       
-      BuiltinType(CompileContext& compile_context, const SourceLocation& location);
-      BuiltinType(CompileContext& compile_context, const String& name, const SourceLocation& location);
+      PrimitiveType(CompileContext& compile_context, const SourceLocation& location);
+      PrimitiveType(CompileContext& compile_context, const String& name, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
-      
-      static TreePtr<> interface_search_impl(BuiltinType& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
-      
+
       String name;
     };
     
@@ -560,7 +524,6 @@ class Function;
       ExternalFunction(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
       ExternalFunction(const TermVtable *vptr, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
-      static TreePtr<> interface_search_impl(ExternalFunction& self, const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters);
     };
     
     /**
@@ -576,19 +539,79 @@ class Function;
       
       String name;
     };
+    
+    class TargetCallback;
+    
+    struct TargetCallbackVtable {
+      TreeVtable base;
+      void (*evaluate) (PropertyValue *result, TargetCallback *self, const PropertyValue *local, const PropertyValue *cross);
+    };
+    
+    class TargetCallback : public Tree {
+    public:
+      typedef TargetCallbackVtable VtableType;
+      static const SIVtable vtable;
+      
+      TargetCallback(const TargetCallbackVtable *vtable, CompileContext& compile_context, const SourceLocation& location);
+      
+      /**
+       * \brief Evaluate a target-depenent value.
+       * 
+       * \param target Target description of system being compiler for.
+       * \param local Target description of system being compiled on.
+       */
+      PropertyValue evaluate(const PropertyValue& target, const PropertyValue& local) {
+        ResultStorage<PropertyValue> result;
+        derived_vptr(this)->evaluate(result.ptr(), this, &target, &local);
+        return result.done();
+      }
+    };
+    
+    template<typename Derived, typename Impl=Derived>
+    struct TargetCallbackWrapper {
+      static void evaluate(PropertyValue *result, TargetCallback *self, const PropertyValue *local, const PropertyValue *cross) {
+        new (result) PropertyValue (Impl::evaluate_impl(*static_cast<Derived*>(self), *local, *cross));
+      }
+    };
+    
+#define PSI_COMPILER_TARGET_CALLBACK_VTABLE(derived,name,super) { \
+    PSI_COMPILER_TREE(derived,name,super), \
+    &::Psi::Compiler::TargetCallbackWrapper<derived>::evaluate \
+  }
 
     /**
-     * Tree for function calls to C.
+     * \brief A library.
+     * 
+     * This is a target-dependent tree. The compilation target must be
+     * able to interpret the result of the callback.
      */
-    class CFunction : public ExternalFunction {
+    class Library : public Tree {
     public:
-      static const TermVtable vtable;
+      static const TreeVtable vtable;
       
-      CFunction(CompileContext& compile_context, const SourceLocation& location);
-      CFunction(const String& name, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
-      template<typename Visitor> static void visit(Visitor& v);
+      Library(CompileContext& compile_context, const SourceLocation& location);
+      Library(const TreePtr<TargetCallback>& callback, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
       
-      String name;
+      /// \brief Callback to get details of the library.
+      TreePtr<TargetCallback> callback;
+    };
+    
+    /**
+     * \brief Symbol imported from a library.
+     */
+    class LibrarySymbol : public Term {
+    public:
+      static const TreeVtable vtable;
+
+      LibrarySymbol(CompileContext& compile_context, const SourceLocation& location);
+      LibrarySymbol(const TreePtr<Library>& library, const TreePtr<TargetCallback>& callback, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Library this symbol is in.
+      TreePtr<Library> library;
+      /// \brief Callback to get the symbol name
+      TreePtr<TargetCallback> callback;
     };
   }
 }

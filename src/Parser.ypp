@@ -652,6 +652,35 @@ namespace Psi {
       return args.result_expressions.front();
     }
 
+    /**
+     * \brief Parse a comma-separated list of tokens.
+     * 
+     * A trailing comma is accepted.
+     */
+    PSI_STD::vector<TokenExpression> parse_identifier_list(const ParserLocation& text) {
+      PSI_STD::vector<TokenExpression> result;
+      
+      ParserInternalArguments args(0, text);
+      YYSTYPE lval;
+      YYLTYPE lloc = text;
+      lloc.end = lloc.begin;
+      lloc.location.last_line = lloc.location.first_line;
+      lloc.location.last_column = lloc.location.first_column;
+
+      while (true) {
+        int tok = yylex(&lval, &lloc, args);
+        if (tok == IDENTIFIER) {
+          result.push_back(TokenExpression(lloc, TokenExpression::identifier, lval.text));
+        } else if (tok == 0) {
+          break;
+        } else if (tok != ',') {
+          throw ParseError("Unexpected token in identifier list");
+        }
+      }
+      
+      return result;
+    }
+
     /** \brief parse a function argument declaration.
      * \details This is a list of argument declarations possibly
      * followed by a return type Expression.

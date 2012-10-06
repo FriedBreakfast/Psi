@@ -7,3 +7,4 @@ Internals
    basic_types
    tvm_mapping
    storage_specifiers
+   overloading

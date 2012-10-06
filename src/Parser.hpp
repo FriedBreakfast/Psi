@@ -87,6 +87,7 @@ namespace Psi {
     PSI_STD::vector<SharedPtr<NamedExpression> > parse_argument_list(const ParserLocation&);
     PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(const ParserLocation&);
     SharedPtr<Expression> parse_expression(const ParserLocation& text);
+    PSI_STD::vector<TokenExpression> parse_identifier_list(const ParserLocation&);
 
     struct ArgumentDeclarations {
       PSI_STD::vector<SharedPtr<NamedExpression> > arguments;

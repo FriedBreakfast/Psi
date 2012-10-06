@@ -177,7 +177,7 @@ namespace Psi {
       
       StatementListContext(const TreePtr<StatementListTree>& statement_list_,
                            const TreePtr<EvaluateContext>& next_)
-      : EvaluateContext(&vtable, statement_list_.compile_context(), statement_list_.location()),
+      : EvaluateContext(&vtable, next_->module(), statement_list_.location()),
       statement_list(statement_list_),
       next(next_) {
       }

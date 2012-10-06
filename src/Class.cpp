@@ -151,7 +151,7 @@ namespace Psi {
 
       ClassCompilerContext(const TreePtr<ClassCompilerTree>& class_compiler_,
                            const TreePtr<EvaluateContext>& next_)
-      : EvaluateContext(&vtable, class_compiler_.compile_context(), class_compiler_.location()),
+      : EvaluateContext(&vtable, next_->module(), class_compiler_.location()),
       class_compiler(class_compiler_),
       next(next_) {
       }
@@ -304,6 +304,7 @@ namespace Psi {
         if (failed)
           throw CompileException();
 
+#if 0
         TreePtr<StructType> object_type(new StructType(self.compile_context(), member_types, self.location()));
         PSI_STD::vector<TreePtr<Anonymous> > object_parameters;
         TreePtr<GenericType> object_generic(new GenericType(object_type, object_parameters, m_info.object_implementations, self.location()));
@@ -316,6 +317,9 @@ namespace Psi {
         TreePtr<Term> static_term(new TypeInstanceValue(static_instance, static_value, self.location()));
 
         return TreePtr<ClassCompilerFinalTree>(new ClassCompilerFinalTree(self.compile_context(), self.location(), object_term, static_term));
+#else
+        PSI_NOT_IMPLEMENTED();
+#endif
       }
     };
 

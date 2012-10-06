@@ -1,4 +1,4 @@
-include_directories(${Boost_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${Boost_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${JSONC_INCLUDE})
 
 configure_file(Config.h.in Config.h)
 
@@ -99,14 +99,16 @@ add_library(psi-compiler SHARED
   Macros.cpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
   Platform.cpp Platform.hpp
+  StaticDispatch.cpp Term.hpp
   Tree.cpp Tree.hpp
-  TvmLowering.cpp
+  TvmFunctionLowering.cpp
+  TvmLowering.cpp TvmLowering.hpp
   Utility.cpp Utility.hpp
   Visitor.hpp
   ${PSI_COMPILER_SOURCES}
 )
 
-target_link_libraries(psi-compiler psi-compiler-common psi-tvm debug psi-assert)
+target_link_libraries(psi-compiler psi-compiler-common psi-tvm debug psi-assert ${JSONC_LIB})
 if (UNIX)
   target_link_libraries(psi-compiler -ldl)
 endif()

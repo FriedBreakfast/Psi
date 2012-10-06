@@ -7,6 +7,9 @@ include(CTest)
 set(PSI_DEBUG 0 CACHE BOOL "Enable debug checks")
 set(PSI_ENABLE_VALGRIND 0 CACHE BOOL "Enable Valgrind support")
 
+find_library(JSONC_LIB json)
+find_path(JSONC_INCLUDE json/json_object.h)
+
 # Locate LLVM
 find_program(LLVM_CONFIG NAMES llvm-config)
 

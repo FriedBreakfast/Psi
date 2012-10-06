@@ -28,10 +28,11 @@ namespace {
   }
 }
 
-Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(Psi::Compiler::CompileContext& compile_context) {
+Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi::Compiler::TreePtr<Psi::Compiler::Module>& module) {
   using namespace Psi::Compiler;
 
-  Psi::SourceLocation psi_location = compile_context.root_location().named_child("psi");
+  CompileContext& compile_context = module.compile_context();
+  Psi::SourceLocation psi_location = module.location();
   
   PSI_STD::map<Psi::String, TreePtr<Term> > global_names;
   global_names["function"] = function_definition_macro(compile_context, psi_location.named_child("function"));
@@ -48,7 +49,7 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(Psi::Compi
   global_names["implement"] = implementation_define_macro(compile_context, psi_location.named_child("implement"));
   global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));
 
-  return evaluate_context_dictionary(compile_context, psi_location, global_names);
+  return evaluate_context_dictionary(module, psi_location, global_names);
 }
 
 Psi::Parser::ParserLocation url_location(const Psi::String& url, const char *text_begin, const char *text_end) {
@@ -91,7 +92,10 @@ int main(int argc, char *argv[]) {
   using namespace Psi::Compiler;
 
   CompileContext compile_context(&std::cerr);
-  TreePtr<EvaluateContext> root_evaluate_context = create_globals(compile_context);
+  TreePtr<Module> global_module(new Module(compile_context, "psi", compile_context.root_location().named_child("psi")));
+  TreePtr<Module> my_module(new Module(compile_context, "main", compile_context.root_location()));
+  TreePtr<EvaluateContext> root_evaluate_context = create_globals(global_module);
+  TreePtr<EvaluateContext> module_evaluate_context = evaluate_context_module(my_module, root_evaluate_context, my_module.location());
   Parser::ParserLocation file_text = url_location(argv[1], source_text.get(), source_text.get() + source_length);
   
   PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(file_text);
@@ -102,20 +106,20 @@ int main(int argc, char *argv[]) {
 
   LogicalSourceLocationPtr root_location = LogicalSourceLocation::new_root_location();
   try {
-    NamespaceCompileResult ns = compile_namespace(statements, root_evaluate_context, SourceLocation(file_text.location, root_location));
+    NamespaceCompileResult ns = compile_namespace(statements, module_evaluate_context, SourceLocation(file_text.location, root_location));
     ns.ns->complete();
     
     SourceLocation init_location(init_text.location, root_location);
 
     // Create only statement in main function
     SharedPtr<Parser::Expression> init_expr = Parser::parse_expression(init_text);
-    TreePtr<EvaluateContext> init_evaluate_context = evaluate_context_dictionary(compile_context, init_location, ns.entries);
+    TreePtr<EvaluateContext> init_evaluate_context = evaluate_context_dictionary(my_module, init_location, ns.entries);
     TreePtr<Term> init_tree = compile_expression(init_expr, init_evaluate_context, root_location);
     init_tree->complete();
     
     // Create main function
     TreePtr<Term> main_result(new EmptyType(compile_context, init_location));
-    TreePtr<Function> main_function(new Function(result_mode_by_value, main_result, default_, init_tree, init_location));
+    TreePtr<Function> main_function(new Function(my_module, result_mode_by_value, main_result, default_, init_tree, init_location));
     
     void (*main_ptr) ();
     *reinterpret_cast<void**>(&main_ptr) = compile_context.jit_compile(main_function);

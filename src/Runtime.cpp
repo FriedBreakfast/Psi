@@ -1,9 +1,13 @@
 #include "Runtime.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
-#include <iostream>
+
+#include <json/json_tokener.h>
+#include <json/linkhash.h>
+#include <json/arraylist.h>
 
 namespace Psi {
   void* checked_alloc(std::size_t n) {
@@ -15,6 +19,22 @@ namespace Psi {
   
   void checked_free(std::size_t, void *ptr) {
     std::free(ptr);
+  }
+  
+  /**
+   * \brief Test whether two floating point values are equivalent.
+   * 
+   * This means that NaN==NaN, however distinguishing between quiet
+   * and signalling NaN is not supported.
+   * 
+   * This routine checks that both are the same type according to fpclassify(),
+   * have the same sign according to signbit() and if finite, have the same value.
+   */
+  bool fpequiv(double a, double b) {
+    if (std::isfinite(a))
+      return a == b;
+    else // Handling Inf and NaN is more complicated
+      return (std::fpclassify(a) == std::fpclassify(b)) && (std::signbit(a) == std::signbit(b));
   }
 
   namespace {
@@ -109,6 +129,10 @@ namespace Psi {
       return false;
   }
 
+  String::operator std::string() const {
+    return std::string(c_str());
+  }
+
   bool operator == (const String& lhs, const char *rhs) {
     return strncmp(lhs.c_str(), rhs, lhs.length()) == 0;
   }
@@ -128,5 +152,195 @@ namespace Psi {
   std::ostream& operator << (std::ostream& os, const String& str) {
     os << str.c_str();
     return os;
+  }
+  
+  PropertyValue::~PropertyValue() {
+    reset();
+  }
+  
+  void PropertyValue::reset() {
+    switch (m_type) {
+    case t_null:
+    case t_boolean:
+    case t_integer:
+    case t_real: break;
+    case t_str: m_value.str.ptr()->~String(); break;
+    case t_map: m_value.map.ptr()->~PropertyMap(); break;
+    case t_list: m_value.list.ptr()->~PropertyList(); break;
+    default: PSI_FAIL("unknown value type");
+    }
+    
+    m_type = t_null;
+  }
+  
+  void PropertyValue::assign(const PropertyValue& src) {
+    switch (src.m_type) {
+    case t_null: reset(); break;
+    case t_boolean: assign(src.boolean()); break;
+    case t_integer: assign(src.integer()); break;
+    case t_real: assign(src.real()); break;
+    case t_str: assign(src.str()); break;
+    case t_map: assign(src.map()); break;
+    case t_list: assign(src.list()); break;
+    default: PSI_FAIL("unknown value type");
+    }
+  }
+  
+  void PropertyValue::assign(const std::string& src) {
+    assign(String(src));
+  }
+  
+  void PropertyValue::assign(const String& src) {
+    if (m_type != t_str) {
+      reset();
+      new (m_value.str.ptr()) String(src);
+      m_type = t_str;
+    } else {
+      *m_value.str.ptr() = src;
+    }
+  }
+  
+  void PropertyValue::assign(bool src) {
+    if (m_type != t_boolean) {
+      reset();
+      m_type = t_boolean;
+    }
+    
+    m_value.integer = src ? 1:0;
+  }
+
+  void PropertyValue::assign(int src) {
+    if (m_type != t_integer) {
+      reset();
+      m_type = t_integer;
+    }
+    
+    m_value.integer = src;
+  }
+  
+  void PropertyValue::assign(double src) {
+    if (m_type != t_real) {
+      reset();
+      m_type = t_real;
+    }
+    
+    m_value.real = src;
+  }
+  
+  void PropertyValue::assign(const PropertyMap& src) {
+    if (m_type != t_map) {
+      reset();
+      new (m_value.map.ptr()) PropertyMap(src);
+      m_type = t_map;
+    } else {
+      *m_value.map.ptr() = src;
+    }
+  }
+  
+  void PropertyValue::assign(const PropertyList& src) {
+    if (m_type != t_list) {
+      reset();
+      new (m_value.list.ptr()) PropertyList(src);
+      m_type = t_list;
+    } else {
+      *m_value.list.ptr() = src;
+    }
+  }
+  
+  const PropertyValue& PropertyValue::get(const String& key) const {
+    if (type() != t_map)
+      throw std::runtime_error("Property value is not a map");
+    
+    PropertyMap::const_iterator it = map().find(key);
+    if (it == map().end())
+      throw std::runtime_error("Property map does not contain key: " + std::string(key));
+    
+    return it->second;
+  }
+  
+  std::vector<std::string> PropertyValue::str_list() const {
+    if (type() != t_list)
+      throw std::runtime_error("Property value is not a list");
+    
+    std::vector<std::string> result;
+    for (PropertyList::const_iterator ii = list().begin(), ie = list().end(); ii != ie; ++ii) {
+      if (ii->type() != t_str)
+        throw std::runtime_error("Property value list element is not a string");
+      result.push_back(ii->str());
+    }
+    
+    return result;
+  }
+
+  bool operator == (const PropertyValue& lhs, const PropertyValue& rhs) {
+    if (lhs.type() != rhs.type())
+      return false;
+    
+    switch (lhs.type()) {
+    case PropertyValue::t_null: return true;
+    case PropertyValue::t_boolean: return lhs.boolean() == rhs.boolean();
+    case PropertyValue::t_integer: return lhs.integer() == rhs.integer();
+    case PropertyValue::t_real: return fpequiv(lhs.real(), rhs.real());
+    case PropertyValue::t_str: return lhs.str() == rhs.str();
+    case PropertyValue::t_map: return lhs.map() == rhs.map();
+    case PropertyValue::t_list: return lhs.list() == rhs.list();
+    default: PSI_FAIL("unknown value type");
+    }
+  }
+  
+  namespace {
+    PropertyValue to_property_value(json_object *obj) {
+      switch (json_object_get_type(obj)) {
+      case json_type_null: return property_null;
+      case json_type_boolean: return bool(json_object_get_boolean(obj));
+      case json_type_int: return json_object_get_int(obj);
+      case json_type_double: return json_object_get_double(obj);
+      case json_type_string: return String(json_object_get_string(obj));
+        
+      case json_type_array: {
+        array_list *ar = json_object_get_array(obj);
+        std::vector<PropertyValue> elements(ar->length);
+        for (unsigned ii = 0, ie = ar->length; ii != ie; ++ii)
+          elements[ii] = to_property_value(static_cast<json_object*>(ar->array[ii]));
+        return elements;
+      }
+        
+      case json_type_object: {
+        std::map<String, PropertyValue> elements;
+        lh_table *tbl = json_object_get_object(obj);
+        for (lh_entry *ii = tbl->head; ii; ii = ii->next)
+          elements.insert(std::make_pair(String(static_cast<char*>(ii->k)),
+                                         to_property_value(static_cast<json_object*>(const_cast<void*>(ii->v)))));
+        return elements;
+      }
+
+      default:
+        PSI_FAIL("Unrecognised json object type");
+      }
+    }
+  }
+  
+  PropertyValue PropertyValue::parse(const char *begin, const char *end) {
+    std::size_t buffer_size = 4096;
+    std::vector<char> buffer(buffer_size);
+    
+    boost::shared_ptr<json_tokener> tok(json_tokener_new(), json_tokener_free);
+    
+    for (const char *ptr = begin; ptr != end;) {
+      std::size_t count = std::min(std::ptrdiff_t(buffer_size), end-ptr);
+      buffer.assign(ptr, ptr+count);
+      
+      json_object *obj = json_tokener_parse_ex(tok.get(), buffer.data(), count);
+      ptr += tok->char_offset;
+      
+      if (obj) {
+        boost::shared_ptr<json_object> obj_ptr(obj, json_object_put);
+        return to_property_value(obj);
+      } else if (tok->err != json_tokener_continue) {
+        throw std::runtime_error("JSON parse error");
+      }
+    }
+    
+    throw std::runtime_error("JSON parse error");
   }
 }

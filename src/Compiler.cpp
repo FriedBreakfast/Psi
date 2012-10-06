@@ -15,7 +15,7 @@
 
 namespace Psi {
   namespace Compiler {
-    void TreePtrBase::update_chain(TreeBase *ptr) const {
+    void TreePtrBase::update_chain(const TreeBase *ptr) const {
       const TreePtrBase *hook = this;
       ObjectPtr<const TreeCallback> ptr_cb;
       while (hook->m_ptr.get() != ptr) {
@@ -31,7 +31,7 @@ namespace Psi {
     /**
      * Evaluate a lazily evaluated Tree (recursively if necessary) and return the final result.
      */
-    Tree* TreePtrBase::get_helper() const {
+    const Tree* TreePtrBase::get_helper() const {
       PSI_ASSERT(m_ptr);
 
       /*
@@ -55,7 +55,7 @@ namespace Psi {
           const TreeCallbackVtable *vtable_cb = reinterpret_cast<const TreeCallbackVtable*>(vtable);
           RunningTreeCallback running(ptr_cb);
           ptr_cb->m_state = TreeCallback::state_running;
-          TreeBase *eval_ptr;
+          const TreeBase *eval_ptr;
           try {
             eval_ptr = vtable_cb->evaluate(ptr_cb);
           } catch (...) {
@@ -86,7 +86,7 @@ namespace Psi {
       update_chain(hook->m_ptr.get());
 
       PSI_ASSERT(!m_ptr || !derived_vptr(m_ptr.get())->is_callback);
-      return static_cast<Tree*>(m_ptr.get());
+      return static_cast<const Tree*>(m_ptr.get());
     }
     
 #ifdef PSI_DEBUG
@@ -158,49 +158,6 @@ namespace Psi {
                                     CompileError::error_internal);
     }
 
-    /**
-     * \brief Locate an interface implementation for a given set of parameters.
-     *
-     * \param interface Interface to look up implementation for.
-     * \param parameters Parameters to the interface.
-     */    
-    TreePtr<> interface_lookup(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const SourceLocation&) {
-      PSI_ASSERT(interface->compile_time_type);
-
-      // Walk the various parameters and look for matching interface implementations
-      for (LocalIterator<TreePtr<Term> > p(parameters); p.next();) {
-        TreePtr<> result = p.current()->interface_search(interface, parameters);
-        if (result) {
-          // Check result has the correct type
-          if (!si_is_a(result.get(), interface->compile_time_type)) {
-            CompileError error(interface.compile_context(), result.location());
-            error.info(boost::format("Implementation of '%s' has the wrong tree type") % interface.location().logical->error_name(result.location().logical));
-            error.info(boost::format("Tree type should be '%s' but is '%s'") % interface->compile_time_type->classname % si_vptr(result.get())->classname);
-            error.info(interface.location(), "Interface defined here");
-            error.end();
-            throw CompileException();
-          }
-          
-          if (interface->run_time_type) {
-            PSI_ASSERT(si_derived(reinterpret_cast<const SIVtable*>(&Term::vtable), interface->compile_time_type));
-            TreePtr<Term> term = treeptr_cast<Term>(result);
-            if (!interface->run_time_type->match(term)) {
-              CompileError error(interface.compile_context(), result.location());
-              error.info(boost::format("Implementation of '%s' has the wrong type") % interface.location().logical->error_name(result.location().logical));
-              error.info(boost::format("Type should be '%s' but is '%s'") % interface->run_time_type.location().logical->error_name(result.location().logical) % term->type.location().logical->error_name(result.location().logical));
-              error.info(interface.location(), "Interface defined here");
-              error.end();
-              throw CompileException();
-            }
-          }
-          
-          return result;
-        }
-      }
-
-      return TreePtr<>();
-    }
-
     CompileException::CompileException() {
     }
 
@@ -250,10 +207,14 @@ namespace Psi {
       empty_type.reset(new EmptyType(compile_context, psi_location.named_child("Empty")));
       bottom_type.reset(new BottomType(compile_context, psi_location.named_child("Bottom")));
       
-      macro_interface.reset(new Interface(compile_context, 1, &Macro::vtable, TreePtr<Term>(), psi_compiler_location.named_child("Macro")));
-      argument_passing_info_interface.reset(new Interface(compile_context, 1, &ArgumentPassingInfoCallback::vtable, TreePtr<Term>(), psi_compiler_location.named_child("ArgumentPasser")));
-      return_passing_info_interface.reset(new Interface(compile_context, 1, &ReturnPassingInfoCallback::vtable, TreePtr<Term>(), psi_compiler_location.named_child("ReturnMode")));
-      class_member_info_interface.reset(new Interface(compile_context, 1, &ClassMemberInfoCallback::vtable, TreePtr<Term>(), psi_compiler_location.named_child("ClassMemberInfo")));
+#if 0
+      macro_interface.reset(new MetadataType(compile_context, 1, &Macro::vtable, psi_compiler_location.named_child("Macro")));
+      argument_passing_info_interface.reset(new MetadataType(compile_context, 1, &ArgumentPassingInfoCallback::vtable, psi_compiler_location.named_child("ArgumentPasser")));
+      return_passing_info_interface.reset(new MetadataType(compile_context, 1, &ReturnPassingInfoCallback::vtable, psi_compiler_location.named_child("ReturnMode")));
+      class_member_info_interface.reset(new MetadataType(compile_context, 1, &ClassMemberInfoCallback::vtable, psi_compiler_location.named_child("ClassMemberInfo")));
+#else
+      PSI_NOT_IMPLEMENTED();
+#endif
     }
 
     CompileContext::CompileContext(std::ostream *error_stream)
@@ -331,7 +292,7 @@ namespace Psi {
     }
 
     /**
-     * \brief JIT compile a global symbol.
+     * \brief JIT compile a global variable or function.
      */
     void* CompileContext::jit_compile(const TreePtr<Global>& global) {
       PSI_NOT_IMPLEMENTED();
@@ -371,11 +332,11 @@ namespace Psi {
 
       typedef PSI_STD::map<String, TreePtr<Term> > NameMapType;
 
-      EvaluateContextDictionary(CompileContext& compile_context,
+      EvaluateContextDictionary(const TreePtr<Module>& module,
                                 const SourceLocation& location,
                                 const NameMapType& entries_,
                                 const TreePtr<EvaluateContext>& next_)
-      : EvaluateContext(&vtable, compile_context, location), entries(entries_), next(next_) {
+      : EvaluateContext(&vtable, module, location), entries(entries_), next(next_) {
       }
 
       NameMapType entries;
@@ -406,15 +367,50 @@ namespace Psi {
     /**
      * \brief Create an evaluation context based on a dictionary.
      */
-    TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const SourceLocation& location, const std::map<String, TreePtr<Term> >& entries, const TreePtr<EvaluateContext>& next) {
-      return TreePtr<EvaluateContext>(new EvaluateContextDictionary(compile_context, location, entries, next));
+    TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>& module, const SourceLocation& location, const std::map<String, TreePtr<Term> >& entries, const TreePtr<EvaluateContext>& next) {
+      return TreePtr<EvaluateContext>(new EvaluateContextDictionary(module, location, entries, next));
     }
 
     /**
      * \brief Create an evaluation context based on a dictionary.
      */
-    TreePtr<EvaluateContext> evaluate_context_dictionary(CompileContext& compile_context, const SourceLocation& location, const std::map<String, TreePtr<Term> >& entries) {
-      return evaluate_context_dictionary(compile_context, location, entries, TreePtr<EvaluateContext>());
+    TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>& module, const SourceLocation& location, const std::map<String, TreePtr<Term> >& entries) {
+      return evaluate_context_dictionary(module, location, entries, TreePtr<EvaluateContext>());
+    }
+
+    class EvaluateContextModule : public EvaluateContext {
+    public:
+      static const EvaluateContextVtable vtable;
+
+      typedef PSI_STD::map<String, TreePtr<Term> > NameMapType;
+
+      EvaluateContextModule(const TreePtr<Module>& module,
+                            const TreePtr<EvaluateContext>& next_,
+                            const SourceLocation& location)
+      : EvaluateContext(&vtable, module, location), next(next_) {
+      }
+
+      TreePtr<EvaluateContext> next;
+
+      template<typename Visitor>
+      static void visit(Visitor& v) {
+        visit_base<EvaluateContext>(v);
+        v("next", &EvaluateContextModule::next);
+      }
+
+      static LookupResult<TreePtr<Term> > lookup_impl(const EvaluateContextModule& self, const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) {
+        return self.next->lookup(name, location, evaluate_context);
+      }
+    };
+
+    const EvaluateContextVtable EvaluateContextModule::vtable =
+    PSI_COMPILER_EVALUATE_CONTEXT(EvaluateContextModule, "psi.compiler.EvaluateContextModule", EvaluateContext);
+
+    /**
+     * \brief Evaluate context which changes target module but forwards name lookups.
+     */
+    TreePtr<EvaluateContext> evaluate_context_module(const TreePtr<Module>& module, const TreePtr<EvaluateContext>& next, const SourceLocation& location) {
+      return TreePtr<EvaluateContext>(new EvaluateContextModule(module, next, location));
     }
     
     /**
@@ -445,15 +441,6 @@ namespace Psi {
       }
       
       return TreePtr<Term>();
-    }
-    
-    /**
-     * \brief Unify two types.
-     * 
-     * This returns the type that either \c lhs or \c rhs can be converted to.
-     */
-    TreePtr<Term> type_combine(const TreePtr<Term>& lhs, const TreePtr<Term>& rhs) {
-      PSI_NOT_IMPLEMENTED();
     }
   }
 }

@@ -21,9 +21,9 @@ namespace Psi {
     public:
       static const EvaluateContextVtable vtable;
 
-      EvaluateContextOneName(CompileContext& compile_context, const SourceLocation& location,
+      EvaluateContextOneName(const SourceLocation& location,
                              const String& name, const TreePtr<Term>& value, const TreePtr<EvaluateContext>& next)
-      : EvaluateContext(&vtable, compile_context, location),
+      : EvaluateContext(&vtable, next->module(), location),
       m_name(name), m_value(value), m_next(next) {
         m_vptr = reinterpret_cast<const SIVtable*>(&vtable);
       }
@@ -211,7 +211,7 @@ namespace Psi {
 
         if (named_expr.name) {
           result.names[expr_name] = result.passing_info.size();
-          argument_context.reset(new EvaluateContextOneName(compile_context, argument_location, expr_name, passing_info.argument, argument_context));
+          argument_context.reset(new EvaluateContextOneName(argument_location, expr_name, passing_info.argument, argument_context));
         }
 
         result.passing_info.push_back(passing_info);
@@ -404,10 +404,10 @@ namespace Psi {
       for (PSI_STD::map<String, unsigned>::iterator ii = common.names.begin(), ie = common.names.end(); ii != ie; ++ii)
         argument_values[ii->first] = common.passing_info[ii->second].argument;
 
-      TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(compile_context, location, argument_values, evaluate_context);
+      TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_values, evaluate_context);
       TreePtr<Term> body_tree = tree_callback<Term>(compile_context, location, FunctionBodyCompiler(body_context, body));
 
-      TreePtr<Function> func(new Function(common.result_mode, common.result_type, argument_trees, body_tree, location));
+      TreePtr<Function> func(new Function(evaluate_context->module(), common.result_mode, common.result_type, argument_trees, body_tree, location));
 
       // Create macro to interpret function arguments
       return function_invoke_macro(common, func, location);
