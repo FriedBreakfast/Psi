@@ -36,7 +36,7 @@ namespace Psi {
     /**
      * Recursively evaluate all tree references inside this tree.
      */
-    void Tree::complete() {
+    void Tree::complete() const {
       VisitQueue<TreePtr<> > queue;
       queue.push(TreePtr<>(this));
       
@@ -546,7 +546,11 @@ namespace Psi {
         }
         
         TreePtr<Term> evaluate(const TreePtr<Term>&) {
+#if 0
           return type_combine(true_value->type, false_value->type);
+#else
+          PSI_NOT_IMPLEMENTED();
+#endif
         }
         
         template<typename Visitor>
@@ -608,10 +612,14 @@ namespace Psi {
         }
         
         TreePtr<Term> evaluate(const TreePtr<Term>&) {
+#if 0
           TreePtr<Term> result = initial->type;
           for (PSI_STD::vector<TreePtr<JumpTarget> >::iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
             result = type_combine(result, (*ii)->value->type);
           return result;
+#else
+          PSI_NOT_IMPLEMENTED();
+#endif
         }
 
         template<typename Visitor>
@@ -853,11 +861,11 @@ namespace Psi {
     const TreeVtable Module::vtable = PSI_COMPILER_TREE(Module, "psi.compiler.Module", Tree);
     
     Library::Library(CompileContext& compile_context, const SourceLocation& location)
-    : Term(&vtable, compile_context, location) {
+    : Tree(&vtable, compile_context, location) {
     }
     
     Library::Library(const TreePtr<TargetCallback>& callback_, const SourceLocation& location)
-    : Term(&vtable, callback_.compile_context(), location),
+    : Tree(&vtable, callback_.compile_context(), location),
     callback(callback_) {
     }
     
@@ -867,7 +875,7 @@ namespace Psi {
       v("callback", &Library::callback);
     }
     
-    const TermVtable Library::vtable = PSI_COMPILER_TERM(Library, "psi.compiler.Library", Term);
+    const TreeVtable Library::vtable = PSI_COMPILER_TREE(Library, "psi.compiler.Library", Tree);
     
     LibrarySymbol::LibrarySymbol(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {

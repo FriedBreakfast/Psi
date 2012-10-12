@@ -116,48 +116,6 @@ namespace Psi {
       return si_derived(cls, object->m_vptr);
     }
 
-    /**
-     * Create a string containing a list of parameters passed to an interface.
-     */
-    std::string interface_parameters_message(const List<TreePtr<Term> >& parameters, const SourceLocation& location) {
-      std::stringstream ss;
-
-      bool first = true;
-      for (LocalIterator<TreePtr<Term> > p(parameters); p.next();) {
-	      if (first)
-	        first = false;
-	      else
-	        ss << ", ";
-        TreePtr<Term>& current = p.current();
-	      ss << '\'' << current.location().logical->error_name(location.logical) << '\'';
-      }
-
-      return ss.str();
-    }
-
-    /**
-     * \brief Checks the result of an interface lookup is non-NULL and of the correct type.
-     *
-     * \param parameters Parameters the interfacce was searched on.
-     */
-    void interface_cast_check(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const TreePtr<>& result, const SourceLocation& location, const TreeVtable* cast_type) {
-      CompileContext& compile_context = interface.compile_context();
-
-      if (!result)
-        compile_context.error_throw(location,
-                                    boost::format("'%s' interface not available for %s")
-                                    % interface.location().logical->error_name(location.logical)
-                                    % interface_parameters_message(parameters, location));
-
-      if (!si_is_a(result.get(), &cast_type->base.base.base))
-        compile_context.error_throw(location,
-                                    boost::format("'%s' interface value has the wrong type (%s) for %s")
-                                    % interface.location().logical->error_name(location.logical)
-                                    % si_vptr(result.get())->classname
-                                    % interface_parameters_message(parameters, location),
-                                    CompileError::error_internal);
-    }
-
     CompileException::CompileException() {
     }
 
@@ -198,6 +156,15 @@ namespace Psi {
     
     BuiltinTypes::BuiltinTypes() {
     }
+    
+    namespace {
+      template<typename TreeType>
+      TreePtr<MetadataType> make_tag(const TreePtr<Term>& wildcard_type, const SourceLocation& location) {
+        TreePtr<Term> wildcard(new Parameter(wildcard_type, 0, 0, location));
+        std::vector<TreePtr<Term> > pattern(1, wildcard);
+        return TreePtr<MetadataType>(new MetadataType(wildcard_type.compile_context(), 0, pattern, &TreeType::vtable, location));
+      }
+    }
 
     void BuiltinTypes::initialize(CompileContext& compile_context) {
       SourceLocation psi_location = compile_context.root_location().named_child("psi");
@@ -207,14 +174,10 @@ namespace Psi {
       empty_type.reset(new EmptyType(compile_context, psi_location.named_child("Empty")));
       bottom_type.reset(new BottomType(compile_context, psi_location.named_child("Bottom")));
       
-#if 0
-      macro_interface.reset(new MetadataType(compile_context, 1, &Macro::vtable, psi_compiler_location.named_child("Macro")));
-      argument_passing_info_interface.reset(new MetadataType(compile_context, 1, &ArgumentPassingInfoCallback::vtable, psi_compiler_location.named_child("ArgumentPasser")));
-      return_passing_info_interface.reset(new MetadataType(compile_context, 1, &ReturnPassingInfoCallback::vtable, psi_compiler_location.named_child("ReturnMode")));
-      class_member_info_interface.reset(new MetadataType(compile_context, 1, &ClassMemberInfoCallback::vtable, psi_compiler_location.named_child("ClassMemberInfo")));
-#else
-      PSI_NOT_IMPLEMENTED();
-#endif
+      macro_tag = make_tag<Macro>(metatype, psi_compiler_location.named_child("Macro"));
+      argument_passing_info_tag = make_tag<ArgumentPassingInfoCallback>(metatype, psi_compiler_location.named_child("ArgumentPasser"));
+      return_passing_info_tag = make_tag<ReturnPassingInfoCallback>(metatype, psi_compiler_location.named_child("ReturnMode"));
+      class_member_info_tag = make_tag<ClassMemberInfoCallback>(metatype, psi_compiler_location.named_child("ClassMemberInfo"));
     }
 
     CompileContext::CompileContext(std::ostream *error_stream)

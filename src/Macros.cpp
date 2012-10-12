@@ -95,33 +95,54 @@ namespace Psi {
     }
     
     namespace {
-      class MakeMacroCallback {
-        TreePtr<Macro> m_macro;
+      class MakeMetadataCallback {
+      public:
+        typedef std::vector<std::pair<TreePtr<MetadataType>, TreePtr<> > > MetadataListType;
+        MetadataListType m_metadata;
         
       public:
-        MakeMacroCallback(const TreePtr<Macro>& macro) : m_macro(macro) {}
+        MakeMetadataCallback(const MetadataListType& metadata) : m_metadata(metadata) {}
         
         TreePtr<GenericType> evaluate(const TreePtr<GenericType>& self) const {
+          TreePtr<TypeInstance> inst(new TypeInstance(self, default_, self.location()));
           PSI_STD::vector<TreePtr<OverloadValue> > overloads;
           PSI_STD::vector<TreePtr<Term> > pattern;
-          overloads.push_back(TreePtr<Metadata>(new Metadata(default_, m_macro, self.location())));
+          for (MetadataListType::const_iterator ii = m_metadata.begin(), ie = m_metadata.end(); ii != ie; ++ii) {
+            pattern.assign(1, inst);
+            overloads.push_back(TreePtr<Metadata>(new Metadata(ii->second, ii->first, pattern, self.location())));
+          }
           return TreePtr<GenericType>(new GenericType(default_, self.compile_context().builtins().empty_type, overloads, self.location()));
         }
         
         template<typename V>
         static void visit(V& v) {
-          v("macro", &MakeMacroCallback::m_macro);
+          v("metadata", &MakeMetadataCallback::m_metadata);
         }
       };
     }
-
-    TreePtr<Term> make_macro_term(CompileContext& compile_context,
-                                  const SourceLocation& location,
-                                  const TreePtr<Macro>& macro) {
-      TreePtr<GenericType> generic = tree_callback<GenericType>(compile_context, location, MakeMacroCallback(macro));
+    
+    /**
+     * \brief Create a Term which carries a single metadata annotation.
+     */
+    TreePtr<Term> make_data_term(const TreePtr<MetadataType>& key, const TreePtr<>& value, const SourceLocation& location) {
+      CompileContext& compile_context = key.compile_context();
+      MakeMetadataCallback::MetadataListType ml(1, std::make_pair(key, value));
+      TreePtr<GenericType> generic = tree_callback<GenericType>(compile_context, location, MakeMetadataCallback(ml));
       return TreePtr<Term>(new TypeInstance(generic, default_, location));
     }
+
+    /**
+     * \brief Create a Term which uses a given macro.
+     */
+    TreePtr<Term> make_macro_term(const TreePtr<Macro>& macro, const SourceLocation& location) {
+      return make_data_term(macro.compile_context().builtins().macro_tag, macro, location);
+    }
     
+    /**
+     * \brief Create the default \c __none__ value.
+     * 
+     * This value has no members and no associated metadata (yet).
+     */
     TreePtr<Term> none_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<GenericType> generic_type(new GenericType(default_, compile_context.builtins().empty_type, default_, location));
       TreePtr<Term> type(new TypeInstance(generic_type, default_, location));
@@ -158,7 +179,7 @@ namespace Psi {
     
     TreePtr<Term> namespace_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(new NamespaceMacro(compile_context, location)));
-      return make_macro_term(compile_context, location, m);
+      return make_macro_term(m, location);
     }
     
     class BuiltinTypeMacro : public MacroEvaluateCallback {
@@ -190,7 +211,7 @@ namespace Psi {
     
     TreePtr<Term> builtin_type_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(new BuiltinTypeMacro(compile_context, location)));
-      return make_macro_term(compile_context, location, m);
+      return make_macro_term(m, location);
     }
     
     class ExternalFunctionMacro : public MacroEvaluateCallback {
@@ -253,12 +274,12 @@ namespace Psi {
     
     TreePtr<Term> builtin_function_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(new ExternalFunctionMacro(compile_context, location, ExternalFunctionMacro::extern_builtin)));
-      return make_macro_term(compile_context, location, m);
+      return make_macro_term(m, location);
     }
     
     TreePtr<Term> c_function_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(new ExternalFunctionMacro(compile_context, location, ExternalFunctionMacro::extern_c)));
-      return make_macro_term(compile_context, location, m);
+      return make_macro_term(m, location);
     }
     
     class BuiltinValueMacro : public MacroEvaluateCallback {
@@ -300,7 +321,7 @@ namespace Psi {
 
     TreePtr<Term> builtin_value_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(new BuiltinValueMacro(compile_context, location)));
-      return make_macro_term(compile_context, location, m);
+      return make_macro_term(m, location);
     }
     
     class TargetCallbackConst : public TargetCallback {
@@ -375,7 +396,7 @@ namespace Psi {
 
       PSI_NOT_IMPLEMENTED();
     }
-
+    
     class LibraryMacro : public MacroEvaluateCallback {
     public:
       static const MacroEvaluateCallbackVtable vtable;
@@ -396,7 +417,8 @@ namespace Psi {
         default: self.compile_context().error_throw(location, "Wrong number of parameters to library macro (expected 1 or 2)");
         }
 
-        return TreePtr<Term>(new Library(callback, location));
+        TreePtr<Library> lib(new Library(callback, location));
+        return make_data_term(self.compile_context().builtins().library_tag, lib, location);
       }
     };
 
@@ -404,7 +426,7 @@ namespace Psi {
 
     TreePtr<Term> library_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(new LibraryMacro(compile_context, location)));
-      return make_macro_term(compile_context, location, m);
+      return make_macro_term(m, location);
     }
     
     class LibrarySymbolMacro : public MacroEvaluateCallback {
@@ -444,7 +466,7 @@ namespace Psi {
 
     TreePtr<Term> library_symbol_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroEvaluateCallback>(new LibrarySymbolMacro(compile_context, location)));
-      return make_macro_term(compile_context, location, m);
+      return make_macro_term(m, location);
     }
   }
 }

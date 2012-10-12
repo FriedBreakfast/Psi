@@ -168,11 +168,21 @@ namespace Psi {
       }
       
       template<typename T>
+      bool visit_treeptr_helper(Term*, const boost::array<const TreePtr<T>*, 2>& ptr) {
+        return (*ptr[0])->match(*ptr[1], *m_wildcards, m_depth);
+      }
+      
+      template<typename T>
+      bool visit_treeptr_helper(Tree*, const boost::array<const TreePtr<T>*, 2>& ptr) {
+        return ptr[0]->get() == ptr[1]->get();
+      }
+      
+      template<typename T>
       void visit_object(const char*, const boost::array<const TreePtr<T>*, 2>& ptr) {
         if (!result)
           return;
 
-        result = (*ptr[0])->match(*ptr[1], *m_wildcards, m_depth);
+        result = visit_treeptr_helper(static_cast<T*>(0), ptr);
       }
 
       template<typename T>

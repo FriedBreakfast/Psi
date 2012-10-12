@@ -288,6 +288,9 @@ namespace Psi {
     &MacroDotCallbackWrapper<derived>::dot \
   }
     
+    
+    class MetadataType;
+    
     struct BuiltinTypes {
       BuiltinTypes();
       void initialize(CompileContext& compile_context);
@@ -300,13 +303,16 @@ namespace Psi {
       TreePtr<Term> metatype;
       
       /// \brief The Macro interface.
-      TreePtr<Interface> macro_interface;
+      TreePtr<MetadataType> macro_tag;
       /// \brief The argument passing descriptor interface.
-      TreePtr<Interface> argument_passing_info_interface;
+      TreePtr<MetadataType> argument_passing_info_tag;
       /// \brief Return value descriptor interface.
-      TreePtr<Interface> return_passing_info_interface;
+      TreePtr<MetadataType> return_passing_info_tag;
       /// \brief The class member descriptor interface.
-      TreePtr<Interface> class_member_info_interface;
+      TreePtr<MetadataType> class_member_info_tag;
+      
+      /// \brief Library metadata tag
+      TreePtr<MetadataType> library_tag;
     };
     
     class Function;
@@ -394,29 +400,10 @@ namespace Psi {
     TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);
     TreePtr<EvaluateContext> evaluate_context_module(const TreePtr<Module>& module, const TreePtr<EvaluateContext>& next, const SourceLocation& location);
 
-    TreePtr<> metadata_lookup(const TreePtr<Interface>&, const List<TreePtr<Term> >&, const SourceLocation&);
-    void interface_cast_check(const TreePtr<Interface>&, const List<TreePtr<Term> >&, const TreePtr<>&, const SourceLocation&, const TreeVtable*);
-
-    template<typename T>
-    TreePtr<T> interface_lookup_as(const TreePtr<Interface>& interface, const TreePtr<Term>& parameter, const SourceLocation& location) {
-      boost::array<TreePtr<Term>, 1> parameters;
-      parameters[0] = parameter;
-      TreePtr<> result = metadata_lookup(interface, list_from_stl(parameters), location);
-      interface_cast_check(interface, list_from_stl(parameters), result, location, reinterpret_cast<const TreeVtable*>(&T::vtable));
-      return treeptr_cast<T>(result);
-    }
-
-    template<typename T>
-    TreePtr<T> interface_lookup_as(const TreePtr<Interface>& interface, const List<TreePtr<Term> >& parameters, const SourceLocation& location) {
-      TreePtr<> result = metadata_lookup(interface, parameters, location);
-      interface_cast_check(interface, parameters, result, location, reinterpret_cast<const TreeVtable*>(&T::vtable));
-      return treeptr_cast<T>(result);
-    }
-
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&, const std::map<String, TreePtr<MacroDotCallback> >&);
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&);
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<MacroDotCallback> >&);
-    TreePtr<Term> make_macro_term(CompileContext& compile_context, const SourceLocation& location, const TreePtr<Macro>& macro);
+    TreePtr<Term> make_macro_term(const TreePtr<Macro>& macro, const SourceLocation& location);
     
     TreePtr<Term> find_by_name(const TreePtr<Namespace>& ns, const std::string& name);
     TreePtr<Term> type_combine(const TreePtr<Term>& lhs, const TreePtr<Term>& rhs);

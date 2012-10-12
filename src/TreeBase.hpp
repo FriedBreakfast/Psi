@@ -182,7 +182,7 @@ namespace Psi {
 
       Tree(const TreeVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
 
-      void complete();
+      void complete() const;
       
       template<typename V> static void visit(V& v) {visit_base<TreeBase>(v);}
     };

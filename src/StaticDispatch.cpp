@@ -5,6 +5,86 @@
 
 namespace Psi {
   namespace Compiler {
+    OverloadType::OverloadType(const TreeVtable *vtable, CompileContext& compile_context, unsigned n_implicit_,
+                               const PSI_STD::vector<TreePtr<Term> >& pattern_, const SourceLocation& location)
+    : Tree(vtable, compile_context, location),
+    n_implicit(n_implicit_),
+    pattern(pattern_) {
+    }
+    
+    const SIVtable OverloadType::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.OverloadType", Tree);
+    
+    OverloadValue::OverloadValue(const TreeVtable *vtable, const TreePtr<OverloadType>& type_,
+                                 const PSI_STD::vector<TreePtr<Term> >& pattern_, const SourceLocation& location)
+    : Tree(vtable, type_.compile_context(), location),
+    overload_type(type_),
+    pattern(pattern_) {
+    }
+    
+    const SIVtable OverloadValue::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.OverloadValue", Tree);
+    
+    Interface::Interface(const PSI_STD::vector<InterfaceBase>& bases_, const TreePtr<Term>& type_, unsigned n_implicit,
+                         const std::vector<TreePtr<Term> >& pattern, const std::vector<TreePtr<Term> >& derived_pattern_,
+                         const SourceLocation& location)
+    : OverloadType(&vtable, type.compile_context(), n_implicit, pattern, location),
+    derived_pattern(derived_pattern_),
+    type(type_),
+    bases(bases_) {
+    }
+    
+    template<typename V>
+    void Interface::visit(V& v) {
+      visit_base<OverloadType>(v);
+      v("derived_pattern", &Interface::derived_pattern)
+      ("type", &Interface::type)
+      ("bases", &Interface::bases);
+    }
+    
+    const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", OverloadType);
+    
+    Implementation::Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent_, const TreePtr<Term>& value_,
+                                   const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location)
+    : OverloadValue(&vtable, interface, pattern, location),
+    dependent(dependent_),
+    value(value_) {
+    }
+    
+    template<typename V>
+    void Implementation::visit(V& v) {
+      visit_base<OverloadValue>(v);
+      v("dependent", &Implementation::dependent)
+      ("value", &Implementation::value);
+    }
+    
+    const TreeVtable Implementation::vtable = PSI_COMPILER_TREE(Implementation, "psi.compiler.Implementation", OverloadValue);
+   
+    MetadataType::MetadataType(CompileContext& compile_context, unsigned int n_implicit, const PSI_STD::vector<TreePtr<Term> >& pattern,
+                               const SIType& type_, const SourceLocation& location)
+    : OverloadType(&vtable, compile_context, n_implicit, pattern, location),
+    type(type_) {
+    }
+    
+    template<typename V>
+    void MetadataType::visit(V& v) {
+      visit_base<OverloadType>(v);
+      v("type", &MetadataType::type);
+    }
+    
+    const TreeVtable MetadataType::vtable = PSI_COMPILER_TREE(MetadataType, "psi.compiler.MetadataType", OverloadType);
+    
+    Metadata::Metadata(const TreePtr<>& value_, const TreePtr<MetadataType>& type, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location)
+    : OverloadValue(&vtable, type, pattern, location),
+    value(value_) {
+    }
+    
+    template<typename V>
+    void Metadata::visit(V& v) {
+      visit_base<OverloadValue>(v);
+      v("value", &Metadata::value);
+    }
+    
+    const TreeVtable Metadata::vtable = PSI_COMPILER_TREE(Metadata, "psi.compiler.Metadata", OverloadValue);
+    
     /**
      * \brief Match a pattern.
      * 
@@ -115,9 +195,9 @@ namespace Psi {
      */    
     TreePtr<> metadata_lookup(const TreePtr<MetadataType>& metadata_type, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
       TreePtr<Metadata> md = treeptr_cast<Metadata>(overload_lookup(metadata_type, parameters, location).second);
-      if (!metadata_type->type().isa(md->value().get()))
-        metadata_type.compile_context().error_throw(location, boost::format("Value of metadata does not have the expected type: %s") % metadata_type->type()->classname);
-      return md->value();
+      if (!metadata_type->type.isa(md->value.get()))
+        metadata_type.compile_context().error_throw(location, boost::format("Value of metadata does not have the expected type: %s") % metadata_type->type->classname);
+      return md->value;
     }
     
     /**

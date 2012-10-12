@@ -202,7 +202,7 @@ namespace Psi {
         SourceLocation argument_location(named_expr.location.location, logical_location);
 
         TreePtr<Term> argument_expr = compile_expression(named_expr.expression, argument_context, argument_location.logical);
-        TreePtr<ArgumentPassingInfoCallback> passing_info_callback = interface_lookup_as<ArgumentPassingInfoCallback>(compile_context.builtins().argument_passing_info_interface, argument_expr, location);
+        TreePtr<ArgumentPassingInfoCallback> passing_info_callback = metadata_lookup_as<ArgumentPassingInfoCallback>(compile_context.builtins().argument_passing_info_tag, argument_expr, location);
 
         ArgumentPassingInfo passing_info = passing_info_callback->argument_passing_info();
 
@@ -221,7 +221,7 @@ namespace Psi {
         TreePtr<Term> result_expr = compile_expression(parsed_arguments.return_type, argument_context, location.logical);
         if (!result.result_type->is_type())
           compile_context.error_throw(location, "Function result type expression does not evaluate to a type");
-        TreePtr<ReturnPassingInfoCallback> return_info_callback = interface_lookup_as<ReturnPassingInfoCallback>(compile_context.builtins().return_passing_info_interface, result_expr, location);
+        TreePtr<ReturnPassingInfoCallback> return_info_callback = metadata_lookup_as<ReturnPassingInfoCallback>(compile_context.builtins().return_passing_info_tag, result_expr, location);
         ReturnPassingInfo return_info = return_info_callback->return_passing_info();
         result.result_type = return_info.type;
         result.result_mode = return_info.mode;
@@ -370,7 +370,7 @@ namespace Psi {
     TreePtr<Term> function_invoke_macro(const FunctionInfo& info, const TreePtr<Term>& func, const SourceLocation& location) {
       TreePtr<MacroEvaluateCallback> callback(new FunctionInvokeCallback(info, func, location));
       TreePtr<Macro> macro = make_macro(func.compile_context(), location, callback);
-      return make_macro_term(func.compile_context(), location, macro);
+      return make_macro_term(macro, location);
     }
 
     /**
@@ -442,7 +442,7 @@ namespace Psi {
     TreePtr<Term> function_definition_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<MacroEvaluateCallback> callback(new FunctionDefineCallback(compile_context, location));
       TreePtr<Macro> macro = make_macro(compile_context, location, callback);
-      return make_macro_term(compile_context, location, macro);
+      return make_macro_term(macro, location);
     }
   }
 }

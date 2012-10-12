@@ -48,7 +48,7 @@ namespace Psi {
 
         TreePtr<Term> member_value;
         TreePtr<Term> evaluated = it->second.callback->dot(value, member_value, evaluate_context, location);
-        TreePtr<Macro> macro = interface_lookup_as<Macro>(self.compile_context().builtins().macro_interface, evaluated, location);
+        TreePtr<Macro> macro = metadata_lookup_as<Macro>(self.compile_context().builtins().macro_tag, evaluated, location);
         return macro->evaluate(value, parameters, evaluate_context, location);
       }
 
@@ -204,7 +204,7 @@ namespace Psi {
 
       TreePtr<ClassMemberInfoTree> evaluate(const TreePtr<ClassMemberInfoTree>& self) {
         TreePtr<Term> expr = compile_expression(m_expression, m_context, self.location().logical);
-        TreePtr<ClassMemberInfoCallback> callback = interface_lookup_as<ClassMemberInfoCallback>(self.compile_context().builtins().class_member_info_interface, expr, self.location());
+        TreePtr<ClassMemberInfoCallback> callback = metadata_lookup_as<ClassMemberInfoCallback>(self.compile_context().builtins().class_member_info_tag, expr, self.location());
         return TreePtr<ClassMemberInfoTree>(new ClassMemberInfoTree(self.compile_context(), self.location(), callback->class_member_info()));
       }
     };
@@ -459,7 +459,7 @@ namespace Psi {
     TreePtr<Term> class_definition_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<MacroEvaluateCallback> callback(new ClassDefineCallback(compile_context, location));
       TreePtr<Macro> macro = make_macro(compile_context, location, callback);
-      return make_macro_term(compile_context, location, macro);
+      return make_macro_term(macro, location);
     }
   }
 }

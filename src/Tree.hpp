@@ -602,7 +602,7 @@ namespace Psi {
      */
     class LibrarySymbol : public Term {
     public:
-      static const TreeVtable vtable;
+      static const TermVtable vtable;
 
       LibrarySymbol(CompileContext& compile_context, const SourceLocation& location);
       LibrarySymbol(const TreePtr<Library>& library, const TreePtr<TargetCallback>& callback, const SourceLocation& location);

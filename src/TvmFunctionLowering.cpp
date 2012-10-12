@@ -206,7 +206,7 @@ class FunctionLowering {
 };
 
 FunctionLowering::Variable::Variable(Scope& parent_scope, const TreePtr<Term>& value, const Tvm::ValuePtr<>& stack_slot)
-: m_type(value->m_type),
+: m_type(value->type),
 m_tvm_type(parent_scope.shared().run_type(m_type)),
 m_storage(local_bottom) {
   if (stack_slot)
@@ -216,7 +216,7 @@ m_storage(local_bottom) {
 }
 
 FunctionLowering::Variable::Variable(Scope&, const TreePtr<Term>& value, LocalStorage storage, const Tvm::ValuePtr<>& tvm_value)
-: m_type(value->m_type),
+: m_type(value->type),
 m_tvm_type(tvm_value->type()),
 m_storage(storage),
 m_value(tvm_value) {
@@ -401,7 +401,7 @@ Tvm::ValuePtr<> FunctionLowering::run_type(const TreePtr<Term>& type) {
       members.push_back(run_type(*ii));
     return Tvm::FunctionalBuilder::union_type(tvm_context(), members, type->location());
   } else if (TreePtr<PointerType> ptr_ty = dyn_treeptr_cast<PointerType>(type)) {
-    return Tvm::FunctionalBuilder::pointer_type(run_type(ptr_ty->m_target_type), ptr_ty->location());
+    return Tvm::FunctionalBuilder::pointer_type(run_type(ptr_ty->target_type), ptr_ty->location());
   } else {
     PSI_NOT_IMPLEMENTED();
   }
@@ -498,7 +498,7 @@ FunctionLowering::VariableResult FunctionLowering::run_jump_group(Scope& scope, 
     for (JumpMapType::iterator ii = initial_jump_map.begin(), ie = initial_jump_map.end(); ii != ie; ++ii) {
       if (ii->first->argument && (ii->first->argument_mode == result_mode_by_value)) {
         PSI_ASSERT(!ii->second.storage);
-        ii->second.storage = Tvm::FunctionalBuilder::element_ptr(storage, run_type(ii->first->argument->m_type), ii->first->location());
+        ii->second.storage = Tvm::FunctionalBuilder::element_ptr(storage, run_type(ii->first->argument->type), ii->first->location());
       }
     }
   }

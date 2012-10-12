@@ -11,7 +11,7 @@ namespace Psi {
      * Get the Macro tree associated with an expression.
      */
     TreePtr<Macro> expression_macro(const TreePtr<Term>& expr, const SourceLocation& location) {
-      return interface_lookup_as<Macro>(expr.compile_context().builtins().macro_interface, expr, location);
+      return metadata_lookup_as<Macro>(expr.compile_context().builtins().macro_tag, expr, location);
     }
     
     /**
