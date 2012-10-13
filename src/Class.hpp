@@ -14,9 +14,9 @@ namespace Psi {
       /// Member data type.
       TreePtr<Term> member_type;
       /// Callback to be used when this member is accessed statically.
-      TreePtr<MacroDotCallback> static_callback;
+      TreePtr<MacroMemberCallback> static_callback;
       /// Callback to be used when this member is accessed on an object.
-      TreePtr<MacroDotCallback> member_callback;
+      TreePtr<MacroMemberCallback> member_callback;
 
       template<typename V>
       static void visit(V& v) {

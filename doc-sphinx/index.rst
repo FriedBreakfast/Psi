@@ -4,6 +4,7 @@ Welcome to Psi's documentation!
 .. toctree::
    :maxdepth: 2
 
+   stdlib/index
    tvm/index
    internals/index
 

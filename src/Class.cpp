@@ -13,7 +13,7 @@ namespace Psi {
 
     struct ClassMacroMember {
       int index;
-      TreePtr<MacroDotCallback> callback;
+      TreePtr<MacroMemberCallback> callback;
     };
 
     class ClassMacro : public Macro {
@@ -47,20 +47,29 @@ namespace Psi {
           self.compile_context().error_throw(location, boost::format("Macro '%s' does not support evaluation") % self.location().logical->error_name(location.logical));
 
         TreePtr<Term> member_value;
-        TreePtr<Term> evaluated = it->second.callback->dot(value, member_value, evaluate_context, location);
+        TreePtr<Term> evaluated = it->second.callback->evaluate(value, parameters, evaluate_context, location);
         TreePtr<Macro> macro = metadata_lookup_as<Macro>(self.compile_context().builtins().macro_tag, evaluated, location);
         return macro->evaluate(value, parameters, evaluate_context, location);
       }
-
+      
       static TreePtr<Term> dot_impl(const ClassMacro& self,
                                     const TreePtr<Term>& value,
                                     const SharedPtr<Parser::Expression>& parameter,
                                     const TreePtr<EvaluateContext>& evaluate_context,
                                     const SourceLocation& location) {
-        if (parameter->expression_type != Parser::expression_token)
+        return evaluate_dot_impl(self, value, parameter, empty_list<SharedPtr<Parser::Expression> >(), evaluate_context, location);
+      }
+
+      static TreePtr<Term> evaluate_dot_impl(const ClassMacro& self,
+                                             const TreePtr<Term>& value,
+                                             const SharedPtr<Parser::Expression>& member,
+                                             const List<SharedPtr<Parser::Expression> >& parameters,
+                                             const TreePtr<EvaluateContext>& evaluate_context,
+                                             const SourceLocation& location) {
+        if (member->expression_type != Parser::expression_token)
           self.compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % self.location().logical->error_name(location.logical));
 
-        const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*parameter);
+        const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*member);
         String member_name(token_expression.text.begin, token_expression.text.end);
         NameMapType::const_iterator it = self.members.find(member_name);
 
@@ -68,7 +77,7 @@ namespace Psi {
           self.compile_context().error_throw(location, boost::format("'%s' has no member named '%s'") % self.location().logical->error_name(location.logical) % member_name);
 
         TreePtr<Term> member_value;
-        return it->second.callback->dot(value, member_value, evaluate_context, location);
+        return it->second.callback->evaluate(value, parameters, evaluate_context, location);
       }
     };
 
@@ -173,8 +182,8 @@ namespace Psi {
         ClassCompilerTree::NameMapType::const_iterator it = self.class_compiler->named_entries.find(name);
         if (it != self.class_compiler->named_entries.end()) {
           TreePtr<Term> member_value;
-          return lookup_result_match(it->second->member_info.static_callback->dot
-            (self.class_compiler->final->static_term, member_value, evaluate_context, location));
+          return lookup_result_match(it->second->member_info.static_callback->evaluate
+            (self.class_compiler->final->static_term, empty_list<SharedPtr<Parser::Expression> >(), evaluate_context, location));
         } else if (self.next) {
           return self.next->lookup(name, location, evaluate_context);
         } else {
@@ -433,12 +442,12 @@ namespace Psi {
       return tree_callback<ClassCompilerTree>(compile_context, location, ClassCompiler(evaluate_context, parameters, mutators, members))->final->static_term;
     }
 
-    class ClassDefineCallback : public MacroEvaluateCallback {
+    class ClassDefineCallback : public MacroMemberCallback {
     public:
-      static const MacroEvaluateCallbackVtable vtable;
+      static const MacroMemberCallbackVtable vtable;
 
       ClassDefineCallback(CompileContext& compile_context, const SourceLocation& location)
-      : MacroEvaluateCallback(&vtable, compile_context, location) {
+      : MacroMemberCallback(&vtable, compile_context, location) {
       }
 
       static TreePtr<Term> evaluate_impl(const ClassDefineCallback&,
@@ -450,14 +459,14 @@ namespace Psi {
       }
     };
 
-    const MacroEvaluateCallbackVtable ClassDefineCallback::vtable =
-    PSI_COMPILER_MACRO_EVALUATE_CALLBACK(ClassDefineCallback, "psi.compiler.ClassDefineCallback", MacroEvaluateCallback);
+    const MacroMemberCallbackVtable ClassDefineCallback::vtable =
+    PSI_COMPILER_MACRO_MEMBER_CALLBACK(ClassDefineCallback, "psi.compiler.ClassDefineCallback", MacroMemberCallback);
 
     /**
      * \brief Create a callback to the function definition function.
      */
     TreePtr<Term> class_definition_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroEvaluateCallback> callback(new ClassDefineCallback(compile_context, location));
+      TreePtr<MacroMemberCallback> callback(new ClassDefineCallback(compile_context, location));
       TreePtr<Macro> macro = make_macro(compile_context, location, callback);
       return make_macro_term(macro, location);
     }

@@ -478,7 +478,7 @@ namespace Psi {
                              const TreePtr<Term>& member_type_,
                              const PSI_STD::vector<TreePtr<OverloadValue> >& overloads_,
                              const SourceLocation& location)
-    : Tree(&vtable, member_type.compile_context(), location),
+    : Tree(&vtable, member_type_.compile_context(), location),
     pattern(pattern_),
     member_type(member_type_),
     overloads(overloads_) {
@@ -814,6 +814,15 @@ namespace Psi {
                                     const SharedPtr<Parser::Expression>&,
                                     const TreePtr<EvaluateContext>&,
                                     const SourceLocation& location) {
+        self.compile_context().error_throw(location, "External functions do not support the dot operator");
+      }
+
+      static TreePtr<Term> evaluate_dot_impl(const ExternalFunctionInvokeMacro& self,
+                                             const TreePtr<Term>&,
+                                             const SharedPtr<Parser::Expression>&,
+                                             const List<SharedPtr<Parser::Expression> >&,
+                                             const TreePtr<EvaluateContext>&,
+                                             const SourceLocation& location) {
         self.compile_context().error_throw(location, "External functions do not support the dot operator");
       }
     };

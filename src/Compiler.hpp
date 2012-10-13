@@ -81,6 +81,7 @@ namespace Psi {
       TreeVtable base;
       const TreeBase* (*evaluate) (const Macro*, const TreeBase*, const void*, void*, const TreeBase*, const SourceLocation*);
       const TreeBase* (*dot) (const Macro*, const TreeBase*, const SharedPtr<Parser::Expression>*,  const TreeBase*, const SourceLocation*);
+      const TreeBase* (*evaluate_dot) (const Macro*, const TreeBase*, const SharedPtr<Parser::Expression>*, const void*, void*, const TreeBase*, const SourceLocation*);
     };
 
     class Macro : public Tree {
@@ -104,6 +105,14 @@ namespace Psi {
                         const TreePtr<EvaluateContext>& evaluate_context,
                         const SourceLocation& location) const {
         return tree_from_base_take<Term>(derived_vptr(this)->dot(this, value.raw_get(), &parameter, evaluate_context.raw_get(), &location));
+      }
+      
+      TreePtr<Term> evaluate_dot(const TreePtr<Term>& value,
+                                 const SharedPtr<Parser::Expression>& member,
+                                 const List<SharedPtr<Parser::Expression> >& parameters,
+                                 const TreePtr<EvaluateContext>& evaluate_context,
+                                 const SourceLocation& location) const {
+        return tree_from_base_take<Term>(derived_vptr(this)->evaluate_dot(this, value.raw_get(), &member, parameters.vptr(), parameters.object(), evaluate_context.raw_get(), &location));
       }
       
       template<typename V> static void visit(V& v) {visit_base<Tree>(v);}
@@ -132,12 +141,24 @@ namespace Psi {
         TreePtr<Term> result = Impl::dot_impl(*static_cast<const Derived*>(self), tree_from_base<Term>(value), *parameter, tree_from_base<EvaluateContext>(evaluate_context), *location);
         return result.release();
       }
+
+      static const TreeBase* evaluate_dot(const Macro *self,
+                                          const TreeBase *value,
+                                          const SharedPtr<Parser::Expression> *member,
+                                          const void *parameters_vtable,
+                                          void *parameters_object,
+                                          const TreeBase *evaluate_context,
+                                          const SourceLocation *location) {
+        TreePtr<Term> result = Impl::evaluate_dot_impl(*static_cast<const Derived*>(self), tree_from_base<Term>(value), *member, List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), tree_from_base<EvaluateContext>(evaluate_context), *location);
+        return result.release();
+      }
     };
 
 #define PSI_COMPILER_MACRO(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
     &MacroWrapper<derived>::evaluate, \
-    &MacroWrapper<derived>::dot \
+    &MacroWrapper<derived>::dot, \
+    &MacroWrapper<derived>::evaluate_dot \
   }
     
     /**
@@ -205,22 +226,22 @@ namespace Psi {
     &EvaluateContextWrapper<derived>::lookup \
   }
 
-    class MacroEvaluateCallback;
+    class MacroMemberCallback;
 
     /**
      * \see MacroEvaluateCallback
      */
-    struct MacroEvaluateCallbackVtable {
+    struct MacroMemberCallbackVtable {
       TreeVtable base;
-      const TreeBase* (*evaluate) (const MacroEvaluateCallback*, const TreeBase*, const void*, void*, const TreeBase*, const SourceLocation*);
+      const TreeBase* (*evaluate) (const MacroMemberCallback*, const TreeBase*, const void*, void*, const TreeBase*, const SourceLocation*);
     };
 
-    class MacroEvaluateCallback : public Tree {
+    class MacroMemberCallback : public Tree {
     public:
-      typedef MacroEvaluateCallbackVtable VtableType;
+      typedef MacroMemberCallbackVtable VtableType;
       static const SIVtable vtable;
 
-      MacroEvaluateCallback(const MacroEvaluateCallbackVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
+      MacroMemberCallback(const MacroMemberCallbackVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
       : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location) {
       }
 
@@ -230,64 +251,17 @@ namespace Psi {
     };
 
     template<typename Derived>
-    struct MacroEvaluateCallbackWrapper : NonConstructible {
-      static const TreeBase* evaluate(const MacroEvaluateCallback *self, const TreeBase *value, const void *parameters_vtable, void *parameters_object, const TreeBase *evaluate_context, const SourceLocation *location) {
+    struct MacroMemberCallbackWrapper : NonConstructible {
+      static const TreeBase* evaluate(const MacroMemberCallback *self, const TreeBase *value, const void *parameters_vtable, void *parameters_object, const TreeBase *evaluate_context, const SourceLocation *location) {
         TreePtr<Term> result = Derived::evaluate_impl(*static_cast<const Derived*>(self), tree_from_base<Term>(value), List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), tree_from_base<EvaluateContext>(evaluate_context), *location);
         return result.release();
       }
     };
 
-#define PSI_COMPILER_MACRO_EVALUATE_CALLBACK(derived,name,super) { \
+#define PSI_COMPILER_MACRO_MEMBER_CALLBACK(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
-    &MacroEvaluateCallbackWrapper<derived>::evaluate \
+    &MacroMemberCallbackWrapper<derived>::evaluate \
   }
-
-    class MacroDotCallback;
-
-    /**
-     * \see MacroEvaluateCallback
-     */
-    struct MacroDotCallbackVtable {
-      TreeVtable base;
-      TreeBase* (*dot) (const MacroDotCallback*, const TreeBase*, const TreeBase*, const TreeBase*, const SourceLocation*);
-    };
-
-    /**
-     * \brief Wrapper class to ease using MacroEvaluateCallbackVtable from C++.
-     */
-    class MacroDotCallback : public Tree {
-    public:
-      typedef MacroDotCallbackVtable VtableType;
-      static const SIVtable vtable;
-
-      MacroDotCallback(MacroDotCallbackVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
-      : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location) {
-      }
-
-      TreePtr<Term> dot(const TreePtr<Term>& parent_value,
-                        const TreePtr<Term>& child_value,
-                        const TreePtr<EvaluateContext>& evaluate_context,
-                        const SourceLocation& location) const {
-        return tree_from_base_take<Term>(derived_vptr(this)->dot(this, parent_value.raw_get(), child_value.raw_get(), evaluate_context.raw_get(), &location));
-      }
-    };
-
-    /**
-     * \brief Wrapper class to ease implementing MacroEvaluateCallbackVtable in C++.
-     */
-    template<typename Derived>
-    struct MacroDotCallbackWrapper : NonConstructible {
-      static TreeBase* dot(MacroDotCallback *self, TreeBase *parent_value, TreeBase *child_value, TreeBase *evaluate_context, const SourceLocation *location) {
-        TreePtr<Term> result = Derived::dot_impl(*static_cast<Derived*>(self), tree_from_base<Term>(parent_value), tree_from_base<Term>(child_value), tree_from_base<EvaluateContext>(evaluate_context), *location);
-        return result.release();
-      }
-    };
-
-#define PSI_COMPILER_MACRO_DOT_CALLBACK(derived,name,super) { \
-    PSI_COMPILER_TREE(derived,name,super) \
-    &MacroDotCallbackWrapper<derived>::dot \
-  }
-    
     
     class MetadataType;
     
@@ -400,9 +374,9 @@ namespace Psi {
     TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);
     TreePtr<EvaluateContext> evaluate_context_module(const TreePtr<Module>& module, const TreePtr<EvaluateContext>& next, const SourceLocation& location);
 
-    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&, const std::map<String, TreePtr<MacroDotCallback> >&);
-    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroEvaluateCallback>&);
-    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<MacroDotCallback> >&);
+    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroMemberCallback>&, const std::map<String, TreePtr<MacroMemberCallback> >&);
+    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroMemberCallback>&);
+    TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<MacroMemberCallback> >&);
     TreePtr<Term> make_macro_term(const TreePtr<Macro>& macro, const SourceLocation& location);
     
     TreePtr<Term> find_by_name(const TreePtr<Namespace>& ns, const std::string& name);

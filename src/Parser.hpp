@@ -24,8 +24,9 @@ namespace Psi {
 
     enum ExpressionType {
       expression_token,
-      expression_macro,
-      expression_dot
+      expression_evaluate,
+      expression_dot,
+      expression_evaluate_dot
     };
 
     struct Expression : Element {
@@ -51,13 +52,28 @@ namespace Psi {
       ParserLocation text;
     };
 
-    class Expression;
+    struct EvaluateExpression : Expression {
+      EvaluateExpression(const ParserLocation& location_, const SharedPtr<Expression>& object_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_);
+      virtual ~EvaluateExpression();
 
-    struct MacroExpression : Expression {
-      MacroExpression(const ParserLocation& location_, const PSI_STD::vector<SharedPtr<Expression> >& elements_);
-      virtual ~MacroExpression();
+      SharedPtr<Expression> object;
+      PSI_STD::vector<SharedPtr<Expression> > parameters;
+    };
 
-      PSI_STD::vector<SharedPtr<Expression> > elements;
+    struct DotExpression : Expression {
+      DotExpression(const ParserLocation& source_, const SharedPtr<Expression>& left_, const SharedPtr<Expression>& right_);
+      ~DotExpression();
+
+      SharedPtr<Expression> left, right;
+    };
+    
+    struct EvaluateDotExpression : Expression {
+      EvaluateDotExpression(const ParserLocation& source_, const SharedPtr<Expression>& obj_, const SharedPtr<Expression>& member_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_);
+      virtual ~EvaluateDotExpression();
+      
+      SharedPtr<Expression> object;
+      SharedPtr<Expression> member;
+      PSI_STD::vector<SharedPtr<Expression> > parameters;
     };
 
     struct NamedExpression : Element {
@@ -68,13 +84,6 @@ namespace Psi {
 
       boost::optional<ParserLocation> name;
       SharedPtr<Expression> expression;
-    };
-
-    struct DotExpression : Expression {
-      DotExpression(const ParserLocation& source_, const SharedPtr<Expression>& left_, const SharedPtr<Expression>& right_);
-      ~DotExpression();
-
-      SharedPtr<Expression> left, right;
     };
 
     class ParseError : public std::runtime_error {

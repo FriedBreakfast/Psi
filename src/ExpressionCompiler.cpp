@@ -29,13 +29,26 @@ namespace Psi {
       SourceLocation location(expression->location.location, source);
 
       switch (expression->expression_type) {
-      case Parser::expression_macro: {
-        const Parser::MacroExpression& macro_expression = checked_cast<Parser::MacroExpression&>(*expression);
+      case Parser::expression_evaluate: {
+        const Parser::EvaluateExpression& macro_expression = checked_cast<Parser::EvaluateExpression&>(*expression);
 
-        TreePtr<Term> first = compile_expression(macro_expression.elements.front(), evaluate_context, source->new_anonymous_child());
-        PSI_STD::vector<SharedPtr<Parser::Expression> > rest(boost::next(macro_expression.elements.begin()), macro_expression.elements.end());
+        TreePtr<Term> first = compile_expression(macro_expression.object, evaluate_context, source->new_anonymous_child());
+        PSI_STD::vector<SharedPtr<Parser::Expression> > parameters_copy(macro_expression.parameters);
 
-        return expression_macro(first, location)->evaluate(first, list_from_stl(rest), evaluate_context, location);
+        return expression_macro(first, location)->evaluate(first, list_from_stl(parameters_copy), evaluate_context, location);
+      }
+
+      case Parser::expression_dot: {
+        const Parser::DotExpression& dot_expression = checked_cast<Parser::DotExpression&>(*expression);
+        TreePtr<Term> left = compile_expression(dot_expression.left, evaluate_context, source);
+        return expression_macro(left, location)->dot(left, dot_expression.right, evaluate_context, location);
+      }
+      
+      case Parser::expression_evaluate_dot: {
+        const Parser::EvaluateDotExpression& eval_dot_expression = checked_cast<Parser::EvaluateDotExpression&>(*expression);
+        TreePtr<Term> obj = compile_expression(eval_dot_expression.object, evaluate_context, source);
+        PSI_STD::vector<SharedPtr<Parser::Expression> > parameters_copy(eval_dot_expression.parameters);
+        return expression_macro(obj, location)->evaluate_dot(obj, eval_dot_expression.member, list_from_stl(parameters_copy), evaluate_context, location);
       }
 
       case Parser::expression_token: {
@@ -107,12 +120,6 @@ namespace Psi {
         default:
           PSI_FAIL("Unknown token type");
         }
-      }
-
-      case Parser::expression_dot: {
-        const Parser::DotExpression& dot_expression = checked_cast<Parser::DotExpression&>(*expression);
-        TreePtr<Term> left = compile_expression(dot_expression.left, evaluate_context, source);
-        return expression_macro(left, location)->dot(left, dot_expression.right, evaluate_context, location);
       }
 
       default:

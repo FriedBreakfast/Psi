@@ -328,12 +328,12 @@ namespace Psi {
       return TreePtr<Term>(new FunctionCall(function, compiled_arguments, location));
     }
 
-    class FunctionInvokeCallback : public MacroEvaluateCallback {
+    class FunctionInvokeCallback : public MacroMemberCallback {
     public:
-      static const MacroEvaluateCallbackVtable vtable;
+      static const MacroMemberCallbackVtable vtable;
 
       FunctionInvokeCallback(const FunctionInfo& info_, const TreePtr<Term>& function_, const SourceLocation& location)
-      : MacroEvaluateCallback(&vtable, function_.compile_context(), location),
+      : MacroMemberCallback(&vtable, function_.compile_context(), location),
       info(info_),
       function(function_) {
       }
@@ -343,7 +343,7 @@ namespace Psi {
       
       template<typename V>
       static void visit(V& v) {
-        visit_base<MacroEvaluateCallback>(v);
+        visit_base<MacroMemberCallback>(v);
         v("info", &FunctionInvokeCallback::info)
         ("function", &FunctionInvokeCallback::function);
       }
@@ -357,8 +357,8 @@ namespace Psi {
       }
     };
 
-    const MacroEvaluateCallbackVtable FunctionInvokeCallback::vtable =
-    PSI_COMPILER_MACRO_EVALUATE_CALLBACK(FunctionInvokeCallback, "psi.compiler.FunctionInvokeCallback", MacroEvaluateCallback);
+    const MacroMemberCallbackVtable FunctionInvokeCallback::vtable =
+    PSI_COMPILER_MACRO_MEMBER_CALLBACK(FunctionInvokeCallback, "psi.compiler.FunctionInvokeCallback", MacroMemberCallback);
 
     /**
      * Create a macro for invoking a function.
@@ -368,7 +368,7 @@ namespace Psi {
      * expected by \c info.
      */
     TreePtr<Term> function_invoke_macro(const FunctionInfo& info, const TreePtr<Term>& func, const SourceLocation& location) {
-      TreePtr<MacroEvaluateCallback> callback(new FunctionInvokeCallback(info, func, location));
+      TreePtr<MacroMemberCallback> callback(new FunctionInvokeCallback(info, func, location));
       TreePtr<Macro> macro = make_macro(func.compile_context(), location, callback);
       return make_macro_term(macro, location);
     }
@@ -416,12 +416,12 @@ namespace Psi {
     /**
      * \brief Callback to use for constructing interfaces which define functions.
      */
-    class FunctionDefineCallback : public MacroEvaluateCallback {
+    class FunctionDefineCallback : public MacroMemberCallback {
     public:
-      static const MacroEvaluateCallbackVtable vtable;
+      static const MacroMemberCallbackVtable vtable;
       
       FunctionDefineCallback(CompileContext& compile_context, const SourceLocation& location)
-      : MacroEvaluateCallback(&vtable, compile_context, location) {
+      : MacroMemberCallback(&vtable, compile_context, location) {
       }
       
       static TreePtr<Term> evaluate_impl(const FunctionDefineCallback&,
@@ -433,14 +433,14 @@ namespace Psi {
       }
     };
 
-    const MacroEvaluateCallbackVtable FunctionDefineCallback::vtable =
-    PSI_COMPILER_MACRO_EVALUATE_CALLBACK(FunctionDefineCallback, "psi.compiler.FunctionDefineCallback", MacroEvaluateCallback);
+    const MacroMemberCallbackVtable FunctionDefineCallback::vtable =
+    PSI_COMPILER_MACRO_MEMBER_CALLBACK(FunctionDefineCallback, "psi.compiler.FunctionDefineCallback", MacroMemberCallback);
 
     /**
      * \brief Create a callback to the function definition function.
      */
     TreePtr<Term> function_definition_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroEvaluateCallback> callback(new FunctionDefineCallback(compile_context, location));
+      TreePtr<MacroMemberCallback> callback(new FunctionDefineCallback(compile_context, location));
       TreePtr<Macro> macro = make_macro(compile_context, location, callback);
       return make_macro_term(macro, location);
     }

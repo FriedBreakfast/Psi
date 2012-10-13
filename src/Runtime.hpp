@@ -692,6 +692,36 @@ namespace Psi {
   List<typename T::value_type> list_from_stl(T& list) {
     return List<typename T::value_type>(&ContainerListFunctions<T>::vtable, &list);
   }
+  
+  template<typename T>
+  struct EmptyListFunctions : NonConstructible {
+    typedef T ValueType;
+    
+    static const ListVtable vtable;
+    
+    struct Iterator {};
+    struct ObjectType {};
+
+    struct IteratorImpl {
+      typedef Iterator ObjectType;
+
+      static void move_impl(Iterator&, Iterator&) {}
+      static void destroy_impl(Iterator&) {}
+      static ValueType& current_impl(Iterator&) {PSI_FAIL("empty list has no elements");}
+      static bool next_impl(Iterator&) {return false;}
+    };
+
+    static void iterator_impl(void*, ObjectType&) {}
+    static PsiSize size_impl(ObjectType&) {return 0;}
+    static ValueType& get_impl(ObjectType&, PsiSize) {PSI_FAIL("empty list has no elements");}
+  };
+
+  template<typename T> const ListVtable EmptyListFunctions<T>::vtable = PSI_LIST(EmptyListFunctions<T>);
+
+  template<typename T>
+  List<T> empty_list() {
+    return List<T>(&EmptyListFunctions<T>::vtable, NULL);
+  }
 
   template<typename T>
   class LocalIterator : public Iterator<T> {

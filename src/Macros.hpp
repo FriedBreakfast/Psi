@@ -19,9 +19,7 @@ namespace Psi {
     TreePtr<Term> interface_define_macro(CompileContext& compile_context, const SourceLocation& location);
     TreePtr<Term> implementation_define_macro(CompileContext& compile_context, const SourceLocation& location);
     
-    TreePtr<Term> library_macro(CompileContext& compile_context, const SourceLocation& location);
-    TreePtr<Term> library_symbol_macro(CompileContext& compile_context, const SourceLocation& location);
-  }
+    TreePtr<Term> library_macro(CompileContext& compile_context, const SourceLocation& location);  }
 }
 
 #endif

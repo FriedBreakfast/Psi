@@ -48,6 +48,7 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));
   global_names["implement"] = implementation_define_macro(compile_context, psi_location.named_child("implement"));
   global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));
+  global_names["library"] = library_macro(compile_context, psi_location.named_child("library"));
 
   return evaluate_context_dictionary(module, psi_location, global_names);
 }
