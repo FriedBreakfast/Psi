@@ -325,6 +325,7 @@ namespace Psi {
     std::vector<char> buffer(buffer_size);
     
     boost::shared_ptr<json_tokener> tok(json_tokener_new(), json_tokener_free);
+    boost::shared_ptr<json_object> obj_ptr;
     
     for (const char *ptr = begin; ptr != end;) {
       std::size_t count = std::min(std::ptrdiff_t(buffer_size), end-ptr);
@@ -334,13 +335,17 @@ namespace Psi {
       ptr += tok->char_offset;
       
       if (obj) {
-        boost::shared_ptr<json_object> obj_ptr(obj, json_object_put);
-        return to_property_value(obj);
+        if (obj_ptr)
+          throw std::runtime_error("Multiple JSON objects in property value data");
+        obj_ptr.reset(obj, json_object_put);
       } else if (tok->err != json_tokener_continue) {
         throw std::runtime_error("JSON parse error");
       }
     }
     
-    throw std::runtime_error("JSON parse error");
+    if (!obj_ptr)
+      throw std::runtime_error("JSON parse error");
+    
+    return to_property_value(obj_ptr.get());
   }
 }

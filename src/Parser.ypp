@@ -585,7 +585,7 @@ namespace Psi {
 
     EvaluateDotExpression::EvaluateDotExpression(const ParserLocation& location_, const SharedPtr<Expression>& object_,
                                                  const SharedPtr<Expression>& member_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_)
-      : Expression(location_, expression_evaluate), object(object_), member(member_), parameters(parameters_) {
+      : Expression(location_, expression_evaluate_dot), object(object_), member(member_), parameters(parameters_) {
     }
 
     EvaluateDotExpression::~EvaluateDotExpression() {

@@ -32,7 +32,9 @@ namespace Psi {
       static const SIVtable vtable;
       Global(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
       Global(const VtableType *vptr, const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location);
+      
       template<typename V> static void visit(V& v);
+      static bool match_impl(const Global& lhs, const Global& rhs, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth);
       
       /// \brief Get the module this global should be built into.
       TreePtr<Module> module;
@@ -71,12 +73,14 @@ namespace Psi {
     class StatementRef : public Term {
     public:
       static const TermVtable vtable;
+      static const bool match_visit = true;
       
       TreePtr<Statement> value;
 
       StatementRef(CompileContext& compile_context, const SourceLocation& location);
       StatementRef(const TreePtr<Statement>& value, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
+      static bool match_impl(const StatementRef& lhs, const StatementRef& rhs, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth);
     };
     
     /**
@@ -154,6 +158,7 @@ namespace Psi {
     class TypeInstance : public Term {
     public:
       static const TermVtable vtable;
+      static const bool match_visit = false;
 
       TypeInstance(CompileContext& compile_context, const SourceLocation& location);
       TypeInstance(const TreePtr<GenericType>& generic,
@@ -166,6 +171,7 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Term> > parameters;
 
       template<typename Visitor> static void visit(Visitor& v);
+      static bool match_impl(const TypeInstance& lhs, const TypeInstance& rhs, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth);
     };
 
     /**
@@ -260,6 +266,8 @@ namespace Psi {
     class StructValue : public Term {
     public:
       static const TermVtable vtable;
+      static const bool match_visit = true;
+      
       StructValue(CompileContext& compile_context, const SourceLocation& location);
       StructValue(const TreePtr<StructType>& type, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
       template<typename V> static void visit(V& v);

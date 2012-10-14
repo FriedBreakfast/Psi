@@ -16,7 +16,7 @@ namespace Psi {
     
       /// \brief The number of implicit parameters which are found by pattern matching
       unsigned n_implicit;
-      /// \brief Parameter patterns.
+      /// \brief Parameter type patterns.
       PSI_STD::vector<TreePtr<Term> > pattern;
       
       template<typename V>
@@ -100,18 +100,19 @@ namespace Psi {
     class OverloadValue : public Tree {
     public:
       static const SIVtable vtable;
-      OverloadValue(const TreeVtable *vtable, const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
+      OverloadValue(const TreeVtable *vtable, const TreePtr<OverloadType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
       
       /// \brief Get what this overloads.
       TreePtr<OverloadType> overload_type;
+      
+      /// \brief Number of wildcards to be matched.
+      unsigned n_wildcards;
 
       /**
        * \brief Pattern which this value matches.
        * 
        * Implicit parameters are expected to have been filled in in this list.
-       * Note that this list will be longer than the number of parameters for OverloadType when
-       * this value has wildcards, and these wildcards are filled in during pattern matching.
-       * Wildcards all occur at the start of the list.
+       * This list should have the same length as that in \c overload_type.
        */
       PSI_STD::vector<TreePtr<Term> > pattern;
       
@@ -119,6 +120,7 @@ namespace Psi {
       static void visit(V& v) {
         visit_base<Tree>(v);
         v("overload_type", &OverloadValue::overload_type)
+        ("n_wildcards", &OverloadValue::n_wildcards)
         ("pattern", &OverloadValue::pattern);
       }
     };
@@ -129,7 +131,7 @@ namespace Psi {
     class Metadata : public OverloadValue {
     public:
       static const TreeVtable vtable;
-      Metadata(const TreePtr<>& value, const TreePtr<MetadataType>& type, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
+      Metadata(const TreePtr<>& value, const TreePtr<MetadataType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief The value of this metadata
@@ -142,8 +144,8 @@ namespace Psi {
     class Implementation : public OverloadValue {
     public:
       static const TreeVtable vtable;
-      Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent, const TreePtr<Term>& value,
-                     const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
+      Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent, const TreePtr<Term>& value, const TreePtr<Interface>& interface,
+                     unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /**

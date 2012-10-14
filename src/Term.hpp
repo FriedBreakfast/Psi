@@ -22,7 +22,8 @@ namespace Psi {
       typedef TreePtr<Term> IteratorValueType;
 
       static const SIVtable vtable;
-      static const bool match_unique = true;
+      /// \brief Used by vtable generator to determine whether matching is performed by a visitor or a custom function \c match_impl
+      static const bool match_visit = false;
 
       Term(const TermVtable *vtable, CompileContext& context, const SourceLocation& location);
       Term(const TermVtable *vtable, const TreePtr<Term>&, const SourceLocation&);
@@ -42,7 +43,10 @@ namespace Psi {
         return tree_from_base_take<Term>(derived_vptr(this)->specialize(this, &location, values.vptr(), values.object(), depth));
       }
       
+      bool equivalent(const TreePtr<Term>& value) const;
       bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& match, unsigned depth) const;
+      
+      static bool match_impl(const Term&, const Term&, PSI_STD::vector<TreePtr<Term> >&, unsigned) {return false;}
 
       template<typename Visitor> static void visit(Visitor& v) {
         visit_base<Tree>(v);
@@ -155,34 +159,12 @@ namespace Psi {
         visit_callback(*this, NULL, m);
       }
 
-      void visit_object(const char*, const boost::array<const TreePtr<GenericType>*, 2>& ptr) {
-        if (!result)
-          return;
-        result = (ptr[0] == ptr[1]);
-      }
-      
-      void visit_object(const char*, const boost::array<const TreePtr<JumpTarget>*, 2>& ptr) {
-        if (!result)
-          return;
-        result = (ptr[0] == ptr[1]);
-      }
-      
-      template<typename T>
-      bool visit_treeptr_helper(Term*, const boost::array<const TreePtr<T>*, 2>& ptr) {
-        return (*ptr[0])->match(*ptr[1], *m_wildcards, m_depth);
-      }
-      
-      template<typename T>
-      bool visit_treeptr_helper(Tree*, const boost::array<const TreePtr<T>*, 2>& ptr) {
-        return ptr[0]->get() == ptr[1]->get();
-      }
-      
       template<typename T>
       void visit_object(const char*, const boost::array<const TreePtr<T>*, 2>& ptr) {
         if (!result)
           return;
 
-        result = visit_treeptr_helper(static_cast<T*>(0), ptr);
+        (*ptr[0])->match(*ptr[1], *m_wildcards, m_depth);
       }
 
       template<typename T>
@@ -293,15 +275,25 @@ namespace Psi {
 
     template<typename Derived>
     struct TermWrapper : NonConstructible {
+      /**
+       * Match implementation when visitor is not used.
+       */
+      static PsiBool match_helper(static_bool<false>, const Term *left, const Term *right, PSI_STD::vector<TreePtr<Term> > *wildcards, unsigned depth) {
+        return Derived::match_impl(*static_cast<const Derived*>(left), *static_cast<const Derived*>(right), *wildcards, depth);
+      }
+
+      /**
+       * Match implementation when visitor is used.
+       */
+      static PsiBool match_helper(static_bool<true>, const Term *left, const Term *right, PSI_STD::vector<TreePtr<Term> > *wildcards, unsigned depth) {
+        boost::array<const Derived*, 2> pair = {{static_cast<const Derived*>(left), static_cast<const Derived*>(right)}};
+        MatchVisitor mv(wildcards, depth);
+        visit_members(mv, pair);
+        return mv.result;
+      }
+      
       static PsiBool match(const Term *left, const Term *right, PSI_STD::vector<TreePtr<Term> > *wildcards, unsigned depth) {
-        if (Derived::match_unique) {
-          return left == right;
-        } else {
-          boost::array<const Derived*, 2> pair = {{static_cast<const Derived*>(left), static_cast<const Derived*>(right)}};
-          MatchVisitor mv(wildcards, depth);
-          visit_members(mv, pair);
-          return mv.result;
-        }
+        return match_helper(static_bool<Derived::match_visit>(), left, right, wildcards, depth);
       }
 
       static const TreeBase* parameterize(const Term *self, const SourceLocation *location, const void *elements_vtable, void *elements_object, unsigned depth) {
@@ -339,6 +331,7 @@ namespace Psi {
     class Type : public Term {
     public:
       static const SIVtable vtable;
+      static const bool match_visit = true;
       Type(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v) {visit_base<Term>(v);}
     };

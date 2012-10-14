@@ -114,19 +114,21 @@ namespace Psi {
         : m_value(value), m_metadata(metadata) {}
         
         TreePtr<GenericType> evaluate(const TreePtr<GenericType>& self) const {
-          TreePtr<TypeInstance> inst(new TypeInstance(self, default_, self.location()));
+          TreePtr<Term> inst(new TypeInstance(self, default_, self.location()));
+          TreePtr<Term> param(new Parameter(inst, 0, 0, self.location()));
+          PSI_STD::vector<TreePtr<Term> > pattern(1, param);
+
           PSI_STD::vector<TreePtr<OverloadValue> > overloads;
-          PSI_STD::vector<TreePtr<Term> > pattern;
-          for (MetadataListType::const_iterator ii = m_metadata.begin(), ie = m_metadata.end(); ii != ie; ++ii) {
-            pattern.assign(1, inst);
-            overloads.push_back(TreePtr<Metadata>(new Metadata(ii->second, ii->first, pattern, self.location())));
-          }
+          for (MetadataListType::const_iterator ii = m_metadata.begin(), ie = m_metadata.end(); ii != ie; ++ii)
+            overloads.push_back(TreePtr<Metadata>(new Metadata(ii->second, ii->first, 1, pattern, self.location())));
+
           return TreePtr<GenericType>(new GenericType(default_, tree_attribute(m_value, &Term::type), overloads, self.location()));
         }
         
         template<typename V>
         static void visit(V& v) {
-          v("metadata", &MakeMetadataCallback::m_metadata);
+          v("value", &MakeMetadataCallback::m_value)
+          ("metadata", &MakeMetadataCallback::m_metadata);
         }
       };
     }

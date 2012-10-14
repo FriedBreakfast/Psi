@@ -121,6 +121,10 @@ namespace Psi {
       v("module", &Global::module);
     }
 
+    bool Global::match_impl(const Global& lhs, const Global& rhs, PSI_STD::vector<TreePtr<Term> >&, unsigned) {
+      return &lhs == &rhs;
+    }
+
     const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
 
     ExternalGlobal::ExternalGlobal(CompileContext& compile_context, const SourceLocation& location)
@@ -244,10 +248,11 @@ namespace Psi {
     }
 
     template<typename Visitor> void Function::visit(Visitor& v) {
-      visit_base<Term>(v);
+      visit_base<Global>(v);
       v("arguments", &Function::arguments)
       ("result_type", &Function::result_type)
-      ("body", &Function::body);
+      ("body", &Function::body)
+      ("return_target", &Function::return_target);
     }
 
     const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", Term);
@@ -300,6 +305,10 @@ namespace Psi {
     void StatementRef::visit(Visitor& v) {
       visit_base<Term>(v);
       v("value", &StatementRef::value);
+    }
+
+    bool StatementRef::match_impl(const StatementRef& lhs, const StatementRef& rhs, PSI_STD::vector<TreePtr<Term> >&, unsigned) {
+      return lhs.value == rhs.value;
     }
 
     const TermVtable StatementRef::vtable = PSI_COMPILER_TERM(StatementRef, "psi.compiler.StatementRef", Term);
@@ -511,6 +520,20 @@ namespace Psi {
       visit_base<Term>(v);
       v("generic", &TypeInstance::generic)
       ("parameters", &TypeInstance::parameters);
+    }
+
+    bool TypeInstance::match_impl(const TypeInstance& lhs, const TypeInstance& rhs, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) {
+      if (lhs.generic != rhs.generic)
+        return false;
+      
+      PSI_ASSERT(lhs.parameters.size() == rhs.parameters.size());
+      
+      for (unsigned ii = 0, ie = lhs.parameters.size(); ii != ie; ++ii) {
+        if (!lhs.parameters[ii]->match(rhs.parameters[ii], wildcards, depth))
+          return false;
+      }
+      
+      return true;
     }
 
     const TermVtable TypeInstance::vtable = PSI_COMPILER_TERM(TypeInstance, "psi.compiler.TypeInstance", Term);

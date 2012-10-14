@@ -7,11 +7,24 @@
 
 #ifdef PSI_DEBUG
 #include <iostream>
+#include <cstdlib>
+#include "GCChecker.h"
 #endif
 
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/format.hpp>
+
+#ifdef PSI_DEBUG
+extern "C" {
+size_t psi_gcchecker_blocks(psi_gcchecker_block **ptr) __attribute__((weak));
+
+size_t psi_gcchecker_blocks(psi_gcchecker_block **ptr) {
+  *ptr = 0;
+  return 0;
+}
+}
+#endif
 
 namespace Psi {
   namespace Compiler {
@@ -162,7 +175,7 @@ namespace Psi {
       TreePtr<MetadataType> make_tag(const TreePtr<Term>& wildcard_type, const SourceLocation& location) {
         TreePtr<Term> wildcard(new Parameter(wildcard_type, 0, 0, location));
         std::vector<TreePtr<Term> > pattern(1, wildcard);
-        return TreePtr<MetadataType>(new MetadataType(wildcard_type.compile_context(), 0, pattern, &TreeType::vtable, location));
+        return TreePtr<MetadataType>(new MetadataType(wildcard_type.compile_context(), 0, pattern, reinterpret_cast<const SIVtable*>(&TreeType::vtable), location));
       }
     }
 
@@ -178,6 +191,7 @@ namespace Psi {
       argument_passing_info_tag = make_tag<ArgumentPassingInfoCallback>(metatype, psi_compiler_location.named_child("ArgumentPasser"));
       return_passing_info_tag = make_tag<ReturnPassingInfoCallback>(metatype, psi_compiler_location.named_child("ReturnMode"));
       class_member_info_tag = make_tag<ClassMemberInfoCallback>(metatype, psi_compiler_location.named_child("ClassMemberInfo"));
+      library_tag = make_tag<Library>(metatype, psi_compiler_location.named_child("Library"));
     }
 
     CompileContext::CompileContext(std::ostream *error_stream)
@@ -214,6 +228,45 @@ namespace Psi {
 #endif
       }
     };
+    
+#ifdef PSI_DEBUG
+    struct MemoryBlockData {
+      std::size_t size;
+      Object *object;
+      bool owned;
+      
+      MemoryBlockData(std::size_t n) : size(n), object(NULL), owned(false) {}
+    };
+
+    typedef std::map<void*, MemoryBlockData> MemoryBlockMap;
+    
+    MemoryBlockMap::iterator memory_block_find(MemoryBlockMap& map, void *ptr) {
+      MemoryBlockMap::iterator it = map.upper_bound(ptr);
+      if (it != map.begin()) {
+        --it;
+        if (std::size_t(reinterpret_cast<char*>(ptr) - reinterpret_cast<char*>(it->first)) < it->second.size)
+          return it;
+      }
+      return map.end();
+    }
+    
+    void scan_block(const char *type, void *base, size_t size,
+                    std::map<void*,MemoryBlockData>& map, std::set<const char*>& suspects) {
+      char **ptrs = reinterpret_cast<char**>(base);
+      for (std::size_t count = size / sizeof(void*); count; --count, ++ptrs) {
+        MemoryBlockMap::iterator ii = memory_block_find(map, *ptrs);
+        if (ii != map.end()) {
+          if (ii->second.object) {
+            if (reinterpret_cast<char*>(ii->second.object) == *ptrs)
+              suspects.insert(type);
+          } else if (!ii->second.owned) {
+            ii->second.owned = true;
+            scan_block(type, ii->first, ii->second.size, map, suspects);
+          }
+        }
+      }
+    }
+#endif
 
     CompileContext::~CompileContext() {
       m_builtins = BuiltinTypes();
@@ -227,6 +280,7 @@ namespace Psi {
         derived_vptr(&t)->gc_clear(&t);
         
 #ifdef PSI_DEBUG
+      // Check for dangling references
       bool failed = false;
       for (GCListType::iterator ii = m_gc_list.begin(), ie = m_gc_list.end(); ii != ie; ++ii) {
         if (ii->m_reference_count != PSI_COMPILE_CONTEXT_REFERENCE_GUARD)
@@ -235,8 +289,38 @@ namespace Psi {
       
       if (failed) {
         PSI_WARNING_FAIL("Incorrect reference count during context destruction: either dangling reference or multiple release");
-        BOOST_FOREACH(Object& t, m_gc_list)
-          PSI_WARNING_FAIL(t.m_vptr->classname);
+        std::set<const char*> suspects;
+        
+        psi_gcchecker_block *blocks;
+        size_t n_blocks = psi_gcchecker_blocks(&blocks);
+        if (blocks) {
+          // Construct a map of allocated blocks, and try and guess type which is not properly collected
+          std::map<void*,MemoryBlockData> block_map;
+          for (size_t i = 0; i != n_blocks; ++i)
+            block_map.insert(std::make_pair(blocks[i].base, MemoryBlockData(blocks[i].size)));
+          std::free(blocks);
+          
+          // Identify block each object belongs to
+          BOOST_FOREACH(Object& t, m_gc_list) {
+            MemoryBlockMap::iterator it = memory_block_find(block_map, &t);
+            if (it != block_map.end()) {
+              it->second.object = &t;
+              it->second.owned = true;
+            }
+          }
+          
+          for (MemoryBlockMap::const_iterator ii = block_map.begin(), ie = block_map.end(); ii != ie; ++ii) {
+            if (ii->second.object)
+              scan_block(ii->second.object->m_vptr->classname, ii->first, ii->second.size, block_map, suspects);
+          }
+        } else {
+          // Print list of types with extra references to them
+          BOOST_FOREACH(Object& t, m_gc_list)
+            suspects.insert(t.m_vptr->classname);
+        }
+        
+        BOOST_FOREACH(const char *s, suspects)
+          PSI_WARNING_FAIL(s);
       }
 #endif
 

@@ -75,10 +75,10 @@ set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" 
 target_link_libraries(psi-tvm-llvm ${LLVM_LIBS} debug psi-assert)
 
 if(UNIX)
-list(APPEND PSI_RUNTIME_SOURCES Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
-list(APPEND PSI_COMPILER_SOURCES PlatformLinux.cpp)
+set(PSI_RUNTIME_SOURCES Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
+set(PSI_COMPILER_SOURCES PlatformLinux.cpp)
 elseif(WIN32)
-list(APPEND PSI_COMPILER_SOURCES PlatformWindows.cpp)
+set(PSI_COMPILER_SOURCES PlatformWindows.cpp)
 endif()
 
 add_library(psi-runtime SHARED
@@ -111,6 +111,10 @@ add_library(psi-compiler SHARED
 target_link_libraries(psi-compiler psi-compiler-common psi-tvm debug psi-assert ${JSONC_LIB})
 if (UNIX)
   target_link_libraries(psi-compiler -ldl)
+endif()
+
+if (UNIX)
+  add_library(psi-compiler-gcchecker SHARED GCChecker.c)
 endif()
 
 set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")

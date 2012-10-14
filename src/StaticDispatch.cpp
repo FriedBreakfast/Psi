@@ -14,10 +14,11 @@ namespace Psi {
     
     const SIVtable OverloadType::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.OverloadType", Tree);
     
-    OverloadValue::OverloadValue(const TreeVtable *vtable, const TreePtr<OverloadType>& type_,
+    OverloadValue::OverloadValue(const TreeVtable *vtable, const TreePtr<OverloadType>& type_, unsigned n_wildcards_,
                                  const PSI_STD::vector<TreePtr<Term> >& pattern_, const SourceLocation& location)
     : Tree(vtable, type_.compile_context(), location),
     overload_type(type_),
+    n_wildcards(n_wildcards_),
     pattern(pattern_) {
     }
     
@@ -42,9 +43,9 @@ namespace Psi {
     
     const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", OverloadType);
     
-    Implementation::Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent_, const TreePtr<Term>& value_,
-                                   const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location)
-    : OverloadValue(&vtable, interface, pattern, location),
+    Implementation::Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent_, const TreePtr<Term>& value_, const TreePtr<Interface>& interface,
+                                   unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location)
+    : OverloadValue(&vtable, interface, n_wildcards, pattern, location),
     dependent(dependent_),
     value(value_) {
     }
@@ -72,8 +73,8 @@ namespace Psi {
     
     const TreeVtable MetadataType::vtable = PSI_COMPILER_TREE(MetadataType, "psi.compiler.MetadataType", OverloadType);
     
-    Metadata::Metadata(const TreePtr<>& value_, const TreePtr<MetadataType>& type, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location)
-    : OverloadValue(&vtable, type, pattern, location),
+    Metadata::Metadata(const TreePtr<>& value_, const TreePtr<MetadataType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location)
+    : OverloadValue(&vtable, type, n_wildcards, pattern, location),
     value(value_) {
     }
     
@@ -88,40 +89,43 @@ namespace Psi {
     /**
      * \brief Match a pattern.
      * 
-     * \param src Pattern to be matched. This may be longer than \c target,
-     * in which case it is assumed that the initial parameters are to be
-     * found by pattern matching.
-     * \param target Wildcard parameters in the target pattern which should
-     * be found by pattern matching.
+     * \param src Pattern.
+     * \param target Parameters.
+     * 
+     * \param n_wildcards Number of wildcards in \c src. \c match will
+     * be resized to this size.
+     * 
      * \param match Holds values of inferred initial parameters after a
      * successful match. Note that this will be modified whether the
      * match is successful or not.
+     * 
+     * \c src may be longer than \c target, in which case the extra
+     * initial values are assumed to be wildcards which will be found during
+     * pattern matching.
      * 
      * \return Whether the match was successful.
      */
     bool overload_pattern_match(const PSI_STD::vector<TreePtr<Term> >& src,
                                 const PSI_STD::vector<TreePtr<Term> >& target,
+                                unsigned n_wildcards,
                                 PSI_STD::vector<TreePtr<Term> >& match) {
-      if (target.size() > src.size())
+      if (target.size() != src.size())
         return false;
-      
-      unsigned offset = src.size() - target.size();
-      match.reserve(src.size());
-      match.assign(offset, TreePtr<Term>());
+
+      match.assign(n_wildcards, TreePtr<Term>());
       
       for (unsigned ii = 0, ie = src.size(); ii != ie; ++ii) {
         PSI_ASSERT(target[ii]);
-        PSI_ASSERT(src[ii+offset]);
+        PSI_ASSERT(src[ii]);
         
-        if (!src[ii+offset]->match(target[ii], match, 0))
+        if (!src[ii]->match(target[ii], match, 0))
           return false;
         
         match.push_back(target[ii]);
       }
       
       // Check all wildcards are set and match expected pattern
-      match.resize(offset);
-      for (unsigned ii = 0; ii != offset; ++ii) {
+      for (unsigned ii = 0; ii != n_wildcards; ++ii) {
         if (!match[ii])
           return false;
       }
@@ -129,7 +133,10 @@ namespace Psi {
       return true;
     }
     
-    void overload_lookup_search(const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& pattern, const TreePtr<Term>& term,
+    /**
+     * \brief Search for a suitable overload.
+     */
+    void overload_lookup_search(const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& parameters, const TreePtr<Term>& term,
                                 std::vector<std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> > >& results,
                                 PSI_STD::vector<TreePtr<Term> >& scratch) {
       TreePtr<Term> my_term = term;
@@ -139,13 +146,13 @@ namespace Psi {
       if (TreePtr<TypeInstance> instance = dyn_treeptr_cast<TypeInstance>(my_term)) {
         const PSI_STD::vector<TreePtr<OverloadValue> >& overloads = instance->generic->overloads;
         for (unsigned ii = 0, ie = overloads.size(); ii != ie; ++ii) {
-          if ((type == overloads[ii]->overload_type) && overload_pattern_match(overloads[ii]->pattern, pattern, scratch))
+          if ((type == overloads[ii]->overload_type) && overload_pattern_match(overloads[ii]->pattern, parameters, overloads[ii]->n_wildcards, scratch))
             results.push_back(std::make_pair(scratch, overloads[ii]));
         }
         
         const PSI_STD::vector<TreePtr<Term> >& parameters = instance->parameters;
         for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii)
-          overload_lookup_search(type, pattern, parameters[ii], results, scratch);
+          overload_lookup_search(type, parameters, parameters[ii], results, scratch);
       }
     }
     
@@ -153,16 +160,16 @@ namespace Psi {
      * \brief Get an overloaded value.
      */
     std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> >
-    overload_lookup(const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location) {
+    overload_lookup(const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
       std::vector<std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> > > results;
       PSI_STD::vector<TreePtr<Term> > match_scratch;
 
       // Find all possible matching overloads
-      for (unsigned ii = 0, ie = pattern.size(); ii != ie; ++ii) {
-        if (pattern[ii]) {
-          overload_lookup_search(type, pattern, pattern[ii], results, match_scratch);
-          if (pattern[ii]->type)
-            overload_lookup_search(type, pattern, pattern[ii]->type, results, match_scratch);
+      for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
+        if (parameters[ii]) {
+          overload_lookup_search(type, parameters, parameters[ii], results, match_scratch);
+          if (parameters[ii]->type)
+            overload_lookup_search(type, parameters, parameters[ii]->type, results, match_scratch);
         }
       }
       
@@ -201,6 +208,19 @@ namespace Psi {
     }
     
     /**
+     * \brief Check whether this term is equivalent to another.
+     * 
+     * This is transitive.
+     * 
+     * It is possible that transitivity is bugged since this is implemented
+     * via match().
+     */
+    bool Term::equivalent(const TreePtr<Term>& value) const {
+      PSI_STD::vector<TreePtr<Term> > empty;
+      return match(value, empty, 0);
+    }
+
+    /**
      * \brief Check whether this tree, which is a pattern, matches a given value.
      *
      * \param value Tree to match to.
@@ -216,12 +236,8 @@ namespace Psi {
       const Term *other = value.get();
       while (const Statement *stmt = dyn_tree_cast<Statement>(other))
         other = stmt->value.get();
-      
-      if (self == other)
-        return true;
 
-      if (!self)
-        return false;
+      PSI_ASSERT(self && other);
 
       if (const Parameter *parameter = dyn_tree_cast<Parameter>(self)) {
         if (parameter->depth == depth) {
@@ -229,9 +245,12 @@ namespace Psi {
           if (!parameter->type->match(other->type, wildcards, depth))
             return false;
 
+          if (parameter->index >= wildcards.size())
+            return false;
+
           TreePtr<Term>& wildcard = wildcards[parameter->index];
           if (wildcard) {
-            return wildcard->match(TreePtr<Term>(other), wildcards, depth);
+            return wildcard->equivalent(TreePtr<Term>(other));
           } else {
             wildcards[parameter->index].reset(other);
             return true;

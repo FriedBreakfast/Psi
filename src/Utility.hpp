@@ -13,6 +13,8 @@
 #include "Array.hpp"
 
 namespace Psi {
+  template<bool v> struct static_bool {static const bool value = v;};
+  
   /**
    * \brief Base class for types which should never be constructed.
    */
