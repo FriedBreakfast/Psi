@@ -17,6 +17,7 @@ namespace Psi {
     class Tree;
     class Term;
     class CompileContext;
+    struct TreeVtable;
 
     class TreePtrBase {
       typedef void (TreePtrBase::*safe_bool_type) () const;
@@ -24,6 +25,7 @@ namespace Psi {
 
       mutable ObjectPtr<const TreeBase> m_ptr;
 
+      bool evaluate(const TreeVtable *ptr) const;
       const Tree* get_helper() const;
       void update_chain(const TreeBase *ptr) const;
 
@@ -34,6 +36,7 @@ namespace Psi {
       TreePtrBase() {}
       explicit TreePtrBase(const TreeBase *ptr, bool add_ref) : m_ptr(ptr, add_ref) {}
       
+      bool is_a(const TreeVtable *vptr) const;
       const Tree* get() const;
       const TreeBase* raw_get() const {return m_ptr.get();}
       const ObjectPtr<const TreeBase>& raw_ptr_get() const {return m_ptr;}
@@ -198,11 +201,6 @@ namespace Psi {
       return si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable));
     }
     
-    template<typename T, typename U>
-    bool tree_isa(const TreePtr<U>& ptr) {
-      return tree_isa<T>(ptr.get());
-    }
-
     template<typename T>
     const T* tree_cast(const Tree *ptr) {
       PSI_ASSERT(tree_isa<T>(ptr));
@@ -215,13 +213,19 @@ namespace Psi {
     }
 
     template<typename T, typename U>
+    bool tree_isa(const TreePtr<U>& ptr) {
+      return ptr.is_a(reinterpret_cast<const TreeVtable*>(&T::vtable));
+    }
+
+    template<typename T, typename U>
     TreePtr<T> treeptr_cast(const TreePtr<U>& ptr) {
-      return TreePtr<T>(tree_cast<T>(ptr.get()));
+      PSI_ASSERT(tree_isa<T>(ptr));
+      return tree_from_base<T>(ptr.raw_get());
     }
 
     template<typename T, typename U>
     TreePtr<T> dyn_treeptr_cast(const TreePtr<U>& ptr) {
-      return TreePtr<T>(dyn_tree_cast<T>(ptr.get()));
+      return tree_isa<T>(ptr) ? tree_from_base<T>(ptr.raw_get()) : TreePtr<T>();
     }
 
     /**
@@ -260,7 +264,7 @@ namespace Psi {
     inline const Tree* TreePtrBase::get() const {
       return (!m_ptr || !derived_vptr(m_ptr.get())->is_callback) ? static_cast<const Tree*>(m_ptr.get()) : get_helper();
     }
-
+    
     /// \see TreeCallback
     struct TreeCallbackVtable {
       TreeBaseVtable base;
@@ -281,13 +285,14 @@ namespace Psi {
 
     private:
       CallbackState m_state;
+      const TreeVtable *m_result_vptr;
       TreePtr<> m_value;
 
     public:
       typedef TreeCallbackVtable VtableType;
       static const SIVtable vtable;
 
-      TreeCallback(const TreeCallbackVtable *vptr, CompileContext&, const SourceLocation&);
+      TreeCallback(const TreeCallbackVtable *vptr, CompileContext&, const TreeVtable *result_vptr, const SourceLocation&);
 
       template<typename Visitor> static void visit(Visitor& v) {
         visit_base<TreeBase>(v);
@@ -341,7 +346,7 @@ namespace Psi {
       static const TreeCallbackVtable vtable;
 
       TreeCallbackImpl(CompileContext& compile_context, const SourceLocation& location, const FunctionType& function)
-      : TreeCallback(&vtable, compile_context, location), m_function(new FunctionType(function)) {
+      : TreeCallback(&vtable, compile_context, PSI_COMPILER_VPTR_UP(Tree, &TreeResultType::vtable), location), m_function(new FunctionType(function)) {
       }
 
       ~TreeCallbackImpl() {

@@ -6,11 +6,12 @@
 namespace Psi {
   namespace Compiler {
     class Anonymous;
+    class Term;
     
     struct TermVtable {
       TreeVtable base;
-      const TreeBase* (*parameterize) (const Term*, const SourceLocation*, const void*, void*, unsigned);
-      const TreeBase* (*specialize) (const Term*, const SourceLocation*, const void*, void*, unsigned);
+      const TreeBase* (*parameterize) (const Term*, const SourceLocation*, const PSI_STD::vector<TreePtr<Anonymous> >*, unsigned);
+      const TreeBase* (*specialize) (const Term*, const SourceLocation*, const PSI_STD::vector<TreePtr<Term> >*, unsigned);
       PsiBool (*match) (const Term*, const Term*, PSI_STD::vector<TreePtr<Term> >*, unsigned);
     };
     
@@ -34,19 +35,21 @@ namespace Psi {
       bool is_type() const;
 
       /// \brief Replace anonymous terms in the list by parameters
-      TreePtr<Term> parameterize(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth=0) const {
-        return tree_from_base_take<Term>(derived_vptr(this)->parameterize(this, &location, elements.vptr(), elements.object(), depth));
+      TreePtr<Term> parameterize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements, unsigned depth=0) const {
+        return tree_from_base_take<Term>(derived_vptr(this)->parameterize(this, &location, &elements, depth));
       }
 
       /// \brief Replace parameter terms in this tree by given values
-      TreePtr<Term> specialize(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth=0) const {
-        return tree_from_base_take<Term>(derived_vptr(this)->specialize(this, &location, values.vptr(), values.object(), depth));
+      TreePtr<Term> specialize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, unsigned depth=0) const {
+        return tree_from_base_take<Term>(derived_vptr(this)->specialize(this, &location, &values, depth));
       }
       
+      bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
       bool equivalent(const TreePtr<Term>& value) const;
-      bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& match, unsigned depth) const;
       
-      static bool match_impl(const Term&, const Term&, PSI_STD::vector<TreePtr<Term> >&, unsigned) {return false;}
+      static bool match_impl(const Term& lhs, const Term& rhs, PSI_STD::vector<TreePtr<Term> >&, unsigned);
+      static TreePtr<Term> parameterize_impl(const Term& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements, unsigned depth);
+      static TreePtr<Term> specialize_impl(const Term& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, unsigned depth);
 
       template<typename Visitor> static void visit(Visitor& v) {
         visit_base<Tree>(v);
@@ -108,9 +111,6 @@ namespace Psi {
         visit_collection(NULL, collections);
       }
     };
-
-    class GenericType;
-    class JumpTarget;
 
     /**
      * Term visitor to perform pattern matching.
@@ -219,57 +219,31 @@ namespace Psi {
 
     class ParameterizeVisitor : public RewriteVisitorBase<ParameterizeVisitor> {
       SourceLocation m_location;
-      List<TreePtr<Anonymous> > m_elements;
+      const PSI_STD::vector<TreePtr<Anonymous> > *m_elements;
       unsigned m_depth;
-
-      template<typename T>
-      TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Tree*) {
-        return ptr;
-      }
-      
-      template<typename T>
-      TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Term*) {
-        if (ptr)
-          return treeptr_cast<T>(ptr->parameterize(m_location, m_elements, m_depth));
-        else
-          return TreePtr<T>();
-      }
       
     public:
-      ParameterizeVisitor(const SourceLocation& location, const List<TreePtr<Anonymous> >& elements, unsigned depth)
+      ParameterizeVisitor(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> > *elements, unsigned depth)
       : m_location(location), m_elements(elements), m_depth(depth) {}
 
       template<typename T>
       TreePtr<T> visit_tree_ptr(const TreePtr<T>& ptr) {
-        return visit_tree_ptr_helper(ptr, ptr.get());
+        return ptr ? treeptr_cast<T>(ptr->parameterize(m_location, *m_elements, m_depth)) : TreePtr<T>();
       }
     };
 
     class SpecializeVisitor : public RewriteVisitorBase<SpecializeVisitor> {
       SourceLocation m_location;
-      List<TreePtr<Term> > m_values;
+      const PSI_STD::vector<TreePtr<Term> > *m_values;
       unsigned m_depth;
 
-      template<typename T>
-      TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Tree*) {
-        return ptr;
-      }
-
-      template<typename T>
-      TreePtr<T> visit_tree_ptr_helper(const TreePtr<T>& ptr, const Term*) {
-        if (ptr)
-          return treeptr_cast<T>(ptr->specialize(m_location, m_values, m_depth));
-        else
-          return TreePtr<T>();
-      }
-
     public:
-      SpecializeVisitor(const SourceLocation& location, const List<TreePtr<Term> >& values, unsigned depth)
+      SpecializeVisitor(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> > *values, unsigned depth)
       : m_location(location), m_values(values), m_depth(depth) {}
 
       template<typename T>
       TreePtr<T> visit_tree_ptr(const TreePtr<T>& ptr) {
-        return visit_tree_ptr_helper(ptr, ptr.get());
+        return ptr ? treeptr_cast<T>(ptr->specialize(m_location, *m_values, m_depth)) : TreePtr<T>();
       }
     };
 
@@ -295,21 +269,37 @@ namespace Psi {
       static PsiBool match(const Term *left, const Term *right, PSI_STD::vector<TreePtr<Term> > *wildcards, unsigned depth) {
         return match_helper(static_bool<Derived::match_visit>(), left, right, wildcards, depth);
       }
-
-      static const TreeBase* parameterize(const Term *self, const SourceLocation *location, const void *elements_vtable, void *elements_object, unsigned depth) {
+      
+      static const TreeBase* parameterize_helper(static_bool<false>, const Term *self, const SourceLocation *location, const PSI_STD::vector<TreePtr<Anonymous> > *elements, unsigned depth) {
+        return Derived::parameterize_impl(*static_cast<const Derived*>(self), *location, *elements, depth).release();
+      }
+      
+      static const TreeBase* parameterize_helper(static_bool<true>, const Term *self, const SourceLocation *location, const PSI_STD::vector<TreePtr<Anonymous> > *elements, unsigned depth) {
         Derived rewritten(self->compile_context(), *location);
         boost::array<const Derived*, 2> ptrs = {{&rewritten, static_cast<const Derived*>(self)}};
-        ParameterizeVisitor pv(*location, List<TreePtr<Anonymous> >(elements_vtable, elements_object), depth);
+        ParameterizeVisitor pv(*location, elements, depth);
         visit_members(pv, ptrs);
         return TreePtr<Derived>(pv.changed() ? new Derived(rewritten) : static_cast<const Derived*>(self)).release();
       }
-      
-      static const TreeBase* specialize(const Term *self, const SourceLocation *location, const void *values_vtable, void *values_object, unsigned depth) {
+
+      static const TreeBase* parameterize(const Term *self, const SourceLocation *location, const PSI_STD::vector<TreePtr<Anonymous> > *elements, unsigned depth) {
+        return parameterize_helper(static_bool<Derived::match_visit>(), self, location, elements, depth);
+      }
+
+      static const TreeBase* specialize_helper(static_bool<false>, const Term *self, const SourceLocation *location, const PSI_STD::vector<TreePtr<Term> > *values, unsigned depth) {
+        return Derived::specialize_impl(*static_cast<const Derived*>(self), *location, *values, depth).release();
+      }
+
+      static const TreeBase* specialize_helper(static_bool<true>, const Term *self, const SourceLocation *location, const PSI_STD::vector<TreePtr<Term> > *values, unsigned depth) {
         Derived rewritten(self->compile_context(), *location);
         boost::array<const Derived*, 2> ptrs = {{&rewritten, static_cast<const Derived*>(self)}};
-        SpecializeVisitor pv(*location, List<TreePtr<Term> >(values_vtable, values_object), depth);
+        SpecializeVisitor pv(*location, values, depth);
         visit_members(pv, ptrs);
         return TreePtr<Derived>(pv.changed() ? new Derived(rewritten) : static_cast<const Derived*>(self)).release();
+      }
+
+      static const TreeBase* specialize(const Term *self, const SourceLocation *location, const PSI_STD::vector<TreePtr<Term> > *values, unsigned depth) {
+        return specialize_helper(static_bool<Derived::match_visit>(), self, location, values, depth);
       }
     };
 
@@ -349,7 +339,21 @@ namespace Psi {
     };
 
     /// \brief Is this a type?
-    inline bool Term::is_type() const {return !type || dyn_tree_cast<Metatype>(type.get());}
+    inline bool Term::is_type() const {return tree_isa<Metatype>(type);}
+
+    /**
+     * Anonymous term. Has a type but no defined value.
+     *
+     * The value must be defined elsewhere, for example by being part of a function.
+     */
+    class Anonymous : public Term {
+    public:
+      static const TermVtable vtable;
+
+      Anonymous(CompileContext& compile_context, const SourceLocation& location);
+      Anonymous(const TreePtr<Term>& type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+    };
 
     /**
      * \brief Parameter to a Pattern.
@@ -357,6 +361,7 @@ namespace Psi {
     class Parameter : public Term {
     public:
       static const TermVtable vtable;
+      static const bool match_visit = true;
 
       Parameter(CompileContext& compile_context, const SourceLocation& location);
       Parameter(const TreePtr<Term>& type, unsigned depth, unsigned index, const SourceLocation& location);

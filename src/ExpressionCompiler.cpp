@@ -235,14 +235,13 @@ namespace Psi {
       TreePtr<StatementListTree> evaluate(const TreePtr<StatementListTree>& self) {
         CompileContext& compile_context = self.compile_context();
         TreePtr<StatementListContext> context_tree(new StatementListContext(self, m_evaluate_context));
-        TreePtr<Statement> last_statement;
-        bool last_statement_set = false;
+        TreePtr<StatementRef> last_statement;
         PSI_STD::vector<TreePtr<Statement> > entries;
         StatementListTree::NameMapType named_entries;
 
         for (PSI_STD::vector<SharedPtr<Parser::NamedExpression> >::iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii) {
           const Parser::NamedExpression& named_expr = **ii;
-          if ((last_statement_set = named_expr.expression.get())) {
+          if (named_expr.expression) {
             String expr_name;
             LogicalSourceLocationPtr logical_location;
             if (named_expr.name) {
@@ -252,17 +251,20 @@ namespace Psi {
               logical_location = self.location().logical->new_anonymous_child();
             }
             SourceLocation statement_location(named_expr.location.location, logical_location);
-            last_statement = tree_callback<Statement>(compile_context, statement_location, StatementListEntry(named_expr.expression, context_tree));
-            entries.push_back(last_statement);
+            TreePtr<Statement> statement = tree_callback<Statement>(compile_context, statement_location, StatementListEntry(named_expr.expression, context_tree));
+            entries.push_back(statement);
+            last_statement.reset(new StatementRef(statement, statement.location()));
 
             if (named_expr.name)
               named_entries[expr_name] = last_statement;
+          } else {
+            last_statement.reset();
           }
         }
 
         TreePtr<Term> block_value;
         if (m_with_value) {
-          if (last_statement_set) {
+          if (last_statement) {
             block_value = last_statement;
           } else {
             LookupResult<TreePtr<Term> > none = m_evaluate_context->lookup("__none__", self.location());

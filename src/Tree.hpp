@@ -10,22 +10,10 @@
 
 namespace Psi {
   namespace Compiler {
-    /**
-     * Anonymous term. Has a type but no defined value.
-     *
-     * The value must be defined elsewhere, for example by being part of a function.
-     */
-    class Anonymous : public Term {
-    public:
-      static const TermVtable vtable;
 
-      Anonymous(CompileContext& compile_context, const SourceLocation& location);
-      Anonymous(const TreePtr<Term>& type, const SourceLocation& location);
-      template<typename V> static void visit(V& v);
-    };
-    
+class Function;
     /**
-     * \brief A global variables, which is an element of a Module.
+     * \brief A global variable or function, which is an element of a Module.
      */
     class Global : public Term {
     public:
@@ -40,22 +28,30 @@ namespace Psi {
       TreePtr<Module> module;
     };
     
-    class ExternalGlobal : public Global {
+    /**
+     * \brief A global variable.
+     */
+    class GlobalVariable : public Global {
     public:
       static const TermVtable vtable;
-      ExternalGlobal(CompileContext& compile_context, const SourceLocation& location);
-      ExternalGlobal(const TreePtr<Module>& module, const TreePtr<Term>& type, const String& symbol, const SourceLocation& location);
+      GlobalVariable(CompileContext& context, const SourceLocation& location);
+      GlobalVariable(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location);
+      
+      /// \brief Global variable value.
+      TreePtr<Term> value;
+      
       template<typename V> static void visit(V& v);
-
-      String symbol;
     };
     
     /**
      * Wrapper around entries in \c StatementList.
+     * 
+     * \todo This could easily be removed and \c StatementRef replaced by a reference
+     * to the containing block plus an index to the required statement.
      */
-    class Statement : public Term {
+    class Statement : public Tree {
     public:
-      static const TermVtable vtable;
+      static const TreeVtable vtable;
 
       TreePtr<Term> value;
       
@@ -73,7 +69,6 @@ namespace Psi {
     class StatementRef : public Term {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = true;
       
       TreePtr<Statement> value;
 
@@ -99,6 +94,8 @@ namespace Psi {
 
     /**
      * \brief Tree for a block of code.
+     * 
+     * \todo Merge StatementList and Block together.
      */
     class Block : public StatementList {
     public:
@@ -113,6 +110,9 @@ namespace Psi {
     
     /**
      * \brief Tree for a namespace.
+     * 
+     * \todo Remove this: it doesn't have a sensible value, so it should be metadata rather
+     * than a Term.
      */
     class Namespace : public StatementList {
     public:
@@ -121,6 +121,22 @@ namespace Psi {
       Namespace(CompileContext& compile_context, const SourceLocation& location);
       Namespace(const PSI_STD::vector<TreePtr<Statement> >& statements, CompileContext& compile_context, const SourceLocation& location);
       template<typename V> static void visit(V& v);
+    };
+    
+    /**
+     * \brief Base for explicit constructor expressions.
+     */
+    class Constructor : public Term {
+    public:
+      static const SIVtable vtable;
+      
+      Constructor(const TermVtable *vtable, CompileContext& context, const SourceLocation& location);
+      Constructor(const TermVtable *vtable, const TreePtr<Term>&, const SourceLocation&);
+      
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<Term>(v);
+      }
     };
 
     /**
@@ -177,16 +193,15 @@ namespace Psi {
     /**
      * \brief Value of type RecursiveType.
      */
-    class TypeInstanceValue : public Term {
-      TreePtr<Term> m_member_value;
-
+    class TypeInstanceValue : public Constructor {
     public:
       static const TermVtable vtable;
 
       TypeInstanceValue(CompileContext& compile_context, const SourceLocation& location);
       TypeInstanceValue(const TreePtr<TypeInstance>& type, const TreePtr<Term>& member_value, const SourceLocation& location);
-
       template<typename Visitor> static void visit(Visitor& v);
+      
+      TreePtr<Term> member_value;
     };
     
     /**
@@ -223,7 +238,7 @@ namespace Psi {
     /**
      * \brief Default initialized value.
      */
-    class DefaultValue : public Term {
+    class DefaultValue : public Constructor {
     public:
       static const TermVtable vtable;
       DefaultValue(CompileContext& compile_context, const SourceLocation& location);
@@ -263,7 +278,7 @@ namespace Psi {
     /**
      * \brief Structure value.
      */
-    class StructValue : public Term {
+    class StructValue : public Constructor {
     public:
       static const TermVtable vtable;
       static const bool match_visit = true;
@@ -320,9 +335,14 @@ namespace Psi {
     
     PSI_VISIT_SIMPLE(ResultMode);
     
+    class InterfaceValue;
+    
     struct FunctionParameterType {
       ParameterMode mode;
       TreePtr<Term> type;
+      
+      FunctionParameterType() {}
+      FunctionParameterType(ParameterMode mode_, const TreePtr<Term>& type_) : mode(mode_), type(type_) {}
       
       template<typename V>
       static void visit(V& v) {
@@ -336,15 +356,17 @@ namespace Psi {
       static const TermVtable vtable;
 
       FunctionType(CompileContext& compile_context, const SourceLocation& location);
-      FunctionType(ResultMode result_mode, const TreePtr<Term>& result_type, const std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >& arguments, const SourceLocation& location);
+      FunctionType(ResultMode result_mode, const TreePtr<Term>& result_type, const PSI_STD::vector<FunctionParameterType>& parameter_types,
+                   const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces, const SourceLocation& location);
       template<typename V> static void visit(V& v);
 
-      TreePtr<Term> argument_type_after(const SourceLocation& location, const List<TreePtr<Term> >& arguments) const;
-      TreePtr<Term> result_type_after(const SourceLocation& location, const List<TreePtr<Term> >& arguments) const;
+      TreePtr<Term> argument_type_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& arguments) const;
+      TreePtr<Term> result_type_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& arguments) const;
       
       ResultMode result_mode;
       TreePtr<Term> result_type;
-      PSI_STD::vector<FunctionParameterType> argument_types;
+      PSI_STD::vector<FunctionParameterType> parameter_types;
+      PSI_STD::vector<TreePtr<InterfaceValue> > interfaces;
     };
     
     class JumpTarget;
@@ -498,6 +520,7 @@ namespace Psi {
     class PrimitiveType : public Type {
     public:
       static const TermVtable vtable;
+      static const bool match_visit = true;
       
       PrimitiveType(CompileContext& compile_context, const SourceLocation& location);
       PrimitiveType(CompileContext& compile_context, const String& name, const SourceLocation& location);
@@ -509,6 +532,7 @@ namespace Psi {
     class BuiltinValue : public Term {
     public:
       static const TermVtable vtable;
+      static const bool match_visit = true;
       
       BuiltinValue(CompileContext& compile_context, const SourceLocation& location);
       BuiltinValue(const String& constructor, const String& data, const TreePtr<Term>& type, const SourceLocation& location);
@@ -519,33 +543,29 @@ namespace Psi {
     };
     
     /**
-     * Base type for trees representing functions which are external to user code.
-     * 
-     * All such functions are entirely non-polymorphic.
-     */
-    class ExternalFunction : public Term {
-      static TreePtr<Term> get_type(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
-
-    public:
-      static const SIVtable vtable;
-      
-      ExternalFunction(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
-      ExternalFunction(const TermVtable *vptr, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
-      template<typename Visitor> static void visit(Visitor& v);
-    };
-    
-    /**
      * Tree for builtin operations. This saves having to create a separate tree for each one.
      */
-    class BuiltinFunction : public ExternalFunction {
-      static const TermVtable vtable;
-      
+    class BuiltinFunction : public Term {
     public:
+      static const TermVtable vtable;
+      static const bool match_visit = true;
+      
       BuiltinFunction(CompileContext& compile_context, const SourceLocation& location);
-      BuiltinFunction(const String& name, const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      BuiltinFunction(const String& name, bool pure, const TreePtr<FunctionType>& type, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
       
+      /**
+       * \brief Builtin identifier.
+       */
       String name;
+      
+      /**
+       * \brief Whether this function dependends on any external state.
+       * 
+       * If this is true, then all parameters to this function must be passed in functional mode,
+       * and the result of this function may only depend on the values of those parameters.
+       */
+      PsiBool pure;
     };
     
     class TargetCallback;
@@ -620,6 +640,24 @@ namespace Psi {
       TreePtr<Library> library;
       /// \brief Callback to get the symbol name
       TreePtr<TargetCallback> callback;
+    };
+    
+    /**
+     * \brief Get the value associated with an interface for particular parameters.
+     */
+    class InterfaceValue : public Term {
+    public:
+      static const TermVtable vtable;
+      static const bool match_visit = true;
+      
+      InterfaceValue(CompileContext& context, const SourceLocation& location);
+      InterfaceValue(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Interface.
+      TreePtr<Interface> interface;
+      /// \brief List of parameters, including implicit parameters.
+      PSI_STD::vector<TreePtr<Term> > parameters;
     };
   }
 }

@@ -89,11 +89,10 @@ bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp)
 set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
 
 add_library(psi-compiler SHARED
-  Class.cpp Class.hpp
   CppCompiler.hpp
   Compiler.cpp Compiler.hpp
   ExpressionCompiler.cpp
-  Function.cpp Function.hpp
+  Function.cpp
   Interface.cpp
   GarbageCollection.hpp
   Macros.cpp
@@ -101,6 +100,8 @@ add_library(psi-compiler SHARED
   Platform.cpp Platform.hpp
   StaticDispatch.cpp Term.hpp
   Tree.cpp Tree.hpp
+  TreeBase.cpp TreeBase.hpp
+  Term.cpp Term.hpp
   TvmFunctionLowering.cpp
   TvmLowering.cpp TvmLowering.hpp
   Utility.cpp Utility.hpp

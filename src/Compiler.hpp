@@ -278,13 +278,6 @@ namespace Psi {
       
       /// \brief The Macro interface.
       TreePtr<MetadataType> macro_tag;
-      /// \brief The argument passing descriptor interface.
-      TreePtr<MetadataType> argument_passing_info_tag;
-      /// \brief Return value descriptor interface.
-      TreePtr<MetadataType> return_passing_info_tag;
-      /// \brief The class member descriptor interface.
-      TreePtr<MetadataType> class_member_info_tag;
-      
       /// \brief Library metadata tag
       TreePtr<MetadataType> library_tag;
     };

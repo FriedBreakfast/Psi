@@ -85,6 +85,15 @@ namespace Psi {
       boost::optional<ParserLocation> name;
       SharedPtr<Expression> expression;
     };
+    
+    struct FunctionArgument : Element {
+      FunctionArgument(const ParserLocation& source_, const boost::optional<ParserLocation>& name_,
+                       const boost::optional<ParserLocation>& mode_, const SharedPtr<Expression>& type_);
+
+      boost::optional<ParserLocation> name;
+      boost::optional<ParserLocation> mode;
+      SharedPtr<Expression> type;
+    };
 
     class ParseError : public std::runtime_error {
     public:
@@ -98,12 +107,18 @@ namespace Psi {
     SharedPtr<Expression> parse_expression(const ParserLocation& text);
     PSI_STD::vector<TokenExpression> parse_identifier_list(const ParserLocation&);
 
+    struct ImplicitArgumentDeclarations {
+      PSI_STD::vector<SharedPtr<FunctionArgument> > arguments;
+      PSI_STD::vector<SharedPtr<Expression> > interfaces;
+    };
+    
     struct ArgumentDeclarations {
-      PSI_STD::vector<SharedPtr<NamedExpression> > arguments;
-      SharedPtr<Expression> return_type;
+      PSI_STD::vector<SharedPtr<FunctionArgument> > arguments;
+      SharedPtr<FunctionArgument> return_type;
     };
 
     ArgumentDeclarations parse_function_argument_declarations(const ParserLocation&);
+    ImplicitArgumentDeclarations parse_function_argument_implicit_declarations(const ParserLocation& text);
     SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpression::TokenType type);
   }
 }

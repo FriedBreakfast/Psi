@@ -35,15 +35,12 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   Psi::SourceLocation psi_location = module.location();
   
   PSI_STD::map<Psi::String, TreePtr<Term> > global_names;
-  global_names["function"] = function_definition_macro(compile_context, psi_location.named_child("function"));
-  global_names["class"] = class_definition_macro(compile_context, psi_location.named_child("child"));
   global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
   global_names["__none__"] = none_macro(compile_context, psi_location.named_child("__none__"));
   global_names["__number__"] = TreePtr<Term>();
   global_names["builtin_type"] = builtin_type_macro(compile_context, psi_location.named_child("builtin_type"));
   global_names["builtin_function"] = builtin_function_macro(compile_context, psi_location.named_child("builtin_function"));
   global_names["builtin_value"] = builtin_value_macro(compile_context, psi_location.named_child("builtin_function"));
-  global_names["c_function"] = c_function_macro(compile_context, psi_location.named_child("c_function"));
   
   global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));
   global_names["implement"] = implementation_define_macro(compile_context, psi_location.named_child("implement"));

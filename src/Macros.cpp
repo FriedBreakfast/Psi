@@ -5,6 +5,7 @@
 
 namespace Psi {
   namespace Compiler {
+    const SIVtable Macro::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Macro", Tree);
     const SIVtable MacroMemberCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.MacroMemberCallback", Tree);
 
     class NamedMemberMacro : public Macro {
@@ -245,22 +246,15 @@ namespace Psi {
       return make_macro_term(m, location);
     }
     
-    class ExternalFunctionMacro : public MacroMemberCallback {
+    class BuiltinFunctionMacro : public MacroMemberCallback {
     public:
       static const MacroMemberCallbackVtable vtable;
-      
-      enum ExternalFunctionType {
-        extern_builtin,
-        extern_c
-      };
 
-      ExternalFunctionMacro(CompileContext& compile_context, const SourceLocation& location, ExternalFunctionType which_)
-      : MacroMemberCallback(&vtable, compile_context, location), which(which_) {
+      BuiltinFunctionMacro(CompileContext& compile_context, const SourceLocation& location)
+      : MacroMemberCallback(&vtable, compile_context, location) {
       }
-      
-      unsigned which;
 
-      static TreePtr<Term> evaluate_impl(const ExternalFunctionMacro& self,
+      static TreePtr<Term> evaluate_impl(const BuiltinFunctionMacro& self,
                                          const TreePtr<Term>&,
                                          const List<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
@@ -287,29 +281,19 @@ namespace Psi {
         argument_types.pop_back();
        
         String name_s(name->text.begin, name->text.end);
-        
-        switch (self.which) {
-        case extern_builtin: return TreePtr<Term>(new BuiltinFunction(name_s, result_type, argument_types, location));
-        default: PSI_FAIL("Unknown external function type");
-        }
+        PSI_NOT_IMPLEMENTED();
       }
       
       template<typename Visitor>
       static void visit(Visitor& v) {
         visit_base<MacroMemberCallback>(v);
-        v("which", &ExternalFunctionMacro::which);
       }
     };
 
-    const MacroMemberCallbackVtable ExternalFunctionMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(ExternalFunctionMacro, "psi.compiler.ExternalFunctionMacro", MacroMemberCallback);
+    const MacroMemberCallbackVtable BuiltinFunctionMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(BuiltinFunctionMacro, "psi.compiler.BuiltinFunctionMacro", MacroMemberCallback);
     
     TreePtr<Term> builtin_function_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroMemberCallback>(new ExternalFunctionMacro(compile_context, location, ExternalFunctionMacro::extern_builtin)));
-      return make_macro_term(m, location);
-    }
-    
-    TreePtr<Term> c_function_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroMemberCallback>(new ExternalFunctionMacro(compile_context, location, ExternalFunctionMacro::extern_c)));
+      TreePtr<Macro> m = make_macro(compile_context, location, TreePtr<MacroMemberCallback>(new BuiltinFunctionMacro(compile_context, location)));
       return make_macro_term(m, location);
     }
     

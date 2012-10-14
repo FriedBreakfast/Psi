@@ -53,8 +53,10 @@ namespace {
     ParserLocation text;
     SharedPtr<Expression> expression;
     SharedPtr<NamedExpression> named_expression;
+    SharedPtr<FunctionArgument> function_argument;
     PSI_STD::vector<SharedPtr<Expression> > expression_list;
     PSI_STD::vector<SharedPtr<NamedExpression> > named_expression_list;
+    PSI_STD::vector<SharedPtr<FunctionArgument> > function_argument_list;
   };
 
   struct ParserInternalArguments : BisonHelper<YYTYPE_INT16, YYSTYPE, YYLTYPE> {
@@ -63,8 +65,9 @@ namespace {
     }
 
     PSI_STD::vector<SharedPtr<Expression> > result_expressions;
-    SharedPtr<Expression> result_return_type;
     PSI_STD::vector<SharedPtr<NamedExpression> > result_named_expressions;
+    ArgumentDeclarations result_argument_declarations;
+    ImplicitArgumentDeclarations result_argument_implicit;
 
     int mode_token;
     ParserLocation text;
@@ -181,15 +184,18 @@ namespace {
 %token MODE_ARGUMENT_LIST
 %token MODE_POSITIONAL_LIST
 %token MODE_FUNCTION_ARGUMENT_DECLARE
+%token MODE_FUNCTION_ARGUMENT_IMPLICIT
 %token MODE_EXPRESSION
 
 %type <text> IDENTIFIER NUMBER
 %type <cstr> product_operator add_operator compare_operator unary_operator
 %type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression
-%type <expression> unary_expression compare_expression return_type_declare macro_expression token_expression
-%type <expression_list> compare_expression_build expression_list expression_list_nonempty token_list
+%type <expression> unary_expression compare_expression macro_expression token_expression
+%type <expression_list> compare_expression_build expression_list expression_list_nonempty token_list interface_list_declare interface_list_declare_nonempty
 %type <named_expression> statement named_expression
-%type <named_expression_list> statement_list argument_list_declare_nonempty argument_list_declare argument_list argument_list_nonempty
+%type <named_expression_list> statement_list argument_list argument_list_nonempty
+%type <function_argument> argument_declare return_type_declare
+%type <function_argument_list> argument_list_declare argument_list_declare_nonempty
 
 %parse-param {ParserInternalArguments& arguments}
 %lex-param {ParserInternalArguments& arguments}
@@ -211,10 +217,11 @@ namespace {
 %%
 
 root: MODE_STATEMENT_LIST statement_list {arguments.result_named_expressions = $2;}
-| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare {arguments.result_named_expressions = $2; arguments.result_return_type = $3;}
 | MODE_ARGUMENT_LIST argument_list {arguments.result_named_expressions = $2;}
 | MODE_POSITIONAL_LIST expression_list {arguments.result_expressions = $2;}
 | MODE_EXPRESSION expression {arguments.result_expressions.assign(1, $2);}
+| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare {arguments.result_argument_declarations.arguments = $2; arguments.result_argument_declarations.return_type = $3;}
+| MODE_FUNCTION_ARGUMENT_IMPLICIT argument_list_declare interface_list_declare {arguments.result_argument_implicit.arguments = $2; arguments.result_argument_implicit.interfaces = $3;}
 ;
 
 argument_list: {$$.clear();}
@@ -227,7 +234,8 @@ named_expression {$$.assign(1, $1);}
 ;
 
 return_type_declare: /* blank */ {$$.reset();}
-| OPERATOR_ARROW expression {$$ = $2;}
+| OPERATOR_ARROW expression {$$.reset(new FunctionArgument(@$, boost::none, boost::none, $2));}
+| OPERATOR_ARROW '#' IDENTIFIER expression {$$.reset(new FunctionArgument(@$, boost::none, $3, $4));}
 ;
 
 argument_list_declare: /* blank */ {$$.clear();}
@@ -235,8 +243,24 @@ argument_list_declare: /* blank */ {$$.clear();}
 ;
 
 argument_list_declare_nonempty:
-named_expression {$$.assign(1, $1);}
-| argument_list_declare_nonempty ',' named_expression {$$ = $1; $$.push_back($3);}
+argument_declare {$$.assign(1, $1);}
+| argument_list_declare_nonempty ',' argument_declare {$$ = $1; $$.push_back($3);}
+;
+
+argument_declare:
+expression {$$.reset(new FunctionArgument(@$, boost::none, boost::none, $1));}
+| IDENTIFIER ':' expression {$$.reset(new FunctionArgument(@$, $1, boost::none, $3));}
+| IDENTIFIER ':' '#' IDENTIFIER expression {$$.reset(new FunctionArgument(@$, $1, $4, $5));}
+| '#' IDENTIFIER expression {$$.reset(new FunctionArgument(@$, boost::none, $2, $3));}
+;
+
+interface_list_declare: /* blank */ {$$.clear();}
+| interface_list_declare_nonempty
+;
+
+interface_list_declare_nonempty:
+OPERATOR_ARROW expression {$$.assign(1, $2);}
+| interface_list_declare_nonempty ',' expression {$$ = $1; $$.push_back($3);}
 ;
 
 expression_list: {$$.clear();}
@@ -687,10 +711,18 @@ namespace Psi {
     ArgumentDeclarations parse_function_argument_declarations(const ParserLocation& text) {
       ParserInternalArguments args(MODE_FUNCTION_ARGUMENT_DECLARE, text);
       parse_helper(args);
-      ArgumentDeclarations result;
-      result.arguments = args.result_named_expressions;
-      result.return_type = args.result_return_type;
-      return result;
+      return args.result_argument_declarations;
+    }
+
+    /** \brief parse a function argument declaration.
+     * \details This is a list of argument declarations possibly
+     * followed by a return type Expression.
+     * \param text Text to parse.
+     */
+    ImplicitArgumentDeclarations parse_function_argument_implicit_declarations(const ParserLocation& text) {
+      ParserInternalArguments args(MODE_FUNCTION_ARGUMENT_IMPLICIT, text);
+      parse_helper(args);
+      return args.result_argument_implicit;
     }
 
     SharedPtr<Parser::TokenExpression> expression_as_token_type(const SharedPtr<Parser::Expression>& expr, Parser::TokenExpression::TokenType type) {

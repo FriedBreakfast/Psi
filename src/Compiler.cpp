@@ -2,9 +2,6 @@
 #include "Tree.hpp"
 #include "Platform.hpp"
 
-#include "Class.hpp"
-#include "Function.hpp"
-
 #ifdef PSI_DEBUG
 #include <iostream>
 #include <cstdlib>
@@ -28,94 +25,6 @@ size_t psi_gcchecker_blocks(psi_gcchecker_block **ptr) {
 
 namespace Psi {
   namespace Compiler {
-    void TreePtrBase::update_chain(const TreeBase *ptr) const {
-      const TreePtrBase *hook = this;
-      ObjectPtr<const TreeCallback> ptr_cb;
-      while (hook->m_ptr.get() != ptr) {
-        PSI_ASSERT(derived_vptr(hook->m_ptr.get())->is_callback);
-        ObjectPtr<const TreeCallback> next_ptr_cb(static_cast<const TreeCallback*>(hook->m_ptr.get()), true);
-        const TreePtrBase *next_hook = &next_ptr_cb->m_value;
-        hook->m_ptr.reset(ptr);
-        hook = next_hook;
-        ptr_cb.swap(next_ptr_cb);
-      }
-    }
-    
-    /**
-     * Evaluate a lazily evaluated Tree (recursively if necessary) and return the final result.
-     */
-    const Tree* TreePtrBase::get_helper() const {
-      PSI_ASSERT(m_ptr);
-
-      /*
-       * Evaluate chain of hooks until either a NULL is found or a non-callback
-       * value is reached.
-       */
-      const TreePtrBase *hook = this;
-      while (true) {
-        if (!hook->m_ptr)
-          break;
-        
-        const TreeBaseVtable *vtable = derived_vptr(hook->m_ptr.get());
-        if (!vtable->is_callback)
-          break;
-
-        TreeCallback *ptr_cb = static_cast<TreeCallback*>(const_cast<TreeBase*>(hook->m_ptr.get()));
-        hook = &ptr_cb->m_value;
-
-        switch (ptr_cb->m_state) {
-        case TreeCallback::state_ready: {
-          const TreeCallbackVtable *vtable_cb = reinterpret_cast<const TreeCallbackVtable*>(vtable);
-          RunningTreeCallback running(ptr_cb);
-          ptr_cb->m_state = TreeCallback::state_running;
-          const TreeBase *eval_ptr;
-          try {
-            eval_ptr = vtable_cb->evaluate(ptr_cb);
-          } catch (...) {
-            ptr_cb->m_state = TreeCallback::state_failed;
-            update_chain(ptr_cb);
-            throw;
-          }
-          PSI_ASSERT(!hook->m_ptr);
-          hook->m_ptr.reset(eval_ptr, false);
-          ptr_cb->m_state = TreeCallback::state_finished;
-          break;
-        }
-
-        case TreeCallback::state_running:
-          update_chain(ptr_cb);
-          RunningTreeCallback::throw_circular_dependency(ptr_cb);
-          PSI_FAIL("Previous line should have thrown an exception");
-
-        case TreeCallback::state_finished:
-          break;
-
-        case TreeCallback::state_failed:
-          update_chain(ptr_cb);
-          throw CompileException();
-        }
-      }
-
-      update_chain(hook->m_ptr.get());
-
-      PSI_ASSERT(!m_ptr || !derived_vptr(m_ptr.get())->is_callback);
-      return static_cast<const Tree*>(m_ptr.get());
-    }
-    
-#ifdef PSI_DEBUG
-    void TreePtrBase::debug_print() const {
-      if (!m_ptr) {
-        std::cerr << "(null)" << std::endl;
-        return;
-      }
-      
-      const SourceLocation& loc = location();
-      std::cerr << loc.physical.file->url << ':' << loc.physical.first_line << ": "
-      << loc.logical->error_name(LogicalSourceLocationPtr())
-      << " : " << si_vptr(m_ptr.get())->classname << std::endl;
-    }
-#endif    
-
     bool si_derived(const SIVtable *base, const SIVtable *derived) {
       for (const SIVtable *super = derived; super; super = super->super) {
         if (super == base)
@@ -188,9 +97,6 @@ namespace Psi {
       bottom_type.reset(new BottomType(compile_context, psi_location.named_child("Bottom")));
       
       macro_tag = make_tag<Macro>(metatype, psi_compiler_location.named_child("Macro"));
-      argument_passing_info_tag = make_tag<ArgumentPassingInfoCallback>(metatype, psi_compiler_location.named_child("ArgumentPasser"));
-      return_passing_info_tag = make_tag<ReturnPassingInfoCallback>(metatype, psi_compiler_location.named_child("ReturnMode"));
-      class_member_info_tag = make_tag<ClassMemberInfoCallback>(metatype, psi_compiler_location.named_child("ClassMemberInfo"));
       library_tag = make_tag<Library>(metatype, psi_compiler_location.named_child("Library"));
     }
 
