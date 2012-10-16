@@ -46,6 +46,7 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   global_names["implement"] = implementation_define_macro(compile_context, psi_location.named_child("implement"));
   global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));
   global_names["library"] = library_macro(compile_context, psi_location.named_child("library"));
+  global_names["function"] = function_definition_macro(compile_context, psi_location.named_child("function"));
 
   return evaluate_context_dictionary(module, psi_location, global_names);
 }
@@ -116,8 +117,8 @@ int main(int argc, char *argv[]) {
     init_tree->complete();
     
     // Create main function
-    TreePtr<Term> main_result(new EmptyType(compile_context, init_location));
-    TreePtr<Function> main_function(new Function(my_module, result_mode_by_value, main_result, default_, init_tree, init_location));
+    TreePtr<FunctionType> main_type(new FunctionType(result_mode_by_value, compile_context.builtins().empty_type, default_, default_, init_location));
+    TreePtr<Function> main_function(new Function(my_module, main_type, default_, init_tree, TreePtr<JumpTarget>(), init_location));
     
     void (*main_ptr) ();
     *reinterpret_cast<void**>(&main_ptr) = compile_context.jit_compile(main_function);

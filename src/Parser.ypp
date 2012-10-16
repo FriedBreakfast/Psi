@@ -630,6 +630,11 @@ namespace Psi {
     NamedExpression::~NamedExpression() {
     }
 
+    FunctionArgument::FunctionArgument(const ParserLocation& source_, const boost::optional<ParserLocation>& name_,
+                                       const boost::optional<ParserLocation>& mode_, const SharedPtr<Expression>& type_)
+    : Element(source_), name(name_), mode(mode_), type(type_) {
+    }
+    
     ParseError::ParseError(const std::string& reason) : std::runtime_error(reason) {
     }
 

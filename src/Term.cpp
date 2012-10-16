@@ -63,15 +63,15 @@ namespace Psi {
       return match(value, empty, 0);
     }
 
-    bool Term::match_impl(const Term& lhs, const Term& rhs, PSI_STD::vector<TreePtr<Term> >&, unsigned) {
+    bool Term::match_impl(const Term&, const Term&, PSI_STD::vector<TreePtr<Term> >&, unsigned) {
       return false;
     }
     
-    TreePtr<Term> Term::parameterize_impl(const Term& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements, unsigned depth) {
+    TreePtr<Term> Term::parameterize_impl(const Term& self, const SourceLocation&, const PSI_STD::vector<TreePtr<Anonymous> >&, unsigned) {
       return TreePtr<Term>(&self);
     }
     
-    TreePtr<Term> Term::specialize_impl(const Term& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, unsigned depth) {
+    TreePtr<Term> Term::specialize_impl(const Term& self, const SourceLocation&, const PSI_STD::vector<TreePtr<Term> >&, unsigned) {
       return TreePtr<Term>(&self);
     }
     

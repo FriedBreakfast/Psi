@@ -12,6 +12,8 @@ add_library(psi-compiler-common SHARED
   SourceLocation.cpp SourceLocation.hpp
 )
 
+target_link_libraries(psi-compiler-common ${JSONC_LIB})
+
 add_library(psi-tvm SHARED
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
   Tvm/AggregateLowering.cpp
@@ -109,7 +111,7 @@ add_library(psi-compiler SHARED
   ${PSI_COMPILER_SOURCES}
 )
 
-target_link_libraries(psi-compiler psi-compiler-common psi-tvm debug psi-assert ${JSONC_LIB})
+target_link_libraries(psi-compiler psi-compiler-common psi-tvm debug psi-assert)
 if (UNIX)
   target_link_libraries(psi-compiler -ldl)
 endif()

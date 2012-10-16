@@ -370,7 +370,7 @@ namespace Psi {
 
 #ifndef PSI_DEBUG
     template<typename T>
-    const TreeCallbackVtable TreeCallbackImpl<T>::vtable = PSI_COMPILER_TREE_CALLBACK(TreeCallbackImpl<T>, "(anonymous)", TreeCallback);
+    const TreeCallbackVtable TreeCallbackImpl<T>::vtable = PSI_COMPILER_TREE_CALLBACK(TreeCallbackImpl<T>, "(callback)", TreeCallback);
 #else
     template<typename T>
     const TreeCallbackVtable TreeCallbackImpl<T>::vtable = PSI_COMPILER_TREE_CALLBACK(TreeCallbackImpl<T>, typeid(typename T::FunctionType).name(), TreeCallback);
@@ -447,6 +447,59 @@ namespace Psi {
     template<typename A, typename B>
     TreePtr<B> tree_attribute(const TreePtr<A>& tree, TreePtr<B> A::*ptr) {
       return tree_property(tree, TreeAttributeFunction<A,B>(ptr), tree.location());
+    }
+    
+    /**
+     * \brief Tree which simply carries a value
+     */
+    template<typename T>
+    class ValueTree : public Tree {
+    public:
+      static const TreeVtable vtable;
+      
+      ValueTree(CompileContext& compile_context, const T& value_, const SourceLocation& location)
+      : Tree(&vtable, compile_context, location), value(value_) {}
+      template<typename V> static void visit(V& v) {visit_base<Tree>(v); v("value", &ValueTree<T>::value);}
+      
+      T value;
+    };
+
+#ifndef PSI_DEBUG
+    template<typename T>
+    const TreeVtable ValueTree<T>::vtable = PSI_COMPILER_TREE(ValueTree<T>, "(value)", Tree);
+#else
+    template<typename T>
+    const TreeVtable ValueTree<T>::vtable = PSI_COMPILER_TREE(ValueTree<T>, typeid(T).name(), Tree);
+#endif
+    
+    template<typename T, typename F>
+    class ValueCallbackWrapper {
+      F m_f;
+      
+    public:
+      typedef ValueTree<T> TreeResultType;
+      
+      ValueCallbackWrapper(const F& f) : m_f(f) {}
+      template<typename V> static void visit(V& v) {v("f", &ValueCallbackWrapper<T,F>::m_f);}
+      TreePtr<ValueTree<T> > evaluate(const TreePtr<ValueTree<T> >& self) {
+        return TreePtr<ValueTree<T> >(new ValueTree<T>(self.compile_context(), m_f.evaluate(self), self.location()));
+      }
+    };
+    
+    /**
+     * \brief Create a tree callback which generates a ValueTree.
+     */
+    template<typename T, typename F>
+    TreePtr<ValueTree<T> > value_callback(CompileContext& compile_context, const SourceLocation& location, const F& f) {
+      return tree_callback(compile_context, location, ValueCallbackWrapper<T,F>(f));
+    }
+
+    /**
+     * \brief Create a tree callback which generates a ValueTree.
+     */
+    template<typename F>
+    TreePtr<ValueTree<typename F::result_type> > value_callback(CompileContext& compile_context, const SourceLocation& location, const F& f) {
+      return tree_callback(compile_context, location, ValueCallbackWrapper<typename F::result_type,F>(f));
     }
   }
 }

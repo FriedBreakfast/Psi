@@ -360,7 +360,7 @@ class Function;
                    const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces, const SourceLocation& location);
       template<typename V> static void visit(V& v);
 
-      TreePtr<Term> argument_type_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& arguments) const;
+      TreePtr<Term> parameter_type_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& arguments) const;
       TreePtr<Term> result_type_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& arguments) const;
       
       ResultMode result_mode;
@@ -377,16 +377,21 @@ class Function;
       
       Function(CompileContext& compile_context, const SourceLocation& location);
       Function(const TreePtr<Module>& module,
-               ResultMode result_mode,
-               const TreePtr<Term>& result_type,
-               const std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >& arguments,
+               const TreePtr<FunctionType>& type,
+               const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
                const TreePtr<Term>& body,
+               const TreePtr<JumpTarget>& return_target,
                const SourceLocation& location);
 
+      /// \brief Argument values.
       PSI_STD::vector<TreePtr<Anonymous> > arguments;
-      TreePtr<Term> result_type;
+      /// \brief Function body.
       TreePtr<Term> body;
-      /// \brief Target to jump to in order to return from the function.
+      /**
+       * \brief Target to jump to in order to return from the function.
+       * 
+       * This may be NULL if the function only exits ordinarily.
+       */
       TreePtr<JumpTarget> return_target;
 
       template<typename Visitor> static void visit(Visitor& v);
@@ -648,7 +653,6 @@ class Function;
     class InterfaceValue : public Term {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = true;
       
       InterfaceValue(CompileContext& context, const SourceLocation& location);
       InterfaceValue(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);

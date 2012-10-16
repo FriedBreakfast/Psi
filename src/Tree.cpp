@@ -1,9 +1,6 @@
 #include "Tree.hpp"
 #include "Parser.hpp"
 
-#include <boost/checked_delete.hpp>
-#include <boost/bind.hpp>
-
 namespace Psi {
   namespace Compiler {
     Constructor::Constructor(const TermVtable* vtable, CompileContext& context, const SourceLocation& location)
@@ -50,6 +47,8 @@ namespace Psi {
       visit_base<Global>(v);
       v("value", &GlobalVariable::value);
     }
+    
+    const TermVtable GlobalVariable::vtable = PSI_COMPILER_TERM(GlobalVariable, "psi.compiler.GlobalVariable", Global);
 
     FunctionType::FunctionType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
@@ -98,7 +97,7 @@ namespace Psi {
     template<typename Key, typename Value>
     const MapVtable ForwardMap<Key, Value>::vtable = PSI_MAP(ForwardMap, Key, Value);
 
-    TreePtr<Term> FunctionType::argument_type_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& previous) const {
+    TreePtr<Term> FunctionType::parameter_type_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& previous) const {
       if (previous.size() >= parameter_types.size())
         compile_context().error_throw(location, "Too many arguments passed to function");
 
@@ -126,26 +125,21 @@ namespace Psi {
     : Global(&vtable, compile_context, location) {
     }
     
-    TreePtr<FunctionType> Function::make_type() {
-    }
-    
     Function::Function(const TreePtr<Module>& module,
-                       ResultMode result_mode_,
-                       const TreePtr<Term>& result_type_,
-                       const std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >& arguments_,
+                       const TreePtr<FunctionType>& type,
+                       const PSI_STD::vector<TreePtr<Anonymous> >& arguments_,
                        const TreePtr<Term>& body_,
+                       const TreePtr<JumpTarget>& return_target_,
                        const SourceLocation& location)
-    : Global(&vtable, module, TreePtr<Term>(new FunctionType(result_mode_, result_type_, arguments_, location)), location),
-    result_type(result_type_),
-    body(body_) {
-      for (std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > >::const_iterator ii = arguments_.begin(), ie = arguments_.end(); ii != ie; ++ii)
-        arguments.push_back(ii->second);
+    : Global(&vtable, module, type, location),
+    arguments(arguments_),
+    body(body_),
+    return_target(return_target_) {
     }
 
     template<typename Visitor> void Function::visit(Visitor& v) {
       visit_base<Global>(v);
       v("arguments", &Function::arguments)
-      ("result_type", &Function::result_type)
       ("body", &Function::body)
       ("return_target", &Function::return_target);
     }
@@ -192,7 +186,7 @@ namespace Psi {
     }
 
     StatementRef::StatementRef(const TreePtr<Statement>& value_, const SourceLocation& location)
-    : Term(&vtable, tree_attribute(tree_attribute(value, &Statement::value), &Term::type), location),
+    : Term(&vtable, tree_attribute(tree_attribute(value_, &Statement::value), &Term::type), location),
     value(value_) {
     }
 
@@ -713,6 +707,26 @@ namespace Psi {
     }
     
     const SIVtable TargetCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.TargetCallback", Tree);
+    
+    InterfaceValue::InterfaceValue(CompileContext& context, const SourceLocation& location)
+    : Term(&vtable, context, location) {
+    }
+    
+    InterfaceValue::InterfaceValue(const TreePtr<Interface>& interface_, const PSI_STD::vector<TreePtr<Term> >& parameters_, const SourceLocation& location)
+    : Term(&vtable, interface_.compile_context(), location),
+    interface(interface_),
+    parameters(parameters_) {
+    }
+    
+    template<typename V>
+    void InterfaceValue::visit(V& v) {
+      visit_base<Term>(v);
+      v("interface", &InterfaceValue::interface)
+      ("parameters", &InterfaceValue::parameters);
+    }
+    
+    const TermVtable InterfaceValue::vtable = PSI_COMPILER_TERM(InterfaceValue, "psi.compiler.InterfaceValue", Term);
+
     const SIVtable EvaluateContext::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.EvaluateContext", Tree);
   }
 }

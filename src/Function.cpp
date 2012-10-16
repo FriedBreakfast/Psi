@@ -4,7 +4,6 @@
 #include "Tree.hpp"
 #include "Utility.hpp"
 
-#include <deque>
 #include <boost/format.hpp>
 
 namespace Psi {
@@ -35,12 +34,12 @@ namespace Psi {
       /// \brief C type.
       TreePtr<FunctionType> type;
       /// \brief Name-to-position map.
-      PSI_STD::map<String, unsigned> argument_names;
+      PSI_STD::map<String, unsigned> names;
 
       template<typename V>
       static void visit(V& v) {
         v("type", &FunctionInfo::type)
-        ("argument_names", &FunctionInfo::argument_names);
+        ("names", &FunctionInfo::names);
       }
     };
     
@@ -130,7 +129,7 @@ namespace Psi {
 
           if (argument_expr.name) {
             argument_map[expr_name] = argument;
-            result.argument_names[expr_name] = argument_list.size();
+            result.names[expr_name] = argument_list.size();
           }
         }
       }
@@ -186,6 +185,106 @@ namespace Psi {
 
       return result;
     }
+    
+    namespace {
+      struct ArgumentInferrer {
+        TreePtr<FunctionType> m_function_type;
+        std::vector<TreePtr<Term> > m_explicit_arguments;
+        
+      public:
+        typedef std::vector<TreePtr<Term> > result_type;
+        
+        ArgumentInferrer(const TreePtr<FunctionType>& function_type, const std::vector<TreePtr<Term> >& explicit_arguments)
+        : m_function_type(function_type), m_explicit_arguments(explicit_arguments) {
+        }
+        
+        result_type evaluate(const TreePtr<ValueTree<result_type> >& self) {
+          PSI_ASSERT(m_explicit_arguments.size() < m_function_type->parameter_types.size());
+          
+          unsigned n_implicit = m_function_type->parameter_types.size() - m_explicit_arguments.size();
+          PSI_STD::vector<TreePtr<Term> > arguments(n_implicit);
+          // Include all arguments so that type dependencies between explicit arguments can be checked
+          arguments.insert(arguments.end(), m_explicit_arguments.begin(), m_explicit_arguments.end());
+          
+          for (unsigned ii = 0, ie = m_explicit_arguments.size(); ii != ie; ++ii) {
+            if (!m_explicit_arguments[ii]->type->match(m_function_type->parameter_types[ii].type, arguments, 0))
+              self.compile_context().error_throw(m_explicit_arguments[ii].location(), "Incorrect argument type");
+          }
+          
+          // Trim to include only implicit arguments
+          arguments.resize(n_implicit);
+          for (unsigned ii = 0, ie = n_implicit; ii != ie; ++ii) {
+            if (!arguments[ii])
+              self.compile_context().error_throw(self.location(), boost::format("No value inferred for argument %d") % (ii+1));
+          }
+          
+          return arguments;
+        }
+        
+        template<typename V>
+        static void visit(V& v) {
+          v("function_type", &ArgumentInferrer::m_function_type)
+          ("explicit_arguments", &ArgumentInferrer::m_explicit_arguments);
+        }
+      };
+      
+      struct ArgumentExtractor {
+        unsigned m_n;
+        TreePtr<ValueTree<ArgumentInferrer::result_type> > m_implicit_arguments;
+        
+      public:
+        typedef Term TreeResultType;
+        
+        ArgumentExtractor(unsigned n, const TreePtr<ValueTree<ArgumentInferrer::result_type> >& implicit_arguments)
+        : m_n(n), m_implicit_arguments(implicit_arguments) {
+        }
+        
+        TreePtr<Term> evaluate(const TreePtr<Term>&) {
+          return m_implicit_arguments->value[m_n];
+        }
+        
+        template<typename V>
+        static void visit(V& v) {
+          v("n", &ArgumentExtractor::m_n)
+          ("implicit_arguments", &ArgumentExtractor::m_implicit_arguments);
+        }
+      };
+    }
+    
+    /**
+     * \brief Create a function call.
+     * 
+     * This will automatically infer explicit arguments.
+     * A compilation error is generated if the arguments cannot be inferred,
+     * or if the unspecified arguments are not suitable for inferring.
+     * 
+     * \param explicit_arguments List of explicit arguments.
+     */
+    TreePtr<Term> function_call(const TreePtr<Term>& function, const PSI_STD::vector<TreePtr<Term> >& explicit_arguments, const SourceLocation& location) {
+      CompileContext& compile_context = function.compile_context();
+
+      TreePtr<FunctionType> ftype = dyn_treeptr_cast<FunctionType>(function->type);
+      if (!ftype)
+        compile_context.error_throw(location, "Call target does not have function type");
+
+      if (explicit_arguments.size() > ftype->parameter_types.size())
+        compile_context.error_throw(location, "Too many arguments passed to function");
+
+      unsigned n_implicit = ftype->parameter_types.size() - explicit_arguments.size();
+      for (unsigned ii = 0, ie = n_implicit; ii != ie; ++ii) {
+        if (ftype->parameter_types[ii].mode != parameter_mode_functional)
+          compile_context.error_throw(location, boost::format("Too few arguments passed to function, expected between %d and %d") % (ftype->parameter_types.size() - ii) % ftype->parameter_types.size());
+      }
+
+      TreePtr<ValueTree<ArgumentInferrer::result_type> > implicit_args_tree = value_callback(compile_context, location, ArgumentInferrer(ftype, explicit_arguments));
+      
+      PSI_STD::vector<TreePtr<Term> > all_arguments;
+      for (unsigned ii = 0, ie = n_implicit; ii != ie; ++ii)
+        all_arguments.push_back(tree_callback(compile_context, location, ArgumentExtractor(ii, implicit_args_tree)));
+      all_arguments.insert(all_arguments.end(), explicit_arguments.begin(), explicit_arguments.end());
+
+      return TreePtr<Term>(new FunctionCall(function, all_arguments, location));
+    }
 
     /**
      * \brief Compile a function invocation.
@@ -193,113 +292,49 @@ namespace Psi {
      * Argument evaluation order is currently "undefined" (basically determined by the callee,
      * but for now the exact semantics are not going to be guaranteed).
      */
-    TreePtr<Term> compile_function_invocation(const FunctionInfo& info, const TreePtr<Term>& function,
+    TreePtr<Term> compile_function_invocation(const TreePtr<Term>& function,
                                               const List<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location) {
-#if 0
       CompileContext& compile_context = evaluate_context.compile_context();
 
       if (arguments.size() != 1)
         compile_context.error_throw(location, boost::format("function incovation expects one macro arguments, got %s") % arguments.size());
-
-      SharedPtr<Parser::TokenExpression> parameters;
-      if (!(parameters = expression_as_token_type(arguments[0], Parser::TokenExpression::bracket)))
+      
+      SharedPtr<Parser::TokenExpression> parameters_expr;
+      if (!(parameters_expr = expression_as_token_type(arguments[0], Parser::TokenExpression::bracket)))
         compile_context.error_throw(location, "Parameters argument to function invocation is not a (...)");
 
-      std::map<String, SharedPtr<Parser::Expression> > named_arguments;
-      std::deque<SharedPtr<Parser::Expression> > positional_arguments;
+      PSI_STD::vector<SharedPtr<Parser::NamedExpression> > parsed_arguments = Parser::parse_argument_list(parameters_expr->text);
       
-      PSI_STD::vector<SharedPtr<Parser::NamedExpression> > parsed_arguments = Parser::parse_argument_list(parameters->text);
+      PSI_STD::vector<TreePtr<Term> > explicit_arguments;
       for (PSI_STD::vector<SharedPtr<Parser::NamedExpression> >::const_iterator ii = parsed_arguments.begin(), ie = parsed_arguments.end(); ii != ie; ++ii) {
         const Parser::NamedExpression& named_expr = **ii;
         if (named_expr.name)
-          named_arguments[String(named_expr.name->begin, named_expr.name->end)] = named_expr.expression;
-        else
-          positional_arguments.push_back(named_expr.expression);
+          compile_context.error_throw(SourceLocation(named_expr.location.location, location.logical), "Bare function invocation does not support keyword arguments");
+        
+        TreePtr<Term> value = compile_expression(named_expr.expression, evaluate_context, location.logical);
+        explicit_arguments.push_back(value);
       }
-
-      PSI_STD::vector<ArgumentAssignment> previous_arguments;
-      PSI_STD::vector<TreePtr<Term> > compiled_arguments;
-      for (PSI_STD::vector<ArgumentPassingInfo>::const_iterator ii = info.passing_info.begin(), ie = info.passing_info.end(); ii != ie; ++ii) {
-        SharedPtr<Parser::Expression> argument_expr;
-        switch (ii->category) {
-          case ArgumentPassingInfo::category_positional:
-            argument_expr = positional_arguments.front();
-            positional_arguments.pop_front();
-            break;
-            
-          case ArgumentPassingInfo::category_keyword: {
-            std::map<String, SharedPtr<Parser::Expression> >::iterator ji = named_arguments.find(ii->keyword);
-            if (ji != named_arguments.end()) {
-              argument_expr = ji->second;
-              named_arguments.erase(ji);
-            }
-            break;
-          }
-            
-          case ArgumentPassingInfo::category_automatic:
-            // Default argument never gets a value
-            break;
-        }
-
-        PSI_STD::vector<TreePtr<Term> > current_arguments;
-        if (argument_expr)
-          current_arguments = ii->handler->argument_handler(list_from_stl(previous_arguments), *argument_expr);
-        else
-          current_arguments = ii->handler->argument_default(list_from_stl(previous_arguments));
-
-        if (current_arguments.size() != ii->extra_arguments.size() + 1)
-          compile_context.error_throw(location, "User argument processing has produced the wrong number of low level arguments.");
-
-        // Append generated arguments to low level arguments.
-        compiled_arguments.insert(compiled_arguments.end(), current_arguments.begin(), current_arguments.end());
-
-        // Append generated arguments to previous argument list.
-        for (std::size_t ji = 0, je = ii->extra_arguments.size(); ji != je; ++ji) {
-          ArgumentAssignment aa = {ii->extra_arguments[ji].second, current_arguments[ji]};
-          previous_arguments.push_back(aa);
-        }
-
-        ArgumentAssignment aa_last = {ii->argument, current_arguments.back()};
-        previous_arguments.push_back(aa_last);
-      }
-
-      // Check all specified arguments have been used
-      if (!positional_arguments.empty())
-        compile_context.error_throw(location, "Too many positional arguments specified");
-
-      if (!named_arguments.empty()) {
-        CompileError err(compile_context, location);
-        err.info("Unexpected keyword arguments to function");
-        for (std::map<String, SharedPtr<Parser::Expression> >::iterator ii = named_arguments.begin(), ie = named_arguments.end(); ii != ie; ++ii)
-          err.info(location.relocate(ii->second->location.location), boost::format("Unexpected keyword: %s") % ii->first);
-        err.end();
-        throw CompileException();
-      }
-
-      return TreePtr<Term>(new FunctionCall(function, compiled_arguments, location));
-#endif
+      
+      return function_call(function, explicit_arguments, location);
     }
 
     class FunctionInvokeCallback : public MacroMemberCallback {
     public:
       static const MacroMemberCallbackVtable vtable;
 
-      FunctionInvokeCallback(const FunctionInfo& info_, const TreePtr<Term>& function_, const SourceLocation& location)
+      FunctionInvokeCallback(const TreePtr<Term>& function_, const SourceLocation& location)
       : MacroMemberCallback(&vtable, function_.compile_context(), location),
-      info(info_),
       function(function_) {
       }
       
-      FunctionInfo info;
       TreePtr<Term> function;
       
       template<typename V>
       static void visit(V& v) {
         visit_base<MacroMemberCallback>(v);
-        v("info", &FunctionInvokeCallback::info)
-        ("function", &FunctionInvokeCallback::function);
+        v("function", &FunctionInvokeCallback::function);
       }
 
       static TreePtr<Term> evaluate_impl(const FunctionInvokeCallback& self,
@@ -307,7 +342,7 @@ namespace Psi {
                                          const List<SharedPtr<Parser::Expression> >& arguments,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
-        return compile_function_invocation(self.info, self.function, arguments, evaluate_context, location);
+        return compile_function_invocation(self.function, arguments, evaluate_context, location);
       }
     };
 
@@ -321,49 +356,54 @@ namespace Psi {
      * \param func Function to call. The arguments of this function must match those
      * expected by \c info.
      */
-    TreePtr<Term> function_invoke_macro(const FunctionInfo& info, const TreePtr<Term>& func, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(new FunctionInvokeCallback(info, func, location));
+    TreePtr<Term> function_invoke_macro(const TreePtr<Term>& func, const SourceLocation& location) {
+      TreePtr<MacroMemberCallback> callback(new FunctionInvokeCallback(func, location));
       TreePtr<Macro> macro = make_macro(func.compile_context(), location, callback);
       return make_macro_term(macro, location);
     }
 
     /**
      * Compile a function definition, and return a macro for invoking it.
+     *
+     * \todo Implement return jump target.
      */
     TreePtr<Term> compile_function_definition(const List<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location) {
       CompileContext& compile_context = evaluate_context.compile_context();
 
-      if (arguments.size() != 2)
-        compile_context.error_throw(location, boost::format("function macro expects two arguments, got %s") % arguments.size());
+      SharedPtr<Parser::Expression> type_arg_1, type_arg_2;
+      if (arguments.size() == 2) {
+        type_arg_2 = arguments[0];
+      } else if (arguments.size() == 3) {
+        type_arg_1 = arguments[0];
+        type_arg_2 = arguments[1];
+      } else {
+        compile_context.error_throw(location, boost::format("function macro expects 2 or 3 arguments, got %s") % arguments.size());
+      }
 
-      SharedPtr<Parser::TokenExpression> parameters, body;
-
-      if (!(parameters = expression_as_token_type(arguments[0], Parser::TokenExpression::bracket)))
-        compile_context.error_throw(location, "First (parameters) argument to definition is not a (...)");
-
-      if (!(body = expression_as_token_type(arguments[1], Parser::TokenExpression::square_bracket)))
+      SharedPtr<Parser::TokenExpression> body;
+      if (!(body = expression_as_token_type(arguments[arguments.size()-1], Parser::TokenExpression::square_bracket)))
         compile_context.error_throw(location, "Second (body) parameter to function definition is not a [...]");
 
-#if 0
-      FunctionInfo common = compile_function_common(parameters->text, compile_context, evaluate_context, location);
+      FunctionInfo common = compile_function_common(type_arg_1, type_arg_2, compile_context, evaluate_context, location);
 
-      std::vector<std::pair<ParameterMode, TreePtr<Anonymous> > > argument_trees;
-      for (PSI_STD::vector<ArgumentPassingInfo>::iterator ii = common.passing_info.begin(), ie = common.passing_info.end(); ii != ie; ++ii) {
-        argument_trees.insert(argument_trees.end(), ii->extra_arguments.begin(), ii->extra_arguments.end());
-        argument_trees.push_back(std::make_pair(ii->argument_mode, ii->argument));
+      PSI_STD::vector<TreePtr<Term> > parameter_trees_term; // This exists because C++ won't convert vector<derived> to vector<base>
+      PSI_STD::vector<TreePtr<Anonymous> > parameter_trees;
+      for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = common.type->parameter_types.begin(), ie = common.type->parameter_types.end(); ii != ie; ++ii) {
+        TreePtr<Anonymous> param(new Anonymous(common.type->parameter_type_after(ii->type.location(), parameter_trees_term), ii->type.location()));
+        parameter_trees.push_back(param);
+        parameter_trees_term.push_back(param);
       }
 
       PSI_STD::map<String, TreePtr<Term> > argument_values;
       for (PSI_STD::map<String, unsigned>::iterator ii = common.names.begin(), ie = common.names.end(); ii != ie; ++ii)
-        argument_values[ii->first] = common.passing_info[ii->second].argument;
+        argument_values[ii->first] = parameter_trees[ii->second];
 
       TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_values, evaluate_context);
       TreePtr<Term> body_tree = tree_callback<Term>(compile_context, location, FunctionBodyCompiler(body_context, body));
 
-      return TreePtr<Function>(new Function(evaluate_context->module(), common.result_mode, common.result_type, argument_trees, body_tree, location));
-#endif
+      return TreePtr<Function>(new Function(evaluate_context->module(), common.type, parameter_trees, body_tree, TreePtr<JumpTarget>(), location));
     }
 
     /**
