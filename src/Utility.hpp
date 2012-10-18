@@ -232,6 +232,22 @@ namespace Psi {
    * \brief Check value is convertible to type.
    */
 #define PSI_REQUIRE_CONVERTIBLE(value,type) (false ? no_op<type>(value) : void())
+
+  /// \brief isdigit() fixed to the C locale.
+  inline bool c_isdigit(char c) {
+    return (c >= '0') && (c <= '9');
+  }
+  
+  /// \brief isalpha() fixed to the C locale.
+  inline bool c_isalpha(char c) {
+    return ((c >= 'A') && (c <= 'Z')) || ((c >= 'a') && (c <= 'z'));
+  }
+  
+  /// \brief isalnum() fixed to the C locale.
+  inline bool c_isalnum(char c) {
+    return c_isdigit(c) || c_isalpha(c);
+  }
+
 }
 
 #endif

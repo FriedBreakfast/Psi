@@ -802,6 +802,8 @@ namespace Psi {
 
     Value* get(const Key& key) const {return static_cast<Value*>(vptr()->get(vptr(), this->m_self, &key));}
   };
+  
+  std::vector<char> string_unescape(const std::vector<char>& s);
 }
 
 #endif

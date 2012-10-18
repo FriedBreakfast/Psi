@@ -102,14 +102,6 @@ namespace Psi {
       return TreePtr<T>(base, false);
     };
 
-    class VisitorPlaceholder {
-    public:
-      template<typename T>
-      VisitorPlaceholder& operator () (const char *name PSI_ATTRIBUTE((PSI_UNUSED)), T& member PSI_ATTRIBUTE((PSI_UNUSED))) {
-        return *this;
-      }
-    };
-
     /// \see TreeBase
     struct TreeBaseVtable {
       ObjectVtable base;
@@ -174,7 +166,7 @@ namespace Psi {
     /// \see Tree
     struct TreeVtable {
       TreeBaseVtable base;
-      void (*complete) (Tree*,VisitQueue<TreePtr<> >*);
+      void (*complete) (const Tree*,VisitQueue<TreePtr<> >*);
     };
 
     class Tree : public TreeBase {
@@ -198,7 +190,7 @@ namespace Psi {
     
     template<typename T>
     bool tree_isa(const Tree *ptr) {
-      return si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable));
+      return !ptr || si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable));
     }
     
     template<typename T>
@@ -238,7 +230,7 @@ namespace Psi {
       }
       
       template<typename T>
-      void visit_tree_ptr(TreePtr<T>& ptr) {
+      void visit_tree_ptr(const TreePtr<T>& ptr) {
         if (ptr)
           m_queue->push(ptr);
       }
@@ -246,8 +238,8 @@ namespace Psi {
 
     template<typename Derived>
     struct TreeWrapper : NonConstructible {
-      static void complete(Tree *self, VisitQueue<TreePtr<> > *queue) {
-        boost::array<Derived*, 1> a = {{static_cast<Derived*>(self)}};
+      static void complete(const Tree *self, VisitQueue<TreePtr<> > *queue) {
+        boost::array<Derived*, 1> a = {{static_cast<Derived*>(const_cast<Tree*>(self))}};
         CompleteVisitor p(queue);
         visit_members(p, a);
       }

@@ -10,8 +10,8 @@
 
 namespace Psi {
   namespace Compiler {
+    class Function;
 
-class Function;
     /**
      * \brief A global variable or function, which is an element of a Module.
      */
@@ -19,13 +19,15 @@ class Function;
     public:
       static const SIVtable vtable;
       Global(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
-      Global(const VtableType *vptr, const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location);
+      Global(const VtableType *vptr, const TreePtr<Module>& module, PsiBool local, const TreePtr<Term>& type, const SourceLocation& location);
       
       template<typename V> static void visit(V& v);
       static bool match_impl(const Global& lhs, const Global& rhs, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth);
       
       /// \brief Get the module this global should be built into.
       TreePtr<Module> module;
+      /// \brief If set, this variable does not have a symbol name.
+      PsiBool local;
     };
     
     /**
@@ -35,10 +37,14 @@ class Function;
     public:
       static const TermVtable vtable;
       GlobalVariable(CompileContext& context, const SourceLocation& location);
-      GlobalVariable(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location);
+      GlobalVariable(const TreePtr<Module>& module, PsiBool local, const TreePtr<Term>& value, PsiBool constant, PsiBool merge, const SourceLocation& location);
       
       /// \brief Global variable value.
       TreePtr<Term> value;
+      /// \brief Whether the contents of this variable are constant
+      PsiBool constant;
+      /// \brief Whether address of this variable may alias another variable.
+      PsiBool merge;
       
       template<typename V> static void visit(V& v);
     };
@@ -129,6 +135,7 @@ class Function;
     class Constructor : public Term {
     public:
       static const SIVtable vtable;
+      static const bool match_visit = true;
       
       Constructor(const TermVtable *vtable, CompileContext& context, const SourceLocation& location);
       Constructor(const TermVtable *vtable, const TreePtr<Term>&, const SourceLocation&);
@@ -253,11 +260,75 @@ class Function;
     public:
       static const TermVtable vtable;
       PointerType(CompileContext& compile_context, const SourceLocation& location);
-      PointerType(CompileContext& compile_context, const TreePtr<Term>& target_type, const SourceLocation& location);
+      PointerType(const TreePtr<Term>& target_type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief Get the type referenced by this pointer type.
       TreePtr<Term> target_type;
+    };
+    
+    /**
+     * \brief Convert a reference to a pointer
+     */
+    class PointerTo : public Term {
+    public:
+      static const TermVtable vtable;
+      static const bool match_visit = true;
+      PointerTo(CompileContext& compile_context, const SourceLocation& location);
+      PointerTo(const TreePtr<Term>& value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief A reference value.
+      TreePtr<Term> value;
+    };
+    
+    /**
+     * \brief Convert a pointer to a reference.
+     */
+    class PointerTarget : public Term {
+    public:
+      static const TermVtable vtable;
+      static const bool match_visit = true;
+      PointerTarget(CompileContext& compile_context, const SourceLocation& location);
+      PointerTarget(const TreePtr<Term>& value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief A pointer value.
+      TreePtr<Term> value;
+    };
+    
+    /**
+     * \brief Get a pointer to an element from a reference to a value.
+     */
+    class ElementPtr : public Term {
+    public:
+      static const TermVtable vtable;
+      static const bool match_visit = true;
+      ElementPtr(CompileContext& compile_context, const SourceLocation& location);
+      ElementPtr(const TreePtr<Term>& value, const TreePtr<Term>& index, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Value of pointer to aggregate.
+      TreePtr<Term> value;
+      /// \brief Index of member to get.
+      TreePtr<Term> index;
+    };
+    
+    /**
+     * \brief Get a reference to a value from a pointer to that value.
+     */
+    class ElementRef : public Term {
+    public:
+      static const TermVtable vtable;
+      static const bool match_visit = true;
+      ElementRef(CompileContext& compile_context, const SourceLocation& location);
+      ElementRef(const TreePtr<Term>& value, const TreePtr<Term>& index, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Value of aggregate.
+      TreePtr<Term> value;
+      /// \brief Index of member to get.
+      TreePtr<Term> index;
     };
 
     /**
@@ -288,6 +359,32 @@ class Function;
       template<typename V> static void visit(V& v);
 
       PSI_STD::vector<TreePtr<Term> > members;
+    };
+    
+    /**
+     * \brief Array type.
+     */
+    class ArrayType : public Type {
+    public:
+      static const TermVtable vtable;
+      ArrayType(CompileContext& compile_context, const SourceLocation& location);
+      ArrayType(const TreePtr<Term>& element_type, const TreePtr<Term>& length, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      TreePtr<Term> element_type;
+      TreePtr<Term> length;
+    };
+    
+    /**
+     * \brief Array value.
+     */
+    class ArrayValue : public Constructor {
+    public:
+      static const TermVtable vtable;
+      ArrayValue(CompileContext& compile_context, const SourceLocation& location);
+      ArrayValue(const TreePtr<ArrayType>& type, const PSI_STD::vector<TreePtr<Term> >& element_values, const SourceLocation& location);
+      
+      PSI_STD::vector<TreePtr<Term> > element_values;
     };
 
     /**
@@ -377,6 +474,7 @@ class Function;
       
       Function(CompileContext& compile_context, const SourceLocation& location);
       Function(const TreePtr<Module>& module,
+               bool local,
                const TreePtr<FunctionType>& type,
                const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
                const TreePtr<Term>& body,
@@ -638,7 +736,7 @@ class Function;
       static const TermVtable vtable;
 
       LibrarySymbol(CompileContext& compile_context, const SourceLocation& location);
-      LibrarySymbol(const TreePtr<Library>& library, const TreePtr<TargetCallback>& callback, const SourceLocation& location);
+      LibrarySymbol(const TreePtr<Library>& library, const TreePtr<TargetCallback>& callback, const TreePtr<Term>& type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief Library this symbol is in.

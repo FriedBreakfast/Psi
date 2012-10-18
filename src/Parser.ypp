@@ -81,21 +81,6 @@ namespace {
                const char *s) {
     arguments.error_message = s;
   }
-  
-  /// \brief isdigit() fixed to the C locale.
-  bool c_isdigit(char c) {
-    return (c >= '0') && (c <= '9');
-  }
-  
-  /// \brief isalpha() fixed to the C locale.
-  bool c_isalpha(char c) {
-    return ((c >= 'A') && (c <= 'Z')) || ((c >= 'a') && (c <= 'z'));
-  }
-  
-  /// \brief isalnum() fixed to the C locale.
-  bool c_isalnum(char c) {
-    return c_isdigit(c) || c_isalpha(c);
-  }
 
   int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self);
 

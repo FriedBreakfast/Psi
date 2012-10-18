@@ -5,6 +5,10 @@
 
 namespace Psi {
   namespace Compiler {
+    class OverloadValue;
+    class Implementation;
+    class Metadata;
+    
     /**
      * \brief Common base class for types which are located by global pattern matching.
      */
@@ -12,18 +16,30 @@ namespace Psi {
     public:
       static const SIVtable vtable;
       OverloadType(const TreeVtable *vtable, CompileContext& compile_context, unsigned n_implicit,
-                   const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
+                   const PSI_STD::vector<TreePtr<Term> >& pattern,
+                   const PSI_STD::vector<TreePtr<OverloadValue> >& values,
+                   const SourceLocation& location);
     
       /// \brief The number of implicit parameters which are found by pattern matching
       unsigned n_implicit;
       /// \brief Parameter type patterns.
       PSI_STD::vector<TreePtr<Term> > pattern;
       
+      /**
+       * \brief Values defined along with the overload definition.
+       * 
+       * These are used for overloads on existing types, because if the
+       * user does not control the type they cannot add an overload to it
+       * directly, so it may be added to the overload type as an alternative.
+       */
+      PSI_STD::vector<TreePtr<OverloadValue> > values;
+      
       template<typename V>
       static void visit(V& v) {
         visit_base<Tree>(v);
         v("n_implicit", &OverloadType::n_implicit)
-        ("pattern", &OverloadType::pattern);
+        ("pattern", &OverloadType::pattern)
+        ("values", &OverloadType::values);
       }
     };
 
@@ -46,9 +62,13 @@ namespace Psi {
       };
       
       static const TreeVtable vtable;
-      Interface(const PSI_STD::vector<InterfaceBase>& bases, const TreePtr<Term>& type,
-                unsigned n_implicit, const PSI_STD::vector<TreePtr<Term> >& pattern,
-                const PSI_STD::vector<TreePtr<Term> >& derived_pattern, const SourceLocation& location);
+      Interface(const PSI_STD::vector<InterfaceBase>& bases,
+                const TreePtr<Term>& type,
+                unsigned n_implicit,
+                const PSI_STD::vector<TreePtr<Term> >& pattern,
+                const PSI_STD::vector<TreePtr<Implementation> >& values,
+                const PSI_STD::vector<TreePtr<Term> >& derived_pattern,
+                const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief The derived parameter pattern.
@@ -82,8 +102,12 @@ namespace Psi {
     class MetadataType : public OverloadType {
     public:
       static const TreeVtable vtable;
-      MetadataType(CompileContext& compile_context, unsigned n_implicit, const PSI_STD::vector<TreePtr<Term> >& pattern,
-                   const SIType& type, const SourceLocation& location);
+      MetadataType(CompileContext& compile_context,
+                   unsigned n_implicit,
+                   const PSI_STD::vector<TreePtr<Term> >& pattern,
+                   const PSI_STD::vector<TreePtr<Metadata> >& values,
+                   const SIType& type,
+                   const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /**

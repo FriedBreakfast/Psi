@@ -37,16 +37,20 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   PSI_STD::map<Psi::String, TreePtr<Term> > global_names;
   global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
   global_names["__none__"] = none_macro(compile_context, psi_location.named_child("__none__"));
-  global_names["__number__"] = TreePtr<Term>();
+  //global_names["__number__"] = TreePtr<Term>();
+  global_names["__brace__"] = string_macro(compile_context, psi_location.named_child("cstring"));
   global_names["builtin_type"] = builtin_type_macro(compile_context, psi_location.named_child("builtin_type"));
   global_names["builtin_function"] = builtin_function_macro(compile_context, psi_location.named_child("builtin_function"));
   global_names["builtin_value"] = builtin_value_macro(compile_context, psi_location.named_child("builtin_function"));
+  
+  global_names["pointer"] = pointer_macro(compile_context, psi_location.named_child("pointer"));
   
   global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));
   global_names["implement"] = implementation_define_macro(compile_context, psi_location.named_child("implement"));
   global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));
   global_names["library"] = library_macro(compile_context, psi_location.named_child("library"));
   global_names["function"] = function_definition_macro(compile_context, psi_location.named_child("function"));
+  global_names["function_type"] = function_type_macro(compile_context, psi_location.named_child("function_type"));
 
   return evaluate_context_dictionary(module, psi_location, global_names);
 }
@@ -118,7 +122,7 @@ int main(int argc, char *argv[]) {
     
     // Create main function
     TreePtr<FunctionType> main_type(new FunctionType(result_mode_by_value, compile_context.builtins().empty_type, default_, default_, init_location));
-    TreePtr<Function> main_function(new Function(my_module, main_type, default_, init_tree, TreePtr<JumpTarget>(), init_location));
+    TreePtr<Function> main_function(new Function(my_module, false, main_type, default_, init_tree, TreePtr<JumpTarget>(), init_location));
     
     void (*main_ptr) ();
     *reinterpret_cast<void**>(&main_ptr) = compile_context.jit_compile(main_function);

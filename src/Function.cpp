@@ -384,7 +384,7 @@ namespace Psi {
 
       SharedPtr<Parser::TokenExpression> body;
       if (!(body = expression_as_token_type(arguments[arguments.size()-1], Parser::TokenExpression::square_bracket)))
-        compile_context.error_throw(location, "Second (body) parameter to function definition is not a [...]");
+        compile_context.error_throw(location, "Last (body) parameter to function definition is not a [...]");
 
       FunctionInfo common = compile_function_common(type_arg_1, type_arg_2, compile_context, evaluate_context, location);
 
@@ -403,7 +403,7 @@ namespace Psi {
       TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_values, evaluate_context);
       TreePtr<Term> body_tree = tree_callback<Term>(compile_context, location, FunctionBodyCompiler(body_context, body));
 
-      return TreePtr<Function>(new Function(evaluate_context->module(), common.type, parameter_trees, body_tree, TreePtr<JumpTarget>(), location));
+      return TreePtr<Function>(new Function(evaluate_context->module(), false, common.type, parameter_trees, body_tree, TreePtr<JumpTarget>(), location));
     }
 
     /**
@@ -424,6 +424,11 @@ namespace Psi {
                                          const SourceLocation& location) {
         return compile_function_definition(arguments, evaluate_context, location);
       }
+      
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<MacroMemberCallback>(v);
+      }
     };
 
     const MacroMemberCallbackVtable FunctionDefineCallback::vtable =
@@ -434,6 +439,60 @@ namespace Psi {
      */
     TreePtr<Term> function_definition_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<MacroMemberCallback> callback(new FunctionDefineCallback(compile_context, location));
+      TreePtr<Macro> macro = make_macro(compile_context, location, callback);
+      return make_macro_term(macro, location);
+    }
+    
+    /**
+     * Compile a function definition, and return a macro for invoking it.
+     *
+     * \todo Implement return jump target.
+     */
+    TreePtr<Term> compile_function_type(const List<SharedPtr<Parser::Expression> >& arguments,
+                                        const TreePtr<EvaluateContext>& evaluate_context,
+                                        const SourceLocation& location) {
+      CompileContext& compile_context = evaluate_context.compile_context();
+
+      SharedPtr<Parser::Expression> type_arg_1, type_arg_2;
+      if (arguments.size() == 1) {
+        type_arg_2 = arguments[0];
+      } else if (arguments.size() == 2) {
+        type_arg_1 = arguments[0];
+        type_arg_2 = arguments[1];
+      } else {
+        compile_context.error_throw(location, boost::format("function_type macro expects 1 or 2 arguments, got %s") % arguments.size());
+      }
+
+      return compile_function_common(type_arg_1, type_arg_2, compile_context, evaluate_context, location).type;
+    }
+
+    class FunctionTypeCallback : public MacroMemberCallback {
+    public:
+      static const MacroMemberCallbackVtable vtable;
+      
+      FunctionTypeCallback(CompileContext& compile_context, const SourceLocation& location)
+      : MacroMemberCallback(&vtable, compile_context, location) {
+      }
+
+      static TreePtr<Term> evaluate_impl(const FunctionTypeCallback&,
+                                         const TreePtr<Term>&,
+                                         const List<SharedPtr<Parser::Expression> >& arguments,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
+        return compile_function_type(arguments, evaluate_context, location);
+      }
+
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<MacroMemberCallback>(v);
+      }
+    };
+    
+    const MacroMemberCallbackVtable FunctionTypeCallback::vtable =
+    PSI_COMPILER_MACRO_MEMBER_CALLBACK(FunctionTypeCallback, "psi.compiler.FunctionTypeCallback", MacroMemberCallback);
+
+    TreePtr<Term> function_type_macro(CompileContext& compile_context, const SourceLocation& location) {
+      TreePtr<MacroMemberCallback> callback(new FunctionTypeCallback(compile_context, location));
       TreePtr<Macro> macro = make_macro(compile_context, location, callback);
       return make_macro_term(macro, location);
     }

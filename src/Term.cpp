@@ -86,6 +86,10 @@ namespace Psi {
       visit_base<Term>(v);
     }
 
+    bool Metatype::match_impl(const Term&, const Term&, PSI_STD::vector<TreePtr<Term> >&, unsigned) {
+      return true;
+    }
+
     const TermVtable Metatype::vtable = PSI_COMPILER_TERM(Metatype, "psi.compiler.Metatype", Term);
 
     Type::Type(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location)

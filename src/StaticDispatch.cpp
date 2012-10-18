@@ -6,10 +6,13 @@
 namespace Psi {
   namespace Compiler {
     OverloadType::OverloadType(const TreeVtable *vtable, CompileContext& compile_context, unsigned n_implicit_,
-                               const PSI_STD::vector<TreePtr<Term> >& pattern_, const SourceLocation& location)
+                               const PSI_STD::vector<TreePtr<Term> >& pattern_,
+                               const PSI_STD::vector<TreePtr<OverloadValue> >& values_,
+                               const SourceLocation& location)
     : Tree(vtable, compile_context, location),
     n_implicit(n_implicit_),
-    pattern(pattern_) {
+    pattern(pattern_),
+    values(values_) {
     }
     
     const SIVtable OverloadType::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.OverloadType", Tree);
@@ -24,10 +27,14 @@ namespace Psi {
     
     const SIVtable OverloadValue::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.OverloadValue", Tree);
     
-    Interface::Interface(const PSI_STD::vector<InterfaceBase>& bases_, const TreePtr<Term>& type_, unsigned n_implicit,
-                         const std::vector<TreePtr<Term> >& pattern, const std::vector<TreePtr<Term> >& derived_pattern_,
+    Interface::Interface(const PSI_STD::vector<InterfaceBase>& bases_,
+                         const TreePtr<Term>& type_,
+                         unsigned n_implicit,
+                         const std::vector<TreePtr<Term> >& pattern,
+                         const PSI_STD::vector<TreePtr<Implementation> >& values,
+                         const std::vector<TreePtr<Term> >& derived_pattern_,
                          const SourceLocation& location)
-    : OverloadType(&vtable, type.compile_context(), n_implicit, pattern, location),
+    : OverloadType(&vtable, type.compile_context(), n_implicit, pattern, PSI_STD::vector<TreePtr<OverloadValue> >(values.begin(), values.end()), location),
     derived_pattern(derived_pattern_),
     type(type_),
     bases(bases_) {
@@ -59,9 +66,13 @@ namespace Psi {
     
     const TreeVtable Implementation::vtable = PSI_COMPILER_TREE(Implementation, "psi.compiler.Implementation", OverloadValue);
    
-    MetadataType::MetadataType(CompileContext& compile_context, unsigned int n_implicit, const PSI_STD::vector<TreePtr<Term> >& pattern,
-                               const SIType& type_, const SourceLocation& location)
-    : OverloadType(&vtable, compile_context, n_implicit, pattern, location),
+    MetadataType::MetadataType(CompileContext& compile_context,
+                               unsigned n_implicit,
+                               const PSI_STD::vector<TreePtr<Term> >& pattern,
+                               const PSI_STD::vector<TreePtr<Metadata> >& values,
+                               const SIType& type_,
+                               const SourceLocation& location)
+    : OverloadType(&vtable, compile_context, n_implicit, pattern, PSI_STD::vector<TreePtr<OverloadValue> >(values.begin(), values.end()), location),
     type(type_) {
     }
     
@@ -120,8 +131,6 @@ namespace Psi {
         
         if (!src[ii]->match(target[ii], match, 0))
           return false;
-        
-        match.push_back(target[ii]);
       }
       
       // Check all wildcards are set and match expected pattern
@@ -146,8 +155,9 @@ namespace Psi {
       if (TreePtr<TypeInstance> instance = dyn_treeptr_cast<TypeInstance>(my_term)) {
         const PSI_STD::vector<TreePtr<OverloadValue> >& overloads = instance->generic->overloads;
         for (unsigned ii = 0, ie = overloads.size(); ii != ie; ++ii) {
-          if ((type == overloads[ii]->overload_type) && overload_pattern_match(overloads[ii]->pattern, parameters, overloads[ii]->n_wildcards, scratch))
-            results.push_back(std::make_pair(scratch, overloads[ii]));
+          const TreePtr<OverloadValue>& v = overloads[ii];
+          if ((type == v->overload_type) && overload_pattern_match(v->pattern, parameters, v->n_wildcards, scratch))
+            results.push_back(std::make_pair(scratch, v));
         }
         
         const PSI_STD::vector<TreePtr<Term> >& parameters = instance->parameters;
@@ -165,6 +175,12 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Term> > match_scratch;
 
       // Find all possible matching overloads
+      for (unsigned ii = 0, ie = type->values.size(); ii != ie; ++ii) {
+        const TreePtr<OverloadValue>& v = type->values[ii];
+        if(v && (type == v->overload_type) && overload_pattern_match(v->pattern, parameters, v->n_wildcards, match_scratch))
+          results.push_back(std::make_pair(match_scratch, v));
+      }
+      
       for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
         if (parameters[ii]) {
           overload_lookup_search(type, parameters, parameters[ii], results, match_scratch);
@@ -182,13 +198,39 @@ namespace Psi {
        * I require that this "most specific" overload 
        */
       unsigned best_idx = 0;
-      for (unsigned ii = 1, ie = results.size(); ii != ie; ++ii) {
+      for (unsigned ii = 1, ie = results.size(); ii < ie;) {
+        if (overload_pattern_match(results[best_idx].second->pattern, results[ii].second->pattern, results[best_idx].second->n_wildcards, match_scratch)) {
+          // best_idx matches anything ii matches, so ii is more specific
+          best_idx = ii;
+          ii++;
+        } else if (overload_pattern_match(results[ii].second->pattern, results[best_idx].second->pattern, results[ii].second->n_wildcards, match_scratch)) {
+          // ii matches anything best_idx matches, so ii is more specific
+          ii++;
+        } else {
+          // Ordering is ambiguous, so neither can be the "best"
+          // Make next in list the "best" candidate and skip matching to the one after
+          best_idx = ii + 1;
+          ii += 2;
+        }
       }
       
+      if (best_idx == results.size()) {
+      ambiguous_match:
+        CompileError err(type->compile_context(), location);
+        for (unsigned ii = 0, ie = results.size(); ii != ie; ++ii)
+          err.info(results[ii].second.location(), "Ambiguous overload candidate");
+        err.end();
+        throw CompileException();
+      }
+
+      // Check best candidate is indeed more specific than all others
       // Now check that the selected overload is more specific than all other overloads
       for (unsigned ii = 0, ie = results.size(); ii != ie; ++ii) {
         if (ii == best_idx)
           continue;
+        
+        if (!overload_pattern_match(results[ii].second->pattern, results[best_idx].second->pattern, results[ii].second->n_wildcards, match_scratch))
+          goto ambiguous_match;
       }
       
       return results[best_idx];

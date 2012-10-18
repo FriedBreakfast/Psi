@@ -1,6 +1,7 @@
 #include "Compiler.hpp"
 #include "Tree.hpp"
 #include "Platform.hpp"
+#include "Macros.hpp"
 
 #ifdef PSI_DEBUG
 #include <iostream>
@@ -80,11 +81,42 @@ namespace Psi {
     }
     
     namespace {
+      class MakeTagCallback {
+        SIType m_value_type;
+        TreePtr<Term> m_wildcard_type;
+        TreePtr<> m_default_value;
+        
+      public:
+        typedef MetadataType TreeResultType;
+        
+        MakeTagCallback(const SIType& value_type, const TreePtr<Term>& wildcard_type, const TreePtr<>& default_value)
+        : m_value_type(value_type), m_wildcard_type(wildcard_type), m_default_value(default_value) {
+        }
+        
+        TreePtr<MetadataType> evaluate(const TreePtr<MetadataType>& self) {
+          TreePtr<Term> wildcard(new Parameter(m_wildcard_type, 0, 0, self.location()));
+          PSI_STD::vector<TreePtr<Term> > pattern(1, wildcard);
+          PSI_STD::vector<TreePtr<Metadata> > values;
+          if (m_default_value) {
+            TreePtr<Term> impl_wildcard_1(new Parameter(self.compile_context().builtins().metatype, 0, 0, self.location()));
+            TreePtr<Term> impl_wildcard_2(new Parameter(impl_wildcard_1, 0, 1, self.location()));
+            PSI_STD::vector<TreePtr<Term> > impl_pattern(1, impl_wildcard_2);
+            values.push_back(TreePtr<Metadata>(new Metadata(m_default_value, self, 2, impl_pattern, self.location())));
+          }
+          return TreePtr<MetadataType>(new MetadataType(self.compile_context(), 0, pattern, values, m_value_type, self.location()));
+        }
+        
+        template<typename V>
+        static void visit(V& v) {
+          v("value_type", &MakeTagCallback::m_value_type)
+          ("wildcard_type", &MakeTagCallback::m_wildcard_type)
+          ("default_value", &MakeTagCallback::m_default_value);
+        }
+      };
+      
       template<typename TreeType>
-      TreePtr<MetadataType> make_tag(const TreePtr<Term>& wildcard_type, const SourceLocation& location) {
-        TreePtr<Term> wildcard(new Parameter(wildcard_type, 0, 0, location));
-        std::vector<TreePtr<Term> > pattern(1, wildcard);
-        return TreePtr<MetadataType>(new MetadataType(wildcard_type.compile_context(), 0, pattern, reinterpret_cast<const SIVtable*>(&TreeType::vtable), location));
+      TreePtr<MetadataType> make_tag(const TreePtr<Term>& wildcard_type, const SourceLocation& location, const TreePtr<>& default_value=TreePtr<>()) {
+        return tree_callback(wildcard_type.compile_context(), location, MakeTagCallback(reinterpret_cast<const SIVtable*>(&TreeType::vtable), wildcard_type, default_value));
       }
     }
 
@@ -96,7 +128,8 @@ namespace Psi {
       empty_type.reset(new EmptyType(compile_context, psi_location.named_child("Empty")));
       bottom_type.reset(new BottomType(compile_context, psi_location.named_child("Bottom")));
       
-      macro_tag = make_tag<Macro>(metatype, psi_compiler_location.named_child("Macro"));
+      SourceLocation macro_location = psi_compiler_location.named_child("Macro");
+      macro_tag = make_tag<Macro>(metatype, macro_location, default_macro_impl(compile_context, macro_location));
       library_tag = make_tag<Library>(metatype, psi_compiler_location.named_child("Library"));
     }
 

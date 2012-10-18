@@ -334,7 +334,9 @@ namespace Psi {
     class Metatype : public Term {
     public:
       static const TermVtable vtable;
+      static const bool match_visit = false;
       Metatype(CompileContext& compile_context, const SourceLocation& location);
+      static bool match_impl(const Term& lhs, const Term& rhs, PSI_STD::vector<TreePtr<Term> >&, unsigned);
       template<typename V> static void visit(V& v);
     };
 

@@ -17,15 +17,17 @@ namespace Psi {
     : Term(vptr, compile_context, location) {
     }
 
-    Global::Global(const VtableType *vptr, const TreePtr<Module>& module_, const TreePtr<Term>& type, const SourceLocation& location)
+    Global::Global(const VtableType *vptr, const TreePtr<Module>& module_, PsiBool local_, const TreePtr<Term>& type, const SourceLocation& location)
     : Term(vptr, type, location),
-    module(module_) {
+    module(module_),
+    local(local_) {
     }
     
     template<typename V>
     void Global::visit(V& v) {
       visit_base<Term>(v);
-      v("module", &Global::module);
+      v("module", &Global::module)
+      ("local", &Global::local);
     }
 
     bool Global::match_impl(const Global& lhs, const Global& rhs, PSI_STD::vector<TreePtr<Term> >&, unsigned) {
@@ -37,15 +39,20 @@ namespace Psi {
     GlobalVariable::GlobalVariable(CompileContext& context, const SourceLocation& location): Global(&vtable, context, location) {
     }
 
-    GlobalVariable::GlobalVariable(const TreePtr<Module>& module, const TreePtr<Term>& value_, const SourceLocation& location)
-    : Global(&vtable, module, tree_attribute(value_, &Term::type), location),
-    value(value_) {
+    GlobalVariable::GlobalVariable(const TreePtr<Module>& module, PsiBool local, const TreePtr<Term>& value_,
+                                   PsiBool constant_, PsiBool merge_, const SourceLocation& location)
+    : Global(&vtable, module, local, tree_attribute(value_, &Term::type), location),
+    value(value_),
+    constant(constant_),
+    merge(merge_) {
     }
     
     template<typename V>
     void GlobalVariable::visit(V& v) {
       visit_base<Global>(v);
-      v("value", &GlobalVariable::value);
+      v("value", &GlobalVariable::value)
+      ("constant", &GlobalVariable::constant)
+      ("merge", &GlobalVariable::merge);
     }
     
     const TermVtable GlobalVariable::vtable = PSI_COMPILER_TERM(GlobalVariable, "psi.compiler.GlobalVariable", Global);
@@ -126,12 +133,13 @@ namespace Psi {
     }
     
     Function::Function(const TreePtr<Module>& module,
+                       bool local,
                        const TreePtr<FunctionType>& type,
                        const PSI_STD::vector<TreePtr<Anonymous> >& arguments_,
                        const TreePtr<Term>& body_,
                        const TreePtr<JumpTarget>& return_target_,
                        const SourceLocation& location)
-    : Global(&vtable, module, type, location),
+    : Global(&vtable, module, local, type, location),
     arguments(arguments_),
     body(body_),
     return_target(return_target_) {
@@ -297,8 +305,8 @@ namespace Psi {
     : Type(&vtable, compile_context, location) {
     }
 
-    PointerType::PointerType(CompileContext& compile_context, const TreePtr<Term>& target_type_, const SourceLocation& location)
-    : Type(&vtable, compile_context, location),
+    PointerType::PointerType(const TreePtr<Term>& target_type_, const SourceLocation& location)
+    : Type(&vtable, target_type_.compile_context(), location),
     target_type(target_type_) {
     }
     
@@ -309,6 +317,129 @@ namespace Psi {
     }
     
     const TermVtable PointerType::vtable = PSI_COMPILER_TERM(PointerType, "psi.compiler.PointerType", Term);
+    
+    PointerTo::PointerTo(CompileContext& compile_context, const SourceLocation& location)
+    : Term(&vtable, compile_context, location) {
+    }
+
+    PointerTo::PointerTo(const TreePtr< Term >& value, const SourceLocation& location)
+    : Term(&vtable, TreePtr<Term>(new PointerType(tree_attribute(value, &Term::type), location)), location) {
+    }
+
+    template<typename V>
+    void PointerTo::visit(V& v) {
+      visit_base<Term>(v);
+      v("value", &PointerTo::value);
+    }
+
+    const TermVtable PointerTo::vtable = PSI_COMPILER_TERM(PointerTo, "psi.compiler.PointerTo", Term);
+    
+    PointerTarget::PointerTarget(CompileContext& compile_context, const SourceLocation& location)
+    : Term(&vtable, compile_context, location) {
+    }
+
+    PointerTarget::PointerTarget(const TreePtr< Term >& value, const SourceLocation& location)
+    : Term(&vtable, TreePtr<Term>(new PointerType(tree_attribute(value, &Term::type), location)), location) {
+    }
+
+    template<typename V>
+    void PointerTarget::visit(V& v) {
+      visit_base<Term>(v);
+      v("value", &PointerTarget::value);
+    }
+
+    const TermVtable PointerTarget::vtable = PSI_COMPILER_TERM(PointerTarget, "psi.compiler.PointerTarget", Term);
+    
+    namespace {
+      TreePtr<Term> element_type(const TreePtr<Term>& aggregate_type, const TreePtr<Term>& index, const SourceLocation& location) {
+        PSI_NOT_IMPLEMENTED();
+      }
+      
+      class ElementPtrType {
+        TreePtr<Term> m_aggregate_ptr_type;
+        TreePtr<Term> m_index;
+        
+      public:
+        typedef Term TreeResultType;
+        
+        ElementPtrType(const TreePtr<Term>& aggregate_ptr_type, const TreePtr<Term>& index)
+        : m_aggregate_ptr_type(aggregate_ptr_type), m_index(index) {}
+        
+        TreePtr<Term> evaluate(const TreePtr<Term>& self) {
+          TreePtr<PointerType> ty = dyn_treeptr_cast<PointerType>(m_aggregate_ptr_type);
+          if (!ty)
+            self.compile_context().error_throw(self.location(), "Argument to element pointer operation is not a pointer");
+          
+          TreePtr<Term> element_ty = element_type(ty->target_type, m_index, self.location());
+          return TreePtr<Term>(new PointerType(element_ty, self.location()));
+        }
+        
+        template<typename V>
+        static void visit(V& v) {
+          v("aggregate_ptr_type", &ElementPtrType::m_aggregate_ptr_type)
+          ("index", &ElementPtrType::m_index);
+        };
+      };
+
+      class ElementRefType {
+        TreePtr<Term> m_aggregate_type;
+        TreePtr<Term> m_index;
+        
+      public:
+        typedef Term TreeResultType;
+
+        ElementRefType(const TreePtr<Term>& aggregate_type, const TreePtr<Term>& index)
+        : m_aggregate_type(aggregate_type), m_index(index) {}
+        
+        TreePtr<Term> evaluate(const TreePtr<Term>& self) {
+          return element_type(m_aggregate_type, m_index, self.location());
+        }
+        
+        template<typename V>
+        static void visit(V& v) {
+          v("aggregate_type", &ElementRefType::m_aggregate_type)
+          ("index", &ElementRefType::m_index);
+        }
+      };
+    }
+    
+    ElementPtr::ElementPtr(CompileContext& compile_context, const SourceLocation& location)
+    : Term(&vtable, compile_context, location) {
+    }
+
+    ElementPtr::ElementPtr(const TreePtr<Term>& value_, const TreePtr<Term>& index_, const SourceLocation& location)
+    : Term(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(tree_attribute(value_, &Term::type), index_)), location),
+    value(value_),
+    index(index_) {
+    }
+
+    template<typename V>
+    void ElementPtr::visit(V& v) {
+      visit_base<Term>(v);
+      v("value", &ElementPtr::value)
+      ("index", &ElementPtr::index);
+    }
+
+    const TermVtable ElementPtr::vtable = PSI_COMPILER_TERM(ElementPtr, "psi.compiler.ElementPtr", Term);
+    
+    ElementRef::ElementRef(CompileContext& compile_context, const SourceLocation& location)
+    : Term(&vtable, compile_context, location) {
+    }
+
+    ElementRef::ElementRef(const TreePtr<Term>& value_, const TreePtr<Term>& index_, const SourceLocation& location)
+    : Term(&vtable, tree_callback(value_.compile_context(), location, ElementRefType(tree_attribute(value_, &Term::type), index_)), location),
+    value(value_),
+    index(index_) {
+    }
+
+    template<typename V>
+    void ElementRef::visit(V& v) {
+      visit_base<Term>(v);
+      v("value", &ElementRef::value)
+      ("index", &ElementRef::index);
+    }
+
+    const TermVtable ElementRef::vtable = PSI_COMPILER_TERM(ElementRef, "psi.compiler.ElementRef", Term);
     
     StructType::StructType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
@@ -343,6 +474,36 @@ namespace Psi {
     }
     
     const TermVtable StructValue::vtable = PSI_COMPILER_TERM(StructValue, "psi.compiler.StructValue", Constructor);
+
+    ArrayType::ArrayType(CompileContext& compile_context, const SourceLocation& location)
+    : Type(&vtable, compile_context, location) {
+    }
+
+    ArrayType::ArrayType(const TreePtr<Term>& element_type_, const TreePtr<Term>& length_, const SourceLocation& location)
+    : Type(&vtable, element_type_.compile_context(), location),
+    element_type(element_type_),
+    length(length_) {
+    }
+
+    template<typename V>
+    void ArrayType::visit(V& v) {
+      visit_base<Type>(v);
+      v("element_type", &ArrayType::element_type)
+      ("length", &ArrayType::length);
+    }
+
+    const TermVtable ArrayType::vtable = PSI_COMPILER_TERM(ArrayType, "psi.compiler.ArrayType", Type);
+    
+    ArrayValue::ArrayValue(CompileContext& compile_context, const SourceLocation& location)
+    : Constructor(&vtable, compile_context, location) {
+    }
+
+    ArrayValue::ArrayValue(const TreePtr<ArrayType>& type, const PSI_STD::vector<TreePtr<Term> >& element_values_, const SourceLocation& location)
+    : Constructor(&vtable, type, location),
+    element_values(element_values_) {
+    }
+
+    const TermVtable ArrayValue::vtable = PSI_COMPILER_TERM(ArrayValue, "psi.compiler.ArrayValue", Constructor);
 
     UnionType::UnionType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
@@ -687,8 +848,8 @@ namespace Psi {
     : Term(&vtable, compile_context, location) {
     }
     
-    LibrarySymbol::LibrarySymbol(const TreePtr<Library>& library_, const TreePtr<TargetCallback>& callback_, const SourceLocation& location)
-    : Term(&vtable, library_.compile_context(), location),
+    LibrarySymbol::LibrarySymbol(const TreePtr<Library>& library_, const TreePtr<TargetCallback>& callback_, const TreePtr<Term>& type, const SourceLocation& location)
+    : Term(&vtable, type, location),
     library(library_),
     callback(callback_) {
     }

@@ -374,6 +374,11 @@ namespace Psi {
     
     TreePtr<Term> find_by_name(const TreePtr<Namespace>& ns, const std::string& name);
     TreePtr<Term> type_combine(const TreePtr<Term>& lhs, const TreePtr<Term>& rhs);
+
+    TreePtr<Term> compile_function_invocation(const TreePtr<Term>& function,
+                                              const List<SharedPtr<Parser::Expression> >& arguments,
+                                              const TreePtr<EvaluateContext>& evaluate_context,
+                                              const SourceLocation& location);
   }
 }
 

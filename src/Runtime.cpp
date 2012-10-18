@@ -348,4 +348,67 @@ namespace Psi {
     
     return to_property_value(obj_ptr.get());
   }
+  
+  namespace {
+    /**
+     * Grab up to n characters from the iterator pair and insert null terminator (in addition to the characters grabbed).
+     * 
+     * Return number of characters grabbed
+     */
+    unsigned grab_digits_up_to(char *out, unsigned n, std::vector<char>::const_iterator& cur, const std::vector<char>::const_iterator& end) {
+      unsigned c = 0;
+      for (; c != n; ++c) {
+        if (cur == end)
+          break;
+        if (!c_isdigit(*cur))
+          break;
+        
+        out[c] = *cur;
+        ++cur;
+      }
+      
+      out[c] = '\0';
+      return c;
+    }
+  }
+  
+  /**
+   * \brief Process escape codes in a string.
+   */
+  std::vector<char> string_unescape(const std::vector<char>& s) {
+    const char *escape_list = "\\nrtv";
+    const char *escape_replace = "\\\n\r\t\v";
+    
+    std::vector<char> r;
+    for (std::vector<char>::const_iterator ii = s.begin(), ie = s.end(); ii != ie;) {
+      if (*ii == '\\') {
+        ++ii;
+        if (ii == ie) {
+          r.push_back('\\');
+          break;
+        }
+        
+        // Handle escape codes
+        if (const char *p = std::strchr(escape_list, *ii)) {
+          r.push_back(escape_replace[p-escape_list]);
+          ++ii;
+        } else if (*ii == 'u') {
+          // Unicode escapes
+          PSI_NOT_IMPLEMENTED();
+        } else if (*ii == 'x') {
+          // ASCII escapes
+          ++ii;
+          char data[3];
+          grab_digits_up_to(data, 3, ii, ie);
+          int val = atoi(data);
+          r.push_back((char)val);
+        }
+      } else {
+        r.push_back(*ii);
+        ++ii;
+      }
+    }
+    
+    return r;
+  }
 }

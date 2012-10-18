@@ -1,5 +1,6 @@
+char : builtin_type {core.uint8};
 libc : library {{"libs":[]}};
-puts : libc.symbol {{"type":"c","name":"puts"}};
+puts : libc.symbol (function_type (pointer(char))) {{"type":"c","name":"puts"}};
 
-main : function () [puts({Hello World});];
+main : function () [puts({Hello World\n});];
 

@@ -163,7 +163,7 @@ namespace Psi {
       while (!queue.empty()) {
         TreePtr<> p = queue.pop();
         const Tree *ptr = p.get();
-        derived_vptr(ptr)->complete(const_cast<Tree*>(ptr), &queue);
+        derived_vptr(ptr)->complete(ptr, &queue);
       }
     }
 
