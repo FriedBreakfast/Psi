@@ -73,8 +73,8 @@ add_library(psi-tvm-llvm MODULE
   Tvm/llvm/Type.cpp
 )
 
-set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
-target_link_libraries(psi-tvm-llvm ${LLVM_LIBS} debug psi-assert)
+set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS ${LLVM_CXX_FLAGS})
+target_link_libraries(psi-tvm-llvm ${LLVM_LIBS} debug psi-assert ${LLVM_LDFLAGS})
 
 if(UNIX)
 set(PSI_RUNTIME_SOURCES Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)

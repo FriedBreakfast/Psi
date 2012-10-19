@@ -99,7 +99,7 @@ namespace Psi {
       return lib;
     }
 
-    boost::shared_ptr<PlatformLibrary> load_shared_object(const PropertyValue& description) {
+    boost::shared_ptr<PlatformLibrary> load_library(const PropertyValue& description) {
       return LibraryLinux::load(description);
     }
   }

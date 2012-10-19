@@ -17,31 +17,62 @@ namespace Psi {
     : Term(vptr, compile_context, location) {
     }
 
-    Global::Global(const VtableType *vptr, const TreePtr<Module>& module_, PsiBool local_, const TreePtr<Term>& type, const SourceLocation& location)
-    : Term(vptr, type, location),
-    module(module_),
-    local(local_) {
-    }
-    
-    template<typename V>
-    void Global::visit(V& v) {
-      visit_base<Term>(v);
-      v("module", &Global::module)
-      ("local", &Global::local);
+    Global::Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location)
+    : Term(vptr, type, location) {
     }
 
     bool Global::match_impl(const Global& lhs, const Global& rhs, PSI_STD::vector<TreePtr<Term> >&, unsigned) {
       return &lhs == &rhs;
     }
 
+    template<typename V>
+    void Global::visit(V& v) {
+      visit_base<Term>(v);
+    }
+
     const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
+
+    ModuleGlobal::ModuleGlobal(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location)
+    : Global(vptr, compile_context, location) {
+    }
+
+    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, PsiBool local_, const TreePtr<Term>& type, const SourceLocation& location)
+    : Global(vptr, type, location),
+    module(module_),
+    local(local_) {
+    }
     
-    GlobalVariable::GlobalVariable(CompileContext& context, const SourceLocation& location): Global(&vtable, context, location) {
+    template<typename V>
+    void ModuleGlobal::visit(V& v) {
+      visit_base<Global>(v);
+      v("module", &ModuleGlobal::module)
+      ("local", &ModuleGlobal::local);
+    }
+
+    const SIVtable ModuleGlobal::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ModuleGlobal", Global);
+
+    ExternalGlobal::ExternalGlobal(CompileContext& compile_context, const SourceLocation& location)
+    : ModuleGlobal(&vtable, compile_context, location) {
+    }
+    
+    ExternalGlobal::ExternalGlobal(const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location)
+    : ModuleGlobal(&vtable, module, false, type, location) {
+    }
+    
+    template<typename V>
+    void ExternalGlobal::visit(V& v) {
+      visit_base<ModuleGlobal>(v);
+    }
+    
+    const TermVtable ExternalGlobal::vtable = PSI_COMPILER_TERM(ExternalGlobal, "psi.compiler.ExternalGlobal", ModuleGlobal);
+
+    GlobalVariable::GlobalVariable(CompileContext& context, const SourceLocation& location)
+    : ModuleGlobal(&vtable, context, location) {
     }
 
     GlobalVariable::GlobalVariable(const TreePtr<Module>& module, PsiBool local, const TreePtr<Term>& value_,
                                    PsiBool constant_, PsiBool merge_, const SourceLocation& location)
-    : Global(&vtable, module, local, tree_attribute(value_, &Term::type), location),
+    : ModuleGlobal(&vtable, module, local, tree_attribute(value_, &Term::type), location),
     value(value_),
     constant(constant_),
     merge(merge_) {
@@ -49,13 +80,13 @@ namespace Psi {
     
     template<typename V>
     void GlobalVariable::visit(V& v) {
-      visit_base<Global>(v);
+      visit_base<ModuleGlobal>(v);
       v("value", &GlobalVariable::value)
       ("constant", &GlobalVariable::constant)
       ("merge", &GlobalVariable::merge);
     }
     
-    const TermVtable GlobalVariable::vtable = PSI_COMPILER_TERM(GlobalVariable, "psi.compiler.GlobalVariable", Global);
+    const TermVtable GlobalVariable::vtable = PSI_COMPILER_TERM(GlobalVariable, "psi.compiler.GlobalVariable", ModuleGlobal);
 
     FunctionType::FunctionType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
@@ -129,7 +160,7 @@ namespace Psi {
     const TermVtable FunctionType::vtable = PSI_COMPILER_TERM(FunctionType, "psi.compiler.FunctionType", Type);
 
     Function::Function(CompileContext& compile_context, const SourceLocation& location)
-    : Global(&vtable, compile_context, location) {
+    : ModuleGlobal(&vtable, compile_context, location) {
     }
     
     Function::Function(const TreePtr<Module>& module,
@@ -139,20 +170,20 @@ namespace Psi {
                        const TreePtr<Term>& body_,
                        const TreePtr<JumpTarget>& return_target_,
                        const SourceLocation& location)
-    : Global(&vtable, module, local, type, location),
+    : ModuleGlobal(&vtable, module, local, type, location),
     arguments(arguments_),
     body(body_),
     return_target(return_target_) {
     }
 
     template<typename Visitor> void Function::visit(Visitor& v) {
-      visit_base<Global>(v);
+      visit_base<ModuleGlobal>(v);
       v("arguments", &Function::arguments)
       ("body", &Function::body)
       ("return_target", &Function::return_target);
     }
 
-    const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", Term);
+    const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", ModuleGlobal);
 
     TryFinally::TryFinally(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -845,23 +876,23 @@ namespace Psi {
     const TreeVtable Library::vtable = PSI_COMPILER_TREE(Library, "psi.compiler.Library", Tree);
     
     LibrarySymbol::LibrarySymbol(CompileContext& compile_context, const SourceLocation& location)
-    : Term(&vtable, compile_context, location) {
+    : Global(&vtable, compile_context, location) {
     }
     
     LibrarySymbol::LibrarySymbol(const TreePtr<Library>& library_, const TreePtr<TargetCallback>& callback_, const TreePtr<Term>& type, const SourceLocation& location)
-    : Term(&vtable, type, location),
+    : Global(&vtable, type, location),
     library(library_),
     callback(callback_) {
     }
     
     template<typename V>
     void LibrarySymbol::visit(V& v) {
-      visit_base<Term>(v);
+      visit_base<Global>(v);
       v("library", &LibrarySymbol::library)
       ("callback", &LibrarySymbol::callback);
     }
 
-    const TermVtable LibrarySymbol::vtable = PSI_COMPILER_TERM(LibrarySymbol, "psi.compiler.LibrarySymbol", Term);
+    const TermVtable LibrarySymbol::vtable = PSI_COMPILER_TERM(LibrarySymbol, "psi.compiler.LibrarySymbol", Global);
     
     TargetCallback::TargetCallback(const TargetCallbackVtable *vtable, CompileContext& compile_context, const SourceLocation& location)
     : Tree(PSI_COMPILER_VPTR_UP(Tree, vtable), compile_context, location) {

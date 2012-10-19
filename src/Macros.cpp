@@ -443,7 +443,7 @@ namespace Psi {
       m_value(value) {
       }
       
-      static PropertyValue evaluate_impl(TargetCallbackConst& self, const PropertyValue&, const PropertyValue&) {
+      static PropertyValue evaluate_impl(const TargetCallbackConst& self, const PropertyValue&, const PropertyValue&) {
         return self.m_value;
       }
       

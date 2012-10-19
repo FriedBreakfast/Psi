@@ -34,7 +34,7 @@ namespace Psi {
       virtual boost::optional<void*> symbol(const std::string& name) = 0;
     };
 
-    boost::shared_ptr<PlatformLibrary> load_shared_object(const PropertyValue& description);
+    boost::shared_ptr<PlatformLibrary> load_library(const PropertyValue& description);
     
     std::vector<std::string> split_command_line(const std::string& args);
 

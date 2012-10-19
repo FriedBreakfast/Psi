@@ -13,16 +13,28 @@ namespace Psi {
     class Function;
 
     /**
-     * \brief A global variable or function, which is an element of a Module.
+     * \brief A global value.
      */
     class Global : public Term {
     public:
       static const SIVtable vtable;
       Global(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
-      Global(const VtableType *vptr, const TreePtr<Module>& module, PsiBool local, const TreePtr<Term>& type, const SourceLocation& location);
+      Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location);
       
       template<typename V> static void visit(V& v);
       static bool match_impl(const Global& lhs, const Global& rhs, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth);
+    };
+
+    /**
+     * \brief A global variable or function, which is an element of a Module.
+     */
+    class ModuleGlobal : public Global {
+    public:
+      static const SIVtable vtable;
+      ModuleGlobal(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
+      ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module, PsiBool local, const TreePtr<Term>& type, const SourceLocation& location);
+      
+      template<typename V> static void visit(V& v);
       
       /// \brief Get the module this global should be built into.
       TreePtr<Module> module;
@@ -31,9 +43,22 @@ namespace Psi {
     };
     
     /**
+     * \brief Used to represent globals in modules not being compiled.
+     * 
+     * This removes the requirement for specifying a value or function body; only a type need be specified.
+     */
+    class ExternalGlobal : public ModuleGlobal {
+    public:
+      static const TermVtable vtable;
+      ExternalGlobal(CompileContext& compile_context, const SourceLocation& location);
+      ExternalGlobal(const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+    };
+    
+    /**
      * \brief A global variable.
      */
-    class GlobalVariable : public Global {
+    class GlobalVariable : public ModuleGlobal {
     public:
       static const TermVtable vtable;
       GlobalVariable(CompileContext& context, const SourceLocation& location);
@@ -468,7 +493,7 @@ namespace Psi {
     
     class JumpTarget;
 
-    class Function : public Global {
+    class Function : public ModuleGlobal {
     public:
       static const TermVtable vtable;
       
@@ -675,7 +700,7 @@ namespace Psi {
     
     struct TargetCallbackVtable {
       TreeVtable base;
-      void (*evaluate) (PropertyValue *result, TargetCallback *self, const PropertyValue *local, const PropertyValue *cross);
+      void (*evaluate) (PropertyValue *result, const TargetCallback *self, const PropertyValue *local, const PropertyValue *cross);
     };
     
     class TargetCallback : public Tree {
@@ -691,7 +716,7 @@ namespace Psi {
        * \param target Target description of system being compiler for.
        * \param local Target description of system being compiled on.
        */
-      PropertyValue evaluate(const PropertyValue& target, const PropertyValue& local) {
+      PropertyValue evaluate(const PropertyValue& target, const PropertyValue& local) const {
         ResultStorage<PropertyValue> result;
         derived_vptr(this)->evaluate(result.ptr(), this, &target, &local);
         return result.done();
@@ -700,8 +725,8 @@ namespace Psi {
     
     template<typename Derived, typename Impl=Derived>
     struct TargetCallbackWrapper {
-      static void evaluate(PropertyValue *result, TargetCallback *self, const PropertyValue *local, const PropertyValue *cross) {
-        new (result) PropertyValue (Impl::evaluate_impl(*static_cast<Derived*>(self), *local, *cross));
+      static void evaluate(PropertyValue *result, const TargetCallback *self, const PropertyValue *local, const PropertyValue *cross) {
+        new (result) PropertyValue (Impl::evaluate_impl(*static_cast<const Derived*>(self), *local, *cross));
       }
     };
     
@@ -731,7 +756,7 @@ namespace Psi {
     /**
      * \brief Symbol imported from a library.
      */
-    class LibrarySymbol : public Term {
+    class LibrarySymbol : public Global {
     public:
       static const TermVtable vtable;
 

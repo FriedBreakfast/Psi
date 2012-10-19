@@ -14,11 +14,18 @@
 
 #include "TreeBase.hpp"
 #include "Term.hpp"
+#include "Platform.hpp"
 
 namespace Psi {
   namespace Parser {
     struct Expression;
     struct NamedExpression;
+  }
+  
+  namespace Tvm {
+    template<typename> class ValuePtr;
+    class Global;
+    class Jit;
   }
   
   namespace Compiler {
@@ -283,22 +290,7 @@ namespace Psi {
     };
     
     class Function;
-    
-    /**
-     * \brief Base class for JIT compile callbacks.
-     */
-    class JitCompiler {
-      CompileContext *m_compile_context;
-      
-      virtual void* build_function(const TreePtr<Function>& function) = 0;
-      virtual void* build_global() = 0;
-      
-    public:
-      JitCompiler(CompileContext *compile_context);
-      virtual ~JitCompiler();
-      
-      CompileContext& compile_context() {return *m_compile_context;}
-    };
+    class TvmCompiler;
 
     /**
      * \brief Context for objects used during compilation.
@@ -320,6 +312,7 @@ namespace Psi {
 
       SourceLocation m_root_location;
       BuiltinTypes m_builtins;
+      boost::shared_ptr<TvmCompiler> m_tvm_compiler;
 
     public:
       CompileContext(std::ostream *error_stream);

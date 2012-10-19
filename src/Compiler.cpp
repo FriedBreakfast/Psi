@@ -2,6 +2,7 @@
 #include "Tree.hpp"
 #include "Platform.hpp"
 #include "Macros.hpp"
+#include "TvmLowering.hpp"
 
 #ifdef PSI_DEBUG
 #include <iostream>
@@ -141,6 +142,7 @@ namespace Psi {
       m_root_location.physical.first_line = m_root_location.physical.first_column = 0;
       m_root_location.physical.last_line = m_root_location.physical.last_column = 0;
       m_builtins.initialize(*this);
+      m_tvm_compiler.reset(new TvmCompiler(this));
     }
     
 #ifdef PSI_DEBUG
@@ -281,7 +283,7 @@ namespace Psi {
      * \brief JIT compile a global variable or function.
      */
     void* CompileContext::jit_compile(const TreePtr<Global>& global) {
-      PSI_NOT_IMPLEMENTED();
+      return m_tvm_compiler->jit_compile(global);
     }
 
     RunningTreeCallback::RunningTreeCallback(TreeCallback *callback)
