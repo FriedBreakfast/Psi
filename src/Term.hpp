@@ -25,6 +25,8 @@ namespace Psi {
       static const SIVtable vtable;
       /// \brief Used by vtable generator to determine whether matching is performed by a visitor or a custom function \c match_impl
       static const bool match_visit = false;
+      /// \brief If matching is performed by a visitor, this determines whether to increment the parameter depth count.
+      static const bool match_parameterized = false;
 
       Term(const TermVtable *vtable, CompileContext& context, const SourceLocation& location);
       Term(const TermVtable *vtable, const TreePtr<Term>&, const SourceLocation&);
@@ -47,7 +49,7 @@ namespace Psi {
       bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
       bool equivalent(const TreePtr<Term>& value) const;
       
-      static bool match_impl(const Term& lhs, const Term& rhs, PSI_STD::vector<TreePtr<Term> >&, unsigned);
+      static bool match_impl(const Term& lhs, const Term& rhs, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth);
       static TreePtr<Term> parameterize_impl(const Term& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements, unsigned depth);
       static TreePtr<Term> specialize_impl(const Term& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, unsigned depth);
 
@@ -261,7 +263,7 @@ namespace Psi {
        */
       static PsiBool match_helper(static_bool<true>, const Term *left, const Term *right, PSI_STD::vector<TreePtr<Term> > *wildcards, unsigned depth) {
         boost::array<const Derived*, 2> pair = {{static_cast<const Derived*>(left), static_cast<const Derived*>(right)}};
-        MatchVisitor mv(wildcards, depth);
+        MatchVisitor mv(wildcards, depth + (Derived::match_parameterized?1:0));
         visit_members(mv, pair);
         return mv.result;
       }
@@ -277,7 +279,7 @@ namespace Psi {
       static const TreeBase* parameterize_helper(static_bool<true>, const Term *self, const SourceLocation *location, const PSI_STD::vector<TreePtr<Anonymous> > *elements, unsigned depth) {
         Derived rewritten(self->compile_context(), *location);
         boost::array<const Derived*, 2> ptrs = {{&rewritten, static_cast<const Derived*>(self)}};
-        ParameterizeVisitor pv(*location, elements, depth);
+        ParameterizeVisitor pv(*location, elements, depth + (Derived::match_parameterized?1:0));
         visit_members(pv, ptrs);
         return TreePtr<Derived>(pv.changed() ? new Derived(rewritten) : static_cast<const Derived*>(self)).release();
       }
@@ -293,7 +295,7 @@ namespace Psi {
       static const TreeBase* specialize_helper(static_bool<true>, const Term *self, const SourceLocation *location, const PSI_STD::vector<TreePtr<Term> > *values, unsigned depth) {
         Derived rewritten(self->compile_context(), *location);
         boost::array<const Derived*, 2> ptrs = {{&rewritten, static_cast<const Derived*>(self)}};
-        SpecializeVisitor pv(*location, values, depth);
+        SpecializeVisitor pv(*location, values, depth + (Derived::match_parameterized?1:0));
         visit_members(pv, ptrs);
         return TreePtr<Derived>(pv.changed() ? new Derived(rewritten) : static_cast<const Derived*>(self)).release();
       }

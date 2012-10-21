@@ -130,7 +130,7 @@ namespace Psi {
       const SourceLocation& location() const {return m_location;}
 
       template<typename Visitor>
-      static void visit(Visitor& visitor PSI_ATTRIBUTE((PSI_UNUSED))) {}
+      static void visit(Visitor& PSI_UNUSED(visitor)) {}
     };
 
     /// \brief Get the location of this Tree, without evaluating the Tree.

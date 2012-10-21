@@ -162,6 +162,7 @@ namespace {
 %token COMPARE_GREATER_EQUAL ">="
 %token OPERATOR_ARROW "->"
 %token OPERATOR_DOUBLE_ARROW "=>"
+%token DOUBLE_COLON "::"
 %token UNKNOWN "unknown"
 %token BLOCK
 
@@ -177,8 +178,8 @@ namespace {
 %type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression
 %type <expression> unary_expression compare_expression macro_expression token_expression
 %type <expression_list> compare_expression_build expression_list expression_list_nonempty token_list interface_list_declare interface_list_declare_nonempty
-%type <named_expression> statement named_expression
-%type <named_expression_list> statement_list argument_list argument_list_nonempty
+%type <named_expression> statement named_expression implicit_argument_declare
+%type <named_expression_list> statement_list argument_list argument_list_nonempty implicit_argument_list_declare implicit_argument_list_declare_nonempty
 %type <function_argument> argument_declare return_type_declare
 %type <function_argument_list> argument_list_declare argument_list_declare_nonempty
 
@@ -206,7 +207,7 @@ root: MODE_STATEMENT_LIST statement_list {arguments.result_named_expressions = $
 | MODE_POSITIONAL_LIST expression_list {arguments.result_expressions = $2;}
 | MODE_EXPRESSION expression {arguments.result_expressions.assign(1, $2);}
 | MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare {arguments.result_argument_declarations.arguments = $2; arguments.result_argument_declarations.return_type = $3;}
-| MODE_FUNCTION_ARGUMENT_IMPLICIT argument_list_declare interface_list_declare {arguments.result_argument_implicit.arguments = $2; arguments.result_argument_implicit.interfaces = $3;}
+| MODE_FUNCTION_ARGUMENT_IMPLICIT implicit_argument_list_declare interface_list_declare {arguments.result_argument_implicit.arguments = $2; arguments.result_argument_implicit.interfaces = $3;}
 ;
 
 argument_list: {$$.clear();}
@@ -221,6 +222,19 @@ named_expression {$$.assign(1, $1);}
 return_type_declare: /* blank */ {$$.reset();}
 | OPERATOR_ARROW expression {$$.reset(new FunctionArgument(@$, boost::none, boost::none, $2));}
 | OPERATOR_ARROW '#' IDENTIFIER expression {$$.reset(new FunctionArgument(@$, boost::none, $3, $4));}
+;
+
+implicit_argument_list_declare: {$$.clear();}
+| implicit_argument_list_declare_nonempty
+;
+
+implicit_argument_list_declare_nonempty:
+implicit_argument_declare
+| implicit_argument_list_declare_nonempty ',' implicit_argument_declare {$$ = $1; $$.push_back($3);}
+;
+
+implicit_argument_declare:
+IDENTIFIER DOUBLE_COLON expression {$$.reset(new NamedExpression(@$, $3, $1, true));}
 ;
 
 argument_list_declare: /* blank */ {$$.clear();}
@@ -269,7 +283,8 @@ statement:
 
 named_expression:
 expression {$$.reset(new NamedExpression(@$, $1));}
-| IDENTIFIER ':' expression {$$.reset(new NamedExpression(@$, $3, $1));}
+| IDENTIFIER ':' expression {$$.reset(new NamedExpression(@$, $3, $1, false));}
+| IDENTIFIER DOUBLE_COLON expression{$$.reset(new NamedExpression(@$, $3, $1, true));}
 ;
 
 expression:
@@ -347,8 +362,8 @@ unary_operator:
 macro_expression:
 token_expression
 | token_expression token_list {$$.reset(new EvaluateExpression(@$, $1, $2));}
-| macro_expression '.' token_expression {$$.reset(new DotExpression(@$, $1, $3));}
-| macro_expression '.' token_expression token_list {$$.reset(new EvaluateDotExpression(@$, $1, $3, $4));}
+| macro_expression '.' token_expression {$$.reset(new DotExpression(@$, $1, $3, default_));}
+| macro_expression '.' token_expression token_list {$$.reset(new DotExpression(@$, $1, $3, $4));}
 | macro_expression '#' {$$ = $1;}
 | macro_expression '#' token_list {$$.reset(new EvaluateExpression(@$, $1, $3));}
 ;
@@ -585,19 +600,12 @@ namespace Psi {
     EvaluateExpression::~EvaluateExpression() {
     }
 
-    DotExpression::DotExpression(const ParserLocation& location_, const SharedPtr<Expression>& left_, const SharedPtr<Expression>& right_)
-      : Expression(location_, expression_dot), left(left_), right(right_) {
+    DotExpression::DotExpression(const ParserLocation& location_, const SharedPtr<Expression>& object_,
+                                 const SharedPtr<Expression>& member_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_)
+      : Expression(location_, expression_dot), object(object_), member(member_), parameters(parameters_) {
     }
 
     DotExpression::~DotExpression() {
-    }
-
-    EvaluateDotExpression::EvaluateDotExpression(const ParserLocation& location_, const SharedPtr<Expression>& object_,
-                                                 const SharedPtr<Expression>& member_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_)
-      : Expression(location_, expression_evaluate_dot), object(object_), member(member_), parameters(parameters_) {
-    }
-
-    EvaluateDotExpression::~EvaluateDotExpression() {
     }
 
     NamedExpression::NamedExpression(const ParserLocation& source_)
@@ -605,11 +613,11 @@ namespace Psi {
     }
 
     NamedExpression::NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_)
-      : Element(source_), expression(expression_) {
+      : Element(source_), functional(false), expression(expression_) {
     }
 
-    NamedExpression::NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const ParserLocation& name_)
-      : Element(source_), name(name_), expression(expression_) {
+    NamedExpression::NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const ParserLocation& name_, bool functional_)
+      : Element(source_), name(name_), functional(functional_), expression(expression_) {
     }
 
     NamedExpression::~NamedExpression() {

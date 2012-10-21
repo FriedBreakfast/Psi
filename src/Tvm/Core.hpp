@@ -707,17 +707,13 @@ namespace Psi {
        * \brief Get a pointer to a functional term given that term's value.
        */
       ValuePtr<HashableValue> get_hash_term(const HashableValue& value);
-
+      
       ValuePtr<FunctionType> get_function_type(CallingConvention calling_convention,
                                                const ValuePtr<>& result,
                                                const std::vector<ValuePtr<ParameterPlaceholder> >& parameters,
                                                unsigned n_phantom,
+                                               bool sret,
                                                const SourceLocation& location);
-
-      ValuePtr<FunctionType> get_function_type_fixed(CallingConvention calling_convention,
-                                                     const ValuePtr<>& result,
-                                                     const std::vector<ValuePtr<> >& parameter_types,
-                                                     const SourceLocation& location);
 
       ValuePtr<Exists> get_exists(const ValuePtr<>& result,
                                   const std::vector<ValuePtr<ParameterPlaceholder> >& parameters,

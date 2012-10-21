@@ -160,7 +160,7 @@ namespace Psi {
 
         ValuePtr<> result_type = build_expression(my_context, *function_type.result_type, logical_location);
 
-        return context.context().get_function_type(function_type.calling_convention, result_type, parameters, n_phantom,
+        return context.context().get_function_type(function_type.calling_convention, result_type, parameters, n_phantom, function_type.sret,
                                                    SourceLocation(function_type.location, logical_location));
       }
       
@@ -171,7 +171,7 @@ namespace Psi {
           ValuePtr<RecursiveParameter> param = RecursiveParameter::create(param_type, phantom, SourceLocation(it->location, logical_location));
           if (it->name)
             context.put(it->name->text, param);
-          output.push_back(*param);
+          output.push_back(param);
         }
       }
 

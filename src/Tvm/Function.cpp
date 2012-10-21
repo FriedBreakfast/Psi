@@ -10,10 +10,6 @@
 
 namespace Psi {
   namespace Tvm {
-    ValuePtr<ResolvedParameter> ResolvedParameter::get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location) {
-      return type->context().get_functional(ResolvedParameter(type, depth, index, location));
-    }
-    
     ResolvedParameter::ResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location)
     : FunctionalValue(type->context(), location),
     m_parameter_type(type),
@@ -38,11 +34,13 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(ResolvedParameter, SimpleOp, resolved_parameter)
 
     FunctionType::FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
-                               const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, const SourceLocation& location)
+                               const std::vector<ValuePtr<> >& parameter_types,
+                               unsigned n_phantom, bool sret, const SourceLocation& location)
     : HashableValue(result_type->context(), term_function_type, location),
     m_calling_convention(calling_convention),
     m_parameter_types(parameter_types),
     m_n_phantom(n_phantom),
+    m_sret(sret),
     m_result_type(result_type) {
     }
 
@@ -60,7 +58,7 @@ namespace Psi {
           ValuePtr<> type = rewrite(term->type());
           for (unsigned i = 0, e = m_parameters.size(); i != e; ++i) {
             if (m_parameters[i] == term)
-              return ResolvedParameter::get(type, m_depth, i, m_parameters[i]->location());
+              return FunctionalBuilder::parameter(type, m_depth, i, m_parameters[i]->location());
           }
           if (type != term->type())
             throw TvmUserError("type of unresolved function parameter cannot depend on type of resolved function parameter");
@@ -104,8 +102,11 @@ namespace Psi {
      * \param result_type The result type of the function. This may
      * depend on \c parameters and \c phantom_parameters.
      *
-     * \param phantom_parameters Phantom parameters - these do not
+     * \param n_phantom Number of phantom parameters - these do not
      * actually cause any data to be passed at machine level.
+     * 
+     * \param sret If set, the last parameter is treated as a pointer
+     * to return value storage.
      *
      * \param parameters Ordinary function parameters.
      */
@@ -113,6 +114,7 @@ namespace Psi {
                                                       const ValuePtr<>& result_type,
                                                       const std::vector<ValuePtr<ParameterPlaceholder> >& parameters,
                                                       unsigned n_phantom,
+                                                      bool sret,
                                                       const SourceLocation& location) {
       PSI_ASSERT(n_phantom <= parameters.size());
 
@@ -126,20 +128,7 @@ namespace Psi {
       ValuePtr<> resolved_result_type = ParameterResolverRewriter(*this, previous_parameters).rewrite(result_type);
       
       return get_functional(FunctionType(calling_convention, resolved_result_type, resolved_parameter_types,
-                                         n_phantom, location));
-    }
-
-    /**
-     * \brief Get a function type with fixed argument types.
-     */
-    ValuePtr<FunctionType> Context::get_function_type_fixed(CallingConvention calling_convention,
-                                                            const ValuePtr<>& result_type,
-                                                            const std::vector<ValuePtr<> >& parameter_types,
-                                                            const SourceLocation& location) {
-      std::vector<ValuePtr<ParameterPlaceholder> > parameters(parameter_types.size());
-      for (std::size_t i = 0; i < parameter_types.size(); ++i)
-        parameters[i] = new_placeholder_parameter(parameter_types[i], parameter_types[i]->location());
-      return get_function_type(calling_convention, result_type, parameters, 0, location);
+                                         n_phantom, sret, location));
     }
 
     namespace {

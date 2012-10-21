@@ -87,8 +87,7 @@ namespace Psi {
     struct MacroVtable {
       TreeVtable base;
       const TreeBase* (*evaluate) (const Macro*, const TreeBase*, const void*, void*, const TreeBase*, const SourceLocation*);
-      const TreeBase* (*dot) (const Macro*, const TreeBase*, const SharedPtr<Parser::Expression>*,  const TreeBase*, const SourceLocation*);
-      const TreeBase* (*evaluate_dot) (const Macro*, const TreeBase*, const SharedPtr<Parser::Expression>*, const void*, void*, const TreeBase*, const SourceLocation*);
+      const TreeBase* (*dot) (const Macro*, const TreeBase*, const SharedPtr<Parser::Expression>*, const void*, void*, const TreeBase*, const SourceLocation*);
     };
 
     class Macro : public Tree {
@@ -106,20 +105,13 @@ namespace Psi {
                              const SourceLocation& location) const {
         return tree_from_base_take<Term>(derived_vptr(this)->evaluate(this, value.raw_get(), parameters.vptr(), parameters.object(), evaluate_context.raw_get(), &location));
       }
-
+      
       TreePtr<Term> dot(const TreePtr<Term>& value,
-                        const SharedPtr<Parser::Expression>& parameter,
+                        const SharedPtr<Parser::Expression>& member,
+                        const List<SharedPtr<Parser::Expression> >& parameters,
                         const TreePtr<EvaluateContext>& evaluate_context,
                         const SourceLocation& location) const {
-        return tree_from_base_take<Term>(derived_vptr(this)->dot(this, value.raw_get(), &parameter, evaluate_context.raw_get(), &location));
-      }
-      
-      TreePtr<Term> evaluate_dot(const TreePtr<Term>& value,
-                                 const SharedPtr<Parser::Expression>& member,
-                                 const List<SharedPtr<Parser::Expression> >& parameters,
-                                 const TreePtr<EvaluateContext>& evaluate_context,
-                                 const SourceLocation& location) const {
-        return tree_from_base_take<Term>(derived_vptr(this)->evaluate_dot(this, value.raw_get(), &member, parameters.vptr(), parameters.object(), evaluate_context.raw_get(), &location));
+        return tree_from_base_take<Term>(derived_vptr(this)->dot(this, value.raw_get(), &member, parameters.vptr(), parameters.object(), evaluate_context.raw_get(), &location));
       }
       
       template<typename V> static void visit(V& v) {visit_base<Tree>(v);}
@@ -142,21 +134,12 @@ namespace Psi {
 
       static const TreeBase* dot(const Macro *self,
                                  const TreeBase *value,
-                                 const SharedPtr<Parser::Expression> *parameter,
+                                 const SharedPtr<Parser::Expression> *member,
+                                 const void *parameters_vtable,
+                                 void *parameters_object,
                                  const TreeBase *evaluate_context,
                                  const SourceLocation *location) {
-        TreePtr<Term> result = Impl::dot_impl(*static_cast<const Derived*>(self), tree_from_base<Term>(value), *parameter, tree_from_base<EvaluateContext>(evaluate_context), *location);
-        return result.release();
-      }
-
-      static const TreeBase* evaluate_dot(const Macro *self,
-                                          const TreeBase *value,
-                                          const SharedPtr<Parser::Expression> *member,
-                                          const void *parameters_vtable,
-                                          void *parameters_object,
-                                          const TreeBase *evaluate_context,
-                                          const SourceLocation *location) {
-        TreePtr<Term> result = Impl::evaluate_dot_impl(*static_cast<const Derived*>(self), tree_from_base<Term>(value), *member, List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), tree_from_base<EvaluateContext>(evaluate_context), *location);
+        TreePtr<Term> result = Impl::dot_impl(*static_cast<const Derived*>(self), tree_from_base<Term>(value), *member, List<SharedPtr<Parser::Expression> >(parameters_vtable, parameters_object), tree_from_base<EvaluateContext>(evaluate_context), *location);
         return result.release();
       }
     };
@@ -164,8 +147,7 @@ namespace Psi {
 #define PSI_COMPILER_MACRO(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
     &MacroWrapper<derived>::evaluate, \
-    &MacroWrapper<derived>::dot, \
-    &MacroWrapper<derived>::evaluate_dot \
+    &MacroWrapper<derived>::dot \
   }
     
     /**
@@ -287,6 +269,8 @@ namespace Psi {
       TreePtr<MetadataType> macro_tag;
       /// \brief Library metadata tag
       TreePtr<MetadataType> library_tag;
+      /// \brief Namespace metadata tag
+      TreePtr<MetadataType> namespace_tag;
     };
     
     class Function;
@@ -347,14 +331,8 @@ namespace Psi {
     class Namespace;
 
     TreePtr<Term> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
-    TreePtr<Block> compile_statement_list(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
-    
-    struct NamespaceCompileResult {
-      TreePtr<Namespace> ns;
-      PSI_STD::map<String, TreePtr<Term> > entries;
-    };
-    
-    NamespaceCompileResult compile_namespace(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
+    TreePtr<Block> compile_block(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
+    TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
 
     TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
     TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);
@@ -365,7 +343,6 @@ namespace Psi {
     TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<MacroMemberCallback> >&);
     TreePtr<Term> make_macro_term(const TreePtr<Macro>& macro, const SourceLocation& location);
     
-    TreePtr<Term> find_by_name(const TreePtr<Namespace>& ns, const std::string& name);
     TreePtr<Term> type_combine(const TreePtr<Term>& lhs, const TreePtr<Term>& rhs);
 
     TreePtr<Term> compile_function_invocation(const TreePtr<Term>& function,

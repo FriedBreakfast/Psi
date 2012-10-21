@@ -109,14 +109,14 @@ int main(int argc, char *argv[]) {
 
   LogicalSourceLocationPtr root_location = LogicalSourceLocation::new_root_location();
   try {
-    NamespaceCompileResult ns = compile_namespace(statements, module_evaluate_context, SourceLocation(file_text.location, root_location));
-    ns.ns->complete();
+    TreePtr<Namespace> ns = compile_namespace(statements, module_evaluate_context, SourceLocation(file_text.location, root_location));
+    ns->complete();
     
     SourceLocation init_location(init_text.location, root_location);
 
     // Create only statement in main function
     SharedPtr<Parser::Expression> init_expr = Parser::parse_expression(init_text);
-    TreePtr<EvaluateContext> init_evaluate_context = evaluate_context_dictionary(my_module, init_location, ns.entries);
+    TreePtr<EvaluateContext> init_evaluate_context = evaluate_context_dictionary(my_module, init_location, ns->members);
     TreePtr<Term> init_tree = compile_expression(init_expr, init_evaluate_context, root_location);
     init_tree->complete();
     

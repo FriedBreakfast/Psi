@@ -611,7 +611,17 @@ namespace Psi {
       if (bracket)
         *m_output << '(';
 
-      *m_output << "function (";
+      *m_output << "function";
+      switch (term->calling_convention()) {
+      case cconv_c: break;
+      case cconv_x86_stdcall: *m_output << " cc_x86_stdcall";
+      case cconv_x86_thiscall: *m_output << " cc_x86_thiscall";
+      case cconv_x86_fastcall: *m_output << " cc_x86_fastcall";
+      default: PSI_FAIL("Unknown calling convention in disassembler");
+      }
+      if (term->sret())
+        *m_output << " sret";
+      *m_output << " (";
       
       unsigned n_parameters = term->parameter_types().size();
       unsigned parameter_name_base = m_parameter_name_index;

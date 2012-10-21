@@ -25,8 +25,7 @@ namespace Psi {
     enum ExpressionType {
       expression_token,
       expression_evaluate,
-      expression_dot,
-      expression_evaluate_dot
+      expression_dot
     };
 
     struct Expression : Element {
@@ -59,17 +58,10 @@ namespace Psi {
       SharedPtr<Expression> object;
       PSI_STD::vector<SharedPtr<Expression> > parameters;
     };
-
-    struct DotExpression : Expression {
-      DotExpression(const ParserLocation& source_, const SharedPtr<Expression>& left_, const SharedPtr<Expression>& right_);
-      ~DotExpression();
-
-      SharedPtr<Expression> left, right;
-    };
     
-    struct EvaluateDotExpression : Expression {
-      EvaluateDotExpression(const ParserLocation& source_, const SharedPtr<Expression>& obj_, const SharedPtr<Expression>& member_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_);
-      virtual ~EvaluateDotExpression();
+    struct DotExpression : Expression {
+      DotExpression(const ParserLocation& source_, const SharedPtr<Expression>& obj_, const SharedPtr<Expression>& member_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_);
+      virtual ~DotExpression();
       
       SharedPtr<Expression> object;
       SharedPtr<Expression> member;
@@ -79,10 +71,11 @@ namespace Psi {
     struct NamedExpression : Element {
       NamedExpression(const ParserLocation& source_);
       NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_);
-      NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const ParserLocation& name_);
+      NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const ParserLocation& name_, bool functional_);
       ~NamedExpression();
 
       boost::optional<ParserLocation> name;
+      bool functional;
       SharedPtr<Expression> expression;
     };
     
@@ -108,7 +101,7 @@ namespace Psi {
     PSI_STD::vector<TokenExpression> parse_identifier_list(const ParserLocation&);
 
     struct ImplicitArgumentDeclarations {
-      PSI_STD::vector<SharedPtr<FunctionArgument> > arguments;
+      PSI_STD::vector<SharedPtr<NamedExpression> > arguments;
       PSI_STD::vector<SharedPtr<Expression> > interfaces;
     };
     

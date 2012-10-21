@@ -36,18 +36,10 @@ namespace Psi {
 
       static TreePtr<Term> dot_impl(const DefaultMacro& self,
                                     const TreePtr<Term>& value,
-                                    const SharedPtr<Parser::Expression>& parameter,
+                                    const SharedPtr<Parser::Expression>& member,
+                                    const List<SharedPtr<Parser::Expression> >& parameters,
                                     const TreePtr<EvaluateContext>& evaluate_context,
                                     const SourceLocation& location) {
-        PSI_NOT_IMPLEMENTED();
-      }
-      
-      static TreePtr<Term> evaluate_dot_impl(const DefaultMacro& self,
-                                             const TreePtr<Term>& value,
-                                             const SharedPtr<Parser::Expression>& member,
-                                             const List<SharedPtr<Parser::Expression> >& parameters,
-                                             const TreePtr<EvaluateContext>& evaluate_context,
-                                             const SourceLocation& location) {
         PSI_NOT_IMPLEMENTED();
       }
     };
@@ -102,18 +94,10 @@ namespace Psi {
 
       static TreePtr<Term> dot_impl(const NamedMemberMacro& self,
                                     const TreePtr<Term>& value,
-                                    const SharedPtr<Parser::Expression>& parameter,
+                                    const SharedPtr<Parser::Expression>& member,
+                                    const List<SharedPtr<Parser::Expression> >& parameters,
                                     const TreePtr<EvaluateContext>& evaluate_context,
                                     const SourceLocation& location) {
-        return evaluate_dot_impl(self, value, parameter, empty_list<SharedPtr<Parser::Expression> >(), evaluate_context, location);
-      }
-      
-      static TreePtr<Term> evaluate_dot_impl(const NamedMemberMacro& self,
-                                             const TreePtr<Term>& value,
-                                             const SharedPtr<Parser::Expression>& member,
-                                             const List<SharedPtr<Parser::Expression> >& parameters,
-                                             const TreePtr<EvaluateContext>& evaluate_context,
-                                             const SourceLocation& location) {
         if (member->expression_type != Parser::expression_token)
           self.compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % self.location().logical->error_name(location.logical));
 
@@ -273,6 +257,49 @@ namespace Psi {
       TreePtr<MacroMemberCallback> callback(new PointerMacro(compile_context, location));
       return make_macro_term(make_macro(compile_context, location, callback), location);
     }
+    
+    class NamespaceMemberMacro : public Macro {
+    public:
+      static const MacroVtable vtable;
+
+      NamespaceMemberMacro(CompileContext& compile_context, const SourceLocation& location)
+      : Macro(&vtable, compile_context, location) {
+      }
+
+      static TreePtr<Term> evaluate_impl(const NamespaceMemberMacro& self,
+                                         const TreePtr<Term>&,
+                                         const List<SharedPtr<Parser::Expression> >&,
+                                         const TreePtr<EvaluateContext>&,
+                                         const SourceLocation& location) {
+        self.compile_context().error_throw(location, "Cannot evaluate a namespace");
+      }
+
+      static TreePtr<Term> dot_impl(const NamespaceMemberMacro& self,
+                                    const TreePtr<Term>& value,
+                                    const SharedPtr<Parser::Expression>& member,
+                                    const List<SharedPtr<Parser::Expression> >& parameters,
+                                    const TreePtr<EvaluateContext>& evaluate_context,
+                                    const SourceLocation& location) {
+        SharedPtr<Parser::TokenExpression> name;
+        if (!(name = expression_as_token_type(parameters[0], Parser::TokenExpression::identifier)))
+          self.compile_context().error_throw(location, "Namespace member argument is not an identifier");
+        
+        String member_name(name->text.begin, name->text.end);
+        TreePtr<Namespace> ns = metadata_lookup_as<Namespace>(self.compile_context().builtins().namespace_tag, value, location);
+        PSI_STD::map<String, TreePtr<Term> >::const_iterator ns_it = ns->members.find(member_name);
+        if (ns_it == ns->members.end())
+          self.compile_context().error_throw(location, boost::format("Namespace '%s' has no member '%s'") % value->location().logical->error_name(location.logical) % member_name);
+        
+        TreePtr<Term> member_value = ns_it->second;
+        if (parameters.empty())
+          return member_value;
+        
+        TreePtr<Macro> member_value_macro = metadata_lookup_as<Macro>(self.compile_context().builtins().macro_tag, member_value, location);
+        return member_value_macro->evaluate(member_value, parameters, evaluate_context, location);
+      }
+    };
+    
+    const MacroVtable NamespaceMemberMacro::vtable = PSI_COMPILER_MACRO(NamespaceMemberMacro, "psi.compiler.NamespaceMemberMacro", Macro);
 
     class NamespaceMacro : public MacroMemberCallback {
     public:
@@ -296,7 +323,13 @@ namespace Psi {
         
         PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(name->text);
 
-        return compile_namespace(statements, evaluate_context, location).ns;
+        TreePtr<Namespace> ns = compile_namespace(statements, evaluate_context, location);
+
+        MetadataListType ml;
+        ml.push_back(std::make_pair(self.compile_context().builtins().namespace_tag, ns));
+        TreePtr<Macro> ns_macro(new NamespaceMemberMacro(self.compile_context(), location));
+        ml.push_back(std::make_pair(self.compile_context().builtins().macro_tag, ns_macro));
+        return make_annotated_value(self.compile_context(), ml, location);
       }
     };
 

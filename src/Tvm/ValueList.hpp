@@ -3,6 +3,8 @@
 
 #include "Core.hpp"
 
+#include <boost/iterator/iterator_facade.hpp>
+
 namespace Psi {
   namespace Tvm {
     template<typename T, boost::intrusive::list_member_hook<> T::*member_hook>
@@ -85,6 +87,10 @@ namespace Psi {
         m_base.push_back(elem);
         intrusive_ptr_add_ref(&elem);
       }
+      
+      void insert(const ValuePtr<T>& ptr, const ValuePtr<T>& elem) {insert(ptr, *elem);}
+      void erase(const ValuePtr<T>& elem) {erase(*elem);}
+      void push_back(const ValuePtr<T>& elem) {push_back(*elem);}
 
       /**
        * \brief Check whether one element comes before another in this list.

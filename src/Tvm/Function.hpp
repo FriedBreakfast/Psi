@@ -364,8 +364,6 @@ namespace Psi {
       /// \brief Get the parameter number of this parameter in its
       /// function.
       unsigned index() const {return m_index;}
-      
-      static ValuePtr<ResolvedParameter> get(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
     };
 
     /**
@@ -381,10 +379,22 @@ namespace Psi {
       friend class Context;
 
     public:
+      FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
+                   const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom,
+                   bool sret, const SourceLocation& location);
+
       CallingConvention calling_convention() {return m_calling_convention;}
       const ValuePtr<>& result_type() const {return m_result_type;}
       /// \brief Get the number of phantom parameters.
       unsigned n_phantom() const {return m_n_phantom;}
+      /**
+       * \brief Whether this has an sret parameter.
+       * 
+       * This means the last parameter is assumed to be a valid pointer to store the result
+       * of the function to. It will also usually be passed as the first parameter according to
+       * the platform calling convention.
+       */
+      bool sret() const {return m_sret;}
       /// \brief Get the vector parameter types.
       const std::vector<ValuePtr<> >& parameter_types() const {return m_parameter_types;}
 
@@ -394,13 +404,10 @@ namespace Psi {
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type;}
 
     private:
-      FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
-                   const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom,
-                   const SourceLocation& location);
-
       CallingConvention m_calling_convention;
       std::vector<ValuePtr<> > m_parameter_types;
       unsigned m_n_phantom;
+      bool m_sret;
       ValuePtr<> m_result_type;
     };
     

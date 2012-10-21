@@ -66,8 +66,8 @@ namespace Psi {
           parameter_types.push_back(handler->lowered_type());
         }
         
-        result.lowered_type = rewriter.context().get_function_type_fixed
-          (function_type->calling_convention(), return_type, parameter_types, function_type->location());
+        result.lowered_type = FunctionalBuilder::function_type
+          (function_type->calling_convention(), return_type, parameter_types, 0, function_type->sret(), function_type->location());
           
         return result;
       }

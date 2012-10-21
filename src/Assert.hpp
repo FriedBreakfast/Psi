@@ -25,7 +25,6 @@ namespace Psi {
 #define PSI_WARNING_FAIL(msg) void()
 #define PSI_NOT_IMPLEMENTED() (std::abort())
 #else
-#define PSI_DEBUG_UNUSED
   /**
    * \brief Require that a condition is true.
    *

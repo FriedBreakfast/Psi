@@ -598,6 +598,7 @@ namespace Psi {
     const ListVtable *vptr() const {return static_cast<const ListVtable*>(this->m_vptr);}
 
     PsiSize size() const {return vptr()->size(vptr(), this->m_self);}
+    bool empty() const {return !size();}
 
     T& operator [] (PsiSize n) const {return *static_cast<T*>(vptr()->get(vptr(), this->m_self, n));}
 

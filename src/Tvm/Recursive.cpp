@@ -34,23 +34,25 @@ namespace Psi {
       if (source && source->phantom())
         throw TvmUserError("Recursive types cannot be phantom");
 
-      Value *test_source = m_parameters.front().get();
-      bool phantom_finished = true;
-      for (RecursiveType::ParameterList::const_iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
-        if ((*ii)->phantom()) {
-          if (phantom_finished)
-            throw TvmUserError("Phantom parameters must come before all others in a parameter list");
-        } else {
-          phantom_finished = true;
+      if (!m_parameters.empty()) {
+        Value *test_source = m_parameters.front().get();
+        bool phantom_finished = true;
+        for (RecursiveType::ParameterList::const_iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
+          if ((*ii)->phantom()) {
+            if (phantom_finished)
+              throw TvmUserError("Phantom parameters must come before all others in a parameter list");
+          } else {
+            phantom_finished = true;
+          }
+
+          (*ii)->m_recursive = this;
+
+          if (!source_dominated((*ii)->source(), test_source))
+            throw TvmUserError("source specified for recursive term is not dominated by parameter block");
         }
-
-        (*ii)->m_recursive = this;
-
-        if (!source_dominated((*ii)->source(), test_source))
-          throw TvmUserError("source specified for recursive term is not dominated by parameter block");
       }
 
-      if (!source_dominated(result_type->source(), test_source))
+      if (!source_dominated(result_type->source(), source))
         throw TvmUserError("source specified for recursive term is not dominated by result type block");
     }
 

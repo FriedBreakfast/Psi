@@ -1,5 +1,7 @@
 #ifndef HPP_PSI_CPP_COMPILER
 #define HPP_PSI_CPP_COMPILER
+#include <boost/concept_check.hpp>
+#include <boost/concept_check.hpp>
 
 namespace Psi {
 #ifdef __GNUC__
@@ -10,8 +12,8 @@ namespace Psi {
 #define PSI_ALIGNED(x) aligned(x)
 #define PSI_ALIGNED_MAX aligned(__BIGGEST_ALIGNMENT__)
 #define PSI_NORETURN noreturn
+#define PSI_UNUSED_ATTR unused
 #define PSI_PURE pure
-#define PSI_UNUSED unused
 
   struct DebugLocation {
     const char *file;
@@ -35,7 +37,7 @@ namespace Psi {
 #define PSI_ATTRIBUTE(x)
 #define PSI_NORETURN
 #define PSI_PURE
-#define PSI_UNUSED
+#define PSI_UNUSED_ATTR
 #define PSI_UNREACHABLE() void()
 
   struct DebugLocation {
@@ -47,6 +49,12 @@ namespace Psi {
   };
 #define PSI_DEBUG_LOCATION() DebugLocation(__FILE__, __LINE__)
 
+#endif
+
+#ifdef PSI_DOXYGEN
+#define PSI_UNUSED(x) x
+#else
+#define PSI_UNUSED(x)
 #endif
 }
 

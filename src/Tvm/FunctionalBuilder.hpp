@@ -43,6 +43,14 @@ namespace Psi {
       static ValuePtr<> zero(const ValuePtr<>& type, const SourceLocation& location);
       //@}
       
+      
+      /// \name Function types
+      //@{
+      static ValuePtr<FunctionType> function_type(CallingConvention calling_convention, const ValuePtr<>& result_type,
+                                                  const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, bool sret, const SourceLocation& location);
+      static ValuePtr<> parameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
+      //@}
+      
       /// \name Aggregate types
       //@{
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const SourceLocation& location);

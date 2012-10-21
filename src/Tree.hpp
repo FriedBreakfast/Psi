@@ -85,9 +85,11 @@ namespace Psi {
       static const TreeVtable vtable;
 
       TreePtr<Term> value;
+      /// \brief Whether the result of this statement should be frozen
+      PsiBool functional;
       
       Statement(CompileContext& compile_context, const SourceLocation& location);
-      Statement(const TreePtr<Term>& value, const SourceLocation& location);
+      Statement(const TreePtr<Term>& value, bool functional, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
     };
     
@@ -110,50 +112,22 @@ namespace Psi {
     };
     
     /**
-     * \brief Base class for terms which are lists of other terms.
-     */
-    class StatementList : public Term {
-    public:
-      static const SIVtable vtable;
-      
-      PSI_STD::vector<TreePtr<Statement> > statements;
-
-      StatementList(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
-      StatementList(const TermVtable *vptr, const TreePtr<Term>& type, const PSI_STD::vector<TreePtr<Statement> >& statements, const SourceLocation& location);
-      template<typename Visitor> static void visit(Visitor& v);
-    };
-
-    /**
      * \brief Tree for a block of code.
      * 
      * \todo Merge StatementList and Block together.
      */
-    class Block : public StatementList {
+    class Block : public Term {
     public:
       static const TermVtable vtable;
-      
-      TreePtr<Term> value;
 
       Block(CompileContext& compile_context, const SourceLocation& location);
       Block(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
-    };
-    
-    /**
-     * \brief Tree for a namespace.
-     * 
-     * \todo Remove this: it doesn't have a sensible value, so it should be metadata rather
-     * than a Term.
-     */
-    class Namespace : public StatementList {
-    public:
-      static const TermVtable vtable;
 
-      Namespace(CompileContext& compile_context, const SourceLocation& location);
-      Namespace(const PSI_STD::vector<TreePtr<Statement> >& statements, CompileContext& compile_context, const SourceLocation& location);
-      template<typename V> static void visit(V& v);
+      PSI_STD::vector<TreePtr<Statement> > statements;
+      TreePtr<Term> value;
     };
-    
+
     /**
      * \brief Base for explicit constructor expressions.
      */
@@ -408,6 +382,7 @@ namespace Psi {
       static const TermVtable vtable;
       ArrayValue(CompileContext& compile_context, const SourceLocation& location);
       ArrayValue(const TreePtr<ArrayType>& type, const PSI_STD::vector<TreePtr<Term> >& element_values, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
       
       PSI_STD::vector<TreePtr<Term> > element_values;
     };
@@ -472,10 +447,27 @@ namespace Psi {
         ("type", &FunctionParameterType::type);
       }
     };
+    
+    class Exists : public Type {
+    public:
+      static const TermVtable vtable;
+      static const bool match_parameterized = true;
+
+      Exists(CompileContext& compile_context, const SourceLocation& location);
+      Exists(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& parameter_types, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+
+      TreePtr<Term> parameter_type_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& arguments) const;
+      TreePtr<Term> result_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& arguments) const;
+      
+      TreePtr<Term> result;
+      PSI_STD::vector<TreePtr<Term> > parameter_types;
+    };
 
     class FunctionType : public Type {
     public:
       static const TermVtable vtable;
+      static const bool match_parameterized = true;
 
       FunctionType(CompileContext& compile_context, const SourceLocation& location);
       FunctionType(ResultMode result_mode, const TreePtr<Term>& result_type, const PSI_STD::vector<FunctionParameterType>& parameter_types,
@@ -575,7 +567,7 @@ namespace Psi {
       static const TreeVtable vtable;
       
       JumpTarget(CompileContext& compile_context, const SourceLocation& location);
-      JumpTarget(const TreePtr<Term>& value, ResultMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location);
+      JumpTarget(CompileContext& compile_context, const TreePtr<Term>& value, ResultMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
       
       TreePtr<Term> value;
@@ -657,7 +649,7 @@ namespace Psi {
       String name;
     };
     
-    class BuiltinValue : public Term {
+    class BuiltinValue : public Global {
     public:
       static const TermVtable vtable;
       static const bool match_visit = true;
@@ -673,7 +665,7 @@ namespace Psi {
     /**
      * Tree for builtin operations. This saves having to create a separate tree for each one.
      */
-    class BuiltinFunction : public Term {
+    class BuiltinFunction : public Global {
     public:
       static const TermVtable vtable;
       static const bool match_visit = true;
@@ -768,6 +760,22 @@ namespace Psi {
       TreePtr<Library> library;
       /// \brief Callback to get the symbol name
       TreePtr<TargetCallback> callback;
+    };
+    
+    /**
+     * \brief Namespace data.
+     */
+    class Namespace : public Tree {
+    public:
+      static const TreeVtable vtable;
+      
+      typedef PSI_STD::map<String, TreePtr<Term> > NameMapType;
+
+      Namespace(CompileContext& compile_context, const SourceLocation& location);
+      Namespace(CompileContext& compile_context, const NameMapType& members, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      NameMapType members;
     };
     
     /**

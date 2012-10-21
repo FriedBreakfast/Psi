@@ -33,7 +33,7 @@ namespace Psi {
   };
 
   namespace {
-    DefaultConstructor default_ PSI_ATTRIBUTE((PSI_UNUSED)) = {};
+    DefaultConstructor default_ PSI_ATTRIBUTE((PSI_UNUSED_ATTR)) = {};
   };
   
   template<typename T>

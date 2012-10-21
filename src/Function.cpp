@@ -26,7 +26,7 @@ namespace Psi {
 
       TreePtr<Term> evaluate(const TreePtr<Term>& self) {
         PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(m_body->text);
-        return compile_statement_list(statements, m_body_context, self.location());
+        return compile_block(statements, m_body_context, self.location());
       }
     };
 
@@ -95,42 +95,58 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Anonymous> > argument_list;
       PSI_STD::vector<ParameterMode> argument_modes;
       
-      // Handle arguments
-      for (unsigned n = 0; n != 2; ++n) {
-        const PSI_STD::vector<SharedPtr<Parser::FunctionArgument> > *arguments = (n==0) ? &parsed_implicit_arguments.arguments : &parsed_explicit_arguments.arguments;
-        for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = arguments->begin(), ie = arguments->end(); ii != ie; ++ii) {
-          const Parser::FunctionArgument& argument_expr = **ii;
-          PSI_ASSERT(argument_expr.type);
+      // Handle implicit arguments
+      for (PSI_STD::vector<SharedPtr<Parser::NamedExpression> >::const_iterator ii = parsed_implicit_arguments.arguments.begin(), ie = parsed_implicit_arguments.arguments.end(); ii != ie; ++ii) {
+        const Parser::NamedExpression& argument_expr = **ii;
+        PSI_ASSERT(argument_expr.expression && argument_expr.name);
 
-          String expr_name;
-          LogicalSourceLocationPtr logical_location;
-          if (argument_expr.name) {
-            expr_name = String(argument_expr.name->begin, argument_expr.name->end);
-            logical_location = location.logical->named_child(expr_name);
-          } else {
-            logical_location = location.logical->new_anonymous_child();
-          }
-          SourceLocation argument_location(argument_expr.location.location, logical_location);
+        String expr_name(argument_expr.name->begin, argument_expr.name->end);
+        LogicalSourceLocationPtr logical_location = location.logical->named_child(expr_name);
+        SourceLocation argument_location(argument_expr.location.location, logical_location);
 
-          TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
-          TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
-          TreePtr<Anonymous> argument(new Anonymous(argument_type, argument_location));
-          argument_list.push_back(argument);
-          
-          if (argument_expr.mode) {
-            String mode_name(argument_expr.mode->begin, argument_expr.mode->end);
-            boost::optional<ParameterMode> mode = parameter_mode_from_name(mode_name);
-            if (!mode)
-              compile_context.error_throw(argument_location, boost::format("Unrecognised argument passing mode: %s") % mode_name);
-            argument_modes.push_back(*mode);
-          } else {
-            argument_modes.push_back((n==0) ? parameter_mode_functional : parameter_mode_io);
-          }
+        TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
+        TreePtr<Term> argument_type = compile_expression(argument_expr.expression, argument_context, argument_location.logical);
+        TreePtr<Anonymous> argument(new Anonymous(argument_type, argument_location));
+        argument_list.push_back(argument);
+        argument_modes.push_back(parameter_mode_functional);
 
-          if (argument_expr.name) {
-            argument_map[expr_name] = argument;
-            result.names[expr_name] = argument_list.size();
-          }
+        argument_map[expr_name] = argument;
+        result.names[expr_name] = argument_list.size();
+      }
+      
+      // Handle explicit arguments
+      for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = parsed_explicit_arguments.arguments.begin(), ie = parsed_explicit_arguments.arguments.end(); ii != ie; ++ii) {
+        const Parser::FunctionArgument& argument_expr = **ii;
+        PSI_ASSERT(argument_expr.type);
+
+        String expr_name;
+        LogicalSourceLocationPtr logical_location;
+        if (argument_expr.name) {
+          expr_name = String(argument_expr.name->begin, argument_expr.name->end);
+          logical_location = location.logical->named_child(expr_name);
+        } else {
+          logical_location = location.logical->new_anonymous_child();
+        }
+        SourceLocation argument_location(argument_expr.location.location, logical_location);
+
+        TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
+        TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
+        TreePtr<Anonymous> argument(new Anonymous(argument_type, argument_location));
+        argument_list.push_back(argument);
+        
+        if (argument_expr.mode) {
+          String mode_name(argument_expr.mode->begin, argument_expr.mode->end);
+          boost::optional<ParameterMode> mode = parameter_mode_from_name(mode_name);
+          if (!mode)
+            compile_context.error_throw(argument_location, boost::format("Unrecognised argument passing mode: %s") % mode_name);
+          argument_modes.push_back(*mode);
+        } else {
+          argument_modes.push_back(parameter_mode_io);
+        }
+
+        if (argument_expr.name) {
+          argument_map[expr_name] = argument;
+          result.names[expr_name] = argument_list.size();
         }
       }
       

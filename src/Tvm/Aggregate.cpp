@@ -553,6 +553,7 @@ namespace Psi {
           result_type,
           new_parameters,
           function_type->n_phantom() - m_parameters.size(),
+          function_type->sret(),
           location());
     }
 

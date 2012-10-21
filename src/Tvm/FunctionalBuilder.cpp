@@ -85,6 +85,62 @@ namespace Psi {
     }
     
     /**
+     * \brief Get a function type.
+     * 
+     * The user must have already resolved dependent parameters.
+     */
+    ValuePtr<FunctionType> FunctionalBuilder::function_type(CallingConvention calling_convention, const ValuePtr<>& result_type,
+                                                            const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, bool sret, const SourceLocation& location) {
+      return result_type->context().get_functional(FunctionType(calling_convention, result_type, parameter_types, n_phantom, sret, location));
+    }
+    
+    /**
+     * \brief Get a ResolvedParameter.
+     * 
+     * This is used in function types to implement dependent parameter types.
+     */
+    ValuePtr<> FunctionalBuilder::parameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location) {
+      return type->context().get_functional(ResolvedParameter(type, depth, index, location));
+    }
+    
+    class ParameterResolverRewriter : public RewriteCallback {
+      std::vector<ValuePtr<ParameterPlaceholder> > m_parameters;
+      std::size_t m_depth;
+
+    public:
+      ParameterResolverRewriter(Context& context, const std::vector<ValuePtr<ParameterPlaceholder> >& parameters)
+      : RewriteCallback(context), m_parameters(parameters), m_depth(0) {
+      }
+
+      virtual ValuePtr<> rewrite(const ValuePtr<>& term) {
+        if (ValuePtr<ParameterPlaceholder> parameter = dyn_cast<ParameterPlaceholder>(term)) {
+          ValuePtr<> type = rewrite(term->type());
+          for (unsigned i = 0, e = m_parameters.size(); i != e; ++i) {
+            if (m_parameters[i] == term)
+              return FunctionalBuilder::parameter(type, m_depth, i, m_parameters[i]->location());
+          }
+          if (type != term->type())
+            throw TvmUserError("type of unresolved function parameter cannot depend on type of resolved function parameter");
+          return term;
+        } else if (ValuePtr<FunctionType> function_type = dyn_cast<FunctionType>(term)) {
+          ++m_depth;
+          ValuePtr<> result = function_type->rewrite(*this);
+          --m_depth;
+          return result;
+        } else if (ValuePtr<Exists> exists = dyn_cast<Exists>(term)) {
+          ++m_depth;
+          ValuePtr<> result = exists->rewrite(*this);
+          --m_depth;
+          return result;
+        } else if (ValuePtr<HashableValue> hashable = dyn_cast<HashableValue>(term)) {
+          return hashable->rewrite(*this);
+        } else {
+          return term;
+        }
+      }
+    };
+
+    /**
      * \brief Get a the type of a pointer to a type.
      * 
      * \param target Type being pointed to.
