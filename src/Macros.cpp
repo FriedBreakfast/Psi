@@ -638,22 +638,14 @@ namespace Psi {
         std::vector<char> utf8_data(value_text->text.begin, value_text->text.end);
         utf8_data = string_unescape(utf8_data);
         utf8_data.push_back('\0');
+        String utf8_str(&utf8_data.front());
 
-        TreePtr<Term> char_type(new PrimitiveType(self.compile_context(), "core.uint8", location));
-        TreePtr<Term> length_type(new PrimitiveType(self.compile_context(), "core.size", location));
-        TreePtr<Term> str_length(new BuiltinValue("core.decimal", boost::lexical_cast<std::string>(utf8_data.size()), length_type, location));
-        TreePtr<Term> zero_size(new BuiltinValue("core.decimal", "0", length_type, location));
-        
-        PSI_STD::vector<TreePtr<Term> > str_values;
-        for (std::vector<char>::const_iterator ii = utf8_data.begin(), ie = utf8_data.end(); ii != ie; ++ii)
-          str_values.push_back(TreePtr<Term>(new BuiltinValue("core.ascii", boost::lexical_cast<std::string>(*ii), char_type, location)));
-        
-        TreePtr<ArrayType> string_ty(new ArrayType(char_type, str_length, location));
-        TreePtr<ArrayValue> string_val(new ArrayValue(string_ty, str_values, location));
-        
+        TreePtr<Term> length_type(new PrimitiveType(self.compile_context(), "core.uint.ptr", location));
+        TreePtr<Term> zero_size(new IntegerValue(length_type, 0, location));
+        TreePtr<Term> string_val(new StringValue(self.compile_context(), utf8_str, location));
         TreePtr<GlobalVariable> string_global(new GlobalVariable(evaluate_context->module(), true, string_val, true, true, location));
         TreePtr<Term> string_global_ptr(new PointerTo(string_global, location));
-        TreePtr<Term> string_global_base_ptr(new ElementPtr(string_global, zero_size, location));
+        TreePtr<Term> string_global_base_ptr(new ElementPtr(string_global_ptr, zero_size, location));
 
         return string_global_base_ptr;
       }

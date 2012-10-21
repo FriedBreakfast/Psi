@@ -3,6 +3,21 @@
 
 namespace Psi {
   namespace Compiler {
+    Constant::Constant(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location)
+    : Term(vptr, compile_context, location) {
+    }
+    
+    Constant::Constant(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location)
+    : Term(vptr, type, location) {
+    }
+    
+    template<typename V>
+    void Constant::visit(V& v) {
+      visit_base<Term>(v);
+    }
+    
+    const SIVtable Constant::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Constant", Term);
+    
     Constructor::Constructor(const TermVtable* vtable, CompileContext& context, const SourceLocation& location)
     : Term(vtable, context, location) {
     }
@@ -330,7 +345,7 @@ namespace Psi {
       v("target_type", &PointerType::target_type);
     }
     
-    const TermVtable PointerType::vtable = PSI_COMPILER_TERM(PointerType, "psi.compiler.PointerType", Term);
+    const TermVtable PointerType::vtable = PSI_COMPILER_TERM(PointerType, "psi.compiler.PointerType", Type);
     
     PointerTo::PointerTo(CompileContext& compile_context, const SourceLocation& location)
     : Term(&vtable, compile_context, location) {
@@ -365,8 +380,33 @@ namespace Psi {
     const TermVtable PointerTarget::vtable = PSI_COMPILER_TERM(PointerTarget, "psi.compiler.PointerTarget", Term);
     
     namespace {
+      int index_to_int(const TreePtr<Term>& index, const SourceLocation& location) {
+        TreePtr<IntegerValue> iv = dyn_treeptr_cast<IntegerValue>(index);
+        if (!iv)
+          index.compile_context().error_throw(location, "Index into aggregate type is not an IntegerValue term");
+        return iv->value;
+      }
+      
       TreePtr<Term> element_type(const TreePtr<Term>& aggregate_type, const TreePtr<Term>& index, const SourceLocation& location) {
-        PSI_NOT_IMPLEMENTED();
+        if (TreePtr<StructType> st = dyn_treeptr_cast<StructType>(aggregate_type)) {
+          int index_int = index_to_int(index, location);
+          if ((index_int < 0) || (unsigned(index_int) >= st->members.size()))
+            aggregate_type.compile_context().error_throw(location, "Structure member index out of range");
+          return st->members[index_int];
+        } else if (TreePtr<UnionType> un = dyn_treeptr_cast<UnionType>(aggregate_type)) {
+          int index_int = index_to_int(index, location);
+          if ((index_int < 0) || (unsigned(index_int) >= un->members.size()))
+            aggregate_type.compile_context().error_throw(location, "Union member index out of range");
+          return un->members[index_int];
+        } else if (TreePtr<ArrayType> ar = dyn_treeptr_cast<ArrayType>(aggregate_type)) {
+          return ar->element_type;
+        } else {
+          CompileError err(aggregate_type.compile_context(), location);
+          err.info("Element lookup argument is not an aggregate type");
+          err.info(aggregate_type.location(), "Type of element");
+          err.end();
+          throw CompileException();
+        }
       }
       
       class ElementPtrType {
@@ -795,23 +835,71 @@ namespace Psi {
     const TermVtable PrimitiveType::vtable = PSI_COMPILER_TERM(PrimitiveType, "psi.compiler.PrimitiveType", Type);
     
     BuiltinValue::BuiltinValue(CompileContext& compile_context, const SourceLocation& location)
-    : Global(&vtable, compile_context, location) {
+    : Constant(&vtable, compile_context, location) {
     }
     
     BuiltinValue::BuiltinValue(const String& constructor_, const String& data_, const TreePtr<Term>& type, const SourceLocation& location)
-    : Global(&vtable, type, location),
+    : Constant(&vtable, type, location),
     constructor(constructor_),
     data(data_) {
     }
     
     template<typename Visitor>
     void BuiltinValue::visit(Visitor& v) {
-      visit_base<Global>(v);
+      visit_base<Constant>(v);
       v("constructor", &BuiltinValue::constructor)
       ("data", &BuiltinValue::data);
     }
 
-    const TermVtable BuiltinValue::vtable = PSI_COMPILER_TERM(BuiltinValue, "psi.compiler.BuiltinValue", Global);
+    const TermVtable BuiltinValue::vtable = PSI_COMPILER_TERM(BuiltinValue, "psi.compiler.BuiltinValue", Constant);
+    
+    IntegerValue::IntegerValue(CompileContext& compile_context, const SourceLocation& location)
+    : Constant(&vtable, compile_context, location) {
+    }
+
+    IntegerValue::IntegerValue(const TreePtr<Term>& type, int value_, const SourceLocation& location)
+    : Constant(&vtable, type, location),
+    value(value_) {
+    }
+    
+    template<typename V>
+    void IntegerValue::visit(V& v) {
+      visit_base<Constant>(v);
+      v("value", &IntegerValue::value);
+    }
+    
+    const TermVtable IntegerValue::vtable = PSI_COMPILER_TERM(IntegerValue, "psi.compiler.IntegerValue", Constant);
+    
+    TreePtr<Term> StringValue::string_element_type(CompileContext& compile_context, const SourceLocation& location) {
+      return TreePtr<Term>(new PrimitiveType(compile_context, "core.uint.8", location));
+    }
+    
+    TreePtr<Term> StringValue::string_type(CompileContext& compile_context, const TreePtr<Term>& length, const SourceLocation& location) {
+      return TreePtr<ArrayType>(new ArrayType(string_element_type(compile_context, location), length, location));
+    }
+    
+    TreePtr<Term> StringValue::string_type(CompileContext& compile_context, unsigned length, const SourceLocation& location) {
+      TreePtr<Term> length_type(new PrimitiveType(compile_context, "core.uint.ptr", location));
+      TreePtr<Term> length_term(new IntegerValue(length_type, length, location));
+      return string_type(compile_context, length_term, location);
+    }
+    
+    StringValue::StringValue(CompileContext& compile_context, const SourceLocation& location)
+    : Constant(&vtable, compile_context, location) {
+    }
+
+    StringValue::StringValue(CompileContext& compile_context, const String& value_, const SourceLocation& location)
+    : Constant(&vtable, string_type(compile_context, value_.length(), location), location),
+    value(value_) {
+    }
+    
+    template<typename V>
+    void StringValue::visit(V& v) {
+      visit_base<Constant>(v);
+      v("value", &StringValue::value);
+    }
+    
+    const TermVtable StringValue::vtable = PSI_COMPILER_TERM(StringValue, "psi.compiler.StringValue", Constant);
     
     BuiltinFunction::BuiltinFunction(CompileContext& compile_context, const SourceLocation& location)
     : Global(&vtable, compile_context, location) {
@@ -844,6 +932,7 @@ namespace Psi {
     template<typename V>
     void Module::visit(V& v) {
       visit_base<Tree>(v);
+      v("name", &Module::name);
     }
     
     const TreeVtable Module::vtable = PSI_COMPILER_TREE(Module, "psi.compiler.Module", Tree);

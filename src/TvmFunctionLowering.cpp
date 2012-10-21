@@ -473,7 +473,7 @@ class TvmFunctionLowering::TypeBuilderCallback : public TvmFunctionalBuilderCall
 public:
   TypeBuilderCallback(TvmFunctionLowering *self) : m_self(self) {}
   
-  virtual TvmFunctional<> build(const TreePtr<Term>& term) {
+  virtual TvmFunctional<> build_hook(const TreePtr<Term>& term) {
     if (TreePtr<StatementRef> st = dyn_treeptr_cast<StatementRef>(term)) {
       VariableMap::const_iterator ii = m_self->m_variables.find(st->value);
       if (ii == m_self->m_variables.end())
@@ -482,14 +482,15 @@ public:
         m_self->compile_context().error_throw(st->location(), "Cannot use non-constant variable as part of type");
       return TvmFunctional<>(ii->second->value());
     } else if (TreePtr<Global> gl = dyn_treeptr_cast<Global>(term)) {
-      return TvmFunctional<>(m_self->tvm_compiler().build(gl));
+      return TvmFunctional<>(m_self->tvm_compiler().build_global(gl));
+    } else if (TreePtr<Constant> cns = dyn_treeptr_cast<Constant>(term)) {
+      return m_self->tvm_compiler().build(cns);
     } else {
       PSI_FAIL(si_vptr(term.get())->classname);
-      PSI_NOT_IMPLEMENTED();
     }
   }
   
-  virtual TvmFunctional<Tvm::RecursiveType> build_generic(const TreePtr<GenericType>& generic) {
+  virtual TvmFunctional<Tvm::RecursiveType> build_generic_hook(const TreePtr<GenericType>& generic) {
     return m_self->tvm_compiler().build_generic(generic);
   }
 };
@@ -505,7 +506,7 @@ TvmFunctional<> TvmFunctionLowering::run_type(const TreePtr<Term>& type) {
 
 TvmFunctionLowering::VariableResult TvmFunctionLowering::run(Scope& scope, const TreePtr<Term>& term, const Variable& slot, Scope& following_scope) {
   if (TreePtr<Global> global = dyn_treeptr_cast<Global>(term)) {
-    return VariableResult::in_register(local_lvalue_ref, tvm_compiler().build(global));
+    return VariableResult::in_register(local_lvalue_ref, tvm_compiler().build_global(global));
   } else if (TreePtr<Block> block = dyn_treeptr_cast<Block>(term)) {
     return run_block(scope, block, slot, following_scope);
   } else if (TreePtr<IfThenElse> if_then_else = dyn_treeptr_cast<IfThenElse>(term)) {

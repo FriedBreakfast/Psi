@@ -182,25 +182,14 @@ namespace Psi {
 
     typedef std::map<void*, MemoryBlockData> MemoryBlockMap;
     
-    MemoryBlockMap::iterator memory_block_find(MemoryBlockMap& map, void *ptr) {
-      MemoryBlockMap::iterator it = map.upper_bound(ptr);
-      if (it != map.begin()) {
-        --it;
-        if (std::size_t(reinterpret_cast<char*>(ptr) - reinterpret_cast<char*>(it->first)) < it->second.size)
-          return it;
-      }
-      return map.end();
-    }
-    
     void scan_block(const char *type, void *base, size_t size,
                     std::map<void*,MemoryBlockData>& map, std::set<const char*>& suspects) {
       char **ptrs = reinterpret_cast<char**>(base);
       for (std::size_t count = size / sizeof(void*); count; --count, ++ptrs) {
-        MemoryBlockMap::iterator ii = memory_block_find(map, *ptrs);
+        MemoryBlockMap::iterator ii = map.find(*ptrs);
         if (ii != map.end()) {
           if (ii->second.object) {
-            if (reinterpret_cast<char*>(ii->second.object) == *ptrs)
-              suspects.insert(type);
+            suspects.insert(type);
           } else if (!ii->second.owned) {
             ii->second.owned = true;
             scan_block(type, ii->first, ii->second.size, map, suspects);
@@ -212,6 +201,7 @@ namespace Psi {
 
     CompileContext::~CompileContext() {
       m_builtins = BuiltinTypes();
+      m_tvm_compiler.reset();
 
       // Add extra reference to each Tree
       BOOST_FOREACH(Object& t, m_gc_list)
@@ -231,11 +221,12 @@ namespace Psi {
       
       if (failed) {
         PSI_WARNING_FAIL("Incorrect reference count during context destruction: either dangling reference or multiple release");
-        std::set<const char*> suspects;
         
         psi_gcchecker_block *blocks;
         size_t n_blocks = psi_gcchecker_blocks(&blocks);
         if (blocks) {
+          std::set<const char*> suspects;
+          
           // Construct a map of allocated blocks, and try and guess type which is not properly collected
           std::map<void*,MemoryBlockData> block_map;
           for (size_t i = 0; i != n_blocks; ++i)
@@ -244,7 +235,7 @@ namespace Psi {
           
           // Identify block each object belongs to
           BOOST_FOREACH(Object& t, m_gc_list) {
-            MemoryBlockMap::iterator it = memory_block_find(block_map, &t);
+            MemoryBlockMap::iterator it = block_map.find(&t);
             if (it != block_map.end()) {
               it->second.object = &t;
               it->second.owned = true;
@@ -255,14 +246,58 @@ namespace Psi {
             if (ii->second.object)
               scan_block(ii->second.object->m_vptr->classname, ii->first, ii->second.size, block_map, suspects);
           }
-        } else {
-          // Print list of types with extra references to them
-          BOOST_FOREACH(Object& t, m_gc_list)
-            suspects.insert(t.m_vptr->classname);
-        }
         
-        BOOST_FOREACH(const char *s, suspects)
-          PSI_WARNING_FAIL(s);
+          BOOST_FOREACH(const char *s, suspects)
+            PSI_WARNING_FAIL(s);
+        } else {
+          std::set<const char*> suspects;
+          
+          // Try to destroy each object with zero remaining references and see what happens...
+          GCListType queue;
+          
+          // Remove all objects with zero remaining references
+          for (GCListType::iterator ii = m_gc_list.begin(), in, ie = m_gc_list.end(); ii != ie; ii = in) {
+            in = ii; ++in;
+            if (ii->m_reference_count == PSI_COMPILE_CONTEXT_REFERENCE_GUARD) {
+              Object& obj = *ii;
+              m_gc_list.erase(ii);
+              queue.push_back(obj);
+            }
+          }
+          
+          while (!queue.empty()) {
+            Object *obj = &queue.front();
+            queue.pop_front();
+
+            const char *type = si_vptr(obj)->classname;
+            obj->m_reference_count = 0;
+            derived_vptr(obj)->destroy(obj);
+            
+            // If any objects now have zero reference count, hold this object responsible!
+            bool responsible = false;
+            for (GCListType::iterator ii = m_gc_list.begin(), in, ie = m_gc_list.end(); ii != ie; ii = in) {
+              in = ii; ++in;
+              if (ii->m_reference_count == PSI_COMPILE_CONTEXT_REFERENCE_GUARD) {
+                Object& obj2 = *ii;
+                m_gc_list.erase(ii);
+                queue.push_back(obj2);
+                responsible = true;
+              }
+            }
+            
+            if (responsible)
+              suspects.insert(type);
+          }
+          
+          PSI_WARNING_FAIL("These types appear to have GC errors:");
+          BOOST_FOREACH(const char *s, suspects)
+            PSI_WARNING_FAIL(s);
+          
+          // Print remaining objects
+          PSI_WARNING_FAIL("These types form a cycle:");
+          BOOST_FOREACH(Object& t, m_gc_list)
+            PSI_WARNING_FAIL(t.m_vptr->classname);
+        }
       }
 #endif
 

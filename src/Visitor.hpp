@@ -72,6 +72,7 @@ namespace Psi {
   
   PSI_VISIT_SIMPLE(bool)
   PSI_VISIT_SIMPLE(char)
+  PSI_VISIT_SIMPLE(int)
   PSI_VISIT_SIMPLE(unsigned)
   PSI_VISIT_SIMPLE(std::string)
 

@@ -372,6 +372,42 @@ namespace Psi {
     }
   }
   
+  void unicode_encode(std::vector<char>& output, unsigned value) {
+    unsigned n_continuation;
+    unsigned char high_bits;
+    if (value < 0x80) {
+      output.push_back(value);
+      return;
+    } else if (value < 0x800) {
+      n_continuation = 1;
+      high_bits = 0xC0;
+    } else if (value < 0x10000) {
+      n_continuation = 2;
+      high_bits = 0xE0;
+    } else if (value < 0x200000) {
+      n_continuation = 3;
+      high_bits = 0xF0;
+    } else if (value < 0x4000000) {
+      n_continuation = 4;
+      high_bits = 0xF8;
+    } else {
+      PSI_ASSERT(value < 0x80000000);
+      n_continuation = 5;
+      high_bits = 0xFC;
+    }
+    
+    char buf[6];
+    unsigned shifted_value = value;
+    for (unsigned i = 0; i < n_continuation; ++i) {
+      buf[i] = 0x80 | (shifted_value & 0x3F);
+      shifted_value >>= 6;
+    }
+    buf[n_continuation] = high_bits | shifted_value;
+    
+    std::reverse(buf, buf + n_continuation + 1);
+    output.insert(output.end(), buf, buf + n_continuation + 1);
+  }
+  
   /**
    * \brief Process escape codes in a string.
    */
@@ -394,17 +430,23 @@ namespace Psi {
           ++ii;
         } else if (*ii == 'u') {
           // Unicode escapes
-          PSI_NOT_IMPLEMENTED();
+          ++ii;
+          char data[5];
+          grab_digits_up_to(data, 5, ii, ie);
+          unicode_encode(r, strtol(data, NULL, 16));
         } else if (*ii == 'x') {
           // ASCII escapes
           ++ii;
           char data[3];
           grab_digits_up_to(data, 3, ii, ie);
-          int val = atoi(data);
-          r.push_back((char)val);
+          unicode_encode(r, strtol(data, NULL, 16));
         }
       } else {
-        r.push_back(*ii);
+        unsigned char uc = *ii;
+        if (uc > 127) // Treat  >= 128 as ISO8859-1
+          unicode_encode(r, uc);
+        else
+          r.push_back(*ii);
         ++ii;
       }
     }

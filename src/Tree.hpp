@@ -11,6 +11,21 @@
 namespace Psi {
   namespace Compiler {
     class Function;
+    
+    /**
+     * \brief Base class for constant values.
+     * 
+     * This is helpful during compilation when one needs to determine
+     * whether a value is a simple constant or not.
+     */
+    class Constant : public Term {
+    public:
+      static const SIVtable vtable;
+      static const bool match_visit = true;
+      Constant(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
+      Constant(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+    };
 
     /**
      * \brief A global value.
@@ -649,7 +664,10 @@ namespace Psi {
       String name;
     };
     
-    class BuiltinValue : public Global {
+    /**
+     * \brief Tree for built in values.
+     */
+    class BuiltinValue : public Constant {
     public:
       static const TermVtable vtable;
       static const bool match_visit = true;
@@ -660,6 +678,40 @@ namespace Psi {
 
       String constructor;
       String data;
+    };
+    
+    /**
+     * \brief Class for small integer values.
+     * 
+     * Holds a 32 bit signed integer value.
+     * Note that it is a requirement to use this type of constant to index
+     * structures and unions.
+     */
+    class IntegerValue : public Constant {
+    public:
+      static const TermVtable vtable;
+      IntegerValue(CompileContext& compile_context, const SourceLocation& location);
+      IntegerValue(const TreePtr<Term>& type, int value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      int value;
+    };
+    
+    /**
+     * \brief Class for string data.
+     */
+    class StringValue : public Constant {
+    public:
+      static const TermVtable vtable;
+      StringValue(CompileContext& compile_context, const SourceLocation& location);
+      StringValue(CompileContext& compile_context, const String& value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      String value;
+
+      static TreePtr<Term> string_element_type(CompileContext& compile_context, const SourceLocation& location);
+      static TreePtr<Term> string_type(CompileContext& compile_context, const TreePtr<Term>& length, const SourceLocation& location);
+      static TreePtr<Term> string_type(CompileContext& compile_context, unsigned length, const SourceLocation& location);
     };
     
     /**

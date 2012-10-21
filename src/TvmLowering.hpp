@@ -25,8 +25,8 @@ namespace Psi {
     
     class TvmFunctionalBuilderCallback {
     public:
-      virtual TvmFunctional<> build(const TreePtr<Term>& term) = 0;
-      virtual TvmFunctional<Tvm::RecursiveType> build_generic(const TreePtr<GenericType>& generic) = 0;
+      virtual TvmFunctional<> build_hook(const TreePtr<Term>& term) = 0;
+      virtual TvmFunctional<Tvm::RecursiveType> build_generic_hook(const TreePtr<GenericType>& generic) = 0;
     };
 
     /**
@@ -41,6 +41,7 @@ namespace Psi {
       FunctionalValueMap m_values;
       
       TvmFunctional<> build_type(const TreePtr<Type>& type);
+      TvmFunctional<> build_primitive_type(const TreePtr<PrimitiveType>& type);
       TvmFunctional<> build_function_type(const TreePtr<FunctionType>& type);
       TvmFunctional<> build_type_instance(const TreePtr<TypeInstance>& type);
       
@@ -55,14 +56,14 @@ namespace Psi {
     /**
      * \brief Compilation context component which handles TVM translation.
      */
-    class TvmCompiler {
+    class TvmCompiler : TvmFunctionalBuilderCallback {
       typedef boost::unordered_map<TreePtr<ModuleGlobal>, Tvm::ValuePtr<Tvm::Global> > ModuleGlobalMap;
       
       struct TvmModule {
         boost::shared_ptr<Tvm::Module> module;
         ModuleGlobalMap symbols;
         std::vector<boost::shared_ptr<Platform::PlatformLibrary> > platform_dependencies;
-      };
+      };        
       
       CompileContext *m_compile_context;
       Tvm::Context m_tvm_context;
@@ -78,7 +79,8 @@ namespace Psi {
       typedef boost::unordered_map<TreePtr<GenericType>, TvmFunctional<Tvm::RecursiveType> > GenericTypeMap;
       GenericTypeMap m_generics;
       
-      virtual Tvm::ValuePtr<> build_value(const TreePtr<Term>& value);
+      virtual TvmFunctional<> build_hook(const TreePtr<Term>& value);
+      virtual TvmFunctional<Tvm::RecursiveType> build_generic_hook(const TreePtr<GenericType>& generic);
       
     public:
       TvmCompiler(CompileContext *compile_context);
@@ -89,7 +91,8 @@ namespace Psi {
       void add_compiled_module(const TreePtr<Module>& module, const boost::shared_ptr<Platform::PlatformLibrary>& lib);
 
       boost::shared_ptr<Platform::PlatformLibrary> load_library(const TreePtr<Library>& lib);
-      Tvm::ValuePtr<Tvm::Global> build(const TreePtr<Global>& global);
+      Tvm::ValuePtr<Tvm::Global> build_global(const TreePtr<Global>& global);
+      TvmFunctional<> build(const TreePtr<Term>& value);
       TvmFunctional<Tvm::RecursiveType> build_generic(const TreePtr<GenericType>& generic);
       void* jit_compile(const TreePtr<Global>& global);
       
