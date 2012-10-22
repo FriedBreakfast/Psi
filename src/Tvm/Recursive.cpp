@@ -25,35 +25,42 @@ namespace Psi {
     }
     
     PSI_TVM_VALUE_IMPL(RecursiveParameter, Value);
+    
+    namespace {
+      bool recursive_source_check(Value *source, RecursiveType *rt) {
+        if (!source)
+          return true;
+        
+        RecursiveParameter *rp = dyn_cast<RecursiveParameter>(source);
+        if (!rp)
+          return false;
+        
+        return rp->recursive_ptr() == rt;
+      }
+    }
 
-    RecursiveType::RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, Value *source, const SourceLocation& location)
-    : Value(result_type->context(), term_recursive, ValuePtr<>(), source, location),
+    RecursiveType::RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, const SourceLocation& location)
+    : Value(result_type->context(), term_recursive, ValuePtr<>(), NULL, location),
     m_result_type(result_type) {
       m_parameters.swap(parameters);
       
-      if (source && source->phantom())
-        throw TvmUserError("Recursive types cannot be phantom");
-
-      if (!m_parameters.empty()) {
-        Value *test_source = m_parameters.front().get();
-        bool phantom_finished = true;
-        for (RecursiveType::ParameterList::const_iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
-          if ((*ii)->phantom()) {
-            if (phantom_finished)
-              throw TvmUserError("Phantom parameters must come before all others in a parameter list");
-          } else {
-            phantom_finished = true;
-          }
-
-          (*ii)->m_recursive = this;
-
-          if (!source_dominated((*ii)->source(), test_source))
-            throw TvmUserError("source specified for recursive term is not dominated by parameter block");
+      bool phantom_finished = true;
+      for (RecursiveType::ParameterList::const_iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
+        if ((*ii)->phantom()) {
+          if (phantom_finished)
+            throw TvmUserError("Phantom parameters must come before all others in a parameter list");
+        } else {
+          phantom_finished = true;
         }
-      }
 
-      if (!source_dominated(result_type->source(), source))
-        throw TvmUserError("source specified for recursive term is not dominated by result type block");
+        (*ii)->m_recursive = this;
+
+        if (!recursive_source_check((*ii)->source(), this))
+          throw TvmUserError("Parameter to recursive term is not global");
+      }
+      
+      if (!recursive_source_check(result_type->source(), this))
+        throw TvmUserError("Recursive term result type is not global");
     }
 
     /**
@@ -65,9 +72,8 @@ namespace Psi {
      */
     ValuePtr<RecursiveType> RecursiveType::create(const ValuePtr<>& result_type,
                                                   RecursiveType::ParameterList& parameters,
-                                                  Value *source,
                                                   const SourceLocation& location) {
-      return ValuePtr<RecursiveType>(::new RecursiveType(result_type, parameters, source, location));
+      return ValuePtr<RecursiveType>(::new RecursiveType(result_type, parameters, location));
     }
 
     /**
@@ -83,12 +89,8 @@ namespace Psi {
       if (m_result)
         throw TvmUserError("resolving a recursive term which has already been resolved");
 
-      Value *to_source = to->source();
-      if (RecursiveParameter *rp = dyn_cast<RecursiveParameter>(to_source))
-        to_source = rp->recursive_ptr()->source();
-
-      if (!source_dominated(to_source, source()))
-        throw TvmUserError("term used to resolve recursive term is not in scope");
+      if (!recursive_source_check(to->source(), this))
+        throw TvmUserError("term used to resolve recursive term is not global");
 
       if (to->phantom())
         throw TvmUserError("Recursive type cannot be resolved to a phantom term");

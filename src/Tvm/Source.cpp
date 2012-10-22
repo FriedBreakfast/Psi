@@ -210,21 +210,15 @@ namespace Psi {
         else if (t2->phantom())
           return t2;
         
-        // Easiest to handle RecursiveParameter case separately
+        // Recursive type parameters are incompatible with any other term type
         if (t1->term_type() == term_recursive_parameter) {
-          if (t2->term_type() == term_recursive_parameter) {
-            return common_source_recursive_parameter_recursive_parameter(value_cast<RecursiveParameter>(t1), value_cast<RecursiveParameter>(t2));
-          } else {
-            Value *t1b = recursive_base_source(value_cast<RecursiveParameter>(t1));
-            if (common_source(t1b, t2) != t1b)
-              common_source_fail();
-            return t1;
-          }
+          if (t2->term_type() == term_recursive_parameter)
+            if (value_cast<RecursiveParameter>(t1)->recursive() == value_cast<RecursiveParameter>(t2)->recursive())
+              return t1;
+            
+          common_source_fail();
         } else if (t2->term_type() == term_recursive_parameter) {
-          Value *t2b = recursive_base_source(value_cast<RecursiveParameter>(t2));
-          if (common_source(t1, t2b) != t2b)
-            common_source_fail();
-          return t2;
+          common_source_fail();
         }
         
         switch (t1->term_type()) {

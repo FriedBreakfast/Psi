@@ -188,7 +188,7 @@ namespace Psi {
         else
           result_type = FunctionalBuilder::type_type(my_context.context(), SourceLocation(recursive_type.location, logical_location));
 
-        return RecursiveType::create(result_type, parameters, NULL, SourceLocation(recursive_type.location, logical_location));
+        return RecursiveType::create(result_type, parameters, SourceLocation(recursive_type.location, logical_location));
       }
 
       ValuePtr<> build_instruction_expression(AssemblerContext& context, InstructionBuilder& builder, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& logical_location) {

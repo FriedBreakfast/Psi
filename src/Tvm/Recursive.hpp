@@ -52,7 +52,6 @@ namespace Psi {
       
       static ValuePtr<RecursiveType> create(const ValuePtr<>& result_type,
                                             RecursiveType::ParameterList& parameters,
-                                            Value *source,
                                             const SourceLocation& location);
 
       void resolve(const ValuePtr<>& term);
@@ -64,7 +63,7 @@ namespace Psi {
       template<typename V> static void visit(V& v);
 
     private:
-      RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, Value *source, const SourceLocation& location);
+      RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, const SourceLocation& location);
 
       ValuePtr<> m_result_type;
       ValuePtr<> m_result;
