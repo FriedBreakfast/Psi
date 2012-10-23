@@ -8,3 +8,5 @@ Internals
    tvm_mapping
    storage_specifiers
    overloading
+   trees
+   tvm_lowering
