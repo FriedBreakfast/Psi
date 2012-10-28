@@ -105,6 +105,7 @@ add_library(psi-compiler SHARED
   TreeBase.cpp TreeBase.hpp
   Term.cpp Term.hpp
   TvmFunctionLowering.cpp
+  TvmFunctionalLowering.cpp
   TvmLowering.cpp TvmLowering.hpp
   Utility.cpp Utility.hpp
   Visitor.hpp

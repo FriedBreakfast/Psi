@@ -271,6 +271,15 @@ namespace Psi {
     }
     
     /**
+     * \brief Generate an unreachable instruction.
+     */
+    ValuePtr<Instruction> InstructionBuilder::unreachable(const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new Unreachable(m_insert_point.block()->context(), location));
+      m_insert_point.insert(insn);
+      return insn;
+    }
+    
+    /**
      * \brief Whether the current block has been terminated.
      * 
      * If it has been, then any instruction insertion at the end of the block will fail.

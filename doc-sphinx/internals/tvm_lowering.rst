@@ -16,10 +16,38 @@ as this is an error.
 Because of this generic type lowering must be performed in two passes: in the first pass the TVM type tree is built and
 in the second pass the dependence of the type layout on its parameters is established.
 
+Constructor calls
+-----------------
+
+Constructors are called the smallest number of times possible, that is an expression::
+
+  a : f(...)
+  
+Will `not` create a temporary of the result of ``f`` and then move the value into ``a``,
+rather, it will directly construct the result into ``a``.
+Move constructor calls may be freely elided by optimisation,
+however the main purpose of the implementation is that a move constructor is not necessary
+in many situations, and this is the principal way to construct non-moveable types.
+
 Module attachment
 -----------------
 
 Global symbol are explicitly attached to modules by a reference to their containing module.
+
+Global variable initialisation
+------------------------------
+
+Global variable initialisation is done on a "best effort" basis.
+That is, any if a global variable A depends on a global variable B (including the transitive closure of dependencies),
+B will be initialised before A, and vice versa.
+If both A depends on B and B depends on A, then a common function is generated which initialises both by first
+default constructing both, and then re-assigning them using proper initialisers.
+This ensures that a valid value is visible at all times, but does mean that modifications performed by the initialiser
+of A on B may or may not be visible after both are initialised.
+This extends to larger sets or interdependent variables.
+
+Within these interdependent sets, there may be at most one variable whose type is not MoveAssignable, otherwise an error occurs.
+The variable with this type will be constructed after default construction of all other variables but before they are assigned their value.
 
 Interface implementations
 -------------------------
@@ -34,7 +62,7 @@ in practice a mechanism to reduce duplicate instantiations should be used.
 Nested functions
 ----------------
 
-Nested functions are implemented usin the :psi:`Psi::Compiler::Closure` tree.
+Nested functions are implemented using the :psi:`Psi::Compiler::Closure` tree.
 The facilitates automatic generation of a type containing variables captured from enclosing scopes.
 Recursion between nested functions is also handled; in this case it is necessary to merge the required variables from all functions in a graph.
 The user may then generate local interface implementations from these values.

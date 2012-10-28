@@ -160,6 +160,7 @@ namespace Psi {
     T* get () const {return static_cast<T*>(m_c.ptr);}
     T& operator * () const {return *get();}
     T* operator -> () const {return get();}
+    bool unique() const {return m_c.owner->use_count == 1;}
 
     SharedPtr& operator = (const SharedPtr& src) {
       SharedPtr<T>(src).swap(*this);

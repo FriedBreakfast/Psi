@@ -39,6 +39,7 @@ namespace Psi {
     class Anonymous;
     class Global;
     class Interface;
+    class Type;
 
     /**
      * \brief Class used for error reporting.

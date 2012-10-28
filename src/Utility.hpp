@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <string>
+#include <cstring>
 #include <vector>
 
 #include <boost/aligned_storage.hpp>

@@ -2,17 +2,25 @@
 #define HPP_PSI_COMPILER_TERM
 
 #include "TreeBase.hpp"
+#include "Compiler.hpp"
 
 namespace Psi {
   namespace Compiler {
     class Anonymous;
     class Term;
+    class Statement;
+    class ModuleGlobal;
     
     struct TermVtable {
       TreeVtable base;
       const TreeBase* (*parameterize) (const Term*, const SourceLocation*, const PSI_STD::vector<TreePtr<Anonymous> >*, unsigned);
       const TreeBase* (*specialize) (const Term*, const SourceLocation*, const PSI_STD::vector<TreePtr<Term> >*, unsigned);
+      const TreeBase* (*anonymize) (const Term*, const SourceLocation*, PSI_STD::vector<TreePtr<Term> >*,
+                                    PSI_STD::map<TreePtr<Statement>, unsigned>*, const PSI_STD::vector<TreePtr<Statement> >*, unsigned);
       PsiBool (*match) (const Term*, const Term*, PSI_STD::vector<TreePtr<Term> >*, unsigned);
+      
+      void (*global_dependencies) (const Term*, PSI_STD::set<TreePtr<ModuleGlobal> > *globals);
+      PsiBool (*pure_functional) (const Term*);
     };
     
     class Term : public Tree {
@@ -46,12 +54,37 @@ namespace Psi {
         return tree_from_base_take<Term>(derived_vptr(this)->specialize(this, &location, &values, depth));
       }
       
+      TreePtr<Term> anonymize(const SourceLocation& location,
+                              PSI_STD::vector<TreePtr<Term> >& parameter_types, PSI_STD::map<TreePtr<Statement>, unsigned>& parameter_map,
+                              const PSI_STD::vector<TreePtr<Statement> >& statements, unsigned depth) const {
+        return tree_from_base_take<Term>(derived_vptr(this)->anonymize(this, &location, &parameter_types, &parameter_map, &statements, depth));
+      }
+
       bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
       bool equivalent(const TreePtr<Term>& value) const;
+      
+      /**
+       * \brief Find module-level globals on which this term depends.
+       */
+      void global_dependencies(PSI_STD::set<TreePtr<ModuleGlobal> >& globals) const {
+        derived_vptr(this)->global_dependencies(this, &globals);
+      }
+      
+      /**
+       * \brief Whether calculation of this term requires evaluating non-functional operands.
+       */
+      bool pure_functional() const {
+        return derived_vptr(this)->pure_functional(this);
+      }
       
       static bool match_impl(const Term& lhs, const Term& rhs, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth);
       static TreePtr<Term> parameterize_impl(const Term& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements, unsigned depth);
       static TreePtr<Term> specialize_impl(const Term& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, unsigned depth);
+      static TreePtr<Term> anonymize_impl(const Term& self, const SourceLocation& location,
+                                          PSI_STD::vector<TreePtr<Term> >& parameter_types, PSI_STD::map<TreePtr<Statement>, unsigned>& parameter_map,
+                                          const PSI_STD::vector<TreePtr<Statement> >& statements, unsigned depth);
+      static void global_dependencies_impl(const Term& self, PSI_STD::set<TreePtr<ModuleGlobal> >& globals);
+      static PsiBool pure_functional_impl(const Term& self);
 
       template<typename Visitor> static void visit(Visitor& v) {
         visit_base<Tree>(v);
@@ -60,7 +93,7 @@ namespace Psi {
     };
 
     template<typename Derived>
-    class RewriteVisitorBase {
+    class RewriteVisitorBase : boost::noncopyable {
       bool m_changed;
       
       Derived& derived() {return *static_cast<Derived*>(this);}
@@ -82,13 +115,13 @@ namespace Psi {
 
       template<typename T>
       void visit_object(const char*, const boost::array<const T*, 2>& obj) {
-        visit_members(*this, obj);
+        visit_members(derived(), obj);
       }
 
       template<typename T>
       void visit_object(const char*, const boost::array<const TreePtr<T>*, 2>& ptr) {
-        *const_cast<TreePtr<T>*>(ptr[0]) = derived().visit_tree_ptr(*ptr[1]);
-        if (*ptr[0] != *ptr[1])
+        *const_cast<TreePtr<T>*>(ptr[0]) = treeptr_cast<T>(derived().visit_tree_ptr(*ptr[1]));
+        if (ptr[0]->raw_get() != ptr[1]->raw_get())
           m_changed = true;
       }
 
@@ -98,7 +131,7 @@ namespace Psi {
         for (typename T::const_iterator ii = collections[1]->begin(), ie = collections[1]->end(); ii != ie; ++ii) {
           typename T::value_type vt;
           boost::array<typename T::const_pointer, 2> m = {{&vt, &*ii}};
-          visit_callback(*this, "", m);
+          visit_callback(derived(), "", m);
           target->insert(target->end(), vt);
         }
       }
@@ -117,7 +150,7 @@ namespace Psi {
     /**
      * Term visitor to perform pattern matching.
      */
-    class MatchVisitor {
+    class MatchVisitor : boost::noncopyable {
       PSI_STD::vector<TreePtr<Term> > *m_wildcards;
       unsigned m_depth;
 
@@ -158,7 +191,12 @@ namespace Psi {
           return;
 
         boost::array<T*, 2> m = {{*obj[0], *obj[1]}};
-        visit_callback(*this, NULL, m);
+        if (!*m[0])
+          result = !*m[1];
+        else if (!*m[1])
+          result = false;
+        else
+          visit_callback(*this, NULL, m);
       }
 
       template<typename T>
@@ -166,7 +204,12 @@ namespace Psi {
         if (!result)
           return;
 
-        (*ptr[0])->match(*ptr[1], *m_wildcards, m_depth);
+        if (!*ptr[0])
+          result = !*ptr[1];
+        else if (!*ptr[1])
+          result = false;
+        else
+          result = (*ptr[0])->match(*ptr[1], *m_wildcards, m_depth);
       }
 
       template<typename T>
@@ -228,9 +271,8 @@ namespace Psi {
       ParameterizeVisitor(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> > *elements, unsigned depth)
       : m_location(location), m_elements(elements), m_depth(depth) {}
 
-      template<typename T>
-      TreePtr<T> visit_tree_ptr(const TreePtr<T>& ptr) {
-        return ptr ? treeptr_cast<T>(ptr->parameterize(m_location, *m_elements, m_depth)) : TreePtr<T>();
+      TreePtr<Term> visit_tree_ptr(const TreePtr<Term>& ptr) {
+        return ptr ? ptr->parameterize(m_location, *m_elements, m_depth) : TreePtr<Term>();
       }
     };
 
@@ -243,12 +285,97 @@ namespace Psi {
       SpecializeVisitor(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> > *values, unsigned depth)
       : m_location(location), m_values(values), m_depth(depth) {}
 
+      TreePtr<Term> visit_tree_ptr(const TreePtr<Term>& ptr) {
+        return ptr ? ptr->specialize(m_location, *m_values, m_depth) : TreePtr<Term>();
+      }
+    };
+    
+    class AnonymizeVisitor : public RewriteVisitorBase<AnonymizeVisitor> {
+      SourceLocation m_location;
+      PSI_STD::vector<TreePtr<Term> > *m_parameter_types;
+      PSI_STD::map<TreePtr<Statement>, unsigned> *m_parameter_map;
+      const PSI_STD::vector<TreePtr<Statement> > *m_statements;
+      unsigned m_depth;
+
+    public:
+      AnonymizeVisitor(const SourceLocation& location,
+                       PSI_STD::vector<TreePtr<Term> > *parameter_types, PSI_STD::map<TreePtr<Statement>, unsigned> *parameter_map,
+                       const PSI_STD::vector<TreePtr<Statement> > *statements, unsigned depth)
+      : m_location(location), m_parameter_types(parameter_types), m_parameter_map(parameter_map), m_statements(statements), m_depth(depth) {}
+
+      TreePtr<Term> visit_tree_ptr(const TreePtr<Term>& ptr) {
+        return ptr ? ptr->anonymize(m_location, *m_parameter_types, *m_parameter_map, *m_statements, m_depth) : TreePtr<Term>();
+      }
+    };
+    
+    template<typename Derived>
+    class UnaryTreePtrVisitor : boost::noncopyable {
+      Derived& derived() {return *static_cast<Derived*>(this);}
+      
+    public:
       template<typename T>
-      TreePtr<T> visit_tree_ptr(const TreePtr<T>& ptr) {
-        return ptr ? treeptr_cast<T>(ptr->specialize(m_location, *m_values, m_depth)) : TreePtr<T>();
+      void visit_base(const boost::array<T*,1>& c) {
+        visit_members(derived(), c);
+      }
+
+      template<typename T>
+      void visit_simple(const char*, const boost::array<const T*, 1>&) {}
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<const T*, 1>& obj) {
+        visit_members(derived(), obj);
+      }
+
+      template<typename T>
+      void visit_object(const char*, const boost::array<const TreePtr<T>*, 1>& ptr) {
+        derived().visit_tree_ptr(*ptr[0]);
+      }
+
+      template<typename T>
+      void visit_collection(const char*, const boost::array<const T*,1>& collections) {
+        for (typename T::const_iterator ii = collections[0]->begin(), ie = collections[0]->end(); ii != ie; ++ii) {
+          boost::array<typename T::const_pointer, 1> m = {{&*ii}};
+          visit_callback(derived(), NULL, m);
+        }
+      }
+
+      template<typename T>
+      void visit_sequence(const char*, const boost::array<T*,1>& collections) {
+        visit_collection(NULL, collections);
+      }
+
+      template<typename T>
+      void visit_map(const char*, const boost::array<T*, 1>& collections) {
+        visit_collection(NULL, collections);
       }
     };
 
+    class GlobalDependenciesVisitor : public UnaryTreePtrVisitor<GlobalDependenciesVisitor> {
+      PSI_STD::set<TreePtr<ModuleGlobal> > *m_dependencies;
+      
+    public:
+      GlobalDependenciesVisitor(PSI_STD::set<TreePtr<ModuleGlobal> > *dependencies) : m_dependencies(dependencies) {}
+      
+      template<typename T>
+      void visit_tree_ptr(const TreePtr<T>& ptr) {
+        if (ptr)
+          ptr->global_dependencies(*m_dependencies);
+      }
+    };
+
+    class PureFunctionalVisitor : public UnaryTreePtrVisitor<GlobalDependenciesVisitor> {
+    public:
+      PureFunctionalVisitor() : pure(true) {}
+      
+      bool pure;
+      
+      template<typename T>
+      void visit_tree_ptr(const TreePtr<T>& ptr) {
+        if (pure && ptr)
+          pure = pure && ptr->pure_functional();
+      }
+    };
+    
     template<typename Derived>
     struct TermWrapper : NonConstructible {
       /**
@@ -303,14 +430,83 @@ namespace Psi {
       static const TreeBase* specialize(const Term *self, const SourceLocation *location, const PSI_STD::vector<TreePtr<Term> > *values, unsigned depth) {
         return specialize_helper(static_bool<Derived::match_visit>(), self, location, values, depth);
       }
+
+      static const TreeBase* anonymize_helper(static_bool<false>, const Term *self, const SourceLocation *location,
+                                              PSI_STD::vector<TreePtr<Term> > *parameter_types, PSI_STD::map<TreePtr<Statement>, unsigned> *parameter_map,
+                                              const PSI_STD::vector<TreePtr<Statement> > *statements, unsigned depth) {
+        return Derived::anonymize_impl(*static_cast<const Derived*>(self), *location, *parameter_types, *parameter_map, *statements, depth).release();
+      }
+
+      static const TreeBase* anonymize_helper(static_bool<true>, const Term *self, const SourceLocation *location,
+                                              PSI_STD::vector<TreePtr<Term> > *parameter_types, PSI_STD::map<TreePtr<Statement>, unsigned> *parameter_map,
+                                              const PSI_STD::vector<TreePtr<Statement> > *statements, unsigned depth) {
+        Derived rewritten(self->compile_context(), *location);
+        boost::array<const Derived*, 2> ptrs = {{&rewritten, static_cast<const Derived*>(self)}};
+        AnonymizeVisitor av(*location, parameter_types, parameter_map, statements, depth + (Derived::match_parameterized?1:0));
+        visit_members(av, ptrs);
+        return TreePtr<Derived>(av.changed() ? new Derived(rewritten) : static_cast<const Derived*>(self)).release();
+      }
+
+      static const TreeBase* anonymize(const Term *self, const SourceLocation *location,
+                                       PSI_STD::vector<TreePtr<Term> > *parameter_types, PSI_STD::map<TreePtr<Statement>, unsigned> *parameter_map,
+                                       const PSI_STD::vector<TreePtr<Statement> > *statements, unsigned depth) {
+        return anonymize_helper(static_bool<Derived::match_visit>(), self, location, parameter_types, parameter_map, statements, depth);
+      }
+
+      static void global_dependencies_helper(static_bool<false>, const Term *self, PSI_STD::set<TreePtr<ModuleGlobal> > *globals) {
+        Derived::global_dependencies_impl(*static_cast<const Derived*>(self), *globals);
+      }
+      
+      static void global_dependencies_helper(static_bool<true>, const Term *self, PSI_STD::set<TreePtr<ModuleGlobal> > *globals) {
+        GlobalDependenciesVisitor gv(globals);
+        boost::array<const Derived*,1> ptrs = {{static_cast<const Derived*>(self)}};
+        visit_members(gv, ptrs);
+      }
+      
+      static void global_dependencies(const Term *self, PSI_STD::set<TreePtr<ModuleGlobal> > *globals) {
+        return global_dependencies_helper(static_bool<Derived::match_visit>(), self, globals);
+      }
+      
+      static PsiBool pure_functional_helper(static_bool<false>, const Term *self) {
+        return Derived::pure_functional_impl(*static_cast<const Derived*>(self));
+      }
+      
+      static PsiBool pure_functional_helper(static_bool<true>, const Term *self) {
+        PureFunctionalVisitor pv;
+        boost::array<const Derived*,1> ptrs = {{static_cast<const Derived*>(self)}};
+        visit_members(pv, ptrs);
+        return pv.pure;
+      }
+      
+      static PsiBool pure_functional(const Term *self) {
+        return pure_functional_helper(static_bool<Derived::match_visit>(), self);
+      }
     };
 
 #define PSI_COMPILER_TERM(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
     &::Psi::Compiler::TermWrapper<derived>::parameterize, \
     &::Psi::Compiler::TermWrapper<derived>::specialize, \
-    &::Psi::Compiler::TermWrapper<derived>::match \
+    &::Psi::Compiler::TermWrapper<derived>::anonymize, \
+    &::Psi::Compiler::TermWrapper<derived>::match, \
+    &::Psi::Compiler::TermWrapper<derived>::global_dependencies, \
+    &::Psi::Compiler::TermWrapper<derived>::pure_functional \
   }
+
+    /**
+     * \brief Base class for (most) functional values.
+     * 
+     * Apart from built-in function calls, all terms which only take pure
+     * functional arguments derive from this.
+     */
+    class Functional : public Term  {
+    public:
+      static const SIVtable vtable;
+      static const bool match_visit = true;
+      Functional(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
+      Functional(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+    };
 
     /**
      * \brief Base class for most types.
@@ -320,7 +516,7 @@ namespace Psi {
      * regular parameters. Use Term::is_type to determine whether a term is a type
      * or not.
      */
-    class Type : public Term {
+    class Type : public Functional {
     public:
       static const SIVtable vtable;
       static const bool match_visit = true;
@@ -333,12 +529,10 @@ namespace Psi {
     /**
      * \brief Type of types.
      */
-    class Metatype : public Term {
+    class Metatype : public Functional {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = false;
       Metatype(CompileContext& compile_context, const SourceLocation& location);
-      static bool match_impl(const Term& lhs, const Term& rhs, PSI_STD::vector<TreePtr<Term> >&, unsigned);
       template<typename V> static void visit(V& v);
     };
 
@@ -376,6 +570,11 @@ namespace Psi {
       /// Index of this parameter in its scope.
       unsigned index;
     };
+
+    TreePtr<Term> anonymize_term(const TreePtr<Term>& term, const SourceLocation& location,
+                                 const PSI_STD::vector<TreePtr<Statement> >& statements=PSI_STD::vector<TreePtr<Statement> >());
+    TreePtr<Term> anonymize_term_delayed(const TreePtr<Term>& term, const SourceLocation& location, const PSI_STD::vector<TreePtr<Statement> >& statements=PSI_STD::vector<TreePtr<Statement> >());
+    TreePtr<Term> anonymize_type_delayed(const TreePtr<Term>& term, const SourceLocation& location, const PSI_STD::vector<TreePtr<Statement> >& statements=PSI_STD::vector<TreePtr<Statement> >());
   }
 }
 

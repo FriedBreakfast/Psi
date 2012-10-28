@@ -105,6 +105,9 @@ namespace Psi {
      * as castable to any type.
      */
     bool TreePtrBase::is_a(const TreeVtable *vptr) const {
+      if (!m_ptr)
+        return true;
+      
       if (derived_vptr(m_ptr.get())->is_callback)
         if (!evaluate(vptr))
           return true;

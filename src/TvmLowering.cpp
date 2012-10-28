@@ -5,243 +5,12 @@
 #include "Tvm/Recursive.hpp"
 
 #include <boost/format.hpp>
-#include <boost/lexical_cast.hpp>
 
 namespace Psi {
 namespace Compiler {
-TvmFunctionalBuilder::TvmFunctionalBuilder(Tvm::Context* context, TvmFunctionalBuilderCallback* callback)
-: m_context(context), m_callback(callback) {
-}
-
-/**
- * \brief Convert a functional operation to TVM.
- */
-TvmFunctional<> TvmFunctionalBuilder::build(const TreePtr<Term>& value) {
-  FunctionalValueMap::iterator ii = m_values.find(value);
-  if (ii != m_values.end())
-    return ii->second;
-  
-  TvmFunctional<> result;
-  if (TreePtr<Type> type = dyn_treeptr_cast<Type>(value)) {
-    result = build_type(type);
-  } else if (TreePtr<TypeInstance> type_inst = dyn_treeptr_cast<TypeInstance>(value)) {
-    result = build_type_instance(type_inst);
-  } else {
-    result = m_callback->build_hook(value);
-  }
-  
-  m_values.insert(std::make_pair(value, result));
-  return result;
-}
-
-/**
- * \brief Shorthand for build(x).value
- */
-Tvm::ValuePtr<> TvmFunctionalBuilder::build_value(const TreePtr<Term>& term) {
-  return build(term).value;
-}
-
-/**
- * \brief Check if a type is primitive.
- * 
- * Note that this does not convert the type to TVM, although it will use existing results.
- * The behaviour of this function must be consistent with \c build_type.
- */
-bool TvmFunctionalBuilder::is_primitive(const TreePtr<Term>& type) {
-  FunctionalValueMap::iterator ii = m_values.find(type);
-  if (ii != m_values.end())
-    return ii->second.primitive;
-
-  if (tree_isa<EmptyType>(type) || tree_isa<PointerType>(type) || tree_isa<UnionType>(type) || tree_isa<PrimitiveType>(type) || tree_isa<BottomType>(type)) {
-    return true;
-  } else if (tree_isa<FunctionType>(type) || tree_isa<Parameter>(type)) {
-    return false;
-  } else if (TreePtr<ArrayType> array_ty = dyn_treeptr_cast<ArrayType>(type)) {
-    return is_primitive(array_ty->element_type);
-  } else if (TreePtr<StructType> struct_ty = dyn_treeptr_cast<StructType>(type)) {
-    for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = struct_ty->members.begin(), ie = struct_ty->members.end(); ii != ie; ++ii) {
-      if (!is_primitive(*ii))
-        return false;
-    }
-    return true;
-  } else {
-    PSI_FAIL("Unknown type subclass");
-  }
-}
-
-/**
- * \brief Convert a type to TVM.
- */
-TvmFunctional<> TvmFunctionalBuilder::build_type(const TreePtr<Type>& type) {
-  if (TreePtr<ArrayType> array_ty = dyn_treeptr_cast<ArrayType>(type)) {
-    TvmFunctional<> element = build(array_ty->element_type);
-    Tvm::ValuePtr<> length = build_value(array_ty->length);
-    return TvmFunctional<>(Tvm::FunctionalBuilder::array_type(element.value, length, type->location()), element.primitive);
-  } else if (tree_isa<EmptyType>(type)) {
-    return TvmFunctional<>(Tvm::FunctionalBuilder::empty_type(context(), type->location()), true);
-  } else if (TreePtr<PointerType> pointer_ty = dyn_treeptr_cast<PointerType>(type)) {
-    Tvm::ValuePtr<> target = build_value(pointer_ty->target_type);
-    return TvmFunctional<>(Tvm::FunctionalBuilder::pointer_type(target, type->location()), true);
-  } else if (TreePtr<StructType> struct_ty = dyn_treeptr_cast<StructType>(type)) {
-    bool primitive = true;
-    std::vector<Tvm::ValuePtr<> > members;
-    for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = struct_ty->members.begin(), ie = struct_ty->members.end(); ii != ie; ++ii) {
-      TvmFunctional<> f = build(*ii);
-      members.push_back(f.value);
-      primitive = primitive && f.primitive;
-    }
-    return TvmFunctional<>(Tvm::FunctionalBuilder::struct_type(context(), members, type->location()), primitive);
-  } else if (TreePtr<UnionType> union_ty = dyn_treeptr_cast<UnionType>(type)) {
-    PSI_STD::vector<Tvm::ValuePtr<> > members;
-    for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = struct_ty->members.begin(), ie = struct_ty->members.end(); ii != ie; ++ii)
-      members.push_back(build_value(*ii));
-    // Unions are always primitive because the user is required to handle copy semantics manually.
-    return TvmFunctional<>(Tvm::FunctionalBuilder::union_type(context(), members, type->location()), true);
-  } else if (TreePtr<PrimitiveType> primitive_ty = dyn_treeptr_cast<PrimitiveType>(type)) {
-    return build_primitive_type(primitive_ty);
-  } else if (TreePtr<FunctionType> function_ty = dyn_treeptr_cast<FunctionType>(type)) {
-    return build_function_type(function_ty);
-  } else if (tree_isa<BottomType>(type)) {
-    type.compile_context().error_throw(type.location(), "Bottom type cannot be lowered to TVM");
-  } else {
-    PSI_FAIL(si_vptr(type.get())->classname);
-  }
-}
-
-namespace {
-  std::vector<std::string> string_split(const std::string& s, char c) {
-    std::vector<std::string> parts;
-    std::string::size_type pos = 0;
-    while (true) {
-      std::string::size_type next = s.find(c, pos);
-      if (next == std::string::npos) {
-        parts.push_back(s.substr(pos));
-        break;
-      } else {
-        parts.push_back(s.substr(pos, next-pos));
-        pos = next + 1;
-      }
-    }
-    return parts;
-  }
-  
-  Tvm::ValuePtr<> build_int_type(Tvm::Context& context, const SourceLocation& location, bool is_signed, const std::vector<std::string>& parts) {
-    if (parts.size() != 3)
-      return Tvm::ValuePtr<>();
-    
-    unsigned bits;
-    try {
-      bits = boost::lexical_cast<unsigned>(parts[2]);
-    } catch (...) {
-      return Tvm::ValuePtr<>();
-    }
-    
-    Tvm::IntegerType::Width width;
-    switch (bits) {
-    case 8: width = Tvm::IntegerType::i8; break;
-    case 16: width = Tvm::IntegerType::i16; break;
-    case 32: width = Tvm::IntegerType::i32; break;
-    case 64: width = Tvm::IntegerType::i64; break;
-    case 128: width = Tvm::IntegerType::i128; break;
-    default: return Tvm::ValuePtr<>();
-    }
-    
-    return Tvm::FunctionalBuilder::int_type(context, width, is_signed, location);
-  }
-}
-
-TvmFunctional<> TvmFunctionalBuilder::build_primitive_type(const TreePtr<PrimitiveType>& type) {
-  Tvm::ValuePtr<> tvm_type;
-  
-  std::vector<std::string> parts = string_split(type->name, '.');
-  if (parts[0] == "core") {
-    if (parts.size() >= 1) {
-      if (parts[1] == "int")
-        tvm_type = build_int_type(context(), type.location(), true, parts);
-      else if (parts[1] == "uint")
-        tvm_type = build_int_type(context(), type.location(), false, parts);
-    }
-  }
-  
-  if (!tvm_type)
-    type.compile_context().error_throw(type.location(), boost::format("Unknown primitive type '%s'") % type->name);
-  
-  return TvmFunctional<>(tvm_type, true);
-}
-
-TvmFunctional<> TvmFunctionalBuilder::build_function_type(const TreePtr<FunctionType>& type) {
-  std::vector<Tvm::ValuePtr<> > parameter_types;
-  for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = type->parameter_types.begin(), ie = type->parameter_types.end(); ii != ie; ++ii) {
-    TvmFunctional<> parameter = build(ii->type);
-    
-    bool by_value;
-    switch (ii->mode) {
-    case parameter_mode_input:
-    case parameter_mode_rvalue:
-      by_value = parameter.primitive;
-      break;
-      
-    case parameter_mode_output:
-    case parameter_mode_io:
-      by_value  = false;
-      break;
-      
-    case parameter_mode_functional:
-      by_value = true;
-      if (!parameter.primitive)
-        type.compile_context().error_throw(type.location(), "Functional parameter does not have a primitive type");
-      break;
-      
-    default: PSI_FAIL("Unrecognised function parameter mode");
-    }
-    
-    parameter_types.push_back(by_value ? parameter.value : Tvm::FunctionalBuilder::pointer_type(parameter.value, type.location()));
-  }
-  
-  TvmFunctional<> result = build(type->result_type);
-  Tvm::ValuePtr<> result_type;
-  bool sret;
-  switch (type->result_mode) {
-  case result_mode_by_value:
-    if (result.primitive) {
-      sret = false;
-      result_type = result.value;
-    } else {
-      sret = true;
-      result_type = Tvm::FunctionalBuilder::pointer_type(result.value, type.location());
-    }
-    break;
-    
-  case result_mode_functional:
-    sret = false;
-    result_type = result.value;
-    break;
-    
-  case result_mode_rvalue:
-  case result_mode_lvalue:
-    sret = false;
-    result_type = Tvm::FunctionalBuilder::pointer_type(result.value, type.location());
-    break;
-    
-  default: PSI_FAIL("Unrecognised function result mode");
-  }
-  
-  // Function types are not primitive because there is a function cannot be copied
-  return TvmFunctional<>(Tvm::FunctionalBuilder::function_type(Tvm::cconv_c, result_type, parameter_types, 0, sret, type.location()), false);
-}
-
-TvmFunctional<> TvmFunctionalBuilder::build_type_instance(const TreePtr<TypeInstance>& type) {
-  TvmFunctional<Tvm::RecursiveType> recursive = m_callback->build_generic_hook(type->generic);  
-  std::vector<Tvm::ValuePtr<> > parameters;
-  for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = type->parameters.begin(), ie = type->parameters.end(); ii != ie; ++ii)
-    parameters.push_back(build_value(*ii));
-  Tvm::ValuePtr<> inst = Tvm::FunctionalBuilder::apply(recursive.value, parameters, type->location());
-  return TvmFunctional<>(inst, recursive.primitive);
-}
-
 TvmCompiler::TvmCompiler(CompileContext *compile_context)
 : m_compile_context(compile_context),
-m_functional_builder(&m_tvm_context, this) {
+m_functional_builder(compile_context, &m_tvm_context, this) {
   boost::shared_ptr<Tvm::JitFactory> factory = Tvm::JitFactory::get("llvm");
   m_jit = factory->create_jit();
 }
@@ -249,21 +18,25 @@ m_functional_builder(&m_tvm_context, this) {
 TvmCompiler::~TvmCompiler() {
 }
 
-TvmFunctional<> TvmCompiler::build_hook(const TreePtr<Term>& value) {
+TvmResult TvmCompiler::build_hook(const TreePtr<Term>& value) {
   if (TreePtr<Global> global = dyn_treeptr_cast<Global>(value))
-    return TvmFunctional<>(build_global(global), true);
+    return TvmResult::in_register(value->type, tvm_storage_lvalue_ref, build_global(global));
   
   compile_context().error_throw(value->location(), "Value is required in a global context but is not a global value.");
 }
 
-TvmFunctional<Tvm::RecursiveType> TvmCompiler::build_generic_hook(const TreePtr<GenericType>& generic) {
+TvmGenericResult TvmCompiler::build_generic_hook(const TreePtr<GenericType>& generic) {
   return build_generic(generic);
+}
+
+Tvm::ValuePtr<> TvmCompiler::load_hook(const Tvm::ValuePtr<>& PSI_UNUSED(ptr), const SourceLocation& PSI_UNUSED(location)) {
+  PSI_FAIL("Cannot create global load instruction");
 }
 
 /**
  * \brief Build a global or constant value.
  */
-TvmFunctional<> Psi::Compiler::TvmCompiler::build(const TreePtr<Term>& value) {
+TvmResult Psi::Compiler::TvmCompiler::build(const TreePtr<Term>& value) {
   return m_functional_builder.build(value);
 }
 
@@ -295,48 +68,233 @@ std::string TvmCompiler::mangle_name(const LogicalSourceLocationPtr& location) {
   return ss.str();
 }
 
+TvmCompiler::TvmModule& TvmCompiler::get_module(const TreePtr<Module>& module) {
+  TvmModule& tvm_module = m_modules[module];
+  if (!tvm_module.module)
+    tvm_module.module.reset(new Tvm::Module(&m_tvm_context, module->name, module->location()));
+  return tvm_module;
+}
+
 /**
  * \brief Create a Tvm::Global from a Global.
  */
 Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global(const TreePtr<Global>& global) {
   if (TreePtr<ModuleGlobal> mod_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
-    TreePtr<Module> module = mod_global->module;
     if (TreePtr<ExternalGlobal> ext_global = dyn_treeptr_cast<ExternalGlobal>(global)) {
       PSI_NOT_IMPLEMENTED();
     } else {
-      TvmModule& tvm_module = m_modules[module];
-      if (!tvm_module.module)
-        tvm_module.module.reset(new Tvm::Module(&m_tvm_context, module->name, module->location()));
-      
-      ModuleGlobalMap::iterator it = tvm_module.symbols.find(mod_global);
-      if (it != tvm_module.symbols.end())
-        return it->second;
-      
-      std::string symbol_name = mangle_name(global->location().logical);
-      
-      Tvm::ValuePtr<> type = m_functional_builder.build_value(mod_global->type);
-
-      if (TreePtr<Function> function = dyn_treeptr_cast<Function>(global)) {
-        Tvm::ValuePtr<Tvm::FunctionType> tvm_ftype = Tvm::dyn_cast<Tvm::FunctionType>(type);
-        if (!tvm_ftype)
-          compile_context().error_throw(function->location(), "Type of function is not a function type");
-        Tvm::ValuePtr<Tvm::Function> tvm_func = tvm_module.module->new_function(symbol_name, tvm_ftype, function->location());
-        tvm_module.symbols.insert(std::make_pair(function, tvm_func));
-        tvm_lower_function(*this, function, tvm_func);
-        return tvm_func;
-      } else if (TreePtr<GlobalVariable> global_var = dyn_treeptr_cast<GlobalVariable>(global)) {
-        Tvm::ValuePtr<Tvm::GlobalVariable> tvm_gvar = tvm_module.module->new_global_variable(symbol_name, type, global_var->location());
-        tvm_module.symbols.insert(std::make_pair(global_var, tvm_gvar));
-        PSI_NOT_IMPLEMENTED();
-        return tvm_gvar;
-      } else {
-        PSI_FAIL("Unknown module global type");
-      }
+      return build_module_global(mod_global);
     }
   } else if (TreePtr<LibrarySymbol> lib_global = dyn_treeptr_cast<LibrarySymbol>(global)) {
     PSI_NOT_IMPLEMENTED();
   } else {
     PSI_FAIL("Unknown global type");
+  }
+}
+
+/**
+ * \brief Build a module global.
+ * 
+ * If this global depends on other globals, this function will recursively search for those and build them.
+ */
+Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_module_global(const TreePtr<ModuleGlobal>& global) {
+  // Check if this global is already built
+  TvmModule& global_module = get_module(global->module);
+  ModuleGlobalMap::iterator global_it = global_module.symbols.find(global);
+  if (global_it != global_module.symbols.end())
+    return global_it->second;
+  
+  m_in_progress_globals.insert(global);
+  
+  typedef std::map<TreePtr<ModuleGlobal>, PSI_STD::set<TreePtr<ModuleGlobal> > > DependencyMapType;
+  DependencyMapType dependency_map;
+  std::vector<TreePtr<ModuleGlobal> > queue;
+  queue.push_back(global);
+  while (!queue.empty()) {
+    TreePtr<ModuleGlobal> current = queue.back();
+    queue.pop_back();
+
+    PSI_STD::set<TreePtr<ModuleGlobal> >& dependencies = dependency_map[current];
+    current->global_dependencies(dependencies);
+    
+    for (PSI_STD::set<TreePtr<ModuleGlobal> >::const_iterator ii = dependencies.begin(), ie = dependencies.end(); ii != ie; ++ii) {
+      // If this global is "in progress", it cannot be built because we must
+      // execute a function which expects it to exist in order to create it!
+      if (m_in_progress_globals.find(*ii) != m_in_progress_globals.end()) {
+        CompileError err(compile_context(), global->location());
+        err.info("Circular dependency amongst global variables");
+        for (std::set<TreePtr<ModuleGlobal> >::iterator ii = m_in_progress_globals.begin(), ie = m_in_progress_globals.end(); ii != ie; ++ii) {
+          if (*ii != global)
+            err.info(ii->location(), "Circular dependency");
+        }
+        err.end();
+        throw CompileException();
+      }
+      
+      // If this global has already been built, don't rebuild it
+      TvmModule& module = get_module((*ii)->module);
+      if (module.symbols.find(global) != module.symbols.end())
+        continue;
+      
+      if (dependency_map.find(*ii) == dependency_map.end()) {
+        dependency_map[*ii]; // Insert element into map to prevent duplication
+        queue.push_back(*ii);
+      }
+    }
+  }
+  
+  // Erase anything from the dependency map which has been built
+  // during construction of the dependency map
+  for (DependencyMapType::iterator ii = dependency_map.begin(), ie = dependency_map.end(), in; ii != ie; ii = in) {
+    in = ii; ++in;
+    
+    TvmModule& module = get_module(ii->first->module);
+    if (module.symbols.find(ii->first) != module.symbols.end())
+      dependency_map.erase(ii);
+  }
+  
+  // Remove any dependencies which have already been built
+  /// \todo Need to check inter-module depenencies form a DAG here
+  for (DependencyMapType::iterator ii = dependency_map.begin(), ie = dependency_map.end(), in; ii != ie; ++ii) {
+    for (DependencyMapType::mapped_type::iterator ji = ii->second.begin(), je = ii->second.end(), jn; ji != je; ji = jn) {
+      jn = ji; ++jn;
+      if (dependency_map.find(*ji) == dependency_map.end())
+        ii->second.erase(ji);
+    }
+  }
+  
+  // Break into initialisation sets to try and initialise dependent variables in the correct order
+  // Note that dependencies should only occur one way between modules
+  
+  // Compute transitive closure of dependency map
+  for (DependencyMapType::iterator ii = dependency_map.begin(), ie = dependency_map.end(); ii != ie; ++ii) {
+    PSI_ASSERT(queue.empty());
+    queue.assign(ii->second.begin(), ii->second.end());
+    while (!queue.empty()) {
+      DependencyMapType::iterator current = dependency_map.find(ii->first);
+      PSI_ASSERT(current != dependency_map.end());
+      queue.pop_back();
+      
+      for (DependencyMapType::mapped_type::iterator ji = current->second.begin(), je = current->second.end(); ji != je; ++ji) {
+        if (ii->second.insert(*ji).second)
+          queue.push_back(*ji);
+      }
+    }
+  }
+  
+  // Group globals into interdependent sets
+  typedef std::vector<std::pair<std::vector<TreePtr<ModuleGlobal> >, std::set<TreePtr<ModuleGlobal> > > > GlobalGroupsList;
+  GlobalGroupsList global_groups;
+  while (!dependency_map.empty()) {
+    std::set<TreePtr<ModuleGlobal> > group;
+    std::set<TreePtr<ModuleGlobal> > external_dependencies;
+    
+    DependencyMapType::iterator current = dependency_map.begin();
+    // Make sure it doesn't depend on itself, which it will if there is a cycle
+    current->second.erase(current->first);
+    group.insert(current->first);
+    for (DependencyMapType::mapped_type::const_iterator ji = current->second.begin(), je = current->second.end(), jn; ji != je; ++ji) {
+      DependencyMapType::iterator dep = dependency_map.find(*ji);
+      if ((dep != dependency_map.end()) && (dep->second.find(current->first) != dep->second.end())) {
+        group.insert(*ji);
+        dependency_map.erase(dep);
+      } else {
+        external_dependencies.insert(*ji);
+      }
+    }
+    
+    global_groups.push_back(std::make_pair(std::vector<TreePtr<ModuleGlobal> >(group.begin(), group.end()), external_dependencies));
+    dependency_map.erase(current);
+  }
+  
+  // Topological sort on groups
+  std::vector<std::vector<TreePtr<ModuleGlobal> > > global_groups_sorted;
+  while (!global_groups.empty()) {
+    std::set<TreePtr<ModuleGlobal> > newly_sorted;
+    // Find groups with no remaining dependencies and move them into the sorted list
+    for (GlobalGroupsList::iterator ii = global_groups.begin(); ii != global_groups.end();) {
+      if (ii->second.empty()) {
+        global_groups_sorted.push_back(ii->first);
+        newly_sorted.insert(ii->first.begin(), ii->first.end());
+        ii = global_groups.erase(ii);
+      } else {
+        ++ii;
+      }
+    }
+    
+    PSI_ASSERT(!newly_sorted.empty());
+    // Remove dependencies on globals newly added to the sorted list
+    for (GlobalGroupsList::iterator ii = global_groups.begin(); ii != global_groups.end();) {
+      for (std::set<TreePtr<ModuleGlobal> >::iterator ji = newly_sorted.begin(), je = newly_sorted.end(); ji != je; ++ji)
+        ii->second.erase(*ji);
+    }
+  }
+  
+  for (std::vector<std::vector<TreePtr<ModuleGlobal> > >::iterator ii = global_groups_sorted.begin(), ie = global_groups_sorted.end(); ii != ie; ++ii)
+    build_global_group(*ii);
+  
+  m_in_progress_globals.erase(global);
+  
+  global_it = global_module.symbols.find(global);
+  PSI_ASSERT(global_it != global_module.symbols.end());
+  return global_it->second;
+}
+
+/**
+ * \brief Build a group of globals.
+ * 
+ * Dependencies ordering has already been handled by build_module_global, which is the
+ * only function which should call this one.
+ */
+void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& group) {
+  TvmModule& tvm_module = get_module(group.front()->module);
+
+  // Create storage for all of these globals
+  bool pure_functional = true;
+  for (std::vector<TreePtr<ModuleGlobal> >::const_iterator ii = group.begin(), ie = group.end(); ii != ie; ++ii) {
+    const TreePtr<ModuleGlobal>& global = *ii;
+    if (global->module != group.front()->module) {
+      CompileError err(compile_context(), global->location());
+      err.info(global->location(), "Circular dependency amongst globals in different modules");
+      for (std::vector<TreePtr<ModuleGlobal> >::const_iterator ji = group.begin(), je = group.end(); ji != je; ++ji)
+        err.info(ji->location(), "Dependency loop element");
+      err.end();
+      throw CompileException();
+    }
+      
+    std::string symbol_name = mangle_name(global->location().logical);
+    
+    TvmResult type = m_functional_builder.build_type(global->type);
+
+    if (TreePtr<Function> function = dyn_treeptr_cast<Function>(global)) {
+      Tvm::ValuePtr<Tvm::FunctionType> tvm_ftype = Tvm::dyn_cast<Tvm::FunctionType>(type.value());
+      if (!tvm_ftype)
+        compile_context().error_throw(function->location(), "Type of function is not a function type");
+      Tvm::ValuePtr<Tvm::Function> tvm_func = tvm_module.module->new_function(symbol_name, tvm_ftype, function->location());
+      tvm_module.symbols.insert(std::make_pair(function, tvm_func));
+    } else if (TreePtr<GlobalVariable> global_var = dyn_treeptr_cast<GlobalVariable>(global)) {
+      Tvm::ValuePtr<Tvm::GlobalVariable> tvm_gvar = tvm_module.module->new_global_variable(symbol_name, type.value(), global_var->location());
+      tvm_module.symbols.insert(std::make_pair(global_var, tvm_gvar));
+      pure_functional = pure_functional && global_var->value->pure_functional();
+    } else {
+      PSI_FAIL("Unknown module global type");
+    }
+  }
+  
+  // First, generate functions
+  for (std::vector<TreePtr<ModuleGlobal> >::const_iterator ii = group.begin(), ie = group.end(); ii != ie; ++ii) {
+    if (TreePtr<Function> function = dyn_treeptr_cast<Function>(*ii)) {
+      Tvm::ValuePtr<Tvm::Function> tvm_func = Tvm::value_cast<Tvm::Function>(tvm_module.symbols.find(*ii)->second);
+      tvm_lower_function(*this, function, tvm_func);
+    }
+  }
+  
+  if (pure_functional) {
+    // Can generate globals entirely as constant data
+    PSI_NOT_IMPLEMENTED();
+  } else {
+    // Must generate an initialisation function
+    PSI_NOT_IMPLEMENTED();
   }
 }
 
@@ -361,19 +319,23 @@ namespace {
     GenericTypeCallback(TvmCompiler *self, const AnonymousMapType *parameters)
     : m_self(self), m_parameters(parameters) {}
     
-    virtual TvmFunctional<> build_hook(const TreePtr<Term>& term) {
+    virtual TvmResult build_hook(const TreePtr<Term>& term) {
       if (TreePtr<Anonymous> anon = dyn_treeptr_cast<Anonymous>(term)) {
         AnonymousMapType::const_iterator ii = m_parameters->find(anon);
         if (ii == m_parameters->end())
           m_self->compile_context().error_throw(term->location(), "Unrecognised anonymous parameter");
-        return ii->second;
+        return TvmResult::type(anon->type, ii->second, false);
       } else {
         m_self->compile_context().error_throw(term->location(), boost::format("Unsupported term type in generic parameter: %s") % si_vptr(term.get())->classname);
       }
     }
     
-    virtual TvmFunctional<Tvm::RecursiveType> build_generic_hook(const TreePtr<GenericType>& generic) {
+    virtual TvmGenericResult build_generic_hook(const TreePtr<GenericType>& generic) {
       return m_self->build_generic(generic);
+    }
+    
+    virtual Tvm::ValuePtr<> load_hook(const Tvm::ValuePtr<>& PSI_UNUSED(ptr), const SourceLocation& PSI_UNUSED(location)) {
+      PSI_FAIL("Cannot create global load instruction");
     }
   };
 }
@@ -381,7 +343,7 @@ namespace {
 /**
  * \brief Lower a generic type.
  */
-TvmFunctional<Tvm::RecursiveType> TvmCompiler::build_generic(const TreePtr<GenericType>& generic) {
+TvmGenericResult TvmCompiler::build_generic(const TreePtr<GenericType>& generic) {
   GenericTypeMap::iterator gen_it = m_generics.find(generic);
   if (gen_it != m_generics.end())
     return gen_it->second;
@@ -396,16 +358,24 @@ TvmFunctional<Tvm::RecursiveType> TvmCompiler::build_generic(const TreePtr<Gener
     TreePtr<Term> rewrite_type = (*ii)->type->specialize(generic->location(), anonymous_list);
     TreePtr<Anonymous> rewrite_anon(new Anonymous(rewrite_type, rewrite_type->location()));
     anonymous_list.push_back(rewrite_anon);
-    Tvm::ValuePtr<> type = type_callback.build_hook((*ii)->type).value;
+    Tvm::ValuePtr<> type = type_callback.build_hook((*ii)->type).value();
     Tvm::ValuePtr<Tvm::RecursiveParameter> param = Tvm::RecursiveParameter::create(type, false, ii->location());
     parameter_map.insert(std::make_pair(rewrite_anon, param));
     parameters.push_back(*param);
   }
   
   Tvm::ValuePtr<Tvm::RecursiveType> recursive =
-    Tvm::RecursiveType::create(Tvm::FunctionalBuilder::type_type(m_tvm_context, generic->location()), parameters, NULL, generic.location());
-  TvmFunctional<Tvm::RecursiveType> result(recursive, m_functional_builder.is_primitive(generic->member_type));
+    Tvm::RecursiveType::create(Tvm::FunctionalBuilder::type_type(m_tvm_context, generic->location()), parameters, generic.location());
+  TvmGenericResult result;
+  result.generic = recursive;
+  result.primitive = m_functional_builder.is_primitive(generic->member_type);
+  
+  // Insert generic into map before building it because it may recursively reference itself.
   m_generics.insert(std::make_pair(generic, result));
+  
+  GenericTypeCallback builder_callback(this, &parameter_map);
+  TvmFunctionalBuilder builder(m_compile_context, &m_tvm_context, &builder_callback);
+  recursive->resolve(builder.build_value(generic->member_type));
   
   return result;
 }
