@@ -94,6 +94,7 @@ namespace Psi {
         llvm::Module* llvm_module() {return m_llvm_module;}
         
         llvm::Function* llvm_memcpy() {return m_llvm_memcpy;}
+        llvm::Function* llvm_memset() {return m_llvm_memset;}
         llvm::Function* llvm_stacksave() {return m_llvm_stacksave;}
         llvm::Function* llvm_stackrestore() {return m_llvm_stackrestore;}
         llvm::Function* llvm_eh_exception() {return m_llvm_eh_exception;}
@@ -124,7 +125,7 @@ namespace Psi {
 
         llvm::Constant* build_constant_internal(const ValuePtr<FunctionalValue>& term);
         
-        llvm::Function *m_llvm_memcpy, *m_llvm_stacksave, *m_llvm_stackrestore,
+        llvm::Function *m_llvm_memcpy, *m_llvm_memset, *m_llvm_stacksave, *m_llvm_stackrestore,
         *m_llvm_eh_exception, *m_llvm_eh_selector, *m_llvm_eh_typeid_for;
       };
 
@@ -190,6 +191,7 @@ namespace Psi {
         virtual void add_module(Module*);
         virtual void remove_module(Module*);
         virtual void rebuild_module(Module*, bool);
+        virtual void add_or_rebuild_module(Module *module, bool incremental);
         virtual void* get_symbol(const ValuePtr<Global>&);
 
       private:

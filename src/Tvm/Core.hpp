@@ -549,6 +549,10 @@ namespace Psi {
       /// \brief Set the minimum alignment of this symbol.
       void set_alignment(const ValuePtr<>& alignment) {m_alignment = alignment;}
       
+      /// \brief Whether this variable should not be visible outside of the module in which it is defined.
+      bool private_() const {return m_private;}
+      void set_private(bool b) {m_private = b;}
+
       static bool isa_impl(const Value& x) {
         return (x.term_type() == term_global_variable) ||
           (x.term_type() == term_function);
@@ -567,6 +571,7 @@ namespace Psi {
       std::string m_name;
       Module *m_module;
       ValuePtr<> m_alignment;
+      bool m_private;
     };
 
     /**
@@ -590,6 +595,10 @@ namespace Psi {
       /// \brief Set whether this global is created in a read only section
       void set_constant(bool is_const) {m_constant = is_const;}
       
+      /// \brief Whether this variable can be merged with others which have the same value.
+      bool merge() const {return m_merge;}
+      void set_merge(bool m) {m_merge = m;}
+      
       template<typename V> static void visit(V& v);
       static bool isa_impl(const Value& v) {return v.term_type() == term_global_variable;}
       
@@ -597,6 +606,8 @@ namespace Psi {
       GlobalVariable(Context& context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location);
 
       bool m_constant;
+      bool m_merge;
+      bool m_private;
       ValuePtr<> m_value;
     };
 
@@ -648,6 +659,7 @@ namespace Psi {
 #endif
       
       ValuePtr<Global> get_member(const std::string& name);
+      ValuePtr<Global> new_member(const std::string& name, const ValuePtr<>& type, const SourceLocation& location);
       ValuePtr<GlobalVariable> new_global_variable(const std::string& name, const ValuePtr<>& type, const SourceLocation& location);
       ValuePtr<GlobalVariable> new_global_variable_set(const std::string&, const ValuePtr<>& value, const SourceLocation& location);
       ValuePtr<Function> new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location);

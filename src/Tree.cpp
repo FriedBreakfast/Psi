@@ -38,6 +38,23 @@ namespace Psi {
     
     const SIVtable Constant::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Constant", Constructor);
 
+    GlobalDefine::GlobalDefine(CompileContext& compile_context, const SourceLocation& location)
+    : Functional(&vtable, compile_context, location) {
+    }
+    
+    GlobalDefine::GlobalDefine(const TreePtr<Term>& value_, const SourceLocation& location)
+    : Functional(&vtable, value_->type, location),
+    value(value_) {
+    }
+    
+    template<typename V>
+    void GlobalDefine::visit(V& v) {
+      visit_base<Functional>(v);
+      v("value", &GlobalDefine::value);
+    }
+
+    const TermVtable GlobalDefine::vtable = PSI_COMPILER_TERM(GlobalDefine, "psi.compiler.GlobalDefine", Functional);
+
     Global::Global(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location)
     : Term(vptr, compile_context, location) {
     }

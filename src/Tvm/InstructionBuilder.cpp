@@ -270,6 +270,16 @@ namespace Psi {
       return memcpy(dest, src, FunctionalBuilder::size_value(dest->context(), count, location), ValuePtr<>(), location);
     }
     
+    ValuePtr<Instruction> InstructionBuilder::memzero(const ValuePtr<>& dest, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new MemZero(dest, count, alignment, location));
+      m_insert_point.insert(insn);
+      return insn;
+    }
+    
+    ValuePtr<Instruction> InstructionBuilder::memzero(const ValuePtr<>& dest, const ValuePtr<>& count, const SourceLocation& location) {
+      return memzero(dest, count, ValuePtr<>(), location);
+    }
+    
     /**
      * \brief Generate an unreachable instruction.
      */

@@ -62,6 +62,8 @@ namespace Psi {
       ValuePtr<Instruction> memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location);
       ValuePtr<Instruction> memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const SourceLocation& location);
       ValuePtr<Instruction> memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, unsigned count, const SourceLocation& location);
+      ValuePtr<Instruction> memzero(const ValuePtr<>& dest, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location);
+      ValuePtr<Instruction> memzero(const ValuePtr<>& dest, const ValuePtr<>& count, const SourceLocation& location);
       ///@}
       
       ValuePtr<Instruction> unreachable(const SourceLocation& location);

@@ -197,6 +197,8 @@ namespace Psi {
       }
 
       void FunctionBuilder::run() {
+        PSI_ASSERT(!m_function->blocks().empty());
+        
         // Set up parameters
         llvm::Function::ArgumentListType::iterator ii = m_llvm_function->getArgumentList().begin(), ie = m_llvm_function->getArgumentList().end();
         for (std::size_t in = function()->function_type()->n_phantom(); ii != ie; ++ii, ++in) {

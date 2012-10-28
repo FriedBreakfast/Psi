@@ -284,7 +284,7 @@ statement:
 named_expression:
 expression {$$.reset(new NamedExpression(@$, $1));}
 | IDENTIFIER ':' expression {$$.reset(new NamedExpression(@$, $3, $1, false));}
-| IDENTIFIER DOUBLE_COLON expression{$$.reset(new NamedExpression(@$, $3, $1, true));}
+| IDENTIFIER DOUBLE_COLON expression {$$.reset(new NamedExpression(@$, $3, $1, true));}
 ;
 
 expression:
@@ -486,7 +486,16 @@ namespace {
       } else {
         SCANNER_RETURN('-');
       }
-    } else if (std::strchr(".:;,+*/%^&|", c)) {
+    } else if (c == ':') {
+      /* Double colon operator :: */
+      SCANNER_ACCEPT();
+      if ((self.current != self.end) && (*self.current == ':')) {
+        SCANNER_ACCEPT();
+        SCANNER_RETURN(DOUBLE_COLON);
+      } else {
+        SCANNER_RETURN(':');
+      }
+    } else if (std::strchr(".;,+*/%^&|", c)) {
       SCANNER_ACCEPT();
       SCANNER_RETURN(c);
     } else if (std::strchr("{[(", c)) {

@@ -311,9 +311,8 @@ namespace Psi {
         TreePtr<Term> value = compile_expression(m_expression, m_evaluate_context, self.location().logical);
         if (tree_isa<Global>(value)) {
           return value;
-        } else if (m_functional) {
-          PSI_NOT_IMPLEMENTED();
-          return value;
+        } else if (m_functional || tree_isa<Type>(value) || tree_isa<TypeInstance>(value)) {
+          return TreePtr<GlobalDefine>(new GlobalDefine(value, self.location()));
         } else {
           return TreePtr<GlobalVariable>(new GlobalVariable(m_evaluate_context->module(), false, value, false, false, self.location()));
         }

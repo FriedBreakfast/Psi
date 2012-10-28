@@ -44,6 +44,21 @@ namespace Psi {
         visit_base<Constructor>(v);
       }
     };
+    
+    /**
+     * \brief Used to indicate that a value should be a global constant.
+     */
+    class GlobalDefine : public Functional {
+    public:
+      static const TermVtable vtable;
+
+      GlobalDefine(CompileContext& compile_context, const SourceLocation& location);
+      GlobalDefine(const TreePtr<Term>& value, const SourceLocation& location);
+      
+      template<typename V> static void visit(V& v);
+      
+      TreePtr<Term> value;
+    };
 
     /**
      * \brief A global value.

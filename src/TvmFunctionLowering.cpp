@@ -28,6 +28,7 @@ namespace Compiler {
 class TvmFunctionLowering {
   TvmCompiler *m_tvm_compiler;
 
+  TreePtr<Module> m_module;
   Tvm::ValuePtr<Tvm::Function> m_output;
   TreePtr<JumpTarget> m_return_target;
   Tvm::ValuePtr<> m_return_storage;
@@ -137,7 +138,7 @@ class TvmFunctionLowering {
   
   Tvm::ValuePtr<> move_constructible_interface(const TreePtr<Term>& type);
   Tvm::ValuePtr<> copy_constructible_interface(const TreePtr<Term>& type);
-  bool is_primitive(const TreePtr<Term>& type);
+  bool is_primitive(Scope& scope, const TreePtr<Term>& type);
   void default_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location);
   void copy_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
   void move_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
@@ -202,7 +203,7 @@ TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location,
 : m_location(location) {
   init(parent);
   
-  if (!m_variables.insert(std::make_pair(key, result)))
+  if (key && !m_variables.insert(std::make_pair(key, result)))
     m_shared->compile_context().error_throw(location, "Overlapping variable definitions");
 
   m_variable = result;
@@ -250,20 +251,19 @@ void TvmFunctionLowering::ScopeList::cleanup() {
 void TvmFunctionLowering::run_body(TvmCompiler *tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output) {
   m_tvm_compiler = tvm_compiler;
   m_output = output;
+  m_module = function->module;
   
   TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(function->type);
-
-  // We need this to be non-NULL
-  m_return_target = function->return_target;
-  if (!m_return_target) {
-    TreePtr<Anonymous> return_argument(new Anonymous(ftype->result_type, function.location()));
-    m_return_target.reset(new JumpTarget(compile_context(), TreePtr<Term>(), ftype->result_mode, return_argument, function.location()));
-  }
   
+  ResultMode exit_result_mode = ftype->result_mode;
   switch (ftype->result_mode) {
   case result_mode_by_value:
-    if (output->function_type()->sret())
+    if (output->function_type()->sret()) {
       m_return_storage = output->parameters().back();
+      exit_result_mode = result_mode_by_value;
+    } else {
+      exit_result_mode = result_mode_functional;
+    }
     break;
     
   case result_mode_functional:
@@ -272,6 +272,13 @@ void TvmFunctionLowering::run_body(TvmCompiler *tvm_compiler, const TreePtr<Func
     break;
 
   default: PSI_FAIL("Unknown function result mode");
+  }
+
+  // We need this to be non-NULL
+  m_return_target = function->return_target;
+  if (!m_return_target) {
+    TreePtr<Anonymous> return_argument(new Anonymous(ftype->result_type, function.location()));
+    m_return_target.reset(new JumpTarget(compile_context(), TreePtr<Term>(), exit_result_mode, return_argument, function.location()));
   }
   
   Tvm::ValuePtr<Tvm::Block> entry_block = output->new_block(function.location());
@@ -406,12 +413,16 @@ public:
         m_scope->shared().compile_context().error_throw(st->location(), "Cannot use non-constant variable as part of type");
       return *var;
     } else if (TreePtr<Global> gl = dyn_treeptr_cast<Global>(term)) {
-      return TvmResult::in_register(gl->type, tvm_storage_lvalue_ref, m_scope->shared().tvm_compiler().build_global(gl));
+      return TvmResult::in_register(gl->type, tvm_storage_lvalue_ref, m_scope->shared().tvm_compiler().build_global_in(gl, m_scope->shared().m_module));
     } else if (TreePtr<Constant> cns = dyn_treeptr_cast<Constant>(term)) {
       return m_scope->shared().tvm_compiler().build(cns);
     } else {
       PSI_FAIL(si_vptr(term.get())->classname);
     }
+  }
+  
+  virtual TvmResult build_define_hook(const TreePtr<GlobalDefine>& define) {
+    return m_scope->shared().tvm_compiler().build(define);
   }
   
   virtual TvmGenericResult build_generic_hook(const TreePtr<GenericType>& generic) {
@@ -463,7 +474,7 @@ Tvm::ValuePtr<> TvmFunctionLowering::run_functional(Scope& scope, const TreePtr<
 
 TvmResult TvmFunctionLowering::run(Scope& scope, const TreePtr<Term>& term, const VariableSlot& slot, Scope& following_scope) {
   if (TreePtr<Global> global = dyn_treeptr_cast<Global>(term)) {
-    return TvmResult::in_register(global->type, tvm_storage_lvalue_ref, tvm_compiler().build_global(global));
+    return TvmResult::in_register(global->type, tvm_storage_lvalue_ref, tvm_compiler().build_global_in(global, m_module));
   } else if (TreePtr<Block> block = dyn_treeptr_cast<Block>(term)) {
     return run_block(scope, block, slot, following_scope);
   } else if (TreePtr<IfThenElse> if_then_else = dyn_treeptr_cast<IfThenElse>(term)) {
@@ -507,7 +518,7 @@ TvmResult TvmFunctionLowering::run_block(Scope& scope, const TreePtr<Block>& blo
       switch (value.storage()) {
       case tvm_storage_lvalue_ref:
       case tvm_storage_rvalue_ref: {
-        if (!is_primitive(value.type()))
+        if (!is_primitive(sl.current(), value.type()))
           compile_context().error_throw(statement->location(), "Non-primitive type cannot be used as a funtional value");
         Tvm::ValuePtr<> loaded = m_builder.load(value.value(), statement->location());
         value = TvmResult::in_register(value.type(), tvm_storage_functional, loaded);
@@ -522,7 +533,7 @@ TvmResult TvmFunctionLowering::run_block(Scope& scope, const TreePtr<Block>& blo
         return TvmResult::bottom();
         
       case tvm_storage_stack: {
-        if (!is_primitive(value.type()))
+        if (!is_primitive(sl.current(), value.type()))
           compile_context().error_throw(statement->location(), "Non-primitive type cannot be used as a funtional value");
         Scope sc(sl.current(), statement->location(), value, var);
         Tvm::ValuePtr<> loaded = m_builder.load(value.value(), statement->location());
@@ -666,8 +677,21 @@ TvmResult TvmFunctionLowering::run_jump(Scope& scope, const TreePtr<JumpTo>& jum
     
     switch (var_result.storage()) {
     case tvm_storage_stack:
-      if (jump_to->target->argument_mode != result_mode_by_value)
+      switch (jump_to->target->argument_mode) {
+      case result_mode_lvalue:
+      case result_mode_rvalue:
         compile_context().error_throw(scope.location(), "Cannot create reference to stack variable going out of scope");
+
+      case result_mode_by_value:
+        break;
+        
+      case result_mode_functional: {
+        result_value = builder().load(var_result.value(), jump_to->location());
+        Scope var_scope(scope, jump_to->location(), var_result, var);
+        var_scope.cleanup();
+        break;
+      }
+      }
       break;
         
     case tvm_storage_lvalue_ref:
@@ -675,6 +699,7 @@ TvmResult TvmFunctionLowering::run_jump(Scope& scope, const TreePtr<JumpTo>& jum
       case result_mode_by_value: copy_construct(scope, var_result.type(), ei.second, var_result.value(), jump_to->location()); break;
       case result_mode_lvalue:
       case result_mode_rvalue: result_value = var_result.value(); break;
+      case result_mode_functional: result_value = builder().load(var_result.value(), jump_to->location()); break;
       default: PSI_FAIL("unknown enum value");
       }
       break;
@@ -684,15 +709,20 @@ TvmResult TvmFunctionLowering::run_jump(Scope& scope, const TreePtr<JumpTo>& jum
       case result_mode_by_value: move_construct(scope, var_result.type(), ei.second, var_result.value(), jump_to->location()); break;
       case result_mode_lvalue: compile_context().error_throw(scope.location(), "Cannot implicitly convert lvalue reference to rvalue reference"); break;
       case result_mode_rvalue: result_value = var_result.value(); break;
+      case result_mode_functional: result_value = builder().load(var_result.value(), jump_to->location()); break;
       default: PSI_FAIL("unknown enum value");
       }
       break;
 
     case tvm_storage_functional:
-      if (jump_to->target->argument_mode == result_mode_by_value)
-        builder().store(var_result.value(), ei.second, jump_to->location());
-      else
-        compile_context().error_throw(scope.location(), "Cannot convert funtional value to reference"); break;
+      switch (jump_to->target->argument_mode) {
+      case result_mode_by_value: builder().store(var_result.value(), ei.second, jump_to->location()); break;
+      case result_mode_functional: result_value = var_result.value(); break;
+      case result_mode_lvalue:
+      case result_mode_rvalue: compile_context().error_throw(scope.location(), "Cannot convert funtional value to reference"); break;
+      default: PSI_FAIL("unknown enum value");
+      }
+      break;
       
     case tvm_storage_bottom:
       return TvmResult::bottom();
@@ -800,7 +830,7 @@ TvmResult TvmFunctionLowering::run_call(Scope& scope, const TreePtr<FunctionCall
   if (!ftype->interfaces.empty())
     PSI_NOT_IMPLEMENTED();
   
-  if ((ftype->result_mode == result_mode_by_value) && !is_primitive(call->type))
+  if ((ftype->result_mode == result_mode_by_value) && !is_primitive(sl.current(), call->type))
     tvm_arguments.push_back(var.slot());
   
   Tvm::ValuePtr<> result;
@@ -948,13 +978,15 @@ Tvm::ValuePtr<> TvmFunctionLowering::copy_constructible_interface(const TreePtr<
 /**
  * \brief Determine whether a type is primitive, in which case MoveConstructible an CopyConstructible interfaces can be short-cut.
  */
-bool TvmFunctionLowering::is_primitive(const TreePtr<Term>& type) {
-  return false;
+bool TvmFunctionLowering::is_primitive(Scope& scope, const TreePtr<Term>& type) {
+  FunctionalBuilderCallback cb(&scope);
+  TvmFunctionalBuilder builder(&compile_context(), &tvm_context(), &cb);
+  return builder.is_primitive(type);
 }
 
 /// \brief Generate default constructor call
 void TvmFunctionLowering::default_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location) {
-  if (is_primitive(type)) {
+  if (is_primitive(scope, type)) {
     // Should this be undef?
     builder().store(Tvm::FunctionalBuilder::zero(Tvm::value_cast<Tvm::PointerType>(dest->type())->target_type(), location), dest, location);
     return;
@@ -967,7 +999,7 @@ void TvmFunctionLowering::default_construct(Scope& scope, const TreePtr<Term>& t
 
 /// \brief Generate copy constructor call
 void TvmFunctionLowering::copy_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {  
-  if (is_primitive(type)) {
+  if (is_primitive(scope, type)) {
     Tvm::ValuePtr<> value = builder().load(src, location);
     builder().store(value, dest, location);
     return;
@@ -980,7 +1012,7 @@ void TvmFunctionLowering::copy_construct(Scope& scope, const TreePtr<Term>& type
 
 /// \brief Generate move constructor call
 void TvmFunctionLowering::move_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {
-  if (is_primitive(type)) {
+  if (is_primitive(scope, type)) {
     Tvm::ValuePtr<> value = builder().load(src, location);
     builder().store(value, dest, location);
     return;
@@ -993,7 +1025,7 @@ void TvmFunctionLowering::move_construct(Scope& scope, const TreePtr<Term>& type
 
 ///  \brief Generate destructor call
 void TvmFunctionLowering::destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& ptr, const SourceLocation& location) {
-  if (is_primitive(type))
+  if (is_primitive(scope, type))
     return;
   
   Tvm::ValuePtr<> mc = move_constructible_interface(type);

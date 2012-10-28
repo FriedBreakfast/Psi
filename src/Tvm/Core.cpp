@@ -201,6 +201,28 @@ namespace Psi {
     }
     
     PSI_TVM_VALUE_IMPL(GlobalVariable, Global);
+
+    /**
+     * \brief Get an existing module member.
+     * 
+     * \return NULL if no member with this name is present.
+     */
+    ValuePtr<Global> Module::get_member(const std::string& name) {
+      ModuleMemberList::const_iterator ii = m_members.find(name);
+      return (ii != m_members.end()) ? ii->second : ValuePtr<Global>();
+    }
+    
+    /**
+     * \brief Create a new global.
+     * 
+     * This creates either a function or a global variable based on what \c type is.
+     */
+    ValuePtr<Global> Module::new_member(const std::string& name, const ValuePtr<>& type, const SourceLocation& location) {
+      if (ValuePtr<FunctionType> ftype = dyn_cast<FunctionType>(type))
+        return new_function(name, ftype, location);
+      else
+        return new_global_variable(name, type, location);
+    }
     
     /**
      * \brief Create a new global term.

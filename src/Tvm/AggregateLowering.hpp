@@ -219,7 +219,7 @@ namespace Psi {
         virtual LoweredValue load_value(const ValuePtr<>& load_term, const ValuePtr<>& ptr, const SourceLocation& location);
         virtual ValuePtr<> store_value(const ValuePtr<>& value, const SourceLocation& location);
         virtual ValuePtr<> store_type(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location);
-        ValuePtr<> store_value(const ValuePtr<>& value, const ValuePtr<>& ptr, const SourceLocation& location);
+        void store_value(const ValuePtr<>& value, const ValuePtr<>& ptr, const SourceLocation& location);
 
         virtual LoweredType rewrite_type(const ValuePtr<>&);
         virtual LoweredValue rewrite_value(const ValuePtr<>&);

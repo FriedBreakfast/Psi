@@ -114,7 +114,7 @@ namespace Psi {
       return false;
     return std::memcmp(m_c.data, rhs.m_c.data, m_c.length) == 0;
   }
-
+  
   bool String::operator != (const String& rhs) const {
     return !operator == (rhs);
   }
@@ -257,6 +257,14 @@ namespace Psi {
     
     return it->second;
   }
+
+  bool PropertyValue::has_key(const String& key) const {
+    if (type() != t_map)
+      return false;
+    
+    PropertyMap::const_iterator it = map().find(key);
+    return (it != map().end());
+  }
   
   std::vector<std::string> PropertyValue::str_list() const {
     if (type() != t_list)
@@ -287,7 +295,23 @@ namespace Psi {
     default: PSI_FAIL("unknown value type");
     }
   }
+
+  bool operator == (const PropertyValue& lhs, const String& rhs) {
+    return (lhs.type() == PropertyValue::t_str) && (lhs.str() == rhs);
+  }
   
+  bool operator == (const String& lhs, const PropertyValue& rhs) {
+    return (rhs.type() == PropertyValue::t_str) && (rhs.str() == lhs);
+  }
+
+  bool operator == (const PropertyValue& lhs, const char *rhs) {
+    return (lhs.type() == PropertyValue::t_str) && (lhs.str() == rhs);
+  }
+  
+  bool operator == (const char *lhs, const PropertyValue& rhs) {
+    return (rhs.type() == PropertyValue::t_str) && (rhs.str() == lhs);
+  }
+
   namespace {
     PropertyValue to_property_value(json_object *obj) {
       switch (json_object_get_type(obj)) {

@@ -90,8 +90,10 @@ bool TvmFunctionalBuilder::is_primitive(const TreePtr<Term>& type) {
         return false;
     }
     return true;
+  } else if (TreePtr<GlobalDefine> def = dyn_treeptr_cast<GlobalDefine>(type)) {
+    return is_primitive(def->value);
   } else {
-    PSI_FAIL("Unknown type subclass");
+    PSI_FAIL(si_vptr(type.get())->classname);
   }
 }
 
@@ -310,6 +312,8 @@ TvmResult TvmFunctionalBuilder::build_other(const TreePtr<Functional>& value) {
     default:
       compile_context().error_throw(value->location(), "Cannot get pointer from non-reference");
     }
+  } else if (TreePtr<GlobalDefine> define = dyn_treeptr_cast<GlobalDefine>(value)) {
+    return m_callback->build_define_hook(define);
   } else {
     PSI_FAIL(si_vptr(value.get())->classname);
   }
@@ -322,11 +326,22 @@ TvmResult TvmFunctionalBuilder::build_constructor(const TreePtr<Constructor>& va
     return TvmResult::in_register(int_value->type, tvm_storage_functional,
                                   Tvm::FunctionalBuilder::int_value(Tvm::value_cast<Tvm::IntegerType>(type.value()), int_value->value, int_value->location()));
   } else if (TreePtr<StringValue> str_value = dyn_treeptr_cast<StringValue>(value)) {
-    PSI_NOT_IMPLEMENTED();
+    Tvm::ValuePtr<Tvm::IntegerType> char_type = Tvm::FunctionalBuilder::int_type(tvm_context(), Tvm::IntegerType::i8, false, str_value->location());
+    std::vector<Tvm::ValuePtr<> > elements;
+    const String& str = str_value->value;
+    for (std::size_t ii = 0, ie = str.length() + 1; ii != ie; ++ii)
+      elements.push_back(Tvm::FunctionalBuilder::int_value(char_type, str[ii], str_value->location()));
+    return TvmResult::in_register(str_value->type, tvm_storage_functional,
+                                  Tvm::FunctionalBuilder::array_value(char_type, elements, value->location()));
   } else if (TreePtr<BuiltinValue> builtin_value = dyn_treeptr_cast<BuiltinValue>(value)) {
     PSI_NOT_IMPLEMENTED();
   } else if (TreePtr<DefaultValue> default_value = dyn_treeptr_cast<DefaultValue>(value)) {
-    PSI_NOT_IMPLEMENTED();
+    TvmResult type = build_type(default_value->type);
+    if (type.primitive()) {
+      return TvmResult::in_register(default_value->type, tvm_storage_functional, Tvm::FunctionalBuilder::undef(type.value(), default_value->location()));
+    } else {
+      PSI_NOT_IMPLEMENTED();
+    }
   } else if (TreePtr<StructValue> struct_value = dyn_treeptr_cast<StructValue>(struct_value)) {
     PSI_NOT_IMPLEMENTED();
   } else if (TreePtr<ArrayValue> array_value = dyn_treeptr_cast<ArrayValue>(array_value)) {

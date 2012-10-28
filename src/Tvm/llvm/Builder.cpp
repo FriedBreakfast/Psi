@@ -162,6 +162,35 @@ namespace Psi {
           return f;
         }
 
+        /// \brief Utility function used by intrinsic_memcpy_64 and
+        /// intrinsic_memcpy_32.
+        llvm::Function* intrinsic_memset(llvm::Module& m, llvm::TargetMachine *target_machine) {
+          llvm::IntegerType *size_type = target_machine->getTargetData()->getIntPtrType(m.getContext());
+          const char *name;
+          switch (size_type->getBitWidth()) {
+          case 32: name = "llvm.memset.p0i8.i32"; break;
+          case 64: name = "llvm.memset.p0i8.i64"; break;
+          default: PSI_FAIL("unsupported bit width for memcpy parameter");
+          }
+          
+          llvm::Function *f = m.getFunction(name);
+          if (f)
+            return f;
+
+          llvm::LLVMContext& c = m.getContext();
+          llvm::Type *args[] = {
+            llvm::Type::getInt8PtrTy(c),
+            llvm::Type::getInt8Ty(c),
+            size_type,
+            llvm::Type::getInt32Ty(c),
+            llvm::Type::getInt1Ty(c)
+          };
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(c), args, false);
+          f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+
+          return f;
+        }
+
         llvm::Function* intrinsic_stacksave(llvm::Module& m) {
           const char *name = "llvm.stacksave";
           llvm::Function *f = m.getFunction(name);
@@ -224,6 +253,7 @@ namespace Psi {
       ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module, TargetCallback *target_callback)
         : m_llvm_context(llvm_context), m_llvm_target_machine(target_machine), m_llvm_module(llvm_module), m_target_callback(target_callback) {
         m_llvm_memcpy = intrinsic_memcpy(*llvm_module, target_machine);
+        m_llvm_memset = intrinsic_memset(*llvm_module, target_machine);
         m_llvm_stacksave = intrinsic_stacksave(*llvm_module);
         m_llvm_stackrestore = intrinsic_stackrestore(*llvm_module);
         m_llvm_eh_exception = intrinsic_eh_exception(*llvm_module);
@@ -249,13 +279,16 @@ namespace Psi {
           const ValuePtr<Global>& term = i->second;
           ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
           llvm::GlobalValue *result;
+          llvm::GlobalValue::LinkageTypes linkage = term->private_() ? llvm::GlobalVariable::LinkerPrivateLinkage : llvm::GlobalValue::ExternalLinkage;
           switch (rewritten_term->term_type()) {
           case term_global_variable: {
             ValuePtr<GlobalVariable> global = value_cast<GlobalVariable>(rewritten_term);
             llvm::Type *llvm_type = build_type(global->value_type());
             result = new llvm::GlobalVariable(*m_llvm_module, llvm_type,
-                                              global->constant(), llvm::GlobalValue::ExternalLinkage,
+                                              global->constant(), linkage,
                                               NULL, global->name());
+            if (global->constant() && global->merge())
+              result->setUnnamedAddr(true);
             break;
           }
 
@@ -266,8 +299,7 @@ namespace Psi {
             llvm::Type *llvm_type = build_type(func_type);
             PSI_ASSERT_MSG(llvm_type, "could not create function because its LLVM type is not known");
             result = llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_type),
-                                            llvm::GlobalValue::ExternalLinkage,
-                                            func->name(), m_llvm_module);
+                                            linkage, func->name(), m_llvm_module);
             break;
           }
 
@@ -289,16 +321,16 @@ namespace Psi {
           llvm::GlobalValue *llvm_term = m_global_terms.find(rewritten_term)->second;
           
           if (rewritten_term->term_type() == term_function) {
-            FunctionBuilder fb(this, value_cast<Function>(rewritten_term), llvm::cast<llvm::Function>(llvm_term));
-            fb.run();
+            ValuePtr<Function> func = value_cast<Function>(rewritten_term);
+            if (!func->blocks().empty()) {
+              FunctionBuilder fb(this, func, llvm::cast<llvm::Function>(llvm_term));
+              fb.run();
+            }
           } else {
             PSI_ASSERT(term->term_type() == term_global_variable);
             if (ValuePtr<> value = value_cast<GlobalVariable>(rewritten_term)->value()) {
               llvm::Constant *llvm_value = build_constant(value);
               llvm::cast<llvm::GlobalVariable>(llvm_term)->setInitializer(llvm_value);
-            } else {
-              llvm::GlobalVariable *gv = llvm::cast<llvm::GlobalVariable>(llvm_term);
-              gv->setInitializer(llvm::UndefValue::get(llvm::cast<llvm::PointerType>(gv->getType())->getElementType()));
             }
           }
         }
@@ -384,13 +416,14 @@ namespace Psi {
       }
 
       void LLVMJit::add_module(Module *module) {
+        ModuleMapping& mapping = m_modules[module];
+        if (mapping.module)
+          throw BuildError("module already exists in this JIT");
+
         std::auto_ptr<llvm::Module> llvm_module(new llvm::Module(module->name(), m_llvm_context));
         ModuleBuilder builder(&m_llvm_context, m_target_machine.get(), llvm_module.get(), m_target_fixes.get());
         ModuleMapping new_mapping = builder.run(module);
 
-        ModuleMapping& mapping = m_modules[module];
-        if (mapping.module)
-          throw BuildError("module already exists in this JIT");
         mapping = new_mapping;
 
         if (!m_llvm_engine) {
@@ -414,6 +447,14 @@ namespace Psi {
       void LLVMJit::rebuild_module(Module *module, bool) {
         remove_module(module);
         add_module(module);
+      }
+      
+      void LLVMJit::add_or_rebuild_module(Module *module, bool incremental) {
+        boost::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
+        if (it == m_modules.end())
+          add_module(module);
+        else
+          rebuild_module(module, incremental);
       }
       
       void* LLVMJit::get_symbol(const ValuePtr<Global>& global) {

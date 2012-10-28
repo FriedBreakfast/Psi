@@ -186,4 +186,13 @@ namespace Psi {
     std::cerr << error_name(LogicalSourceLocationPtr()) << std::endl;
   }
 #endif
+
+  SourceLocation SourceLocation::root_location(const String& url) {
+    PhysicalSourceLocation phys;
+    phys.file.reset(new SourceFile());
+    phys.file->url = url;
+    phys.first_line = phys.first_column = 1;
+    phys.last_line = phys.last_column = 0;
+    return SourceLocation(phys, LogicalSourceLocation::new_root_location());
+  }
 }

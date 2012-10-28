@@ -46,7 +46,11 @@ namespace Psi {
     }
 
     boost::shared_ptr<PlatformLibrary> LibraryLinux::load(const PropertyValue& args) {
-      std::vector<std::string> libs = args.get("libs").str_list(), dirs = args.get("dirs").str_list();
+      std::vector<std::string> libs, dirs;
+      if (args.has_key("libs"))
+        libs = args.get("libs").str_list();
+      if (args.has_key("dirs"))
+        dirs = args.get("dirs").str_list();
 
       boost::shared_ptr<LibraryLinux> lib(new LibraryLinux);
       // Should prevent any exceptions from being thrown by std::vector::push_back

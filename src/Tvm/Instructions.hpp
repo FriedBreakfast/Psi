@@ -158,6 +158,29 @@ namespace Psi {
       /// \brief Alignment hint
       ValuePtr<> alignment;
     };
+    
+    /**
+     * \brief bzero as an instruction.
+     * 
+     * This exists because during code generation load and store operations
+     * on complex types may be replaced by memcpy.
+     * 
+     * Unlike most operations, which have their destination last, this
+     * follows the ordinary memcpy convention and has the destination
+     * first and source second.
+     */
+    class MemZero : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(MemZero)
+      
+    public:
+      MemZero(const ValuePtr<>& dest, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location);
+      /// \brief Copy destination
+      ValuePtr<> dest;
+      /// \brief Number of elements to copy
+      ValuePtr<> count;
+      /// \brief Alignment hint
+      ValuePtr<> alignment;
+    };
   }
 }
 

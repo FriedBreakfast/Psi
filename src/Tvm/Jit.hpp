@@ -76,6 +76,12 @@ namespace Psi {
       virtual void rebuild_module(Module *module, bool incremental) = 0;
 
       /**
+       * Add a module to the JIT or rebuild it depending on
+       * whether the module is already present.
+       */
+      virtual void add_or_rebuild_module(Module *module, bool incremental) = 0;
+
+      /**
        * \brief Get a pointer to the given term, generating code or
        * global data as necessary.
        */

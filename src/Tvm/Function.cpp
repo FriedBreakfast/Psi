@@ -446,9 +446,10 @@ namespace Psi {
         if (isa<TerminatorInstruction>(insn))
           throw TvmUserError("terminating instruction cannot be inserted other than at the end of a block");
       }
-
+      
       m_instructions.insert(insert_before, *insn);
       insn->m_block = this;
+      insn->type_check();
     }
     
     void Block::erase_phi(Phi& phi) {

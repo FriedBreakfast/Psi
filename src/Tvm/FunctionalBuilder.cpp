@@ -435,12 +435,12 @@ namespace Psi {
     }
     
     /// \brief Get an integer type
-    ValuePtr<> FunctionalBuilder::int_type(Context& context, IntegerType::Width width, bool is_signed, const SourceLocation& location) {
+    ValuePtr<IntegerType> FunctionalBuilder::int_type(Context& context, IntegerType::Width width, bool is_signed, const SourceLocation& location) {
       return context.get_functional(IntegerType(context, width, is_signed, location));
     }
     
     /// \brief Get the intptr type
-    ValuePtr<> FunctionalBuilder::size_type(Context& context, const SourceLocation& location) {
+    ValuePtr<IntegerType> FunctionalBuilder::size_type(Context& context, const SourceLocation& location) {
       return int_type(context, IntegerType::iptr, false, location);
     }
     

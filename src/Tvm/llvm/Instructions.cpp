@@ -110,6 +110,24 @@ namespace Psi {
           return builder.irbuilder().CreateCall5(builder.module_builder()->llvm_memcpy(), dest, src, count, alignment_expr, isvolatile);
         }
         
+        static llvm::Instruction* memzero_callback(FunctionBuilder& builder, const ValuePtr<MemZero>& term) {
+          llvm::Value *dest = builder.build_value(term->dest);
+          llvm::Value *count = builder.build_value(term->count);
+          unsigned alignment = 0;
+          if (term->alignment) {
+            if (llvm::ConstantInt *alignment_expr = llvm::dyn_cast<llvm::ConstantInt>(builder.build_value(term->alignment)))
+              alignment = alignment_expr->getValue().getZExtValue();
+          }
+
+          PSI_ASSERT(dest->getType() == llvm::IntegerType::getInt8PtrTy(builder.module_builder()->llvm_context()));
+          
+          llvm::ConstantInt *alignment_expr = llvm::ConstantInt::get(llvm::IntegerType::getInt32Ty(builder.module_builder()->llvm_context()), alignment);
+          llvm::Value *val = llvm::ConstantInt::get(llvm::IntegerType::getInt8Ty(builder.module_builder()->llvm_context()), 0);
+          llvm::Value *isvolatile = llvm::ConstantInt::getFalse(builder.module_builder()->llvm_context());
+          
+          return builder.irbuilder().CreateCall5(builder.module_builder()->llvm_memset(), dest, val, count, alignment_expr, isvolatile);
+        }
+        
         typedef TermOperationMap<Instruction, llvm::Value*, FunctionBuilder&> CallbackMap;
         
         static CallbackMap callback_map;
@@ -124,7 +142,8 @@ namespace Psi {
             .add<Load>(load_callback)
             .add<Store>(store_callback)
             .add<Alloca>(alloca_callback)
-            .add<MemCpy>(memcpy_callback);
+            .add<MemCpy>(memcpy_callback)
+            .add<MemZero>(memzero_callback);
         }
       };
 

@@ -96,8 +96,8 @@ namespace Psi {
       //@{
       static ValuePtr<> bool_type(Context&, const SourceLocation& location);
       static ValuePtr<> bool_value(Context&, bool, const SourceLocation& location);
-      static ValuePtr<> int_type(Context&, IntegerType::Width, bool, const SourceLocation& location);
-      static ValuePtr<> size_type(Context&, const SourceLocation& location);
+      static ValuePtr<IntegerType> int_type(Context&, IntegerType::Width, bool, const SourceLocation& location);
+      static ValuePtr<IntegerType> size_type(Context&, const SourceLocation& location);
       static ValuePtr<> int_value(Context&, IntegerType::Width, bool, int, const SourceLocation& location);
       static ValuePtr<> int_value(Context&, IntegerType::Width, bool, unsigned, const SourceLocation& location);
       static ValuePtr<> int_value(Context&, IntegerType::Width, bool, const std::string&, const SourceLocation& location);

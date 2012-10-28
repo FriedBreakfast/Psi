@@ -87,6 +87,8 @@ namespace Psi {
     SourceLocation named_child(const String& name) const {
       return SourceLocation(physical, logical->named_child(name));
     }
+    
+    static SourceLocation root_location(const String& name);
   };
 }
 

@@ -210,17 +210,6 @@ namespace Psi {
       return make_metadata_term(macro, macro.compile_context().builtins().macro_tag, location);
     }
     
-    /**
-     * \brief Create the default \c __none__ value.
-     * 
-     * This value has no members and no associated metadata (yet).
-     */
-    TreePtr<Term> none_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<GenericType> generic_type(new GenericType(default_, compile_context.builtins().empty_type, default_, location));
-      TreePtr<Term> type(new TypeInstance(generic_type, default_, location));
-      return TreePtr<Term>(new DefaultValue(type, location));
-    }
-    
     class PointerMacro : public MacroMemberCallback {
     public:
       static const MacroMemberCallbackVtable vtable;

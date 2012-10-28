@@ -192,7 +192,7 @@ namespace Psi {
       // Generate function type - parameterize parameters!
       PSI_STD::vector<FunctionParameterType> argument_types;
       for (unsigned ii = 0, ie = argument_list.size(); ii != ie; ++ii)
-        argument_types.push_back(FunctionParameterType(argument_modes[ii], argument_list[ii]->parameterize(argument_list[ii].location(), argument_list)));
+        argument_types.push_back(FunctionParameterType(argument_modes[ii], argument_list[ii]->type->parameterize(argument_list[ii].location(), argument_list)));
       TreePtr<Term> result_type_param = result_type->parameterize(result_type.location(), argument_list);
       for (PSI_STD::vector<TreePtr<InterfaceValue> >::iterator ii = interfaces.begin(), ie = interfaces.end(); ii != ie; ++ii)
         *ii = treeptr_cast<InterfaceValue>((*ii)->parameterize(ii->location(), argument_list));

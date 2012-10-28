@@ -448,6 +448,22 @@ namespace Psi {
           throw TvmUserError("element_value aggregate argument is not an aggregate type");
       }
 
+      static LoweredValue zero_value_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ZeroValue>& term) {
+        LoweredType term_type = rewriter.rewrite_type(term->type());
+        if (term_type.stack_type())
+          return LoweredValue(Tvm::FunctionalBuilder::zero(term_type.stack_type(), term->location()), true);
+        else
+          return LoweredValue(rewriter.store_value(term, term->location()), false);
+      }
+      
+      static LoweredValue undefined_value_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<UndefinedValue>& term) {
+        LoweredType term_type = rewriter.rewrite_type(term->type());
+        if (term_type.stack_type())
+          return LoweredValue(Tvm::FunctionalBuilder::undef(term_type.stack_type(), term->location()), true);
+        else
+          return LoweredValue(rewriter.store_value(term, term->location()), false);
+      }
+
       typedef TermOperationMap<FunctionalValue, LoweredValue, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
       
@@ -474,7 +490,9 @@ namespace Psi {
           .add<Unwrap>(unwrap_rewrite)
           .add<ApplyValue>(apply_rewrite)
           .add<ElementValue>(element_value_rewrite)
-          .add<ElementPtr>(element_ptr_rewrite);
+          .add<ElementPtr>(element_ptr_rewrite)
+          .add<ZeroValue>(zero_value_rewrite)
+          .add<UndefinedValue>(undefined_value_rewrite);
       }
     };
 
@@ -505,16 +523,19 @@ namespace Psi {
 
       static LoweredValue alloca_rewrite(FunctionRunner& runner, const ValuePtr<Alloca>& term) {
         LoweredType type = runner.rewrite_type(term->element_type);
-        ValuePtr<> count = runner.rewrite_value_stack(term->count);
-        ValuePtr<> alignment = runner.rewrite_value_stack(term->alignment);
+        ValuePtr<> count = term->count ? runner.rewrite_value_stack(term->count) : ValuePtr<>();
+        ValuePtr<> alignment = term->alignment ? runner.rewrite_value_stack(term->alignment) : ValuePtr<>();
         ValuePtr<> stack_ptr;
         if (type.heap_type()) {
           stack_ptr = runner.builder().alloca_(type.heap_type(), count, alignment, term->location());
         } else {
-          ValuePtr<> type_size = runner.rewrite_value_stack(FunctionalBuilder::type_size(term->element_type, term->location()));
-          ValuePtr<> type_alignment = runner.rewrite_value_stack(FunctionalBuilder::type_alignment(term->element_type, term->location()));
-          ValuePtr<> total_size = FunctionalBuilder::mul(count, type_size, term->location());
-          stack_ptr = runner.builder().alloca_(FunctionalBuilder::byte_type(runner.context(), term->location()), total_size, type_alignment, term->location());
+          ValuePtr<> total_size = runner.rewrite_value_stack(FunctionalBuilder::type_size(term->element_type, term->location()));
+          if (count)
+            total_size = FunctionalBuilder::mul(count, total_size, term->location());
+          ValuePtr<> total_alignment = runner.rewrite_value_stack(FunctionalBuilder::type_alignment(term->element_type, term->location()));
+          if (alignment)
+            total_alignment = FunctionalBuilder::max(total_alignment, alignment, term->location());
+          stack_ptr = runner.builder().alloca_(FunctionalBuilder::byte_type(runner.context(), term->location()), total_size, total_alignment, term->location());
         }
         ValuePtr<> cast_stack_ptr = FunctionalBuilder::pointer_cast(stack_ptr, FunctionalBuilder::byte_type(runner.context(), term->location()), term->location());
         return LoweredValue(cast_stack_ptr, true);
@@ -707,46 +728,50 @@ namespace Psi {
      * 
      * \pre \code isa<PointerType>(ptr->type()) \endcode
      */
-    ValuePtr<> AggregateLoweringPass::FunctionRunner::store_value(const ValuePtr<>& value, const ValuePtr<>& ptr, const SourceLocation& location) {
+    void AggregateLoweringPass::FunctionRunner::store_value(const ValuePtr<>& value, const ValuePtr<>& ptr, const SourceLocation& location) {
+      if (isa<UndefinedValue>(value))
+        return;
+      
       LoweredType value_type = rewrite_type(value->type());
       if (value_type.stack_type()) {
         ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, value_type.stack_type(), location);
         ValuePtr<> stack_value = rewrite_value_stack(value);
-        return builder().store(stack_value, cast_ptr, location);
+        builder().store(stack_value, cast_ptr, location);
+      }
+      
+      if (isa<ZeroValue>(value)) {
+        builder().memzero(ptr, value_type.size(), location);
+        return;
       }
 
       if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(value)) {
-        ValuePtr<> result;
         LoweredType element_type = rewrite_type(array_val->element_type());
         if (element_type.heap_type()) {
           ValuePtr<> base_ptr = FunctionalBuilder::pointer_cast(ptr, element_type.heap_type(), location);
           for (unsigned i = 0, e = array_val->length(); i != e; ++i) {
             ValuePtr<> element_ptr = FunctionalBuilder::pointer_offset(base_ptr, i, location);
-            result = store_value(array_val->value(i), element_ptr, location);
+            store_value(array_val->value(i), element_ptr, location);
           }
         } else {
           PSI_ASSERT(ptr->type() == FunctionalBuilder::byte_pointer_type(context(), location));
           ValuePtr<> element_size = rewrite_value_stack(FunctionalBuilder::type_size(array_val->element_type(), location));
           ValuePtr<> element_ptr = ptr;
           for (unsigned i = 0, e = array_val->length(); i != e; ++i) {
-            result = store_value(array_val->value(i), element_ptr, location);
+            store_value(array_val->value(i), element_ptr, location);
             element_ptr = FunctionalBuilder::pointer_offset(element_ptr, element_size, location);
           }
         }
-        return result;
       } else if (ValuePtr<UnionValue> union_val = dyn_cast<UnionValue>(value)) {
         return store_value(union_val->value(), ptr, location);
       }
       
       if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(value->type())) {
         PSI_ASSERT(ptr->type() == FunctionalBuilder::byte_pointer_type(context(), location));
-        ValuePtr<> result;
         for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
           ValuePtr<> offset = rewrite_value_stack(FunctionalBuilder::struct_element_offset(struct_ty, i, location));
           ValuePtr<> member_ptr = FunctionalBuilder::pointer_offset(ptr, offset, location);
-          result = store_value(FunctionalBuilder::element_value(value, i, location), member_ptr, location);
+          store_value(FunctionalBuilder::element_value(value, i, location), member_ptr, location);
         }
-        return result;
       }
 
       if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(value->type())) {
@@ -754,7 +779,7 @@ namespace Psi {
         if (element_type.heap_type()) {
           ValuePtr<> value_ptr = rewrite_value_ptr(value);
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, element_type.heap_type(), location);
-          return builder().memcpy(cast_ptr, value_ptr, array_ty->length(), location);
+          builder().memcpy(cast_ptr, value_ptr, array_ty->length(), location);
         }
       }
 
@@ -763,7 +788,7 @@ namespace Psi {
       PSI_ASSERT(value_ptr->type() == FunctionalBuilder::byte_pointer_type(context(), location));
       ValuePtr<> value_size = rewrite_value_stack(FunctionalBuilder::type_size(value->type(), location));
       ValuePtr<> value_alignment = rewrite_value_stack(FunctionalBuilder::type_alignment(value->type(), location));
-      return builder().memcpy(ptr, value_ptr, value_size, value_alignment, location);
+      builder().memcpy(ptr, value_ptr, value_size, value_alignment, location);
     }
 
     /**
@@ -775,9 +800,10 @@ namespace Psi {
        * function and decide whether a new entry block is necessary in case
        * the user jumps back to the start of the function.
        */
-      ValuePtr<Block> prolog_block = new_function()->blocks().front();
-      if (!prolog_block)
+      if (new_function()->blocks().empty())
         return; // This is an external function
+
+      ValuePtr<Block> prolog_block = new_function()->blocks().front();
 
       std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > > sorted_blocks;
       

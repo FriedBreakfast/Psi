@@ -85,11 +85,12 @@ namespace Psi {
     };
 
     std::ostream& operator << (std::ostream& os, const DisassemblerContext::TermNamePrinter& printer) {
+      os << '%';
       for (std::string::const_iterator ii = printer.name->begin(), ie = printer.name->end(); ii != ie; ++ii) {
         if (Parser::token_char(*ii))
           os << *ii;
         else
-          os << '%' << (((unsigned(*ii) & 0xF0) >> 8) + '0') << ((unsigned(*ii) & 0xF) + '0');
+          os << '%' << ((unsigned(*ii) & 0xF0) >> 8) << (unsigned(*ii) & 0xF);
       }
       
       return os;
@@ -143,7 +144,7 @@ namespace Psi {
       boost::unordered_set<std::string> used_names;
       boost::unordered_map<std::string, unsigned> name_indices;
       
-      boost::format name_formatter("%%%s"), number_formatter("%s%s");
+      boost::format name_formatter("%s"), number_formatter("%s%s");
       
       for (std::vector<boost::shared_ptr<TermName> >::iterator ii = names.begin(), ie = names.end(); ii != ie; ++ii) {
         TermName& name = **ii;
@@ -484,7 +485,7 @@ namespace Psi {
       
       TermNameMap::iterator name_it = m_names.find(term);
       if (name_it != m_names.end()) {
-        *m_output << name_it->second->name;
+        *m_output << TermNamePrinter(&name_it->second->name);
         return;
       }
       
@@ -550,12 +551,14 @@ namespace Psi {
       
       case term_global_variable: {
         ValuePtr<GlobalVariable> gvar = value_cast<GlobalVariable>(term);
-        *m_output << name(gvar) << " = global ";
+        *m_output << "global ";
         if (gvar->constant())
           *m_output << "const ";
         print_term(gvar->value_type(), true);
-        if (gvar->value())
+        if (gvar->value()) {
+          *m_output << ' ';
           print_term(gvar->value(), true);
+        }
         *m_output << ";\n";
         return;
       }
@@ -637,12 +640,12 @@ namespace Psi {
         
         std::string name;
         if (use_names) {
-          name = m_names.find(use_names->parameters().at(ii))->second->name;
+          *m_output << TermNamePrinter(&m_names.find(use_names->parameters().at(ii))->second->name);
         } else {
-          name = str(name_formatter % (parameter_name_base + ii));
+          *m_output << name_formatter % (parameter_name_base + ii);
         }
         
-        *m_output << name << " : ";
+        *m_output << " : ";
         print_term(term->parameter_types()[ii], false);
         
         name_list.push_back(name);
@@ -878,12 +881,15 @@ namespace Psi {
 
     void DisassemblerContext::print_function(const ValuePtr<Function>& term) {
       print_function_type_term(term->function_type(), term);
-      *m_output << " {\n";
-      
-      for (Function::BlockList::const_iterator ii = term->blocks().begin(), ie = term->blocks().end(); ii != ie; ++ii)
-        print_block(*ii, m_local_definitions[*ii]);
-      
-      *m_output << "};\n";
+      if (!term->blocks().empty()) {
+        *m_output << " {\n";
+        
+        for (Function::BlockList::const_iterator ii = term->blocks().begin(), ie = term->blocks().end(); ii != ie; ++ii)
+          print_block(*ii, m_local_definitions[*ii]);
+        
+        *m_output << "}";
+      }
+      *m_output << ";\n";
     }
 
     void DisassemblerContext::print_block(const ValuePtr<Block>& block, const TermDefinitionList& definitions) {

@@ -287,5 +287,34 @@ namespace Psi {
     }
 
     PSI_TVM_INSTRUCTION_IMPL(MemCpy, Instruction, memcpy);
+    
+    MemZero::MemZero(const ValuePtr<>& dest_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::empty_type(dest_->context(), location), operation, location),
+    dest(dest_),
+    count(count_),
+    alignment(alignment_) { 
+    }
+
+    void MemZero::type_check() {
+      if (!isa<PointerType>(dest->type()))
+        throw TvmUserError("first parameter to memzero instruction is not a pointer");
+      
+      if (!isa<ByteType>(value_cast<PointerType>(dest->type())->target_type()))
+        throw TvmUserError("first parameter to memzero instruction is not a byte pointer");
+      
+      ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location());
+      if (count->type() != size_type || (alignment && (alignment->type() != size_type)))
+        throw TvmUserError("secon and third parameters to memzero instruction must be uintptr");
+    }
+    
+    template<typename V>
+    void MemZero::visit(V& v) {
+      visit_base<Instruction>(v);
+      v("dest", &MemZero::dest)
+      ("count", &MemZero::count)
+      ("alignment", &MemZero::alignment);
+    }
+
+    PSI_TVM_INSTRUCTION_IMPL(MemZero, Instruction, memzero);
   }
 }

@@ -243,6 +243,7 @@ namespace Psi {
     const char *c_str() const {return m_c.data;}
     bool empty() const {return !m_c.length;}
     void swap(String&);
+    char operator [] (std::size_t idx) const {return m_c.data[idx];}
   };
   
   bool operator == (const String& lhs, const char *rhs);
@@ -407,6 +408,7 @@ namespace Psi {
     PropertyMap& map() {PSI_ASSERT(m_type == t_map); return *m_value.map.ptr();}
     const PropertyMap& map() const {PSI_ASSERT(m_type == t_map); return *m_value.map.ptr();}
     const PropertyValue& get(const String& key) const;
+    bool has_key(const String& key) const;
 
     PropertyList& list() {PSI_ASSERT(m_type == t_list); return *m_value.list.ptr();}
     const PropertyList& list() const {PSI_ASSERT(m_type == t_list); return *m_value.list.ptr();}
@@ -416,6 +418,10 @@ namespace Psi {
   };
   
   bool operator == (const PropertyValue& lhs, const PropertyValue& rhs);
+  bool operator == (const PropertyValue& lhs, const String& rhs);
+  bool operator == (const String& lhs, const PropertyValue& rhs);
+  bool operator == (const PropertyValue& lhs, const char *rhs);
+  bool operator == (const char *lhs, const PropertyValue& rhs);
 
   PSI_VISIT_SIMPLE(PropertyValue)
 
