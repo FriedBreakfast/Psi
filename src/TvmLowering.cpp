@@ -9,8 +9,7 @@
 namespace Psi {
 namespace Compiler {
 TvmCompiler::TvmCompiler(CompileContext *compile_context)
-: m_compile_context(compile_context),
-m_functional_builder(compile_context, &m_tvm_context, this) {
+: m_compile_context(compile_context) {
   boost::shared_ptr<Tvm::JitFactory> factory = Tvm::JitFactory::get("llvm");
   m_jit = factory->create_jit();
   m_library_module.reset(new Tvm::Module(&m_tvm_context, "(library)", SourceLocation::root_location("(library)")));
@@ -19,30 +18,54 @@ m_functional_builder(compile_context, &m_tvm_context, this) {
 TvmCompiler::~TvmCompiler() {
 }
 
-TvmResult TvmCompiler::build_hook(const TreePtr<Term>& value) {
-  if (TreePtr<Global> global = dyn_treeptr_cast<Global>(value))
-    return TvmResult::in_register(value->type, tvm_storage_lvalue_ref, build_global(global));
+class TvmCompiler::FunctionalBuilderCallback : public TvmFunctionalBuilderCallback {
+  TvmCompiler *m_self;
+  TreePtr<Module> m_module;
   
-  compile_context().error_throw(value->location(), "Value is required in a global context but is not a global value.");
-}
+public:
+  FunctionalBuilderCallback(TvmCompiler *self, const TreePtr<Module>& module)
+  : m_self(self), m_module(module) {}
+  
+  virtual TvmResult build_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<Term>& value) {
+    if (TreePtr<Global> global = dyn_treeptr_cast<Global>(value))
+      return TvmResult::in_register(value->type, tvm_storage_lvalue_ref, m_self->build_global(global, m_module));
+    
+    m_self->compile_context().error_throw(value->location(), "Value is required in a global context but is not a global value.");
+  }
 
-TvmResult TvmCompiler::build_define_hook(const TreePtr<GlobalDefine>& define) {
-  return m_functional_builder.build(define->value);
-}
+  virtual TvmResult build_define_hook(TvmFunctionalBuilder& builder, const TreePtr<GlobalDefine>& define) {
+    return builder.build(define->value);
+  }
 
-TvmGenericResult TvmCompiler::build_generic_hook(const TreePtr<GenericType>& generic) {
-  return build_generic(generic);
-}
+  virtual TvmGenericResult build_generic_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<GenericType>& generic) {
+    return m_self->build_generic(generic);
+  }
 
-Tvm::ValuePtr<> TvmCompiler::load_hook(const Tvm::ValuePtr<>& PSI_UNUSED(ptr), const SourceLocation& PSI_UNUSED(location)) {
-  PSI_FAIL("Cannot create global load instruction");
-}
+  virtual Tvm::ValuePtr<> load_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const Tvm::ValuePtr<>& PSI_UNUSED(ptr), const SourceLocation& PSI_UNUSED(location)) {
+    PSI_FAIL("Cannot create global load instruction");
+  }
+};
 
 /**
  * \brief Build a global or constant value.
  */
-TvmResult Psi::Compiler::TvmCompiler::build(const TreePtr<Term>& value) {
-  return m_functional_builder.build(value);
+TvmResult TvmCompiler::build(const TreePtr<Term>& value, const TreePtr<Module>& module) {
+  FunctionalBuilderCallback callback(this, module);
+  TvmFunctionalBuilder builder(&compile_context(), &m_tvm_context, &callback);
+  return builder.build(value);
+}
+
+/**
+ * \brief Build a type or constant value.
+ */
+TvmResult TvmCompiler::build_type(const TreePtr<Term>& type) {
+  return build(type, TreePtr<Module>());
+}
+
+bool TvmCompiler::is_primitive(const TreePtr<Term>& type) {
+  FunctionalBuilderCallback callback(this, TreePtr<Module>());
+  TvmFunctionalBuilder builder(&compile_context(), &m_tvm_context, &callback);
+  return builder.is_primitive(type);
 }
 
 std::string TvmCompiler::mangle_name(const LogicalSourceLocationPtr& location) {
@@ -78,26 +101,38 @@ TvmCompiler::TvmPlatformLibrary& TvmCompiler::get_platform_library(const TreePtr
 }
 
 /**
+ * \brief Build global in a general module for the user.
+ */
+Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global_jit(const TreePtr<Global>& global) {
+  if (TreePtr<ModuleGlobal> mod_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
+    return build_global(mod_global, mod_global->module);
+  } else if (TreePtr<LibrarySymbol> lib_sym = dyn_treeptr_cast<LibrarySymbol>(global)) {
+    return build_library_symbol(lib_sym);
+  } else {
+    PSI_FAIL("Unrecognised global subclass");
+  }
+}
+
+/**
  * \brief Build global in a specific module.
  * 
  * This create an external reference to symbols in another module when required.
  */
-Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global_in(const TreePtr<Global>& global, const TreePtr<Module>& module) {  
+Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global(const TreePtr<Global>& global, const TreePtr<Module>& module) {  
   if (TreePtr<ModuleGlobal> mod_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
-    if (mod_global->module == module)
-      return build_global(mod_global);
-    
     TvmModule& tvm_module = get_module(module);
-
     ModuleGlobalMap::iterator global_it = tvm_module.symbols.find(mod_global);
     if (global_it != tvm_module.symbols.end())
       return global_it->second;
     
-    Tvm::ValuePtr<Tvm::Global> native = build_global(mod_global);
-    Tvm::ValuePtr<Tvm::Global> result = tvm_module.module->new_member(native->name(), native->value_type(), native->location());
-    
-    tvm_module.symbols.insert(std::make_pair(mod_global, result));
-    return result;
+    Tvm::ValuePtr<Tvm::Global> native = build_module_global(mod_global);
+    if (mod_global->module == module) {
+      return native;
+    } else {
+      Tvm::ValuePtr<Tvm::Global> result = tvm_module.module->new_member(native->name(), native->value_type(), native->location());
+      tvm_module.symbols.insert(std::make_pair(mod_global, result));
+      return result;
+    }
   } else if (TreePtr<LibrarySymbol> lib_sym = dyn_treeptr_cast<LibrarySymbol>(global)) {
     TvmModule& tvm_module = get_module(module);
 
@@ -105,65 +140,55 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global_in(const TreePtr<Global>& g
     if (global_it != tvm_module.library_symbols.end())
       return global_it->second;
     
-    Tvm::ValuePtr<Tvm::Global> native = build_global(lib_sym);
+    Tvm::ValuePtr<Tvm::Global> native = build_library_symbol(lib_sym);
     Tvm::ValuePtr<Tvm::Global> result = tvm_module.module->new_member(native->name(), native->value_type(), native->location());
     
     tvm_module.library_symbols.insert(std::make_pair(lib_sym, result));
     return result;
   } else {
-    return build_global(global);
+    PSI_FAIL("Unrecognised global subclass");
   }
 }
 
 /**
- * \brief Create a Tvm::Global from a Global.
+ * \brief Build an external symbol.
  */
-Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global(const TreePtr<Global>& global) {
-  if (TreePtr<ModuleGlobal> mod_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
-    if (TreePtr<ExternalGlobal> ext_global = dyn_treeptr_cast<ExternalGlobal>(global)) {
-      PSI_NOT_IMPLEMENTED();
-    } else {
-      return build_module_global(mod_global);
-    }
-  } else if (TreePtr<LibrarySymbol> lib_global = dyn_treeptr_cast<LibrarySymbol>(global)) {
-    TvmPlatformLibrary& lib = get_platform_library(lib_global->library);
-    TvmLibrarySymbol& sym = lib.symbol_info[lib_global];
-    if (sym.value)
-      return sym.value;
-
-    PropertyValue symbol = lib_global->callback->evaluate(m_local_target, m_local_target);
-    if (symbol.type() != PropertyValue::t_map)
-      compile_context().error_throw(lib_global->location(), "Global symbol identifiers are expected to have map type");
-    PropertyMap& symbol_map = symbol.map();
-    PropertyMap::const_iterator type_it = symbol_map.find("type");
-    if (type_it == symbol_map.end())
-      compile_context().error_throw(lib_global->location(), "Global symbol property map is missing property 'type'");
-    if (type_it->second == "c") {
-      PropertyMap::const_iterator name_it = symbol_map.find("name");
-      if (name_it == symbol_map.end())
-        compile_context().error_throw(lib_global->location(), "Global symbol property map is missing property 'name'");
-      if (name_it->second.type() != PropertyValue::t_str)
-        compile_context().error_throw(lib_global->location(), "Global symbol property map entry 'name' is not a string");
-      sym.name = name_it->second.str();
-    } else {
-      compile_context().error_throw(lib_global->location(), "Unrecognised symbol type");
-    }
-    
-    if (Tvm::ValuePtr<Tvm::Global> existing = m_library_module->get_member(sym.name)) {
-      sym.value = existing;
-      return existing;
-    }
-    
-    TvmResult type = m_functional_builder.build_type(lib_global->type);
-    if (Tvm::ValuePtr<Tvm::FunctionType> ftype = Tvm::dyn_cast<Tvm::FunctionType>(type.value())) {
-      sym.value = m_library_module->new_function(sym.name, ftype, lib_global->location());
-    } else {
-      sym.value = m_library_module->new_global_variable(sym.name, type.value(), lib_global->location());
-    }
+Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_library_symbol(const TreePtr<LibrarySymbol>& lib_global) {
+  TvmPlatformLibrary& lib = get_platform_library(lib_global->library);
+  TvmLibrarySymbol& sym = lib.symbol_info[lib_global];
+  if (sym.value)
     return sym.value;
+
+  PropertyValue symbol = lib_global->callback->evaluate(m_local_target, m_local_target);
+  if (symbol.type() != PropertyValue::t_map)
+    compile_context().error_throw(lib_global->location(), "Global symbol identifiers are expected to have map type");
+  PropertyMap& symbol_map = symbol.map();
+  PropertyMap::const_iterator type_it = symbol_map.find("type");
+  if (type_it == symbol_map.end())
+    compile_context().error_throw(lib_global->location(), "Global symbol property map is missing property 'type'");
+  if (type_it->second == "c") {
+    PropertyMap::const_iterator name_it = symbol_map.find("name");
+    if (name_it == symbol_map.end())
+      compile_context().error_throw(lib_global->location(), "Global symbol property map is missing property 'name'");
+    if (name_it->second.type() != PropertyValue::t_str)
+      compile_context().error_throw(lib_global->location(), "Global symbol property map entry 'name' is not a string");
+    sym.name = name_it->second.str();
   } else {
-    PSI_FAIL("Unknown global type");
+    compile_context().error_throw(lib_global->location(), "Unrecognised symbol type");
   }
+  
+  if (Tvm::ValuePtr<Tvm::Global> existing = m_library_module->get_member(sym.name)) {
+    sym.value = existing;
+    return existing;
+  }
+  
+  TvmResult type = build_type(lib_global->type);
+  if (Tvm::ValuePtr<Tvm::FunctionType> ftype = Tvm::dyn_cast<Tvm::FunctionType>(type.value())) {
+    sym.value = m_library_module->new_function(sym.name, ftype, lib_global->location());
+  } else {
+    sym.value = m_library_module->new_global_variable(sym.name, type.value(), lib_global->location());
+  }
+  return sym.value;
 }
 
 /**
@@ -172,12 +197,6 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global(const TreePtr<Global>& glob
  * If this global depends on other globals, this function will recursively search for those and build them.
  */
 Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_module_global(const TreePtr<ModuleGlobal>& global) {
-  // Check if this global is already built
-  TvmModule& global_module = get_module(global->module);
-  ModuleGlobalMap::iterator global_it = global_module.symbols.find(global);
-  if (global_it != global_module.symbols.end())
-    return global_it->second;
-  
   m_in_progress_globals.insert(global);
   
   typedef std::map<TreePtr<ModuleGlobal>, PSI_STD::set<TreePtr<ModuleGlobal> > > DependencyMapType;
@@ -309,7 +328,8 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_module_global(const TreePtr<Module
   
   m_in_progress_globals.erase(global);
   
-  global_it = global_module.symbols.find(global);
+  TvmModule& global_module = get_module(global->module);
+  ModuleGlobalMap::const_iterator global_it = global_module.symbols.find(global);
   PSI_ASSERT(global_it != global_module.symbols.end());
   return global_it->second;
 }
@@ -321,7 +341,8 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_module_global(const TreePtr<Module
  * only function which should call this one.
  */
 void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& group) {
-  TvmModule& tvm_module = get_module(group.front()->module);
+  TreePtr<Module> module = group.front()->module;
+  TvmModule& tvm_module = get_module(module);
   tvm_module.jit_current = false;
 
   // Create storage for all of these globals
@@ -339,7 +360,7 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
       
     std::string symbol_name = mangle_name(global->location().logical);
     
-    TvmResult type = m_functional_builder.build_type(global->type);
+    TvmResult type = build_type(global->type);
 
     if (TreePtr<Function> function = dyn_treeptr_cast<Function>(global)) {
       Tvm::ValuePtr<Tvm::FunctionType> tvm_ftype = Tvm::dyn_cast<Tvm::FunctionType>(type.value());
@@ -370,8 +391,9 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
     for (std::vector<TreePtr<ModuleGlobal> >::const_iterator ii = group.begin(), ie = group.end(); ii != ie; ++ii) {
       if (TreePtr<GlobalVariable> gvar = dyn_treeptr_cast<GlobalVariable>(*ii)) {
         Tvm::ValuePtr<Tvm::GlobalVariable> tvm_gvar = Tvm::value_cast<Tvm::GlobalVariable>(tvm_module.symbols.find(*ii)->second);
-        Tvm::ValuePtr<> value = m_functional_builder.build_value(gvar->value);
-        tvm_gvar->set_value(value);
+        TvmResult value = build(gvar->value, module);
+        PSI_ASSERT(value.storage() == tvm_storage_functional);
+        tvm_gvar->set_value(value.value());
         tvm_gvar->set_constant(gvar->constant);
         tvm_gvar->set_merge(gvar->merge);
         tvm_gvar->set_private(gvar->local);
@@ -387,7 +409,7 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
  * \brief Just-in-time compile a symbol.
  */
 void* TvmCompiler::jit_compile(const TreePtr<Global>& global) {
-  Tvm::ValuePtr<Tvm::Global> built = build_global(global);
+  Tvm::ValuePtr<Tvm::Global> built = build_global_jit(global);
   
   // Ensure all modules are up to date in the JIT
   for (ModuleMap::iterator ii = m_modules.begin(), ie = m_modules.end(); ii != ie; ++ii) {
@@ -413,7 +435,7 @@ namespace {
     GenericTypeCallback(TvmCompiler *self, const AnonymousMapType *parameters)
     : m_self(self), m_parameters(parameters) {}
     
-    virtual TvmResult build_hook(const TreePtr<Term>& term) {
+    virtual TvmResult build_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<Term>& term) {
       if (TreePtr<Anonymous> anon = dyn_treeptr_cast<Anonymous>(term)) {
         AnonymousMapType::const_iterator ii = m_parameters->find(anon);
         if (ii == m_parameters->end())
@@ -424,15 +446,15 @@ namespace {
       }
     }
     
-    virtual TvmResult build_define_hook(const TreePtr<GlobalDefine>& define) {
-      return m_self->build(define);
+    virtual TvmResult build_define_hook(TvmFunctionalBuilder& builder, const TreePtr<GlobalDefine>& define) {
+      return builder.build(define->value);
     }
     
-    virtual TvmGenericResult build_generic_hook(const TreePtr<GenericType>& generic) {
+    virtual TvmGenericResult build_generic_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<GenericType>& generic) {
       return m_self->build_generic(generic);
     }
     
-    virtual Tvm::ValuePtr<> load_hook(const Tvm::ValuePtr<>& PSI_UNUSED(ptr), const SourceLocation& PSI_UNUSED(location)) {
+    virtual Tvm::ValuePtr<> load_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const Tvm::ValuePtr<>& PSI_UNUSED(ptr), const SourceLocation& PSI_UNUSED(location)) {
       PSI_FAIL("Cannot create global load instruction");
     }
   };
@@ -456,7 +478,7 @@ TvmGenericResult TvmCompiler::build_generic(const TreePtr<GenericType>& generic)
     TreePtr<Term> rewrite_type = (*ii)->type->specialize(generic->location(), anonymous_list);
     TreePtr<Anonymous> rewrite_anon(new Anonymous(rewrite_type, rewrite_type->location()));
     anonymous_list.push_back(rewrite_anon);
-    Tvm::ValuePtr<> type = type_callback.build_hook((*ii)->type).value();
+    Tvm::ValuePtr<> type = TvmFunctionalBuilder(m_compile_context, &m_tvm_context, &type_callback).build_type((*ii)->type).value();
     Tvm::ValuePtr<Tvm::RecursiveParameter> param = Tvm::RecursiveParameter::create(type, false, ii->location());
     parameter_map.insert(std::make_pair(rewrite_anon, param));
     parameters.push_back(*param);
@@ -466,7 +488,7 @@ TvmGenericResult TvmCompiler::build_generic(const TreePtr<GenericType>& generic)
     Tvm::RecursiveType::create(Tvm::FunctionalBuilder::type_type(m_tvm_context, generic->location()), parameters, generic.location());
   TvmGenericResult result;
   result.generic = recursive;
-  result.primitive = m_functional_builder.is_primitive(generic->member_type);
+  result.primitive = is_primitive(generic->member_type);
   
   // Insert generic into map before building it because it may recursively reference itself.
   m_generics.insert(std::make_pair(generic, result));

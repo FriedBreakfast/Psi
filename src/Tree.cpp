@@ -42,15 +42,17 @@ namespace Psi {
     : Functional(&vtable, compile_context, location) {
     }
     
-    GlobalDefine::GlobalDefine(const TreePtr<Term>& value_, const SourceLocation& location)
+    GlobalDefine::GlobalDefine(const TreePtr<Term>& value_, bool functional_, const SourceLocation& location)
     : Functional(&vtable, value_->type, location),
-    value(value_) {
+    value(value_),
+    functional(functional_) {
     }
     
     template<typename V>
     void GlobalDefine::visit(V& v) {
       visit_base<Functional>(v);
-      v("value", &GlobalDefine::value);
+      v("value", &GlobalDefine::value)
+      ("functional", &GlobalDefine::functional);
     }
 
     const TermVtable GlobalDefine::vtable = PSI_COMPILER_TERM(GlobalDefine, "psi.compiler.GlobalDefine", Functional);
@@ -275,17 +277,17 @@ namespace Psi {
     : Tree(&vtable, compile_context, location) {
     }
 
-    Statement::Statement(const TreePtr<Term>& value_, bool functional_, const SourceLocation& location)
+    Statement::Statement(const TreePtr<Term>& value_, StatementMode mode_, const SourceLocation& location)
     : Tree(&vtable, value_.compile_context(), location),
     value(value_),
-    functional(functional_) {
+    mode(mode_) {
     }
 
     template<typename Visitor>
     void Statement::visit(Visitor& v) {
       visit_base<Tree>(v);
       v("value", &Statement::value)
-      ("functional", &Statement::functional);
+      ("mode", &Statement::mode);
     }
 
     const TreeVtable Statement::vtable = PSI_COMPILER_TREE(Statement, "psi.compiler.Statement", Tree);

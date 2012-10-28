@@ -7,6 +7,7 @@
 
 #include "Compiler.hpp"
 #include "StaticDispatch.hpp"
+#include "Enums.hpp"
 
 namespace Psi {
   namespace Compiler {
@@ -53,11 +54,17 @@ namespace Psi {
       static const TermVtable vtable;
 
       GlobalDefine(CompileContext& compile_context, const SourceLocation& location);
-      GlobalDefine(const TreePtr<Term>& value, const SourceLocation& location);
+      GlobalDefine(const TreePtr<Term>& value, bool functional, const SourceLocation& location);
       
       template<typename V> static void visit(V& v);
       
       TreePtr<Term> value;
+
+      /**
+       * Whether the resulting value is expected to be functional.
+       * Otherwise, a reference is expected.
+       */
+      bool functional;
     };
 
     /**
@@ -134,11 +141,11 @@ namespace Psi {
       static const TreeVtable vtable;
 
       TreePtr<Term> value;
-      /// \brief Whether the result of this statement should be frozen
-      PsiBool functional;
+      /// \brief How to store the result of this statement.
+      StatementMode mode;
       
       Statement(CompileContext& compile_context, const SourceLocation& location);
-      Statement(const TreePtr<Term>& value, bool functional, const SourceLocation& location);
+      Statement(const TreePtr<Term>& value, StatementMode mode, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
     };
     
@@ -438,35 +445,6 @@ namespace Psi {
 
       PSI_STD::vector<TreePtr<Term> > members;
     };
-    
-    /**
-     * \brief Storage modes for function parameters.
-     * 
-     * \see \ref storage_specifiers
-     */
-    enum ParameterMode {
-      parameter_mode_input, ///< Input parameter
-      parameter_mode_output, ///< Output parameter
-      parameter_mode_io, ///< Input/Output parameter
-      parameter_mode_rvalue, ///< R-value reference
-      parameter_mode_functional ///< Funtional value
-    };
-    
-    PSI_VISIT_SIMPLE(ParameterMode);
-    
-    /**
-     * \brief Storage modes for function return values and jump parameters.
-     * *
-     * \see \ref storage_specifiers
-     */
-    enum ResultMode {
-      result_mode_by_value, ///< By value
-      result_mode_functional, ///< By value, functional
-      result_mode_rvalue, ///< R-value reference
-      result_mode_lvalue ///< L-value reference
-    };
-    
-    PSI_VISIT_SIMPLE(ResultMode);
     
     class InterfaceValue;
     

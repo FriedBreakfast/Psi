@@ -31,7 +31,7 @@ TvmResult TvmFunctionalBuilder::build(const TreePtr<Term>& value) {
   } else if (TreePtr<Functional> func = dyn_treeptr_cast<Functional>(value)) {
     result = build_other(func);
   } else {
-    result = m_callback->build_hook(value);
+    result = m_callback->build_hook(*this, value);
   }
   
   m_values.insert(std::make_pair(value, result));
@@ -52,7 +52,7 @@ Tvm::ValuePtr<> TvmFunctionalBuilder::build_value(const TreePtr<Term>& term) {
     
   case tvm_storage_lvalue_ref:
   case tvm_storage_rvalue_ref:
-    return m_callback->load_hook(r.value(), term->location());
+    return m_callback->load_hook(*this, r.value(), term->location());
     
   default: PSI_FAIL("Unexpected enum value");
   }
@@ -263,7 +263,7 @@ TvmResult TvmFunctionalBuilder::build_function_type(const TreePtr<FunctionType>&
 }
 
 TvmResult TvmFunctionalBuilder::build_type_instance(const TreePtr<TypeInstance>& type) {
-  TvmGenericResult recursive = m_callback->build_generic_hook(type->generic);  
+  TvmGenericResult recursive = m_callback->build_generic_hook(*this, type->generic);  
   std::vector<Tvm::ValuePtr<> > parameters;
   for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = type->parameters.begin(), ie = type->parameters.end(); ii != ie; ++ii)
     parameters.push_back(build_value(*ii));
@@ -313,7 +313,7 @@ TvmResult TvmFunctionalBuilder::build_other(const TreePtr<Functional>& value) {
       compile_context().error_throw(value->location(), "Cannot get pointer from non-reference");
     }
   } else if (TreePtr<GlobalDefine> define = dyn_treeptr_cast<GlobalDefine>(value)) {
-    return m_callback->build_define_hook(define);
+    return m_callback->build_define_hook(*this, define);
   } else {
     PSI_FAIL(si_vptr(value.get())->classname);
   }

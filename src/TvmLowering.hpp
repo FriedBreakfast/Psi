@@ -69,12 +69,14 @@ namespace Psi {
       bool primitive;
     };
     
+    class TvmFunctionalBuilder;
+    
     class TvmFunctionalBuilderCallback {
     public:
-      virtual TvmResult build_hook(const TreePtr<Term>& term) = 0;
-      virtual TvmResult build_define_hook(const TreePtr<GlobalDefine>& define) = 0;
-      virtual TvmGenericResult build_generic_hook(const TreePtr<GenericType>& generic) = 0;
-      virtual Tvm::ValuePtr<> load_hook(const Tvm::ValuePtr<>& ptr, const SourceLocation& location) = 0;
+      virtual TvmResult build_hook(TvmFunctionalBuilder& builder, const TreePtr<Term>& term) = 0;
+      virtual TvmResult build_define_hook(TvmFunctionalBuilder& builder, const TreePtr<GlobalDefine>& define) = 0;
+      virtual TvmGenericResult build_generic_hook(TvmFunctionalBuilder& builder, const TreePtr<GenericType>& generic) = 0;
+      virtual Tvm::ValuePtr<> load_hook(TvmFunctionalBuilder& builder, const Tvm::ValuePtr<>& ptr, const SourceLocation& location) = 0;
     };
 
     /**
@@ -109,7 +111,7 @@ namespace Psi {
     /**
      * \brief Compilation context component which handles TVM translation.
      */
-    class TvmCompiler : TvmFunctionalBuilderCallback {
+    class TvmCompiler {
       typedef boost::unordered_map<TreePtr<ModuleGlobal>, Tvm::ValuePtr<Tvm::Global> > ModuleGlobalMap;
       typedef boost::unordered_map<TreePtr<LibrarySymbol>, Tvm::ValuePtr<Tvm::Global> > ModuleLibrarySymbolMap;
       
@@ -132,7 +134,6 @@ namespace Psi {
       
       CompileContext *m_compile_context;
       Tvm::Context m_tvm_context;
-      TvmFunctionalBuilder m_functional_builder;
       boost::shared_ptr<Tvm::Jit> m_jit;
       boost::shared_ptr<Tvm::Module> m_library_module;
 
@@ -156,13 +157,14 @@ namespace Psi {
        */
       std::set<TreePtr<ModuleGlobal> > m_in_progress_globals;
       
-      virtual TvmResult build_hook(const TreePtr<Term>& value);
-      virtual TvmResult build_define_hook(const TreePtr<GlobalDefine>& value);
-      virtual TvmGenericResult build_generic_hook(const TreePtr<GenericType>& generic);
-      virtual Tvm::ValuePtr<> load_hook(const Tvm::ValuePtr<>& ptr, const SourceLocation& location);
+      class FunctionalBuilderCallback;
       
       Tvm::ValuePtr<Tvm::Global> build_module_global(const TreePtr<ModuleGlobal>& global);
+      Tvm::ValuePtr<Tvm::Global> build_library_symbol(const TreePtr<LibrarySymbol>& lib_global);
       void build_global_group(const std::vector<TreePtr<ModuleGlobal> >& group);
+      
+      TvmResult build_type(const TreePtr<Term>& type);
+      bool is_primitive(const TreePtr<Term>& type);
       
     public:
       TvmCompiler(CompileContext *compile_context);
@@ -172,9 +174,9 @@ namespace Psi {
       
       void add_compiled_module(const TreePtr<Module>& module, const boost::shared_ptr<Platform::PlatformLibrary>& lib);
 
-      Tvm::ValuePtr<Tvm::Global> build_global(const TreePtr<Global>& global);
-      Tvm::ValuePtr<Tvm::Global> build_global_in(const TreePtr<Global>& global, const TreePtr<Module>& module);
-      TvmResult build(const TreePtr<Term>& value);
+      Tvm::ValuePtr<Tvm::Global> build_global(const TreePtr<Global>& global, const TreePtr<Module>& module);
+      Tvm::ValuePtr<Tvm::Global> build_global_jit(const TreePtr<Global>& global);
+      TvmResult build(const TreePtr<Term>& value, const TreePtr<Module>& module);
       TvmGenericResult build_generic(const TreePtr<GenericType>& generic);
       void* jit_compile(const TreePtr<Global>& global);
       

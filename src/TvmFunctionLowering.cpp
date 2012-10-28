@@ -404,7 +404,7 @@ class TvmFunctionLowering::FunctionalBuilderCallback : public TvmFunctionalBuild
 public:
   FunctionalBuilderCallback(Scope *scope) : m_scope(scope) {}
   
-  virtual TvmResult build_hook(const TreePtr<Term>& term) {
+  virtual TvmResult build_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<Term>& term) {
     if (TreePtr<StatementRef> st = dyn_treeptr_cast<StatementRef>(term)) {
       const TvmResult *var = m_scope->variables().lookup(st->value);
       if (!var)
@@ -413,23 +413,23 @@ public:
         m_scope->shared().compile_context().error_throw(st->location(), "Cannot use non-constant variable as part of type");
       return *var;
     } else if (TreePtr<Global> gl = dyn_treeptr_cast<Global>(term)) {
-      return TvmResult::in_register(gl->type, tvm_storage_lvalue_ref, m_scope->shared().tvm_compiler().build_global_in(gl, m_scope->shared().m_module));
+      return TvmResult::in_register(gl->type, tvm_storage_lvalue_ref, m_scope->shared().tvm_compiler().build_global(gl, m_scope->shared().m_module));
     } else if (TreePtr<Constant> cns = dyn_treeptr_cast<Constant>(term)) {
-      return m_scope->shared().tvm_compiler().build(cns);
+      return m_scope->shared().tvm_compiler().build(cns, m_scope->shared().m_module);
     } else {
       PSI_FAIL(si_vptr(term.get())->classname);
     }
   }
   
-  virtual TvmResult build_define_hook(const TreePtr<GlobalDefine>& define) {
-    return m_scope->shared().tvm_compiler().build(define);
+  virtual TvmResult build_define_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<GlobalDefine>& define) {
+    return m_scope->shared().tvm_compiler().build(define, m_scope->shared().m_module);
   }
   
-  virtual TvmGenericResult build_generic_hook(const TreePtr<GenericType>& generic) {
+  virtual TvmGenericResult build_generic_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<GenericType>& generic) {
     return m_scope->shared().tvm_compiler().build_generic(generic);
   }
   
-  virtual Tvm::ValuePtr<> load_hook(const Tvm::ValuePtr<>& ptr, const SourceLocation& location) {
+  virtual Tvm::ValuePtr<> load_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const Tvm::ValuePtr<>& ptr, const SourceLocation& location) {
     return m_scope->shared().builder().load(ptr, location);
   }
 };
@@ -474,7 +474,7 @@ Tvm::ValuePtr<> TvmFunctionLowering::run_functional(Scope& scope, const TreePtr<
 
 TvmResult TvmFunctionLowering::run(Scope& scope, const TreePtr<Term>& term, const VariableSlot& slot, Scope& following_scope) {
   if (TreePtr<Global> global = dyn_treeptr_cast<Global>(term)) {
-    return TvmResult::in_register(global->type, tvm_storage_lvalue_ref, tvm_compiler().build_global_in(global, m_module));
+    return TvmResult::in_register(global->type, tvm_storage_lvalue_ref, tvm_compiler().build_global(global, m_module));
   } else if (TreePtr<Block> block = dyn_treeptr_cast<Block>(term)) {
     return run_block(scope, block, slot, following_scope);
   } else if (TreePtr<IfThenElse> if_then_else = dyn_treeptr_cast<IfThenElse>(term)) {
@@ -514,39 +514,84 @@ TvmResult TvmFunctionLowering::run_block(Scope& scope, const TreePtr<Block>& blo
     VariableSlot var(sl.current(), statement->value);
     TvmResult value = run(sl.current(), statement->value, var, sl.current());
     
-    if (statement->functional) {
-      switch (value.storage()) {
-      case tvm_storage_lvalue_ref:
-      case tvm_storage_rvalue_ref: {
-        if (!is_primitive(sl.current(), value.type()))
-          compile_context().error_throw(statement->location(), "Non-primitive type cannot be used as a funtional value");
-        Tvm::ValuePtr<> loaded = m_builder.load(value.value(), statement->location());
-        value = TvmResult::in_register(value.type(), tvm_storage_functional, loaded);
-        break;
-      }
-        
-      case tvm_storage_functional:
-        break;
-
-      case tvm_storage_bottom:
-        var.destroy_slot();
-        return TvmResult::bottom();
-        
-      case tvm_storage_stack: {
-        if (!is_primitive(sl.current(), value.type()))
-          compile_context().error_throw(statement->location(), "Non-primitive type cannot be used as a funtional value");
-        Scope sc(sl.current(), statement->location(), value, var);
-        Tvm::ValuePtr<> loaded = m_builder.load(value.value(), statement->location());
-        value = TvmResult::in_register(value.type(), tvm_storage_functional, loaded);
-        sc.cleanup();
-      }
-      }
-    } else if (value.storage() == tvm_storage_functional) {
-      m_builder.store(value.value(), var.slot(), statement->location());
-      value = TvmResult::on_stack(value.type(), var.slot());
+    if (value.storage() == tvm_storage_bottom) {
+      var.destroy_slot();
+      return TvmResult::bottom();
     }
     
-    sl.push(new Scope(sl.current(), statement->location(), value, var));
+    if (statement->mode == statement_mode_destroy) {
+      Scope(sl.current(), statement->location(), value, var).cleanup();
+    } else {
+      switch (statement->mode) {
+      case statement_mode_functional:
+        switch (value.storage()) {
+        case tvm_storage_lvalue_ref:
+        case tvm_storage_rvalue_ref: {
+          if (!is_primitive(sl.current(), value.type()))
+            compile_context().error_throw(statement->location(), "Non-primitive type cannot be used as a funtional value");
+          Tvm::ValuePtr<> loaded = m_builder.load(value.value(), statement->location());
+          value = TvmResult::in_register(value.type(), tvm_storage_functional, loaded);
+          break;
+        }
+          
+        case tvm_storage_functional:
+          break;
+
+        case tvm_storage_stack: {
+          if (!is_primitive(sl.current(), value.type()))
+            compile_context().error_throw(statement->location(), "Non-primitive type cannot be used as a funtional value");
+          Scope sc(sl.current(), statement->location(), value, var);
+          Tvm::ValuePtr<> loaded = m_builder.load(value.value(), statement->location());
+          value = TvmResult::in_register(value.type(), tvm_storage_functional, loaded);
+          sc.cleanup();
+        }
+        
+        default: PSI_FAIL("Unrecognised storage mode");
+        }
+        break;
+        
+      case statement_mode_ref:
+        switch (value.storage()) {
+        case tvm_storage_lvalue_ref:
+        case tvm_storage_rvalue_ref:
+          break;
+          
+        case tvm_storage_functional: compile_context().error_throw(statement->location(), "Cannot take reference to functional value");
+        case tvm_storage_stack: compile_context().error_throw(statement->location(), "Cannot take reference to temporary");
+          
+        default: PSI_FAIL("Unrecognised storage mode");
+        }
+        break;
+      
+      case statement_mode_value:
+        switch (value.storage()) {
+        case tvm_storage_functional:
+          m_builder.store(value.value(), var.slot(), statement->location());
+          value = TvmResult::on_stack(value.type(), var.slot());
+          break;
+        
+        case tvm_storage_stack:
+          break;
+          
+        case tvm_storage_lvalue_ref:
+          copy_construct(sl.current(), value.type(), var.slot(), value.value(), statement->location());
+          value = TvmResult::on_stack(value.type(), var.slot());
+          break;
+          
+        case tvm_storage_rvalue_ref:
+          move_construct(sl.current(), value.type(), var.slot(), value.value(), statement->location());
+          value = TvmResult::on_stack(value.type(), var.slot());
+          break;
+
+        default: PSI_FAIL("Unrecognised storage mode");
+        }
+        break;
+        
+      default: PSI_FAIL("Unrecognised statement storage mode");
+      }
+      
+      sl.push(new Scope(sl.current(), statement->location(), value, var));
+    }
   }
   
   TvmResult result = run(sl.current(), block->value, slot, following_scope);

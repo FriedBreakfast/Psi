@@ -49,13 +49,17 @@ using namespace Psi::Parser;
 
 namespace {
   struct ParserValue {
+    int int_value;
     const char *cstr;
     ParserLocation text;
+    
     SharedPtr<Expression> expression;
-    SharedPtr<NamedExpression> named_expression;
-    SharedPtr<FunctionArgument> function_argument;
     PSI_STD::vector<SharedPtr<Expression> > expression_list;
-    PSI_STD::vector<SharedPtr<NamedExpression> > named_expression_list;
+
+    SharedPtr<Statement> statement;
+    PSI_STD::vector<SharedPtr<Statement> > statement_list;
+
+    SharedPtr<FunctionArgument> function_argument;
     PSI_STD::vector<SharedPtr<FunctionArgument> > function_argument_list;
   };
 
@@ -65,7 +69,7 @@ namespace {
     }
 
     PSI_STD::vector<SharedPtr<Expression> > result_expressions;
-    PSI_STD::vector<SharedPtr<NamedExpression> > result_named_expressions;
+    PSI_STD::vector<SharedPtr<Statement> > result_statements;
     ArgumentDeclarations result_argument_declarations;
     ImplicitArgumentDeclarations result_argument_implicit;
 
@@ -160,26 +164,35 @@ namespace {
 %token COMPARE_UNEQUAL "!="
 %token COMPARE_LESS_EQUAL "<="
 %token COMPARE_GREATER_EQUAL ">="
+
 %token OPERATOR_ARROW "->"
-%token OPERATOR_DOUBLE_ARROW "=>"
-%token DOUBLE_COLON "::"
+%token OPERATOR_DASH_COLON "-:"
+%token OPERATOR_DASH_AMP "-&"
+%token OPERATOR_DASH_AMP_AMP "-&&"
+
+%token OPERATOR_DOUBLE_COLON "::"
+%token OPERATOR_COLON_AMP ":&"
+%token OPERATOR_COLON_AMP_AMP ":&&"
+%token OPERATOR_COLON_RIGHT ":>"
+
 %token UNKNOWN "unknown"
 %token BLOCK
 
 %token MODE_STATEMENT_LIST
-%token MODE_ARGUMENT_LIST
 %token MODE_POSITIONAL_LIST
+%token MODE_NAMESPACE
 %token MODE_FUNCTION_ARGUMENT_DECLARE
 %token MODE_FUNCTION_ARGUMENT_IMPLICIT
 %token MODE_EXPRESSION
 
 %type <text> IDENTIFIER NUMBER
+%type <int_value> return_mode argument_mode statement_mode
 %type <cstr> product_operator add_operator compare_operator unary_operator
 %type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression
 %type <expression> unary_expression compare_expression macro_expression token_expression
 %type <expression_list> compare_expression_build expression_list expression_list_nonempty token_list interface_list_declare interface_list_declare_nonempty
-%type <named_expression> statement named_expression implicit_argument_declare
-%type <named_expression_list> statement_list argument_list argument_list_nonempty implicit_argument_list_declare implicit_argument_list_declare_nonempty
+%type <statement> statement namespace_entry
+%type <statement_list> statement_list namespace_list
 %type <function_argument> argument_declare return_type_declare
 %type <function_argument_list> argument_list_declare argument_list_declare_nonempty
 
@@ -202,39 +215,31 @@ namespace {
 
 %%
 
-root: MODE_STATEMENT_LIST statement_list {arguments.result_named_expressions = $2;}
-| MODE_ARGUMENT_LIST argument_list {arguments.result_named_expressions = $2;}
+root: MODE_STATEMENT_LIST statement_list {arguments.result_statements = $2;}
 | MODE_POSITIONAL_LIST expression_list {arguments.result_expressions = $2;}
+| MODE_NAMESPACE namespace_list {arguments.result_statements = $2;}
 | MODE_EXPRESSION expression {arguments.result_expressions.assign(1, $2);}
 | MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare {arguments.result_argument_declarations.arguments = $2; arguments.result_argument_declarations.return_type = $3;}
-| MODE_FUNCTION_ARGUMENT_IMPLICIT implicit_argument_list_declare interface_list_declare {arguments.result_argument_implicit.arguments = $2; arguments.result_argument_implicit.interfaces = $3;}
+| MODE_FUNCTION_ARGUMENT_IMPLICIT argument_list_declare interface_list_declare {arguments.result_argument_implicit.arguments = $2; arguments.result_argument_implicit.interfaces = $3;}
 ;
 
-argument_list: {$$.clear();}
-| argument_list_nonempty
+return_mode:
+OPERATOR_ARROW {$$ = Psi::Compiler::result_mode_by_value;}
+| OPERATOR_DASH_COLON {$$ = Psi::Compiler::result_mode_functional;}
+| OPERATOR_DASH_AMP {$$ = Psi::Compiler::result_mode_lvalue;}
+| OPERATOR_DASH_AMP_AMP {$$ = Psi::Compiler::result_mode_rvalue;}
 ;
 
-argument_list_nonempty:
-named_expression {$$.assign(1, $1);}
-| argument_list_nonempty ',' named_expression {$$ = $1; $$.push_back($3);}
+argument_mode:
+':' {$$ = Psi::Compiler::parameter_mode_input;}
+| OPERATOR_COLON_RIGHT {$$ = Psi::Compiler::parameter_mode_output;}
+| OPERATOR_COLON_AMP {$$ = Psi::Compiler::parameter_mode_io;}
+| OPERATOR_COLON_AMP_AMP {$$ = Psi::Compiler::parameter_mode_rvalue;}
+| OPERATOR_DOUBLE_COLON {$$ = Psi::Compiler::parameter_mode_functional;}
 ;
 
 return_type_declare: /* blank */ {$$.reset();}
-| OPERATOR_ARROW expression {$$.reset(new FunctionArgument(@$, boost::none, boost::none, $2));}
-| OPERATOR_ARROW '#' IDENTIFIER expression {$$.reset(new FunctionArgument(@$, boost::none, $3, $4));}
-;
-
-implicit_argument_list_declare: {$$.clear();}
-| implicit_argument_list_declare_nonempty
-;
-
-implicit_argument_list_declare_nonempty:
-implicit_argument_declare
-| implicit_argument_list_declare_nonempty ',' implicit_argument_declare {$$ = $1; $$.push_back($3);}
-;
-
-implicit_argument_declare:
-IDENTIFIER DOUBLE_COLON expression {$$.reset(new NamedExpression(@$, $3, $1, true));}
+| return_mode expression {$$.reset(new FunctionArgument(@$, boost::none, $1, $2));}
 ;
 
 argument_list_declare: /* blank */ {$$.clear();}
@@ -247,10 +252,9 @@ argument_declare {$$.assign(1, $1);}
 ;
 
 argument_declare:
-expression {$$.reset(new FunctionArgument(@$, boost::none, boost::none, $1));}
-| IDENTIFIER ':' expression {$$.reset(new FunctionArgument(@$, $1, boost::none, $3));}
-| IDENTIFIER ':' '#' IDENTIFIER expression {$$.reset(new FunctionArgument(@$, $1, $4, $5));}
-| '#' IDENTIFIER expression {$$.reset(new FunctionArgument(@$, boost::none, $2, $3));}
+expression {$$.reset(new FunctionArgument(@$, boost::none, Psi::Compiler::parameter_mode_input, $1));}
+| IDENTIFIER argument_mode expression {$$.reset(new FunctionArgument(@$, $1, $2, $3));}
+| argument_mode expression {$$.reset(new FunctionArgument(@$, boost::none, $1, $2));}
 ;
 
 interface_list_declare: /* blank */ {$$.clear();}
@@ -276,15 +280,26 @@ statement {$$.assign(1, $1);}
 | statement_list ';' statement {$$ = $1; $$.push_back($3);}
 ;
 
-statement:
-{$$.reset(new NamedExpression(@$));}
-| named_expression
+statement_mode:
+':' {$$ = Psi::Compiler::statement_mode_value;}
+| OPERATOR_DOUBLE_COLON {$$ = Psi::Compiler::statement_mode_functional;}
+| OPERATOR_COLON_AMP {$$ = Psi::Compiler::statement_mode_ref;}
 ;
 
-named_expression:
-expression {$$.reset(new NamedExpression(@$, $1));}
-| IDENTIFIER ':' expression {$$.reset(new NamedExpression(@$, $3, $1, false));}
-| IDENTIFIER DOUBLE_COLON expression {$$.reset(new NamedExpression(@$, $3, $1, true));}
+statement:
+{$$.reset();}
+| expression {$$.reset(new Statement(@$, $1, boost::none, Psi::Compiler::statement_mode_destroy));}
+| statement_mode expression {$$.reset(new Statement(@$, $2, boost::none, $1));}
+| IDENTIFIER statement_mode expression {$$.reset(new Statement(@$, $3, $1, $2));}
+;
+
+namespace_list:
+namespace_entry {$$.assign(1, $1);}
+| namespace_list ';' namespace_entry {$$ = $1; $$.push_back($3);}
+;
+
+namespace_entry: {$$.reset();}
+| IDENTIFIER statement_mode expression {$$.reset(new Statement(@$, $3, $1, $2));}
 ;
 
 expression:
@@ -451,25 +466,18 @@ namespace {
       }
       SCANNER_RETURN(IDENTIFIER);
     } else if (std::strchr("<>=!", c)) {
-      /* Multi-char comparison operators */
+      /* Multi-char comparison operators and arrow operator */
       SCANNER_ACCEPT();
       if (self.current != self.end) {
         switch (*self.current) {
         case '=':
           switch(c) {
-          case '>': SCANNER_RETURN(COMPARE_GREATER_EQUAL);
-          case '<': SCANNER_RETURN(COMPARE_LESS_EQUAL);
-          case '=': SCANNER_RETURN(COMPARE_EQUAL);
-          case '!': SCANNER_RETURN(COMPARE_UNEQUAL);
-          default: PSI_UNREACHABLE();
+          case '>': SCANNER_ACCEPT(); SCANNER_RETURN(COMPARE_GREATER_EQUAL);
+          case '<': SCANNER_ACCEPT(); SCANNER_RETURN(COMPARE_LESS_EQUAL);
+          case '=': SCANNER_ACCEPT(); SCANNER_RETURN(COMPARE_EQUAL);
+          case '!': SCANNER_ACCEPT(); SCANNER_RETURN(COMPARE_UNEQUAL);
+          default: break;
           }
-
-        case '>':
-          if (c == '=') {
-            SCANNER_ACCEPT();
-            SCANNER_RETURN(OPERATOR_DOUBLE_ARROW);
-          }
-          break;
 
         default:
           break;
@@ -478,23 +486,44 @@ namespace {
 
       SCANNER_RETURN(c);
     } else if (c == '-') {
-      /* Arrow operator "->" */
       SCANNER_ACCEPT();
-      if ((self.current != self.end) && (*self.current == '>')) {
-        SCANNER_ACCEPT();
-        SCANNER_RETURN(OPERATOR_ARROW);
-      } else {
-        SCANNER_RETURN('-');
+      if (self.current != self.end) {
+        switch (*self.current) {
+        case '>': SCANNER_ACCEPT(); SCANNER_RETURN(OPERATOR_ARROW);
+        case ':': SCANNER_ACCEPT(); SCANNER_RETURN(OPERATOR_DASH_COLON);
+        case '&': {
+          SCANNER_ACCEPT();
+          if ((self.current != self.end) && (*self.current == '&')) {
+            SCANNER_ACCEPT();
+            SCANNER_RETURN(OPERATOR_DASH_AMP);
+          }
+          SCANNER_RETURN(OPERATOR_DASH_AMP_AMP);
+        }
+        
+        default: break;
+        }
       }
+      SCANNER_RETURN('-');
     } else if (c == ':') {
-      /* Double colon operator :: */
+      /* Variable assignment operators */
       SCANNER_ACCEPT();
-      if ((self.current != self.end) && (*self.current == ':')) {
-        SCANNER_ACCEPT();
-        SCANNER_RETURN(DOUBLE_COLON);
-      } else {
-        SCANNER_RETURN(':');
+      if (self.current != self.end) {
+        switch (*self.current) {
+        case ':': SCANNER_ACCEPT(); SCANNER_RETURN(OPERATOR_DOUBLE_COLON);
+        case '>': SCANNER_ACCEPT(); SCANNER_RETURN(OPERATOR_COLON_RIGHT);
+        case '&': {
+          SCANNER_ACCEPT();
+          if ((self.current != self.end) && (*self.current == '&')) {
+            SCANNER_ACCEPT();
+            SCANNER_RETURN(OPERATOR_COLON_AMP_AMP);
+          }
+          SCANNER_RETURN(OPERATOR_COLON_AMP);
+        }
+        
+        default: break;
+        }
       }
+      SCANNER_RETURN(':');
     } else if (std::strchr(".;,+*/%^&|", c)) {
       SCANNER_ACCEPT();
       SCANNER_RETURN(c);
@@ -617,23 +646,19 @@ namespace Psi {
     DotExpression::~DotExpression() {
     }
 
-    NamedExpression::NamedExpression(const ParserLocation& source_)
+    Statement::Statement(const ParserLocation& source_)
       : Element(source_) {
     }
 
-    NamedExpression::NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_)
-      : Element(source_), functional(false), expression(expression_) {
+    Statement::Statement(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const boost::optional<ParserLocation>& name_, int mode_)
+      : Element(source_), name(name_), mode(mode_), expression(expression_) {
     }
 
-    NamedExpression::NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const ParserLocation& name_, bool functional_)
-      : Element(source_), name(name_), functional(functional_), expression(expression_) {
-    }
-
-    NamedExpression::~NamedExpression() {
+    Statement::~Statement() {
     }
 
     FunctionArgument::FunctionArgument(const ParserLocation& source_, const boost::optional<ParserLocation>& name_,
-                                       const boost::optional<ParserLocation>& mode_, const SharedPtr<Expression>& type_)
+                                       int mode_, const SharedPtr<Expression>& type_)
     : Element(source_), name(name_), mode(mode_), type(type_) {
     }
     
@@ -646,20 +671,20 @@ namespace Psi {
     /** \brief parse a statement list.
      * \param text Text to parse.
      */
-    PSI_STD::vector<SharedPtr<NamedExpression> > parse_statement_list(const ParserLocation& text) {
+    PSI_STD::vector<SharedPtr<Statement> > parse_statement_list(const ParserLocation& text) {
       ParserInternalArguments args(MODE_STATEMENT_LIST, text);
       parse_helper(args);
-      return args.result_named_expressions;
+      return args.result_statements;
     }
 
     /** \brief parse an argument list.
      * \details an argument list is a list of Expressions forming arguments to a function call.
      * \param text Text to parse.
      */
-    PSI_STD::vector<SharedPtr<NamedExpression> > parse_argument_list(const ParserLocation& text) {
-      ParserInternalArguments args(MODE_ARGUMENT_LIST, text);
+    PSI_STD::vector<SharedPtr<Statement> > parse_namespace(const ParserLocation& text) {
+      ParserInternalArguments args(MODE_NAMESPACE, text);
       parse_helper(args);
-      return args.result_named_expressions;
+      return args.result_statements;
     }
 
     /** \brief parse a purely positional argument list.

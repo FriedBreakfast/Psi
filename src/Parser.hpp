@@ -8,9 +8,13 @@
 
 #include "SourceLocation.hpp"
 #include "Runtime.hpp"
+#include "Enums.hpp"
 
 namespace Psi {
   namespace Parser {
+    using Compiler::ResultMode;
+    using Compiler::ParameterMode;
+    
     struct ParserLocation {
       PhysicalSourceLocation location;
       const char *begin, *end;
@@ -67,24 +71,23 @@ namespace Psi {
       SharedPtr<Expression> member;
       PSI_STD::vector<SharedPtr<Expression> > parameters;
     };
-
-    struct NamedExpression : Element {
-      NamedExpression(const ParserLocation& source_);
-      NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_);
-      NamedExpression(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const ParserLocation& name_, bool functional_);
-      ~NamedExpression();
+    
+    struct Statement : Element {
+      Statement(const ParserLocation& source_);
+      Statement(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const boost::optional<ParserLocation>& name_, int mode_);
+      ~Statement();
 
       boost::optional<ParserLocation> name;
-      bool functional;
+      int mode;
       SharedPtr<Expression> expression;
     };
     
     struct FunctionArgument : Element {
       FunctionArgument(const ParserLocation& source_, const boost::optional<ParserLocation>& name_,
-                       const boost::optional<ParserLocation>& mode_, const SharedPtr<Expression>& type_);
+                       int mode_, const SharedPtr<Expression>& type_);
 
       boost::optional<ParserLocation> name;
-      boost::optional<ParserLocation> mode;
+      int mode;
       SharedPtr<Expression> type;
     };
 
@@ -94,14 +97,14 @@ namespace Psi {
       virtual ~ParseError() throw();
     };
 
-    PSI_STD::vector<SharedPtr<NamedExpression> > parse_statement_list(const ParserLocation&);
-    PSI_STD::vector<SharedPtr<NamedExpression> > parse_argument_list(const ParserLocation&);
+    PSI_STD::vector<SharedPtr<Statement> > parse_statement_list(const ParserLocation&);
+    PSI_STD::vector<SharedPtr<Statement> > parse_namespace(const ParserLocation&);
     PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(const ParserLocation&);
     SharedPtr<Expression> parse_expression(const ParserLocation& text);
     PSI_STD::vector<TokenExpression> parse_identifier_list(const ParserLocation&);
 
     struct ImplicitArgumentDeclarations {
-      PSI_STD::vector<SharedPtr<NamedExpression> > arguments;
+      PSI_STD::vector<SharedPtr<FunctionArgument> > arguments;
       PSI_STD::vector<SharedPtr<Expression> > interfaces;
     };
     

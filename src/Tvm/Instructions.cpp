@@ -12,6 +12,8 @@ namespace Psi {
     }
     
     void Return::type_check() {
+      require_available(value);
+
       if (value->type() != function()->result_type())
         throw TvmUserError("return instruction argument has incorrect type");
 
@@ -42,6 +44,10 @@ namespace Psi {
      * \todo Need to check that targets are dominated by an appropriate block to jump to.
      */
     void ConditionalBranch::type_check() {
+      require_available(condition);
+      require_available(true_target);
+      require_available(false_target);
+
       if (condition->type() != FunctionalBuilder::bool_type(context(), location()))
         throw TvmUserError("first parameter to branch instruction must be of boolean type");
 
@@ -84,6 +90,8 @@ namespace Psi {
      * \todo Need to check that target is dominated by an appropriate block to jump to.
      */
     void UnconditionalBranch::type_check() {
+      require_available(target);
+      
       if (!target)
         throw TvmUserError("jump targets may not be null");
       
@@ -147,6 +155,8 @@ namespace Psi {
     }
 
     void Call::type_check() {
+      require_available(target);
+
       if (call_type(target, parameters) != type())
         throw TvmUserError("Type of function call has changed since instruction was created");
 
@@ -155,6 +165,8 @@ namespace Psi {
 
       ValuePtr<FunctionType> target_type = target_function_type();
       for (std::size_t ii = 0, ie = parameters.size(); ii < ie; ++ii) {
+        require_available(parameters[ii]);
+
         if ((ii >= target_type->n_phantom()) && parameters[ii]->phantom())
           throw TvmUserError("cannot pass phantom value to non-phantom function parameter");
       }
@@ -188,6 +200,9 @@ namespace Psi {
     }
     
     void Store::type_check() {
+      require_available(target);
+      require_available(value);
+      
       if (target->phantom() || value->phantom())
         throw TvmUserError("value and target for store instruction cannot have phantom values");
 
@@ -210,6 +225,8 @@ namespace Psi {
     }
 
     void Load::type_check() {
+      require_available(target);
+      
       if (type() != pointer_target_type(target))
         throw TvmUserError("load target type has changed since instruction creation");
     }
@@ -230,21 +247,30 @@ namespace Psi {
     }
 
     void Alloca::type_check() {
+      require_available(element_type);
+      
       if (!element_type->is_type())
         throw TvmUserError("first parameter to alloca is not a type");
+      if (element_type->phantom())
+        throw TvmUserError("parameter to alloca cannot be phantom");
       
       ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location());
 
-      if (count && (count->type() != size_type))
-        throw TvmUserError("second parameter to alloca is not a uintptr");
+      if (count) {
+        require_available(count);
+        if (count->type() != size_type)
+          throw TvmUserError("second parameter to alloca is not a uintptr");
+        if (count->phantom())
+          throw TvmUserError("parameter to alloca cannot be phantom");
+      }
 
-      if (alignment && (alignment->type() != size_type))
-        throw TvmUserError("third parameter to alloca is not a uintptr");
-      
-      if (element_type->phantom() ||
-        (count && count->phantom()) ||
-        (alignment && alignment->phantom()))
-        throw TvmUserError("parameter to alloca cannot be phantom");
+      if (alignment) {
+        require_available(alignment);
+        if (alignment->type() != size_type)
+          throw TvmUserError("third parameter to alloca is not a uintptr");
+        if (alignment->phantom())
+          throw TvmUserError("parameter to alloca cannot be phantom");
+      }
     }
     
     template<typename V>
@@ -266,6 +292,10 @@ namespace Psi {
     }
 
     void MemCpy::type_check() {
+      require_available(dest);
+      require_available(src);
+      require_available(count);
+
       if (!isa<PointerType>(dest->type()))
         throw TvmUserError("first parameter to memcpy instruction is not a pointer");
       
@@ -273,8 +303,14 @@ namespace Psi {
         throw TvmUserError("first two parameters to memcpy instruction must have the same type");
       
       ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location());
-      if (count->type() != size_type || (alignment && (alignment->type() != size_type)))
-        throw TvmUserError("third and fourth parameters to memcpy instruction must be uintptr");
+      if (count->type() != size_type)
+        throw TvmUserError("size parameter to memcpy instruction must be uintptr");
+      
+      if (alignment) {
+        require_available(alignment);
+        if (alignment->type() != size_type)
+          throw TvmUserError("alignment parameter to memcpy instruction must be uintptr");
+      }
     }
     
     template<typename V>
@@ -296,6 +332,9 @@ namespace Psi {
     }
 
     void MemZero::type_check() {
+      require_available(dest);
+      require_available(count);
+      
       if (!isa<PointerType>(dest->type()))
         throw TvmUserError("first parameter to memzero instruction is not a pointer");
       
@@ -303,8 +342,14 @@ namespace Psi {
         throw TvmUserError("first parameter to memzero instruction is not a byte pointer");
       
       ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location());
-      if (count->type() != size_type || (alignment && (alignment->type() != size_type)))
-        throw TvmUserError("secon and third parameters to memzero instruction must be uintptr");
+      if (count->type() != size_type)
+        throw TvmUserError("size parameter to memzero instruction must be uintptr");
+      
+      if (alignment) {
+        require_available(alignment);
+        if (alignment->type() != size_type)
+          throw TvmUserError("alignment parameter to memzero instruction must be uintptr");
+      }
     }
     
     template<typename V>

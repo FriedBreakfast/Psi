@@ -86,7 +86,7 @@ namespace Psi {
     void Term::global_dependencies_impl(const Term& PSI_UNUSED(self), PSI_STD::set<TreePtr<ModuleGlobal> >& PSI_UNUSED(globals)) {
     }
     
-    PsiBool Term::pure_functional_impl(const Term& self) {
+    PsiBool Term::pure_functional_impl(const Term& PSI_UNUSED(self)) {
       return false;
     }
 

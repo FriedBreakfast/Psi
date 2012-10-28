@@ -85,6 +85,8 @@ namespace Psi {
     protected:
       Instruction(const ValuePtr<>& type, const char *operation,
                   const SourceLocation& location);
+      
+      void require_available(const ValuePtr<>& value);
 
     private:
       const char *m_operation;
@@ -217,7 +219,6 @@ namespace Psi {
       
       std::vector<ValuePtr<Block> > successors();
 
-      bool check_available(const ValuePtr<>& term, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
       bool dominated_by(Block *block);
       bool dominated_by(const ValuePtr<Block>& block) {return dominated_by(block.get());}
       

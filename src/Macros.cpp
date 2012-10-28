@@ -310,7 +310,7 @@ namespace Psi {
         if (!(name = expression_as_token_type(parameters[0], Parser::TokenExpression::square_bracket)))
           self.compile_context().error_throw(location, "Parameter to namespace macro is not a [...]");
         
-        PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(name->text);
+        PSI_STD::vector<SharedPtr<Parser::Statement> > statements = Parser::parse_namespace(name->text);
 
         TreePtr<Namespace> ns = compile_namespace(statements, evaluate_context, location);
 

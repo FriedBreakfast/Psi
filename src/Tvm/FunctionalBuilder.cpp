@@ -645,11 +645,42 @@ namespace Psi {
     
     /// \brief Get an integer multiply operation.
     ValuePtr<> FunctionalBuilder::mul(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      if (isa<UndefinedValue>(lhs) || isa<UndefinedValue>(rhs)) {
+        return int_binary_undef(IntegerMultiply::operation, lhs, rhs, location);
+      } else if (ValuePtr<IntegerNegative> lhs_neg = dyn_cast<IntegerNegative>(lhs)) {
+        return neg(mul(lhs_neg->parameter(), rhs, location), location);
+      } else if (ValuePtr<IntegerNegative> rhs_neg = dyn_cast<IntegerNegative>(rhs)) {
+        return neg(mul(lhs, rhs_neg->parameter(), location), location);
+      }
+      
+      if (ValuePtr<IntegerValue> lhs_val = dyn_cast<IntegerValue>(lhs)) {
+        if (lhs_val->value().zero())
+          return lhs_val;
+      }
+      
+      if (ValuePtr<IntegerValue> rhs_val = dyn_cast<IntegerValue>(rhs)) {
+        if (rhs_val->value().zero())
+          return rhs_val;
+      }
+
       return lhs->context().get_functional(IntegerMultiply(lhs, rhs, location));
     }
     
     /// \brief Get an integer division operation.
     ValuePtr<> FunctionalBuilder::div(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
+      if (ValuePtr<IntegerNegative> lhs_neg = dyn_cast<IntegerNegative>(lhs)) {
+        return neg(div(lhs_neg->parameter(), rhs, location), location);
+      } else if (ValuePtr<IntegerNegative> rhs_neg = dyn_cast<IntegerNegative>(rhs)) {
+        return neg(div(lhs, rhs_neg->parameter(), location), location);
+      }
+
+      if (ValuePtr<IntegerValue> lhs_val = dyn_cast<IntegerValue>(lhs)) {
+        if (ValuePtr<IntegerValue> rhs_val = dyn_cast<IntegerValue>(rhs)) {
+          if (lhs_val->value().zero() && !rhs_val->value().zero())
+            return lhs_val;
+        }
+      }
+      
       return lhs->context().get_functional(IntegerDivide(lhs, rhs, location));
     }
     

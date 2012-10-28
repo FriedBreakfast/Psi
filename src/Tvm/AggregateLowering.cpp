@@ -1314,6 +1314,15 @@ namespace Psi {
       if (value_it != m_value_map.end())
         return value_it->second;
       
+      if (isa<Global>(value)) {
+        PSI_ASSERT(value_cast<Global>(value)->module() != pass().source_module());
+        throw TvmUserError("Global from a different module encountered during lowering");
+      } else if (isa<FunctionType>(value)) {
+        throw TvmUserError("Function type encountered in computed expression");
+      } else if (!isa<FunctionalValue>(value)) {
+        throw TvmUserError("Non-functional value encountered in global expression: probably instruction or block which has not been inserted into a function");
+      }
+      
       LoweredValue result = FunctionalTermRewriter::callback_map.call(*this, value_cast<FunctionalValue>(value));
       PSI_ASSERT(result.value());
       m_value_map[value] = result;
@@ -1356,8 +1365,10 @@ namespace Psi {
         boost::optional<unsigned> count_value_int = count_value->value().unsigned_value();
         if (!count_value_int)
           throw TvmInternalError("cannot create internal global variable padding due to size overflow");
-        ValuePtr<> padding_term = is_value ? FunctionalBuilder::undef(padding_type.first, location) : padding_type.first;
-        status.elements.insert(status.elements.end(), *count_value_int, padding_term);
+        if (*count_value_int) {
+          ValuePtr<> padding_term = is_value ? FunctionalBuilder::undef(padding_type.first, location) : padding_type.first;
+          status.elements.insert(status.elements.end(), *count_value_int, padding_term);
+        }
       } else {
         ValuePtr<> array_ty = FunctionalBuilder::array_type(padding_type.first, count, location);
         status.elements.push_back(is_value ? FunctionalBuilder::undef(array_ty, location) : array_ty);

@@ -101,7 +101,7 @@ int main(int argc, char *argv[]) {
   TreePtr<EvaluateContext> module_evaluate_context = evaluate_context_module(my_module, root_evaluate_context, my_module.location());
   Parser::ParserLocation file_text = url_location(argv[1], source_text.get(), source_text.get() + source_length);
   
-  PSI_STD::vector<SharedPtr<Parser::NamedExpression> > statements = Parser::parse_statement_list(file_text);
+  PSI_STD::vector<SharedPtr<Parser::Statement> > statements = Parser::parse_namespace(file_text);
   
   // Code used to bootstrap into user program.
   std::string init = "main()";

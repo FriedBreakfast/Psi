@@ -123,27 +123,27 @@ namespace Psi {
 
     class StatementListEntry {
       SharedPtr<Parser::Expression> m_expression;
-      bool m_functional;
+      StatementMode m_mode;
       TreePtr<EvaluateContext> m_evaluate_context;
 
     public:
       StatementListEntry(const SharedPtr<Parser::Expression>& expression,
-                         bool functional,
+                         StatementMode mode,
                          const TreePtr<EvaluateContext>& evaluate_context)
         : m_expression(expression),
-        m_functional(functional),
+        m_mode(mode),
         m_evaluate_context(evaluate_context) {
       }
       
       template<typename Visitor>
       static void visit(Visitor& v) {
         v("expression", &StatementListEntry::m_expression)
-        ("functional", &StatementListEntry::m_functional)
+        ("mode", &StatementListEntry::m_mode)
         ("evaluate_context", &StatementListEntry::m_evaluate_context);
       }
 
       TreePtr<Statement> evaluate(const TreePtr<Statement>& self) {
-        return TreePtr<Statement>(new Statement(compile_expression(m_expression, m_evaluate_context, self.location().logical), m_functional, self.location()));
+        return TreePtr<Statement>(new Statement(compile_expression(m_expression, m_evaluate_context, self.location().logical), m_mode, self.location()));
       }
     };
     
@@ -212,12 +212,12 @@ namespace Psi {
     const EvaluateContextVtable BlockContext::vtable = PSI_COMPILER_EVALUATE_CONTEXT(BlockContext, "psi.compiler.BlockContext", EvaluateContext);
 
     class BlockCompiler {
-      PSI_STD::vector<SharedPtr<Parser::NamedExpression> > m_statements;
+      PSI_STD::vector<SharedPtr<Parser::Statement> > m_statements;
       TreePtr<EvaluateContext> m_evaluate_context;
 
     public:
-      BlockCompiler(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
-                            const TreePtr<EvaluateContext>& evaluate_context)
+      BlockCompiler(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements,
+                    const TreePtr<EvaluateContext>& evaluate_context)
       : m_statements(statements), m_evaluate_context(evaluate_context) {
       }
       
@@ -234,9 +234,9 @@ namespace Psi {
         PSI_STD::vector<TreePtr<Statement> > entries;
         BlockCompileData::NameMapType named_entries;
 
-        for (PSI_STD::vector<SharedPtr<Parser::NamedExpression> >::iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii) {
-          const Parser::NamedExpression& named_expr = **ii;
-          if (named_expr.expression) {
+        for (PSI_STD::vector<SharedPtr<Parser::Statement> >::iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii) {
+          if ((*ii) && (*ii)->expression) {
+            const Parser::Statement& named_expr = **ii;
             String expr_name;
             LogicalSourceLocationPtr logical_location;
             if (named_expr.name) {
@@ -246,7 +246,7 @@ namespace Psi {
               logical_location = self.location().logical->new_anonymous_child();
             }
             SourceLocation statement_location(named_expr.location.location, logical_location);
-            TreePtr<Statement> statement = tree_callback<Statement>(compile_context, statement_location, StatementListEntry(named_expr.expression, named_expr.functional, context_tree));
+            TreePtr<Statement> statement = tree_callback<Statement>(compile_context, statement_location, StatementListEntry(named_expr.expression, (StatementMode)named_expr.mode, context_tree));
             entries.push_back(statement);
             last_statement.reset(new StatementRef(statement, statement.location()));
 
@@ -280,7 +280,7 @@ namespace Psi {
       }
     };
 
-    TreePtr<Block> compile_block(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
+    TreePtr<Block> compile_block(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements,
                                  const TreePtr<EvaluateContext>& evaluate_context,
                                  const SourceLocation& location) {
       TreePtr<BlockCompileData> t = tree_callback<BlockCompileData>(evaluate_context.compile_context(), location, BlockCompiler(statements, evaluate_context));
@@ -289,15 +289,15 @@ namespace Psi {
 
     class NamespaceEntry {
       SharedPtr<Parser::Expression> m_expression;
-      bool m_functional;
+      StatementMode m_mode;
       TreePtr<EvaluateContext> m_evaluate_context;
 
     public:
       typedef Term TreeResultType;
       
-      NamespaceEntry(const SharedPtr<Parser::Expression>& expression, bool functional, const TreePtr<EvaluateContext>& evaluate_context)
+      NamespaceEntry(const SharedPtr<Parser::Expression>& expression, StatementMode mode, const TreePtr<EvaluateContext>& evaluate_context)
         : m_expression(expression),
-        m_functional(functional),
+        m_mode(mode),
         m_evaluate_context(evaluate_context) {
       }
       
@@ -309,12 +309,25 @@ namespace Psi {
 
       TreePtr<Term> evaluate(const TreePtr<Term>& self) {
         TreePtr<Term> value = compile_expression(m_expression, m_evaluate_context, self.location().logical);
-        if (tree_isa<Global>(value)) {
-          return value;
-        } else if (m_functional || tree_isa<Type>(value) || tree_isa<TypeInstance>(value)) {
-          return TreePtr<GlobalDefine>(new GlobalDefine(value, self.location()));
+        if (value->is_type()) {
+          if (m_mode != statement_mode_value)
+            self.compile_context().error_throw(self.location(), "Types must have the default storage mode.");
+          return TreePtr<GlobalDefine>(new GlobalDefine(value, true, self.location()));
+        } else if (tree_isa<FunctionType>(value->type)) {
+          if (m_mode != statement_mode_value)
+            self.compile_context().error_throw(self.location(), "Functions must have the default storage mode.");
+          return TreePtr<GlobalDefine>(new GlobalDefine(value, false, self.location()));
         } else {
-          return TreePtr<GlobalVariable>(new GlobalVariable(m_evaluate_context->module(), false, value, false, false, self.location()));
+          switch (m_mode) {
+          case statement_mode_ref:
+            return TreePtr<GlobalDefine>(new GlobalDefine(value, false, self.location()));
+          case statement_mode_functional:
+            return TreePtr<GlobalDefine>(new GlobalDefine(value, true, self.location()));
+          case statement_mode_value:
+            return TreePtr<GlobalVariable>(new GlobalVariable(m_evaluate_context->module(), false, value, false, false, self.location()));
+          default:
+            PSI_FAIL("Unrecognised namespace entry mode");
+          }
         }
       }
     };
@@ -356,11 +369,11 @@ namespace Psi {
     const EvaluateContextVtable NamespaceContext::vtable = PSI_COMPILER_EVALUATE_CONTEXT(NamespaceContext, "psi.compiler.NamespaceContext", EvaluateContext);
 
     class NamespaceCompiler {
-      PSI_STD::vector<SharedPtr<Parser::NamedExpression> > m_statements;
+      PSI_STD::vector<SharedPtr<Parser::Statement> > m_statements;
       TreePtr<EvaluateContext> m_evaluate_context;
 
     public:
-      NamespaceCompiler(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements,
+      NamespaceCompiler(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements,
                         const TreePtr<EvaluateContext>& evaluate_context)
       : m_statements(statements), m_evaluate_context(evaluate_context) {
       }
@@ -376,15 +389,15 @@ namespace Psi {
         TreePtr<NamespaceContext> context_tree(new NamespaceContext(self, m_evaluate_context));
         Namespace::NameMapType named_entries;
 
-        for (PSI_STD::vector<SharedPtr<Parser::NamedExpression> >::iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii) {
-          const Parser::NamedExpression& named_expr = **ii;
-          if (named_expr.expression) {
-            PSI_ASSERT(named_expr.name);
+        for (PSI_STD::vector<SharedPtr<Parser::Statement> >::iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii) {
+          if (*ii) {
+            const Parser::Statement& named_expr = **ii;
+            PSI_ASSERT(named_expr.expression && named_expr.name && (named_expr.mode != statement_mode_destroy));
             
             String expr_name(named_expr.name->begin, named_expr.name->end);
             LogicalSourceLocationPtr logical_location = self.location().logical->named_child(expr_name);
             SourceLocation entry_location(named_expr.location.location, logical_location);
-            named_entries[expr_name] = tree_callback(compile_context, entry_location, NamespaceEntry(named_expr.expression, named_expr.functional, context_tree));
+            named_entries[expr_name] = tree_callback(compile_context, entry_location, NamespaceEntry(named_expr.expression, (StatementMode)named_expr.mode, context_tree));
           }
         }
 
@@ -392,7 +405,7 @@ namespace Psi {
       }
     };
 
-    TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::NamedExpression> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location) {
+    TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location) {
       return tree_callback<Namespace>(evaluate_context.compile_context(), location, NamespaceCompiler(statements, evaluate_context));
     }
   }

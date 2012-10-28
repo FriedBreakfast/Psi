@@ -536,8 +536,13 @@ namespace Psi {
       template<typename V> static void visit(V& v);
     };
 
-    /// \brief Is this a type?
-    inline bool Term::is_type() const {return tree_isa<Metatype>(type);}
+    /**
+     * \brief Is this a type?
+     * 
+     * This means "can this be the type of another term". Therefore, Metatype
+     * counts as a type here.
+     */
+    inline bool Term::is_type() const {return !type || tree_isa<Metatype>(type);}
 
     /**
      * Anonymous term. Has a type but no defined value.
