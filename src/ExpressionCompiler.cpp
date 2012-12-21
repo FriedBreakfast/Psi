@@ -143,7 +143,21 @@ namespace Psi {
       }
 
       TreePtr<Statement> evaluate(const TreePtr<Statement>& self) {
-        return TreePtr<Statement>(new Statement(compile_expression(m_expression, m_evaluate_context, self.location().logical), m_mode, self.location()));
+        TreePtr<Term> value = compile_expression(m_expression, m_evaluate_context, self.location().logical);
+        StatementMode mode;
+        if (value->is_type()) {
+          if (m_mode != statement_mode_value)
+            self.compile_context().error_throw(self.location(), "Types must have the default storage mode.");
+          mode = statement_mode_functional;
+        } else if (tree_isa<FunctionType>(value->type)) {
+          if (m_mode != statement_mode_value)
+            self.compile_context().error_throw(self.location(), "Functions must have the default storage mode.");
+          mode = statement_mode_ref;
+        } else {
+          mode = m_mode;
+        }
+        
+        return TreePtr<Statement>(new Statement(value, mode, self.location()));
       }
     };
     

@@ -14,6 +14,7 @@ namespace Psi {
     TreePtr<Term> pointer_macro(CompileContext& compile_context, const SourceLocation& location);
     TreePtr<Term> function_definition_macro(CompileContext& compile_context, const SourceLocation& location);
     TreePtr<Term> function_type_macro(CompileContext& compile_context, const SourceLocation& location);
+    TreePtr<Term> struct_macro(CompileContext& compile_context, const SourceLocation& location);
 
     TreePtr<Term> macro_define_macro(CompileContext& compile_context, const SourceLocation& location);
     TreePtr<Term> interface_define_macro(CompileContext& compile_context, const SourceLocation& location);

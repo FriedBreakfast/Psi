@@ -249,6 +249,20 @@ namespace Psi {
     return c_isdigit(c) || c_isalpha(c);
   }
 
+  template<typename T>
+  PSI_STD::vector<T> vector_of(const T& t1) {
+    PSI_STD::vector<T> x;
+    x.push_back(t1);
+    return x;
+  }
+  
+  template<typename T>
+  PSI_STD::vector<T> vector_of(const T& t1, const T& t2) {
+    PSI_STD::vector<T> x;
+    x.push_back(t1);
+    x.push_back(t2);
+    return x;
+  }
 }
 
 #endif

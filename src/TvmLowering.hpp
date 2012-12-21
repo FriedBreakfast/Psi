@@ -66,7 +66,7 @@ namespace Psi {
     struct TvmGenericResult {
       Tvm::ValuePtr<Tvm::RecursiveType> generic;
       /// Whether this type is primitive regardless of its parameters
-      bool primitive;
+      int primitive_mode;
     };
     
     class TvmFunctionalBuilder;

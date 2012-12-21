@@ -156,7 +156,7 @@ namespace Psi {
         const PSI_STD::vector<TreePtr<OverloadValue> >& overloads = instance->generic->overloads;
         for (unsigned ii = 0, ie = overloads.size(); ii != ie; ++ii) {
           const TreePtr<OverloadValue>& v = overloads[ii];
-          if ((type == v->overload_type) && overload_pattern_match(v->pattern, parameters, v->n_wildcards, scratch))
+          if (v && (type == v->overload_type) && overload_pattern_match(v->pattern, parameters, v->n_wildcards, scratch))
             results.push_back(std::make_pair(scratch, v));
         }
         

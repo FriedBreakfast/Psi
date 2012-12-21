@@ -488,7 +488,7 @@ TvmGenericResult TvmCompiler::build_generic(const TreePtr<GenericType>& generic)
     Tvm::RecursiveType::create(Tvm::FunctionalBuilder::type_type(m_tvm_context, generic->location()), parameters, generic.location());
   TvmGenericResult result;
   result.generic = recursive;
-  result.primitive = is_primitive(generic->member_type);
+  result.primitive_mode = generic->primitive_mode;
   
   // Insert generic into map before building it because it may recursively reference itself.
   m_generics.insert(std::make_pair(generic, result));

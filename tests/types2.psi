@@ -1,9 +1,0 @@
-z : function(y -> OutputStream) [y];
-
-w : function(y -> function(a)) [z(y).write];
-
-x : function(y) [
-  w(y)#({Hello World\n});
-];
-
-x(StandardOut);

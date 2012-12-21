@@ -616,6 +616,8 @@ namespace Psi {
     friend void iterator_init(void *dest, const List& self) {
       self.vptr()->iterator(self.vptr(), dest, self.object());
     }
+    
+    PSI_STD::vector<T> to_vector() const;
   };
 
   template<typename Impl>
@@ -756,6 +758,19 @@ namespace Psi {
       this->vptr()->super.destroy(this->vptr(), this->object());
     }
   };
+  
+  /**
+   * \brief Convert a generic list to a vector.
+   */
+  template<typename T>
+  PSI_STD::vector<T> List<T>::to_vector() const {
+    std::size_t n = size();
+    PSI_STD::vector<T> result;
+    result.reserve(n);
+    for (LocalIterator<T> it(*this); it.next();)
+      result.push_back(it.current());
+    return result;
+  }
 
   struct MapObject;
 

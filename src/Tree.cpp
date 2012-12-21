@@ -254,16 +254,18 @@ namespace Psi {
     : Term(&vtable, compile_context, location) {
     }
 
-    TryFinally::TryFinally(const TreePtr<Term>& try_expr_, const TreePtr<Term>& finally_expr_, const SourceLocation& location)
+    TryFinally::TryFinally(const TreePtr<Term>& try_expr_, const TreePtr<Term>& finally_expr_, bool except_only_, const SourceLocation& location)
     : Term(&vtable, tree_attribute(try_expr_, &Term::type), location),
     try_expr(try_expr_),
-    finally_expr(finally_expr_) {
+    finally_expr(finally_expr_),
+    except_only(except_only_) {
     }
 
     template<typename Visitor> void TryFinally::visit(Visitor& v) {
       visit_base<Term>(v);
       v("try_expr", &TryFinally::try_expr)
-      ("finally_expr", &TryFinally::finally_expr);
+      ("finally_expr", &TryFinally::finally_expr)
+      ("except_only", &TryFinally::except_only);
     }
 
     void TryFinally::global_dependencies_impl(const TryFinally& self, PSI_STD::set<TreePtr<ModuleGlobal> >& globals) {
@@ -438,8 +440,9 @@ namespace Psi {
     : Functional(&vtable, compile_context, location) {
     }
 
-    PointerTarget::PointerTarget(const TreePtr< Term >& value, const SourceLocation& location)
-    : Functional(&vtable, TreePtr<Term>(new PointerType(tree_attribute(value, &Term::type), location)), location) {
+    PointerTarget::PointerTarget(const TreePtr<Term>& value_, const SourceLocation& location)
+    : Functional(&vtable, TreePtr<Term>(new PointerType(tree_attribute(value_, &Term::type), location)), location),
+    value(value_) {
     }
 
     template<typename V>
@@ -450,12 +453,36 @@ namespace Psi {
 
     const TermVtable PointerTarget::vtable = PSI_COMPILER_TERM(PointerTarget, "psi.compiler.PointerTarget", Functional);
     
+    PointerCast::PointerCast(CompileContext& compile_context, const SourceLocation& location)
+    : Functional(&vtable, compile_context, location) {
+    }
+
+    PointerCast::PointerCast(const TreePtr<Term>& value_, const TreePtr<Term>& target_type_, const SourceLocation& location)
+    : Functional(&vtable, TreePtr<Term>(new PointerType(target_type_, location)), location),
+    value(value_),
+    target_type(target_type_) {
+    }
+
+    template<typename V>
+    void PointerCast::visit(V& v) {
+      visit_base<Functional>(v);
+      v("value", &PointerCast::value)
+      ("target_type", &PointerCast::target_type);
+    }
+
+    const TermVtable PointerCast::vtable = PSI_COMPILER_TERM(PointerCast, "psi.compiler.PointerCast", Functional);
+    
     namespace {
       int index_to_int(const TreePtr<Term>& index, const SourceLocation& location) {
         TreePtr<IntegerValue> iv = dyn_treeptr_cast<IntegerValue>(index);
         if (!iv)
           index.compile_context().error_throw(location, "Index into aggregate type is not an IntegerValue term");
         return iv->value;
+      }
+      
+      TreePtr<Term> int_to_index(const TreePtr<Term>& value, int index, const SourceLocation& location) {
+        TreePtr<Term> ty(new PrimitiveType(value.compile_context(), "core.uint.i32", location));
+        return TreePtr<IntegerValue>(new IntegerValue(ty, index, location));
       }
       
       TreePtr<Term> element_type(const TreePtr<Term>& aggregate_type, const TreePtr<Term>& index, const SourceLocation& location) {
@@ -506,14 +533,14 @@ namespace Psi {
         };
       };
 
-      class ElementRefType {
+      class ElementValueType {
         TreePtr<Term> m_aggregate_type;
         TreePtr<Term> m_index;
         
       public:
         typedef Term TreeResultType;
 
-        ElementRefType(const TreePtr<Term>& aggregate_type, const TreePtr<Term>& index)
+        ElementValueType(const TreePtr<Term>& aggregate_type, const TreePtr<Term>& index)
         : m_aggregate_type(aggregate_type), m_index(index) {}
         
         TreePtr<Term> evaluate(const TreePtr<Term>& self) {
@@ -522,8 +549,8 @@ namespace Psi {
         
         template<typename V>
         static void visit(V& v) {
-          v("aggregate_type", &ElementRefType::m_aggregate_type)
-          ("index", &ElementRefType::m_index);
+          v("aggregate_type", &ElementValueType::m_aggregate_type)
+          ("index", &ElementValueType::m_index);
         }
       };
     }
@@ -536,6 +563,12 @@ namespace Psi {
     : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(tree_attribute(value_, &Term::type), index_)), location),
     value(value_),
     index(index_) {
+    }
+
+    ElementPtr::ElementPtr(const TreePtr<Term>& value_, int index_, const SourceLocation& location)
+    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(tree_attribute(value_, &Term::type), int_to_index(value_, index_, location))), location),
+    value(value_),
+    index(int_to_index(value_, index_, location)) {
     }
 
     template<typename V>
@@ -552,9 +585,15 @@ namespace Psi {
     }
 
     ElementValue::ElementValue(const TreePtr<Term>& value_, const TreePtr<Term>& index_, const SourceLocation& location)
-    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementRefType(tree_attribute(value_, &Term::type), index_)), location),
+    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementValueType(tree_attribute(value_, &Term::type), index_)), location),
     value(value_),
     index(index_) {
+    }
+
+    ElementValue::ElementValue(const TreePtr<Term>& value_, int index_, const SourceLocation& location)
+    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementValueType(tree_attribute(value_, &Term::type), int_to_index(value_, index_, location))), location),
+    value(value_),
+    index(int_to_index(value_, index_, location)) {
     }
 
     template<typename V>
@@ -656,11 +695,14 @@ namespace Psi {
     GenericType::GenericType(const PSI_STD::vector<TreePtr<Term> >& pattern_,
                              const TreePtr<Term>& member_type_,
                              const PSI_STD::vector<TreePtr<OverloadValue> >& overloads_,
+                             int primitive_mode_,
                              const SourceLocation& location)
     : Tree(&vtable, member_type_.compile_context(), location),
     pattern(pattern_),
     member_type(member_type_),
-    overloads(overloads_) {
+    overloads(overloads_),
+    primitive_mode(primitive_mode_) {
+      PSI_ASSERT((primitive_mode == primitive_always) || (primitive_mode == primitive_never) || (primitive_mode == primitive_recurse));
     }
 
     template<typename Visitor>
@@ -683,6 +725,13 @@ namespace Psi {
     : Functional(&vtable, generic_.compile_context().builtins().metatype, location),
     generic(generic_),
     parameters(parameters_) {
+    }
+
+    /**
+     * \brief Get the inner type of this instance.
+     */
+    TreePtr<Term> TypeInstance::unwrap() const {
+      return generic->member_type->specialize(location(), parameters);
     }
 
     template<typename Visitor>

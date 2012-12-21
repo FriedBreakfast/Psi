@@ -63,6 +63,24 @@ public:
     return result.done();
   }
 };
+
+/**
+ * \brief Indices of members in the Movable interface
+ */
+enum InterfaceMovableMembers {
+  interface_movable_init=0,
+  interface_movable_fini=1,
+  interface_movable_move=2,
+  interface_movable_move_init=3
+};
+
+/**
+ * \brief Indices of members in the Copyable interface
+ */
+enum InterfaceCopyableMembers {
+  interface_copyable_copy=0,
+  interface_copyable_copy_init=1
+};
 }
 }
 

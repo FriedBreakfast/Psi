@@ -272,6 +272,11 @@ namespace Psi {
       TreePtr<MetadataType> library_tag;
       /// \brief Namespace metadata tag
       TreePtr<MetadataType> namespace_tag;
+      
+      /// \brief Movable interface
+      TreePtr<Interface> movable_interface;
+      /// \brief Copyable interface
+      TreePtr<Interface> copyable_interface;
     };
     
     class Function;

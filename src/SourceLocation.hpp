@@ -76,6 +76,8 @@ namespace Psi {
   struct SourceLocation {
     PhysicalSourceLocation physical;
     LogicalSourceLocationPtr logical;
+    
+    SourceLocation() {}
 
     SourceLocation(const PhysicalSourceLocation& physical_,  const LogicalSourceLocationPtr& logical_)
     : physical(physical_), logical(logical_) {}

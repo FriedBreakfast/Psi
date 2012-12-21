@@ -94,13 +94,14 @@ class TvmFunctionLowering {
     VariableMapType m_variables;
     TvmResult m_variable;
     CleanupCallback *m_cleanup;
+    bool m_cleanup_except_only;
     
     void init(Scope& parent);
 
   public:
     Scope(TvmFunctionLowering *shared, const SourceLocation& location);
     Scope(Scope& parent, const SourceLocation& location, const TvmResult& result, VariableSlot& slot, const TreePtr<>& key=TreePtr<>());
-    Scope(Scope& parent, const SourceLocation& location, CleanupCallback *cleanup);
+    Scope(Scope& parent, const SourceLocation& location, CleanupCallback *cleanup, bool cleanup_except_only);
     Scope(Scope& parent, const SourceLocation& location, const JumpMapType& initial_jump_map);
     
     CompileContext& compile_context() {return m_shared->compile_context();}
@@ -113,7 +114,7 @@ class TvmFunctionLowering {
     const VariableMapType& variables() const {return m_variables;}
     TvmResult variable() const {return m_variable;}
     
-    bool has_cleanup() const {return m_cleanup || (m_variable.storage() == tvm_storage_stack);}
+    bool has_cleanup(bool except) const {return (m_cleanup && (except || !m_cleanup_except_only)) || (m_variable.storage() == tvm_storage_stack);}
     void cleanup();
   };
   
@@ -216,10 +217,11 @@ TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location,
   slot.clear();
 }
 
-TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location, CleanupCallback *cleanup)
+TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location, CleanupCallback *cleanup, bool cleanup_except)
 : m_location(location) {
   init(parent);
   m_cleanup = cleanup;
+  m_cleanup_except_only = cleanup_except;
 }
 
 TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location, const JumpMapType& initial_jump_map)
@@ -336,6 +338,9 @@ std::pair<TvmFunctionLowering::Scope*, Tvm::ValuePtr<> > TvmFunctionLowering::ex
  * be modified by the function call to point to a new insertion point;
  * it should not be re-used without updating the insertion point anyway
  * since nothing should be inserted after a terminator instruction.
+ * 
+ * \param target Jump target. This will be NULL for a throw passing
+ * through the function.
  */
 void TvmFunctionLowering::exit_to(Scope& from, const TreePtr<JumpTarget>& target, const SourceLocation& location, const Tvm::ValuePtr<>& return_value) {
   // Locate storage and target scope first
@@ -369,7 +374,7 @@ void TvmFunctionLowering::exit_to(Scope& from, const TreePtr<JumpTarget>& target
         if (phi_value)
           Tvm::value_cast<Tvm::Phi>(it->second.storage)->add_edge(builder().block(), phi_value);
         return;
-      } else if (scope->has_cleanup()) {
+      } else if (scope->has_cleanup(!target)) {
         // Only bother with scopes which have a variable constructed in
 
         // Branch to new block and destroy this variable
@@ -797,7 +802,7 @@ public:
 
 TvmResult TvmFunctionLowering::run_try_finally(Scope& scope, const TreePtr<TryFinally>& try_finally, const VariableSlot& slot, Scope& PSI_UNUSED(following_scope)) {
   TryFinallyCleanup cleanup(try_finally);
-  Scope my_scope(scope, try_finally->location(), &cleanup);
+  Scope my_scope(scope, try_finally->location(), &cleanup, try_finally->except_only);
   TvmResult result = run(my_scope, try_finally->try_expr, slot, my_scope);
   my_scope.cleanup();
   return result;

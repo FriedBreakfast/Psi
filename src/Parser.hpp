@@ -73,13 +73,33 @@ namespace Psi {
     };
     
     struct Statement : Element {
-      Statement(const ParserLocation& source_);
       Statement(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const boost::optional<ParserLocation>& name_, int mode_);
       ~Statement();
 
       boost::optional<ParserLocation> name;
       int mode;
       SharedPtr<Expression> expression;
+    };
+    
+    struct Implementation : Element {
+      Implementation(const ParserLocation& source_, bool constructor_, const SharedPtr<Expression>& interface_, const SharedPtr<Expression>& arguments_, const SharedPtr<Expression>& value_);
+      ~Implementation();
+      
+      bool constructor;
+      SharedPtr<Expression> interface;
+      SharedPtr<Expression> arguments;
+      SharedPtr<Expression> value;
+    };
+    
+    struct Lifecycle : Element {
+      Lifecycle(const ParserLocation& source_, const ParserLocation& function_name_, const ParserLocation& dest_name_,
+                const boost::optional<ParserLocation>& src_name_, const SharedPtr<TokenExpression>& body_);
+      ~Lifecycle();
+      
+      ParserLocation function_name;
+      ParserLocation dest_name;
+      boost::optional<ParserLocation> src_name;
+      SharedPtr<TokenExpression> body;
     };
     
     struct FunctionArgument : Element {
@@ -92,12 +112,20 @@ namespace Psi {
     };
 
     class ParseError : public std::runtime_error {
+      PhysicalSourceLocation m_location;
+      std::string m_reason;
+      
     public:
-      ParseError(const std::string& reason);
+      ParseError(const PhysicalSourceLocation& location, const std::string& reason);
       virtual ~ParseError() throw();
+      
+      const PhysicalSourceLocation& location() const {return m_location;}
+      const std::string& reason() const {return m_reason;}
     };
 
     PSI_STD::vector<SharedPtr<Statement> > parse_statement_list(const ParserLocation&);
+    PSI_STD::vector<SharedPtr<Implementation> > parse_implementation_list(const ParserLocation&);
+    PSI_STD::vector<SharedPtr<Lifecycle> > parse_lifecycle_list(const ParserLocation&);
     PSI_STD::vector<SharedPtr<Statement> > parse_namespace(const ParserLocation&);
     PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(const ParserLocation&);
     SharedPtr<Expression> parse_expression(const ParserLocation& text);

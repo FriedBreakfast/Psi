@@ -3,6 +3,7 @@
 %{
 #include <cstring>
 #include <memory>
+#include <boost/format.hpp>
 
 #include "Parser.hpp"
 #include "ParserUtility.hpp"
@@ -52,6 +53,8 @@ namespace {
     int int_value;
     const char *cstr;
     ParserLocation text;
+
+    SharedPtr<TokenExpression> token_expression;
     
     SharedPtr<Expression> expression;
     PSI_STD::vector<SharedPtr<Expression> > expression_list;
@@ -61,29 +64,39 @@ namespace {
 
     SharedPtr<FunctionArgument> function_argument;
     PSI_STD::vector<SharedPtr<FunctionArgument> > function_argument_list;
+    
+    SharedPtr<Implementation> implementation;
+    PSI_STD::vector<SharedPtr<Implementation> > implementation_list;
+    
+    PSI_STD::vector<SharedPtr<Lifecycle> > lifecycle_list;
   };
 
   struct ParserInternalArguments : BisonHelper<YYTYPE_INT16, YYSTYPE, YYLTYPE> {
     ParserInternalArguments(int mode_token_, const ParserLocation& text_)
-      : mode_token(mode_token_), text(text_), current(text_.begin), end(text_.end) {
+      : mode_token(mode_token_), bracket_literal(false), text(text_), current(text_.begin), end(text_.end) {
     }
 
     PSI_STD::vector<SharedPtr<Expression> > result_expressions;
     PSI_STD::vector<SharedPtr<Statement> > result_statements;
+    PSI_STD::vector<SharedPtr<Implementation> > result_implementations;
+    PSI_STD::vector<SharedPtr<Lifecycle> > result_lifecycle;
     ArgumentDeclarations result_argument_declarations;
     ImplicitArgumentDeclarations result_argument_implicit;
 
     int mode_token;
+    bool bracket_literal;
     ParserLocation text;
     const char *current, *end;
 
     std::string error_message;
+    PhysicalSourceLocation error_location;
   };
 
-  void yyerror(const YYLTYPE*,
+  void yyerror(const YYLTYPE *loc,
                ParserInternalArguments& arguments,
                const char *s) {
     arguments.error_message = s;
+    arguments.error_location = loc->location;
   }
 
   int yylex(YYSTYPE *lvalp, YYLTYPE *llocp, ParserInternalArguments& self);
@@ -184,17 +197,23 @@ namespace {
 %token MODE_FUNCTION_ARGUMENT_DECLARE
 %token MODE_FUNCTION_ARGUMENT_IMPLICIT
 %token MODE_EXPRESSION
+%token MODE_IMPLEMENTATION_LIST
+%token MODE_LIFECYCLE
 
 %type <text> IDENTIFIER NUMBER
 %type <int_value> return_mode argument_mode statement_mode
 %type <cstr> product_operator add_operator compare_operator unary_operator
-%type <expression> BLOCK expression or_expression and_expression xor_expression product_expression add_expression
+%type <token_expression> BLOCK
+%type <expression> expression or_expression and_expression xor_expression product_expression add_expression
 %type <expression> unary_expression compare_expression macro_expression token_expression
 %type <expression_list> compare_expression_build expression_list expression_list_nonempty token_list interface_list_declare interface_list_declare_nonempty
 %type <statement> statement namespace_entry
 %type <statement_list> statement_list namespace_list
 %type <function_argument> argument_declare return_type_declare
 %type <function_argument_list> argument_list_declare argument_list_declare_nonempty
+%type <implementation> implementation_entry
+%type <implementation_list> implementation_list
+%type <lifecycle_list> lifecycle lifecycle_list
 
 %parse-param {ParserInternalArguments& arguments}
 %lex-param {ParserInternalArguments& arguments}
@@ -221,6 +240,8 @@ root: MODE_STATEMENT_LIST statement_list {arguments.result_statements = $2;}
 | MODE_EXPRESSION expression {arguments.result_expressions.assign(1, $2);}
 | MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare {arguments.result_argument_declarations.arguments = $2; arguments.result_argument_declarations.return_type = $3;}
 | MODE_FUNCTION_ARGUMENT_IMPLICIT argument_list_declare interface_list_declare {arguments.result_argument_implicit.arguments = $2; arguments.result_argument_implicit.interfaces = $3;}
+| MODE_IMPLEMENTATION_LIST implementation_list {arguments.result_implementations = $2;}
+| MODE_LIFECYCLE lifecycle_list {arguments.result_lifecycle = $2;}
 ;
 
 return_mode:
@@ -266,6 +287,20 @@ OPERATOR_ARROW expression {$$.assign(1, $2);}
 | interface_list_declare_nonempty ',' expression {$$ = $1; $$.push_back($3);}
 ;
 
+lifecycle_list: {$$.clear();}
+| lifecycle
+| lifecycle_list ';' lifecycle {$$ = $1; $$.insert($$.end(), $3.begin(), $3.end());}
+;
+
+open_bracket: {PSI_ASSERT(yychar == YYEMPTY); arguments.bracket_literal = true;} '(';
+close_bracket: {PSI_ASSERT(yychar == YYEMPTY); arguments.bracket_literal = true;} ')';
+
+lifecycle: {$$.clear();}
+| IDENTIFIER open_bracket IDENTIFIER close_bracket BLOCK {SharedPtr<Lifecycle> c(new Lifecycle(@$, $1, $3, boost::none, $5)); $$.assign(1, c);}
+| IDENTIFIER open_bracket IDENTIFIER ',' IDENTIFIER close_bracket BLOCK {SharedPtr<Lifecycle> c(new Lifecycle(@$, $1, $3, $5, $7)); $$.assign(1, c);}
+| '!' IDENTIFIER {SharedPtr<Lifecycle> c(new Lifecycle(@$, $2, default_, default_, default_)); $$.assign(1, c);}
+;
+
 expression_list: {$$.clear();}
 | expression_list_nonempty
 ;
@@ -300,6 +335,17 @@ namespace_entry {$$.assign(1, $1);}
 
 namespace_entry: {$$.reset();}
 | IDENTIFIER statement_mode expression {$$.reset(new Statement(@$, $3, $1, $2));}
+;
+
+implementation_list:
+implementation_entry {$$.assign(1, $1);}
+| implementation_list ';' implementation_entry {$$ = $1; $$.push_back($3);}
+;
+
+implementation_entry: {$$.reset();}
+| expression ':' BLOCK '=' expression {$$.reset(new Implementation(@$, false, $1, $3, $5));}
+| expression ':' BLOCK BLOCK {$$.reset(new Implementation(@$, true, $1, $3, $4));}
+| BLOCK {$$.reset(new Implementation(@$, true, default_, default_, $1));}
 ;
 
 expression:
@@ -391,7 +437,7 @@ token_expression {$$.clear(); $$.push_back($1);}
 token_expression:
 IDENTIFIER {$$.reset(new TokenExpression(@$, TokenExpression::identifier, $1));}
 | NUMBER {$$.reset(new TokenExpression(@$, TokenExpression::number, $1));}
-| BLOCK
+| BLOCK {$$ = $1;}
 ;
 
 %%
@@ -434,6 +480,13 @@ namespace {
 #define SCANNER_NEWLINE() (++llocp->location.last_line, llocp->location.last_column = 1)
 
     c = *self.current;
+    
+    if (self.bracket_literal) {
+      self.bracket_literal = false;
+      if (!std::strchr("()[]{}", c))
+        SCANNER_RETURN(INVALID);
+      return c;
+    }
 
     if (c_isdigit(c)) {
       bool has_dot = false;
@@ -580,7 +633,7 @@ namespace {
           ++value_text.location.first_column;
           --value_text.end;
           --value_text.location.last_column;
-          lvalp->expression.reset(new TokenExpression(*llocp, block_type, value_text));
+          lvalp->token_expression.reset(new TokenExpression(*llocp, block_type, value_text));
           return BLOCK;
         } else if (self.current == self.end) {
           SCANNER_RETURN(INVALID);
@@ -604,7 +657,7 @@ namespace {
   void parse_helper(ParserInternalArguments& internal) {
     int result = yyparse(internal);
     if (result)
-      throw ParseError(internal.error_message);
+      throw ParseError(internal.error_location, internal.error_message);
   }
 }
 
@@ -646,15 +699,27 @@ namespace Psi {
     DotExpression::~DotExpression() {
     }
 
-    Statement::Statement(const ParserLocation& source_)
-      : Element(source_) {
-    }
-
     Statement::Statement(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const boost::optional<ParserLocation>& name_, int mode_)
       : Element(source_), name(name_), mode(mode_), expression(expression_) {
     }
 
     Statement::~Statement() {
+    }
+    
+    Implementation::Implementation(const ParserLocation& source_, bool constructor_, const SharedPtr<Expression>& interface_, const SharedPtr<Expression>& arguments_, const SharedPtr<Expression>& value_)
+    : Element(source_), constructor(constructor_), interface(interface_), arguments(arguments_), value(value_) {
+    }
+    
+    Implementation::~Implementation() {
+    }
+    
+    Lifecycle::Lifecycle(const ParserLocation& source_, const ParserLocation& function_name_, const ParserLocation& dest_name_,
+                         const boost::optional<ParserLocation>& src_name_, const SharedPtr<TokenExpression>& body_)
+    : Element(source_), function_name(function_name_), dest_name(dest_name_),
+    src_name(src_name_), body(body_) {
+    }
+    
+    Lifecycle::~Lifecycle() {
     }
 
     FunctionArgument::FunctionArgument(const ParserLocation& source_, const boost::optional<ParserLocation>& name_,
@@ -662,7 +727,10 @@ namespace Psi {
     : Element(source_), name(name_), mode(mode_), type(type_) {
     }
     
-    ParseError::ParseError(const std::string& reason) : std::runtime_error(reason) {
+    ParseError::ParseError(const PhysicalSourceLocation& location, const std::string& reason)
+    : std::runtime_error(str(boost::format("%s:%d: %s") % location.file->url % location.first_line % reason)),
+    m_location(location),
+    m_reason(reason) {
     }
 
     ParseError::~ParseError() throw() {
@@ -675,6 +743,24 @@ namespace Psi {
       ParserInternalArguments args(MODE_STATEMENT_LIST, text);
       parse_helper(args);
       return args.result_statements;
+    }
+
+    /** \brief parse an implementation list.
+     * \param text Text to parse.
+     */
+    PSI_STD::vector<SharedPtr<Implementation> > parse_implementation_list(const ParserLocation& text) {
+      ParserInternalArguments args(MODE_IMPLEMENTATION_LIST, text);
+      parse_helper(args);
+      return args.result_implementations;
+    }
+
+    /** \brief parse a lifecycle functionlist.
+     * \param text Text to parse.
+     */
+    PSI_STD::vector<SharedPtr<Lifecycle> > parse_lifecycle_list(const ParserLocation& text) {
+      ParserInternalArguments args(MODE_LIFECYCLE, text);
+      parse_helper(args);
+      return args.result_lifecycle;
     }
 
     /** \brief parse an argument list.
@@ -728,7 +814,7 @@ namespace Psi {
         } else if (tok == 0) {
           break;
         } else if (tok != ',') {
-          throw ParseError("Unexpected token in identifier list");
+          throw ParseError(lloc.location, "Unexpected token in identifier list");
         }
       }
       

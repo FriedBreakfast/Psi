@@ -205,6 +205,7 @@ namespace Psi {
       GenericType(const PSI_STD::vector<TreePtr<Term> >& pattern,
                   const TreePtr<Term>& member_type,
                   const PSI_STD::vector<TreePtr<OverloadValue> >& overloads,
+                  int primitive_mode,
                   const SourceLocation& location);
 
       template<typename Visitor> static void visit(Visitor& v);
@@ -215,6 +216,14 @@ namespace Psi {
       TreePtr<Term> member_type;
       /// \brief Overloads carried by this type.
       PSI_STD::vector<TreePtr<OverloadValue> > overloads;
+      
+      enum GenericTypePrimitive {
+        primitive_recurse=0, ///< Primitive if the evaluated member_type is primitive
+        primitive_never=1, ///< Never primitive
+        primitive_always=2, ///< Always primitive
+      };
+      /// \brief Primitive mode: whether or not this type is primitive
+      int primitive_mode;
     };
 
     /**
@@ -229,6 +238,8 @@ namespace Psi {
       TypeInstance(const TreePtr<GenericType>& generic,
                    const PSI_STD::vector<TreePtr<Term> >& parameters,
                    const SourceLocation& location);
+      
+      TreePtr<Term> unwrap() const;
 
       /// \brief Generic type this is an instance of.
       TreePtr<GenericType> generic;
@@ -315,7 +326,6 @@ namespace Psi {
     class PointerTo : public Functional {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = true;
       PointerTo(CompileContext& compile_context, const SourceLocation& location);
       PointerTo(const TreePtr<Term>& value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -330,7 +340,6 @@ namespace Psi {
     class PointerTarget : public Functional {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = true;
       PointerTarget(CompileContext& compile_context, const SourceLocation& location);
       PointerTarget(const TreePtr<Term>& value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -340,7 +349,25 @@ namespace Psi {
     };
     
     /**
-     * \brief Get a pointer to an element from a reference to a value.
+     * \brief Cast a pointer to a different type.
+     * 
+     * This is not like C++ pointer casting, no pointer adjustment is ever performed.
+     */
+    class PointerCast : public Functional {
+    public:
+      static const TermVtable vtable;
+      PointerCast(CompileContext& compile_context, const SourceLocation& location);
+      PointerCast(const TreePtr<Term>& value, const TreePtr<Term>& target_type, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief A pointer value.
+      TreePtr<Term> value;
+      /// \brief Cast target type
+      TreePtr<Term> target_type;
+    };
+    
+    /**
+     * \brief Get a pointer to an element from a pointer to a value.
      */
     class ElementPtr : public Functional {
     public:
@@ -348,6 +375,7 @@ namespace Psi {
       static const bool match_visit = true;
       ElementPtr(CompileContext& compile_context, const SourceLocation& location);
       ElementPtr(const TreePtr<Term>& value, const TreePtr<Term>& index, const SourceLocation& location);
+      ElementPtr(const TreePtr<Term>& value, int index, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief Value of pointer to aggregate.
@@ -357,7 +385,7 @@ namespace Psi {
     };
     
     /**
-     * \brief Get a reference to a value from a pointer to that value.
+     * \brief Get a reference to a member from a reference to a value.
      */
     class ElementValue : public Functional {
     public:
@@ -365,6 +393,7 @@ namespace Psi {
       static const bool match_visit = true;
       ElementValue(CompileContext& compile_context, const SourceLocation& location);
       ElementValue(const TreePtr<Term>& value, const TreePtr<Term>& index, const SourceLocation& location);
+      ElementValue(const TreePtr<Term>& value, int index, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief Value of aggregate.
@@ -589,18 +618,24 @@ namespace Psi {
 
     /**
      * \brief Try-finally.
+     * 
+     * Executes try expression, then evaluate finally expression.
+     * If except_only is true, the finally expression is only run
+     * for exceptional exits.
      */
     class TryFinally : public Term {
     public:
       static const TermVtable vtable;
 
       TryFinally(CompileContext& compile_context, const SourceLocation& location);
-      TryFinally(const TreePtr<Term>& try_expr, const TreePtr<Term>& finally_expr, const SourceLocation& location);
+      TryFinally(const TreePtr<Term>& try_expr, const TreePtr<Term>& finally_expr, bool except_only, const SourceLocation& location);
 
       template<typename Visitor> static void visit(Visitor& v);
       static void global_dependencies_impl(const TryFinally& self, PSI_STD::set<TreePtr<ModuleGlobal> >& globals);
 
       TreePtr<Term> try_expr, finally_expr;
+      /// Only run finally_expr in exceptional exits.
+      bool except_only;
     };
     
     /**

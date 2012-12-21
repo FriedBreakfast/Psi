@@ -92,6 +92,13 @@ bool TvmFunctionalBuilder::is_primitive(const TreePtr<Term>& type) {
     return true;
   } else if (TreePtr<GlobalDefine> def = dyn_treeptr_cast<GlobalDefine>(type)) {
     return is_primitive(def->value);
+  } else if (TreePtr<TypeInstance> inst = dyn_treeptr_cast<TypeInstance>(type)) {
+    switch (inst->generic->primitive_mode) {
+    case GenericType::primitive_never: return false;
+    case GenericType::primitive_always: return true;
+    case GenericType::primitive_recurse: return is_primitive(inst->unwrap());
+    default: PSI_FAIL("unrecognised GenericType primitive mode");
+    }
   } else {
     PSI_FAIL(si_vptr(type.get())->classname);
   }
@@ -268,7 +275,14 @@ TvmResult TvmFunctionalBuilder::build_type_instance(const TreePtr<TypeInstance>&
   for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = type->parameters.begin(), ie = type->parameters.end(); ii != ie; ++ii)
     parameters.push_back(build_value(*ii));
   Tvm::ValuePtr<> inst = Tvm::FunctionalBuilder::apply(recursive.generic, parameters, type->location());
-  return TvmResult::type(type->type, inst, recursive.primitive);
+  bool primitive;
+  switch (recursive.primitive_mode) {
+  case GenericType::primitive_recurse: primitive = is_primitive(type->unwrap()); break;
+  case GenericType::primitive_never: primitive = false; break;
+  case GenericType::primitive_always: primitive = true; break;
+  default: PSI_FAIL("unrecognised GenericType primitive mode");
+  }
+  return TvmResult::type(type->type, inst, primitive);
 }
 
 TvmResult TvmFunctionalBuilder::build_other(const TreePtr<Functional>& value) {

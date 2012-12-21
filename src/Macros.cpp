@@ -163,7 +163,7 @@ namespace Psi {
           for (MetadataListType::const_iterator ii = m_metadata.begin(), ie = m_metadata.end(); ii != ie; ++ii)
             overloads.push_back(TreePtr<Metadata>(new Metadata(ii->second, ii->first, 1, pattern, self.location())));
 
-          return TreePtr<GenericType>(new GenericType(default_, tree_attribute(m_value, &Term::type), overloads, self.location()));
+          return TreePtr<GenericType>(new GenericType(default_, tree_attribute(m_value, &Term::type), overloads, GenericType::primitive_never, self.location()));
         }
         
         template<typename V>

@@ -5,6 +5,7 @@ Internals
    :maxdepth: 2
 
    basic_types
+   lifecycle
    tvm_mapping
    storage_specifiers
    overloading

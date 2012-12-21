@@ -1,2 +1,0 @@
-x:{;print(format{x:{${x}}${x}})
-};print(format{x:{${x}}${x}})

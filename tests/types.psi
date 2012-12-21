@@ -1,7 +1,0 @@
-z : function(y : OutputStream -> OutputStream) [y];
-
-x : function(y : OutputStream) [
-  z(y).write({Hello World\n});
-];
-
-x(StandardOut);

@@ -29,6 +29,7 @@ namespace Psi {
   namespace Compiler {
     bool si_derived(const SIVtable *base, const SIVtable *derived) {
       for (const SIVtable *super = derived; super; super = super->super) {
+        PSI_ASSERT(super->super != derived);
         if (super == base)
           return true;
       }
