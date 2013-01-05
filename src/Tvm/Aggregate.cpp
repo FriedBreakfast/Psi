@@ -222,6 +222,23 @@ namespace Psi {
 
     PSI_TVM_FUNCTIONAL_IMPL(UpwardReference, FunctionalValue, upref)
     
+    ConstantType::ConstantType(const ValuePtr<>& value, const SourceLocation& location)
+    : Type(value->context(), location),
+    m_value(value) {
+    }
+    
+    ValuePtr<> ConstantType::check_type() const {
+      return FunctionalBuilder::type_type(context(), location());
+    }
+    
+    template<typename V>
+    void ConstantType::visit(V& v) {
+      visit_base<Type>(v);
+      v("value", &ConstantType::m_value);
+    }
+    
+    PSI_TVM_FUNCTIONAL_IMPL(ConstantType, Type, const);
+    
     PointerCast::PointerCast(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location)
     : AggregateOp(pointer->context(), location),
     m_pointer(pointer),

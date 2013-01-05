@@ -43,6 +43,19 @@ the input of any operation.
   a type representing an unknown block of data is desired.
   It primarily exists to facilitate :ref:`type lowering <psi.tvm.type_lowering>`.
 
+.. _psi.tvm.instructions.const:
+
+const
+"""""
+
+``const {value}``
+
+A type which can only take a single value given by ``value``.
+This is used to allow phantom values to be stored to an retrieved from memory, using the ``solidify`` instruction.
+
+``value``
+  The only valid value of this type.
+
 empty
 """""
 
@@ -243,41 +256,6 @@ Aggregate operations
 Operations for constructing and manipulating aggregate types in virtual registers,
 and manipulating pointers to aggregate types.
 
-array_el
-""""""""
-
-``array_el {arr} {n}``
-
-Get the *n*\th element of an array.
-
-array_ep
-""""""""
-
-``array_ep {ptr} {n}``
-
-Get a pointer to an array element.
-
-``{ptr}``
-  Pointer to an array.
-``{n}``
-  Array index.
-
-.. _psi.tvm.instructions.array_up:
-
-array_up
-""""""""
-
-``array_up {ty} {n} {next}``
-
-Array upward reference.
-
-``{ty}``
-  An array type.
-``{n}``
-  Array index.
-``{next}``
-  Next upward reference.
-
 array_v
 """""""
 
@@ -367,8 +345,19 @@ Add an offset to a pointer.
   This should have type ``iptr``.
   Note that this is measure in units of the pointed-to type, not bytes.
 
+.. _psi.tvm.instructions.struct_v:
+
 struct_v
 """"""""
+
+``struct_v {elements...}``
+
+Structure value constructor.
+Note that an empty structure is not equivalent to ``empty_v``.
+
+``elements``
+  List of elements of the structure.
+  The structures type is inferred from the type of the elements.
 
 undef
 """""
@@ -380,7 +369,7 @@ The compiler is allowed to make any assumption whatsoever about the contents of 
 
 ``{type}``
   Result type of this operation.
-
+  
 .. _psi.tvm.instructions.upref:
 
 upref
@@ -573,6 +562,25 @@ Exit the current function, using ``{value}`` as the result of this function.
 
 ``{value}``
   Value to return from the current function.
+
+.. _psi.tvm.instructions.solidify:
+
+solidify
+""""""""
+
+``solidify {value}``
+
+Assign a value to a phantom term for all instructions and blocks dominated by this instruction.
+Phantom terms may arise in two ways: either as a phantom function parameter, or from the ``unwrap`` operation.
+
+``{value}``
+  The value the phantom term is to take on.
+  The type of this value should be ``const {x}``, where ``x`` is a phantom value.
+
+This instruction should be used with great care since it will circumvent the type check if ``value`` has
+been obtained from uninitialized memory.
+If the memory has been initialized with the correct type the type system then we know that ``value``
+has the correct value since only a single value will be valid for that type.
 
 store
 """""

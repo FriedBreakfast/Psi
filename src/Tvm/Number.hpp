@@ -193,6 +193,7 @@ namespace Psi {
     };
     
     unsigned size_to_unsigned(const ValuePtr<>& value);
+    bool size_equals_constant(const ValuePtr<>& value, unsigned c);
   }
 }
 

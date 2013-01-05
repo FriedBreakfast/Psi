@@ -181,6 +181,18 @@ namespace Psi {
       /// \brief Alignment hint
       ValuePtr<> alignment;
     };
+    
+    /**
+     * \brief Import the value of a phantom term.
+     */
+    class Solidify : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(Solidify)
+      
+    public:
+      Solidify(const ValuePtr<>& value, const SourceLocation& location);
+      /// \brief Constant value
+      ValuePtr<> value;
+    };
   }
 }
 

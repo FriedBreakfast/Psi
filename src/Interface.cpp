@@ -1,5 +1,6 @@
 #include "Compiler.hpp"
 #include "Interface.hpp"
+#include "Tree.hpp"
 
 namespace Psi {
   namespace Compiler {
@@ -91,5 +92,64 @@ namespace Psi {
     }
 
     const SIVtable TypeConstructorInfoCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.TypeConstructorInfo", Tree);
+    
+    class InterfaceTypeHelper {
+      TreePtr<GenericType> m_generic;
+      PSI_STD::vector<TreePtr<Term> > m_introduced_parameters;
+      PSI_STD::vector<TreePtr<Term> > m_generic_parameters;
+      
+    public:
+      typedef Term TreeResultType;
+      
+      InterfaceTypeHelper(const TreePtr<GenericType>& generic,
+                          const PSI_STD::vector<TreePtr<Term> >& introduced_parameters,
+                          const PSI_STD::vector<TreePtr<Term> >& generic_parameters)
+      : m_generic(generic),
+      m_introduced_parameters(introduced_parameters),
+      m_generic_parameters(generic_parameters) {
+      }
+      
+      TreePtr<Term> evaluate(const TreePtr<Term>& self) {
+        TreePtr<Term> upref(new UpwardReference(self, int_to_index(0, self.compile_context(), self.location()), TreePtr<Term>()));
+        PSI_STD::vector<TreePtr<Term> > generic_parameters;
+        generic_parameters.push_back(upref);
+        generic_parameters.insert(generic_parameters.end(), m_generic_parameters.begin(), m_generic_parameters.end());
+        TreePtr<Term> generic_instance(new TypeInstance(m_generic, generic_parameters, self.location()));
+        TreePtr<Term> introduce_type(new IntroduceType(m_introduced_parameters, self.compile_context().builtins().empty_type, self.location()));
+        PSI_STD::vector<TreePtr<Term> > pair_members;
+        pair_members.push_back(generic_instance);
+        pair_members.push_back(introduce_type);
+        TreePtr<Term> pair_type(new StructType(self.compile_context(), pair_members, self.location()));
+        return TreePtr<Term>(new DerivedType(pair_type, upref));
+      }
+      
+      template<typename V>
+      static void visit(V& v) {
+        v("generic", &InterfaceTypeHelper::m_generic)
+        ("introduced_parameters", &InterfaceTypeHelper::m_introduced_parameters)
+        ("generic_parameters", &InterfaceTypeHelper::m_generic_parameters);
+      }
+    };
+
+    /**
+     * \brief Construct the type of a specific implementation of an interface.
+     * 
+     * Global implementations of an interface will usually include additional type information via an
+     * IntroduceType term. This facilitates the construction of that term by supplying the required
+     * circular callback structure.
+     * 
+     * This assumes that the first parameter to the generic type is an upref.
+     * 
+     * \param generic Generic type of the interface.
+     * \param introduced_parameters Type parameters which must be introduced in interface callback functions.
+     * This should be a list of parameterised types as would be given in a function type.
+     * \param generic_parameters Parameters to the generic type, excluding the first (upref) parameter which
+     * this utility function is designed to handle.
+     */
+    TreePtr<Term> interface_type(const TreePtr<GenericType>& generic,
+                                 const PSI_STD::vector<TreePtr<Term> >& introduced_parameters,
+                                 const PSI_STD::vector<TreePtr<Term> >& generic_parameters) {
+      return tree_callback(generic.compile_context(), generic.location(), InterfaceTypeHelper(generic, introduced_parameters, generic_parameters));
+    }
   }
 }

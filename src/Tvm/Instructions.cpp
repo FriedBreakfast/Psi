@@ -361,5 +361,23 @@ namespace Psi {
     }
 
     PSI_TVM_INSTRUCTION_IMPL(MemZero, Instruction, memzero);
+    
+    Solidify::Solidify(const ValuePtr<>& value_, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::empty_type(value_->context(), location), operation, location),
+    value(value_) {
+    }
+    
+    void Solidify::type_check() {
+      if (!isa<ConstantType>(value_->type()))
+        throw TvmUserError("Parameter to solidify is not const");
+    }
+    
+    template<typename V>
+    void Solidify::visit(V& v) {
+      visit_base<Instruction>(v);
+      v("value", &Solidify::value);
+    }
+    
+    PSI_TVM_INSTRUCTION_IMPL(Solidify, Instruction, solidify);
   }
 }

@@ -437,5 +437,25 @@ namespace Psi {
     TreePtr<EvaluateContext> evaluate_context_module(const TreePtr<Module>& module, const TreePtr<EvaluateContext>& next, const SourceLocation& location) {
       return TreePtr<EvaluateContext>(new EvaluateContextModule(module, next, location));
     }
+
+    /**
+     * \brief Create an index term from an integer.
+     */
+    TreePtr<Term> int_to_index(unsigned index, CompileContext& compile_context, const SourceLocation& location) {
+      TreePtr<Term> ty(new PrimitiveType(compile_context, "core.uint.i32", location));
+      return TreePtr<IntegerValue>(new IntegerValue(ty, index, location));
+    }
+    
+    /**
+     * \brief Convert a constant index to an integer.
+     * 
+     * \param location Location for error reporting.
+     */
+    unsigned index_to_int(const TreePtr<Term>& index, const SourceLocation& location) {
+      TreePtr<IntegerValue> iv = dyn_treeptr_cast<IntegerValue>(index);
+      if (!iv)
+        index.compile_context().error_throw(location, "Index into aggregate type is not an IntegerValue term");
+      return iv->value;
+    }
   }
 }

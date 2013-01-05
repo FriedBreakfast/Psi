@@ -177,6 +177,13 @@ namespace Psi {
     }
     
     /**
+     * \brief Get a constant type.
+     */
+    ValuePtr<> FunctionalBuilder::const_type(const ValuePtr<>& value, const SourceLocation& location) {
+      return value->context().get_functional(ConstantType(value, location));
+    }
+    
+    /**
      * \brief Get an array type.
      * 
      * \param element_type The type of each element of the array.

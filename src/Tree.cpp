@@ -473,33 +473,33 @@ namespace Psi {
     const TermVtable PointerCast::vtable = PSI_COMPILER_TERM(PointerCast, "psi.compiler.PointerCast", Functional);
     
     namespace {
-      int index_to_int(const TreePtr<Term>& index, const SourceLocation& location) {
-        TreePtr<IntegerValue> iv = dyn_treeptr_cast<IntegerValue>(index);
-        if (!iv)
-          index.compile_context().error_throw(location, "Index into aggregate type is not an IntegerValue term");
-        return iv->value;
-      }
-      
-      TreePtr<Term> int_to_index(const TreePtr<Term>& value, int index, const SourceLocation& location) {
-        TreePtr<Term> ty(new PrimitiveType(value.compile_context(), "core.uint.i32", location));
-        return TreePtr<IntegerValue>(new IntegerValue(ty, index, location));
-      }
-      
       TreePtr<Term> element_type(const TreePtr<Term>& aggregate_type, const TreePtr<Term>& index, const SourceLocation& location) {
-        if (TreePtr<StructType> st = dyn_treeptr_cast<StructType>(aggregate_type)) {
+        CompileContext& compile_context = aggregate_type.compile_context();
+        
+        TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(aggregate_type);
+        TreePtr<Term> my_aggregate_type, next_upref;
+        if (derived) {
+          my_aggregate_type = derived->value_type;
+          next_upref = derived->upref;
+        } else {
+          my_aggregate_type = aggregate_type;
+        }
+        
+        TreePtr<Term> upref(new UpwardReference(my_aggregate_type, index, next_upref));
+        if (TreePtr<StructType> st = dyn_treeptr_cast<StructType>(my_aggregate_type)) {
           int index_int = index_to_int(index, location);
           if ((index_int < 0) || (unsigned(index_int) >= st->members.size()))
-            aggregate_type.compile_context().error_throw(location, "Structure member index out of range");
-          return st->members[index_int];
-        } else if (TreePtr<UnionType> un = dyn_treeptr_cast<UnionType>(aggregate_type)) {
+            compile_context.error_throw(location, "Structure member index out of range");
+          return TreePtr<Term>(new DerivedType(st->members[index_int], upref, location));
+        } else if (TreePtr<UnionType> un = dyn_treeptr_cast<UnionType>(my_aggregate_type)) {
           int index_int = index_to_int(index, location);
           if ((index_int < 0) || (unsigned(index_int) >= un->members.size()))
-            aggregate_type.compile_context().error_throw(location, "Union member index out of range");
-          return un->members[index_int];
-        } else if (TreePtr<ArrayType> ar = dyn_treeptr_cast<ArrayType>(aggregate_type)) {
-          return ar->element_type;
+            compile_context.error_throw(location, "Union member index out of range");
+          return TreePtr<Term>(new DerivedType(un->members[index_int], upref, location));
+        } else if (TreePtr<ArrayType> ar = dyn_treeptr_cast<ArrayType>(my_aggregate_type)) {
+          return TreePtr<Term>(new DerivedType(ar->element_type, upref, location));
         } else {
-          CompileError err(aggregate_type.compile_context(), location);
+          CompileError err(compile_context, location);
           err.info("Element lookup argument is not an aggregate type");
           err.info(aggregate_type.location(), "Type of element");
           err.end();
@@ -566,7 +566,7 @@ namespace Psi {
     }
 
     ElementPtr::ElementPtr(const TreePtr<Term>& value_, int index_, const SourceLocation& location)
-    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(tree_attribute(value_, &Term::type), int_to_index(value_, index_, location))), location),
+    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(tree_attribute(value_, &Term::type), int_to_index(index_, value_.compile_context(), location))), location),
     value(value_),
     index(int_to_index(value_, index_, location)) {
     }
@@ -631,6 +631,22 @@ namespace Psi {
     members(members_) {
     }
     
+    namespace {
+      TreePtr<Term> make_struct_type(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location) {
+        PSI_STD::vector<TreePtr<Term> > member_types;
+        member_types.reserve(members.size());
+        for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = members.begin(), ie = members.end(); ii != ie; ++ii)
+          member_types.push_back(*ii);
+        TreePtr<Term> ty(new StructType(compile_context, members, location));
+        return ty;
+      }
+    }
+    
+    StructValue::StructValue(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& members_, const SourceLocation& location)
+    : Constructor(&vtable, make_struct_type(compile_context, members, location), location),
+    members(members_) {
+    }
+
     template<typename V>
     void StructValue::visit(V& v) {
       visit_base<Constructor>(v);

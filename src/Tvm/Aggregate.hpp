@@ -81,6 +81,21 @@ namespace Psi {
     };
     
     /**
+     * \brief A type which can only have a single value.
+     */
+    class ConstantType : public Type {
+      PSI_TVM_FUNCTIONAL_DECL(ConstantType)
+    public:
+      ConstantType(const ValuePtr<>& value, const SourceLocation& location);
+
+      /// \brief Get the value of this type
+      const ValuePtr<>& value() const {return m_value;}
+
+    private:
+      ValuePtr<> m_value;
+    };
+    
+    /**
      * \brief The type of a BlockTerm.
      */
     class BlockType : public Type {

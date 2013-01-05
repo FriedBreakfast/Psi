@@ -70,17 +70,20 @@ public:
 enum InterfaceMovableMembers {
   interface_movable_init=0,
   interface_movable_fini=1,
-  interface_movable_move=2,
-  interface_movable_move_init=3
+  interface_movable_move_init=2,
+  interface_movable_move=3
 };
 
 /**
  * \brief Indices of members in the Copyable interface
  */
 enum InterfaceCopyableMembers {
-  interface_copyable_copy=0,
-  interface_copyable_copy_init=1
+  interface_copyable_copy_init=0,
+  interface_copyable_copy=1
 };
+
+TreePtr<Term> interface_type(const TreePtr<GenericType>& generic, const PSI_STD::vector<TreePtr<Term> >& introduced_parameters,
+                              const PSI_STD::vector<TreePtr<Term> >& generic_parameters);
 }
 }
 

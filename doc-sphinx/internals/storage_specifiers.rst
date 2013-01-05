@@ -33,6 +33,9 @@ Function return values can have the following specifiers, described by the :psi:
 
 By value
   The value is returned to the caller in the caller's stack space.
+  A pointer (known as an `sret` parameter) is added to the function signature giving the address to store the result to.
+Functional
+  The result is returned in a virtual register.
 L-value reference
   A reference to an object.
   The caller may explicitly modify the object but should not modify it implicitly by passing it as an R-value reference to another function.

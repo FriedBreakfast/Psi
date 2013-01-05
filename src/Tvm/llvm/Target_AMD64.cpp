@@ -151,7 +151,7 @@ namespace Psi {
             return ElementTypeInfo(category, amd64_class, size, align, n_elements);
           } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(element)) {
             ElementTypeInfo child = get_element_info(rewriter, array_ty->element_type());
-            ValuePtr<IntegerValue> length = value_cast<IntegerValue>(rewriter.rewrite_value_stack(array_ty->length()));
+            ValuePtr<IntegerValue> length = value_cast<IntegerValue>(rewriter.rewrite_value_register(array_ty->length()));
             boost::optional<unsigned> length_val = length->value().unsigned_value();
             if (!length_val)
               throw BuildError("array length value out of range");

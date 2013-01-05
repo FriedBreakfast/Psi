@@ -7,38 +7,62 @@
 #include "Instructions.hpp"
 #include "InstructionBuilder.hpp"
 #include "ModuleRewriter.hpp"
+#include "../SharedMap.hpp"
 
 #include <boost/unordered_map.hpp>
+#include <boost/variant.hpp>
+#include <boost/make_shared.hpp>
 
 namespace Psi {
-  namespace Tvm {    
+  namespace Tvm {
     class LoweredType {
-      ValuePtr<> m_stack_type, m_heap_type;
+    public:
+      typedef std::vector<LoweredType> EntryVector;
+      
+    private:
+      bool m_global;
+      ValuePtr<> m_origin;
       ValuePtr<> m_size, m_alignment;
+      typedef boost::shared_ptr<EntryVector> EntryVectorPtr;
+      typedef boost::variant<boost::blank, ValuePtr<>, EntryVectorPtr> VariantType;
+      VariantType m_type;
       
     public:
-      LoweredType() : m_stack_type(0), m_heap_type(0), m_size(0), m_alignment(0) {}
-      /// \brief Constructor for unknown types
-      LoweredType(const ValuePtr<>& size, const ValuePtr<>& alignment) : m_stack_type(0), m_heap_type(0), m_size(size), m_alignment(alignment) {}
-      /// \brief Constructor for types which are the same on the stack and heap
-      LoweredType(const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& type) : m_stack_type(type), m_heap_type(type), m_size(size), m_alignment(alignment) {}
-      /// \brief Constructor for types which are different on the stack and heap
-      LoweredType(const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& stack_type, const ValuePtr<>& heap_type) : m_stack_type(stack_type), m_heap_type(heap_type), m_size(size), m_alignment(alignment) {}
+      LoweredType() : m_global(false) {}
+      /// \brief Constructor for unknown types (including non-primitive unions)
+      LoweredType(const ValuePtr<>& origin, bool global, const ValuePtr<>& size, const ValuePtr<>& alignment)
+      : m_global(global), m_origin(origin), m_size(size), m_alignment(alignment) {}
+      /// \brief Constructor for primitive types
+      LoweredType(const ValuePtr<>& origin, bool global, const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& type)
+      : m_global(global), m_origin(origin), m_size(size), m_alignment(alignment), m_type(type) {}
+      /// \brief Constructor for split types
+      LoweredType(const ValuePtr<>& origin, bool global, const ValuePtr<>& size, const ValuePtr<>& alignment, const EntryVector& entries)
+      : m_global(global), m_origin(origin), m_size(size), m_alignment(alignment), m_type(boost::make_shared<EntryVector>(entries)) {}
       
-      /// \brief Get the type used to represent this type on the stack
-      const ValuePtr<>& stack_type() const {return m_stack_type;}
       
-      /// \brief Get the type used to represent this type on the heap
-      const ValuePtr<>& heap_type() const {return m_heap_type;}
+      /// \brief Is this value NULL
+      bool empty() const {return !m_size;}
+      /// \brief Is this representable by a primitive type
+      bool primitive() const {return boost::get<ValuePtr<> >(&m_type);}
+      /// \brief Is this representable by a list of types
+      bool split() const {return boost::get<EntryVectorPtr>(&m_type);}
+      /// \brief Is this a global type?
+      bool global() const {return m_global;}
+      
+      /// \brief Type from which this type was lowered (in the original context)
+      const ValuePtr<>& origin() const {return m_origin;}
+
+      /// \brief Get the type used to represent this type in a register
+      const ValuePtr<>& register_type() const {const ValuePtr<> *p = boost::get<ValuePtr<> >(&m_type); PSI_ASSERT(p); return *p;}
+      
+      /// \brief Get the entries used to represent this type, which is split
+      const EntryVector& entries() const {const EntryVectorPtr *v = boost::get<EntryVectorPtr>(&m_type); PSI_ASSERT(v); return **v;}
       
       /// \brief Get the size of this type in a suitable form for later passes
       const ValuePtr<>& size() const {return m_size;}
       
       /// \brief Get the alignment of this type in a suitable form for later passes
       const ValuePtr<>& alignment() const {return m_alignment;}
-      
-      /// \brief Check whether this is a valid lowered type.
-      bool valid() const {return m_size && m_alignment;}
     };
     
     /**
@@ -50,31 +74,88 @@ namespace Psi {
       * it is an aggregate or not.
       */
     class LoweredValue {
-      ValuePtr<> m_value;
-      bool m_on_stack;
-      
     public:
-      LoweredValue() : m_value(0), m_on_stack(false) {}
+      typedef std::vector<LoweredValue> EntryVector;
 
-      LoweredValue(const ValuePtr<>& value, bool on_stack) : m_value(value), m_on_stack(on_stack) {
-        PSI_ASSERT(on_stack ? true : isa<PointerType>(value->type()));
-      }
+    private:
+      bool m_global;
+      ValuePtr<> m_type;
+      struct RegisterValue {ValuePtr<> x; RegisterValue(const ValuePtr<>& x_) : x(x_) {}};
+      struct StackValue {ValuePtr<> x; StackValue(const ValuePtr<>& x_) : x(x_) {}};
+      struct ZeroValue {};
+      struct UndefinedValue {};
+      typedef boost::shared_ptr<EntryVector> EntryVectorPtr;
+      typedef boost::variant<boost::blank, RegisterValue, StackValue, EntryVectorPtr, ZeroValue, UndefinedValue> ValueType;
+      ValueType m_value;
+      
+      LoweredValue(bool global, const ValuePtr<>& type, const ValuePtr<>& value, boost::mpl::true_) : m_global(global), m_type(type), m_value(RegisterValue(value)) {}
+      LoweredValue(bool global, const ValuePtr<>& type, const ValuePtr<>& value, boost::mpl::false_) : m_global(global), m_type(type), m_value(StackValue(value)) {}
+      LoweredValue(bool global, const ValuePtr<>& type, ZeroValue) : m_global(global), m_type(type), m_value(ZeroValue()) {}
+      LoweredValue(bool global, const ValuePtr<>& type, UndefinedValue) : m_global(global), m_type(type), m_value(UndefinedValue()) {}
 
+    public:
+      LoweredValue() {}
+      LoweredValue(const ValuePtr<>& type, bool global, const EntryVector& entries) : m_global(global), m_type(type), m_value(boost::make_shared<EntryVector>(entries)) {}
+      
+      /// \brief Construct a lowered value with a single entry in a register
+      static LoweredValue primitive(bool global, const ValuePtr<>& value) {return LoweredValue(global, ValuePtr<>(), value, boost::mpl::true_());}
+      /// \brief Construct a lowered value with a single entry in a register
+      static LoweredValue register_(const ValuePtr<>& type, bool global, const ValuePtr<>& value) {return LoweredValue(global, type, value, boost::mpl::true_());}
+      /// \brief Construct a lowered value with a single entry on the stack
+      static LoweredValue stack(const ValuePtr<>& type, bool global, const ValuePtr<>& value) {return LoweredValue(global, type, value, boost::mpl::false_());}
+      /// \brief Construct a lowered value which is zero
+      static LoweredValue zero(const ValuePtr<>& type, bool global) {return LoweredValue(global, type, ZeroValue());}
+      /// \brief Construct a lowered value which is zero
+      static LoweredValue zero(const LoweredType& type) {return LoweredValue(type.global(), type.origin(), ZeroValue());}
+      /// \brief Construct a lowered value which is undefined
+      static LoweredValue undefined(const ValuePtr<>& type, bool global) {return LoweredValue(global, type, UndefinedValue());}
+      /// \brief Construct a lowered value which is undefined
+      static LoweredValue undefined(const LoweredType& type) {return LoweredValue(type.global(), type.origin(), UndefinedValue());}
+      
+      /// \brief Whether this value is global
+      bool global() const {return m_global;}
+      /// \brief The original type of this value.
+      const ValuePtr<>& type() const {return m_type;}
+      
       /**
-        * \brief Whether this is a type which the later passes recognise
-        * and can be handled on the stack.
-        * 
-        * If this is false, the value is handled via pointers using
-        * \c alloca.
-        */
-      bool on_stack() const {return m_on_stack;}
-
-      /**
-        * \brief Value of this term.
-        */
-      const ValuePtr<>& value() const {return m_value;}
+       * Storage mode of a value.
+       * 
+       * Note that the numerical values of this enumeration must match the order of the
+       * entries in ValueType.
+       */
+      enum Mode {
+        mode_empty=0,
+        mode_register=1,
+        mode_stack=2,
+        mode_split=3,
+        mode_zero=4,
+        mode_undefined=5
+      };
+      
+      /// \brief Get the storage mode of this value
+      Mode mode() const {return static_cast<Mode>(m_value.which());}
+      /// \brief Whether this value is empty
+      bool empty() const {return mode() == mode_empty;}
+      
+      /// \brief Get value of data allocated in register
+      const ValuePtr<>& register_value() const {const RegisterValue *ptr = boost::get<RegisterValue>(&m_value); PSI_ASSERT(ptr); return ptr->x;}
+      /// \brief Get value of data allocated on stack
+      const ValuePtr<>& stack_value() const {const StackValue *ptr = boost::get<StackValue>(&m_value); PSI_ASSERT(ptr); return ptr->x;}
+      /// \brief Get list of entries
+      const EntryVector& entries() const {const EntryVectorPtr *ptr = boost::get<EntryVectorPtr>(&m_value); PSI_ASSERT(ptr); return **ptr;}
     };
-
+    
+    /**
+     * Specialized LoweredValue-like structure which only contains a value and a flag indicating
+     * whether the value is global or not.
+     */
+    struct LoweredValueRegister {
+      LoweredValueRegister() : global(true) {}
+      LoweredValueRegister(bool global_, const ValuePtr<>& value_) : global(global_), value(value_) {}
+      bool global;
+      ValuePtr<> value;
+    };
+    
     /**
      * A function pass which removes aggregate operations by rewriting
      * them in terms of pointer offsets, so that later stages need not
@@ -94,6 +175,7 @@ namespace Psi {
      */
     class AggregateLoweringPass : public ModuleRewriter {
     public:
+      class ElementOffsetGenerator;
       class FunctionRunner;
       class GlobalVariableRunner;
       
@@ -104,8 +186,8 @@ namespace Psi {
         
         AggregateLoweringPass *m_pass;
         
-        typedef boost::unordered_map<ValuePtr<>, LoweredType> TypeMapType;
-        typedef boost::unordered_map<ValuePtr<>, LoweredValue> ValueMapType;
+        typedef SharedMap<ValuePtr<>, LoweredType> TypeMapType;
+        typedef SharedMap<ValuePtr<>, LoweredValue> ValueMapType;
 
         TypeMapType m_type_map;
         ValueMapType m_value_map;
@@ -134,10 +216,8 @@ namespace Psi {
          * 
          * Given a pointer to a value, this returns a Value corresponding to the
          * data at that pointer.
-         * 
-         * \param load_term Term to assign the result of this load to.
          */
-        virtual LoweredValue load_value(const ValuePtr<>& load_term, const ValuePtr<>& ptr, const SourceLocation& location) = 0;
+        virtual LoweredValue load_value(const LoweredType& type, const LoweredValueRegister& ptr, const SourceLocation& location) = 0;
         
         /**
          * \brief \em Store a value.
@@ -163,12 +243,25 @@ namespace Psi {
          * the target context).
          */
         virtual ValuePtr<> store_type(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location) = 0;
+        
+        /**
+         * \brief Construct a value with a given type by bit-wise conversion from an existing value.
+         * 
+         * Any data not required by \c type but not specified by \c value is undefined, including padding bytes
+         * and bytes at the end.
+         * 
+         * \param type Type to conert to, in the source context.
+         * \param value Lowered value to convert.
+         */
+        virtual LoweredValue bitcast(const ValuePtr<>& type, const LoweredValue& value, const SourceLocation& location) = 0;
 
-        ValuePtr<> rewrite_value_stack(const ValuePtr<>&);
-        ValuePtr<> rewrite_value_ptr(const ValuePtr<>&);
+        LoweredType lookup_type(const ValuePtr<>& type);
+
+        LoweredValueRegister rewrite_value_register(const ValuePtr<>&);
+        LoweredValueRegister rewrite_value_ptr(const ValuePtr<>&);
         LoweredValue lookup_value(const ValuePtr<>&);
-        ValuePtr<> lookup_value_stack(const ValuePtr<>&);
-        ValuePtr<> lookup_value_ptr(const ValuePtr<>&);
+        LoweredValueRegister lookup_value_register(const ValuePtr<>&);
+        LoweredValueRegister lookup_value_ptr(const ValuePtr<>&);
       };
 
       /**
@@ -194,7 +287,7 @@ namespace Psi {
         
         TypePhiMapType m_generated_phi_terms;
         
-        void create_phi_node(const ValuePtr<Block>&, const ValuePtr<>&);
+        LoweredValue create_phi_node(const ValuePtr<Block>& block, const LoweredType& type, const SourceLocation& location);
         void populate_phi_node(const ValuePtr<>&, const std::vector<PhiEdge>& edges);
         ValuePtr<> create_storage(const ValuePtr<>& type, const SourceLocation& location);
         ValuePtr<> create_alloca(const ValuePtr<>& type, const SourceLocation& location);
@@ -213,24 +306,27 @@ namespace Psi {
         /// \brief Return an InstructionBuilder set to the current instruction insert point.
         InstructionBuilder& builder() {return m_builder;}
         
-        void add_mapping(const ValuePtr<>&, const ValuePtr<>&, bool);
+        void add_mapping(const ValuePtr<>& source, const LoweredValue& target);
         ValuePtr<Block> rewrite_block(const ValuePtr<Block>&);
         
-        virtual LoweredValue load_value(const ValuePtr<>& load_term, const ValuePtr<>& ptr, const SourceLocation& location);
+        virtual LoweredValue load_value(const LoweredType& type, const LoweredValueRegister& ptr, const SourceLocation& location);
+        LoweredValue load_value(const LoweredType& type, const ValuePtr<>& ptr, const SourceLocation& location);
         virtual ValuePtr<> store_value(const ValuePtr<>& value, const SourceLocation& location);
         virtual ValuePtr<> store_type(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location);
         void store_value(const ValuePtr<>& value, const ValuePtr<>& ptr, const SourceLocation& location);
 
         virtual LoweredType rewrite_type(const ValuePtr<>&);
         virtual LoweredValue rewrite_value(const ValuePtr<>&);
+        virtual LoweredValue bitcast(const ValuePtr<>& type, const LoweredValue& value, const SourceLocation& location);
       };
       
       class ModuleLevelRewriter : public AggregateLoweringRewriter {
       public:
         ModuleLevelRewriter(AggregateLoweringPass*);
-        virtual LoweredValue load_value(const ValuePtr<>& load_term, const ValuePtr<>& ptr, const SourceLocation& location);
+        virtual LoweredValue load_value(const LoweredType& type, const LoweredValueRegister& ptr, const SourceLocation& location);
         virtual ValuePtr<> store_value(const ValuePtr<>&, const SourceLocation& location);
         virtual ValuePtr<> store_type(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
+        virtual LoweredValue bitcast(const ValuePtr<>& type, const LoweredValue& input, const SourceLocation& location);
         virtual LoweredType rewrite_type(const ValuePtr<>&);
         virtual LoweredValue rewrite_value(const ValuePtr<>&);
       };
@@ -364,7 +460,7 @@ namespace Psi {
       /// \brief Get the (target) context of this pass
       Context& context() {return target_module()->context();}
       
-      AggregateLoweringRewriter& global_rewriter() {return m_global_rewriter;}
+      ModuleLevelRewriter& global_rewriter() {return m_global_rewriter;}
 
       /**
        * Callback used to rewrite function types and function calls
@@ -388,7 +484,7 @@ namespace Psi {
        * Whether all arrays on the stack should be rewritten as an
        * alloca'd pointer.
        */
-      bool remove_stack_arrays;
+      bool remove_register_arrays;
       
       /**
        * Whether instances of \c sizeof and \c alignof on aggregate types

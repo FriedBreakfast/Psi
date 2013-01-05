@@ -27,14 +27,18 @@ These are organised into two interfaces, Movable and Copyable.
 Almost all objects should implement Movable, whether Copyable is supported depends on the resources the object holds.
 Their definitions are::
 
-  Movable : interface (x : type) [
-    init : function (dest :: pointer(x));
-    fini : function (dest :: pointer(x));
-    move : function(dest :: pointer(x), src :: pointer(x));
-    move_init : function(dest :: pointer(x), src :: pointer(x));
+  MovableType : struct (u : upref, x : type) [
+    init : function (self : derived(MovableType(u,x),u), dest :: pointer(x));
+    fini : function (self : derived(MovableType(u,x),u), dest :: pointer(x));
+    move : function (self : derived(MovableType(u,x),u), dest :: pointer(x), src :: pointer(x));
+    move_init : function (self : derived(MovableType(u,x),u), dest :: pointer(x), src :: pointer(x));
+  ];
+
+  Movable : interface (x : type => exists (u:upref => derived(MovableType(u,x),u)));
+  
+  CopyableType : struct (u : upref, x : type) [
+    copy : function (self : derived(MovableType(u,x),u), dest :: pointer(x), src :: pointer(x));
+    copy_init : function (self : derived(MovableType(u,x),u), dest :: pointer(x), src :: pointer(x));
   ];
   
-  Copyable : interface (x : type) (Movable(x)) [
-    copy : function (dest :: pointer(x), src :: pointer(x));
-    copy_init : function (dest :: pointer(x), src :: pointer(x));
-  ];
+  Copyable : interface (x : type => exists (u:upref => derived(CopyableType(u,x),u))) (Movable(x));

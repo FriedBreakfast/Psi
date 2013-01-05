@@ -22,6 +22,27 @@ namespace Psi {
       return val->value().unsigned_value_checked();
     }
 
+    /**
+     * \brief Check whether the given matches a constant value.
+     * 
+     * \throw TvmUserError The type of value was not \c size_type.
+     */
+    bool size_equals_constant(const ValuePtr<>& value, unsigned c) {
+      ValuePtr<IntegerType> ty = dyn_unrecurse<IntegerType>(value);
+      if (!ty || (ty->width() != IntegerType::iptr))
+        throw TvmUserError("value is not a size_type integer");
+      
+      ValuePtr<IntegerValue> val = dyn_unrecurse<IntegerValue>(value);
+      if (!val)
+        return false;
+      
+      boost::optional<unsigned> val_int = val->value().unsigned_value();
+      if (!val_int)
+        return false;
+      
+      return (*val_int == c);
+    }
+
     BooleanType::BooleanType(Context& context, const SourceLocation& location)
     : Type(context, location) {
     }

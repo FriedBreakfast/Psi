@@ -355,6 +355,9 @@ namespace Psi {
                                               const List<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location);
+    
+    TreePtr<Term> int_to_index(unsigned index, CompileContext& compile_context, const SourceLocation& location);
+    unsigned index_to_int(const TreePtr<Term>& index, const SourceLocation& location);
   }
 }
 

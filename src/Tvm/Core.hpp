@@ -223,30 +223,6 @@ namespace Psi {
       /// \brief Whether this term can be the type of another term
       bool is_type() const {return (m_category == category_metatype) || (m_category == category_type);}
 
-      /**
-       * \brief Get the term which generates this one.
-       * 
-       * The source can be several different types of term. A term type
-       * further down the list overrides one further up since the higher
-       * up item must be a parent of the lower one.
-       * 
-       * <ol>
-       * <li>Null - this term is global.</li>
-       * <li>Function - non-constant values are parameters to the
-       * given function.</li>
-       * <li>Phantom parameter - a phantom value</li>
-       * <li>Function type parameter - a parameterized value</li>
-       * <li>Global term - uses values from this module</li>
-       * <li>Block - non-constant values are phi nodes in this block.</li>
-       * <li>Instruction - this is the last instruction contributing to
-       * the resulting value</li>
-       * </ol>
-       */
-      Value* source() const {return m_source;}
-
-      bool phantom() const;
-      bool parameterized() const;
-
       /// \brief Get the category of this value (whether it is a metatype, type, or value)
       Category category() const {return static_cast<Category>(m_category);}
 
@@ -276,7 +252,6 @@ namespace Psi {
       unsigned char m_term_type;
       unsigned char m_category;
       ValuePtr<> m_type;
-      Value *m_source;
       SourceLocation m_location;
       boost::intrusive::list_member_hook<> m_value_list_hook;
       
@@ -295,8 +270,7 @@ namespace Psi {
       }
 
     protected:
-      Value(Context& context, TermType term_type, const ValuePtr<>& type,
-            Value *source, const SourceLocation& location);
+      Value(Context& context, TermType term_type, const ValuePtr<>& type, const SourceLocation& location);
       
       void set_type(const ValuePtr<>& type, Value *source);
     };
@@ -475,7 +449,6 @@ namespace Psi {
       virtual ValuePtr<> check_type() const = 0;
       virtual bool equals_impl(const HashableValue& rhs) const = 0;
       virtual std::pair<const char*,std::size_t> hash_impl() const = 0;
-      virtual Value* source_impl() const = 0;
       virtual HashableValue* clone() const = 0;
     };
 
@@ -490,7 +463,6 @@ namespace Psi {
   private: \
     virtual bool equals_impl(const HashableValue& rhs) const; \
     virtual std::pair<const char*, std::size_t> hash_impl() const; \
-    virtual Value* source_impl() const; \
     virtual HashableValue* clone() const;
 
 #define PSI_TVM_HASHABLE_IMPL(Type,Base,Name) \
@@ -520,13 +492,6 @@ namespace Psi {
       HashVisitor<Type> v(Type::operation, this); \
       visit(v); \
       return std::make_pair(Type::operation, v.hash()); \
-    } \
-    \
-    Value* Type::source_impl() const { \
-      SourceVisitor v; \
-      boost::array<const Type*,1> c = {{this}}; \
-      visit_members(v, c); \
-      return v.source(); \
     }
 
     /**
@@ -818,16 +783,12 @@ namespace Psi {
       }
     };
 
-    class SourceVisitor : public ValuePtrVistorBase<SourceVisitor> {
-      Value *m_source;
-      
+    class SourceCheckVisitor : public ValuePtrVistorBase<SourceCheckVisitor> {
     public:
-      SourceVisitor() : m_source(NULL) {}
-      Value *source() const {return m_source;}
+      SourceCheckVisitor();
       
       void visit_ptr(const ValuePtr<>& ptr) {
-        if (ptr)
-          m_source = common_source(m_source, ptr->source());
+        PSI_NOT_IMPLEMENTED();
       }
 
       template<typename T> bool do_visit_base(VisitorTag<T>) const {return !boost::is_same<T,HashableValue>::value;}

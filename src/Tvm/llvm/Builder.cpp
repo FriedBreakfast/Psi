@@ -271,7 +271,7 @@ namespace Psi {
         AggregateLoweringPass aggregate_lowering_pass(module, target_callback()->aggregate_lowering_callback());
         aggregate_lowering_pass.remove_all_unions = true;
         aggregate_lowering_pass.remove_only_unknown = true;
-        aggregate_lowering_pass.remove_stack_arrays = true;
+        aggregate_lowering_pass.remove_register_arrays = true;
         aggregate_lowering_pass.remove_sizeof = true;
         aggregate_lowering_pass.update();
         

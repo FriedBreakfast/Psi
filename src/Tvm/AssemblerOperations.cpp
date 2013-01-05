@@ -199,6 +199,7 @@ namespace Psi {
         ("upref_type", NullaryOpCallback(&FunctionalBuilder::upref_type))
         ("upref", UprefCallback())
         ("outer_ptr", UnaryOpCallback(&FunctionalBuilder::outer_ptr))
+        ("const", UnaryOpCallback(&FunctionalBuilder::const_type))
         ("add", BinaryOpCallback(&FunctionalBuilder::add))
         ("sub", BinaryOpCallback(&FunctionalBuilder::sub))
         ("mul", BinaryOpCallback(&FunctionalBuilder::mul))
@@ -310,7 +311,8 @@ namespace Psi {
         ("return", UnaryInstructionCallback(&InstructionBuilder::return_))
         ("alloca", AllocaCallback())
         ("load", UnaryInstructionCallback(&InstructionBuilder::load))
-        ("store", BinaryInstructionCallback(&InstructionBuilder::store));
+        ("store", BinaryInstructionCallback(&InstructionBuilder::store))
+        ("solidify", UnaryInstructionCallback(&InstructionBuilder::solidify));
     }
   }
 }

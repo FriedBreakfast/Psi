@@ -87,7 +87,7 @@ namespace Psi {
         for (std::size_t i = 0; i != helper_result.n_passed_parameters; ++i)
           parameters[i+sret] = helper_result.parameter_handlers[i]->pack(runner, term->parameters[i+helper_result.n_phantom], term->location());
         
-        ValuePtr<> lowered_target = runner.rewrite_value_stack(term->target);
+        ValuePtr<> lowered_target = runner.rewrite_value_register(term->target);
         ValuePtr<> cast_target = FunctionalBuilder::pointer_cast(lowered_target, helper_result.lowered_type, term->location());
         ValuePtr<> result = runner.builder().call(cast_target, parameters, term->location());
         
@@ -199,7 +199,7 @@ namespace Psi {
       class TargetCommon::ParameterHandlerSimple : public ParameterHandler {
       public:
         ParameterHandlerSimple(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type, CallingConvention calling_convention)
-          : ParameterHandler(type, rewriter.rewrite_type(type).stack_type(), calling_convention) {
+          : ParameterHandler(type, rewriter.rewrite_type(type).register_type(), calling_convention) {
         }
 
         virtual bool return_by_sret() const {
@@ -207,7 +207,7 @@ namespace Psi {
         }
 
         virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation&) const {
-          return builder.rewrite_value_stack(source_value);
+          return builder.rewrite_value_register(source_value);
         }
 
         virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation&) const {
@@ -219,7 +219,7 @@ namespace Psi {
         }
 
         virtual ValuePtr<Instruction> return_pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& value, const SourceLocation& location) const {
-          ValuePtr<> lowered_value = builder.rewrite_value_stack(value);
+          ValuePtr<> lowered_value = builder.rewrite_value_register(value);
           return builder.builder().return_(lowered_value, location);
         }
 
@@ -340,7 +340,7 @@ namespace Psi {
           if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(type())) {
             LoweredType element_type = runner.rewrite_type(array_ty->element_type());
             if (element_type.heap_type()) {
-              ValuePtr<> length = runner.rewrite_value_stack(array_ty->length());
+              ValuePtr<> length = runner.rewrite_value_register(array_ty->length());
               return runner.builder().alloca_(element_type.heap_type(), length, location);
             }
           }
