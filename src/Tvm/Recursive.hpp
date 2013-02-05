@@ -22,6 +22,8 @@ namespace Psi {
       static bool isa_impl(const Value& ptr) {
         return ptr.term_type() == term_recursive_parameter;
       }
+      
+      virtual Value* disassembler_source();
 
       template<typename V> static void visit(V& v);
 
@@ -35,6 +37,7 @@ namespace Psi {
       RecursiveType *m_recursive;
       boost::intrusive::list_member_hook<> m_parameter_list_hook;
       template<typename T, boost::intrusive::list_member_hook<> T::*> friend class ValueList;
+      virtual void check_source_hook(CheckSourceParameter& parameter);
     };
 
     /**
@@ -61,9 +64,12 @@ namespace Psi {
       
       static bool isa_impl(const Value& v) {return v.term_type() == term_recursive;}
       template<typename V> static void visit(V& v);
+      virtual Value* disassembler_source();
 
     private:
       RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, const SourceLocation& location);
+      
+      virtual void check_source_hook(CheckSourceParameter& parameter);
 
       ValuePtr<> m_result_type;
       ValuePtr<> m_result;
@@ -99,6 +105,15 @@ namespace Psi {
      */
     template<typename T> ValuePtr<T> dyn_unrecurse(const ValuePtr<>& value) {
       return dyn_cast<T>(unrecurse(value));
+    }
+    
+    /**
+     * \brief Combines unrecurse and value_cast.
+     * 
+     * Just because it's used to often.
+     */
+    template<typename T> ValuePtr<T> unrecurse_cast(const ValuePtr<>& value) {
+      return value_cast<T>(unrecurse(value));
     }
   }
 }

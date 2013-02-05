@@ -28,9 +28,10 @@ namespace Psi {
 
       template<typename V> static void visit(V& v) {visit_base<Value>(v);}
 
+      virtual Value* disassembler_source();
+
     protected:
-      BlockMember(TermType term_type, const ValuePtr<>& type,
-                  Value* source, const SourceLocation& location);
+      BlockMember(TermType term_type, const ValuePtr<>& type, const SourceLocation& location);
       
     private:
       template<typename T, boost::intrusive::list_member_hook<> T::*> friend class ValueList;
@@ -45,7 +46,7 @@ namespace Psi {
     
     class Instruction;
     
-    class InstructionVisitorWrapper : public ValuePtrVistorBase<InstructionVisitorWrapper> {
+    class InstructionVisitorWrapper : public ValuePtrVisitorBase<InstructionVisitorWrapper> {
       InstructionVisitor *m_callback;
     public:
       InstructionVisitorWrapper(InstructionVisitor *callback) : m_callback(callback) {}
@@ -91,6 +92,7 @@ namespace Psi {
     private:
       const char *m_operation;
       boost::intrusive::list_member_hook<> m_instruction_list_hook;
+      virtual void check_source_hook(CheckSourceParameter& parameter);
     };
     
     /**
@@ -180,6 +182,7 @@ namespace Psi {
       Phi(const ValuePtr<>& type, const SourceLocation& location);
       std::vector<PhiEdge> m_edges;
       boost::intrusive::list_member_hook<> m_phi_list_hook;
+      virtual void check_source_hook(CheckSourceParameter& parameter);
     };
 
     /**
@@ -222,6 +225,8 @@ namespace Psi {
       bool dominated_by(Block *block);
       bool dominated_by(const ValuePtr<Block>& block) {return dominated_by(block.get());}
       
+      virtual Value* disassembler_source();
+      
       static ValuePtr<Block> common_dominator(const ValuePtr<Block>&, const ValuePtr<Block>&);
       static bool isa_impl(const Value& v) {return v.term_type() == term_block;}
       
@@ -242,6 +247,7 @@ namespace Psi {
       template<typename T, boost::intrusive::list_member_hook<> T::*> friend class ValueList;
       boost::intrusive::list_member_hook<> m_block_list_hook;
       void list_release() {m_function = NULL;}
+      virtual void check_source_hook(CheckSourceParameter& parameter);
     };
     
     inline ValuePtr<Function> BlockMember::function() {return m_block ? m_block->function() : ValuePtr<Function>();}
@@ -260,11 +266,15 @@ namespace Psi {
         return ptr.term_type() == term_function_parameter;
       }
 
+      virtual Value* disassembler_source();
+
       template<typename V> static void visit(V& v);
 
     private:
       FunctionParameter(Context& context, Function *function, const ValuePtr<>& type, bool phantom, const SourceLocation& location);
       bool m_phantom;
+      
+      virtual void check_source_hook(CheckSourceParameter& parameter);
 
       void list_release() {m_function = NULL;}
       Function *m_function;
@@ -470,6 +480,8 @@ namespace Psi {
       const ValuePtr<>& value() const {return m_value;}
       /// \brief Index of exists parameter this corresponds to.
       unsigned index() const {return m_index;}
+      
+      friend void hashable_check_source_hook(UnwrapParameter& self, CheckSourceParameter& parameter);
 
     private:
       ValuePtr<> m_value;
@@ -487,9 +499,11 @@ namespace Psi {
       friend class Context;
       ParameterPlaceholder(Context& context, const ValuePtr<>& type, const SourceLocation& location);
       ValuePtr<> m_parameter_type;
+      virtual void check_source_hook(CheckSourceParameter& parameter);
     public:
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_parameter_placeholder;}
       template<typename V> static void visit(V& v);
+      Value* disassembler_source();
     };
 
     /**

@@ -12,6 +12,7 @@
 #include <boost/intrusive/unordered_set.hpp>
 #include <boost/iterator/iterator_adaptor.hpp>
 #include <boost/intrusive_ptr.hpp>
+#include <boost/unordered_set.hpp>
 
 #include "../SourceLocation.hpp"
 #include "../Utility.hpp"
@@ -113,7 +114,7 @@ namespace Psi {
     };
 
     template<typename Derived>
-    class ValuePtrVistorBase {
+    class ValuePtrVisitorBase {
       Derived& derived() {
         return static_cast<Derived&>(*this);
       }
@@ -188,6 +189,23 @@ namespace Psi {
       }
     };
     
+    struct CheckSourceParameter {
+      enum Mode {
+        mode_before_block,
+        mode_after_block,
+        mode_before_instruction,
+        mode_global
+      };
+      
+      Mode mode;
+      Value *point;
+      boost::unordered_set<Value*> available;
+      
+      CheckSourceParameter(Mode mode_, Value *point_) : mode(mode_), point(point_) {}
+    };
+    
+    void check_phantom_available(CheckSourceParameter& parameter, Value *phantom);
+    
     /**
      * \brief Base class for all compile- and run-time values.
      *
@@ -235,6 +253,15 @@ namespace Psi {
       /** \brief Get the location this value originated from */
       const SourceLocation& location() const {return m_location;}
       
+      /**
+       * \brief Get an approximate source for this term.
+       *
+       * This should ONLY be used in the disassembler.
+       */
+      virtual Value* disassembler_source() = 0;
+      
+      void check_source(CheckSourceParameter& parameter);
+      
 #ifdef PSI_DEBUG
       void dump();
 #endif
@@ -259,6 +286,7 @@ namespace Psi {
       virtual void gc_increment() = 0;
       virtual void gc_decrement() = 0;
       virtual void gc_clear() = 0;
+      virtual void check_source_hook(CheckSourceParameter& parameter) = 0;
       
       friend void intrusive_ptr_add_ref(Value *self) {
         ++self->m_reference_count;
@@ -272,7 +300,7 @@ namespace Psi {
     protected:
       Value(Context& context, TermType term_type, const ValuePtr<>& type, const SourceLocation& location);
       
-      void set_type(const ValuePtr<>& type, Value *source);
+      void set_type(const ValuePtr<>& type);
     };
     
 #define PSI_TVM_VALUE_DECL(Type) \
@@ -281,7 +309,7 @@ namespace Psi {
     virtual void gc_decrement(); \
     virtual void gc_clear();
     
-    struct GCIncrementVisitor : ValuePtrVistorBase<GCIncrementVisitor> {
+    struct GCIncrementVisitor : ValuePtrVisitorBase<GCIncrementVisitor> {
       template<typename T>
       void visit_ptr(const ValuePtr<T>& ptr) {
         ++ptr->m_reference_count;
@@ -296,7 +324,7 @@ namespace Psi {
       template<typename T> bool do_visit_base(VisitorTag<T>) {return true;}
     };
     
-    struct GCDecerementVisitor : ValuePtrVistorBase<GCDecerementVisitor> {
+    struct GCDecerementVisitor : ValuePtrVisitorBase<GCDecerementVisitor> {
       template<typename T>
       void visit_ptr(const ValuePtr<T>& ptr) {
         --ptr->m_reference_count;
@@ -311,7 +339,7 @@ namespace Psi {
       template<typename T> bool do_visit_base(VisitorTag<T>) {return true;}
     };
     
-    struct GCClearVisitor : ValuePtrVistorBase<GCClearVisitor> {
+    struct GCClearVisitor : ValuePtrVisitorBase<GCClearVisitor> {
       template<typename T>
       void visit_ptr(ValuePtr<T>& ptr) {
         ptr.reset();
@@ -343,9 +371,6 @@ namespace Psi {
       boost::array<Type*,1> c = {{this}}; \
       visit_members(v, c); \
     }
-    
-    Value* common_source(Value *t1, Value *t2);
-    bool source_dominated(Value *dominator, Value *dominated);
     
     template<typename T>
     T* value_cast(Value *ptr) {
@@ -459,8 +484,10 @@ namespace Psi {
   public: \
     static const char operation[]; \
     virtual ValuePtr<HashableValue> rewrite(RewriteCallback& callback) const; \
+    virtual Value* disassembler_source(); \
     template<typename V> static void visit(V& v); \
   private: \
+    virtual void check_source_hook(CheckSourceParameter& parameter); \
     virtual bool equals_impl(const HashableValue& rhs) const; \
     virtual std::pair<const char*, std::size_t> hash_impl() const; \
     virtual HashableValue* clone() const;
@@ -492,8 +519,19 @@ namespace Psi {
       HashVisitor<Type> v(Type::operation, this); \
       visit(v); \
       return std::make_pair(Type::operation, v.hash()); \
+    } \
+    \
+    Value* Type::disassembler_source() { \
+      DisassemblerSourceVisitor v; \
+      boost::array<Type*,1> c = {{this}}; \
+      visit_members(v, c); \
+      return v.source(); \
+    } \
+    \
+    void Type::check_source_hook(CheckSourceParameter& parameter) { \
+      hashable_check_source_hook(*this, parameter); \
     }
-
+    
     /**
      * \brief Base class for globals: these are GlobalVariableTerm and FunctionTerm.
      */
@@ -517,6 +555,8 @@ namespace Psi {
       /// \brief Whether this variable should not be visible outside of the module in which it is defined.
       bool private_() const {return m_private;}
       void set_private(bool b) {m_private = b;}
+      
+      virtual Value* disassembler_source();
 
       static bool isa_impl(const Value& x) {
         return (x.term_type() == term_global_variable) ||
@@ -537,6 +577,8 @@ namespace Psi {
       Module *m_module;
       ValuePtr<> m_alignment;
       bool m_private;
+      
+      virtual void check_source_hook(CheckSourceParameter& parameter);
     };
 
     /**
@@ -710,7 +752,7 @@ namespace Psi {
     void print_module(std::ostream&, Module*);
     void print_term(std::ostream&, const ValuePtr<>&);
 
-    class RewriteVisitor : public ValuePtrVistorBase<RewriteVisitor> {
+    class RewriteVisitor : public ValuePtrVisitorBase<RewriteVisitor> {
       RewriteCallback *m_callback;
     public:
       RewriteVisitor(RewriteCallback *callback) : m_callback(callback) {}
@@ -782,17 +824,34 @@ namespace Psi {
         Base::visit(v);
       }
     };
-
-    class SourceCheckVisitor : public ValuePtrVistorBase<SourceCheckVisitor> {
-    public:
-      SourceCheckVisitor();
+    
+    Value* disassembler_merge_source(Value *lhs, Value *rhs);
+    
+    class DisassemblerSourceVisitor : public ValuePtrVisitorBase<DisassemblerSourceVisitor> {
+      Value *m_source;
       
-      void visit_ptr(const ValuePtr<>& ptr) {
-        PSI_NOT_IMPLEMENTED();
-      }
-
+    public:
+      DisassemblerSourceVisitor() : m_source(NULL) {}
+      void visit_ptr(const ValuePtr<>& ptr) {m_source = disassembler_merge_source(m_source, ptr->disassembler_source());}
+      Value *source() const {return m_source;}
       template<typename T> bool do_visit_base(VisitorTag<T>) const {return !boost::is_same<T,HashableValue>::value;}
     };
+
+    class CheckSourceVisitor : public ValuePtrVisitorBase<CheckSourceVisitor> {
+      CheckSourceParameter *m_parameter;
+      
+    public:
+      CheckSourceVisitor(CheckSourceParameter *parameter) : m_parameter(parameter) {}
+      void visit_ptr(const ValuePtr<>& ptr) {ptr->check_source(*m_parameter);}
+      template<typename T> bool do_visit_base(VisitorTag<T>) const {return !boost::is_same<T,HashableValue>::value;}
+    };
+
+    template<typename T>
+    void hashable_check_source_hook(T& obj, CheckSourceParameter& parameter) {
+      CheckSourceVisitor v(&parameter);
+      boost::array<const T*,1> c = {{&obj}};
+      visit_members(v, c);
+    }
   }
 }
 

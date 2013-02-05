@@ -87,7 +87,7 @@ namespace Psi {
         for (std::size_t i = 0; i != helper_result.n_passed_parameters; ++i)
           parameters[i+sret] = helper_result.parameter_handlers[i]->pack(runner, term->parameters[i+helper_result.n_phantom], term->location());
         
-        ValuePtr<> lowered_target = runner.rewrite_value_register(term->target);
+        ValuePtr<> lowered_target = runner.rewrite_value_register(term->target).value;
         ValuePtr<> cast_target = FunctionalBuilder::pointer_cast(lowered_target, helper_result.lowered_type, term->location());
         ValuePtr<> result = runner.builder().call(cast_target, parameters, term->location());
         
@@ -207,11 +207,11 @@ namespace Psi {
         }
 
         virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation&) const {
-          return builder.rewrite_value_register(source_value);
+          return builder.rewrite_value_register(source_value).value;
         }
 
         virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation&) const {
-          runner.add_mapping(source_value, target_value, true);
+          runner.add_mapping(source_value, LoweredValue::primitive(false, target_value));
         }
 
         virtual ValuePtr<> return_by_sret_setup(AggregateLoweringPass::FunctionRunner&, const SourceLocation&) const {
@@ -219,12 +219,12 @@ namespace Psi {
         }
 
         virtual ValuePtr<Instruction> return_pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& value, const SourceLocation& location) const {
-          ValuePtr<> lowered_value = builder.rewrite_value_register(value);
+          ValuePtr<> lowered_value = builder.rewrite_value_register(value).value;
           return builder.builder().return_(lowered_value, location);
         }
 
         virtual void return_unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>&, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation&) const {
-          runner.add_mapping(source_value, target_value, true);
+          runner.add_mapping(source_value, LoweredValue::primitive(false, target_value));
         }
       };
 
@@ -255,15 +255,8 @@ namespace Psi {
 
         virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation& location) const {
           LoweredValue value = builder.rewrite_value(source_value);
-          
-          ValuePtr<> ptr;
-          if (value.on_stack()) {
-            ptr = builder.builder().alloca_(value.value()->type(), location);
-            builder.builder().store(value.value(), ptr, location);
-          } else {
-            ptr = value.value();
-          }
-          
+          ValuePtr<> ptr = builder.alloca_(builder.rewrite_type(source_value->type()), location);
+          builder.store_value(value, ptr, location);
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, lowered_type(), location);
           return builder.builder().load(cast_ptr, location);
         }
@@ -271,7 +264,9 @@ namespace Psi {
         virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const {
           ValuePtr<> ptr = runner.builder().alloca_(lowered_type(), location);
           runner.builder().store(target_value, ptr, location);
-          runner.load_value(source_value, ptr, location);
+          LoweredType rewritten_type = runner.rewrite_type(type());
+          LoweredValue loaded = runner.load_value(rewritten_type, ptr, location);
+          runner.add_mapping(source_value, loaded);
         }
 
         virtual ValuePtr<> return_by_sret_setup(AggregateLoweringPass::FunctionRunner&, const SourceLocation&) const {
@@ -317,47 +312,32 @@ namespace Psi {
         }
 
         virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation& location) const {
-          LoweredValue value = builder.rewrite_value(source_value);
-          
-          if (value.on_stack()) {
-            ValuePtr<> ptr = builder.builder().alloca_(value.value()->type(), location);
-            builder.builder().store(value.value(), ptr, location);
-            return ptr;
-          } else {
-            return value.value();
-          }
+          ValuePtr<> value = builder.rewrite_value_register(source_value).value;
+          ValuePtr<> ptr = builder.builder().alloca_(value->type(), location);
+          builder.builder().store(value, ptr, location);
+          return ptr;
         }
 
         virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const {
-          runner.load_value(source_value, target_value, location);
+          ValuePtr<> value = runner.builder().load(target_value, location);
+          runner.add_mapping(source_value, LoweredValue::primitive(false, value));
         }
 
         virtual ValuePtr<> return_by_sret_setup(AggregateLoweringPass::FunctionRunner& runner, const SourceLocation& location) const {
-          LoweredType lowered_type = runner.rewrite_type(type());
-          if (lowered_type.heap_type())
-            return runner.builder().alloca_(lowered_type.heap_type(), location);
-          
-          if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(type())) {
-            LoweredType element_type = runner.rewrite_type(array_ty->element_type());
-            if (element_type.heap_type()) {
-              ValuePtr<> length = runner.rewrite_value_register(array_ty->length());
-              return runner.builder().alloca_(element_type.heap_type(), length, location);
-            }
-          }
-          
-          AggregateLoweringPass::TypeSizeAlignment size_align = runner.pass().target_callback->type_size_alignment(type());
-          Context& context = runner.new_function()->context();
-          return runner.builder().alloca_(FunctionalBuilder::byte_type(context, location), size_align.size, size_align.alignment, location);
+          return runner.alloca_(runner.rewrite_type(type()), location);
         }
 
         virtual ValuePtr<Instruction> return_pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& value, const SourceLocation& location) const {
           ValuePtr<> sret_parameter = builder.new_function()->parameters().at(0);
-          builder.store_value(value, sret_parameter, location);
+          LoweredValue rewritten = builder.rewrite_value(value);
+          builder.store_value(rewritten, sret_parameter, location);
           return builder.builder().return_(sret_parameter, location);
         }
 
         virtual void return_unpack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& sret_addr, const ValuePtr<>& source_value, const ValuePtr<>&, const SourceLocation& location) const {
-          builder.load_value(source_value, sret_addr, location);
+          LoweredType lt = builder.rewrite_type(type());
+          LoweredValue loaded = builder.load_value(lt, sret_addr, location);
+          builder.add_mapping(source_value, loaded);
         }
       };
 

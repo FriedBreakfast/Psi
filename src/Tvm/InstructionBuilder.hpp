@@ -67,6 +67,7 @@ namespace Psi {
       ///@}
       
       ValuePtr<Instruction> unreachable(const SourceLocation& location);
+      ValuePtr<Instruction> solidify(const ValuePtr<>& value, const SourceLocation& location);
       
       bool is_terminated();
       ValuePtr<Phi> phi(const ValuePtr<>& type, const SourceLocation& location);

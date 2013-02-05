@@ -102,10 +102,6 @@ namespace Psi {
         llvm::Function* llvm_eh_typeid_for() {return m_llvm_eh_typeid_for;}
 
       protected:
-        struct TypeBuilderCallback;
-        struct ConstantBuilderCallback;
-        struct GlobalBuilderCallback;
-
         llvm::LLVMContext *m_llvm_context;
         llvm::TargetMachine *m_llvm_target_machine;
         Module *m_module;
@@ -133,8 +129,6 @@ namespace Psi {
         friend class ModuleBuilder;
 
       public:
-        typedef boost::unordered_map<ValuePtr<>, llvm::Value*> ValueTermMap;
-
         ~FunctionBuilder();
         
         ModuleBuilder *module_builder() {return m_module_builder;}
@@ -150,8 +144,6 @@ namespace Psi {
         llvm::StringRef term_name(const ValuePtr<>& term);
         
       private:
-        struct ValueBuilderCallback;
-
         FunctionBuilder(ModuleBuilder*, const ValuePtr<Function>&, llvm::Function*);
 
         ModuleBuilder *m_module_builder;
@@ -160,9 +152,15 @@ namespace Psi {
         ValuePtr<Function> m_function;
         llvm::Function *m_llvm_function;
 
+        typedef SharedMap<ValuePtr<>, llvm::Value*> ValueTermMap;
         ValueTermMap m_value_terms;
 
+        typedef boost::unordered_map<ValuePtr<Block>, ValueTermMap> BlockMapType;
+        BlockMapType m_block_value_terms;
+        ValuePtr<Block> m_current_block;
+
         void run();
+        void switch_to_block(const ValuePtr<Block>& block);
         void setup_stack_save_restore(const std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >&);
 
         llvm::Value* build_value_instruction(const ValuePtr<Instruction>& term);

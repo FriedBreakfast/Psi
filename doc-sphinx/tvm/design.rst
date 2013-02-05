@@ -13,7 +13,8 @@ To give an example::
   %g = function (%n: i32) > i32 {
     %x1 = alloca (array i8 (add %n #i1));
     %x2 = alloca (array i8 (add %n #i1));
-    %g(array i8 (add n #i1), %x1, %x2);
+    call %f (array i8 (add n #i1)) %x1 %x2;
+    return #i0;
   };
 
 In order for the function ``g`` to pass a type check, the checker must be able to detect
@@ -118,8 +119,29 @@ in fact only function calls may raise exceptions.
 
 .. _psi.tvm.type_lowering:
 
-Type lowering
--------------
+Aggregate type lowering
+-----------------------
+
+Type lowering generally tries to rewrite TVM code into TVM code which
+contains simpler operations but only making the smallest possible modification.
+Therefore if the back-end supports structures and fixed-size arrays
+(and, indeed, unions) these will be passed through unmodified.
+In cases where a data structure is not understood by the back-end data structures
+with a fixed number of elements are split into their constituent parts and separate
+operations are generated to handle each part.
+In cases where the numer of parts is not fixed (i.e. a data "blob" or a variable length array)
+the data is stored on the stack.
+Note that it is not possible for an ``array_el`` operation to get a pointer into such a variable
+length array because this makes phi operations impossible to track; no interior pointers are allowed.
+
+Unions require special handling within this scheme because they are generally treated as "blobs"
+however constructing a union requires creating a value with a single element.
+Care must be taken to ensure this case is handled correctly because the element will be padded,
+and the ``LoweredValue`` associated to a union will be split even though the 
+associated ``LoweredType`` indicates a blob.
+
+Back-end instructions
+"""""""""""""""""""""
 
 Certain instructions are present whose use is discouraged.
 These exist to facilitate a TVM compilation stage where dependent

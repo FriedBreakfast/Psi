@@ -366,6 +366,7 @@ undef
 
 Undefined value of any type.
 The compiler is allowed to make any assumption whatsoever about the contents of such a value.
+Note that values ``const`` type which are undefined still contain arbitrary data.
 
 ``{type}``
   Result type of this operation.
@@ -392,6 +393,8 @@ zero
 ``zero {type}``
 
 Zero-initialized value of any type.
+Note that in one case this does not actually contain the value zero: that of ``const`` types,
+which only have a single valid value which is used instead of zeor.
 
 ``{type}``
   Result type of this operation.

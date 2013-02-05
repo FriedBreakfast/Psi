@@ -290,6 +290,15 @@ namespace Psi {
     }
     
     /**
+     * \brief Generate a solidify instruction.
+     */
+    ValuePtr<Instruction> InstructionBuilder::solidify(const ValuePtr<>& value, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new Solidify(value, location));
+      m_insert_point.insert(insn);
+      return insn;
+    }
+    
+    /**
      * \brief Whether the current block has been terminated.
      * 
      * If it has been, then any instruction insertion at the end of the block will fail.

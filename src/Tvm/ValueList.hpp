@@ -102,10 +102,10 @@ namespace Psi {
        */
       bool before(const T& first, const T& second) const {
         for (typename BaseList::const_iterator ii = m_base.begin(), ie = m_base.end(); ii != ie; ++ii) {
-          if (&*ii == &first)
-            return true;
-          else if (&*ii == &second)
+          if (&*ii == &second)
             return false;
+          else if (&*ii == &first)
+            return true;
         }
         PSI_FAIL("Unreachable");
       }

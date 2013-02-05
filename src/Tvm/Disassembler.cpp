@@ -286,30 +286,24 @@ namespace Psi {
       // Should this term be named?
       ValuePtr<Block> block;
       ValuePtr<Function> function;
-      if (term->source()) {
-        Value *source = term->source();
-        while (source && (source->term_type() == term_recursive_parameter))
-          source = value_cast<RecursiveParameter>(source)->recursive_ptr()->source();
-        
-        if (source) {
-          switch (source->term_type()) {
-          case term_global_variable:
-          case term_function:
-            return &m_global_definitions;
+      if (Value *source = term->disassembler_source()) {
+        switch (source->term_type()) {
+        case term_global_variable:
+        case term_function:
+          return &m_global_definitions;
 
-          case term_block: block.reset(value_cast<Block>(source)); break;
-          case term_phi: block = value_cast<Phi>(source)->block(); break;
-          case term_instruction: block = value_cast<Instruction>(source)->block(); break;
+        case term_block: block.reset(value_cast<Block>(source)); break;
+        case term_phi: block = value_cast<Phi>(source)->block(); break;
+        case term_instruction: block = value_cast<Instruction>(source)->block(); break;
 
-          case term_parameter_placeholder: return NULL;
+        case term_parameter_placeholder: return NULL;
 
-          case term_function_parameter:
-            function = value_cast<FunctionParameter>(source)->function();
-            block = function->blocks().front();
-            break;
+        case term_function_parameter:
+          function = value_cast<FunctionParameter>(source)->function();
+          block = function->blocks().front();
+          break;
 
-          default: PSI_FAIL("unexpected source term type");
-          }
+        default: PSI_FAIL("unexpected source term type");
         }
       }
 
@@ -325,11 +319,7 @@ namespace Psi {
     void DisassemblerContext::setup_term_name(const ValuePtr<>& term) {
       // Should this term be named?
       ValuePtr<Function> function;
-      Value *source = term->source();
-      while (source && (source->term_type() == term_recursive_parameter))
-        source = value_cast<RecursiveParameter>(source)->recursive_ptr()->source();
-      
-      if (source) {
+      if (Value *source = term->disassembler_source()) {
         switch (source->term_type()) {
         case term_global_variable:
         case term_function: break;

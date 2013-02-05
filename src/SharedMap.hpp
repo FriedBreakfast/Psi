@@ -65,7 +65,7 @@ namespace Psi {
     typedef ValueType value_type;
 
     SharedRbTree(const comparator_type& comparator=comparator_type(), const key_function_type& key_function=key_function_type())
-    : m_comparator(comparator), m_key_function(key_function) {
+    : m_size(0), m_comparator(comparator), m_key_function(key_function) {
     }
 
     /**
@@ -87,6 +87,9 @@ namespace Psi {
 
       return NULL;
     }
+    
+    /// \brief Number of elements in this tree
+    std::size_t size() const {return m_size;}
 
     /**
      * Insert a value into the tree. If there is another value with the
@@ -99,7 +102,37 @@ namespace Psi {
       std::pair<bool, violation_type> result(node_insert(m_root, value));
       PSI_ASSERT(m_root.unique());
       m_root->color = black;
+      ++m_size;
       return result.first;
+    }
+    
+    /**
+     * \brief Merge two trees.
+     * 
+     * At the moment this implementation looks rather inefficient, but I think
+     * asymptotically this operation is O(m log (n+m)), where m is the size of the smaller
+     * tree and n the larger.
+     */
+    void merge(const SharedRbTree& src) {
+      if (m_size < src.m_size) {
+        SharedRbTree tmp = src;
+        if (m_root)
+          tmp.merge_from(m_root);
+        tmp.swap(*this);
+      } else {
+        if (src.m_root)
+          merge_from(src.m_root);
+      }
+    }
+
+    /**
+     * Swap the contents of this tree with another.
+     */
+    void swap(SharedRbTree& src) {
+      std::swap(m_size, src.m_size);
+      std::swap(m_comparator, src.m_comparator);
+      std::swap(m_key_function, src.m_key_function);
+      m_root.swap(src.m_root);
     }
 
   private:
@@ -125,6 +158,7 @@ namespace Psi {
       }
     };
 
+    std::size_t m_size;
     comparator_type m_comparator;
     key_function_type m_key_function;
     NodePtr m_root;
@@ -268,6 +302,14 @@ namespace Psi {
         }
       }
     }
+    
+    void merge_from(const NodePtr& node) {
+      insert(node->value);
+      if (node->left)
+        merge_from(node->left);
+      if (node->right)
+        merge_from(node->right);
+    }
   };
 
   /**
@@ -287,11 +329,35 @@ namespace Psi {
       }
     };
     
-    SharedRbTree<key_type, value_type, Get1st, ThreeWayComparatorAdaptor<key_type> > m_tree;
+    SharedRbTree<key_type, value_type, Get1st, ThreeWayComparatorAdaptor<key_type, Cmp> > m_tree;
     
   public:
     bool insert(const value_type& value) {return m_tree.insert(value);}
+    bool put(const key_type& key, const mapped_type& value) {return m_tree.insert(value_type(key, value));}
     const mapped_type* lookup(const key_type& key) const {const value_type *ptr = m_tree.lookup(key); return ptr ? &ptr->second : NULL;}
+  };
+  
+  /**
+   * \brief A set which can be duplicated in O(1) by sharing nodes.
+   */
+  template<typename V, typename Cmp=std::less<V> >
+  class SharedSet {
+  public:
+    typedef V value_type;
+    
+  private:
+    struct Forward {
+      const value_type& operator () (const value_type& v) const {
+        return v;
+      }
+    };
+    
+    SharedRbTree<value_type, value_type, Forward, ThreeWayComparatorAdaptor<value_type, Cmp> > m_tree;
+
+  public:
+    bool insert(const value_type& v) {return m_tree.insert(v);}
+    bool contains(const value_type& v) {return m_tree.lookup(v);}
+    void merge(const SharedSet& src) {m_tree.merge(src.m_tree);}
   };
 }
 

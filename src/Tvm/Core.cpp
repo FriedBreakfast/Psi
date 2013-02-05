@@ -38,25 +38,13 @@ namespace Psi {
       return m_str;
     }
 
-    Value::Value(Context& context, TermType term_type, const ValuePtr<>& type,
-                 Value *source, const SourceLocation& location)
+    Value::Value(Context& context, TermType term_type, const ValuePtr<>& type, const SourceLocation& location)
     : m_reference_count(0),
     m_context(&context),
     m_term_type(term_type),
     m_type(type),
-    m_source(source),
     m_location(location) {
       PSI_ASSERT(m_context);
-
-      PSI_ASSERT(!source ||
-        (source->term_type() == term_global_variable) ||
-        (source->term_type() == term_function) ||
-        (source->term_type() == term_block) ||
-        (source->term_type() == term_phi) ||
-        (source->term_type() == term_instruction) ||
-        (source->term_type() == term_parameter_placeholder) ||
-        (source->term_type() == term_function_parameter) ||
-        (source->term_type() == term_recursive_parameter));
 
       if (!type) {
         if (term_type == term_recursive) {
@@ -93,7 +81,7 @@ namespace Psi {
      * 
      * This should only be used for values about to be moved onto the heap.
      */
-    void Value::set_type(const ValuePtr<>& type, Value *source) {
+    void Value::set_type(const ValuePtr<>& type) {
       PSI_ASSERT(m_category == category_undetermined);
       PSI_ASSERT(!m_type);
 
@@ -108,7 +96,6 @@ namespace Psi {
       }
 
       m_type = type;
-      m_source = source;
       m_context->m_value_list.push_back(*this);
     }
     
@@ -121,6 +108,21 @@ namespace Psi {
         return ht->m_hash;
       else
         return boost::hash_value(this);
+    }
+    
+    /**
+     * \brief Check that an operation can be used with a given source
+     * 
+     * \param source Point at which this value is required to be available.
+     * This must be an Instruction, in which case all values generated prior
+     * to that instruction are available, a Block, in which case all values generated
+     * prior to and during that block are available.
+     */
+    void Value::check_source(CheckSourceParameter& parameter) {
+      if (parameter.available.find(this) != parameter.available.end())
+        return;
+      check_source_hook(parameter);
+      parameter.available.insert(this);
     }
     
 #ifdef PSI_DEBUG
@@ -137,13 +139,13 @@ namespace Psi {
     }
 
     HashableValue::HashableValue(Context& context, TermType term_type, const SourceLocation& location)
-    : Value(context, term_type, ValuePtr<>(), NULL, location),
+    : Value(context, term_type, ValuePtr<>(), location),
     m_hash(0),
     m_operation(NULL) {
     }
     
     HashableValue::HashableValue(const HashableValue& src)
-    : Value(src.context(), src.term_type(), ValuePtr<>(), NULL, src.location()),
+    : Value(src.context(), src.term_type(), ValuePtr<>(), src.location()),
     m_hash(src.m_hash),
     m_operation(src.m_operation) {
     }
@@ -163,7 +165,7 @@ namespace Psi {
      * pointer to this type.
      */
     Global::Global(Context& context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
-    : Value(context, term_type, FunctionalBuilder::pointer_type(type, location), this, location),
+    : Value(context, term_type, FunctionalBuilder::pointer_type(type, location), location),
       m_name(name),
       m_module(module) {
     }
@@ -175,6 +177,39 @@ namespace Psi {
     ValuePtr<> Global::value_type() const {
       return value_cast<PointerType>(type())->target_type();
     }
+    
+    /**
+     * Returns this object, because global values are their own source.
+     */
+    Value* Global::disassembler_source() {
+      return this;
+    }
+    
+    /**
+     * \internal No-op, because globals are visible everywhere.
+     */
+    void Global::check_source_hook(CheckSourceParameter& parameter) {
+      Module *source_module;
+      switch (parameter.mode) {
+      case CheckSourceParameter::mode_after_block:
+      case CheckSourceParameter::mode_before_block:
+        source_module = value_cast<Block>(parameter.point)->function_ptr()->module();
+        break;
+        
+      case CheckSourceParameter::mode_before_instruction:
+        source_module = value_cast<Instruction>(parameter.point)->block_ptr()->function_ptr()->module();
+        break;
+        
+      case CheckSourceParameter::mode_global:
+        source_module = value_cast<Global>(parameter.point)->module();
+        break;
+        
+      default: PSI_FAIL("unexpected enum value");
+      }
+      
+      if (module() != source_module)
+        throw TvmUserError("Cannot mix global variables between modules");
+    }
 
     GlobalVariable::GlobalVariable(Context& context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
     : Global(context, term_global_variable, type, name, module, location),
@@ -182,15 +217,8 @@ namespace Psi {
     }
 
     void GlobalVariable::set_value(const ValuePtr<>& value) {
-      if (value->phantom())
-        throw TvmUserError("value of global variable cannot be phantom");
-
-      if (value->source()) {
-        Global *source = dyn_cast<Global>(value->source());
-        if (!source || (module() != source->module()))
-          throw TvmUserError("value of global variable must be a global from the same module");
-      }
-
+      CheckSourceParameter cp(CheckSourceParameter::mode_global, this);
+      value->check_source(cp);
       m_value = value;
     }
     
@@ -228,9 +256,7 @@ namespace Psi {
      * \brief Create a new global term.
      */
     ValuePtr<GlobalVariable> Module::new_global_variable(const std::string& name, const ValuePtr<>& type, const SourceLocation& location) {
-      if (type->phantom())
-        throw TvmUserError("global variable type cannot be phantom");
-
+      PSI_FAIL("Check global variable type source");
       ValuePtr<GlobalVariable> result(::new GlobalVariable(context(), type, name, this, location));
       add_member(result);
       return result;
@@ -311,7 +337,7 @@ namespace Psi {
         return ValuePtr<HashableValue>(&*r.first);
 
       ValuePtr<HashableValue> result(value.clone());
-      result->set_type(result->check_type(), result->source_impl());
+      result->set_type(result->check_type());
       result->m_operation = hash.first;
       result->m_hash = hash.second;
       m_hash_value_set.insert_commit(*result, commit_data);

@@ -10,6 +10,7 @@
 #include <boost/next_prior.hpp>
 #include <set>
 #include <map>
+#include <queue>
 #include <utility>
 
 namespace Psi {
@@ -61,15 +62,15 @@ namespace Psi {
     
     struct AggregateLoweringPass::TypeTermRewriter {
       static LoweredType array_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayType>& term) {
-        LoweredValueRegister length = rewriter.rewrite_value_register(term->length());
+        LoweredValueSimple length = rewriter.rewrite_value_register(term->length());
         LoweredType element_type = rewriter.rewrite_type(term->element_type());
         ValuePtr<> size = FunctionalBuilder::mul(length.value, element_type.size(), term->location());
         ValuePtr<> alignment = element_type.alignment();
         
-        if (rewriter.pass().remove_only_unknown && isa<IntegerValue>(length.value)) {
+        if (element_type.global() && isa<IntegerValue>(length.value)) {
           PSI_ASSERT(length.global);
           
-          if (element_type.primitive() && !rewriter.pass().remove_register_arrays) {
+          if (!rewriter.pass().split_arrays && (element_type.mode() == LoweredType::mode_register)) {
             ValuePtr<> register_type = FunctionalBuilder::array_type(element_type.register_type(), length.value, term->location());
 
             if (!rewriter.pass().remove_sizeof) {
@@ -77,13 +78,13 @@ namespace Psi {
               alignment = FunctionalBuilder::type_alignment(register_type, term->location());
             }
             
-            return LoweredType(term, element_type.global(), size, alignment, register_type);
-          } else if (element_type.split()) {
+            return LoweredType::register_(term, size, alignment, register_type);
+          } else {
             LoweredType::EntryVector entries(size_to_unsigned(length.value), element_type);
-            return LoweredType(term, element_type.global(), size, alignment, entries);
+            return LoweredType::split(term, size, alignment, entries);
           }
         } else {
-          return LoweredType(term, element_type.global() && length.global, size, alignment);
+          return LoweredType::blob(term, size, alignment);
         }
       }
 
@@ -93,13 +94,13 @@ namespace Psi {
         
         std::vector<ValuePtr<> > register_members;
         LoweredType::EntryVector entries;
-        bool has_register = true, global = true;
+        bool all_register = true, global = true;
         for (unsigned i = 0; i != register_members.size(); ++i) {
           LoweredType member_type = rewriter.rewrite_type(term->member_type(i));
           entries.push_back(member_type);
           register_members.push_back(member_type.register_type());
           
-          has_register = has_register && member_type.register_type();
+          all_register = all_register && (member_type.mode() == LoweredType::mode_register);
           global = global && member_type.global();
           
           ValuePtr<> aligned_size = FunctionalBuilder::align_to(size, member_type.alignment(), term->location());
@@ -107,7 +108,7 @@ namespace Psi {
           alignment = FunctionalBuilder::max(alignment, member_type.alignment(), term->location());
         }
         
-        if (rewriter.pass().remove_only_unknown && has_register) {
+        if (!rewriter.pass().split_structs && all_register) {
           ValuePtr<> register_type = FunctionalBuilder::struct_type(rewriter.context(), register_members, term->location());
 
           if (!rewriter.pass().remove_sizeof) {
@@ -115,9 +116,11 @@ namespace Psi {
             alignment = FunctionalBuilder::type_alignment(register_type, term->location());
           }
           
-          return LoweredType(term, global, size, alignment, register_type);
+          return LoweredType::register_(term, size, alignment, register_type);
+        } else if (global) {
+          return LoweredType::split(term, size, alignment, entries);
         } else {
-          return LoweredType(term, global, size, alignment, entries);
+          return LoweredType::blob(term, size, alignment);
         }
       }
 
@@ -126,18 +129,17 @@ namespace Psi {
         ValuePtr<> alignment = FunctionalBuilder::size_value(rewriter.context(), 1, term->location());
         
         std::vector<ValuePtr<> > register_members;
-        bool has_register = true, global = true;
+        bool all_register = true;
         for (unsigned i = 0; i != register_members.size(); ++i) {
           LoweredType member_type = rewriter.rewrite_type(term->member_type(i));
           register_members.push_back(member_type.register_type());
-          has_register = has_register && member_type.register_type();
-          global = global && member_type.global();
+          all_register = all_register && member_type.register_type();
           
           size = FunctionalBuilder::max(size, member_type.size(), term->location());
           alignment = FunctionalBuilder::max(alignment, member_type.alignment(), term->location());
         }
         
-        if (has_register && rewriter.pass().remove_only_unknown && !rewriter.pass().remove_all_unions) {
+        if (all_register && !rewriter.pass().remove_unions) {
           ValuePtr<> register_type = FunctionalBuilder::union_type(rewriter.context(), register_members, term->location());
           
           if (!rewriter.pass().remove_sizeof) {
@@ -145,9 +147,9 @@ namespace Psi {
             alignment = FunctionalBuilder::type_alignment(register_type, term->location());
           }
           
-          return LoweredType(term, global, size, alignment, register_type);
+          return LoweredType::register_(term, size, alignment, register_type);
         } else {
-          return LoweredType(term, global, size, alignment);
+          return LoweredType::union_(term, size, alignment);
         }
       }
       
@@ -161,7 +163,7 @@ namespace Psi {
           size = FunctionalBuilder::type_size(rewritten_type, location);
           alignment = FunctionalBuilder::type_alignment(rewritten_type, location);
         }
-        return LoweredType(origin, true, size, alignment, rewritten_type);
+        return LoweredType::register_(origin, size, alignment, rewritten_type);
       }
       
       static LoweredType pointer_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<PointerType>& term) {
@@ -190,27 +192,27 @@ namespace Psi {
       }
       
       static LoweredType unknown_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<MetatypeValue>& term) {
-        LoweredValueRegister size = rewriter.rewrite_value_register(term->size());
-        LoweredValueRegister alignment = rewriter.rewrite_value_register(term->alignment());
-        return LoweredType(term, size.global && alignment.global, size.value, alignment.value);
+        LoweredValueSimple size = rewriter.rewrite_value_register(term->size());
+        LoweredValueSimple alignment = rewriter.rewrite_value_register(term->alignment());
+        return LoweredType::blob(term, size.value, alignment.value);
+      }
+      
+      static LoweredType constant_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ConstantType>& term) {
+        return LoweredType::constant_(term, rewriter.rewrite_value(term->value()));
       }
       
       static LoweredType parameter_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<>& type) {
-        bool global = false;
         ValuePtr<> size, alignment;
-        if (rewriter.pass().remove_only_unknown) {
-          LoweredValueRegister rewritten = rewriter.rewrite_value_register(type);
-          global = rewritten.global;
-          size = FunctionalBuilder::element_value(rewritten.value, 0, type->location());
-          alignment = FunctionalBuilder::element_value(rewritten.value, 1, type->location());
+        LoweredValue rewritten = rewriter.rewrite_value(type);
+        if (rewritten.mode() == LoweredValue::mode_register) {
+          size = FunctionalBuilder::element_value(rewritten.register_value(), 0, type->location());
+          alignment = FunctionalBuilder::element_value(rewritten.register_value(), 1, type->location());
         } else {
-          LoweredValueRegister size_reg = rewriter.lookup_value_register(FunctionalBuilder::type_size(type, type->location()));
-          LoweredValueRegister alignment_reg = rewriter.lookup_value_register(FunctionalBuilder::type_alignment(type, type->location()));
-          global = size_reg.global && alignment_reg.global;
-          size = size_reg.value;
-          alignment = alignment_reg.value;
+          PSI_ASSERT(rewritten.mode() == LoweredValue::mode_split);
+          size = rewritten.split_entries()[0].register_value();
+          alignment = rewritten.split_entries()[1].register_value();
         }
-        return LoweredType(type, global, size, alignment);
+        return LoweredType::blob(type, size, alignment);
       }
       
       typedef TermOperationMap<FunctionalValue, LoweredType, AggregateLoweringRewriter&> CallbackMap;
@@ -228,7 +230,8 @@ namespace Psi {
           .add<ByteType>(primitive_type_rewrite)
           .add<EmptyType>(primitive_type_rewrite)
           .add<FloatType>(primitive_type_rewrite)
-          .add<IntegerType>(primitive_type_rewrite);
+          .add<IntegerType>(primitive_type_rewrite)
+          .add<ConstantType>(constant_type_rewrite);
       }
     };
     
@@ -238,21 +241,20 @@ namespace Psi {
     struct AggregateLoweringPass::FunctionalTermRewriter {
       static LoweredValue type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<>& term) {
         LoweredType ty = rewriter.rewrite_type(term);
-        if (rewriter.pass().remove_only_unknown) {
+        if (!rewriter.pass().split_structs) {
           std::vector<ValuePtr<> > members;
           members.push_back(ty.size());
           members.push_back(ty.alignment());
-          return LoweredValue::register_(term->type(), ty.global(), FunctionalBuilder::struct_value(rewriter.context(), members, term->location()));
+          return LoweredValue::register_(ty, ty.global(), FunctionalBuilder::struct_value(rewriter.context(), members, term->location()));
         } else {
           LoweredValue::EntryVector members;
           members.push_back(LoweredValue::primitive(ty.global(), ty.size()));
           members.push_back(LoweredValue::primitive(ty.global(), ty.alignment()));
-          return LoweredValue(term->type(), ty.global(), members);
+          return LoweredValue::split(ty, members);
         }
       }
 
       static LoweredValue default_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionalValue>& term) {
-        PSI_ASSERT(rewriter.rewrite_type(term->type()).register_type());
 
         class Callback : public RewriteCallback {
           AggregateLoweringRewriter *m_rewriter;
@@ -266,7 +268,7 @@ namespace Psi {
           }
 
           virtual ValuePtr<> rewrite(const ValuePtr<>& value) {
-            LoweredValueRegister x = m_rewriter->rewrite_value_register(value);
+            LoweredValueSimple x = m_rewriter->rewrite_value_register(value);
             m_global = m_global && x.global;
             return x.value;
           }
@@ -274,13 +276,14 @@ namespace Psi {
           bool global() const {return m_global;}
         } callback(rewriter);
         
+        LoweredType type = rewriter.rewrite_type(term->type());
         ValuePtr<> rewritten = term->rewrite(callback);
-        return LoweredValue::register_(term->type(), callback.global(), rewritten);
+        return LoweredValue::register_(type, callback.global(), rewritten);
       }
       
       static LoweredValue array_value_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayValue>& term) {
         bool global = true;
-        LoweredType el_type = rewriter.rewrite_type(term->element_type());
+        LoweredType arr_type = rewriter.rewrite_type(term->type()), el_type = rewriter.rewrite_type(term->element_type());
         LoweredValue::EntryVector entries;
         for (std::size_t ii = 0, ie = term->length(); ii != ie; ++ii) {
           LoweredValue c = rewriter.rewrite_value(term->value(ii));
@@ -292,9 +295,9 @@ namespace Psi {
           std::vector<ValuePtr<> > values;
           for (LoweredValue::EntryVector::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
             values.push_back(ii->register_value());
-          return LoweredValue::register_(term->type(), global, FunctionalBuilder::array_value(el_type.register_type(), values, term->location()));
+          return LoweredValue::register_(arr_type, global, FunctionalBuilder::array_value(el_type.register_type(), values, term->location()));
         } else {
-          return LoweredValue(term->type(), global, entries);
+          return LoweredValue::split(arr_type, entries);
         }
       }
       
@@ -312,50 +315,52 @@ namespace Psi {
           std::vector<ValuePtr<> > values;
           for (LoweredValue::EntryVector::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
             values.push_back(ii->register_value());
-          return LoweredValue::register_(term->type(), global, FunctionalBuilder::struct_value(rewriter.context(), values, term->location()));
+          return LoweredValue::register_(st_type, global, FunctionalBuilder::struct_value(rewriter.context(), values, term->location()));
         } else {
-          return LoweredValue(term->type(), global, entries);
+          return LoweredValue::split(st_type, entries);
         }
       }
       
       static LoweredValue union_value_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<UnionValue>& term) {
         LoweredType type = rewriter.rewrite_type(term->type());
         LoweredValue inner = rewriter.rewrite_value(term->value());
-        if (type.register_type()) {
-          return LoweredValue::register_(term->type(), inner.global() && type.global(),
+        if (type.mode() == LoweredType::mode_register) {
+          return LoweredValue::register_(type, inner.global(),
                                          FunctionalBuilder::union_value(type.register_type(), inner.register_value(), term->location()));
         } else {
-          return LoweredValue(term->type(), inner.global() && type.global(), std::vector<LoweredValue>(1, inner));
+          PSI_ASSERT(type.mode() == LoweredType::mode_union);
+          return LoweredValue::union_(type, inner);
         }
       }
       
       static LoweredValue outer_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<OuterPtr>& term) {
-        ValuePtr<PointerType> ptr_ty = value_cast<PointerType>(term->pointer()->type());
-        LoweredValueRegister inner_ptr = rewriter.rewrite_value_register(term->pointer());
+        ValuePtr<PointerType> inner_ptr_ty = value_cast<PointerType>(term->pointer()->type());
+        LoweredValueSimple inner_ptr = rewriter.rewrite_value_register(term->pointer());
+        LoweredType outer_ptr_ty = rewriter.rewrite_type(term->type());
         ValuePtr<> base = FunctionalBuilder::pointer_cast(inner_ptr.value,
                                                           FunctionalBuilder::byte_type(rewriter.context(), term->location()),
                                                           term->location());
         
-        ValuePtr<UpwardReference> up = dyn_unrecurse<UpwardReference>(ptr_ty->upref());
+        ValuePtr<UpwardReference> up = dyn_unrecurse<UpwardReference>(inner_ptr_ty->upref());
         ValuePtr<> offset;
-        bool global = inner_ptr.global;
+        bool global = inner_ptr.global && outer_ptr_ty.global();
         if (ValuePtr<StructType> struct_ty = dyn_unrecurse<StructType>(up->outer_type())) {
-          LoweredValueRegister st_offset = rewriter.rewrite_value_register(FunctionalBuilder::struct_element_offset(struct_ty, size_to_unsigned(up->index()), term->location()));
+          LoweredValueSimple st_offset = rewriter.rewrite_value_register(FunctionalBuilder::struct_element_offset(struct_ty, size_to_unsigned(up->index()), term->location()));
           offset = st_offset.value;
           global = global && st_offset.global;
         } else if (ValuePtr<ArrayType> array_ty = dyn_unrecurse<ArrayType>(up)) {
-          LoweredValueRegister idx = rewriter.rewrite_value_register(up->index());
+          LoweredValueSimple idx = rewriter.rewrite_value_register(up->index());
           LoweredType el_type = rewriter.rewrite_type(array_ty->element_type());
           offset = FunctionalBuilder::mul(idx.value, el_type.size(), term->location());
           global = global && idx.global && el_type.global();
         } else if (ValuePtr<UnionType> union_ty = dyn_unrecurse<UnionType>(up)) {
-          return LoweredValue::register_(term->type(), global, base);
+          return LoweredValue::register_(outer_ptr_ty, global, base);
         } else {
           throw TvmInternalError("Upward reference cannot be unfolded");
         }
         
         offset = FunctionalBuilder::neg(offset, term->location());
-        return LoweredValue::register_(term->type(), global, FunctionalBuilder::pointer_offset(base, offset, term->location()));
+        return LoweredValue::register_(outer_ptr_ty, global, FunctionalBuilder::pointer_offset(base, offset, term->location()));
       }
 
       /**
@@ -366,7 +371,7 @@ namespace Psi {
        * \param unchecked_array_ty Array type. This must not have been lowered.
        * \param base Pointer to array. This must have already been lowered.
        */
-      static LoweredValueRegister array_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<>& unchecked_array_ty, const LoweredValueRegister& base, const LoweredValueRegister& index, const SourceLocation& location) {
+      static LoweredValueSimple array_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<>& unchecked_array_ty, const LoweredValueSimple& base, const LoweredValueSimple& index, const SourceLocation& location) {
         ValuePtr<ArrayType> array_ty = dyn_unrecurse<ArrayType>(unchecked_array_ty);
         if (!array_ty)
           throw TvmUserError("array type argument did not evaluate to an array type");
@@ -374,22 +379,22 @@ namespace Psi {
         LoweredType array_ty_l = rewriter.rewrite_type(array_ty);
         if (array_ty_l.register_type()) {
           ValuePtr<> array_ptr = FunctionalBuilder::pointer_cast(base.value, array_ty_l.register_type(), location);
-          return LoweredValueRegister(base.global && index.global && array_ty_l.global(),
-                                      FunctionalBuilder::element_ptr(array_ptr, index.value, location));
+          return LoweredValueSimple(base.global && index.global && array_ty_l.global(),
+                                    FunctionalBuilder::element_ptr(array_ptr, index.value, location));
         }
 
         LoweredType element_ty = rewriter.rewrite_type(array_ty->element_type());
         if (element_ty.register_type()) {
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(base.value, element_ty.register_type(), location);
-          return LoweredValueRegister(base.global && index.global && element_ty.global(),
-                                      FunctionalBuilder::pointer_offset(cast_ptr, index.value, location));
+          return LoweredValueSimple(base.global && index.global && element_ty.global(),
+                                    FunctionalBuilder::pointer_offset(cast_ptr, index.value, location));
         }
 
-        LoweredValueRegister element_size = rewriter.rewrite_value_register(FunctionalBuilder::type_size(array_ty->element_type(), location));
+        LoweredValueSimple element_size = rewriter.rewrite_value_register(FunctionalBuilder::type_size(array_ty->element_type(), location));
         ValuePtr<> offset = FunctionalBuilder::mul(element_size.value, index.value, location);
         PSI_ASSERT(base.value->type() == FunctionalBuilder::byte_pointer_type(rewriter.context(), location));
-        return LoweredValueRegister(base.global && index.global && element_size.global,
-                                    FunctionalBuilder::pointer_offset(base.value, offset, location));
+        return LoweredValueSimple(base.global && index.global && element_size.global,
+                                  FunctionalBuilder::pointer_offset(base.value, offset, location));
       }
       
       /**
@@ -412,120 +417,75 @@ namespace Psi {
         return value;
       }
       
-      static LoweredValue array_element_rewrite_split(AggregateLoweringRewriter& rewriter, const LoweredValueRegister& index, const LoweredValue::EntryVector& entries, const SourceLocation& location) {
-        LoweredType ty = rewriter.rewrite_type(entries.front().type());
-        if (ty.register_type()) {
+      static LoweredValue array_element_rewrite_split(AggregateLoweringRewriter& rewriter, const LoweredValueSimple& index, const LoweredValue::EntryVector& entries, const SourceLocation& location) {
+        const LoweredType& ty = entries.front().type();
+        switch (ty.mode()) {
+        case LoweredType::mode_register: {
           std::map<unsigned, ValuePtr<> > values;
-          bool global = index.global;
+          bool global = ty.global() && index.global;
           ValuePtr<> zero;
           for (std::size_t ii = 0, ie = entries.size(); ii != ie; ++ii) {
             const LoweredValue& entry = entries[ii];
             global = global && entry.global();
-            switch (entry.mode()) {
-            case LoweredValue::mode_register:
-              values[ii] = entry.register_value();
-              break;
-              
-            case LoweredValue::mode_zero:
-              if (!zero)
-                zero = FunctionalBuilder::zero(ty.register_type(), location);
-              values[ii] = zero;
-              break;
-              
-            case LoweredValue::mode_undefined:
-              break;
-              
-            default: PSI_FAIL("unexpected enum value");
-            }
+            values[ii] = entry.register_value();
           }
           ValuePtr<> undef_value = FunctionalBuilder::undef(ty.register_type(), location);
-          return LoweredValue::register_(entries.front().type(), global,
-                                         array_element_select(rewriter, index.value, undef_value, values, location));
-        } else if (ty.split()) {
-          bool global = index.global;
+          return LoweredValue::register_(ty, global, array_element_select(rewriter, index.value, undef_value, values, location));
+        }
+        
+        case LoweredType::mode_split: {
           LoweredValue::EntryVector split_result;
           std::vector<LoweredValue> component_entries;
-          for (std::size_t ii = 0, ie = entries.front().entries().size(); ii != ie; ++ii) {
+          for (std::size_t ii = 0, ie = ty.split_entries().size(); ii != ie; ++ii) {
             component_entries.clear();
             for (LoweredValue::EntryVector::const_iterator ji = entries.begin(), je = entries.end(); ji != je; ++ji) {
-              PSI_ASSERT(ii < ji->entries().size());
-              component_entries.push_back(ji->entries()[ii]);
+              PSI_ASSERT(ii < ji->split_entries().size());
+              component_entries.push_back(ji->split_entries()[ii]);
             }
             split_result.push_back(array_element_rewrite_split(rewriter, index, component_entries, location));
-            global = global && split_result.back().global();
           }
-          return LoweredValue(entries.front().type(), global, split_result);
-        } else {
-          // Single values on the stack
-          std::map<unsigned, ValuePtr<> > values;
-          ValuePtr<> zero;
-          bool global = index.global;
-          for (std::size_t ii = 0, ie = entries.size(); ii != ie; ++ii) {
-            const LoweredValue& entry = entries[ii];
-            global = global && entry.global();
-            switch (entry.mode()) {
-            case LoweredValue::mode_stack:
-              values[ii] = entry.register_value();
-              break;
-              
-            case LoweredValue::mode_zero:
-              if (!zero)
-                zero = rewriter.store_value(FunctionalBuilder::zero(entries.front().type(), location), location);
-              values[ii] = zero;
-              break;
-              
-            case LoweredValue::mode_undefined:
-              break;
-              
-            default: PSI_FAIL("unexpected enum value");
-            }
-          }
-          ValuePtr<> undef_value = zero ? zero : values[0];
-          return LoweredValue::stack(entries.front().type(), global, array_element_select(rewriter, index.value, undef_value, values, location));
+          return LoweredValue::split(ty, split_result);
+        }
+        
+        case LoweredType::mode_blob:
+          throw TvmUserError("Arrays type not supported by the back-end used in register");
+        
+        default: PSI_FAIL("unexpected enum value");
         }
       }
 
       static LoweredValue array_element_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementValue>& term) {
-        LoweredValueRegister index = rewriter.rewrite_value_register(term->aggregate());
+        LoweredValueSimple index = rewriter.rewrite_value_register(term->aggregate());
         LoweredValue array_val = rewriter.rewrite_value(term->aggregate());
         LoweredType el_type = rewriter.rewrite_type(term->type());
         switch (array_val.mode()) {
         case LoweredValue::mode_register:
-          return LoweredValue::register_(term->type(), index.global && array_val.global(),
+          return LoweredValue::register_(el_type, index.global && array_val.global(),
                                          FunctionalBuilder::element_value(array_val.register_value(), index.value, term->location()));
-          
-        case LoweredValue::mode_stack: {
-          LoweredValueRegister element_ptr = array_ptr_offset(rewriter, term->aggregate()->type(),
-                                                              LoweredValueRegister(array_val.global(), array_val.stack_value()),
-                                                              index, term->location());
-          return rewriter.load_value(el_type, element_ptr, term->location());
-        }
         
         case LoweredValue::mode_split: {
-          switch (array_val.entries().size()) {
-          case 0: return LoweredValue::undefined(el_type);
-          case 1: return array_val.entries().front();
-          default: return array_element_rewrite_split(rewriter, index, array_val.entries(), term->location());
+          switch (array_val.split_entries().size()) {
+          case 0: return rewriter.rewrite_value(FunctionalBuilder::undef(el_type.origin(), term->location()));
+          case 1: return array_val.split_entries().front();
+          default: return array_element_rewrite_split(rewriter, index, array_val.split_entries(), term->location());
           }
         }
-        
-        case LoweredValue::mode_zero: return LoweredValue::zero(el_type);
-        case LoweredValue::mode_undefined: return LoweredValue::undefined(el_type);
           
         default: PSI_FAIL("unexpected enum value");
         }
       }
       
       static LoweredValue array_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
-        LoweredValueRegister array_ptr = rewriter.rewrite_value_register(term->aggregate_ptr());
-        LoweredValueRegister index = rewriter.rewrite_value_register(term->index());
+        LoweredValueSimple array_ptr = rewriter.rewrite_value_register(term->aggregate_ptr());
+        LoweredValueSimple index = rewriter.rewrite_value_register(term->index());
         
         ValuePtr<PointerType> pointer_type = dyn_unrecurse<PointerType>(term->aggregate_ptr()->type());
         if (!pointer_type)
           throw TvmUserError("array_ep argument did not evaluate to a pointer");
         
-        LoweredValueRegister result = array_ptr_offset(rewriter, pointer_type->target_type(), array_ptr, index, term->location());
-        return LoweredValue::register_(term->type(), result.global, result.value);
+        LoweredType type = rewriter.rewrite_type(term->type());
+        LoweredValueSimple result = array_ptr_offset(rewriter, pointer_type->target_type(), array_ptr, index, term->location());
+        return LoweredValue::register_(type, result.global, result.value);
       }
       
       /**
@@ -535,7 +495,7 @@ namespace Psi {
        * 
        * \param base Pointer to struct. This must have already been lowered.
        */
-      static LoweredValueRegister struct_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<>& unchecked_struct_ty, const LoweredValueRegister& base, unsigned index, const SourceLocation& location) {
+      static LoweredValueSimple struct_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<>& unchecked_struct_ty, const LoweredValueSimple& base, unsigned index, const SourceLocation& location) {
         ValuePtr<StructType> struct_ty = dyn_unrecurse<StructType>(unchecked_struct_ty);
         if (!struct_ty)
           throw TvmInternalError("struct type value did not evaluate to a struct type");
@@ -543,12 +503,12 @@ namespace Psi {
         LoweredType struct_ty_rewritten = rewriter.rewrite_type(struct_ty);
         if (struct_ty_rewritten.register_type()) {
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(base.value, struct_ty_rewritten.register_type(), location);
-          return LoweredValueRegister(base.global && struct_ty_rewritten.global(), FunctionalBuilder::element_ptr(cast_ptr, index, location));
+          return LoweredValueSimple(base.global && struct_ty_rewritten.global(), FunctionalBuilder::element_ptr(cast_ptr, index, location));
         }
         
         PSI_ASSERT(base.value->type() == FunctionalBuilder::byte_pointer_type(rewriter.context(), location));
-        LoweredValueRegister offset = rewriter.rewrite_value_register(FunctionalBuilder::struct_element_offset(struct_ty, index, location));
-        return LoweredValueRegister(base.global && offset.global, FunctionalBuilder::pointer_offset(base.value, offset.value, location));
+        LoweredValueSimple offset = rewriter.rewrite_value_register(FunctionalBuilder::struct_element_offset(struct_ty, index, location));
+        return LoweredValueSimple(base.global && offset.global, FunctionalBuilder::pointer_offset(base.value, offset.value, location));
       }
       
       static LoweredValue struct_element_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementValue>& term) {
@@ -556,18 +516,11 @@ namespace Psi {
         unsigned idx = size_to_unsigned(term->index());
         switch (struct_val.mode()) {
         case LoweredValue::mode_register:
-          return LoweredValue::register_(term->type(), struct_val.global(),
+          return LoweredValue::register_(rewriter.rewrite_type(term->type()), struct_val.global(),
                                          FunctionalBuilder::element_value(struct_val.register_value(), idx, term->location()));
           
-        case LoweredValue::mode_stack: {
-          LoweredValueRegister result = struct_ptr_offset(rewriter, term->aggregate()->type(),
-                                                          LoweredValueRegister(struct_val.global(), struct_val.stack_value()),
-                                                          idx, term->location());
-          return LoweredValue::stack(term->type(), result.global, result.value);
-        }
-        
         case LoweredValue::mode_split:
-          return struct_val.entries()[idx];
+          return struct_val.split_entries()[idx];
           
         default:
           PSI_FAIL("unexpected enum value");
@@ -575,14 +528,14 @@ namespace Psi {
       }
 
       static LoweredValue struct_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
-        LoweredValueRegister struct_ptr = rewriter.rewrite_value_register(term->aggregate_ptr());
+        LoweredValueSimple struct_ptr = rewriter.rewrite_value_register(term->aggregate_ptr());
         
         ValuePtr<PointerType> pointer_type = dyn_unrecurse<PointerType>(term->aggregate_ptr()->type());
         if (!pointer_type)
           throw TvmUserError("struct_ep argument did not evaluate to a pointer");
         
-        LoweredValueRegister result = struct_ptr_offset(rewriter, pointer_type->target_type(), struct_ptr, size_to_unsigned(term->index()), term->location());
-        return LoweredValue::register_(term->type(), result.global, result.value);
+        LoweredValueSimple result = struct_ptr_offset(rewriter, pointer_type->target_type(), struct_ptr, size_to_unsigned(term->index()), term->location());
+        return LoweredValue::register_(rewriter.rewrite_type(term->type()), result.global, result.value);
       }
       
       static LoweredValue struct_element_offset_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<StructElementOffset>& term) {
@@ -598,40 +551,24 @@ namespace Psi {
       }
 
       static LoweredValue union_element_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementValue>& term) {
+        LoweredType type = rewriter.rewrite_type(term->type());
         LoweredValue union_val = rewriter.rewrite_value(term->aggregate());
-        switch (union_val.mode()) {
-        case LoweredValue::mode_register:
-          return LoweredValue::register_(term->type(), union_val.global(),
-                                         FunctionalBuilder::element_value(union_val.register_value(), term->index(), term->location()));
+        if (union_val.mode() == LoweredValue::mode_register) {
+          return LoweredValue::register_(type, union_val.global(),
+                                        FunctionalBuilder::element_value(union_val.register_value(), term->index(), term->location()));
+        } else {
+          PSI_ASSERT(union_val.mode() == LoweredValue::mode_union);
           
-        case LoweredValue::mode_stack:
-          return LoweredValue::stack(term->type(), union_val.global(), union_val.stack_value());
+          if (union_val.union_inner().type().origin() == term->type())
+            return union_val.union_inner();
           
-        case LoweredValue::mode_split: {
-          const LoweredValue& element = union_val.entries().front();
-          
-          // If we're getting the existing element value, then just
-          if (element.type() == term->type())
-            return element;
-          
-          if (element.mode() == LoweredValue::mode_stack) {
-            /**
-             * \todo Is pointer adjustment necessary here? There's no guarantee that the alignment
-             * of the union and the inner value are the same.
-             */
-            return LoweredValue::stack(term->type(), union_val.global(), union_val.stack_value());
-          } else {
-            return rewriter.bitcast(term->type(), element, term->location());
-          }
-        }
-          
-        default: PSI_FAIL("unexpected enum value");
+          return rewriter.bitcast(type, union_val, term->location());
         }
       }
 
       static LoweredValue union_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
-        LoweredValueRegister result = rewriter.rewrite_value_register(term->aggregate_ptr());
-        return LoweredValue::register_(term->type(), result.global, result.value);
+        LoweredValueSimple result = rewriter.rewrite_value_register(term->aggregate_ptr());
+        return LoweredValue::register_(rewriter.rewrite_type(term->type()), result.global, result.value);
       }
 
       static LoweredValue metatype_size_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<MetatypeSize>& term) {
@@ -645,19 +582,20 @@ namespace Psi {
       }
       
       static LoweredValue pointer_offset_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<PointerOffset>& term) {
-        LoweredValueRegister base_value = rewriter.rewrite_value_register(term->pointer());
-        LoweredValueRegister offset = rewriter.rewrite_value_register(term->offset());
+        LoweredValueSimple base_value = rewriter.rewrite_value_register(term->pointer());
+        LoweredValueSimple offset = rewriter.rewrite_value_register(term->offset());
         
+        LoweredType term_ty = rewriter.rewrite_type(term->type());
         LoweredType ty = rewriter.rewrite_type(term->pointer_type()->target_type());
         if (ty.register_type() && !rewriter.pass().pointer_arithmetic_to_bytes) {
           ValuePtr<> cast_base = FunctionalBuilder::pointer_cast(base_value.value, ty.register_type(), term->location());
           ValuePtr<> ptr = FunctionalBuilder::pointer_offset(cast_base, offset.value, term->location());
           ValuePtr<> result = FunctionalBuilder::pointer_cast(ptr, FunctionalBuilder::byte_type(rewriter.context(), term->location()), term->location());
-          return LoweredValue::register_(term->type(), ty.global() && base_value.global && offset.global, result);
+          return LoweredValue::register_(term_ty, ty.global() && base_value.global && offset.global, result);
         } else {
           ValuePtr<> new_offset = FunctionalBuilder::mul(ty.size(), offset.value, term->location());
           ValuePtr<> result = FunctionalBuilder::pointer_offset(base_value.value, new_offset, term->location());
-          return LoweredValue::register_(term->type(), ty.global() && base_value.global && offset.global, result);
+          return LoweredValue::register_(term_ty, ty.global() && base_value.global && offset.global, result);
         }
       }
       
@@ -700,13 +638,69 @@ namespace Psi {
         else
           throw TvmUserError("element_value aggregate argument is not an aggregate type");
       }
+      
+      static LoweredValue build_select(AggregateLoweringRewriter& rewriter, const LoweredValueSimple& cond, const LoweredValue& true_val, const LoweredValue& false_val, const SourceLocation& location) {
+        const LoweredType& ty = true_val.type();
+        switch (ty.mode()) {
+        case LoweredType::mode_register:
+          return LoweredValue::register_(ty, ty.global() && cond.global && true_val.global() && false_val.global(),
+                                         FunctionalBuilder::select(cond.value, true_val.register_value(), false_val.register_value(), location));
+          
+        case LoweredType::mode_constant:
+          return LoweredValue::constant(ty);
+          
+        case LoweredType::mode_split: {
+          const LoweredType::EntryVector& ty_entries = ty.split_entries();
+          const LoweredValue::EntryVector& true_entries = true_val.split_entries(), &false_entries = false_val.split_entries();
+          PSI_ASSERT((ty_entries.size() == true_entries.size()) && (ty_entries.size() == false_entries.size()));
+          LoweredValue::EntryVector val_entries;
+          for (std::size_t ii = 0, ie = ty_entries.size(); ii != ie; ++ii)
+            val_entries.push_back(build_select(rewriter, cond, true_entries[ii], false_entries[ii], location));
+          return LoweredValue::split(ty, val_entries);
+        }
+        
+        default: PSI_FAIL("unexpected enum value");
+        }
+      }
+      
+      static LoweredValue select_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<Select>& select) {
+        LoweredType ty = rewriter.rewrite_type(select->type());
+        LoweredValueSimple cond = rewriter.rewrite_value_register(select->condition());
+        LoweredValue true_val = rewriter.rewrite_value(select->true_value());
+        LoweredValue false_val = rewriter.rewrite_value(select->false_value());
+        return build_select(rewriter, cond, true_val, false_val, select->location());
+      }
+      
+      static LoweredValue build_zero_undef(const LoweredType& ty, bool is_zero, const SourceLocation& location) {
+        switch (ty.mode()) {
+        case LoweredType::mode_register:
+          return LoweredValue::register_(ty, true, is_zero ? FunctionalBuilder::zero(ty.register_type(), location) : FunctionalBuilder::undef(ty.register_type(), location));
+          
+        case LoweredType::mode_constant:
+          return LoweredValue::constant(ty);
+          
+        case LoweredType::mode_split: {
+          LoweredValue::EntryVector entries;
+          for (LoweredType::EntryVector::const_iterator ii = ty.split_entries().begin(), ie = ty.split_entries().end(); ii != ie; ++ii)
+            entries.push_back(build_zero_undef(*ii, is_zero, location));
+          return LoweredValue::split(ty, entries);
+        }
+          
+        case LoweredType::mode_blob:
+          throw TvmUserError("Type unsupported by back-end cannot be used in register");
+          
+        default: PSI_FAIL("unexpected enum value");
+        }
+      }
 
       static LoweredValue zero_value_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ZeroValue>& term) {
-        return LoweredValue::zero(rewriter.rewrite_type(term->type()));
+        LoweredType ty = rewriter.rewrite_type(term->type());
+        return build_zero_undef(ty, true, term->location());
       }
       
       static LoweredValue undefined_value_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<UndefinedValue>& term) {
-        return LoweredValue::undefined(rewriter.rewrite_type(term->type()));
+        LoweredType ty = rewriter.rewrite_type(term->type());
+        return build_zero_undef(ty, false, term->location());
       }
 
       typedef TermOperationMap<FunctionalValue, LoweredValue, AggregateLoweringRewriter&> CallbackMap;
@@ -736,6 +730,7 @@ namespace Psi {
           .add<ApplyValue>(apply_rewrite)
           .add<ElementValue>(element_value_rewrite)
           .add<ElementPtr>(element_ptr_rewrite)
+          .add<Select>(select_rewrite)
           .add<ZeroValue>(zero_value_rewrite)
           .add<UndefinedValue>(undefined_value_rewrite);
       }
@@ -774,10 +769,10 @@ namespace Psi {
         if (type.register_type()) {
           stack_ptr = runner.builder().alloca_(type.register_type(), count, alignment, term->location());
         } else {
-          ValuePtr<> total_size = runner.rewrite_value_register(FunctionalBuilder::type_size(term->element_type, term->location())).value;
+          ValuePtr<> total_size = type.size();
           if (count)
             total_size = FunctionalBuilder::mul(count, total_size, term->location());
-          ValuePtr<> total_alignment = runner.rewrite_value_register(FunctionalBuilder::type_alignment(term->element_type, term->location())).value;
+          ValuePtr<> total_alignment = type.alignment();
           if (alignment)
             total_alignment = FunctionalBuilder::max(total_alignment, alignment, term->location());
           stack_ptr = runner.builder().alloca_(FunctionalBuilder::byte_type(runner.context(), term->location()), total_size, total_alignment, term->location());
@@ -788,13 +783,14 @@ namespace Psi {
       
       static LoweredValue load_rewrite(FunctionRunner& runner, const ValuePtr<Load>& term) {
         LoweredType ty = runner.rewrite_type(term->type());
-        LoweredValueRegister ptr = runner.rewrite_value_register(term->target);
-        return runner.load_value(ty, ptr, term->location());
+        LoweredValueSimple ptr = runner.rewrite_value_register(term->target);
+        return runner.load_value(ty, ptr.value, term->location());
       }
       
       static LoweredValue store_rewrite(FunctionRunner& runner, const ValuePtr<Store>& term) {
         ValuePtr<> ptr = runner.rewrite_value_register(term->target).value;
-        runner.store_value(term->value, ptr, term->location());
+        LoweredValue val = runner.rewrite_value(term->value);
+        runner.store_value(val, ptr, term->location());
         return LoweredValue();
       }
       
@@ -820,6 +816,13 @@ namespace Psi {
         }
       }
       
+      static LoweredValue solidify_rewrite(FunctionRunner& runner, const ValuePtr<Solidify>& term) {
+        ValuePtr<ConstantType> cn = unrecurse_cast<ConstantType>(term->value->type());
+        LoweredValue cval = runner.rewrite_value(term->value);
+        runner.add_mapping(cn->value(), cval);
+        return LoweredValue();
+      }
+      
       typedef TermOperationMap<Instruction, LoweredValue, FunctionRunner&> CallbackMap;
       static CallbackMap callback_map;
       
@@ -831,7 +834,8 @@ namespace Psi {
           .add<Call>(call_rewrite)
           .add<Alloca>(alloca_rewrite)
           .add<Store>(store_rewrite)
-          .add<Load>(load_rewrite);
+          .add<Load>(load_rewrite)
+          .add<Solidify>(solidify_rewrite);
       }
     };
     
@@ -857,20 +861,8 @@ namespace Psi {
      * Utility function which runs rewrite_value and asserts that the resulting
      * value is in a register and is non-NULL.
      */
-    LoweredValueRegister AggregateLoweringPass::AggregateLoweringRewriter::rewrite_value_register(const ValuePtr<>& value) {
-      LoweredValue v = rewrite_value(value);
-      PSI_ASSERT((v.mode() == LoweredValue::mode_register) && v.register_value());
-      return LoweredValueRegister(v.global(), v.register_value());
-    }
-    
-    /**
-     * Utility function which runs rewrite_value and asserts that the resulting
-     * value is on the stack and is non-NULL.
-     */
-    LoweredValueRegister AggregateLoweringPass::AggregateLoweringRewriter::rewrite_value_ptr(const ValuePtr<>& value) {
-      LoweredValue v = rewrite_value(value);
-      PSI_ASSERT((v.mode() == LoweredValue::mode_stack) && v.stack_value());
-      return LoweredValueRegister(v.global(), v.stack_value());
+    LoweredValueSimple AggregateLoweringPass::AggregateLoweringRewriter::rewrite_value_register(const ValuePtr<>& value) {
+      return rewrite_value(value).register_simple();
     }
     
     /**
@@ -887,21 +879,8 @@ namespace Psi {
      * Utility function which runs lookup_value and asserts that the resulting
      * value is on the stack and is non-NULL.
      */
-    LoweredValueRegister AggregateLoweringPass::AggregateLoweringRewriter::lookup_value_register(const ValuePtr<>& value) {
-      LoweredValue v = lookup_value(value);
-      PSI_ASSERT((v.mode() == LoweredValue::mode_register) && v.register_value());
-      return LoweredValueRegister(v.global(), v.register_value());
-    }
-    
-    /**
-     * Utility function which runs lookup_value and asserts that the resulting
-     * value is not on the stack and is non-NULL.
-     */
-    LoweredValueRegister AggregateLoweringPass::AggregateLoweringRewriter::lookup_value_ptr(const ValuePtr<>& value) {
-      LoweredValue v = lookup_value(value);
-      PSI_ASSERT(!v.empty());
-      PSI_ASSERT((v.mode() == LoweredValue::mode_stack) && v.stack_value());
-      return LoweredValueRegister(v.global(), v.stack_value());
+    LoweredValueSimple AggregateLoweringPass::AggregateLoweringRewriter::lookup_value_register(const ValuePtr<>& value) {
+      return lookup_value(value).register_simple();
     }
     
     AggregateLoweringPass::FunctionRunner::FunctionRunner(AggregateLoweringPass* pass, const ValuePtr<Function>& old_function)
@@ -930,48 +909,6 @@ namespace Psi {
     }
 
     /**
-     * Stores a value onto the stack. The type of \c value is used to determine where to place the
-     * \c alloca instruction, so that the pointer will be available at all PHI nodes that it can possibly
-     * reach as a value.
-     * 
-     * \copydoc AggregateLoweringPass::AggregateLoweringRewriter::store_value
-     */
-    ValuePtr<> AggregateLoweringPass::FunctionRunner::store_value(const ValuePtr<>& value, const SourceLocation& location) {
-      ValuePtr<> ptr = create_storage(value->type(), location);
-      store_value(value, ptr, location);
-      return ptr;
-    }
-    
-    ValuePtr<> AggregateLoweringPass::FunctionRunner::store_type(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location) {
-      ValuePtr<> byte_type = FunctionalBuilder::byte_type(context(), location);
-      ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location);
-      
-      LoweredType metatype = rewrite_type(FunctionalBuilder::type_type(pass().source_module()->context(), location));
-
-      /*
-       * Note that we should not need to change the insert point because this function is called by
-       * the functional operation code generator, so the insert point should already be set to the
-       * appropriate place for this op.
-       * 
-       * In cases involving PHI nodes however, I doubt this is true.
-       */
-      PSI_FAIL("This will fail when PHI nodes get involved");
-      ValuePtr<> ptr;
-      if (metatype.register_type()) {
-        ptr = builder().alloca_(metatype.register_type(), location);
-        ptr = FunctionalBuilder::pointer_cast(ptr, size_type, location);
-      } else {
-        ptr = builder().alloca_(size_type, 2, location);
-      }
-      
-      builder().store(size, ptr, location);
-      ValuePtr<> alignment_ptr = FunctionalBuilder::pointer_offset(ptr, FunctionalBuilder::size_value(context(), 1, location), location);
-      builder().store(alignment, alignment_ptr, location);
-      
-      return FunctionalBuilder::pointer_cast(ptr, byte_type, location);
-    }
-
-    /**
      * \brief Store a value to a pointer.
      * 
      * Overload for building functions. As well as implementing the store_value operation
@@ -986,67 +923,58 @@ namespace Psi {
      * 
      * \pre \code isa<PointerType>(ptr->type()) \endcode
      */
-    void AggregateLoweringPass::FunctionRunner::store_value(const ValuePtr<>& value, const ValuePtr<>& ptr, const SourceLocation& location) {
-      if (isa<UndefinedValue>(value))
-        return;
-      
-      LoweredType value_type = rewrite_type(value->type());
-      if (value_type.register_type()) {
-        ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, value_type.register_type(), location);
-        ValuePtr<> stack_value = rewrite_value_register(value).value;
-        builder().store(stack_value, cast_ptr, location);
-      }
-      
-      if (isa<ZeroValue>(value)) {
-        builder().memzero(ptr, value_type.size(), location);
+    void AggregateLoweringPass::FunctionRunner::store_value(const LoweredValue& value, const ValuePtr<>& ptr, const SourceLocation& location) {
+      switch (value.mode()) {
+      case LoweredValue::mode_register: {
+        ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, value.register_value()->type(), location);
+        builder().store(value.register_value(), cast_ptr, location);
         return;
       }
-
-      if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(value)) {
-        LoweredType element_type = rewrite_type(array_val->element_type());
-        if (element_type.register_type()) {
-          ValuePtr<> base_ptr = FunctionalBuilder::pointer_cast(ptr, element_type.register_type(), location);
-          for (unsigned i = 0, e = array_val->length(); i != e; ++i) {
-            ValuePtr<> element_ptr = FunctionalBuilder::pointer_offset(base_ptr, i, location);
-            store_value(array_val->value(i), element_ptr, location);
-          }
-        } else {
-          PSI_ASSERT(ptr->type() == FunctionalBuilder::byte_pointer_type(context(), location));
-          ValuePtr<> element_size = rewrite_value_register(FunctionalBuilder::type_size(array_val->element_type(), location)).value;
-          ValuePtr<> element_ptr = ptr;
-          for (unsigned i = 0, e = array_val->length(); i != e; ++i) {
-            store_value(array_val->value(i), element_ptr, location);
-            element_ptr = FunctionalBuilder::pointer_offset(element_ptr, element_size, location);
-          }
+      
+      case LoweredValue::mode_split: {
+        const LoweredValue::EntryVector& entries = value.split_entries();
+        ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, FunctionalBuilder::byte_type(context(), location), location);
+        ElementOffsetGenerator gen(this, location);
+        for (LoweredValue::EntryVector::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii) {
+          PSI_NOT_IMPLEMENTED(); // Update gen to current offset
+          ValuePtr<> offset_ptr = FunctionalBuilder::pointer_offset(cast_ptr, gen.offset(), location);
+          store_value(*ii, offset_ptr, location);
         }
-      } else if (ValuePtr<UnionValue> union_val = dyn_cast<UnionValue>(value)) {
-        return store_value(union_val->value(), ptr, location);
+        return;
       }
       
-      if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(value->type())) {
-        PSI_ASSERT(ptr->type() == FunctionalBuilder::byte_pointer_type(context(), location));
-        for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
-          ValuePtr<> offset = rewrite_value_register(FunctionalBuilder::struct_element_offset(struct_ty, i, location)).value;
-          ValuePtr<> member_ptr = FunctionalBuilder::pointer_offset(ptr, offset, location);
-          store_value(FunctionalBuilder::element_value(value, i, location), member_ptr, location);
-        }
+      case LoweredValue::mode_union: {
+        // Known element of union
+        store_value(value.union_inner(), ptr, location);
+        return;
       }
-
-      if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(value->type())) {
-        LoweredType element_type = rewrite_type(array_ty->element_type());
-        if (element_type.register_type()) {
-          ValuePtr<> value_ptr = rewrite_value_ptr(value).value;
-          ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, element_type.register_type(), location);
-          builder().memcpy(cast_ptr, value_ptr, array_ty->length(), location);
-        }
+      
+      case LoweredValue::mode_constant: {
+        PSI_FAIL("Not implemented");
       }
-
-      PSI_ASSERT(ptr->type() == FunctionalBuilder::byte_pointer_type(context(), location));
-      ValuePtr<> value_ptr = rewrite_value_ptr(value).value;
-      PSI_ASSERT(value_ptr->type() == FunctionalBuilder::byte_pointer_type(context(), location));
-      ValuePtr<> value_size = rewrite_value_register(FunctionalBuilder::type_size(value->type(), location)).value;
-      ValuePtr<> value_alignment = rewrite_value_register(FunctionalBuilder::type_alignment(value->type(), location)).value;
-      builder().memcpy(ptr, value_ptr, value_size, value_alignment, location);
+        
+      default:
+        PSI_FAIL("unexpected enum value");
+      }
+    }
+    
+    /**
+     * Switch the insert point of a FunctionRunner to just before the end of an existing block.
+     * 
+     * Stores current block state back to state map before restoring state of specified block,
+     * even when both blocks are the same (this helps with initializing the first entry in the
+     * map, or when a block is built immediately after its dominating block).
+     */
+    void AggregateLoweringPass::FunctionRunner::switch_to_block(const ValuePtr<Block>& block) {
+      PSI_ASSERT(block->terminated());
+      BlockBuildState& old_st = m_block_state[builder().block()];
+      old_st.types = m_type_map;
+      old_st.values = m_value_map;
+      BlockSlotMapType::const_iterator new_st = m_block_state.find(block);
+      PSI_ASSERT(new_st != m_block_state.end());
+      m_type_map = new_st->second.types;
+      m_value_map = new_st->second.values;
+      builder().set_insert_point(block->instructions().back());
     }
 
     /**
@@ -1082,12 +1010,15 @@ namespace Psi {
         const ValuePtr<Block>& old_block = ii->first;
         const ValuePtr<Block>& new_block = ii->second;
 
+        // Set up variable map from dominating block
+        switch_to_block(new_block->dominator());
+        m_builder.set_insert_point(new_block);
+
         // Generate PHI nodes
         for (Block::PhiList::const_iterator ji = old_block->phi_nodes().begin(), je = old_block->phi_nodes().end(); ji != je; ++ji)
           create_phi_node(new_block, rewrite_type((*ji)->type()), (*ji)->location());
 
         // Create instructions
-        m_builder.set_insert_point(new_block);
         for (Block::InstructionList::const_iterator ji = old_block->instructions().begin(), je = old_block->instructions().end(); ji != je; ++ji) {
           const ValuePtr<Instruction>& insn = *ji;
           LoweredValue value = InstructionTermRewriter::callback_map.call(*this, insn);
@@ -1100,80 +1031,29 @@ namespace Psi {
       for (std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > >::iterator ii = sorted_blocks.begin(), ie = sorted_blocks.end(); ii != ie; ++ii) {
         ValuePtr<Block> old_block = ii->first;
         for (Block::PhiList::const_iterator ji = old_block->phi_nodes().begin(), je = old_block->phi_nodes().end(); ji != je; ++ji) {
-          const ValuePtr<Phi>& phi_node = *ji;
+          const ValuePtr<Phi>& old_phi_node = *ji;
+          LoweredValue new_phi_node = lookup_value(old_phi_node);
 
-          std::vector<PhiEdge> edges;
-          for (unsigned ki = 0, ke = phi_node->edges().size(); ki != ke; ++ki) {
-            const PhiEdge& e = phi_node->edges()[ki];
-            PhiEdge ne;
-            ne.block = rewrite_block(e.block);
-            ne.value = e.value;
-            edges.push_back(ne);
+          for (unsigned ki = 0, ke = old_phi_node->edges().size(); ki != ke; ++ki) {
+            const PhiEdge& e = old_phi_node->edges()[ki];
+            switch_to_block(value_cast<Block>(lookup_value_register(e.block).value));
+            create_phi_edge(new_phi_node, rewrite_value(e.value));
           }
-          
-          populate_phi_node(phi_node, edges);
         }
       }
-      
-      create_phi_alloca_terms(sorted_blocks);
-    }
-    
-    /**
-     * Create suitable alloca'd storage for the given type.
-     */
-    ValuePtr<> AggregateLoweringPass::FunctionRunner::create_alloca(const ValuePtr<>& type, const SourceLocation& location) {
-      ValuePtr<> byte_type = FunctionalBuilder::byte_type(context(), location);
-      
-      LoweredType new_type = rewrite_type(type);
-      if (new_type.register_type()) {
-        ValuePtr<> alloca_insn = builder().alloca_(new_type.register_type(), location);
-        return FunctionalBuilder::pointer_cast(alloca_insn, byte_type, location);
-      }
-      
-      if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(type)) {
-        LoweredType element_type = rewrite_type(array_ty->element_type());
-        if (element_type.register_type()) {
-          ValuePtr<> alloca_insn = builder().alloca_(element_type.register_type(), array_ty->length(), location);
-          return FunctionalBuilder::pointer_cast(alloca_insn, byte_type, location);
-        }
-      }
-      
-      return builder().alloca_(byte_type, new_type.size(), new_type.alignment(), location);
     }
 
     /**
-     * Create storage for an unknown type.
-     * 
-     * \param type Type to create storage for.
+     * \brief Allocate space for a specific type.
      */
-    ValuePtr<> AggregateLoweringPass::FunctionRunner::create_storage(const ValuePtr<>& type, const SourceLocation& location) {
-#if 0
-      if (Value *source = type->source()) {
-        ValuePtr<Block> block;
-        switch(source->term_type()) {
-        case term_instruction: block = rewrite_block(value_cast<Instruction>(source)->block()); break;
-        case term_phi: block = rewrite_block(value_cast<Phi>(source)->block()); break;
-        default: break;
-        }
-
-        if (block == builder().insert_point().block())
-          return create_alloca(type, location);
+    ValuePtr<> AggregateLoweringPass::FunctionRunner::alloca_(const LoweredType& type, const SourceLocation& location) {
+      ValuePtr<> stack_ptr;
+      if (type.register_type()) {
+        stack_ptr = builder().alloca_(type.register_type(), location);
+      } else {
+        stack_ptr = builder().alloca_(FunctionalBuilder::byte_type(context(), location), type.size(), type.alignment(), location);
       }
-      
-      ValuePtr<Block> block = builder().insert_point().block();
-      ValuePtr<Phi> phi = block->insert_phi(FunctionalBuilder::byte_pointer_type(context(), location), location);
-      m_generated_phi_terms[type][block].alloca_.push_back(phi);
-      return phi;
-#else
-      PSI_NOT_IMPLEMENTED();
-#endif
-    }
-    
-    LoweredValue AggregateLoweringPass::FunctionRunner::load_value(const LoweredType& type, const LoweredValueRegister& ptr, const SourceLocation& location) {
-      if (type.global() && ptr.global)
-        return pass().global_rewriter().load_value(type, ptr, location);
-      else
-        return load_value(type, ptr.value, location);
+      return FunctionalBuilder::pointer_cast(stack_ptr, FunctionalBuilder::byte_type(context(), location), location);
     }
     
     /**
@@ -1186,12 +1066,15 @@ namespace Psi {
      * \param ptr Address to load from (new value).
      */
     LoweredValue AggregateLoweringPass::FunctionRunner::load_value(const LoweredType& type, const ValuePtr<>& ptr, const SourceLocation& location) {
-      if (type.primitive()) {
+      switch (type.mode()) {
+      case LoweredType::mode_register: {
         ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, type.register_type(), location);
         ValuePtr<> load_insn = builder().load(cast_ptr, location);
-        return LoweredValue::primitive(false, load_insn);
-      } else if (type.split()) {
-        const LoweredType::EntryVector& ty_entries = type.entries();
+        return LoweredValue::register_(type, false, load_insn);
+      }
+      
+      case LoweredType::mode_split: {
+        const LoweredType::EntryVector& ty_entries = type.split_entries();
         LoweredValue::EntryVector val_entries;
         ElementOffsetGenerator gen(this, location);
         ValuePtr<> byte_ptr = FunctionalBuilder::pointer_cast(ptr, FunctionalBuilder::byte_pointer_type(context(), location), location);
@@ -1199,13 +1082,21 @@ namespace Psi {
           gen.next(*ii);
           val_entries.push_back(load_value(*ii, FunctionalBuilder::pointer_offset(byte_ptr, gen.offset(), location), location));
         }
-        return LoweredValue(type.origin(), false, val_entries);
-      } else {
-        // So this type cannot be loaded: memcpy it to the stack
-        ValuePtr<> target_ptr = create_storage(type, location);
-        builder().memcpy(target_ptr, ptr, type.size(), type.alignment(), location);
-        return LoweredValue::stack(type.origin(), false, target_ptr);
+        return LoweredValue::split(type, val_entries);
       }
+      
+      case LoweredType::mode_union:
+      case LoweredType::mode_blob:
+        throw TvmUserError("Cannot load types not supported by the back-end into registers");
+      
+      default: PSI_FAIL("unexpected enum value");
+      }
+    }
+
+    LoweredValue AggregateLoweringPass::FunctionRunner::bitcast(const LoweredType& type, const LoweredValue& input, const SourceLocation& location) {
+      ValuePtr<> ptr = alloca_(input.type(), location);
+      store_value(input, ptr, location);
+      return load_value(type, ptr, location);
     }
     
     LoweredType AggregateLoweringPass::FunctionRunner::rewrite_type(const ValuePtr<>& type) {
@@ -1229,8 +1120,9 @@ namespace Psi {
       } else {
         PSI_ASSERT(!result.empty());
         m_type_map.insert(std::make_pair(type, result));
-        return result;
       }
+      
+      return result;
     }
     
     LoweredValue AggregateLoweringPass::FunctionRunner::rewrite_value(const ValuePtr<>& value_orig) {
@@ -1264,250 +1156,71 @@ namespace Psi {
      * PHI node this will be a PHI term, but in general it will not be.
      */
     LoweredValue AggregateLoweringPass::FunctionRunner::create_phi_node(const ValuePtr<Block>& block, const LoweredType& type, const SourceLocation& location) {
-      if (type.primitive()) {
+      switch (type.mode()) {
+      case LoweredType::mode_constant:
+        return LoweredValue::constant(type);
+        
+      case LoweredType::mode_register: {
         ValuePtr<Phi> new_phi = block->insert_phi(type.register_type(), location);
-        return LoweredValue::register_(type.origin(), false, new_phi);
-      } else if (type.split()) {
-        const LoweredType::EntryVector& entries = type.entries();
+        return LoweredValue::register_(type, false, new_phi);
+      }
+      
+      case LoweredType::mode_split: {
+        const LoweredType::EntryVector& entries = type.split_entries();
         LoweredValue::EntryVector value_entries;
         for (LoweredType::EntryVector::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
           value_entries.push_back(create_phi_node(block, *ii, location));
-        return LoweredValue(type.origin(), false, value_entries);
-      } else {
-        ValuePtr<Phi> new_phi = block->insert_phi(FunctionalBuilder::byte_pointer_type(context(), location), location);
-        m_generated_phi_terms[type.origin()][block].user.push_back(new_phi);
-        return LoweredValue::stack(type.origin(), false, new_phi);
+        return LoweredValue::split(type, value_entries);
+      }
+      
+      case LoweredType::mode_blob:
+      case LoweredType::mode_union:
+        throw TvmUserError("Phi nodes do not work with types not supported by the back-end");
+      
+      default: PSI_FAIL("unexpected enum value");
       }
     }
     
     /**
      * \brief Initialize the values used by a PHI node, or a set of PHI nodes representing parts of a single value.
      * 
-     * \param incoming_edges Predecessor block associated with each value, in the rewritten function.
+     * \param phi_term PHI term in the new function
+     * \param value Value to be passed through the new PHI node
      * 
-     * \param incoming_values Values associated with each value in the original function.
+     * The instruction builder insert point should be set to the end of the block being jumped from.
      */
-    void AggregateLoweringPass::FunctionRunner::populate_phi_node(const ValuePtr<>& phi_term, const std::vector<PhiEdge>& incoming_edges) {
-      LoweredType type = rewrite_type(phi_term->type());
-      if (type.register_type()) {
-        ValuePtr<Phi> new_phi = value_cast<Phi>(lookup_value_register(phi_term).value);
-        for (unsigned ii = 0, ie = incoming_edges.size(); ii != ie; ++ii)
-          new_phi->add_edge(incoming_edges[ii].block, rewrite_value_register(incoming_edges[ii].value).value);
+    void AggregateLoweringPass::FunctionRunner::create_phi_edge(const LoweredValue& phi_term, const LoweredValue& value) {
+      switch (value.type().mode()) {
+      case LoweredType::mode_constant:
+        return;
+        
+      case LoweredType::mode_register:
+        value_cast<Phi>(phi_term.register_value())->add_edge(m_builder.block(), value.register_value());
+        return;
+      
+      case LoweredType::mode_split: {
+        PSI_ASSERT(phi_term.mode() == LoweredValue::mode_split);
+        const LoweredValue::EntryVector& phi_entries = phi_term.split_entries();
+        const LoweredValue::EntryVector& value_entries = value.split_entries();
+        PSI_ASSERT(phi_entries.size() == value_entries.size());
+        for (std::size_t ii = 0, ie = phi_entries.size(); ii != ie; ++ii)
+          create_phi_edge(phi_entries[ii], value_entries[ii]);
         return;
       }
 
-      if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(phi_term->type())) {
-        std::vector<PhiEdge> child_incoming_edges(incoming_edges.size());
-        for (unsigned ii = 0, ie = struct_ty->n_members(); ii != ie; ++ii) {
-          for (unsigned ji = 0, je = incoming_edges.size(); ji != je; ++ji) {
-            PhiEdge& child_edge = child_incoming_edges[ji];
-            child_edge.block = incoming_edges[ji].block;
-            child_edge.value = FunctionalBuilder::element_value(incoming_edges[ji].value, ii, incoming_edges[ji].value->location());
-          }
-          populate_phi_node(FunctionalBuilder::element_value(phi_term, ii, phi_term->location()), child_incoming_edges);
-        }
-      } else if (isa<Metatype>(phi_term->type())) {
-        std::vector<PhiEdge> child_incoming_edges(incoming_edges.size());
-        for (unsigned ji = 0, je = incoming_edges.size(); ji != je; ++ji)
-          child_incoming_edges[ji].block = incoming_edges[ji].block;
-        
-        for (unsigned ji = 0, je = incoming_edges.size(); ji != je; ++ji)
-          child_incoming_edges[ji].value = FunctionalBuilder::type_size(incoming_edges[ji].value, incoming_edges[ji].value->location());
-        populate_phi_node(FunctionalBuilder::type_size(phi_term, phi_term->location()), child_incoming_edges);
-          
-        for (unsigned ji = 0, je = incoming_edges.size(); ji != je; ++ji)
-          child_incoming_edges[ji].value = FunctionalBuilder::type_alignment(incoming_edges[ji].value, incoming_edges[ji].value->location());
-        populate_phi_node(FunctionalBuilder::type_alignment(phi_term, phi_term->location()), child_incoming_edges);
-      } else {
-        ValuePtr<Phi> new_phi = value_cast<Phi>(lookup_value_ptr(phi_term).value);
-        for (unsigned ii = 0, ie = incoming_edges.size(); ii != ie; ++ii)
-          new_phi->add_edge(incoming_edges[ii].block, rewrite_value_ptr(incoming_edges[ii].value).value);
+      case LoweredType::mode_union:
+      case LoweredType::mode_blob:
+        throw TvmUserError("Phi nodes do not work with types not supported by the back-end");
+
+      default: PSI_FAIL("unrecognised enum value");
       }
     }
 
-    /**
-     * \c alloca terms created by rewriting aggregates onto the heap are created as
-     * PHI terms since loops can the memory used to have to be different on later
-     * passes through a block.
-     */
-    void AggregateLoweringPass::FunctionRunner::create_phi_alloca_terms(const std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > >& sorted_blocks) {
-      ValuePtr<> byte_type = FunctionalBuilder::byte_type(context(), new_function()->location());
-      ValuePtr<> byte_pointer_type = FunctionalBuilder::byte_pointer_type(context(), new_function()->location());
-
-      // Build a map from a block to blocks it dominates
-      typedef std::multimap<ValuePtr<Block>, ValuePtr<Block> > DominatorMapType;
-      DominatorMapType dominator_map;
-      for (std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > >::const_iterator ji = sorted_blocks.begin(), je = sorted_blocks.end(); ji != je; ++ji)
-        dominator_map.insert(std::make_pair(ji->second->dominator(), ji->second));
-      
-      for (TypePhiMapType::iterator ii = m_generated_phi_terms.begin(), ie = m_generated_phi_terms.end(); ii != ie; ++ii) {
-        // Find block to create alloca's for current type
-        ValuePtr<Block> type_block = new_function()->blocks().front();
-        if (Value *source = ii->first->source()) {
-          switch (source->term_type()) {
-          case term_instruction: type_block = rewrite_block(value_cast<Instruction>(source)->block()); break;
-          case term_phi: type_block = rewrite_block(value_cast<Phi>(source)->block()); break;
-          default: break;
-          }
-        }
-
-        // Find blocks dominated by the block the type is created in, recursively
-        std::vector<ValuePtr<Block> > dominated_blocks(1, type_block);
-        for (unsigned count = 0; count != dominated_blocks.size(); ++count) {
-          for (std::pair<DominatorMapType::iterator, DominatorMapType::iterator> pair = dominator_map.equal_range(dominated_blocks[count]);
-               pair.first != pair.second; ++pair.first)
-            dominated_blocks.push_back(pair.first->second);
-        }
-        
-        // The total number of slots required
-        unsigned total_vars = 0;
-        
-        // Holds the number of variables in scope in the specified block
-        std::map<ValuePtr<Block>, unsigned> active_vars;
-        active_vars[type_block] = 0;
-        for (std::vector<ValuePtr<Block> >::iterator ji = boost::next(dominated_blocks.begin()), je = dominated_blocks.end(); ji != je; ++ji) {
-          ValuePtr<Block> block = *ji;
-          BlockPhiData& data = ii->second[block];
-          unsigned block_vars = active_vars[block->dominator()] + data.user.size() + data.alloca_.size();
-          active_vars[block] = block_vars;
-          total_vars = std::max(block_vars, total_vars);
-        }
-        
-        // Create PHI nodes in each block to track the used/free list
-        for (std::vector<ValuePtr<Block> >::iterator ji = boost::next(dominated_blocks.begin()), je = dominated_blocks.end(); ji != je; ++ji) {
-          ValuePtr<Block> block = *ji;
-          BlockPhiData& data = ii->second[*ji];
-          unsigned used_vars = active_vars[block];
-          unsigned free_vars = total_vars - used_vars;
-          for (unsigned ki = 0, ke = data.user.size(); ki != ke; ++ki)
-            data.used.push_back(block->insert_phi(byte_pointer_type, block->location()));
-          for (unsigned k = 0; k != free_vars; ++k)
-            data.free_.push_back(block->insert_phi(byte_pointer_type, block->location()));
-        }
-        
-        // Create memory slots
-        m_builder.set_insert_point(type_block->instructions().back());
-        
-        BlockPhiData& entry_data = ii->second[type_block];
-        entry_data.free_.resize(total_vars);
-        LoweredType new_type = rewrite_type(ii->first);
-        if (new_type.register_type()) {
-          for (unsigned ji = 0, je = entry_data.free_.size(); ji != je; ++ji)
-            entry_data.free_[ji] = FunctionalBuilder::pointer_cast(builder().alloca_(new_type.register_type(), type_block->location()), byte_type, type_block->location());
-          goto slots_created;
-        }
-        
-        if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(ii->first)) {
-          LoweredType element_type = rewrite_type(array_ty->element_type());
-          if (element_type.register_type()) {
-            for (unsigned ji = 0, je = entry_data.free_.size(); ji != je; ++ji)
-              entry_data.free_[ji] = FunctionalBuilder::pointer_cast(builder().alloca_(element_type.register_type(), array_ty->length(), type_block->location()), byte_type, type_block->location());
-            goto slots_created;
-          }
-        }
-        
-        // Default mechanism suitable for any type
-        for (unsigned ji = 0, je = entry_data.free_.size(); ji != je; ++ji)
-          entry_data.free_[ji] = builder().alloca_(byte_type, new_type.size(), new_type.alignment(), type_block->location());
-        
-      slots_created:
-        for (std::vector<ValuePtr<Block> >::iterator ji = dominated_blocks.begin(), je = dominated_blocks.end(); ji != je; ++ji) {
-          ValuePtr<Block> source_block = *ji;
-          BlockPhiData& source_data = ii->second[source_block];
-          
-          const std::vector<ValuePtr<Block> >& successors = source_block->successors();
-          for (std::vector<ValuePtr<Block> >::const_iterator ki = successors.begin(), ke = successors.end(); ki != ke; ++ki) {
-            ValuePtr<Block> target_block = *ki;
-            ValuePtr<Block> common_dominator = Block::common_dominator(source_block, target_block->dominator());
-            
-            if (!common_dominator->dominated_by(type_block))
-              continue;
-            
-            BlockPhiData& target_data = ii->second[target_block];
-            
-            // Find all slots newly used between common_dominator and source_block
-            std::set<ValuePtr<> > free_slots_set;
-            for (ValuePtr<Block> parent = source_block; parent != common_dominator; parent = parent->dominator()) {
-              BlockPhiData& parent_data = ii->second[parent];
-              free_slots_set.insert(parent_data.alloca_.begin(), parent_data.alloca_.end());
-              free_slots_set.insert(parent_data.used.begin(), parent_data.used.end());
-            }
-            
-            std::set<ValuePtr<> > used_slots_set;
-            for (std::vector<ValuePtr<Phi> >::iterator li = target_data.user.begin(), le = target_data.user.end(); li != le; ++li) {
-              ValuePtr<> incoming = (*li)->incoming_value_from(source_block);
-              // Filter out values which are user-specified
-              if (free_slots_set.erase(incoming))
-                used_slots_set.insert(incoming);
-            }
-              
-            std::vector<ValuePtr<> > used_slots(used_slots_set.begin(), used_slots_set.end());
-            std::vector<ValuePtr<> > free_slots = source_data.free_;
-            free_slots.insert(free_slots.end(), free_slots_set.begin(), free_slots_set.end());
-            
-            PSI_ASSERT(free_slots.size() >= target_data.free_.size() + target_data.alloca_.size());
-            PSI_ASSERT(free_slots.size() + used_slots.size() == target_data.used.size() + target_data.free_.size() + target_data.alloca_.size());
-            
-            unsigned free_to_used_transfer = target_data.used.size() - used_slots.size();
-            used_slots.insert(used_slots.end(), free_slots.end() - free_to_used_transfer, free_slots.end());
-            free_slots.erase(free_slots.end() - free_to_used_transfer, free_slots.end());
-            
-            PSI_ASSERT(used_slots.size() == target_data.used.size());
-            PSI_ASSERT(free_slots.size() == target_data.free_.size() + target_data.alloca_.size());
-            
-            for (unsigned li = 0, le = used_slots.size(); li != le; ++li)
-              value_cast<Phi>(target_data.used[li])->add_edge(source_block, used_slots[li]);
-            for (unsigned li = 0, le = target_data.alloca_.size(); li != le; ++li)
-              target_data.alloca_[li]->add_edge(source_block, free_slots[li]);
-            for (unsigned li = 0, le = target_data.free_.size(), offset = target_data.alloca_.size(); li != le; ++li)
-              value_cast<Phi>(target_data.free_[li])->add_edge(source_block, free_slots[li+offset]);
-          }
-        }
-      }
-    }
-    
     AggregateLoweringPass::ModuleLevelRewriter::ModuleLevelRewriter(AggregateLoweringPass *pass)
     : AggregateLoweringRewriter(pass) {
     }
-    
-    LoweredValue AggregateLoweringPass::ModuleLevelRewriter::load_value(const ValuePtr<>& load_term, const LoweredValueRegister& ptr, const SourceLocation& location) {
-      PSI_ASSERT(ptr.global);
 
-      ValuePtr<> origin = ptr.value;
-      unsigned offset = 0;
-      /*
-       * This is somewhat awkward - I have to work out the relationship of ptr to some
-       * already existing global variable, and then simulate a load instruction.
-       */
-      while (true) {
-        /* ArrayElementPtr should not occur in these expressions since it is arrays
-         * which can cause values to have to be treated as pointers due to the fact
-         * that their indices may not be compile-time constants.
-         */
-        if (ValuePtr<PointerOffset> ptr_offset = dyn_cast<PointerOffset>(origin)) {
-          origin = ptr_offset->pointer();
-          //offset += pass().target_callback->type_size_alignment() * rewrite_value_integer();
-        } else if (ValuePtr<PointerCast> ptr_cast = dyn_cast<PointerCast>(origin)) {
-          origin = ptr_cast->pointer();
-        } else if (ValuePtr<ElementPtr> element_ptr = dyn_cast<ElementPtr>(origin)) {
-          origin = element_ptr->aggregate_ptr();
-        } else if (ValuePtr<OuterPtr> outer_ptr = dyn_cast<OuterPtr>(origin)) {
-          origin = outer_ptr->pointer();
-        } else if (isa<GlobalVariable>(origin)) {
-          break;
-        } else {
-          PSI_FAIL("unexpected term type in global pointer expression");
-        }
-      }
-      
-      PSI_NOT_IMPLEMENTED();
-    }
-    
-    ValuePtr<> AggregateLoweringPass::ModuleLevelRewriter::store_value(const ValuePtr<>& value, const SourceLocation& location) {
-      PSI_NOT_IMPLEMENTED();
-    }
-    
-    ValuePtr<> AggregateLoweringPass::ModuleLevelRewriter::store_type(const ValuePtr<>& size, const ValuePtr<>& alignment, const SourceLocation& location) {
+    LoweredValue AggregateLoweringPass::ModuleLevelRewriter::bitcast(const LoweredType& type, const LoweredValue& input, const SourceLocation& location) {
       PSI_NOT_IMPLEMENTED();
     }
     
@@ -1671,7 +1384,7 @@ namespace Psi {
     AggregateLoweringPass::GlobalBuildStatus AggregateLoweringPass::rewrite_global_value(const ValuePtr<>& value) {
       LoweredType value_ty = global_rewriter().rewrite_type(value->type());
       if (value_ty.register_type()) {
-        LoweredValueRegister rewritten_value = m_global_rewriter.rewrite_value_register(value);
+        LoweredValueSimple rewritten_value = m_global_rewriter.rewrite_value_register(value);
         PSI_ASSERT(rewritten_value.global);
         return GlobalBuildStatus(rewritten_value.value, value_ty.size(), value_ty.alignment(), value_ty.size(), value_ty.alignment());
       }
@@ -1710,9 +1423,9 @@ namespace Psi {
     : ModuleRewriter(source_module, target_context),
     m_global_rewriter(this),
     target_callback(target_callback_),
-    remove_only_unknown(false),
-    remove_all_unions(false),
-    remove_register_arrays(false),
+    split_arrays(false),
+    split_structs(false),
+    remove_unions(false),
     remove_sizeof(false),
     pointer_arithmetic_to_bytes(false),
     flatten_globals(false) {
@@ -1750,7 +1463,7 @@ namespace Psi {
           new_var->set_constant(old_var->constant());
           
           if (old_var->alignment()) {
-            LoweredValueRegister old_align = m_global_rewriter.rewrite_value_register(old_var->alignment());
+            LoweredValueSimple old_align = m_global_rewriter.rewrite_value_register(old_var->alignment());
             PSI_ASSERT(old_align.global);
             new_var->set_alignment(FunctionalBuilder::max(status.alignment, old_align.value, term->location()));
           } else {

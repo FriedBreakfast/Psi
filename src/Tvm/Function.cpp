@@ -311,11 +311,27 @@ namespace Psi {
       return exists->parameter_type_after(parameters);
     }
     
+    void hashable_check_source_hook(UnwrapParameter&, CheckSourceParameter&) {
+      throw TvmUserError("unwrap_param used outside its context");
+    }
+    
     PSI_TVM_FUNCTIONAL_IMPL(UnwrapParameter, FunctionalValue, unwrap_param)
 
     ParameterPlaceholder::ParameterPlaceholder(Context& context, const ValuePtr<>& type, const SourceLocation& location)
-    : Value(context, term_parameter_placeholder, type, this, location),
+    : Value(context, term_parameter_placeholder, type, location),
     m_parameter_type(type) {
+    }
+    
+    Value* ParameterPlaceholder::disassembler_source() {
+      return this;
+    }
+    
+    /**
+     * \internal Since check_source checks that the \c available map does not contain this term,
+     * this method always throws.
+     */
+    void ParameterPlaceholder::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Parameter placeholder used in wrong context");
     }
     
     template<typename V>
@@ -329,14 +345,17 @@ namespace Psi {
       return ValuePtr<ParameterPlaceholder>(::new ParameterPlaceholder(*this, type, location));
     }
 
-    BlockMember::BlockMember(TermType term_type, const ValuePtr<>& type,
-                             Value* source, const SourceLocation& location)
-    : Value(type->context(), term_type, type, source, location),
+    BlockMember::BlockMember(TermType term_type, const ValuePtr<>& type, const SourceLocation& location)
+    : Value(type->context(), term_type, type, location),
     m_block(NULL) {
     }
-
+    
+    Value* BlockMember::disassembler_source() {
+      return this;
+    }
+    
     Instruction::Instruction(const ValuePtr<>& type, const char *operation, const SourceLocation& location)
-    : BlockMember(term_instruction, type, this, location),
+    : BlockMember(term_instruction, type, location),
     m_operation(operation) {
     }
     
@@ -346,8 +365,8 @@ namespace Psi {
      * If the test fails, throw an exception.
      */
     void Instruction::require_available(const ValuePtr<>& value) {
-      if (!source_dominated(value->source(), this))
-        throw TvmUserError("Instruction parameter is not available at insertion point");
+      CheckSourceParameter cs(CheckSourceParameter::mode_before_instruction, this);
+      value->check_source(cs);
     }
 
     /**
@@ -358,6 +377,40 @@ namespace Psi {
       block_ptr()->erase_instruction(*this);
     }
 
+    void Instruction::check_source_hook(CheckSourceParameter& parameter) {
+      switch (parameter.mode) {
+      case CheckSourceParameter::mode_before_instruction: {
+        Instruction *insn = value_cast<Instruction>(parameter.point);
+        if (insn->block_ptr()->dominator()->dominated_by(block_ptr())) {
+          return;
+        } else if (insn->block_ptr() == block_ptr()) {
+          if (block_ptr()->instructions().before(*this, *insn))
+            return;
+        }
+        break;
+      }
+      
+      case CheckSourceParameter::mode_after_block: {
+        Block *block = value_cast<Block>(parameter.point);
+        if (block->dominated_by(block_ptr()))
+          return;
+        break;
+      }
+      
+      case CheckSourceParameter::mode_before_block: {
+        Block *block = value_cast<Block>(parameter.point);
+        if (block->dominator()->dominated_by(block_ptr()))
+          return;
+        break;
+      }
+      
+      case CheckSourceParameter::mode_global:
+        break;
+      }
+      
+      throw TvmUserError("Result of PHI term used in wrong context");
+    }
+
     TerminatorInstruction::TerminatorInstruction(Context& context, const char* operation, const SourceLocation& location)
     : Instruction(FunctionalBuilder::empty_type(context, location), operation, location) {
     }
@@ -366,7 +419,7 @@ namespace Psi {
      * Utility function to check that the dominator of a jump target also dominates this instruction.
      */
     void TerminatorInstruction::check_dominated(const ValuePtr<Block>& target) {
-      if (!source_dominated(target->dominator().get(), block().get()))
+      if (!block_ptr()->dominated_by(target->dominator()))
         throw TvmUserError("instruction jump target dominator block may not have run");
     }
     
@@ -390,6 +443,8 @@ namespace Psi {
      * If \c block is NULL, this will return true since a NULL
      * dominator block refers to the function entry, i.e. before the
      * entry block is run, and therefore eveything is dominated by it.
+     * 
+     * If \c block is the same as \c this, this function returns true.
      */
     bool Block::dominated_by(Block *block) {
       if (!block)
@@ -488,8 +543,11 @@ namespace Psi {
      * phantom values.
      */
     void Phi::add_edge(const ValuePtr<Block>& block, const ValuePtr<>& value) {
-      if (value->phantom())
-        throw TvmUserError("phi nodes cannot take on phantom values");
+      CheckSourceParameter cs(CheckSourceParameter::mode_after_block, block.get());
+      value->check_source(cs);
+      
+      if (!block->dominated_by(block_ptr()->dominator().get()))
+        throw TvmUserError("incoming edge added to PHI term for block which does not dominate the current one");
       
       for (std::vector<PhiEdge>::const_iterator ii = m_edges.begin(), ie = m_edges.end(); ii != ie; ++ii) {
         if (ii->block == block)
@@ -504,9 +562,7 @@ namespace Psi {
     }
 
     Phi::Phi(const ValuePtr<>& type, const SourceLocation& location)
-    : BlockMember(term_phi, type, this, location) {
-      if (type->phantom())
-        throw TvmUserError("type of phi term cannot be phantom");
+    : BlockMember(term_phi, type, location) {
     }
     
     /**
@@ -534,6 +590,36 @@ namespace Psi {
       v("edges", &Phi::m_edges);
     }
 
+    void Phi::check_source_hook(CheckSourceParameter& parameter) {
+      switch (parameter.mode) {
+      case CheckSourceParameter::mode_before_instruction: {
+        Instruction *insn = value_cast<Instruction>(parameter.point);
+        if (insn->block_ptr()->dominated_by(block_ptr()))
+          return;
+        break;
+      }
+      
+      case CheckSourceParameter::mode_after_block: {
+        Block *block = value_cast<Block>(parameter.point);
+        if (block->dominated_by(block_ptr()))
+          return;
+        break;
+      }
+      
+      case CheckSourceParameter::mode_before_block: {
+        Block *block = value_cast<Block>(parameter.point);
+        if (block->dominator()->dominated_by(block_ptr()))
+          return;
+        break;
+      }
+      
+      case CheckSourceParameter::mode_global:
+        break;
+      }
+      
+      throw TvmUserError("Result of PHI term used in wrong context");
+    }
+
     PSI_TVM_VALUE_IMPL(Phi, Value)
 
     /**
@@ -547,6 +633,9 @@ namespace Psi {
      * take on must be of the same type.
      */
     ValuePtr<Phi> Block::insert_phi(const ValuePtr<>& type, const SourceLocation& location) {
+      CheckSourceParameter cs(CheckSourceParameter::mode_before_block, this);
+      type->check_source(cs);
+      
       ValuePtr<Phi> phi(::new Phi(type, location));
       m_phi_nodes.push_back(*phi);
       phi->m_block = this;
@@ -555,23 +644,67 @@ namespace Psi {
 
     Block::Block(Function *function, const ValuePtr<Block>& dominator,
                  bool is_landing_pad, const ValuePtr<Block>& landing_pad, const SourceLocation& location)
-    : Value(function->context(), term_block, FunctionalBuilder::block_type(function->context(), location), this, location),
+    : Value(function->context(), term_block, FunctionalBuilder::block_type(function->context(), location), location),
     m_function(function),
     m_dominator(dominator),
     m_landing_pad(landing_pad),
     m_is_landing_pad(is_landing_pad) {
     }
+    
+    Value* Block::disassembler_source() {
+      return this;
+    }
+    
+    void Block::check_source_hook(CheckSourceParameter& parameter) {
+      if (parameter.mode == CheckSourceParameter::mode_before_instruction) {
+        if (TerminatorInstruction *insn = dyn_cast<TerminatorInstruction>(parameter.point)) {
+          if (insn->block_ptr()->dominated_by(dominator()))
+            return;
+        }
+      }
+      
+      throw TvmUserError("Block address used in incorrect context");
+    }
 
     FunctionParameter::FunctionParameter(Context& context, Function *function, const ValuePtr<>& type, bool phantom, const SourceLocation& location)
-    : Value(context, term_function_parameter, type, this, location),
+    : Value(context, term_function_parameter, type, location),
     m_phantom(phantom),
     m_function(function) {
-      PSI_ASSERT(!type->parameterized());
     }
     
     template<typename V>
     void FunctionParameter::visit(V& v) {
       visit_base<Value>(v);
+    }
+    
+    void FunctionParameter::check_source_hook(CheckSourceParameter& parameter) {
+      switch (parameter.mode) {
+      case CheckSourceParameter::mode_before_instruction:
+        if (value_cast<Instruction>(parameter.point)->block_ptr()->function_ptr() == function_ptr()) {
+          if (parameter_phantom())
+            check_phantom_available(parameter, this);
+          return;
+        }
+        break;
+        
+      case CheckSourceParameter::mode_before_block:
+      case CheckSourceParameter::mode_after_block:
+        if (value_cast<Block>(parameter.point)->function_ptr() == function_ptr()) {
+          if (parameter_phantom())
+            check_phantom_available(parameter, this);
+          return;
+        }
+        break;
+        
+      case CheckSourceParameter::mode_global:
+        break;
+      }
+      
+      throw TvmUserError("function parameter used in wrong context");
+    }
+    
+    Value* FunctionParameter::disassembler_source() {
+      return this;
     }
     
     PSI_TVM_VALUE_IMPL(FunctionParameter, Value);
@@ -697,6 +830,39 @@ namespace Psi {
      */
     void InstructionInsertPoint::insert(const ValuePtr<Instruction>& instruction) {
       m_block->insert_instruction(instruction, m_instruction);
+    }
+
+    void check_phantom_available(CheckSourceParameter& parameter, Value *phantom) {
+      Block *block = NULL;
+      Instruction *instruction = NULL;
+      
+      switch (parameter.mode) {
+      case CheckSourceParameter::mode_before_block:
+        block = value_cast<Block>(parameter.point)->dominator().get();
+        break;
+        
+      case CheckSourceParameter::mode_after_block:
+        block = value_cast<Block>(parameter.point);
+        break;
+
+      case CheckSourceParameter::mode_before_instruction:
+        instruction = value_cast<Instruction>(parameter.point);
+        block = instruction->block_ptr();
+        break;
+        
+      case CheckSourceParameter::mode_global:
+        throw TvmUserError("Phantom value required to have been instantiated by this point");
+      }
+
+      for (; block; block = block->dominator().get(), instruction = NULL) {
+        for (Block::InstructionList::iterator ii = block->instructions().begin(), ie = block->instructions().end(); (ii != ie) && (ii->get() != instruction); ++ii) {
+          Solidify *solid = dyn_cast<Solidify>(ii->get());
+          if (phantom == solid->value.get())
+            return;
+        }
+      }
+      
+      throw TvmUserError("Phantom value required to have been instantiated by this point");
     }
   }
 }

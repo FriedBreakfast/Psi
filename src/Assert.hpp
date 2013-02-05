@@ -10,11 +10,11 @@ namespace Psi {
 #ifdef PSI_DEBUG
 #define PSI_ASSERT_MSG(cond,msg) ((cond) ? void() : Psi::assert_fail(PSI_DEBUG_LOCATION(), #cond, msg))
 #define PSI_ASSERT(cond) ((cond) ? void() : Psi::assert_fail(PSI_DEBUG_LOCATION(), #cond, NULL))
-#define PSI_ASSERT_BLOCK(init,cond) do {init; PSI_ASSERT(cond);} while(false)
 #define PSI_FAIL(msg) (Psi::assert_fail(PSI_DEBUG_LOCATION(), NULL, msg))
 #define PSI_NOT_IMPLEMENTED() (Psi::assert_fail(PSI_DEBUG_LOCATION(), NULL, "Not implemented"))
 #define PSI_WARNING(cond) (cond ? void() : Psi::warning_fail(PSI_DEBUG_LOCATION(), #cond, NULL))
 #define PSI_WARNING_FAIL(msg) (Psi::warning_fail(PSI_DEBUG_LOCATION(), NULL, msg))
+#define PSI_CHECK(cond) PSI_ASSERT(cond)
   void assert_fail(DebugLocation, const char *test, const char *msg) PSI_ATTRIBUTE((PSI_NORETURN));
   void warning_fail(DebugLocation, const char *test, const char *msg);
 #elif !defined(PSI_DOXYGEN)
@@ -24,6 +24,7 @@ namespace Psi {
 #define PSI_WARNING(cond) void()
 #define PSI_WARNING_FAIL(msg) void()
 #define PSI_NOT_IMPLEMENTED() (std::abort())
+#define PSI_CHECK(cond) (cond)
 #else
   /**
    * \brief Require that a condition is true.
@@ -84,7 +85,21 @@ namespace Psi {
    * and aborts. Otherwise, it just aborts.
    */
 #define PSI_NOT_IMPLEMENTED()
+/**
+ * \brief Check that a value evaluates to \c true.
+ * 
+ * The value is evaluated regardless of the debug configuration, but will raise
+ * an assertion if false and debug configuration is enabled.
+ */
+#define PSI_CHECK(cond) 
 #endif
+
+/**
+ * \param init Initialization code; always run regardless of debug configuration.
+ * Variables created in this context do not leak.
+ * \param cond Condition to assert on, only evaluated in debug configuration.
+ */
+#define PSI_ASSERT_BLOCK(init,cond) do {init; PSI_ASSERT(cond);} while(false)
 }
 
 #endif

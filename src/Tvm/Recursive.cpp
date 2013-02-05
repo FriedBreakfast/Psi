@@ -9,10 +9,9 @@
 namespace Psi {
   namespace Tvm {
     RecursiveParameter::RecursiveParameter(Context& context, const ValuePtr<>& type, bool phantom, const SourceLocation& location)
-    : Value(context, term_recursive_parameter, type, this, location),
+    : Value(context, term_recursive_parameter, type, location),
     m_phantom(phantom),
     m_recursive(NULL) {
-      PSI_ASSERT(!type->parameterized());
     }
     
     template<typename V>
@@ -22,6 +21,14 @@ namespace Psi {
     
     ValuePtr<RecursiveParameter> RecursiveParameter::create(const ValuePtr<>& type, bool phantom, const SourceLocation& location) {
       return ValuePtr<RecursiveParameter>(::new RecursiveParameter(type->context(), type, phantom, location));
+    }
+    
+    Value* RecursiveParameter::disassembler_source() {
+      return recursive()->disassembler_source();
+    }
+    
+    void RecursiveParameter::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Recursive parameter not available in this context");
     }
     
     PSI_TVM_VALUE_IMPL(RecursiveParameter, Value);
@@ -40,27 +47,9 @@ namespace Psi {
     }
 
     RecursiveType::RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, const SourceLocation& location)
-    : Value(result_type->context(), term_recursive, ValuePtr<>(), NULL, location),
+    : Value(result_type->context(), term_recursive, ValuePtr<>(), location),
     m_result_type(result_type) {
       m_parameters.swap(parameters);
-      
-      bool phantom_finished = true;
-      for (RecursiveType::ParameterList::const_iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
-        if ((*ii)->phantom()) {
-          if (phantom_finished)
-            throw TvmUserError("Phantom parameters must come before all others in a parameter list");
-        } else {
-          phantom_finished = true;
-        }
-
-        (*ii)->m_recursive = this;
-
-        if (!recursive_source_check((*ii)->source(), this))
-          throw TvmUserError("Parameter to recursive term is not global");
-      }
-      
-      if (!recursive_source_check(result_type->source(), this))
-        throw TvmUserError("Recursive term result type is not global");
     }
 
     /**
@@ -83,17 +72,8 @@ namespace Psi {
       if (m_result_type != to->type())
         throw TvmUserError("mismatch between recursive term type and resolving term type");
 
-      if (to->parameterized())
-        throw TvmUserError("cannot resolve recursive term to parameterized term");
-
       if (m_result)
         throw TvmUserError("resolving a recursive term which has already been resolved");
-
-      if (!recursive_source_check(to->source(), this))
-        throw TvmUserError("term used to resolve recursive term is not global");
-
-      if (to->phantom())
-        throw TvmUserError("Recursive type cannot be resolved to a phantom term");
       
       m_result = to;
     }
@@ -104,6 +84,20 @@ namespace Psi {
       v("result", &RecursiveType::m_result)
       ("result_type", &RecursiveType::m_result_type)
       ("parameters", &RecursiveType::m_parameters);
+    }
+    
+    Value* RecursiveType::disassembler_source() {
+      return this;
+    }
+    
+    void RecursiveType::check_source_hook(CheckSourceParameter& parameter) {
+      m_result_type->check_source(parameter);
+      CheckSourceParameter parameter_copy(parameter);
+      for (ParameterList::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
+        (*ii)->check_source(parameter_copy);
+        parameter_copy.available.insert(ii->get());
+      }
+      m_result->check_source(parameter_copy);
     }
     
     PSI_TVM_VALUE_IMPL(RecursiveType, Value)
@@ -149,12 +143,7 @@ namespace Psi {
       if (!recursive()->result())
         throw TvmUserError("Cannot unpack recursive term which has not been assigned");
 
-      ValuePtr<> result = RecursiveParameterResolverRewriter(recursive(), &m_parameters).rewrite(recursive()->result());
-      // Check that the source originally computed by apply operation would still be valid for the new result,
-      // so that the source analysis is not broken
-      PSI_ASSERT(source_dominated(result->source(), source()));
-      
-      return result;
+      return RecursiveParameterResolverRewriter(recursive(), &m_parameters).rewrite(recursive()->result());
     }
 
     template<typename V>

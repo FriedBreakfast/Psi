@@ -10,6 +10,7 @@ set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS 
 add_library(psi-compiler-common SHARED
   Runtime.cpp Runtime.hpp
   SourceLocation.cpp SourceLocation.hpp
+  Utility.cpp Utility.hpp
 )
 
 target_link_libraries(psi-compiler-common ${JSONC_LIB})
@@ -22,6 +23,7 @@ add_library(psi-tvm SHARED
   Tvm/BigInteger.cpp Tvm/BigInteger.hpp
   Tvm/Core.cpp Tvm/Core.hpp
   Tvm/Disassembler.cpp
+  Tvm/DisassemblerSource.cpp
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
   Tvm/FunctionalBuilder.cpp Tvm/FunctionalBuilder.hpp
@@ -32,7 +34,6 @@ add_library(psi-tvm SHARED
   Tvm/Number.cpp Tvm/Number.hpp
   ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp
-  Tvm/Source.cpp
   Tvm/TermOperationMap.hpp
   Tvm/Utility.hpp
   Tvm/ValueList.hpp
@@ -69,7 +70,6 @@ add_library(psi-tvm-llvm MODULE
   Tvm/llvm/Instructions.cpp
   Tvm/llvm/Target.cpp Tvm/llvm/Target.hpp
   Tvm/llvm/Target_AMD64.cpp
-  Tvm/llvm/Templates.hpp
   Tvm/llvm/Type.cpp
 )
 
@@ -87,7 +87,7 @@ add_library(psi-runtime SHARED
   ${PSI_RUNTIME_SOURCES}
 )
 
-bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp)
+bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated)
 set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
 
 add_library(psi-compiler SHARED
@@ -109,7 +109,6 @@ add_library(psi-compiler SHARED
   TvmFunctionLowering.cpp
   TvmFunctionalLowering.cpp
   TvmLowering.cpp TvmLowering.hpp
-  Utility.cpp Utility.hpp
   Visitor.hpp
   ${PSI_COMPILER_SOURCES}
 )

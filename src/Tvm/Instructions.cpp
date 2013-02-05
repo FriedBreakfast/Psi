@@ -16,9 +16,6 @@ namespace Psi {
 
       if (value->type() != function()->result_type())
         throw TvmUserError("return instruction argument has incorrect type");
-
-      if (value->phantom())
-        throw TvmUserError("cannot return a phantom value");
     }
     
     std::vector<ValuePtr<Block> > Return::successors() {
@@ -51,14 +48,8 @@ namespace Psi {
       if (condition->type() != FunctionalBuilder::bool_type(context(), location()))
         throw TvmUserError("first parameter to branch instruction must be of boolean type");
 
-      if (condition->phantom())
-        throw TvmUserError("cannot conditionally branch on a phantom value");
-
       if (!true_target || !false_target)
         throw TvmUserError("jump targets may not be null");
-      
-      if (true_target->phantom() || false_target->phantom())
-        throw TvmUserError("jump targets cannot be phantom");
       
       if ((true_target->function() != function()) || (false_target->function() != function()))
         throw TvmUserError("jump target must be in the same function");
@@ -94,9 +85,6 @@ namespace Psi {
       
       if (!target)
         throw TvmUserError("jump targets may not be null");
-      
-      if (target->phantom())
-        throw TvmUserError("jump targets cannot be phantom");
       
       if (target->function() != function())
         throw TvmUserError("jump target must be in the same function");
@@ -160,16 +148,8 @@ namespace Psi {
       if (call_type(target, parameters) != type())
         throw TvmUserError("Type of function call has changed since instruction was created");
 
-      if (target->phantom())
-        throw TvmUserError("function call target cannot have phantom value");
-
-      ValuePtr<FunctionType> target_type = target_function_type();
-      for (std::size_t ii = 0, ie = parameters.size(); ii < ie; ++ii) {
+      for (std::size_t ii = target_function_type()->n_phantom(), ie = parameters.size(); ii < ie; ++ii)
         require_available(parameters[ii]);
-
-        if ((ii >= target_type->n_phantom()) && parameters[ii]->phantom())
-          throw TvmUserError("cannot pass phantom value to non-phantom function parameter");
-      }
     }
 
     template<typename V>
@@ -203,9 +183,6 @@ namespace Psi {
       require_available(target);
       require_available(value);
       
-      if (target->phantom() || value->phantom())
-        throw TvmUserError("value and target for store instruction cannot have phantom values");
-
       if (pointer_target_type(target) != value->type())
         throw TvmUserError("store target type is not a pointer to the type of value");
     }
@@ -251,8 +228,6 @@ namespace Psi {
       
       if (!element_type->is_type())
         throw TvmUserError("first parameter to alloca is not a type");
-      if (element_type->phantom())
-        throw TvmUserError("parameter to alloca cannot be phantom");
       
       ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location());
 
@@ -260,16 +235,12 @@ namespace Psi {
         require_available(count);
         if (count->type() != size_type)
           throw TvmUserError("second parameter to alloca is not a uintptr");
-        if (count->phantom())
-          throw TvmUserError("parameter to alloca cannot be phantom");
       }
 
       if (alignment) {
         require_available(alignment);
         if (alignment->type() != size_type)
           throw TvmUserError("third parameter to alloca is not a uintptr");
-        if (alignment->phantom())
-          throw TvmUserError("parameter to alloca cannot be phantom");
       }
     }
     
@@ -368,7 +339,7 @@ namespace Psi {
     }
     
     void Solidify::type_check() {
-      if (!isa<ConstantType>(value_->type()))
+      if (!isa<ConstantType>(value->type()))
         throw TvmUserError("Parameter to solidify is not const");
     }
     

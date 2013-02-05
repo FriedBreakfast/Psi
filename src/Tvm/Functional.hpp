@@ -14,7 +14,7 @@ namespace Psi {
       virtual void next(const ValuePtr<>& ptr) = 0;
     };
     
-    class FunctionalValueVisitorWrapper : public ValuePtrVistorBase<FunctionalValueVisitorWrapper> {
+    class FunctionalValueVisitorWrapper : public ValuePtrVisitorBase<FunctionalValueVisitorWrapper> {
       FunctionalValueVisitor *m_callback;
     public:
       FunctionalValueVisitorWrapper(FunctionalValueVisitor *callback) : m_callback(callback) {}

@@ -1,5 +1,4 @@
 #include "Builder.hpp"
-#include "Templates.hpp"
 
 #include "../Aggregate.hpp"
 #include "../Core.hpp"
@@ -52,47 +51,6 @@ namespace Psi {
         return m_str;
       }
 
-      struct ModuleBuilder::TypeBuilderCallback : PtrValidBase<llvm::Type> {
-        ModuleBuilder *self;
-        TypeBuilderCallback(ModuleBuilder *self_) : self(self_) {}
-
-        llvm::Type* build(const ValuePtr<>& term) const {
-          switch(term->term_type()) {
-          case term_functional:
-            return self->build_type_internal(value_cast<FunctionalValue>(term));
-
-          case term_apply: {
-            ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
-            PSI_ASSERT(actual->term_type() != term_apply);
-            return self->build_type(actual);
-          }
-
-          case term_function_type: {
-            llvm::SmallVector<llvm::Type*, 8> params;
-            ValuePtr<FunctionType> function_type = value_cast<FunctionType>(term);
-            for (std::size_t i = function_type->n_phantom(), e = function_type->parameter_types().size(); i != e; ++i)
-              params.push_back(self->build_type(function_type->parameter_types()[i]));
-            llvm::Type *result = self->build_type(function_type->result_type());
-            return llvm::FunctionType::get(result, params, false);
-          }
-
-          default:
-            /**
-             * Only terms which can be the type of a term should
-             * appear here. This restricts us to term_functional,
-             * term_apply, term_function_type and
-             * term_function_parameter.
-             *
-             * term_recursive should only occur inside term_apply.
-             *
-             * term_recursive_parameter should never be encountered
-             * since it should be expanded out by ApplyTerm::apply().
-             */
-            PSI_FAIL("unexpected type term type");
-          }
-        }
-      };
-
       /**
        * \brief Return the constant integer specified by the given term.
        *
@@ -107,31 +65,6 @@ namespace Psi {
         return llvm::cast<llvm::ConstantInt>(c)->getValue();
       }
 
-      struct ModuleBuilder::ConstantBuilderCallback : PtrValidBase<llvm::Constant> {
-        ModuleBuilder *self;
-        ConstantBuilderCallback(ModuleBuilder *self_) : self(self_) {}
-
-        llvm::Constant* build(const ValuePtr<>& term) const {
-          switch (term->term_type()) {
-          case term_functional:
-            return self->build_constant_internal(value_cast<FunctionalValue>(term));
-           
-          case term_apply: {
-            ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
-            PSI_ASSERT(actual->term_type() != term_apply);
-            return self->build_constant(actual);
-          }
-
-          case term_global_variable:
-          case term_function:
-            return self->build_global(value_cast<Global>(term));
-
-          default:
-            PSI_FAIL("unexpected type term type");
-          }
-        }
-      };
-      
       namespace {
         /// \brief Utility function used by intrinsic_memcpy_64 and
         /// intrinsic_memcpy_32.
@@ -269,9 +202,7 @@ namespace Psi {
         module_result.module = m_llvm_module;
         
         AggregateLoweringPass aggregate_lowering_pass(module, target_callback()->aggregate_lowering_callback());
-        aggregate_lowering_pass.remove_all_unions = true;
-        aggregate_lowering_pass.remove_only_unknown = true;
-        aggregate_lowering_pass.remove_register_arrays = true;
+        aggregate_lowering_pass.remove_unions = true;
         aggregate_lowering_pass.remove_sizeof = true;
         aggregate_lowering_pass.update();
         
@@ -354,18 +285,43 @@ namespace Psi {
         * \pre <tt>!term->phantom() && term->global()</tt>
         */
       llvm::Constant* ModuleBuilder::build_constant(const ValuePtr<>& term) {
-        PSI_ASSERT(!term->phantom() && (!term->source() || isa<Global>(term->source())));
+        std::pair<typename ConstantTermMap::iterator, bool> itp =
+          m_constant_terms.insert(std::make_pair(term, static_cast<llvm::Constant*>(NULL)));
+        if (!itp.second) {
+          if (!itp.first->second)
+            throw BuildError("Cyclical term found");
+          return itp.first->second;
+        }
 
+        llvm::Constant *r;
         switch (term->term_type()) {
-        case term_function:
-        case term_global_variable:
-        case term_apply:
         case term_functional:
-          return build_term(m_constant_terms, term, ConstantBuilderCallback(this)).first;
+          r = build_constant_internal(value_cast<FunctionalValue>(term));
+          break;
+
+        case term_global_variable:
+        case term_function:
+          r = build_global(value_cast<Global>(term));
+          break;
+          
+        case term_apply: {
+          ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
+          PSI_ASSERT(actual->term_type() != term_apply);
+          r = build_constant(actual);
+          break;
+        }
 
         default:
           PSI_FAIL("constant builder encountered unexpected term type");
         }
+        
+        if (!r) {
+          m_constant_terms.erase(itp.first);
+          throw BuildError("LLVM term building failed");
+        }
+        
+        itp.first->second = r;
+        return r;
       }
 
       /**
@@ -376,7 +332,59 @@ namespace Psi {
        * is this term.
        */
       llvm::Type* ModuleBuilder::build_type(const ValuePtr<>& term) {
-        return build_term(m_type_terms, term, TypeBuilderCallback(this)).first;
+        std::pair<typename TypeTermMap::iterator, bool> itp =
+          m_type_terms.insert(std::make_pair(term, static_cast<llvm::Type*>(NULL)));
+        if (!itp.second) {
+          if (!itp.first->second)
+            throw BuildError("Cyclical term found");
+          return itp.first->second;
+        }
+
+      llvm::Type *t;
+        switch(term->term_type()) {
+        case term_functional:
+          t = build_type_internal(value_cast<FunctionalValue>(term));
+          break;
+
+        case term_apply: {
+          ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
+          PSI_ASSERT(actual->term_type() != term_apply);
+          t = build_type(actual);
+          break;
+        }
+
+        case term_function_type: {
+          llvm::SmallVector<llvm::Type*, 8> params;
+          ValuePtr<FunctionType> function_type = value_cast<FunctionType>(term);
+          for (std::size_t i = function_type->n_phantom(), e = function_type->parameter_types().size(); i != e; ++i)
+            params.push_back(build_type(function_type->parameter_types()[i]));
+          llvm::Type *result = build_type(function_type->result_type());
+          t = llvm::FunctionType::get(result, params, false);
+          break;
+        }
+
+        default:
+          /**
+            * Only terms which can be the type of a term should
+            * appear here. This restricts us to term_functional,
+            * term_apply, term_function_type and
+            * term_function_parameter.
+            *
+            * term_recursive should only occur inside term_apply.
+            *
+            * term_recursive_parameter should never be encountered
+            * since it should be expanded out by ApplyTerm::apply().
+            */
+          PSI_FAIL("unexpected type term type");
+        }
+        
+        if (!t) {
+          m_type_terms.erase(itp.first);
+          throw BuildError("LLVM type building failed");
+        }
+        
+        itp.first->second = t;
+        return t;
       }
       
       llvm::IntegerType* integer_type(llvm::LLVMContext& context, const llvm::TargetData *target_data, IntegerType::Width width) {

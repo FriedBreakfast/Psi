@@ -263,6 +263,20 @@ namespace Psi {
     x.push_back(t2);
     return x;
   }
+  
+  /**
+   * Sort the elements of a container and remove any duplicates.
+   */
+  template<typename T, typename Ord, typename Eq>
+  void container_sort_unique(T& container, const Ord& ord=Ord(), const Eq& eq=Eq()) {
+    std::sort(container.begin(), container.end(), ord);
+    container.erase(std::unique(container.begin(), container.end(), eq), container.end());
+  }
+
+  template<typename T>
+  void container_sort_unique(T& container) {
+    container_sort_unique(container, std::less<typename T::value_type>(), std::equal_to<typename T::value_type>());
+  }
 }
 
 #endif

@@ -1,5 +1,4 @@
 #include "Builder.hpp"
-#include "Templates.hpp"
 
 #include "../Aggregate.hpp"
 #include "../Recursive.hpp"
@@ -15,92 +14,6 @@
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
-      struct FunctionBuilder::ValueBuilderCallback : PtrValidBase<llvm::Value> {
-        FunctionBuilder *self;
-        const FunctionBuilder::ValueTermMap *value_terms;
-
-        ValueBuilderCallback(FunctionBuilder *self_,
-                             const FunctionBuilder::ValueTermMap *value_terms_)
-          : self(self_), value_terms(value_terms_) {}
-
-        llvm::Value* build(const ValuePtr<>& term) const {
-          llvm::BasicBlock *old_insert_block = self->irbuilder().GetInsertBlock();
-
-          // Set the insert point to the dominator block of the value
-          llvm::BasicBlock *new_insert_block;
-          Value *src = term->source();
-          PSI_ASSERT(src);
-          switch (src->term_type()) {
-            case term_instruction: {
-              FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(value_cast<Instruction>(src)->block());
-              new_insert_block = llvm::cast<llvm::BasicBlock>(it->second);
-              break;
-            }
-            
-            case term_phi: {
-              FunctionBuilder::ValueTermMap::const_iterator it = value_terms->find(value_cast<Phi>(src)->block());
-              new_insert_block = llvm::cast<llvm::BasicBlock>(it->second);
-              break;
-            }
-            
-            case term_function_parameter: {
-              PSI_ASSERT_BLOCK(FunctionParameter *cast_src = value_cast<FunctionParameter>(src),
-                               !cast_src->phantom() && (cast_src->function() == self->function()));
-              new_insert_block = &self->llvm_function()->front();
-              break;
-            }
-            
-            case term_block: {
-              new_insert_block = &self->llvm_function()->front();
-              break;
-            }
-            
-            default:
-              PSI_FAIL("unexpected source term type");
-          }
-
-          if (new_insert_block != old_insert_block) {
-            // If inserting into another block, it should dominate this
-            // one, and therefore already have been built, and terminated.
-            PSI_ASSERT(new_insert_block->getTerminator());
-
-            // if the block has been completed, it should have a jump
-            // instruction at the end, and we want to insert before that.
-            self->irbuilder().SetInsertPoint(new_insert_block, new_insert_block->getTerminator());
-          } else {
-            old_insert_block = NULL;
-          }
-
-          llvm::Value* result;
-          switch(term->term_type()) {
-          case term_functional: {
-            result = self->build_value_functional(value_cast<FunctionalValue>(term));
-            break;
-          }
-
-          case term_apply: {
-            ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
-            PSI_ASSERT(actual->term_type() != term_apply);
-            result = self->build_value(actual);
-            break;
-          }
-
-          default:
-            PSI_FAIL("unexpected term type");
-          }
-
-          llvm::Instruction *value_insn = llvm::dyn_cast<llvm::Instruction>(result);
-          if (value_insn && !value_insn->hasName() && !value_insn->getType()->isVoidTy())
-            value_insn->setName(self->term_name(term));
-
-          // restore original insert block
-          if (old_insert_block)
-            self->irbuilder().SetInsertPoint(old_insert_block);
-
-          return result;
-        }
-      };
-
       FunctionBuilder::FunctionBuilder(ModuleBuilder *global_builder,
                                        const ValuePtr<Function>& function,
                                        llvm::Function *llvm_function)
@@ -120,9 +33,7 @@ namespace Psi {
        * \pre <tt>!term->phantom()</tt>
        */
       llvm::Value* FunctionBuilder::build_value(const ValuePtr<>& term) {
-        PSI_ASSERT(!term->phantom());
-
-        if (!term->source() || isa<Global>(term->source()))
+        if (isa<Global>(term))
           return module_builder()->build_constant(term);
 
         switch (term->term_type()) {
@@ -130,14 +41,46 @@ namespace Psi {
         case term_instruction:
         case term_phi:
         case term_block: {
-          ValueTermMap::iterator it = m_value_terms.find(term);
-          PSI_ASSERT(it != m_value_terms.end());
-          return it->second;
+          llvm::Value *const* value = m_value_terms.lookup(term);
+          PSI_ASSERT(value);
+          return *value;
         }
 
         case term_apply:
-        case term_functional:
-          return build_term(m_value_terms, term, ValueBuilderCallback(this, &m_value_terms)).first;
+        case term_functional: {
+          if (llvm::Value *const* lookup = m_value_terms.lookup(term)) {
+            if (!*lookup)
+              throw BuildError("Circular term found");
+            return *lookup;
+          }
+          m_value_terms.put(term, NULL);
+          
+          llvm::Value* result;
+          switch(term->term_type()) {
+          case term_functional: {
+            result = build_value_functional(value_cast<FunctionalValue>(term));
+            break;
+          }
+
+          case term_apply: {
+            ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
+            PSI_ASSERT(actual->term_type() != term_apply);
+            result = build_value(actual);
+            break;
+          }
+
+          default:
+            PSI_FAIL("unexpected term type");
+          }
+
+          llvm::Instruction *value_insn = llvm::dyn_cast<llvm::Instruction>(result);
+          if (value_insn && !value_insn->hasName() && !value_insn->getType()->isVoidTy())
+            value_insn->setName(term_name(term));
+          
+          m_value_terms.put(term, result);
+
+          return result;
+        }
 
         default:
           PSI_FAIL("unexpected term type");
@@ -196,6 +139,14 @@ namespace Psi {
         }
       }
 
+      void FunctionBuilder::switch_to_block(const ValuePtr<Block>& block) {
+        m_block_value_terms[m_current_block] = m_value_terms;
+        BlockMapType::const_iterator new_block = m_block_value_terms.find(block);
+        PSI_ASSERT(new_block != m_block_value_terms.end());
+        m_current_block = block;
+        m_value_terms = new_block->second;
+      }
+      
       void FunctionBuilder::run() {
         PSI_ASSERT(!m_function->blocks().empty());
         
@@ -212,8 +163,7 @@ namespace Psi {
         std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> > blocks;
         for (Function::BlockList::const_iterator it = m_function->blocks().begin(), ie = m_function->blocks().end(); it != ie; ++it) {
           llvm::BasicBlock *llvm_bb = llvm::BasicBlock::Create(module_builder()->llvm_context(), term_name(*it), m_llvm_function);
-          std::pair<ValueTermMap::iterator, bool> insert_result = m_value_terms.insert(std::make_pair(*it, llvm_bb));
-          PSI_ASSERT(insert_result.second);
+          PSI_CHECK(!m_value_terms.put(*it, llvm_bb));
           blocks.push_back(std::make_pair(*it, llvm_bb));
         }
 
@@ -231,6 +181,9 @@ namespace Psi {
         // Build basic blocks
         for (std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >::iterator it = blocks.begin();
              it != blocks.end(); ++it) {
+          switch_to_block(it->first->dominator());
+          m_current_block = it->first;
+        
           irbuilder().SetInsertPoint(it->second);
           PSI_ASSERT(it->second->empty());
 
@@ -283,10 +236,10 @@ namespace Psi {
         for (boost::unordered_map<ValuePtr<Phi>, llvm::PHINode*>::iterator it = phi_node_map.begin(), ie = phi_node_map.end(); it != ie; ++it) {
           for (std::vector<PhiEdge>::const_iterator ji = it->first->edges().begin(), je = it->first->edges().end(); ji != je; ++ji) {
             const PhiEdge& edge = *ji;
-            PSI_ASSERT(m_value_terms.find(edge.block) != m_value_terms.end());
-            llvm::BasicBlock *incoming_block =
-              llvm::cast<llvm::BasicBlock>(m_value_terms.find(edge.block)->second);
+            PSI_ASSERT(m_value_terms.lookup(edge.block));
+            llvm::BasicBlock *incoming_block = llvm::cast<llvm::BasicBlock>(*m_value_terms.lookup(edge.block));
             PSI_ASSERT(incoming_block);
+            switch_to_block(edge.block);
             llvm::Value* incoming_value = build_value(edge.value);
             it->second->addIncoming(incoming_value, incoming_block);
           }
