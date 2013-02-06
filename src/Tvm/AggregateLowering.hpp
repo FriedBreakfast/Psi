@@ -201,7 +201,7 @@ namespace Psi {
     /// \brief Get the constant value of this type, which is a const_type
     inline const LoweredValue& LoweredType::constant_value() const {return checked_cast<const ConstantType*>(m_value.get())->value;}
 
-    struct LoweredValue::UnionValue : Base {LoweredValue inner; UnionValue(const LoweredType& type, const LoweredValue& inner_) : Base(mode_union, type, inner.global()), inner(inner_) {}};
+    struct LoweredValue::UnionValue : Base {LoweredValue inner; UnionValue(const LoweredType& type, const LoweredValue& inner_) : Base(mode_union, type, inner_.global()), inner(inner_) {}};
     /// \brief Construct a LoweredValue for a union with a known inner type
     inline LoweredValue LoweredValue::union_(const LoweredType& type, const LoweredValue& inner) {return LoweredValue(boost::make_shared<UnionValue>(type, inner));}
     /// \brief Get the value used to construct a union

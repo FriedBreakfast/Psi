@@ -417,6 +417,8 @@ namespace Psi {
       
       if (isa<UndefinedValue>(ptr) || isa<UndefinedValue>(offset))
         return undef(result->type(), location);
+      else if (size_equals_constant(offset, 0))
+        return ptr;
       
       return result;
     }
@@ -937,7 +939,7 @@ namespace Psi {
      * \brief Specialize a recursive type.
      */
     ValuePtr<> FunctionalBuilder::apply(const ValuePtr<>& recursive, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
-      return recursive->context().get_functional(ApplyValue(recursive, parameters, location));
+      return recursive->context().get_functional(ApplyValue(value_cast<RecursiveType>(recursive), parameters, location));
     }
     
     ValuePtr<> FunctionalBuilder::unwrap(const ValuePtr<>& value, const SourceLocation& location) {

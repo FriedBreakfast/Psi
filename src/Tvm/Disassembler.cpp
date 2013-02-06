@@ -323,6 +323,7 @@ namespace Psi {
         switch (source->term_type()) {
         case term_global_variable:
         case term_function: break;
+        case term_recursive: break;
         case term_block: function = value_cast<Block>(source)->function(); break;
         case term_phi: function = value_cast<Phi>(source)->block()->function(); break;
         case term_instruction: function = value_cast<Instruction>(source)->block()->function(); break;

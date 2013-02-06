@@ -24,7 +24,7 @@ namespace Psi {
     }
     
     Value* RecursiveParameter::disassembler_source() {
-      return recursive()->disassembler_source();
+      return recursive() ? recursive()->disassembler_source() : NULL;
     }
     
     void RecursiveParameter::check_source_hook(CheckSourceParameter&) {
@@ -131,7 +131,7 @@ namespace Psi {
       }
     };
 
-    ApplyValue::ApplyValue(const ValuePtr<>& recursive,
+    ApplyValue::ApplyValue(const ValuePtr<RecursiveType>& recursive,
                            const std::vector<ValuePtr<> >& parameters,
                            const SourceLocation& location)
     : HashableValue(recursive->context(), term_apply, location),

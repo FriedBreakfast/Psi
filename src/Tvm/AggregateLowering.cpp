@@ -137,7 +137,6 @@ namespace Psi {
         bool all_register = true;
         for (unsigned ii = 0, ie = term->n_members(); ii != ie; ++ii) {
           LoweredType member_type = rewriter.rewrite_type(term->member_type(ii));
-          register_members.push_back(member_type.register_type());
 
           if (member_type.mode() == LoweredType::mode_register) {
             if (all_register)
@@ -304,7 +303,7 @@ namespace Psi {
           global = global && c.global();
         }
           
-        if (el_type.register_type()) {
+        if (el_type.mode() == LoweredType::mode_register) {
           std::vector<ValuePtr<> > values;
           for (LoweredValue::EntryVector::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
             values.push_back(ii->register_value());
@@ -324,7 +323,7 @@ namespace Psi {
           global = global && c.global();
         }
         
-        if (st_type.register_type()) {
+        if (st_type.mode() == LoweredType::mode_register) {
           std::vector<ValuePtr<> > values;
           for (LoweredValue::EntryVector::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
             values.push_back(ii->register_value());
@@ -390,14 +389,14 @@ namespace Psi {
           throw TvmUserError("array type argument did not evaluate to an array type");
 
         LoweredType array_ty_l = rewriter.rewrite_type(array_ty);
-        if (array_ty_l.register_type()) {
+        if (array_ty_l.mode() == LoweredType::mode_register) {
           ValuePtr<> array_ptr = FunctionalBuilder::pointer_cast(base.value, array_ty_l.register_type(), location);
           return LoweredValueSimple(base.global && index.global && array_ty_l.global(),
                                     FunctionalBuilder::element_ptr(array_ptr, index.value, location));
         }
 
         LoweredType element_ty = rewriter.rewrite_type(array_ty->element_type());
-        if (element_ty.register_type()) {
+        if (element_ty.mode() == LoweredType::mode_register) {
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(base.value, element_ty.register_type(), location);
           return LoweredValueSimple(base.global && index.global && element_ty.global(),
                                     FunctionalBuilder::pointer_offset(cast_ptr, index.value, location));
@@ -514,7 +513,7 @@ namespace Psi {
           throw TvmInternalError("struct type value did not evaluate to a struct type");
 
         LoweredType struct_ty_rewritten = rewriter.rewrite_type(struct_ty);
-        if (struct_ty_rewritten.register_type()) {
+        if (struct_ty_rewritten.mode() == LoweredType::mode_register) {
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(base.value, struct_ty_rewritten.register_type(), location);
           return LoweredValueSimple(base.global && struct_ty_rewritten.global(), FunctionalBuilder::element_ptr(cast_ptr, index, location));
         }
@@ -557,7 +556,7 @@ namespace Psi {
           throw TvmUserError("struct_eo argument did not evaluate to a struct type");
 
         ElementOffsetGenerator gen(&rewriter, term->location());
-        for (unsigned ii = 0, ie = term->index(); ii != ie; ++ii)
+        for (unsigned ii = 0, ie = term->index(); ii <= ie; ++ii)
           gen.next(struct_ty->member_type(ii));
         
         return LoweredValue::register_(rewriter.pass().size_type(), gen.global(), gen.offset());
@@ -600,7 +599,7 @@ namespace Psi {
         
         LoweredType term_ty = rewriter.rewrite_type(term->type());
         LoweredType ty = rewriter.rewrite_type(term->pointer_type()->target_type());
-        if (ty.register_type() && !rewriter.pass().pointer_arithmetic_to_bytes) {
+        if ((ty.mode() == LoweredType::mode_register) && !rewriter.pass().pointer_arithmetic_to_bytes) {
           ValuePtr<> cast_base = FunctionalBuilder::pointer_cast(base_value.value, ty.register_type(), term->location());
           ValuePtr<> ptr = FunctionalBuilder::pointer_offset(cast_base, offset.value, term->location());
           ValuePtr<> result = FunctionalBuilder::pointer_cast(ptr, FunctionalBuilder::byte_type(rewriter.context(), term->location()), term->location());
@@ -782,7 +781,7 @@ namespace Psi {
         ValuePtr<> count = term->count ? runner.rewrite_value_register(term->count).value : ValuePtr<>();
         ValuePtr<> alignment = term->alignment ? runner.rewrite_value_register(term->alignment).value : ValuePtr<>();
         ValuePtr<> stack_ptr;
-        if (type.register_type()) {
+        if (type.mode() == LoweredType::mode_register) {
           stack_ptr = runner.builder().alloca_(type.register_type(), count, alignment, term->location());
         } else {
           ValuePtr<> total_size = type.size();
@@ -818,7 +817,7 @@ namespace Psi {
         
         ValuePtr<> original_element_type = value_cast<PointerType>(term->dest->type())->target_type();
         LoweredType element_type = runner.rewrite_type(original_element_type);
-        if (element_type.register_type()) {
+        if (element_type.mode() == LoweredType::mode_register) {
           ValuePtr<> dest_cast = FunctionalBuilder::pointer_cast(dest, element_type.register_type(), term->location());
           ValuePtr<> src_cast = FunctionalBuilder::pointer_cast(dest, element_type.register_type(), term->location());
           runner.builder().memcpy(dest_cast, src_cast, count, alignment, term->location());
@@ -841,7 +840,7 @@ namespace Psi {
         
         ValuePtr<> original_element_type = value_cast<PointerType>(term->dest->type())->target_type();
         LoweredType element_type = runner.rewrite_type(original_element_type);
-        if (element_type.register_type()) {
+        if (element_type.mode() == LoweredType::mode_register) {
           ValuePtr<> ptr_cast = FunctionalBuilder::pointer_cast(ptr, element_type.register_type(), term->location());
           runner.builder().memzero(ptr_cast, count, alignment, term->location());
           return LoweredValue();
@@ -893,7 +892,7 @@ namespace Psi {
      * return NULL.
      */
     LoweredType AggregateLoweringPass::AggregateLoweringRewriter::lookup_type(const ValuePtr<>& type) {
-      const LoweredType *x = m_type_map.lookup(type);
+      const LoweredType *x = m_type_map.lookup(unrecurse(type));
       if (x)
         return *x;
       return LoweredType();
@@ -911,7 +910,7 @@ namespace Psi {
      * \brief Get a value which must already have been rewritten.
      */
     LoweredValue AggregateLoweringPass::AggregateLoweringRewriter::lookup_value(const ValuePtr<>& value) {
-      const LoweredValue *x = m_value_map.lookup(value);
+      const LoweredValue *x = m_value_map.lookup(unrecurse(value));
       if (x)
         return *x;
       return LoweredValue();
@@ -978,7 +977,7 @@ namespace Psi {
         ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, FunctionalBuilder::byte_type(context(), location), location);
         ElementOffsetGenerator gen(this, location);
         for (LoweredValue::EntryVector::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii) {
-          PSI_NOT_IMPLEMENTED(); // Update gen to current offset
+          gen.next(ii->type());
           ValuePtr<> offset_ptr = FunctionalBuilder::pointer_offset(cast_ptr, gen.offset(), location);
           store_value(*ii, offset_ptr, location);
         }
@@ -1057,8 +1056,10 @@ namespace Psi {
         m_builder.set_insert_point(new_block);
 
         // Generate PHI nodes
-        for (Block::PhiList::const_iterator ji = old_block->phi_nodes().begin(), je = old_block->phi_nodes().end(); ji != je; ++ji)
-          create_phi_node(new_block, rewrite_type((*ji)->type()), (*ji)->location());
+        for (Block::PhiList::const_iterator ji = old_block->phi_nodes().begin(), je = old_block->phi_nodes().end(); ji != je; ++ji) {
+          LoweredValue v = create_phi_node(new_block, rewrite_type((*ji)->type()), (*ji)->location());
+          m_value_map.insert(std::make_pair(*ji, v));
+        }
 
         // Create instructions
         for (Block::InstructionList::const_iterator ji = old_block->instructions().begin(), je = old_block->instructions().end(); ji != je; ++ji) {
@@ -1090,7 +1091,7 @@ namespace Psi {
      */
     ValuePtr<> AggregateLoweringPass::FunctionRunner::alloca_(const LoweredType& type, const SourceLocation& location) {
       ValuePtr<> stack_ptr;
-      if (type.register_type()) {
+      if (type.mode() == LoweredType::mode_register) {
         stack_ptr = builder().alloca_(type.register_type(), location);
       } else {
         stack_ptr = builder().alloca_(FunctionalBuilder::byte_type(context(), location), type.size(), type.alignment(), location);
@@ -1141,11 +1142,13 @@ namespace Psi {
       return load_value(type, ptr, location);
     }
     
-    LoweredType AggregateLoweringPass::FunctionRunner::rewrite_type(const ValuePtr<>& type) {
+    LoweredType AggregateLoweringPass::FunctionRunner::rewrite_type(const ValuePtr<>& type_orig) {
+      ValuePtr<> type = unrecurse(type_orig);
+      
       LoweredType global_lookup = pass().global_rewriter().lookup_type(type);
       if (!global_lookup.empty())
         return global_lookup;
-      
+
       const LoweredType *lookup = m_type_map.lookup(type);
       if (lookup)
         return *lookup;
@@ -1153,6 +1156,7 @@ namespace Psi {
       LoweredType result;
       if (ValuePtr<FunctionalValue> func_type = dyn_cast<FunctionalValue>(type)) {
         result = TypeTermRewriter::callback_map.call(*this, func_type);
+      } else if (ValuePtr<Exists> exists_type = dyn_cast<Exists>(type)) {
       } else {
         result = TypeTermRewriter::parameter_type_rewrite(*this, type);
       }
@@ -1168,12 +1172,12 @@ namespace Psi {
     }
     
     LoweredValue AggregateLoweringPass::FunctionRunner::rewrite_value(const ValuePtr<>& value_orig) {
-      LoweredValue global_lookup = pass().global_rewriter().lookup_value(value_orig);
+      ValuePtr<> value = unrecurse(value_orig);
+      
+      LoweredValue global_lookup = pass().global_rewriter().lookup_value(value);
       if (!global_lookup.empty())
         return global_lookup;
 
-      ValuePtr<> value = unrecurse(value_orig);
-      
       const LoweredValue *lookup = m_value_map.lookup(value);
       if (lookup) {
         // Not all values in the value map are necessarily valid - instructions which do not
@@ -1182,7 +1186,16 @@ namespace Psi {
         return *lookup;
       }
 
-      LoweredValue result = FunctionalTermRewriter::callback_map.call(*this, unrecurse_cast<FunctionalValue>(value));
+      LoweredValue result;
+      if (ValuePtr<Exists> exists = dyn_cast<Exists>(value)) {
+        if (!isa<PointerType>(unrecurse(exists->result())))
+          throw TvmUserError("Value of type exists is not a pointer");
+        result = rewrite_value(FunctionalBuilder::byte_pointer_type(context(), exists->location()));
+      } else if (ValuePtr<FunctionalValue> functional = dyn_cast<FunctionalValue>(value)) {
+        result = FunctionalTermRewriter::callback_map.call(*this, functional);
+      } else {
+        throw TvmUserError("Unexpected term type encountered in value lowering");
+      }
       
       PSI_ASSERT(!result.empty());
       m_value_map.insert(std::make_pair(value, result));
@@ -1266,24 +1279,30 @@ namespace Psi {
       PSI_NOT_IMPLEMENTED();
     }
     
-    LoweredType AggregateLoweringPass::ModuleLevelRewriter::rewrite_type(const ValuePtr<>& type) {
+    LoweredType AggregateLoweringPass::ModuleLevelRewriter::rewrite_type(const ValuePtr<>& type_orig) {
+      ValuePtr<> type = unrecurse(type_orig);
+      
       const LoweredType *lookup = m_type_map.lookup(type);
       if (lookup)
         return *lookup;
       
+      LoweredType result;
       if (ValuePtr<Exists> exists = dyn_cast<Exists>(type)) {
-        if (!isa<PointerType>(exists->result()))
+        if (!isa<PointerType>(unrecurse(exists->result())))
           throw TvmUserError("Value of type exists is not a pointer");
-        return rewrite_type(FunctionalBuilder::byte_pointer_type(context(), exists->location()));
+        result = rewrite_type(FunctionalBuilder::byte_pointer_type(context(), exists->location()));
+      } else {
+        result = TypeTermRewriter::callback_map.call(*this, value_cast<FunctionalValue>(type));
       }
       
-      LoweredType result = TypeTermRewriter::callback_map.call(*this, value_cast<FunctionalValue>(type));
       PSI_ASSERT(!result.empty());
       m_type_map.insert(std::make_pair(type, result));
       return result;
     }
     
-    LoweredValue AggregateLoweringPass::ModuleLevelRewriter::rewrite_value(const ValuePtr<>& value) {
+    LoweredValue AggregateLoweringPass::ModuleLevelRewriter::rewrite_value(const ValuePtr<>& value_orig) {
+      ValuePtr<> value = unrecurse(value_orig);
+      
       const LoweredValue *lookup = m_value_map.lookup(value);
       if (lookup)
         return *lookup;
@@ -1293,11 +1312,19 @@ namespace Psi {
         throw TvmUserError("Global from a different module encountered during lowering");
       } else if (isa<FunctionType>(value)) {
         throw TvmUserError("Function type encountered in computed expression");
-      } else if (!isa<FunctionalValue>(value)) {
+      }
+      
+      LoweredValue result;
+      if (ValuePtr<Exists> exists = dyn_cast<Exists>(value)) {
+        if (!isa<PointerType>(unrecurse(exists->result())))
+          throw TvmUserError("Value of type exists is not a pointer");
+        result = rewrite_value(FunctionalBuilder::byte_pointer_type(context(), exists->location()));
+      } else if (ValuePtr<FunctionalValue> functional = dyn_cast<FunctionalValue>(value)) {
+        result = FunctionalTermRewriter::callback_map.call(*this, functional);
+      } else {
         throw TvmUserError("Non-functional value encountered in global expression: probably instruction or block which has not been inserted into a function");
       }
       
-      LoweredValue result = FunctionalTermRewriter::callback_map.call(*this, value_cast<FunctionalValue>(value));
       PSI_ASSERT(!result.empty());
       m_value_map.insert(std::make_pair(value, result));
       return result;
@@ -1425,7 +1452,7 @@ namespace Psi {
 
     AggregateLoweringPass::GlobalBuildStatus AggregateLoweringPass::rewrite_global_value(const ValuePtr<>& value) {
       LoweredType value_ty = global_rewriter().rewrite_type(value->type());
-      if (value_ty.register_type()) {
+      if (value_ty.mode() == LoweredType::mode_register) {
         LoweredValueSimple rewritten_value = m_global_rewriter.rewrite_value_register(value);
         PSI_ASSERT(rewritten_value.global);
         return GlobalBuildStatus(rewritten_value.value, value_ty.size(), value_ty.alignment(), value_ty.size(), value_ty.alignment());

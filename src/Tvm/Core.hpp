@@ -456,6 +456,9 @@ namespace Psi {
       /**
        * \brief Build a copy of this term with a new set of parameters.
        * 
+       * Note that the RecursiveType in ApplyTerm will not be rewritten,
+       * since it is not a value in the usual sense.
+       * 
        * \param context Context to create the new term in. This may be
        * different to the current context of this term.
        * 
@@ -757,6 +760,7 @@ namespace Psi {
     public:
       RewriteVisitor(RewriteCallback *callback) : m_callback(callback) {}
       void visit_ptr(ValuePtr<>& ptr) {ptr = m_callback->rewrite(ptr);}
+      void visit_ptr(ValuePtr<RecursiveType>&) {}
       template<typename T> bool do_visit_base(VisitorTag<T>) {return !boost::is_same<T,HashableValue>::value;}
     };
     
@@ -838,6 +842,9 @@ namespace Psi {
           m_source = disassembler_merge_source(m_source, ptr->disassembler_source());
       }
       
+      /// Ignore recursive type reference in ApplyTerm.
+      void visit_ptr(const ValuePtr<RecursiveType>&) {}
+      
       Value *source() const {return m_source;}
       template<typename T> bool do_visit_base(VisitorTag<T>) const {return !boost::is_same<T,HashableValue>::value;}
     };
@@ -848,7 +855,8 @@ namespace Psi {
     public:
       CheckSourceVisitor(CheckSourceParameter *parameter) : m_parameter(parameter) {}
       
-      void visit_ptr(const ValuePtr<>& ptr) {
+      template<typename T>
+      void visit_ptr(const ValuePtr<T>& ptr) {
         if (ptr)
           ptr->check_source(*m_parameter);
       }

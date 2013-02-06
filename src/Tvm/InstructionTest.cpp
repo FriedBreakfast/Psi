@@ -30,31 +30,6 @@ namespace Psi {
       BOOST_CHECK_EQUAL(f(c), c);
     }
 
-    BOOST_AUTO_TEST_CASE(ReturnDependent) {
-      const char *src =
-        "%f = function(%a:type, %b:pointer %a, %c:pointer %a) > empty {\n"
-        "  %x = load %b;\n"
-        "  store %x %c;\n"
-        "  return empty_v;\n"
-        "};\n";
-
-      typedef void (*callback_type) (Jit::Metatype,const void*,void*);
-      callback_type callback = reinterpret_cast<callback_type>(jit_single("f", src));
-
-      // a decent data size is required - previously a test of less
-      // than 16 bytes worked previously for no known reason even
-      // though the code generation wasn't working properly.
-      const char data[] = "f4oh3g10845XweNNyu19hgb19";
-      const Jit::Metatype data_meta = {sizeof(data), 1};
-
-      char result_data[sizeof(data)];
-      // Set to an incorrect value
-      std::fill_n(result_data, sizeof(result_data), 'x');
-      callback(data_meta, data, result_data);
-      BOOST_CHECK_EQUAL_COLLECTIONS(result_data, result_data+sizeof(result_data),
-                                    data, data+sizeof(data));
-    }
-
     BOOST_AUTO_TEST_CASE(UnconditionalBranchTest) {
       const char *src =
         "%f = function () > i32 {\n"

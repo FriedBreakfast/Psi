@@ -357,7 +357,7 @@ namespace Psi {
      * \brief Term type appearing in dependent types of completed function types.
      */
     class ResolvedParameter : public FunctionalValue {
-      PSI_TVM_FUNCTIONAL_DECL(FunctionTypeResolvedParameter)
+      PSI_TVM_FUNCTIONAL_DECL(ResolvedParameter)
       
     private:
       ValuePtr<> m_parameter_type;
