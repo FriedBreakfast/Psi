@@ -217,6 +217,8 @@ namespace Psi {
     }
 
     void GlobalVariable::set_value(const ValuePtr<>& value) {
+      if (value->type() != value_type())
+        throw TvmUserError("Global variable assigned value of incorrect type");
       CheckSourceParameter cp(CheckSourceParameter::mode_global, this);
       value->check_source(cp);
       m_value = value;
@@ -256,8 +258,9 @@ namespace Psi {
      * \brief Create a new global term.
      */
     ValuePtr<GlobalVariable> Module::new_global_variable(const std::string& name, const ValuePtr<>& type, const SourceLocation& location) {
-      PSI_FAIL("Check global variable type source");
       ValuePtr<GlobalVariable> result(::new GlobalVariable(context(), type, name, this, location));
+      CheckSourceParameter cp(CheckSourceParameter::mode_global, result.get());
+      type->check_source(cp);
       add_member(result);
       return result;
     }

@@ -162,8 +162,6 @@ namespace Psi {
       LoweredValue() {}
       
       /// \brief Construct a lowered value with a single entry in a register
-      static LoweredValue primitive(bool global, const ValuePtr<>& value) {return LoweredValue(boost::make_shared<RegisterValue>(LoweredType(), global, value));}
-      /// \brief Construct a lowered value with a single entry in a register
       static LoweredValue register_(const LoweredType& type, bool global, const ValuePtr<>& value) {return LoweredValue(boost::make_shared<RegisterValue>(type, global, value));}
       /// \brief Construct a lowered value with a single entry in a register
       static LoweredValue register_(const LoweredType& type, const LoweredValueSimple& r) {return register_(type, type.global() && r.global, r.value);}
@@ -458,6 +456,10 @@ namespace Psi {
       void global_pad_to_size(GlobalBuildStatus&, const ValuePtr<>&, const ValuePtr<>&, bool, const SourceLocation& location);
       void global_group(GlobalBuildStatus&, bool, const SourceLocation& location);
       virtual void update_implementation(bool);
+      
+      LoweredType m_size_type;
+      LoweredType m_pointer_type;
+      LoweredType m_block_type;
 
     public:
       AggregateLoweringPass(Module*, TargetCallback*, Context* =0);
@@ -466,6 +468,13 @@ namespace Psi {
       Context& context() {return target_module()->context();}
       
       ModuleLevelRewriter& global_rewriter() {return m_global_rewriter;}
+      
+      /// \brief Type to use for sizes
+      const LoweredType& size_type();
+      /// \brief Type to use for pointers
+      const LoweredType& pointer_type();
+      /// \brief Type to use for blocks
+      const LoweredType& block_type();
 
       /**
        * Callback used to rewrite function types and function calls

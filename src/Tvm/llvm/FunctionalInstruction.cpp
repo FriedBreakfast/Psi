@@ -129,13 +129,17 @@ namespace Psi {
             else
               return builder.irbuilder().CreateUDiv(lhs, rhs, "");
         }
+
+        static llvm::Value *default_rewrite(FunctionBuilder& builder, const ValuePtr<>& value) {
+          return builder.module_builder()->build_constant(value);
+        }
         
         typedef TermOperationMap<FunctionalValue, llvm::Value*, FunctionBuilder&> CallbackMap;
         
         static CallbackMap callback_map;
         
         static CallbackMap::Initializer callback_map_initializer() {
-          return CallbackMap::initializer()
+          return CallbackMap::initializer(default_rewrite)
             .add<MetatypeSize>(metatype_size_callback)
             .add<MetatypeAlignment>(metatype_alignment_callback)
             .add<ArrayValue>(array_value_callback)
@@ -169,7 +173,7 @@ namespace Psi {
        * Build a value for a functional operation.
        *
        * This handles aggregate types. Primitive types are forwarded
-       * to build_value_functional_simple.
+       * to ModuleBuilder::build_value_functional.
        */
       llvm::Value* FunctionBuilder::build_value_functional(const ValuePtr<FunctionalValue>& term) {
         return FunctionalInstructionBuilder::callback_map.call(*this, term);

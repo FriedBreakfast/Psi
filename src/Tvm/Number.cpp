@@ -28,7 +28,7 @@ namespace Psi {
      * \throw TvmUserError The type of value was not \c size_type.
      */
     bool size_equals_constant(const ValuePtr<>& value, unsigned c) {
-      ValuePtr<IntegerType> ty = dyn_unrecurse<IntegerType>(value);
+      ValuePtr<IntegerType> ty = dyn_unrecurse<IntegerType>(value->type());
       if (!ty || (ty->width() != IntegerType::iptr))
         throw TvmUserError("value is not a size_type integer");
       

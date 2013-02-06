@@ -88,11 +88,11 @@ namespace Psi {
                   const SourceLocation& location);
       
       void require_available(const ValuePtr<>& value);
+      void check_source_hook_base(CheckSourceParameter& parameter);
 
     private:
       const char *m_operation;
       boost::intrusive::list_member_hook<> m_instruction_list_hook;
-      virtual void check_source_hook(CheckSourceParameter& parameter);
     };
     
     /**
@@ -128,7 +128,9 @@ namespace Psi {
     virtual void type_check(); \
     virtual void instruction_visit(InstructionVisitor& callback); \
     template<typename V> static void visit(V& v); \
-    static bool isa_impl(const Value& val) {return (val.term_type() == term_instruction) && (operation == static_cast<const Type&>(val).operation_name());}
+    static bool isa_impl(const Value& val) {return (val.term_type() == term_instruction) && (operation == static_cast<const Type&>(val).operation_name());} \
+  private: \
+    virtual void check_source_hook(CheckSourceParameter& parameter);
     
 #define PSI_TVM_INSTRUCTION_IMPL(Type,Base,Name) \
     PSI_TVM_VALUE_IMPL(Type,Base) \

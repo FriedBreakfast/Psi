@@ -77,21 +77,14 @@ namespace Psi {
          * type on a particular target.
          */
         class ParameterHandler {
-          ValuePtr<> m_type;
           ValuePtr<> m_lowered_type;
           CallingConvention m_calling_convention;
 
         public:
-          ParameterHandler(const ValuePtr<>& type, const ValuePtr<>& lowered_type, CallingConvention calling_convention);
-
-          /// The type of term that this object was created to pass.
-          const ValuePtr<>& type() const {return m_type;}
+          ParameterHandler(const ValuePtr<>& lowered_type);
           
           /// Type used to pass this parameter.
           const ValuePtr<>& lowered_type() const {return m_lowered_type;}
-
-          /// The calling convention this parameter type was built for.
-          CallingConvention calling_convention() const {return m_calling_convention;}
 
           /// \brief Whether this type should be returned via an extra sret
           /// parameter, which must be inserted manually since LLVM will not
@@ -168,9 +161,9 @@ namespace Psi {
       public:
         TargetCommon(const Callback*, llvm::LLVMContext*, const llvm::TargetData*);
 
-        static boost::shared_ptr<ParameterHandler> parameter_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter&, const ValuePtr<>&, CallingConvention);
-        static boost::shared_ptr<ParameterHandler> parameter_handler_change_type_by_memory(const ValuePtr<>&, const ValuePtr<>&, CallingConvention);
-        static boost::shared_ptr<ParameterHandler> parameter_handler_force_ptr(Context&, const ValuePtr<>&, CallingConvention);
+        static boost::shared_ptr<ParameterHandler> parameter_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type);
+        static boost::shared_ptr<ParameterHandler> parameter_handler_change_type_by_memory(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type, const ValuePtr<>& lowered_type);
+        static boost::shared_ptr<ParameterHandler> parameter_handler_force_ptr(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type);
 
         static llvm::CallingConv::ID map_calling_convention(CallingConvention conv);
         

@@ -27,6 +27,10 @@ namespace Psi {
       visit_base<TerminatorInstruction>(v);
       v("value", &Return::value);
     }
+    
+    void Return::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Result of return instruction should not be used");
+    }
 
     PSI_TVM_INSTRUCTION_IMPL(Return, TerminatorInstruction, return);
 
@@ -69,6 +73,10 @@ namespace Psi {
       ("true_target", &ConditionalBranch::true_target)
       ("false_target", &ConditionalBranch::false_target);
     }
+
+    void ConditionalBranch::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Result of cond_br instruction should not be used");
+    }
     
     PSI_TVM_INSTRUCTION_IMPL(ConditionalBranch, TerminatorInstruction, cond_br);
 
@@ -102,6 +110,10 @@ namespace Psi {
       v("target", &UnconditionalBranch::target);
     }
 
+    void UnconditionalBranch::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Result of br instruction should not be used");
+    }
+
     PSI_TVM_INSTRUCTION_IMPL(UnconditionalBranch, TerminatorInstruction, br);
     
     Unreachable::Unreachable(Context& context, const SourceLocation& location)
@@ -114,6 +126,10 @@ namespace Psi {
     template<typename V>
     void Unreachable::visit(V& v) {
       visit_base<TerminatorInstruction>(v);
+    }
+
+    void Unreachable::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Result of unreachable instruction should not be used");
     }
 
     std::vector<ValuePtr<Block> > Unreachable::successors() {
@@ -158,6 +174,10 @@ namespace Psi {
       v("target", &Call::target)
       ("parameters", &Call::parameters);
     }
+
+    void Call::check_source_hook(CheckSourceParameter& parameter) {
+      Instruction::check_source_hook_base(parameter);
+    }
     
     PSI_TVM_INSTRUCTION_IMPL(Call, Instruction, call);
 
@@ -194,6 +214,10 @@ namespace Psi {
       ("target", &Store::target);
     }
 
+    void Store::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Result of store instruction should not be used");
+    }
+
     PSI_TVM_INSTRUCTION_IMPL(Store, Instruction, store);
 
     Load::Load(const ValuePtr<>& target_, const SourceLocation& location)
@@ -212,6 +236,10 @@ namespace Psi {
     void Load::visit(V& v) {
       visit_base<Instruction>(v);
       v("target", &Load::target);
+    }
+    
+    void Load::check_source_hook(CheckSourceParameter& parameter) {
+      Instruction::check_source_hook_base(parameter);
     }
 
     PSI_TVM_INSTRUCTION_IMPL(Load, Instruction, load);
@@ -250,6 +278,10 @@ namespace Psi {
       v("element_type", &Alloca::element_type)
       ("count", &Alloca::count)
       ("alignment", &Alloca::alignment);
+    }
+    
+    void Alloca::check_source_hook(CheckSourceParameter& parameter) {
+      Instruction::check_source_hook_base(parameter);
     }
 
     PSI_TVM_INSTRUCTION_IMPL(Alloca, Instruction, alloca);
@@ -293,6 +325,10 @@ namespace Psi {
       ("alignment", &MemCpy::alignment);
     }
 
+    void MemCpy::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Result of memcpy instruction should not be used");
+    }
+
     PSI_TVM_INSTRUCTION_IMPL(MemCpy, Instruction, memcpy);
     
     MemZero::MemZero(const ValuePtr<>& dest_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
@@ -331,6 +367,10 @@ namespace Psi {
       ("alignment", &MemZero::alignment);
     }
 
+    void MemZero::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Result of memzero instruction should not be used");
+    }
+
     PSI_TVM_INSTRUCTION_IMPL(MemZero, Instruction, memzero);
     
     Solidify::Solidify(const ValuePtr<>& value_, const SourceLocation& location)
@@ -347,6 +387,10 @@ namespace Psi {
     void Solidify::visit(V& v) {
       visit_base<Instruction>(v);
       v("value", &Solidify::value);
+    }
+
+    void Solidify::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Result of solidify instruction should not be used");
     }
     
     PSI_TVM_INSTRUCTION_IMPL(Solidify, Instruction, solidify);

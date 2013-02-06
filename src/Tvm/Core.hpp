@@ -832,7 +832,12 @@ namespace Psi {
       
     public:
       DisassemblerSourceVisitor() : m_source(NULL) {}
-      void visit_ptr(const ValuePtr<>& ptr) {m_source = disassembler_merge_source(m_source, ptr->disassembler_source());}
+      
+      void visit_ptr(const ValuePtr<>& ptr) {
+        if (ptr)
+          m_source = disassembler_merge_source(m_source, ptr->disassembler_source());
+      }
+      
       Value *source() const {return m_source;}
       template<typename T> bool do_visit_base(VisitorTag<T>) const {return !boost::is_same<T,HashableValue>::value;}
     };
@@ -842,7 +847,12 @@ namespace Psi {
       
     public:
       CheckSourceVisitor(CheckSourceParameter *parameter) : m_parameter(parameter) {}
-      void visit_ptr(const ValuePtr<>& ptr) {ptr->check_source(*m_parameter);}
+      
+      void visit_ptr(const ValuePtr<>& ptr) {
+        if (ptr)
+          ptr->check_source(*m_parameter);
+      }
+      
       template<typename T> bool do_visit_base(VisitorTag<T>) const {return !boost::is_same<T,HashableValue>::value;}
     };
 

@@ -377,11 +377,11 @@ namespace Psi {
       block_ptr()->erase_instruction(*this);
     }
 
-    void Instruction::check_source_hook(CheckSourceParameter& parameter) {
+    void Instruction::check_source_hook_base(CheckSourceParameter& parameter) {
       switch (parameter.mode) {
       case CheckSourceParameter::mode_before_instruction: {
         Instruction *insn = value_cast<Instruction>(parameter.point);
-        if (insn->block_ptr()->dominator()->dominated_by(block_ptr())) {
+        if (insn->block_ptr()->dominator() && insn->block_ptr()->dominator()->dominated_by(block_ptr())) {
           return;
         } else if (insn->block_ptr() == block_ptr()) {
           if (block_ptr()->instructions().before(*this, *insn))
@@ -399,7 +399,7 @@ namespace Psi {
       
       case CheckSourceParameter::mode_before_block: {
         Block *block = value_cast<Block>(parameter.point);
-        if (block->dominator()->dominated_by(block_ptr()))
+        if (block->dominator() && block->dominator()->dominated_by(block_ptr()))
           return;
         break;
       }
