@@ -122,12 +122,13 @@ namespace Psi {
         };
 
         static llvm::Value *integer_divide_callback(FunctionBuilder& builder, const ValuePtr<IntegerDivide>& term) {
-            llvm::Value* lhs = builder.build_value(term->lhs());
-            llvm::Value* rhs = builder.build_value(term->rhs());
-            if (value_cast<IntegerType>(term->type())->is_signed())
-              return builder.irbuilder().CreateSDiv(lhs, rhs, "");
-            else
-              return builder.irbuilder().CreateUDiv(lhs, rhs, "");
+          // Can't use IntegerBinaryOpHandler because CreateSDiv and CreateUDiv take a default extra parameter
+          llvm::Value* lhs = builder.build_value(term->lhs());
+          llvm::Value* rhs = builder.build_value(term->rhs());
+          if (value_cast<IntegerType>(term->type())->is_signed())
+            return builder.irbuilder().CreateSDiv(lhs, rhs, "");
+          else
+            return builder.irbuilder().CreateUDiv(lhs, rhs, "");
         }
 
         static llvm::Value *default_rewrite(FunctionBuilder& builder, const ValuePtr<>& value) {

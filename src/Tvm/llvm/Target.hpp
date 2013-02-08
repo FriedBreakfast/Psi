@@ -67,11 +67,6 @@ namespace Psi {
        */
       class TargetCommon : public AggregateLoweringPass::TargetCallback {
       public:
-        struct TypeSizeAlignmentLiteral {
-          unsigned size;
-          unsigned alignment;
-        };
-
         /**
          * \brief Base class for a handler for a particular parameter
          * type on a particular target.
@@ -156,7 +151,7 @@ namespace Psi {
         };
         
         LowerFunctionHelperResult lower_function_helper(AggregateLoweringPass::AggregateLoweringRewriter&,  const ValuePtr<FunctionType>&);
-        TypeSizeAlignmentLiteral type_size_alignment_simple(llvm::Type*);
+        AggregateLoweringPass::TypeSizeAlignment type_size_alignment_simple(llvm::Type*);
 
       public:
         TargetCommon(const Callback*, llvm::LLVMContext*, const llvm::TargetData*);
@@ -169,15 +164,14 @@ namespace Psi {
         
         llvm::LLVMContext& context() const {return *m_context;}
         
-        TypeSizeAlignmentLiteral type_size_alignment_literal(const ValuePtr<>&);
-
         virtual void lower_function_call(AggregateLoweringPass::FunctionRunner&, const ValuePtr<Call>&);
         virtual ValuePtr<Instruction> lower_return(AggregateLoweringPass::FunctionRunner&, const ValuePtr<>&, const SourceLocation&);
         virtual ValuePtr<Function> lower_function(AggregateLoweringPass&, const ValuePtr<Function>&);
         virtual void lower_function_entry(AggregateLoweringPass::FunctionRunner&, const ValuePtr<Function>&, const ValuePtr<Function>&);
         virtual ValuePtr<> convert_value(const ValuePtr<>&, const ValuePtr<>&);
         virtual AggregateLoweringPass::TypeSizeAlignment type_size_alignment(const ValuePtr<>&);
-        virtual std::pair<ValuePtr<>,ValuePtr<> > type_from_alignment(const ValuePtr<>&);
+        virtual std::pair<ValuePtr<>, std::size_t> type_from_size(Context& context, std::size_t size, const SourceLocation& location);
+        virtual std::pair<ValuePtr<>, std::size_t> type_from_alignment(Context& context, std::size_t alignment, const SourceLocation& location);
       };
       
       llvm::Function* target_exception_personality_linux(llvm::Module*, const std::string&);

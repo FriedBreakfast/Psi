@@ -246,6 +246,38 @@ namespace Psi {
     IMPLEMENT_INT_COMPARE(IntegerCompareGe, cmp_ge)
     IMPLEMENT_INT_COMPARE(IntegerCompareLt, cmp_lt)
     IMPLEMENT_INT_COMPARE(IntegerCompareLe, cmp_le)
+    
+    BitCast::BitCast(const ValuePtr<>& value, const ValuePtr<>& target_type, const SourceLocation& location)
+    : FunctionalValue(value->context(), location),
+    m_value(value),
+    m_target_type(target_type) {
+    }
+    
+    template<typename V>
+    void BitCast::visit(V& v) {
+      visit_base<FunctionalValue>(v);
+      v("value", &BitCast::m_value)
+      ("target_type", &BitCast::m_target_type);
+    }
+    
+    namespace {
+      bool bit_castable_type(const ValuePtr<>& type) {
+        return isa<BooleanType>(type)
+          || isa<IntegerType>(type)
+          || isa<FloatType>(type)
+          || isa<PointerType>(type);
+      }
+    }
+    
+    ValuePtr<> BitCast::check_type() const {
+      if (!bit_castable_type(m_value->type()))
+        throw TvmUserError("bitcast value parameter is not a primitive type");
+      if (!bit_castable_type(m_target_type))
+        throw TvmUserError("bitcast type parameter is not primitive");
+      return m_target_type;
+    }
+
+    PSI_TVM_FUNCTIONAL_IMPL(BitCast, FunctionalValue, bitcast);
 
     Select::Select(const ValuePtr<>& condition, const ValuePtr<>& true_value, const ValuePtr<>& false_value, const SourceLocation& location)
     : FunctionalValue(condition->context(), location),

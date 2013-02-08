@@ -857,7 +857,14 @@ namespace Psi {
       for (; block; block = block->dominator().get(), instruction = NULL) {
         for (Block::InstructionList::iterator ii = block->instructions().begin(), ie = block->instructions().end(); (ii != ie) && (ii->get() != instruction); ++ii) {
           Solidify *solid = dyn_cast<Solidify>(ii->get());
-          if (phantom == solid->value.get())
+          if (!solid)
+            continue;
+          
+          ValuePtr<ConstantType> const_ty = dyn_cast<ConstantType>(solid->value->type());
+          if (!const_ty)
+            throw TvmUserError("Argument to solidify does not appear to have constant type");
+          
+          if (phantom == const_ty->value().get())
             return;
         }
       }

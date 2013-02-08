@@ -116,6 +116,8 @@ namespace Psi {
         return boost::make_shared<TermName>("", function, true);
       } else if (ValuePtr<Global> global = dyn_cast<Global>(term)) {
         return boost::make_shared<TermName>(global->name(), ValuePtr<Function>(), false);
+      } else if (ValuePtr<RecursiveType> recursive = dyn_cast<RecursiveType>(term)) {
+        return boost::make_shared<TermName>(recursive->location().logical->name(), ValuePtr<Function>(), false);
       } else {
         return boost::make_shared<TermName>("", function, true);
       }
@@ -290,6 +292,7 @@ namespace Psi {
         switch (source->term_type()) {
         case term_global_variable:
         case term_function:
+        case term_recursive:
           return &m_global_definitions;
 
         case term_block: block.reset(value_cast<Block>(source)); break;
@@ -322,13 +325,13 @@ namespace Psi {
       if (Value *source = term->disassembler_source()) {
         switch (source->term_type()) {
         case term_global_variable:
-        case term_function: break;
+        case term_function:
         case term_recursive: break;
         case term_block: function = value_cast<Block>(source)->function(); break;
         case term_phi: function = value_cast<Phi>(source)->block()->function(); break;
         case term_instruction: function = value_cast<Instruction>(source)->block()->function(); break;
         case term_function_parameter: function = value_cast<FunctionParameter>(source)->function(); break;
-        case term_parameter_placeholder: return;
+        case term_parameter_placeholder: break;
         default: PSI_FAIL("unexpected source term type");
         }
       }
@@ -345,8 +348,10 @@ namespace Psi {
       switch (term->term_type()) {
       case term_recursive: {
         ValuePtr<RecursiveType> recursive = value_cast<RecursiveType>(term);
-        for (RecursiveType::ParameterList::const_iterator ii = recursive->parameters().begin(), ie = recursive->parameters().end(); ii != ie; ++ii)
-          setup_term(*ii);
+        for (RecursiveType::ParameterList::const_iterator ii = recursive->parameters().begin(), ie = recursive->parameters().end(); ii != ie; ++ii) {
+          setup_term_name(*ii);
+          setup_term((*ii)->type());
+        }
         setup_term(recursive->result_type());
         if (recursive->result())
           setup_term(recursive->result());
@@ -416,20 +421,16 @@ namespace Psi {
         setup_term(apply->recursive());
         for (std::vector<ValuePtr<> >::const_iterator ii = apply->parameters().begin(), ie = apply->parameters().end(); ii != ie; ++ii)
           setup_term(*ii);
-        
-        if (TermDefinitionList *dl = term_definition_list(term))
-          dl->push_back(term);
         break;
       }
       
       case term_exists: {
         ValuePtr<Exists> exists = value_cast<Exists>(term);
         setup_term(exists->result());
-        if (TermDefinitionList *dl = term_definition_list(term))
-          dl->push_back(term);
         break;
       }
         
+      case term_parameter_placeholder:
       case term_recursive_parameter: {
         setup_term(term->type());
         break;
@@ -445,9 +446,6 @@ namespace Psi {
         
         MyVisitor my_visitor(this);
         value_cast<FunctionalValue>(term)->functional_visit(my_visitor);
-        
-        if (TermDefinitionList *dl = term_definition_list(term))
-          dl->push_back(term);
         break;
       }
         
@@ -457,15 +455,15 @@ namespace Psi {
         for (std::vector<ValuePtr<> >::const_iterator ii = parameter_types.begin(), ie = parameter_types.end(); ii != ie; ++ii)
           setup_term(*ii);
         setup_term(cast_term->result_type());
-
-        if (TermDefinitionList *dl = term_definition_list(term))
-          dl->push_back(term);
         break;
       }
       
       default:
-        break;
+        return; // Skip adding to definition list
       }
+      
+      if (TermDefinitionList *dl = term_definition_list(term))
+        dl->push_back(term);
     }
     
     void DisassemblerContext::print_term(const ValuePtr<>& term, bool bracket) {
@@ -502,7 +500,22 @@ namespace Psi {
 
       case term_exists: {
         print_exists(value_cast<Exists>(term), bracket);
-        return;
+        break;
+      }
+      
+      case term_recursive: {
+        *m_output << "[recursive]";
+        break;
+      }
+      
+      case term_recursive_parameter: {
+        *m_output << "[recursive parameter]";
+        break;
+      }
+      
+      case term_parameter_placeholder: {
+        *m_output << "[parameter placeholder]";
+        break;
       }
         
       default:
@@ -593,6 +606,9 @@ namespace Psi {
         print_recursive(value_cast<RecursiveType>(term));
         return;
       }
+      
+      case term_recursive_parameter: *m_output << "[recursive parameter]\n"; return;
+      case term_parameter_placeholder: *m_output << "[parameter placeholder]\n"; return;
         
       default:
         PSI_FAIL("unexpected term type - cannot print a definition");
@@ -741,8 +757,14 @@ namespace Psi {
           PSI_ASSERT(resolved_param->index() < it->size());
           *m_output << (*it)[resolved_param->index()];
         } else {
-          *m_output << "[unknown parameter]";
+          *m_output << "[unknown parameter : ";
+          print_term(resolved_param->type(), false);
+          *m_output << "]";
         }
+      } else if (ValuePtr<UnwrapParameter> unwrap_param = dyn_cast<UnwrapParameter>(term)) {
+        *m_output << "unwrap_param ";
+        print_term(unwrap_param->value(), true);
+        *m_output << " " << unwrap_param->index();
       } else {
         class MyVisitor : public FunctionalValueVisitor {
           DisassemblerContext *m_self;
@@ -835,23 +857,14 @@ namespace Psi {
     void DisassemblerContext::print_recursive(const ValuePtr<RecursiveType>& term) {
       *m_output << "recursive (";
       
-      unsigned parameter_name_base = m_parameter_name_index, parameter_name_idx = m_parameter_name_index;
-      m_parameter_name_index += term->parameters().size();
-      
       boost::format name_formatter("%%%s");
       
-      m_parameter_names.push_back(ParameterNameList::value_type());
-      ParameterNameList::value_type& name_list = m_parameter_names.back();
-      for (RecursiveType::ParameterList::const_iterator ib = term->parameters().begin(), ii = term->parameters().begin(), ie = term->parameters().end(); ii != ie; ++ii, ++parameter_name_idx) {
+      for (RecursiveType::ParameterList::const_iterator ib = term->parameters().begin(), ii = term->parameters().begin(), ie = term->parameters().end(); ii != ie; ++ii) {
         if (ii != ib)
           *m_output << ", ";
         
-        std::string name = str(name_formatter % parameter_name_idx);
-        
-        *m_output << name << " : ";
-        print_term(*ii, false);
-        
-        name_list.push_back(name);
+        *m_output << name(*ii) << " : ";
+        print_term((*ii)->type(), false);
       }
       
       *m_output << ") > ";
@@ -862,10 +875,6 @@ namespace Psi {
         print_term(term->result(), true);
       else
         *m_output << "NULL";
-      
-      m_parameter_names.pop_back();
-      m_parameter_name_index = parameter_name_base;
-      
       
       *m_output << ";\n";
     }

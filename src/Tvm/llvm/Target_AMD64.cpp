@@ -2,6 +2,7 @@
 
 #include "../Aggregate.hpp"
 #include "../Number.hpp"
+#include "../Recursive.hpp"
 #include "../FunctionalBuilder.hpp"
 
 #include <boost/make_shared.hpp>
@@ -124,14 +125,16 @@ namespace Psi {
          * type.
          */
         ElementTypeInfo primitive_element_info(const ValuePtr<>& type, AMD64_Class amd_class) {
-          TargetCommon::TypeSizeAlignmentLiteral size_align = type_size_alignment_literal(type);
+          AggregateLoweringPass::TypeSizeAlignment size_align = type_size_alignment(type);
           return ElementTypeInfo(TargetParameterCategory::simple, amd_class, size_align.size, size_align.alignment, 1);
         }
 
         /**
          * Compute element type info for a sub-part of the object.
          */
-        ElementTypeInfo get_element_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& element) {
+        ElementTypeInfo get_element_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& element_base) {
+          ValuePtr<> element = rewriter.simplify_argument_type(element_base);
+          
           if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(element)) {
             TargetParameterCategory category = TargetParameterCategory::simple;
             uint64_t size = 0, align = 1;
@@ -178,17 +181,6 @@ namespace Psi {
             return primitive_element_info(element, amd64_integer);
           } else if (ValuePtr<FloatType> float_ty = dyn_cast<FloatType>(element)) {
             return primitive_element_info(element, (float_ty->width() != FloatType::fp_x86_80) ? amd64_sse : amd64_x87);
-          } else if (isa<EmptyType>(element)) {
-            return ElementTypeInfo(TargetParameterCategory::simple, amd64_no_class, 0, 1, 0);
-          } else if (isa<Metatype>(element)) {
-            ValuePtr<> size_type = FunctionalBuilder::size_type(element->context(), element->location());
-            ValuePtr<> metatype_struct = FunctionalBuilder::struct_type(element->context(), std::vector<ValuePtr<> >(2, size_type), element->location());
-            return get_element_info(rewriter, metatype_struct);
-          } else if (ValuePtr<Exists> exists = dyn_cast<Exists>(element)) {
-            if (isa<PointerType>(exists->result()))
-              return primitive_element_info(exists->result(), amd64_integer);
-            else
-              throw BuildError("function parameter has exists type but is not a pointer");
           } else {
             PSI_ASSERT_MSG(!dyn_cast<ParameterPlaceholder>(element) && !dyn_cast<FunctionParameter>(element),
                            "low-level parameter type should not depend on function type parameters");

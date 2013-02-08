@@ -22,24 +22,24 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(IntegerAdd) {
       const char *src =
-        "%mul = function (%a:i32,%b:i32) > i32 {\n"
+        "%add = function (%a:i32,%b:i32) > i32 {\n"
         "  return (add %a %b);\n"
         "};\n";
 
       typedef Jit::Int32 (*FuncType) (Jit::Int32,Jit::Int32);
-      FuncType f = reinterpret_cast<FuncType>(jit_single("mul", src));
+      FuncType f = reinterpret_cast<FuncType>(jit_single("add", src));
       BOOST_CHECK_EQUAL(f(344,-62), 282);
       BOOST_CHECK_EQUAL(f(-100,-1), -101);
     }
 
     BOOST_AUTO_TEST_CASE(IntegerSubtract) {
       const char *src =
-        "%mul = function (%a:i32,%b:i32) > i32 {\n"
+        "%sub = function (%a:i32,%b:i32) > i32 {\n"
         "  return (sub %a %b);\n"
         "};\n";
 
       typedef Jit::Int32 (*FuncType) (Jit::Int32,Jit::Int32);
-      FuncType f = reinterpret_cast<FuncType>(jit_single("mul", src));
+      FuncType f = reinterpret_cast<FuncType>(jit_single("sub", src));
       BOOST_CHECK_EQUAL(f(12,-99), 111);
       BOOST_CHECK_EQUAL(f(34,27), 7);
     }

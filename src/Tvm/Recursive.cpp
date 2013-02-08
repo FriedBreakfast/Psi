@@ -32,19 +32,6 @@ namespace Psi {
     }
     
     PSI_TVM_VALUE_IMPL(RecursiveParameter, Value);
-    
-    namespace {
-      bool recursive_source_check(Value *source, RecursiveType *rt) {
-        if (!source)
-          return true;
-        
-        RecursiveParameter *rp = dyn_cast<RecursiveParameter>(source);
-        if (!rp)
-          return false;
-        
-        return rp->recursive_ptr() == rt;
-      }
-    }
 
     RecursiveType::RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, const SourceLocation& location)
     : Value(result_type->context(), term_recursive, ValuePtr<>(), location),
@@ -62,7 +49,10 @@ namespace Psi {
     ValuePtr<RecursiveType> RecursiveType::create(const ValuePtr<>& result_type,
                                                   RecursiveType::ParameterList& parameters,
                                                   const SourceLocation& location) {
-      return ValuePtr<RecursiveType>(::new RecursiveType(result_type, parameters, location));
+      ValuePtr<RecursiveType> result(::new RecursiveType(result_type, parameters, location));
+      for (ParameterList::iterator ii = result->parameters().begin(), ie = result->parameters().end(); ii != ie; ++ii)
+        (*ii)->m_recursive = result.get();
+      return result;
     }
 
     /**

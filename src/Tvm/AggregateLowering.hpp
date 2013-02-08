@@ -17,8 +17,6 @@
 
 namespace Psi {
   namespace Tvm {
-    class LoweredValue;
-    
     class LoweredType {
     public:
       typedef std::vector<LoweredType> EntryVector;
@@ -27,9 +25,7 @@ namespace Psi {
         mode_empty,
         mode_register,
         mode_split,
-        mode_blob,
-        mode_union,
-        mode_constant
+        mode_blob
       };
       
     private:
@@ -50,9 +46,8 @@ namespace Psi {
       : Base(mode_register, origin, size, alignment), register_type(register_type_) {}};
       struct SplitType : Base {EntryVector entries; SplitType(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const EntryVector& entries_)
       : Base(mode_split, origin, size, alignment), entries(entries_) {PSI_ASSERT(all_global(entries));}};
-      struct ConstantType;
       
-      boost::shared_ptr<Base> m_value;
+      boost::shared_ptr<const Base> m_value;
       
       LoweredType(const boost::shared_ptr<Base>& value) : m_value(value) {}
       
@@ -68,16 +63,8 @@ namespace Psi {
       /// \brief Construct a lowered type which is treated as a black box
       static LoweredType blob(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment)
       {return LoweredType(boost::make_shared<Base>(mode_blob, origin, size, alignment));}
-      /**
-       * \brief Construc a lowered type for a union.
-       * 
-       * This special type is necessary because global variables may require union operations
-       * to be constant-folded in a platform specific way.
-       */
-      static LoweredType union_(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment)
-      {return LoweredType(boost::make_shared<Base>(mode_union, origin, size, alignment));}
 
-      static LoweredType constant_(const ValuePtr<>& origin, const LoweredValue& value);
+      LoweredType with_origin(const ValuePtr<>& new_origin);
       
       /// \brief Is this value NULL?
       bool empty() const {return !m_value;}
@@ -95,11 +82,8 @@ namespace Psi {
       /// \brief Get the entries used to represent this type, which is split
       const EntryVector& split_entries() const {return checked_cast<const SplitType*>(m_value.get())->entries;}
 
-      const LoweredValue& constant_value() const;
-      
       /// \brief Get the size of this type in a suitable form for later passes
       const ValuePtr<>& size() const {return m_value->size;}
-      
       /// \brief Get the alignment of this type in a suitable form for later passes
       const ValuePtr<>& alignment() const {return m_value->alignment;}
     };
@@ -136,9 +120,7 @@ namespace Psi {
       enum Mode {
         mode_empty,
         mode_register,
-        mode_split,
-        mode_union,
-        mode_constant
+        mode_split
       };
 
     private:
@@ -153,7 +135,6 @@ namespace Psi {
       struct Base : CheckedCastBase {Mode mode; LoweredType type; bool global; Base(Mode mode_, const LoweredType& type_, bool global_) : mode(mode_), type(type_), global(global_) {PSI_ASSERT(type.global());}};
       struct RegisterValue : Base {ValuePtr<> value; RegisterValue(const LoweredType& type, bool global, const ValuePtr<>& value_) : Base(mode_register, type, global), value(value_) {PSI_ASSERT(type.mode() == LoweredType::mode_register);}};
       struct SplitValue : Base {EntryVector entries; SplitValue(const LoweredType& type, const EntryVector& entries_) : Base(mode_split, type, type.global() && all_global(entries_)), entries(entries_) {PSI_ASSERT(type.mode() == LoweredType::mode_split);}};
-      struct UnionValue;
       boost::shared_ptr<Base> m_value;
 
       explicit LoweredValue(const boost::shared_ptr<Base>& value) : m_value(value) {}
@@ -167,9 +148,6 @@ namespace Psi {
       static LoweredValue register_(const LoweredType& type, const LoweredValueSimple& r) {return register_(type, type.global() && r.global, r.value);}
       /// \brief Construct a lowered value which is a list of other values
       static LoweredValue split(const LoweredType& type, const EntryVector& entries) {return LoweredValue(boost::make_shared<SplitValue>(type, entries));}
-      static LoweredValue union_(const LoweredType& type, const LoweredValue& inner);
-      /// \brief Construct a lowered value of a constant type
-      static LoweredValue constant(const LoweredType& type) {return LoweredValue(boost::make_shared<Base>(mode_constant, type, type.global()));}
       
       /// \brief Whether this value is global
       bool global() const {return m_value->global;}
@@ -187,25 +165,9 @@ namespace Psi {
       /// \brief Get list of entries
       const EntryVector& split_entries() const {return checked_cast<const SplitValue*>(m_value.get())->entries;}
       
-      const LoweredValue& union_inner() const;
-
       /// \brief Convert a LoweredValue on the stack to a LoweredValueSimple
       LoweredValueSimple register_simple() const {return LoweredValueSimple(global(), register_value());}
     };
-
-    struct LoweredType::ConstantType : Base {LoweredValue value; ConstantType(const ValuePtr<>& origin, const LoweredValue& value_)
-    : Base(mode_constant, origin, value_.type().size(), value_.type().alignment()), value(value_) {}};
-    /// \brief Construct a lowered type for const_type
-    inline LoweredType LoweredType::constant_(const ValuePtr<>& origin, const LoweredValue& value)
-    {return LoweredType(boost::make_shared<ConstantType>(origin, value));}
-    /// \brief Get the constant value of this type, which is a const_type
-    inline const LoweredValue& LoweredType::constant_value() const {return checked_cast<const ConstantType*>(m_value.get())->value;}
-
-    struct LoweredValue::UnionValue : Base {LoweredValue inner; UnionValue(const LoweredType& type, const LoweredValue& inner_) : Base(mode_union, type, inner_.global()), inner(inner_) {}};
-    /// \brief Construct a LoweredValue for a union with a known inner type
-    inline LoweredValue LoweredValue::union_(const LoweredType& type, const LoweredValue& inner) {return LoweredValue(boost::make_shared<UnionValue>(type, inner));}
-    /// \brief Get the value used to construct a union
-    inline const LoweredValue& LoweredValue::union_inner() const {return checked_cast<const UnionValue*>(m_value.get())->inner;}
     
     /**
      * A function pass which removes aggregate operations by rewriting
@@ -226,9 +188,34 @@ namespace Psi {
      */
     class AggregateLoweringPass : public ModuleRewriter {
     public:
-      class ElementOffsetGenerator;
       class FunctionRunner;
       class GlobalVariableRunner;
+      class AggregateLoweringRewriter;
+      
+      /// \brief Computes offsets and alignment of struct-like (and thereby also array-like) data structures.
+      class ElementOffsetGenerator {
+        AggregateLoweringRewriter *m_rewriter;
+        SourceLocation m_location;
+        bool m_global;
+        ValuePtr<> m_offset, m_size, m_alignment;
+        
+      public:
+        ElementOffsetGenerator(AggregateLoweringRewriter *rewriter, const SourceLocation& location);
+        
+        /// \brief Are size(), offset() and alignment() all global values?
+        bool global() const {return m_global;}
+        /// \brief Offset of last element inserted
+        const ValuePtr<>& offset() const {return m_offset;}
+        /// \brief Current total size of all elements (may not be a multiple of alignment until finish() is called)
+        const ValuePtr<>& size() const {return m_size;}
+        /// \brief Current alignment of all elements
+        const ValuePtr<>& alignment() const {return m_alignment;}
+        
+        void next(bool global, const ValuePtr<>& el_size, const ValuePtr<>& el_alignment);
+        void finish();
+        void next(const LoweredType& type);
+        void next(const ValuePtr<>& type);
+      };    
       
       class AggregateLoweringRewriter {
         friend class FunctionRunner;
@@ -278,6 +265,9 @@ namespace Psi {
         LoweredValueSimple rewrite_value_register(const ValuePtr<>&);
         LoweredValue lookup_value(const ValuePtr<>&);
         LoweredValueSimple lookup_value_register(const ValuePtr<>&);
+        
+        ValuePtr<> simplify_argument_type(const ValuePtr<>& type);
+        ValuePtr<> unwrap_exists(const ValuePtr<Exists>& exists);
       };
 
       /**
@@ -327,6 +317,16 @@ namespace Psi {
       };
       
       class ModuleLevelRewriter : public AggregateLoweringRewriter {
+        struct ExplodeEntry {
+          std::size_t offset, size;
+          ValuePtr<> value;
+        };
+        
+        void explode_constant_value(const ValuePtr<>& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
+        void explode_lowered_value(const LoweredValue& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
+        ValuePtr<> implode_constant_value(const ValuePtr<>& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
+        LoweredValue implode_lowered_value(const LoweredType& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
+        
       public:
         ModuleLevelRewriter(AggregateLoweringPass*);
         virtual LoweredValue bitcast(const LoweredType& type, const LoweredValue& input, const SourceLocation& location);
@@ -335,8 +335,8 @@ namespace Psi {
       };
       
       struct TypeSizeAlignment {
-        ValuePtr<> size;
-        ValuePtr<> alignment;
+        std::size_t size;
+        std::size_t alignment;
       };
 
       /**
@@ -407,6 +407,13 @@ namespace Psi {
          * \param type Type of value to return.
          */
         virtual ValuePtr<> convert_value(const ValuePtr<>& value, const ValuePtr<>& type) = 0;
+        
+        /**
+         * \brief Get the largest type with size less than or equal to that specified.
+         * 
+         * \param size Requested size, which must be a power of two.
+         */
+        virtual std::pair<ValuePtr<>, std::size_t> type_from_size(Context& context, std::size_t size, const SourceLocation& location) = 0;
 
         /**
          * \brief Get the type with alignment closest to the specified alignment.
@@ -415,7 +422,7 @@ namespace Psi {
          * Its size must be the same as its alignment. The first member of the
          * pair is the type, the second member of the pair is the size of the first.
          */
-        virtual std::pair<ValuePtr<>,ValuePtr<> > type_from_alignment(const ValuePtr<>& alignment) = 0;
+        virtual std::pair<ValuePtr<>, std::size_t> type_from_alignment(Context& context, std::size_t alignment, const SourceLocation& location) = 0;
         
         /**
          * \brief Get the size and alignment of a type.
@@ -432,6 +439,12 @@ namespace Psi {
       struct TypeTermRewriter;
       struct FunctionalTermRewriter;
       struct InstructionTermRewriter;
+      
+      static LoweredType type_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionalValue>& term);
+      static LoweredType type_term_rewrite_parameter(AggregateLoweringRewriter& rewriter, const ValuePtr<>& term);
+      static LoweredValue functional_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionalValue>& term);
+      static LoweredValue instruction_term_rewrite(FunctionRunner& runner, const ValuePtr<Instruction>& insn);
+      
       ModuleLevelRewriter m_global_rewriter;
 
       struct GlobalBuildStatus {
@@ -507,8 +520,8 @@ namespace Psi {
        * For primitive types, the target can alter behaviour by changing
        * TargetCallback::type_size_alignment.
        * 
-       * Note that if \c remove_only_unknown is not set all aggregate types are
-       * removed anyway, so the value of this flag is irrelevent.
+       * Note that if unions remove_unions is true this flag must be set
+       * in order for unions to work in registers.
        */
       bool remove_sizeof;
       

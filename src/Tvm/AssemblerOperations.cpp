@@ -192,6 +192,7 @@ namespace Psi {
         ("true", BoolValueCallback(true))
         ("false", BoolValueCallback(false))
         ("type", NullaryOpCallback(&FunctionalBuilder::type_type))
+        ("constant", UnaryOpCallback(&FunctionalBuilder::constant))
         ("empty", NullaryOpCallback(&FunctionalBuilder::empty_type))
         ("empty_v", NullaryOpCallback(&FunctionalBuilder::empty_value))
         ("byte", NullaryOpCallback(&FunctionalBuilder::byte_type))

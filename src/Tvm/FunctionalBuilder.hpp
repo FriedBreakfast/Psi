@@ -41,8 +41,8 @@ namespace Psi {
       static ValuePtr<> byte_pointer_type(Context& context, const SourceLocation& location);
       static ValuePtr<> undef(const ValuePtr<>& type, const SourceLocation& location);
       static ValuePtr<> zero(const ValuePtr<>& type, const SourceLocation& location);
+      static ValuePtr<> constant(const ValuePtr<>& value, const SourceLocation& location);
       //@}
-      
       
       /// \name Function types
       //@{
@@ -150,6 +150,7 @@ namespace Psi {
       
       static ValuePtr<> float_type(Context&, FloatType::Width, const SourceLocation& location);
       
+      static ValuePtr<> bitcast(const ValuePtr<>& value, const ValuePtr<>& type, const SourceLocation& location);
       static ValuePtr<> select(const ValuePtr<>&, const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> specialize(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
       

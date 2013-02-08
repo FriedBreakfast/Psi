@@ -17,7 +17,8 @@ target_link_libraries(psi-compiler-common ${JSONC_LIB})
 
 add_library(psi-tvm SHARED
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
-  Tvm/AggregateLowering.cpp
+  Tvm/AggregateLowering.cpp Tvm/AggregateLowering.hpp
+  Tvm/AggregateLoweringOperations.cpp
   Tvm/Assembler.cpp Tvm/Assembler.hpp
   Tvm/AssemblerOperations.cpp
   Tvm/BigInteger.cpp Tvm/BigInteger.hpp

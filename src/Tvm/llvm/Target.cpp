@@ -118,16 +118,16 @@ namespace Psi {
         PSI_NOT_IMPLEMENTED();
       }
       
-      TargetCommon::TypeSizeAlignmentLiteral TargetCommon::type_size_alignment_simple(llvm::Type *llvm_type) {
-        TypeSizeAlignmentLiteral result;
+      AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment_simple(llvm::Type *llvm_type) {
+        AggregateLoweringPass::TypeSizeAlignment result;
         result.size = m_target_data->getTypeAllocSize(llvm_type);
         result.alignment = m_target_data->getABITypeAlignment(llvm_type);
         return result;
       }
       
-      TargetCommon::TypeSizeAlignmentLiteral TargetCommon::type_size_alignment_literal(const ValuePtr<>& type) {
+      AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment(const ValuePtr<>& type) {
         if (ValuePtr<PointerType> pointer_ty = dyn_cast<PointerType>(type)) {
-          TypeSizeAlignmentLiteral result;
+          AggregateLoweringPass::TypeSizeAlignment result;
           result.size = m_target_data->getPointerSize();
           result.alignment = m_target_data->getPointerABIAlignment();
           return result;
@@ -140,7 +140,7 @@ namespace Psi {
         } else if (ValuePtr<FloatType> float_ty = dyn_cast<FloatType>(type)) {
           return type_size_alignment_simple(float_type(context(), float_ty->width()));
         } else if (isa<EmptyType>(type) || isa<BlockType>(type)) {
-          TypeSizeAlignmentLiteral result;
+          AggregateLoweringPass::TypeSizeAlignment result;
           result.size = 0;
           result.alignment = 1;
           return result;
@@ -149,42 +149,30 @@ namespace Psi {
         }
       }
       
-      AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment(const ValuePtr<>& type) {
-        TypeSizeAlignmentLiteral literal = type_size_alignment_literal(type);
-        AggregateLoweringPass::TypeSizeAlignment result;
-        result.size = FunctionalBuilder::size_value(type->context(), literal.size, type->location());
-        result.alignment = FunctionalBuilder::size_value(type->context(), literal.alignment, type->location());
-        return result;
-      }
-      
-      std::pair<ValuePtr<>, ValuePtr<> > TargetCommon::type_from_alignment(const ValuePtr<>& alignment) {
-        if (ValuePtr<IntegerValue> alignment_int_val = dyn_cast<IntegerValue>(alignment)) {
-          boost::optional<unsigned> alignment_val = alignment_int_val->value().unsigned_value();
-          if (alignment_val) {
-            unsigned real_alignment = std::min(*alignment_val, 16u);
-            for (; real_alignment > 1; real_alignment /= 2) {
-              unsigned abi_alignment = m_target_data->getABIIntegerTypeAlignment(real_alignment*8);
-              if (abi_alignment == real_alignment)
-                break;
-            }
-            
-            IntegerType::Width width;
-            switch (real_alignment) {
-            case 1: width = IntegerType::i8; break;
-            case 2: width = IntegerType::i16; break;
-            case 4: width = IntegerType::i32; break;
-            case 8: width = IntegerType::i64; break;
-            case 16: width = IntegerType::i128; break;
-            default: PSI_FAIL("should not reach here");
-            }
-            
-            ValuePtr<> int_type = FunctionalBuilder::int_type(alignment->context(), width, false, alignment->location());
-            return std::make_pair(int_type, FunctionalBuilder::size_value(alignment->context(), real_alignment, alignment->location()));
-          }
+      std::pair<ValuePtr<>, std::size_t> TargetCommon::type_from_size(Context& context, std::size_t size, const SourceLocation& location) {
+        std::size_t my_size = std::min(size, std::size_t(16));
+        IntegerType::Width width;
+        switch (my_size) {
+        case 1: width = IntegerType::i8; break;
+        case 2: width = IntegerType::i16; break;
+        case 4: width = IntegerType::i32; break;
+        case 8: width = IntegerType::i64; break;
+        case 16: width = IntegerType::i128; break;
+        default: PSI_FAIL("type_from_size argument was not a power of two");
         }
         
-        return std::make_pair(FunctionalBuilder::byte_type(alignment->context(), alignment->location()),
-                              FunctionalBuilder::size_value(alignment->context(), 1, alignment->location()));
+        ValuePtr<> int_type = FunctionalBuilder::int_type(context, width, false, location);
+        return std::make_pair(int_type, my_size);
+      }
+      
+      std::pair<ValuePtr<>, std::size_t> TargetCommon::type_from_alignment(Context& context, std::size_t alignment, const SourceLocation& location) {
+        unsigned real_alignment = std::min(alignment, std::size_t(16));
+        for (; real_alignment > 1; real_alignment /= 2) {
+          unsigned abi_alignment = m_target_data->getABIIntegerTypeAlignment(real_alignment*8);
+          if (abi_alignment == real_alignment)
+            break;
+        }
+        return type_from_size(context, real_alignment, location);
       }
 
       TargetCommon::ParameterHandler::ParameterHandler(const ValuePtr<>& lowered_type)

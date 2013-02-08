@@ -111,6 +111,27 @@ namespace Psi {
       BOOST_CHECK_EQUAL(r.u[1].b[1], b);
     }
 
+    BOOST_AUTO_TEST_CASE(FunctionParameterUnion) {
+      const char *src =
+        "%u = define (union i64 (array i32 #up2));\n"
+        "%f = function (%a:%u) > %u {\n"
+        "  return %a;\n"
+        "};\n";
+
+      typedef TestUnionType (*FunctionType) (TestUnionType);
+      FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
+
+      TestUnionType u1, u2;
+      u1.a = 904589786;
+      u2.b[0] = 4956;
+      u2.b[1] = 120954;
+
+      TestUnionType r1 = f(u1), r2 = f(u2);
+      BOOST_CHECK_EQUAL(r1.a, u1.a);
+      BOOST_CHECK_EQUAL(r2.b[0], u2.b[0]);
+      BOOST_CHECK_EQUAL(r2.b[1], u2.b[1]);
+    }
+
     BOOST_AUTO_TEST_SUITE_END()
   }
 }

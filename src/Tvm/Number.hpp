@@ -173,6 +173,22 @@ namespace Psi {
     PSI_TVM_BINARY_OP_DECL(IntegerCompareLt, IntegerCompareOp);
     PSI_TVM_BINARY_OP_DECL(IntegerCompareLe, IntegerCompareOp);
     
+    class BitCast : public FunctionalValue {
+      PSI_TVM_FUNCTIONAL_DECL(BitCast)
+      
+    public:
+      /// \brief Get the value being cast
+      const ValuePtr<>& value() const {return m_value;}
+      /// \brief Get the target type of the cast
+      const ValuePtr<>& target_type() const {return m_target_type;}
+      
+      BitCast(const ValuePtr<>& value, const ValuePtr<>& target_type, const SourceLocation& location);
+      
+    private:
+      ValuePtr<> m_value;
+      ValuePtr<> m_target_type;
+    };
+    
     class Select : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(Select)
 

@@ -84,6 +84,11 @@ namespace Psi {
       }
     }
     
+    /// \brief Get the constant type of the specified value
+    ValuePtr<> FunctionalBuilder::constant(const ValuePtr<>& value, const SourceLocation& location) {
+      return value->context().get_functional(ConstantType(value, location));
+    }
+    
     /**
      * \brief Get a function type.
      * 
@@ -660,14 +665,17 @@ namespace Psi {
         return neg(mul(lhs_neg->parameter(), rhs, location), location);
       } else if (ValuePtr<IntegerNegative> rhs_neg = dyn_cast<IntegerNegative>(rhs)) {
         return neg(mul(lhs, rhs_neg->parameter(), location), location);
-      }
-      
-      if (ValuePtr<IntegerValue> lhs_val = dyn_cast<IntegerValue>(lhs)) {
+      } else if (ValuePtr<IntegerValue> lhs_val = dyn_cast<IntegerValue>(lhs)) {
         if (lhs_val->value().zero())
           return lhs_val;
-      }
-      
-      if (ValuePtr<IntegerValue> rhs_val = dyn_cast<IntegerValue>(rhs)) {
+        else if (ValuePtr<IntegerValue> rhs_val = dyn_cast<IntegerValue>(rhs)) {
+          if (lhs_val->type() != rhs_val->type())
+            throw TvmUserError("Incompatible argument types to mul instruction");
+          BigInteger v;
+          v.multiply(lhs_val->value(), rhs_val->value());
+          return int_value(lhs_val->type(), v, location);
+        }
+      } else if (ValuePtr<IntegerValue> rhs_val = dyn_cast<IntegerValue>(rhs)) {
         if (rhs_val->value().zero())
           return rhs_val;
       }
@@ -685,8 +693,16 @@ namespace Psi {
 
       if (ValuePtr<IntegerValue> lhs_val = dyn_cast<IntegerValue>(lhs)) {
         if (ValuePtr<IntegerValue> rhs_val = dyn_cast<IntegerValue>(rhs)) {
-          if (lhs_val->value().zero() && !rhs_val->value().zero())
-            return lhs_val;
+          if (lhs_val->type() != rhs_val->type())
+            throw TvmUserError("Incompatible argument types to div instruction");
+          if (!rhs_val->value().zero()) {
+            BigInteger v;
+            if (lhs_val->type()->is_signed())
+              v.divide_signed(lhs_val->value(), rhs_val->value());
+            else
+              v.divide_unsigned(lhs_val->value(), rhs_val->value());
+            return int_value(lhs_val->type(), v, location);
+          }
         }
       }
       
@@ -887,7 +903,16 @@ namespace Psi {
       const ValuePtr<>& not_align_minus_one = bit_not(align_minus_one, location);
       return bit_and(offset_plus_align_minus_one, not_align_minus_one, location);
     }
-  
+
+    /**
+     * \brief Cast a value from one type to another.
+     * 
+     * The value must be a primitive. The cast may be to a type of a different size.
+     */
+    ValuePtr<> FunctionalBuilder::bitcast(const ValuePtr<>& value, const ValuePtr<>& type, const SourceLocation& location) {
+      return value->context().get_functional(BitCast(value, type, location));
+    }
+    
     /**
      * \brief Get a select operation.
      * 

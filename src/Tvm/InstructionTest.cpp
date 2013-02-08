@@ -251,6 +251,20 @@ namespace Psi {
 
       BOOST_CHECK_EQUAL(f(alloca_test_cb), 576);
     }
+    
+    BOOST_AUTO_TEST_CASE(SolidifyTest) {
+      const char *src = 
+        "%f = function(%a : i32 | %x : (constant %a)) > i32 {\n"
+        "  solidify %x;\n"
+        "  return %a;\n"
+        "};\n";
+
+        typedef Jit::Int32 (*func_type) (Jit::Int32);
+      func_type f = reinterpret_cast<func_type>(jit_single("f", src));
+
+      Jit::Int32 v = 42350898;
+      BOOST_CHECK_EQUAL(f(v), v);
+    }
 
     BOOST_AUTO_TEST_SUITE_END()    
   }
