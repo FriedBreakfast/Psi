@@ -9,7 +9,6 @@
 
 #include <llvm/Function.h>
 #include <llvm/Module.h>
-#include <llvm/Target/TargetData.h>
 
 namespace Psi {
   namespace Tvm {
@@ -18,7 +17,7 @@ namespace Psi {
                                        const ValuePtr<Function>& function,
                                        llvm::Function *llvm_function)
         : m_module_builder(global_builder),
-          m_irbuilder(global_builder->llvm_context(), llvm::TargetFolder(global_builder->llvm_target_machine()->getTargetData())),
+          m_irbuilder(global_builder->llvm_context(), llvm::TargetFolder(global_builder->llvm_target_machine()->getDataLayout())),
           m_function(function),
           m_llvm_function(llvm_function) {
       }

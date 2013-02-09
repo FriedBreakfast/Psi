@@ -10,14 +10,13 @@
 
 #include <llvm/Function.h>
 #include <llvm/Module.h>
-#include <llvm/Target/TargetData.h>
 #include <llvm/ADT/Triple.h>
 #include <llvm/Support/TargetRegistry.h>
 
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
-      TargetCommon::TargetCommon(const Callback *callback, llvm::LLVMContext *context, const llvm::TargetData *target_data)
+      TargetCommon::TargetCommon(const Callback *callback, llvm::LLVMContext *context, const llvm::DataLayout *target_data)
       : m_callback(callback), m_context(context), m_target_data(target_data) {
       }
 
@@ -377,7 +376,7 @@ namespace Psi {
 
       public:
         TargetDefault(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine)
-        : TargetCommon(&m_callback, context, target_machine->getTargetData()), m_target_machine(target_machine) {}
+        : TargetCommon(&m_callback, context, target_machine->getDataLayout()), m_target_machine(target_machine) {}
       };
 
       /**

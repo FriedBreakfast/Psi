@@ -287,7 +287,7 @@ namespace Psi {
 
       public:
         TargetFixes_AMD64_AggregateLowering(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine)
-        : TargetCommon(&m_function_call_callback, context, target_machine->getTargetData()),
+        : TargetCommon(&m_function_call_callback, context, target_machine->getDataLayout()),
         m_function_call_callback(this),
         m_target_machine(target_machine) {
         }

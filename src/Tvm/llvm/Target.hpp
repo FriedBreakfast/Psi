@@ -139,7 +139,7 @@ namespace Psi {
       private:
         const Callback *m_callback;
         llvm::LLVMContext *m_context;
-        const llvm::TargetData *m_target_data;
+        const llvm::DataLayout *m_target_data;
         
         struct LowerFunctionHelperResult {
           ValuePtr<FunctionType> lowered_type;
@@ -154,7 +154,7 @@ namespace Psi {
         TypeSizeAlignment type_size_alignment_simple(llvm::Type*);
 
       public:
-        TargetCommon(const Callback*, llvm::LLVMContext*, const llvm::TargetData*);
+        TargetCommon(const Callback*, llvm::LLVMContext*, const llvm::DataLayout*);
 
         static boost::shared_ptr<ParameterHandler> parameter_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type);
         static boost::shared_ptr<ParameterHandler> parameter_handler_change_type_by_memory(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type, const ValuePtr<>& lowered_type);

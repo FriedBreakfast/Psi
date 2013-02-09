@@ -8,7 +8,7 @@
 
 #include <llvm/LLVMContext.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/Support/IRBuilder.h>
+#include <llvm/IRBuilder.h>
 #include <llvm/Support/TargetFolder.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Value.h>
@@ -173,7 +173,7 @@ namespace Psi {
        * Functions for handling simple types.
        */
       ///@{
-      llvm::IntegerType* integer_type(llvm::LLVMContext&, const llvm::TargetData*, IntegerType::Width);
+      llvm::IntegerType* integer_type(llvm::LLVMContext&, const llvm::DataLayout*, IntegerType::Width);
       llvm::Type* float_type(llvm::LLVMContext&, FloatType::Width);
       ///@}
 

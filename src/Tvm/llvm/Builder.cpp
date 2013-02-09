@@ -10,11 +10,10 @@
 
 #include <llvm/DerivedTypes.h>
 #include <llvm/Module.h>
-#include <llvm/Support/IRBuilder.h>
+#include <llvm/IRBuilder.h>
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Support/Host.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
-#include <llvm/Target/TargetData.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
@@ -69,7 +68,7 @@ namespace Psi {
         /// \brief Utility function used by intrinsic_memcpy_64 and
         /// intrinsic_memcpy_32.
         llvm::Function* intrinsic_memcpy(llvm::Module& m, llvm::TargetMachine *target_machine) {
-          llvm::IntegerType *size_type = target_machine->getTargetData()->getIntPtrType(m.getContext());
+          llvm::IntegerType *size_type = target_machine->getDataLayout()->getIntPtrType(m.getContext());
           const char *name;
           switch (size_type->getBitWidth()) {
           case 32: name = "llvm.memcpy.p0i8.p0i8.i32"; break;
@@ -98,7 +97,7 @@ namespace Psi {
         /// \brief Utility function used by intrinsic_memcpy_64 and
         /// intrinsic_memcpy_32.
         llvm::Function* intrinsic_memset(llvm::Module& m, llvm::TargetMachine *target_machine) {
-          llvm::IntegerType *size_type = target_machine->getTargetData()->getIntPtrType(m.getContext());
+          llvm::IntegerType *size_type = target_machine->getDataLayout()->getIntPtrType(m.getContext());
           const char *name;
           switch (size_type->getBitWidth()) {
           case 32: name = "llvm.memset.p0i8.i32"; break;
@@ -386,7 +385,7 @@ namespace Psi {
         return t;
       }
       
-      llvm::IntegerType* integer_type(llvm::LLVMContext& context, const llvm::TargetData *target_data, IntegerType::Width width) {
+      llvm::IntegerType* integer_type(llvm::LLVMContext& context, const llvm::DataLayout *target_data, IntegerType::Width width) {
         unsigned bits;
         switch (width) {
         case IntegerType::i8: bits = 8; break;

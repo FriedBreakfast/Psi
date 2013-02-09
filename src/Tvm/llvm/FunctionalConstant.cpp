@@ -2,22 +2,20 @@
 
 #include "../TermOperationMap.hpp"
 
-#include <llvm/Target/TargetData.h>
-
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
       struct FunctionalConstantBuilder {
         static llvm::Constant *metatype_size_callback(ModuleBuilder& builder, const ValuePtr<MetatypeSize>& term) {
           llvm::Type *type = builder.build_type(term->parameter());
-          uint64_t size = builder.llvm_target_machine()->getTargetData()->getTypeAllocSize(type);
-          return llvm::ConstantInt::get(builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context()), size);
+          uint64_t size = builder.llvm_target_machine()->getDataLayout()->getTypeAllocSize(type);
+          return llvm::ConstantInt::get(builder.llvm_target_machine()->getDataLayout()->getIntPtrType(builder.llvm_context()), size);
         }
 
         static llvm::Constant *metatype_alignment_callback(ModuleBuilder& builder, const ValuePtr<MetatypeAlignment>& term) {
           llvm::Type *type = builder.build_type(term->parameter());
-          uint64_t size = builder.llvm_target_machine()->getTargetData()->getABITypeAlignment(type);
-          return llvm::ConstantInt::get(builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context()), size);
+          uint64_t size = builder.llvm_target_machine()->getDataLayout()->getABITypeAlignment(type);
+          return llvm::ConstantInt::get(builder.llvm_target_machine()->getDataLayout()->getIntPtrType(builder.llvm_context()), size);
         }
 
         static llvm::Constant* empty_value_callback(ModuleBuilder& builder, const ValuePtr<EmptyValue>&) {
@@ -31,7 +29,7 @@ namespace Psi {
         }
 
         static llvm::Constant* integer_value_callback(ModuleBuilder& builder, const ValuePtr<IntegerValue>& term) {
-          llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), term->type()->width());
+          llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getDataLayout(), term->type()->width());
           llvm::APInt llvm_value(llvm_type->getBitWidth(), term->value().num_words(), term->value().words());
           return llvm::ConstantInt::get(llvm_type, llvm_value);
         }
@@ -102,9 +100,9 @@ namespace Psi {
         
         static llvm::Constant* struct_element_offset_callback(ModuleBuilder& builder, const ValuePtr<StructElementOffset>& term) {
           llvm::StructType *struct_type = llvm::cast<llvm::StructType>(builder.build_type(term->struct_type()));
-          const llvm::StructLayout *layout = builder.llvm_target_machine()->getTargetData()->getStructLayout(struct_type);
+          const llvm::StructLayout *layout = builder.llvm_target_machine()->getDataLayout()->getStructLayout(struct_type);
           uint64_t value = layout->getElementOffset(term->index());
-          llvm::Type *size_type = builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context());
+          llvm::Type *size_type = builder.llvm_target_machine()->getDataLayout()->getIntPtrType(builder.llvm_context());
           return llvm::ConstantInt::get(size_type, value);
         }
         

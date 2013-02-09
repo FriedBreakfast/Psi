@@ -4,14 +4,13 @@
 
 #include "../Aggregate.hpp"
 #include "../Number.hpp"
-#include <llvm/Target/TargetData.h>
 
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
       struct TypeBuilder {
         static llvm::Type *metatype_callback(ModuleBuilder& builder, const ValuePtr<Metatype>&) {
-          llvm::Type *intptr_ty = builder.llvm_target_machine()->getTargetData()->getIntPtrType(builder.llvm_context());
+          llvm::Type *intptr_ty = builder.llvm_target_machine()->getDataLayout()->getIntPtrType(builder.llvm_context());
           llvm::Type *elements[] = {intptr_ty, intptr_ty};
           return llvm::StructType::get(builder.llvm_context(), elements, false);
         }
@@ -37,7 +36,7 @@ namespace Psi {
         }
 
         static llvm::Type* integer_type_callback(ModuleBuilder& builder, const ValuePtr<IntegerType>& term) {
-          return integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), term->width());
+          return integer_type(builder.llvm_context(), builder.llvm_target_machine()->getDataLayout(), term->width());
         }
 
         static llvm::Type* float_type_callback(ModuleBuilder& builder, const ValuePtr<FloatType>& term) {

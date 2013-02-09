@@ -8,7 +8,6 @@
 #include <boost/make_shared.hpp>
 
 #include <llvm/Function.h>
-#include <llvm/Target/TargetData.h>
 
 namespace Psi {
   namespace Tvm {
@@ -94,7 +93,7 @@ namespace Psi {
 
           llvm::Type *i8ptr = llvm::IntegerType::getInt8PtrTy(builder.module_builder()->llvm_context());
           if (dest->getType() != i8ptr) {
-            const llvm::TargetData *target_data = builder.module_builder()->llvm_target_machine()->getTargetData();
+            const llvm::DataLayout *target_data = builder.module_builder()->llvm_target_machine()->getDataLayout();
             llvm::Type *element_type = llvm::cast<llvm::PointerType>(dest->getType())->getElementType();
             llvm::Constant *target_size = llvm::ConstantInt::get(target_data->getIntPtrType(builder.module_builder()->llvm_context()), target_data->getTypeAllocSize(element_type));
             count = builder.irbuilder().CreateMul(count, target_size);
