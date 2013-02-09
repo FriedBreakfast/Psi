@@ -78,6 +78,68 @@ namespace Psi {
           return builder.irbuilder().CreateSelect(condition, true_value, false_value);
         }
         
+        static llvm::Value* zext_or_trunc(FunctionBuilder& builder, llvm::Value *val, llvm::Type *ty) {
+          unsigned val_bits = val->getType()->getScalarSizeInBits(), ty_bits = ty->getScalarSizeInBits();
+          if (val_bits < ty_bits)
+            return builder.irbuilder().CreateZExt(val, ty);
+          else if (val_bits > ty_bits)
+            return builder.irbuilder().CreateTrunc(val, ty);
+          else {
+            PSI_ASSERT(val->getType() == ty);
+            return val;
+          }
+        }
+        
+        static llvm::Value* bitcast_callback(FunctionBuilder& builder, const ValuePtr<BitCast>& term) {
+          llvm::Value *value = builder.build_value(term->value());
+          llvm::Type *target_type = builder.module_builder()->build_type(term->target_type());
+          
+          if (target_type->isPointerTy() && value->getType()->isPointerTy())
+            return builder.irbuilder().CreatePointerCast(value, target_type);
+          else if (!target_type->isPointerTy() && !value->getType()->isPointerTy() && (target_type->getPrimitiveSizeInBits() == value->getType()->getPrimitiveSizeInBits()))
+            return builder.irbuilder().CreateBitCast(value, target_type);
+          
+          llvm::Value *value_int;
+          if (value->getType()->isIntegerTy()) {
+            value_int = value;
+          } else if (value->getType()->isPointerTy()) {
+            llvm::Type *value_int_type = llvm::Type::getIntNTy(builder.module_builder()->llvm_context(), target_type->getPrimitiveSizeInBits());
+            value_int = builder.irbuilder().CreatePtrToInt(value, value_int_type);
+          } else {
+            llvm::Type *value_int_type = llvm::Type::getIntNTy(builder.module_builder()->llvm_context(), value->getType()->getPrimitiveSizeInBits());
+            value_int = builder.irbuilder().CreateBitCast(value, value_int_type);
+          }
+          
+          if (target_type->isPointerTy())
+            return builder.irbuilder().CreateIntToPtr(value_int, target_type);
+          
+          llvm::Type *target_int_type;
+          if (target_type->isIntegerTy())
+            target_int_type = target_type;
+          else
+            target_int_type = llvm::Type::getIntNTy(builder.module_builder()->llvm_context(), target_type->getPrimitiveSizeInBits());
+          
+          llvm::Value *target_sized_value = zext_or_trunc(builder, value_int, target_int_type);
+          
+          if (target_sized_value->getType() == target_type)
+            return target_sized_value;
+          else
+            return builder.irbuilder().CreateBitCast(target_sized_value, target_type);
+        }
+        
+        static llvm::Value* shl_callback(FunctionBuilder& builder, const ValuePtr<ShiftLeft>& term) {
+          llvm::Value *value = builder.build_value(term->lhs()), *shift = builder.build_value(term->rhs());
+          shift = zext_or_trunc(builder, shift, value->getType());
+          return builder.irbuilder().CreateShl(value, shift);
+        }
+        
+        static llvm::Value* shr_callback(FunctionBuilder& builder, const ValuePtr<ShiftRight>& term) {
+          llvm::Value *value = builder.build_value(term->lhs()), *shift = builder.build_value(term->rhs());
+          shift = zext_or_trunc(builder, shift, value->getType());
+          return value_cast<IntegerType>(term->type())->is_signed() ?
+            builder.irbuilder().CreateAShr(value, shift) : builder.irbuilder().CreateLShr(value, shift);
+        }
+
         struct UnaryOpHandler {
           typedef llvm::Value* (IRBuilder::*CallbackType) (llvm::Value*,const llvm::Twine&);
           CallbackType callback;
@@ -151,6 +213,9 @@ namespace Psi {
             .add<ElementValue>(element_value_callback)
             .add<ElementPtr>(element_ptr_callback)
             .add<Select>(select_value_callback)
+            .add<BitCast>(bitcast_callback)
+            .add<ShiftLeft>(shl_callback)
+            .add<ShiftRight>(shr_callback)
             .add<IntegerAdd>(IntegerBinaryOpHandler(&IRBuilder::CreateNUWAdd, &IRBuilder::CreateNSWAdd))
             .add<IntegerMultiply>(IntegerBinaryOpHandler(&IRBuilder::CreateNUWMul, &IRBuilder::CreateNSWMul))
             .add<IntegerDivide>(integer_divide_callback)

@@ -114,20 +114,16 @@ namespace Psi {
           helper_result.parameter_handlers[i]->unpack(runner, source_function->parameters().at(i+helper_result.n_phantom), target_function->parameters().at(i + sret), target_function->location());
       }
       
-      ValuePtr<> TargetCommon::convert_value(const ValuePtr<>& value, const ValuePtr<>& type) {
-        PSI_NOT_IMPLEMENTED();
-      }
-      
-      AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment_simple(llvm::Type *llvm_type) {
-        AggregateLoweringPass::TypeSizeAlignment result;
+      TypeSizeAlignment TargetCommon::type_size_alignment_simple(llvm::Type *llvm_type) {
+        TypeSizeAlignment result;
         result.size = m_target_data->getTypeAllocSize(llvm_type);
         result.alignment = m_target_data->getABITypeAlignment(llvm_type);
         return result;
       }
       
-      AggregateLoweringPass::TypeSizeAlignment TargetCommon::type_size_alignment(const ValuePtr<>& type) {
+      TypeSizeAlignment TargetCommon::type_size_alignment(const ValuePtr<>& type) {
         if (ValuePtr<PointerType> pointer_ty = dyn_cast<PointerType>(type)) {
-          AggregateLoweringPass::TypeSizeAlignment result;
+          TypeSizeAlignment result;
           result.size = m_target_data->getPointerSize();
           result.alignment = m_target_data->getPointerABIAlignment();
           return result;
@@ -140,7 +136,7 @@ namespace Psi {
         } else if (ValuePtr<FloatType> float_ty = dyn_cast<FloatType>(type)) {
           return type_size_alignment_simple(float_type(context(), float_ty->width()));
         } else if (isa<EmptyType>(type) || isa<BlockType>(type)) {
-          AggregateLoweringPass::TypeSizeAlignment result;
+          TypeSizeAlignment result;
           result.size = 0;
           result.alignment = 1;
           return result;
@@ -173,6 +169,22 @@ namespace Psi {
             break;
         }
         return type_from_size(context, real_alignment, location);
+      }
+
+      ValuePtr<> TargetCommon::byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int offset, const SourceLocation& location) {
+        TypeSizeAlignment value_size_align = type_size_alignment(value->type());
+        TypeSizeAlignment result_size_align = type_size_alignment(result_type);
+        std::size_t max_size = std::max(value_size_align.size, result_size_align.size);
+        std::pair<ValuePtr<>, std::size_t> value_int_type = type_from_size(value->context(), max_size, location);
+        PSI_ASSERT(value_int_type.second == max_size);
+        ValuePtr<> value_cast = FunctionalBuilder::bit_cast(value, value_int_type.first, location);
+        int byte_offset;
+        if (m_target_data->isBigEndian())
+          byte_offset = offset + result_size_align.size - value_size_align.size;
+        else
+          byte_offset = -offset;
+        ValuePtr<> value_shifted = FunctionalBuilder::bit_shift(value_cast, byte_offset*8, location);
+        return FunctionalBuilder::bit_cast(value_shifted, result_type, location);
       }
 
       TargetCommon::ParameterHandler::ParameterHandler(const ValuePtr<>& lowered_type)
@@ -351,7 +363,7 @@ namespace Psi {
       class TargetDefault : public TargetCommon {
       private:
         struct Callback : TargetCommon::Callback {
-          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, const ValuePtr<>& type) const {
+          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ValuePtr<>& type) const {
             return TargetCommon::parameter_handler_simple(rewriter, type);
           }
 

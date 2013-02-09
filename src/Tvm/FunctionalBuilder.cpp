@@ -728,6 +728,10 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::bit_and(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
       if (isa<UndefinedValue>(lhs) && isa<UndefinedValue>(rhs)) {
         return int_binary_undef(BitAnd::operation, lhs, rhs, location);
+      } else if (isa<ZeroValue>(lhs)) {
+        return lhs;
+      } else if (isa<ZeroValue>(rhs)) {
+        return rhs;
       } else {
         return commutative_simplify<BitAnd, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::bit_and), location);
       }
@@ -737,6 +741,10 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::bit_or(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
       if (isa<UndefinedValue>(lhs) || isa<UndefinedValue>(rhs)) {
         return int_binary_undef(BitOr::operation, lhs, rhs, location);
+      } else if (isa<ZeroValue>(lhs)) {
+        return rhs;
+      } else if (isa<ZeroValue>(rhs)) {
+        return lhs;
       } else {
         return commutative_simplify<BitOr, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::bit_or), location);
       }
@@ -746,6 +754,10 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::bit_xor(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
       if (isa<UndefinedValue>(lhs) || isa<UndefinedValue>(rhs)) {
         return int_binary_undef(BitXor::operation, lhs, rhs, location);
+      } else if (isa<ZeroValue>(lhs)) {
+        return rhs;
+      } else if (isa<ZeroValue>(rhs)) {
+        return lhs;
       } else {
         return commutative_simplify<BitXor, IntegerValue>(lhs, rhs, IntConstCombiner(&BigInteger::bit_xor), location);
       }
@@ -764,6 +776,40 @@ namespace Psi {
       } else {
         return parameter->context().get_functional(BitNot(parameter, location));
       }
+    }
+    
+    /**
+     * \brief Generate a shl operation.
+     */
+    ValuePtr<> FunctionalBuilder::bit_shl(const ValuePtr<>& value, const ValuePtr<>& bits_left, const SourceLocation& location) {
+      if (ValuePtr<IntegerValue> int_val = dyn_cast<IntegerValue>(bits_left)) {
+        if (int_val->value().zero())
+          return value;
+      }
+      return value->context().get_functional(ShiftLeft(value, bits_left, location));
+    }
+    
+    /**
+     * \brief Generate a bit_shift operation.
+     */
+    ValuePtr<> FunctionalBuilder::bit_shr(const ValuePtr<>& value, const ValuePtr<>& bits_right, const SourceLocation& location) {
+      if (ValuePtr<IntegerValue> int_val = dyn_cast<IntegerValue>(bits_right)) {
+        if (int_val->value().zero())
+          return value;
+      }
+      return value->context().get_functional(ShiftRight(value, bits_right, location));
+    }
+    
+    /**
+     * \brief Generate a bit_shift operation.
+     */
+    ValuePtr<> FunctionalBuilder::bit_shift(const ValuePtr<>& value, int bits_left, const SourceLocation& location) {
+      if (bits_left > 0)
+        return bit_shl(value, FunctionalBuilder::int_value(value->context(), IntegerType::i32, false, bits_left, location), location);
+      else if (bits_left < 0)
+        return bit_shr(value, FunctionalBuilder::int_value(value->context(), IntegerType::i32, false, -bits_left, location), location);
+      else
+        return value;
     }
     
     namespace {
@@ -909,7 +955,10 @@ namespace Psi {
      * 
      * The value must be a primitive. The cast may be to a type of a different size.
      */
-    ValuePtr<> FunctionalBuilder::bitcast(const ValuePtr<>& value, const ValuePtr<>& type, const SourceLocation& location) {
+    ValuePtr<> FunctionalBuilder::bit_cast(const ValuePtr<>& value, const ValuePtr<>& type, const SourceLocation& location) {
+      if (value->type() == type)
+        return value;
+      
       return value->context().get_functional(BitCast(value, type, location));
     }
     

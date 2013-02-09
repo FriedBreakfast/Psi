@@ -173,6 +173,17 @@ namespace Psi {
     PSI_TVM_BINARY_OP_DECL(IntegerCompareLt, IntegerCompareOp);
     PSI_TVM_BINARY_OP_DECL(IntegerCompareLe, IntegerCompareOp);
     
+    class IntegerShiftOp : public BinaryOp {
+    protected:
+      IntegerShiftOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
+      virtual ValuePtr<> check_type() const;
+    public:
+      template<typename V> static void visit(V& v);
+    };
+    
+    PSI_TVM_BINARY_OP_DECL(ShiftLeft, IntegerShiftOp);
+    PSI_TVM_BINARY_OP_DECL(ShiftRight, IntegerShiftOp);
+    
     class BitCast : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(BitCast)
       

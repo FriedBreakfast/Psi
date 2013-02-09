@@ -125,7 +125,7 @@ namespace Psi {
          * type.
          */
         ElementTypeInfo primitive_element_info(const ValuePtr<>& type, AMD64_Class amd_class) {
-          AggregateLoweringPass::TypeSizeAlignment size_align = type_size_alignment(type);
+          TypeSizeAlignment size_align = type_size_alignment(type);
           return ElementTypeInfo(TargetParameterCategory::simple, amd_class, size_align.size, size_align.alignment, 1);
         }
 

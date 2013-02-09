@@ -129,6 +129,9 @@ namespace Psi {
       static ValuePtr<> bit_or(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> bit_xor(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> bit_not(const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> bit_shl(const ValuePtr<>& value, const ValuePtr<>& bits_left, const SourceLocation& location);
+      static ValuePtr<> bit_shr(const ValuePtr<>& value, const ValuePtr<>& bits_right, const SourceLocation& location);
+      static ValuePtr<> bit_shift(const ValuePtr<>& value, int bits_left, const SourceLocation& location);
       //@}
       
       /// \name Integer comparison operations
@@ -150,7 +153,7 @@ namespace Psi {
       
       static ValuePtr<> float_type(Context&, FloatType::Width, const SourceLocation& location);
       
-      static ValuePtr<> bitcast(const ValuePtr<>& value, const ValuePtr<>& type, const SourceLocation& location);
+      static ValuePtr<> bit_cast(const ValuePtr<>& value, const ValuePtr<>& type, const SourceLocation& location);
       static ValuePtr<> select(const ValuePtr<>&, const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> specialize(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
       

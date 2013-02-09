@@ -247,6 +247,29 @@ namespace Psi {
     IMPLEMENT_INT_COMPARE(IntegerCompareLt, cmp_lt)
     IMPLEMENT_INT_COMPARE(IntegerCompareLe, cmp_le)
     
+    IntegerShiftOp::IntegerShiftOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location)
+    : BinaryOp(lhs, rhs, location) {
+    }
+    
+    ValuePtr<> IntegerShiftOp::check_type() const {
+      if (!isa<IntegerType>(lhs()->type()))
+        throw TvmUserError("bit_shift only works on integer types");
+      ValuePtr<IntegerType> shift_type = dyn_cast<IntegerType>(rhs()->type());
+      if (!shift_type || shift_type->is_signed() || (shift_type->width() != IntegerType::i32))
+        throw TvmUserError("Bit shift should be an unsigned 32-bit integer");
+      return lhs()->type();
+    }
+
+    template<typename V>
+    void IntegerShiftOp::visit(V& v) {
+      visit_base<BinaryOp>(v);
+    }
+
+    ValuePtr<> ShiftLeft::check_type() const {return IntegerShiftOp::check_type();}
+    PSI_TVM_BINARY_OP_IMPL(ShiftLeft, IntegerShiftOp, shl)
+    ValuePtr<> ShiftRight::check_type() const {return IntegerShiftOp::check_type();}
+    PSI_TVM_BINARY_OP_IMPL(ShiftRight, IntegerShiftOp, shr)
+    
     BitCast::BitCast(const ValuePtr<>& value, const ValuePtr<>& target_type, const SourceLocation& location)
     : FunctionalValue(value->context(), location),
     m_value(value),

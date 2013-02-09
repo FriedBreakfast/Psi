@@ -33,6 +33,20 @@ namespace Psi {
       return LoweredType(value);
     }
     
+    /**
+     * \brief Get the size and alignment of a type as integers.
+     */
+    TypeSizeAlignment LoweredType::size_alignment_const() const {
+      ValuePtr<IntegerValue> size_val = dyn_cast<IntegerValue>(size()), alignment_val = dyn_cast<IntegerValue>(alignment());
+      if (!size_val || !alignment_val)
+        throw TvmInternalError("Size and alignment of global type are not constant");
+
+      TypeSizeAlignment result;
+      result.size = size_val->value().unsigned_value_checked();
+      result.alignment = alignment_val->value().unsigned_value_checked();
+      return result;
+    }
+    
     AggregateLoweringPass::ElementOffsetGenerator::ElementOffsetGenerator(AggregateLoweringRewriter *rewriter, const SourceLocation& location)
     : m_rewriter(rewriter), m_location(location), m_global(true) {
       m_offset = m_size = FunctionalBuilder::size_value(rewriter->context(), 0, location);
@@ -476,110 +490,13 @@ namespace Psi {
     AggregateLoweringPass::ModuleLevelRewriter::ModuleLevelRewriter(AggregateLoweringPass *pass)
     : AggregateLoweringRewriter(pass) {
     }
-    
-    void AggregateLoweringPass::ModuleLevelRewriter::explode_constant_value(const ValuePtr<>& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location) {
-      if (isa<IntegerType>(value->type()) || isa<PointerType>(value->type()) || isa<FloatType>(value->type())) {
-        TypeSizeAlignment size = pass().target_callback->type_size_alignment(value->type());
-        offset = (offset + size.alignment - 1) & ~(size.alignment - 1);
-        PSI_ASSERT((size.alignment != 0) && ((size.alignment & (size.alignment - 1)) == 0)); // Power of 2 check
-        ExplodeEntry entry = {offset, size.size, value};
-        entries.push_back(entry);
-        offset += size.size;
-      } else if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(value)) {
-        PSI_FAIL("need to align aggregate types in explode");
-        for (unsigned ii = 0, ie = struct_val->n_members(); ii != ie; ++ii)
-          explode_constant_value(struct_val->member_value(ii), entries, offset, location);
-      } else if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(value)) {
-        PSI_FAIL("need to align aggregate types in explode");
-        for (unsigned ii = 0, ie = array_val->length(); ii != ie; ++ii)
-          explode_constant_value(array_val->value(ii), entries, offset, location);
-      } else {
-        PSI_FAIL("Unexpected tree type in constant explosion");
-      }
-    }
-      
-    ValuePtr<> AggregateLoweringPass::ModuleLevelRewriter::implode_constant_value(const ValuePtr<>& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location) {
-      if (isa<IntegerType>(type) || isa<PointerType>(type) || isa<FloatType>(type)) {
-        TypeSizeAlignment size = pass().target_callback->type_size_alignment(type);
-        offset = (offset + size.alignment - 1) & ~(size.alignment - 1);
-        PSI_ASSERT((size.alignment != 0) && ((size.alignment & (size.alignment - 1)) == 0)); // Power of 2 check
-        
-        PSI_NOT_IMPLEMENTED();
-
-        offset += size.size;
-      } else if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(type)) {
-        PSI_FAIL("need to align aggregate types in implode");
-        std::vector<ValuePtr<> > members;
-        for (unsigned ii = 0, ie = struct_ty->n_members(); ii != ie; ++ii)
-          members.push_back(implode_constant_value(struct_ty->member_type(ii), entries, offset, location));
-        return FunctionalBuilder::struct_value(context(), members, location);
-      } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(type)) {
-        PSI_FAIL("need to align aggregate types in implode");
-        ValuePtr<IntegerValue> length_val = dyn_cast<IntegerValue>(array_ty->length());
-        if (!length_val)
-          throw TvmUserError("Array length not constant in value implosion");
-        std::vector<ValuePtr<> > elements;
-        for (unsigned ii = 0, ie = length_val->value().unsigned_value_checked(); ii != ie; ++ii)
-          elements.push_back(implode_constant_value(array_ty->element_type(), entries, offset, location));
-        return FunctionalBuilder::array_value(array_ty->element_type(), elements, location);
-      } else {
-        PSI_FAIL("Unexpected tree type in constant implosion");
-      }
-    }
-    
-    void AggregateLoweringPass::ModuleLevelRewriter::explode_lowered_value(const LoweredValue& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location) {
-      ValuePtr<IntegerValue> alignment = dyn_cast<IntegerValue>(value.type().alignment());
-      if (!alignment)
-        throw TvmUserError("Type with non-constant alignment found during static bitcast");
-      
-      std::size_t value_alignment = alignment->value().unsigned_value_checked();
-      PSI_ASSERT((value_alignment != 0) && ((value_alignment & (value_alignment - 1)) == 0)); // Power of 2 check
-      offset = (offset + value_alignment - 1) & ~(value_alignment - 1);
-      
-      switch (value.mode()) {
-      case LoweredValue::mode_register:
-        explode_constant_value(value.register_value(), entries, offset, location);
-        return;
-      
-      case LoweredValue::mode_split:
-        for (LoweredValue::EntryVector::const_iterator ii = value.split_entries().begin(), ie = value.split_entries().end(); ii != ie; ++ii)
-          explode_lowered_value(*ii, entries, offset, location);
-        return;
-      
-      default: PSI_FAIL("unexpected LoweredValue mode");
-      }
-    }
-    
-    LoweredValue AggregateLoweringPass::ModuleLevelRewriter::implode_lowered_value(const LoweredType& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location) {
-      ValuePtr<IntegerValue> alignment = dyn_cast<IntegerValue>(type.alignment());
-      if (!alignment)
-        throw TvmUserError("Type with non-constant alignment found during static bitcast");
-      
-      std::size_t value_alignment = alignment->value().unsigned_value_checked();
-      PSI_ASSERT((value_alignment != 0) && ((value_alignment & (value_alignment - 1)) == 0)); // Power of 2 check
-      offset = (offset + value_alignment - 1) & ~(value_alignment - 1);
-
-      switch (type.mode()) {
-      case LoweredType::mode_register:
-        return LoweredValue::register_(type, true, implode_constant_value(type.register_type(), entries, offset, location));
-      
-      case LoweredType::mode_split: {
-        LoweredValue::EntryVector value_entries;
-        for (LoweredType::EntryVector::const_iterator ii = type.split_entries().begin(), ie = type.split_entries().end(); ii != ie; ++ii)
-          value_entries.push_back(implode_lowered_value(*ii, entries, offset, location));
-        return LoweredValue::split(type, value_entries);
-      }
-      
-      default: PSI_FAIL("unexpected LoweredType mode");
-      }
-    }
 
     LoweredValue AggregateLoweringPass::ModuleLevelRewriter::bitcast(const LoweredType& type, const LoweredValue& input, const SourceLocation& location) {
       std::vector<ExplodeEntry> exploded;
       std::size_t offset = 0;
-      explode_lowered_value(input, exploded, offset, location);
+      pass().explode_lowered_value(input, exploded, offset, location, true);
       offset = 0;
-      return implode_lowered_value(type, exploded, offset, location);
+      return pass().implode_lowered_value(type, exploded, offset, location);
     }
     
     LoweredType AggregateLoweringPass::ModuleLevelRewriter::rewrite_type(const ValuePtr<>& type_orig) {
@@ -632,162 +549,6 @@ namespace Psi {
     }
 
     /**
-     * Initialize a global variable build with no elements, zero size and minimum alignment.
-     */
-    AggregateLoweringPass::GlobalBuildStatus::GlobalBuildStatus(Context& context, const SourceLocation& location) {
-      first_element_alignment = max_element_alignment = alignment = FunctionalBuilder::size_value(context, 1, location);
-      elements_size = size = FunctionalBuilder::size_value(context, 0, location);
-    }
-    
-    /**
-     * Initialize a global variable build with one element, and the specified sizes and alignment.
-     */
-    AggregateLoweringPass::GlobalBuildStatus::GlobalBuildStatus(const ValuePtr<>& element, const ValuePtr<>& element_size_, const ValuePtr<>& element_alignment_, const ValuePtr<>& size_, const ValuePtr<>& alignment_)
-    : elements(1, element),
-    elements_size(element_size_),
-    first_element_alignment(element_alignment_),
-    max_element_alignment(element_alignment_),
-    size(size_),
-    alignment(alignment_) {
-    }
-
-    /**
-     * Pad a global to the specified size, assuming that either the next element added or
-     * the global variable itself is padded to the specified alignment.
-     * 
-     * \param status This does not alter the size, alignment or elements_size members of
-     * \c status. It only affects the \c elements member.
-     * 
-     * \param is_value Whether a value is being built. If not, a type is being built.
-     */
-    void AggregateLoweringPass::global_pad_to_size(GlobalBuildStatus& status, const ValuePtr<>& size, const ValuePtr<>& alignment, bool is_value, const SourceLocation& location) {
-      std::pair<ValuePtr<>, std::size_t> padding_type;
-      if (ValuePtr<IntegerValue> alignment_val = dyn_cast<IntegerValue>(alignment))
-        padding_type = target_callback->type_from_alignment(context(), alignment_val->value().unsigned_value_checked(), location);
-      else
-        padding_type = std::make_pair(FunctionalBuilder::byte_type(context(), location), 1);
-      
-      ValuePtr<> count = FunctionalBuilder::div(FunctionalBuilder::sub(size, status.size, location),
-                                                FunctionalBuilder::size_value(context(), padding_type.second, location), location);
-      if (ValuePtr<IntegerValue> count_value = dyn_cast<IntegerValue>(count)) {
-        boost::optional<unsigned> count_value_int = count_value->value().unsigned_value();
-        if (!count_value_int)
-          throw TvmInternalError("cannot create internal global variable padding due to size overflow");
-        if (*count_value_int) {
-          ValuePtr<> padding_term = is_value ? FunctionalBuilder::undef(padding_type.first, location) : padding_type.first;
-          status.elements.insert(status.elements.end(), *count_value_int, padding_term);
-        }
-      } else {
-        ValuePtr<> array_ty = FunctionalBuilder::array_type(padding_type.first, count, location);
-        status.elements.push_back(is_value ? FunctionalBuilder::undef(array_ty, location) : array_ty);
-      }
-    }
-    
-    /**
-     * Append the result of building a part of a global variable to the current
-     * status of building it.
-     */
-    void AggregateLoweringPass::global_append(GlobalBuildStatus& status, const GlobalBuildStatus& child, bool is_value, const SourceLocation& location) {
-      ValuePtr<> child_start = FunctionalBuilder::align_to(status.size, child.alignment, location);
-      if (!child.elements.empty()) {
-        global_pad_to_size(status, child_start, child.first_element_alignment, is_value, location);
-        status.elements.insert(status.elements.end(), child.elements.begin(), child.elements.end());
-        status.elements_size = FunctionalBuilder::add(child_start, child.elements_size, location);
-      }
-
-      status.size = FunctionalBuilder::add(child_start, child.size, location);
-      status.alignment = FunctionalBuilder::max(status.alignment, child.alignment, location);
-      status.max_element_alignment = FunctionalBuilder::max(status.max_element_alignment, child.max_element_alignment, location);
-    }
-    
-    /**
-     * If the appropriate flags are set, rewrite the global build status \c status
-     * from a sequence of elements to a single element which is a struct of the
-     * previous elements.
-     * 
-     * \param is_value If \c status represents a value this should be true, otherwise
-     * \c status represents a type.
-     */
-    void AggregateLoweringPass::global_group(GlobalBuildStatus& status, bool is_value, const SourceLocation& location) {
-      if (!flatten_globals)
-        return;
-      
-      ValuePtr<> new_element;
-      if (is_value)
-        new_element = FunctionalBuilder::struct_value(context(), status.elements, location);
-      else
-        new_element = FunctionalBuilder::struct_type(context(), status.elements, location);
-      
-      status.elements.assign(1, new_element);
-      status.first_element_alignment = status.max_element_alignment;
-    }
-
-    /**
-     * Rewrite the type of a global variable.
-     * 
-     * \param value Global value being stored.
-     * 
-     * \param element_types Sequence of elements to be put into
-     * the global at the top level.
-     */
-    AggregateLoweringPass::GlobalBuildStatus AggregateLoweringPass::rewrite_global_type(const ValuePtr<>& value) {
-      LoweredType value_ty = global_rewriter().rewrite_type(value->type());
-      if (value_ty.mode() == LoweredType::mode_register)
-        return GlobalBuildStatus(value_ty.register_type(), value_ty.size(), value_ty.alignment(), value_ty.size(), value_ty.alignment());
-
-      if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(value)) {
-        GlobalBuildStatus status(context(), value->location());
-        for (unsigned i = 0, e = array_val->length(); i != e; ++i)
-          global_append(status, rewrite_global_type(array_val->value(i)), false, value->location());
-        global_group(status, false, value->location());
-        return status;
-      } else if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(value)) {
-        GlobalBuildStatus status(context(), value->location());
-        for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i)
-          global_append(status, rewrite_global_type(struct_val->member_value(i)), false, value->location());
-        global_group(status, false, value->location());
-        return status;
-      } else if (ValuePtr<UnionValue> union_val = dyn_cast<UnionValue>(value)) {
-        GlobalBuildStatus status = rewrite_global_type(union_val->value());
-        status.size = value_ty.size();
-        status.alignment = value_ty.alignment();
-        return status;
-      } else {
-        PSI_FAIL("unsupported global element");
-      }
-    }
-
-    AggregateLoweringPass::GlobalBuildStatus AggregateLoweringPass::rewrite_global_value(const ValuePtr<>& value) {
-      LoweredType value_ty = global_rewriter().rewrite_type(value->type());
-      if (value_ty.mode() == LoweredType::mode_register) {
-        LoweredValueSimple rewritten_value = m_global_rewriter.rewrite_value_register(value);
-        PSI_ASSERT(rewritten_value.global);
-        return GlobalBuildStatus(rewritten_value.value, value_ty.size(), value_ty.alignment(), value_ty.size(), value_ty.alignment());
-      }
-
-      if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(value)) {
-        GlobalBuildStatus status(context(), value->location());
-        for (unsigned i = 0, e = array_val->length(); i != e; ++i)
-          global_append(status, rewrite_global_value(array_val->value(i)), true, value->location());
-        global_group(status, true, value->location());
-        return status;
-      } else if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(value)) {
-        GlobalBuildStatus status(context(), value->location());
-        for (unsigned i = 0, e = struct_val->n_members(); i != e; ++i)
-          global_append(status, rewrite_global_value(struct_val->member_value(i)), true, value->location());
-        global_group(status, true, value->location());
-        return status;
-      } else if (ValuePtr<UnionValue> union_val = dyn_cast<UnionValue>(value)) {
-        GlobalBuildStatus status = rewrite_global_value(union_val->value());
-        status.size = value_ty.size();
-        status.alignment = value_ty.alignment();
-        return status;
-      } else {
-        PSI_FAIL("unsupported global element");
-      }
-    }
-
-    /**
      * \param source_module Module being rewritten
      * 
      * \param target_callback_ Target specific callback functions.
@@ -802,9 +563,31 @@ namespace Psi {
     split_arrays(false),
     split_structs(false),
     remove_unions(false),
-    remove_sizeof(false),
     pointer_arithmetic_to_bytes(false),
     flatten_globals(false) {
+    }
+
+    /**
+     * \brief Get the alignment of a lowered type.
+     */
+    std::size_t AggregateLoweringPass::lowered_type_alignment(const ValuePtr<>& type) {
+      if (ValuePtr<StructType> st = dyn_cast<StructType>(type)) {
+        std::size_t a = 1;
+        for (unsigned ii = 0, ie = st->n_members(); ii != ie; ++ii)
+          a = std::max(a, lowered_type_alignment(st->member_type(ii)));
+        return a;
+      } else if (ValuePtr<ArrayType> arr = dyn_cast<ArrayType>(type)) {
+        return lowered_type_alignment(arr->element_type());
+      } else if (ValuePtr<UnionType> un = dyn_cast<UnionType>(type)) {
+        std::size_t a = 1;
+        for (unsigned ii = 0, ie = un->n_members(); ii != ie; ++ii)
+          a = std::max(a, lowered_type_alignment(un->member_type(ii)));
+        return a;
+      } else if (isa<EmptyType>(type)) {
+        return 1;
+      } else {
+        return target_callback->type_size_alignment(type).alignment;
+      }
     }
     
     /// \brief Type to use for sizes
@@ -827,7 +610,67 @@ namespace Psi {
         m_block_type = m_global_rewriter.rewrite_type(FunctionalBuilder::block_type(source_module()->context(), source_module()->location()));
       return m_block_type;
     }
-
+    
+    /**
+     * \brief Generate the type used to store a global variable.
+     * 
+     * \return First entry is the type, second is its alignment.
+     */
+    std::pair<ValuePtr<>, ValuePtr<> > AggregateLoweringPass::build_global_type(const ValuePtr<>& type, const SourceLocation& location) {
+      std::vector<ExplodeEntry> entries;
+      std::size_t offset = 0;
+      LoweredType lowered_type = m_global_rewriter.rewrite_type(type);
+      explode_lowered_type(lowered_type, entries, offset, location);
+      ValuePtr<> global_type;
+      if (entries.size() == 1) {
+        global_type = entries.front().value;
+      } else {
+        std::vector<ValuePtr<> > type_entries;
+        offset = 0;
+        for (std::vector<ExplodeEntry>::const_iterator ji = entries.begin(), je = entries.end(); ji != je; ++ji) {
+          std::size_t delta = (ji->offset - offset) / ji->tsa.alignment;
+          if (delta >= 1) {
+            std::pair<ValuePtr<>, std::size_t> pad_type = target_callback->type_from_alignment(context(), ji->tsa.alignment, location);
+            PSI_ASSERT(pad_type.second == ji->tsa.alignment);
+            type_entries.insert(type_entries.end(), delta, pad_type.first);
+          }
+          type_entries.push_back(ji->value);
+          offset += ji->tsa.size;
+        }
+        global_type = FunctionalBuilder::struct_type(context(), type_entries, location);
+      }
+      
+      return std::make_pair(global_type, lowered_type.alignment());
+    }
+    
+    ValuePtr<> AggregateLoweringPass::build_global_value(const ValuePtr<>& source_value, const SourceLocation& location) {
+      std::vector<ExplodeEntry> entries;
+      std::size_t offset = 0;
+      explode_lowered_value(m_global_rewriter.rewrite_value(source_value), entries, offset, location, false);
+      
+      ValuePtr<> target_value;
+      if (entries.size() == 1) {
+        target_value = entries.front().value;
+      } else {
+        std::vector<ValuePtr<> > value_entries;
+        offset = 0;
+        for (std::vector<ExplodeEntry>::const_iterator ji = entries.begin(), je = entries.end(); ji != je; ++ji) {
+          std::size_t delta = (ji->offset - offset) / ji->tsa.alignment;
+          if (delta >= 1) {
+            std::pair<ValuePtr<>, std::size_t> pad_type = target_callback->type_from_alignment(context(), ji->tsa.alignment, location);
+            PSI_ASSERT(pad_type.second == ji->tsa.alignment);
+            ValuePtr<> pad_value = FunctionalBuilder::undef(pad_type.first, location);
+            value_entries.insert(value_entries.end(), delta, pad_value);
+          }
+          value_entries.push_back(ji->value);
+          offset += ji->tsa.size;
+        }
+        target_value = FunctionalBuilder::struct_value(context(), value_entries, location);
+      }
+      
+      return target_value;
+    }
+    
     void AggregateLoweringPass::update_implementation(bool incremental) {
       if (!incremental)
         m_global_rewriter = ModuleLevelRewriter(this);
@@ -845,26 +688,16 @@ namespace Psi {
           continue;
       
         if (ValuePtr<GlobalVariable> old_var = dyn_cast<GlobalVariable>(term)) {
-          std::vector<ValuePtr<> > element_types;
-          GlobalBuildStatus status = rewrite_global_type(old_var->value());
-          global_pad_to_size(status, status.size, status.alignment, false, term->location());
-          ValuePtr<> global_type;
-          if (status.elements.empty()) {
-            global_type = FunctionalBuilder::empty_type(context(), term->location());
-          } else if (status.elements.size() == 1) {
-            global_type = status.elements.front();
-          } else {
-            global_type = FunctionalBuilder::struct_type(context(), status.elements, term->location());
-          }
-          ValuePtr<GlobalVariable> new_var = target_module()->new_global_variable(old_var->name(), global_type, old_var->location());
+          std::pair<ValuePtr<>, ValuePtr<> > type_alignment = build_global_type(old_var->value_type(), term->location());
+          ValuePtr<GlobalVariable> new_var = target_module()->new_global_variable(old_var->name(), type_alignment.first, term->location());
           new_var->set_constant(old_var->constant());
           
           if (old_var->alignment()) {
             LoweredValueSimple old_align = m_global_rewriter.rewrite_value_register(old_var->alignment());
             PSI_ASSERT(old_align.global);
-            new_var->set_alignment(FunctionalBuilder::max(status.alignment, old_align.value, term->location()));
+            new_var->set_alignment(FunctionalBuilder::max(type_alignment.second, old_align.value, term->location()));
           } else {
-            new_var->set_alignment(status.alignment);
+            new_var->set_alignment(type_alignment.second);
           }
 
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(new_var, byte_type, term->location());
@@ -882,19 +715,8 @@ namespace Psi {
       for (std::vector<std::pair<ValuePtr<GlobalVariable>, ValuePtr<GlobalVariable> > >::iterator
            i = rewrite_globals.begin(), e = rewrite_globals.end(); i != e; ++i) {
         ValuePtr<GlobalVariable> source = i->first, target = i->second;
-        if (ValuePtr<> source_value = source->value()) {
-          GlobalBuildStatus status = rewrite_global_value(source_value);
-          global_pad_to_size(status, status.size, status.alignment, true, source->location());
-          ValuePtr<> target_value;
-          if (status.elements.empty()) {
-            target_value = FunctionalBuilder::empty_value(context(), source->location());
-          } else if (status.elements.size() == 1) {
-            target_value = status.elements.front();
-          } else {
-            target_value = FunctionalBuilder::struct_value(context(), status.elements, source->location());
-          }
-          target->set_value(target_value);
-        }
+        if (source->value())
+          target->set_value(build_global_value(source->value(), source->value()->location()));
         
         global_map_put(i->first, i->second);
       }
@@ -903,6 +725,153 @@ namespace Psi {
            i = rewrite_functions.begin(), e = rewrite_functions.end(); i != e; ++i) {
         i->second->run();
         global_map_put(i->first, i->second->new_function());
+      }
+    }
+    
+    void AggregateLoweringPass::explode_lowered_type(const LoweredType& type, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location) {
+      TypeSizeAlignment tsa = type.size_alignment_const();
+      offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+      PSI_ASSERT((tsa.alignment != 0) && ((tsa.alignment & (tsa.alignment - 1)) == 0)); // Power of 2 check
+
+      switch (type.mode()) {
+      case LoweredType::mode_register: {
+        ExplodeEntry entry = {offset, tsa, type.register_type()};
+        entries.push_back(entry);
+        offset += tsa.size;
+        break;
+      }
+      
+      case LoweredType::mode_split:
+        for (LoweredType::EntryVector::const_iterator ii = type.split_entries().begin(), ie = type.split_entries().end(); ii != ie; ++ii)
+          explode_lowered_type(*ii, entries, offset, location);
+        break;
+        
+      default: PSI_FAIL("Unknown LoweredType mode");
+      }
+
+      offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+    }
+    
+    void AggregateLoweringPass::explode_constant_value(const ValuePtr<>& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location, bool expand_aggregates) {
+      TypeSizeAlignment tsa = m_global_rewriter.rewrite_type(value->type()).size_alignment_const();
+      offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+      PSI_ASSERT((tsa.alignment != 0) && ((tsa.alignment & (tsa.alignment - 1)) == 0)); // Power of 2 check
+
+      if (!expand_aggregates || isa<IntegerType>(value->type()) || isa<PointerType>(value->type()) || isa<FloatType>(value->type())) {
+        if (tsa.size != 0) {
+          ExplodeEntry entry = {offset, tsa, value};
+          entries.push_back(entry);
+          offset += tsa.size;
+        }
+      } else if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(value)) {
+        for (unsigned ii = 0, ie = struct_val->n_members(); ii != ie; ++ii)
+          explode_constant_value(struct_val->member_value(ii), entries, offset, location, expand_aggregates);
+        offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+      } else if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(value)) {
+        for (unsigned ii = 0, ie = array_val->length(); ii != ie; ++ii)
+          explode_constant_value(array_val->value(ii), entries, offset, location, expand_aggregates);
+        offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+      } else {
+        PSI_FAIL("Unexpected tree type in constant explosion");
+      }
+    }
+    
+    struct AggregateLoweringPass::ExplodeCompareStart {
+      bool operator () (const ExplodeEntry& a, const ExplodeEntry& b) const {
+        return a.offset < b.offset;
+      }
+    };
+
+    struct AggregateLoweringPass::ExplodeCompareEnd {
+      bool operator () (const ExplodeEntry& a, const ExplodeEntry& b) const {
+        return a.offset + a.tsa.size < b.offset + b.tsa.size;
+      }
+    };
+    
+    ValuePtr<> AggregateLoweringPass::implode_constant_value(const ValuePtr<>& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location) {
+      TypeSizeAlignment tsa = m_global_rewriter.rewrite_type(type).size_alignment_const();
+      offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+      PSI_ASSERT((tsa.alignment != 0) && ((tsa.alignment & (tsa.alignment - 1)) == 0)); // Power of 2 check
+
+      if (isa<IntegerType>(type) || isa<PointerType>(type) || isa<FloatType>(type)) {
+        ExplodeEntry start = {offset, {0,0}, ValuePtr<>()}, end = {offset + tsa.size, {0,0}, ValuePtr<>()};
+        std::vector<ExplodeEntry>::const_iterator first = std::upper_bound(entries.begin(), entries.end(), start, ExplodeCompareEnd());
+        std::vector<ExplodeEntry>::const_iterator last = std::upper_bound(entries.begin(), entries.end(), end, ExplodeCompareStart());
+    
+        ValuePtr<> result;
+        if ((std::distance(first, last) == 1) && (first->tsa.size == tsa.size) && (first->offset == offset)) {
+          result = FunctionalBuilder::bit_cast(first->value, type, location);
+        } else {
+          std::pair<ValuePtr<>, std::size_t> integer_type = target_callback->type_from_size(context(), tsa.size, location);
+          PSI_ASSERT(tsa.size == integer_type.second);
+          result = FunctionalBuilder::zero(integer_type.first, location);
+          for (; first != last; ++first) {
+            ValuePtr<> shifted = target_callback->byte_shift(first->value, integer_type.first, offset - first->offset, location);
+            result = FunctionalBuilder::bit_or(result, shifted, location);
+          }
+          result = FunctionalBuilder::bit_cast(result, type, location);
+        }
+        
+        offset += tsa.size;
+        return result;
+      } else if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(type)) {
+        std::vector<ValuePtr<> > members;
+        for (unsigned ii = 0, ie = struct_ty->n_members(); ii != ie; ++ii)
+          members.push_back(implode_constant_value(struct_ty->member_type(ii), entries, offset, location));
+        offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+        return FunctionalBuilder::struct_value(context(), members, location);
+      } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(type)) {
+        ValuePtr<IntegerValue> length_val = dyn_cast<IntegerValue>(array_ty->length());
+        if (!length_val)
+          throw TvmUserError("Array length not constant in value implosion");
+        std::vector<ValuePtr<> > elements;
+        for (unsigned ii = 0, ie = length_val->value().unsigned_value_checked(); ii != ie; ++ii)
+          elements.push_back(implode_constant_value(array_ty->element_type(), entries, offset, location));
+        offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+        return FunctionalBuilder::array_value(array_ty->element_type(), elements, location);
+      } else {
+        PSI_FAIL("Unexpected tree type in constant implosion");
+      }
+    }
+    
+    void AggregateLoweringPass::explode_lowered_value(const LoweredValue& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location, bool expand_aggregates) {
+      TypeSizeAlignment tsa = value.type().size_alignment_const();
+      PSI_ASSERT((tsa.alignment != 0) && ((tsa.alignment & (tsa.alignment - 1)) == 0)); // Power of 2 check
+      offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+      
+      switch (value.mode()) {
+      case LoweredValue::mode_register:
+        explode_constant_value(value.register_value(), entries, offset, location, expand_aggregates);
+        return;
+      
+      case LoweredValue::mode_split:
+        for (LoweredValue::EntryVector::const_iterator ii = value.split_entries().begin(), ie = value.split_entries().end(); ii != ie; ++ii)
+          explode_lowered_value(*ii, entries, offset, location, expand_aggregates);
+        offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+        return;
+      
+      default: PSI_FAIL("unexpected LoweredValue mode");
+      }
+    }
+    
+    LoweredValue AggregateLoweringPass::implode_lowered_value(const LoweredType& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location) {
+      TypeSizeAlignment tsa = type.size_alignment_const();
+      PSI_ASSERT((tsa.alignment != 0) && ((tsa.alignment & (tsa.alignment - 1)) == 0)); // Power of 2 check
+      offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+
+      switch (type.mode()) {
+      case LoweredType::mode_register:
+        return LoweredValue::register_(type, true, implode_constant_value(type.register_type(), entries, offset, location));
+      
+      case LoweredType::mode_split: {
+        LoweredValue::EntryVector value_entries;
+        for (LoweredType::EntryVector::const_iterator ii = type.split_entries().begin(), ie = type.split_entries().end(); ii != ie; ++ii)
+          value_entries.push_back(implode_lowered_value(*ii, entries, offset, location));
+        offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+        return LoweredValue::split(type, value_entries);
+      }
+      
+      default: PSI_FAIL("unexpected LoweredType mode");
       }
     }
   }

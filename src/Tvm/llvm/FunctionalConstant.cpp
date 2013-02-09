@@ -115,62 +115,120 @@ namespace Psi {
           return llvm::ConstantExpr::getSelect(condition, true_value, false_value);
         }
         
-        struct IntegerUnaryOpHandler {
-          typedef llvm::APInt (llvm::APInt::*CallbackType) () const;
-          CallbackType callback;
-          
-          IntegerUnaryOpHandler(CallbackType callback_) : callback(callback_) {}
-          
-          llvm::Constant* operator () (ModuleBuilder& builder, const ValuePtr<IntegerUnaryOp>& term) const {
-            llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), value_cast<IntegerType>(term->type())->width());
-            llvm::APInt param = builder.build_constant_integer(term->parameter());
-            llvm::APInt result = (param.*callback)();
-            return llvm::ConstantInt::get(llvm_type, result);
+        static llvm::Constant* zext_or_trunc(llvm::Constant *val, llvm::Type *ty) {
+          unsigned val_bits = val->getType()->getScalarSizeInBits(), ty_bits = ty->getScalarSizeInBits();
+          if (val_bits < ty_bits)
+            return llvm::ConstantExpr::getZExt(val, ty);
+          else if (val_bits > ty_bits)
+            return llvm::ConstantExpr::getTrunc(val, ty);
+          else {
+            PSI_ASSERT(val->getType() == ty);
+            return val;
           }
-        };
+        }
+
+        static llvm::Constant* bitcast_callback(ModuleBuilder& builder, const ValuePtr<BitCast>& term) {
+          llvm::Constant *value = builder.build_constant(term->value());
+          llvm::Type *target_type = builder.build_type(term->target_type());
+          
+          if (target_type->isPointerTy() && value->getType()->isPointerTy())
+            return llvm::ConstantExpr::getPointerCast(value, target_type);
+          else if (!target_type->isPointerTy() && !value->getType()->isPointerTy() && (target_type->getPrimitiveSizeInBits() == value->getType()->getPrimitiveSizeInBits()))
+            return llvm::ConstantExpr::getBitCast(value, target_type);
+          
+          llvm::Constant *value_int;
+          if (value->getType()->isIntegerTy()) {
+            value_int = value;
+          } else if (value->getType()->isPointerTy()) {
+            llvm::Type *value_int_type = llvm::Type::getIntNTy(builder.llvm_context(), target_type->getPrimitiveSizeInBits());
+            value_int = llvm::ConstantExpr::getPtrToInt(value, value_int_type);
+          } else {
+            llvm::Type *value_int_type = llvm::Type::getIntNTy(builder.llvm_context(), value->getType()->getPrimitiveSizeInBits());
+            value_int = llvm::ConstantExpr::getBitCast(value, value_int_type);
+          }
+          
+          if (target_type->isPointerTy())
+            return llvm::ConstantExpr::getIntToPtr(value_int, target_type);
+          
+          llvm::Type *target_int_type;
+          if (target_type->isIntegerTy())
+            target_int_type = target_type;
+          else
+            target_int_type = llvm::Type::getIntNTy(builder.llvm_context(), target_type->getPrimitiveSizeInBits());
+          
+          llvm::Constant *target_sized_value = zext_or_trunc(value_int, target_int_type);
+          
+          if (target_sized_value->getType() == target_type)
+            return target_sized_value;
+          else
+            return llvm::ConstantExpr::getBitCast(target_sized_value, target_type);
+        }
+        
+        static llvm::Constant* shl_callback(ModuleBuilder& builder, const ValuePtr<ShiftLeft>& term) {
+          llvm::Constant *value = builder.build_constant(term->lhs()), *shift = builder.build_constant(term->rhs());
+          shift = zext_or_trunc(shift, value->getType());
+          return llvm::ConstantExpr::getShl(value, shift);
+        }
+        
+        static llvm::Constant* shr_callback(ModuleBuilder& builder, const ValuePtr<ShiftRight>& term) {
+          llvm::Constant *value = builder.build_constant(term->lhs()), *shift = builder.build_constant(term->rhs());
+          shift = zext_or_trunc(shift, value->getType());
+          return value_cast<IntegerType>(term->type())->is_signed() ?
+            llvm::ConstantExpr::getAShr(value, shift) : llvm::ConstantExpr::getLShr(value, shift);
+        }
+        
+        static llvm::Constant* add_callback(ModuleBuilder& builder, const ValuePtr<IntegerAdd>& term) {
+          llvm::Constant *lhs = builder.build_constant(term->lhs()), *rhs = builder.build_constant(term->rhs());
+          return llvm::ConstantExpr::getAdd(lhs, rhs);
+        }
+        
+        static llvm::Constant* mul_callback(ModuleBuilder& builder, const ValuePtr<IntegerMultiply>& term) {
+          llvm::Constant *lhs = builder.build_constant(term->lhs()), *rhs = builder.build_constant(term->rhs());
+          return llvm::ConstantExpr::getMul(lhs, rhs);
+        }
+
+        static llvm::Constant* div_callback(ModuleBuilder& builder, const ValuePtr<IntegerDivide>& term) {
+          llvm::Constant *lhs = builder.build_constant(term->lhs()), *rhs = builder.build_constant(term->rhs());
+          if (value_cast<IntegerType>(term->type())->is_signed())
+            return llvm::ConstantExpr::getSDiv(lhs, rhs);
+          else
+            return llvm::ConstantExpr::getUDiv(lhs, rhs);
+        }
+        
+        static llvm::Constant* neg_callback(ModuleBuilder& builder, const ValuePtr<IntegerNegative>& term) {
+          return llvm::ConstantExpr::getNeg(builder.build_constant(term->parameter()));
+        }
+        
+        static llvm::Constant* not_callback(ModuleBuilder& builder, const ValuePtr<BitNot>& term) {
+          return llvm::ConstantExpr::getNot(builder.build_constant(term->parameter()));
+        }
 
         struct IntegerBinaryOpHandler {
-          typedef llvm::APInt (llvm::APInt::*CallbackType) (const llvm::APInt&) const;
-          CallbackType ui_callback, si_callback;
+          typedef llvm::Constant* (*CallbackType) (llvm::Constant*, llvm::Constant*);
+          CallbackType callback;
 
-          IntegerBinaryOpHandler(CallbackType callback_)
-            : ui_callback(callback_), si_callback(callback_) {}
-
-          IntegerBinaryOpHandler(CallbackType ui_callback_, CallbackType si_callback_)
-            : ui_callback(ui_callback_), si_callback(si_callback_) {}
+          IntegerBinaryOpHandler(CallbackType callback_) : callback(callback_) {}
 
           llvm::Constant* operator () (ModuleBuilder& builder, const ValuePtr<IntegerBinaryOp>& term) const {
-            llvm::IntegerType *llvm_type = integer_type(builder.llvm_context(), builder.llvm_target_machine()->getTargetData(), value_cast<IntegerType>(term->type())->width());
-            llvm::APInt lhs = builder.build_constant_integer(term->lhs());
-            llvm::APInt rhs = builder.build_constant_integer(term->rhs());
-            llvm::APInt result;
-            if (value_cast<IntegerType>(term->type())->is_signed())
-              result = (lhs.*si_callback)(rhs);
-            else
-              result = (lhs.*ui_callback)(rhs);
-            return llvm::ConstantInt::get(llvm_type, result);
+            llvm::Constant *lhs = builder.build_constant(term->lhs());
+            llvm::Constant *rhs = builder.build_constant(term->rhs());
+            return callback(lhs, rhs);
           }
         };
         
-        struct IntegerCompareOpHandler {
-          typedef bool (llvm::APInt::*CallbackType) (const llvm::APInt&) const;
-          CallbackType ui_callback, si_callback;
+        struct IntegerCompareHandler {
+          unsigned short ui_predicate, si_predicate;
+          
+          IntegerCompareHandler(unsigned short predicate)
+            : ui_predicate(predicate), si_predicate(predicate) {}
 
-          IntegerCompareOpHandler(CallbackType callback_)
-            : ui_callback(callback_), si_callback(callback_) {}
-
-          IntegerCompareOpHandler(CallbackType ui_callback_, CallbackType si_callback_)
-            : ui_callback(ui_callback_), si_callback(si_callback_) {}
+          IntegerCompareHandler(unsigned short ui_predicate_, unsigned short si_predicate_)
+            : ui_predicate(ui_predicate_), si_predicate(si_predicate_) {}
 
           llvm::Constant* operator () (ModuleBuilder& builder, const ValuePtr<IntegerCompareOp>& term) const {
-            llvm::APInt lhs = builder.build_constant_integer(term->lhs());
-            llvm::APInt rhs = builder.build_constant_integer(term->rhs());
-            bool pred_passed;
-            if (value_cast<IntegerType>(term->lhs()->type())->is_signed())
-              pred_passed = (lhs.*si_callback)(rhs);
-            else
-              pred_passed = (lhs.*ui_callback)(rhs);
-            return pred_passed ? llvm::ConstantInt::getTrue(builder.llvm_context()) : llvm::ConstantInt::getFalse(builder.llvm_context());
+            llvm::Constant *lhs = builder.build_constant(term->lhs());
+            llvm::Constant *rhs = builder.build_constant(term->rhs());
+            return llvm::ConstantExpr::getICmp(value_cast<IntegerType>(term->lhs()->type())->is_signed() ? si_predicate : ui_predicate, lhs, rhs);
           }
         };
 
@@ -196,20 +254,23 @@ namespace Psi {
             .add<ElementPtr>(element_ptr_callback)
             .add<StructElementOffset>(struct_element_offset_callback)
             .add<Select>(select_value_callback)
-            .add<IntegerAdd>(IntegerBinaryOpHandler(&llvm::APInt::operator +))
-            .add<IntegerMultiply>(IntegerBinaryOpHandler(&llvm::APInt::operator *))
-            .add<IntegerDivide>(IntegerBinaryOpHandler(&llvm::APInt::udiv, &llvm::APInt::sdiv))
-            .add<IntegerNegative>(IntegerUnaryOpHandler(&llvm::APInt::operator -))
-            .add<BitAnd>(IntegerBinaryOpHandler(&llvm::APInt::operator &))
-            .add<BitOr>(IntegerBinaryOpHandler(&llvm::APInt::operator |))
-            .add<BitXor>(IntegerBinaryOpHandler(&llvm::APInt::operator ^))
-            .add<BitNot>(IntegerUnaryOpHandler(&llvm::APInt::operator ~))
-            .add<IntegerCompareEq>(IntegerCompareOpHandler(&llvm::APInt::eq))
-            .add<IntegerCompareNe>(IntegerCompareOpHandler(&llvm::APInt::ne))
-            .add<IntegerCompareGt>(IntegerCompareOpHandler(&llvm::APInt::ugt, &llvm::APInt::sgt))
-            .add<IntegerCompareLt>(IntegerCompareOpHandler(&llvm::APInt::ult, &llvm::APInt::slt))
-            .add<IntegerCompareGe>(IntegerCompareOpHandler(&llvm::APInt::uge, &llvm::APInt::sge))
-            .add<IntegerCompareLe>(IntegerCompareOpHandler(&llvm::APInt::ule, &llvm::APInt::sle));
+            .add<BitCast>(bitcast_callback)
+            .add<ShiftLeft>(shl_callback)
+            .add<ShiftRight>(shr_callback)
+            .add<IntegerAdd>(add_callback)
+            .add<IntegerMultiply>(mul_callback)
+            .add<IntegerDivide>(div_callback)
+            .add<IntegerNegative>(neg_callback)
+            .add<BitAnd>(IntegerBinaryOpHandler(llvm::ConstantExpr::getAnd))
+            .add<BitOr>(IntegerBinaryOpHandler(llvm::ConstantExpr::getOr))
+            .add<BitXor>(IntegerBinaryOpHandler(llvm::ConstantExpr::getXor))
+            .add<BitNot>(not_callback)
+            .add<IntegerCompareEq>(IntegerCompareHandler(llvm::CmpInst::ICMP_EQ))
+            .add<IntegerCompareNe>(IntegerCompareHandler(llvm::CmpInst::ICMP_NE))
+            .add<IntegerCompareGt>(IntegerCompareHandler(llvm::CmpInst::ICMP_UGT, llvm::CmpInst::ICMP_SGT))
+            .add<IntegerCompareLt>(IntegerCompareHandler(llvm::CmpInst::ICMP_ULT, llvm::CmpInst::ICMP_SLT))
+            .add<IntegerCompareGe>(IntegerCompareHandler(llvm::CmpInst::ICMP_UGE, llvm::CmpInst::ICMP_SGE))
+            .add<IntegerCompareLe>(IntegerCompareHandler(llvm::CmpInst::ICMP_ULE, llvm::CmpInst::ICMP_SLE));
         }
       };
       

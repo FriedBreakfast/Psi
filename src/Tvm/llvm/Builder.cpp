@@ -203,7 +203,6 @@ namespace Psi {
         
         AggregateLoweringPass aggregate_lowering_pass(module, target_callback()->aggregate_lowering_callback());
         aggregate_lowering_pass.remove_unions = true;
-        aggregate_lowering_pass.remove_sizeof = true;
         aggregate_lowering_pass.update();
         
         for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {
@@ -340,7 +339,7 @@ namespace Psi {
           return itp.first->second;
         }
 
-      llvm::Type *t;
+        llvm::Type *t;
         switch(term->term_type()) {
         case term_functional:
           t = build_type_internal(value_cast<FunctionalValue>(term));

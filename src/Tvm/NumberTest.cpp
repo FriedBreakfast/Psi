@@ -80,6 +80,39 @@ namespace Psi {
       BOOST_CHECK_EQUAL(f(-17,-5), 3); // check round-toward-zero behaviour
       BOOST_CHECK_EQUAL(f(35,-9), -3);
     }
+    
+    BOOST_AUTO_TEST_CASE(ShiftLeft) {
+      const char *src =
+        "%shift = function (%a:i32, %b: ui32, %c: ui32) > (struct i32 ui32) {\n"
+        "  return (struct_v (shl %a %c) (shl %b %c));\n"
+        "};\n";
+        
+      struct ResultType {Jit::Int32 a; Jit::UInt32 b;};
+      typedef ResultType (*FuncType) (Jit::Int32, Jit::UInt32, Jit::UInt32);
+      FuncType f = reinterpret_cast<FuncType>(jit_single("shift", src));
+      
+      ResultType r1 = f(10, 17, 2);
+      BOOST_CHECK_EQUAL(r1.a, 40);
+      BOOST_CHECK_EQUAL(r1.b, 68);
+    }
+    
+    BOOST_AUTO_TEST_CASE(ShiftRight) {
+      const char *src =
+        "%shift = function (%a:i32, %b: ui32, %c: ui32) > (struct i32 ui32) {\n"
+        "  return (struct_v (shr %a %c) (shr %b %c));\n"
+        "};\n";
+        
+      struct ResultType {Jit::Int32 a; Jit::UInt32 b;};
+      typedef ResultType (*FuncType) (Jit::Int32, Jit::UInt32, Jit::UInt32);
+      FuncType f = reinterpret_cast<FuncType>(jit_single("shift", src));
+      
+      ResultType r2 = f(15, 29, 2);
+      BOOST_CHECK_EQUAL(r2.a, 3);
+      BOOST_CHECK_EQUAL(r2.b, 7);
+      ResultType r3 = f(-5, -10, 2);
+      BOOST_CHECK_EQUAL(r3.a, -2);
+      BOOST_CHECK_EQUAL(r3.b, 0x3FFFFFFD);
+    }
 
     BOOST_AUTO_TEST_SUITE_END()
   }

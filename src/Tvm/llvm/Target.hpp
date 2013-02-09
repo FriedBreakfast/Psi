@@ -151,7 +151,7 @@ namespace Psi {
         };
         
         LowerFunctionHelperResult lower_function_helper(AggregateLoweringPass::AggregateLoweringRewriter&,  const ValuePtr<FunctionType>&);
-        AggregateLoweringPass::TypeSizeAlignment type_size_alignment_simple(llvm::Type*);
+        TypeSizeAlignment type_size_alignment_simple(llvm::Type*);
 
       public:
         TargetCommon(const Callback*, llvm::LLVMContext*, const llvm::TargetData*);
@@ -168,10 +168,10 @@ namespace Psi {
         virtual ValuePtr<Instruction> lower_return(AggregateLoweringPass::FunctionRunner&, const ValuePtr<>&, const SourceLocation&);
         virtual ValuePtr<Function> lower_function(AggregateLoweringPass&, const ValuePtr<Function>&);
         virtual void lower_function_entry(AggregateLoweringPass::FunctionRunner&, const ValuePtr<Function>&, const ValuePtr<Function>&);
-        virtual ValuePtr<> convert_value(const ValuePtr<>&, const ValuePtr<>&);
-        virtual AggregateLoweringPass::TypeSizeAlignment type_size_alignment(const ValuePtr<>&);
+        virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>&);
         virtual std::pair<ValuePtr<>, std::size_t> type_from_size(Context& context, std::size_t size, const SourceLocation& location);
         virtual std::pair<ValuePtr<>, std::size_t> type_from_alignment(Context& context, std::size_t alignment, const SourceLocation& location);
+        virtual ValuePtr<> byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int offset, const SourceLocation& location);
       };
       
       llvm::Function* target_exception_personality_linux(llvm::Module*, const std::string&);

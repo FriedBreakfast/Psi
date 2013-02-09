@@ -17,12 +17,6 @@ namespace Psi {
           
           if (!rewriter.pass().split_arrays && (element_type.mode() == LoweredType::mode_register)) {
             ValuePtr<> register_type = FunctionalBuilder::array_type(element_type.register_type(), length.value, term->location());
-
-            if (!rewriter.pass().remove_sizeof) {
-              size = FunctionalBuilder::type_size(register_type, term->location());
-              alignment = FunctionalBuilder::type_alignment(register_type, term->location());
-            }
-            
             return LoweredType::register_(term, size, alignment, register_type);
           } else {
             LoweredType::EntryVector entries(size_to_unsigned(length.value), element_type);
@@ -60,12 +54,6 @@ namespace Psi {
         
         if (!rewriter.pass().split_structs && all_register) {
           ValuePtr<> register_type = FunctionalBuilder::struct_type(rewriter.context(), register_members, term->location());
-
-          if (!rewriter.pass().remove_sizeof) {
-            size = FunctionalBuilder::type_size(register_type, term->location());
-            alignment = FunctionalBuilder::type_alignment(register_type, term->location());
-          }
-          
           return LoweredType::register_(term, size, alignment, register_type);
         } else if (global) {
           return LoweredType::split(term, size, alignment, entries);
@@ -97,18 +85,15 @@ namespace Psi {
         
         if (all_register && !rewriter.pass().remove_unions) {
           ValuePtr<> register_type = FunctionalBuilder::union_type(rewriter.context(), register_members, term->location());
-          
-          if (!rewriter.pass().remove_sizeof) {
-            size = FunctionalBuilder::type_size(register_type, term->location());
-            alignment = FunctionalBuilder::type_alignment(register_type, term->location());
-          }
-          
           return LoweredType::register_(term, size, alignment, register_type);
         } else if (isa<IntegerValue>(size) && isa<IntegerValue>(alignment)) {
           std::pair<ValuePtr<>, std::size_t> elem_type =
             rewriter.pass().target_callback->type_from_size(rewriter.context(), value_cast<IntegerValue>(alignment)->value().unsigned_value_checked(), term->location());
           std::size_t count = value_cast<IntegerValue>(size)->value().unsigned_value_checked() / elem_type.second;
-          if (rewriter.pass().split_arrays) {
+          PSI_ASSERT(count > 0);
+          if (count == 1) {
+            return LoweredType::register_(term, size, alignment, elem_type.first);
+          } else if (rewriter.pass().split_arrays) {
             ValuePtr<> elem_size = FunctionalBuilder::size_value(rewriter.context(), elem_type.second, term->location());
             std::vector<LoweredType> elements(count, LoweredType::register_(ValuePtr<>(), elem_size, elem_size, elem_type.first));
             return LoweredType::split(term, size, alignment, elements);
@@ -123,14 +108,9 @@ namespace Psi {
       
       static LoweredType simple_type_helper(AggregateLoweringRewriter& rewriter, const ValuePtr<>& origin, const ValuePtr<>& rewritten_type, const SourceLocation& location) {
         ValuePtr<> size, alignment;
-        if (rewriter.pass().remove_sizeof) {
-          TypeSizeAlignment size_align = rewriter.pass().target_callback->type_size_alignment(rewritten_type);
-          size = FunctionalBuilder::size_value(rewriter.context(), size_align.size, location);
-          alignment = FunctionalBuilder::size_value(rewriter.context(), size_align.alignment, location);
-        } else {
-          size = FunctionalBuilder::type_size(rewritten_type, location);
-          alignment = FunctionalBuilder::type_alignment(rewritten_type, location);
-        }
+        TypeSizeAlignment size_align = rewriter.pass().target_callback->type_size_alignment(rewritten_type);
+        size = FunctionalBuilder::size_value(rewriter.context(), size_align.size, location);
+        alignment = FunctionalBuilder::size_value(rewriter.context(), size_align.alignment, location);
         return LoweredType::register_(origin, size, alignment, rewritten_type);
       }
       
@@ -276,7 +256,7 @@ namespace Psi {
           global = global && c.global();
         }
           
-        if (el_type.mode() == LoweredType::mode_register) {
+        if (arr_type.mode() == LoweredType::mode_register) {
           std::vector<ValuePtr<> > values;
           for (LoweredValue::EntryVector::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
             values.push_back(ii->register_value());

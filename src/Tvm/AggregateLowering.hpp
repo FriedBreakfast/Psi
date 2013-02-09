@@ -17,6 +17,14 @@
 
 namespace Psi {
   namespace Tvm {
+    /**
+     * \brief Size and alignment of a type after lowering.
+     */
+    struct TypeSizeAlignment {
+      std::size_t size;
+      std::size_t alignment;
+    };
+    
     class LoweredType {
     public:
       typedef std::vector<LoweredType> EntryVector;
@@ -86,6 +94,9 @@ namespace Psi {
       const ValuePtr<>& size() const {return m_value->size;}
       /// \brief Get the alignment of this type in a suitable form for later passes
       const ValuePtr<>& alignment() const {return m_value->alignment;}
+      
+      /// \brief Get the size and alignment of this type as a constant
+      TypeSizeAlignment size_alignment_const() const;
     };
     
     /**
@@ -317,26 +328,11 @@ namespace Psi {
       };
       
       class ModuleLevelRewriter : public AggregateLoweringRewriter {
-        struct ExplodeEntry {
-          std::size_t offset, size;
-          ValuePtr<> value;
-        };
-        
-        void explode_constant_value(const ValuePtr<>& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
-        void explode_lowered_value(const LoweredValue& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
-        ValuePtr<> implode_constant_value(const ValuePtr<>& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
-        LoweredValue implode_lowered_value(const LoweredType& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
-        
       public:
         ModuleLevelRewriter(AggregateLoweringPass*);
         virtual LoweredValue bitcast(const LoweredType& type, const LoweredValue& input, const SourceLocation& location);
         virtual LoweredType rewrite_type(const ValuePtr<>&);
         virtual LoweredValue rewrite_value(const ValuePtr<>&);
-      };
-      
-      struct TypeSizeAlignment {
-        std::size_t size;
-        std::size_t alignment;
       };
 
       /**
@@ -391,24 +387,6 @@ namespace Psi {
         virtual void lower_function_entry(FunctionRunner& runner, const ValuePtr<Function>& source_function, const ValuePtr<Function>& target_function) = 0;
         
         /**
-         * \brief Convert a value to another type.
-         * 
-         * This function must simulate a store/load pair on the
-         * target system, storing \c value as its actual type and
-         * then loading it back as an instance of \c type, and
-         * return the result.
-         * 
-         * Note that the size of the type of \c value need not equal
-         * the size of \c type and is in fact unlikely to since this
-         * is used to implement accessing different members of unions.
-         * 
-         * \param value Value to be converted.
-         * 
-         * \param type Type of value to return.
-         */
-        virtual ValuePtr<> convert_value(const ValuePtr<>& value, const ValuePtr<>& type) = 0;
-        
-        /**
          * \brief Get the largest type with size less than or equal to that specified.
          * 
          * \param size Requested size, which must be a power of two.
@@ -433,6 +411,15 @@ namespace Psi {
          * \param type A primitive type.
          */
         virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>& type) = 0;
+        
+        /**
+         * \brief Shift a primitive value by a number of bytes.
+         * 
+         * This operation is equivalent to writing \c value to memory at a location
+         * \c ptr and then reading back a value of type \c result_type from \c ptr+shift,
+         * with zero padding surrounding \c value.
+         */
+        virtual ValuePtr<> byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int shift, const SourceLocation& location) = 0;
       };
 
     private:
@@ -446,28 +433,25 @@ namespace Psi {
       static LoweredValue instruction_term_rewrite(FunctionRunner& runner, const ValuePtr<Instruction>& insn);
       
       ModuleLevelRewriter m_global_rewriter;
-
-      struct GlobalBuildStatus {
-        GlobalBuildStatus(Context& context, const SourceLocation& location);
-        GlobalBuildStatus(const ValuePtr<>& element, const ValuePtr<>& element_size_, const ValuePtr<>& element_alignment_, const ValuePtr<>& size_, const ValuePtr<>& alignment_);
-        std::vector<ValuePtr<> > elements;
-        /// \brief Size of the entries in elements as a sequence (not including end padding to reach a multiple of alignment)
-        ValuePtr<> elements_size;
-        /// \brief Actual alignment of the first element in this set
-        ValuePtr<> first_element_alignment;
-        /// \brief Largest alignment of any elements in this set
-        ValuePtr<> max_element_alignment;
-        /// \brief Desired size of this set of elements.
-        ValuePtr<> size;
-        /// \brief Desired alignment of this set of elements.
-        ValuePtr<> alignment;
+      
+      struct ExplodeEntry {
+        std::size_t offset;
+        TypeSizeAlignment tsa;
+        ValuePtr<> value;
       };
       
-      GlobalBuildStatus rewrite_global_type(const ValuePtr<>&);
-      GlobalBuildStatus rewrite_global_value(const ValuePtr<>&);
-      void global_append(GlobalBuildStatus&, const GlobalBuildStatus&, bool, const SourceLocation& location);
-      void global_pad_to_size(GlobalBuildStatus&, const ValuePtr<>&, const ValuePtr<>&, bool, const SourceLocation& location);
-      void global_group(GlobalBuildStatus&, bool, const SourceLocation& location);
+      struct ExplodeCompareStart;
+      struct ExplodeCompareEnd;
+      
+      void explode_lowered_type(const LoweredType& type, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
+      void explode_constant_value(const ValuePtr<>& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location, bool expand_aggregates);
+      void explode_lowered_value(const LoweredValue& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location, bool expand_aggregates);
+      ValuePtr<> implode_constant_value(const ValuePtr<>& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
+      LoweredValue implode_lowered_value(const LoweredType& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
+
+      std::pair<ValuePtr<>, ValuePtr<> > build_global_type(const ValuePtr<>& type, const SourceLocation& location);
+      ValuePtr<> build_global_value(const ValuePtr<>& value, const SourceLocation& location);
+
       virtual void update_implementation(bool);
       
       LoweredType m_size_type;
@@ -488,6 +472,8 @@ namespace Psi {
       const LoweredType& pointer_type();
       /// \brief Type to use for blocks
       const LoweredType& block_type();
+      
+      std::size_t lowered_type_alignment(const ValuePtr<>& alignment);
 
       /**
        * Callback used to rewrite function types and function calls
@@ -512,18 +498,6 @@ namespace Psi {
 
       /// Whether to replace all unions in the IR with pointer operations
       bool remove_unions;
-      
-      /**
-       * Whether instances of \c sizeof and \c alignof on aggregate types
-       * should be replaced using explicit calculations.
-       * 
-       * For primitive types, the target can alter behaviour by changing
-       * TargetCallback::type_size_alignment.
-       * 
-       * Note that if unions remove_unions is true this flag must be set
-       * in order for unions to work in registers.
-       */
-      bool remove_sizeof;
       
       /**
        * Force all pointer arithmetic to take place on byte pointers.

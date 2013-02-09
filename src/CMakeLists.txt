@@ -52,6 +52,7 @@ if(BUILD_TESTING)
     Tvm/InstructionTest.cpp
     Tvm/DerivedTest.cpp
     Tvm/FunctionTest.cpp
+    Tvm/MemoryTest.cpp
     Tvm/NumberTest.cpp
     Tvm/ParserTest.cpp
   )
