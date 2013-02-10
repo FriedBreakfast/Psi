@@ -2,6 +2,7 @@
 #define HPP_PSI_INTERFACE
 
 #include "Compiler.hpp"
+#include "Tree.hpp"
 
 /**
  * \file

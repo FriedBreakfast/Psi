@@ -110,17 +110,17 @@ namespace Psi {
       }
       
       TreePtr<Term> evaluate(const TreePtr<Term>& self) {
-        TreePtr<Term> upref(new UpwardReference(self, int_to_index(0, self.compile_context(), self.location()), TreePtr<Term>()));
+        TreePtr<Term> upref(new UpwardReference(self, int_to_index(0, self.compile_context(), self.location()), TreePtr<Term>(), self.location()));
         PSI_STD::vector<TreePtr<Term> > generic_parameters;
         generic_parameters.push_back(upref);
         generic_parameters.insert(generic_parameters.end(), m_generic_parameters.begin(), m_generic_parameters.end());
         TreePtr<Term> generic_instance(new TypeInstance(m_generic, generic_parameters, self.location()));
-        TreePtr<Term> introduce_type(new IntroduceType(m_introduced_parameters, self.compile_context().builtins().empty_type, self.location()));
+        TreePtr<Term> introduce_type;//(new IntroduceType(m_introduced_parameters, self.compile_context().builtins().empty_type, self.location()));
         PSI_STD::vector<TreePtr<Term> > pair_members;
         pair_members.push_back(generic_instance);
         pair_members.push_back(introduce_type);
         TreePtr<Term> pair_type(new StructType(self.compile_context(), pair_members, self.location()));
-        return TreePtr<Term>(new DerivedType(pair_type, upref));
+        return TreePtr<Term>(new DerivedType(pair_type, upref, self.location()));
       }
       
       template<typename V>

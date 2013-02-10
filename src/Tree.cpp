@@ -485,7 +485,7 @@ namespace Psi {
           my_aggregate_type = aggregate_type;
         }
         
-        TreePtr<Term> upref(new UpwardReference(my_aggregate_type, index, next_upref));
+        TreePtr<Term> upref(new UpwardReference(my_aggregate_type, index, next_upref, location));
         if (TreePtr<StructType> st = dyn_treeptr_cast<StructType>(my_aggregate_type)) {
           int index_int = index_to_int(index, location);
           if ((index_int < 0) || (unsigned(index_int) >= st->members.size()))
@@ -568,7 +568,7 @@ namespace Psi {
     ElementPtr::ElementPtr(const TreePtr<Term>& value_, int index_, const SourceLocation& location)
     : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(tree_attribute(value_, &Term::type), int_to_index(index_, value_.compile_context(), location))), location),
     value(value_),
-    index(int_to_index(value_, index_, location)) {
+    index(int_to_index(index_, value_.compile_context(), location)) {
     }
 
     template<typename V>
@@ -591,9 +591,13 @@ namespace Psi {
     }
 
     ElementValue::ElementValue(const TreePtr<Term>& value_, int index_, const SourceLocation& location)
-    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementValueType(tree_attribute(value_, &Term::type), int_to_index(value_, index_, location))), location),
+    : Functional(&vtable,
+                 tree_callback(value_.compile_context(), location,
+                               ElementValueType(tree_attribute(value_, &Term::type),
+                                                int_to_index(index_, value_.compile_context(), location))),
+                 location),
     value(value_),
-    index(int_to_index(value_, index_, location)) {
+    index(int_to_index(index_, value_.compile_context(), location)) {
     }
 
     template<typename V>
@@ -707,6 +711,57 @@ namespace Psi {
     }
 
     const TermVtable UnionType::vtable = PSI_COMPILER_TERM(UnionType, "psi.compiler.UnionType", Type);
+    
+    UpwardReferenceType::UpwardReferenceType(CompileContext& compile_context, const SourceLocation& location)
+    : Type(&vtable, compile_context, location) {
+    }
+    
+    template<typename V>
+    void UpwardReferenceType::visit(V& v) {
+      visit_base<Type>(v);
+    }
+    
+    const TermVtable UpwardReferenceType::vtable = PSI_COMPILER_TERM(UpwardReferenceType, "psi.compiler.UpwardReferenceType", Type);
+    
+    UpwardReference::UpwardReference(const TreePtr<Term>& outer_type_, const TreePtr<Term>& outer_index_, const TreePtr<Term>& next_, const SourceLocation& location)
+    : Constructor(&vtable, outer_type_.compile_context().builtins().upref_type, location),
+    outer_type(outer_type_),
+    outer_index(outer_index_),
+    next(next_) {
+    }
+    
+    UpwardReference::UpwardReference(CompileContext& context, const SourceLocation& location)
+    : Constructor(&vtable, context, location) {
+    }
+    
+    template<typename V>
+    void UpwardReference::visit(V& v) {
+      visit_base<Constructor>(v);
+      v("outer_type", &UpwardReference::outer_type)
+      ("outer_index", &UpwardReference::outer_index)
+      ("next", &UpwardReference::next);
+    }
+    
+    const TermVtable UpwardReference::vtable = PSI_COMPILER_TERM(UpwardReference, "psi.compiler.UpwardReference", Constructor);
+    
+    DerivedType::DerivedType(CompileContext& compile_context, const SourceLocation& location)
+    : Type(&vtable, compile_context, location) {
+    }
+    
+    DerivedType::DerivedType(const TreePtr<Term>& value_type_, const TreePtr<Term>& upref_, const SourceLocation& location)
+    : Type(&vtable, value_type_->compile_context(), location),
+    value_type(value_type_),
+    upref(upref_) {
+    }
+    
+    template<typename V>
+    void DerivedType::visit(V& v) {
+      visit_base<Type>(v);
+      v("value_type", &DerivedType::value_type)
+      ("upref", &DerivedType::upref);
+    }
+    
+    const TermVtable DerivedType::vtable = PSI_COMPILER_TERM(DerivedType, "psi.compiler.DerivedType", Type);
 
     GenericType::GenericType(const PSI_STD::vector<TreePtr<Term> >& pattern_,
                              const TreePtr<Term>& member_type_,
@@ -1042,7 +1097,7 @@ namespace Psi {
     }
 
     StringValue::StringValue(CompileContext& compile_context, const String& value_, const SourceLocation& location)
-    : Constant(&vtable, string_type(compile_context, value_.length(), location), location),
+    : Constant(&vtable, string_type(compile_context, value_.length()+1, location), location),
     value(value_) {
     }
     

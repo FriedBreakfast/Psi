@@ -263,6 +263,8 @@ namespace Psi {
       TreePtr<Type> empty_type;
       /// \brief The bottom type.
       TreePtr<Type> bottom_type;
+      /// \brief The type of upward references
+      TreePtr<Type> upref_type;
       /// \brief The type of types
       TreePtr<Term> metatype;
       

@@ -116,7 +116,7 @@ TvmResult TvmFunctionalBuilder::build_type_internal(const TreePtr<Type>& type) {
     return TvmResult::type(type->type, Tvm::FunctionalBuilder::empty_type(tvm_context(), type->location()), true);
   } else if (TreePtr<PointerType> pointer_ty = dyn_treeptr_cast<PointerType>(type)) {
     TvmResult target = build_type(pointer_ty->target_type);
-    return TvmResult::type(type->type, Tvm::FunctionalBuilder::pointer_type(target.value(), type->location()), true);
+    return TvmResult::type(type->type, Tvm::FunctionalBuilder::pointer_type(target.value(), target.upref(), type->location()), true);
   } else if (TreePtr<StructType> struct_ty = dyn_treeptr_cast<StructType>(type)) {
     bool primitive = true;
     std::vector<Tvm::ValuePtr<> > members;
@@ -136,6 +136,9 @@ TvmResult TvmFunctionalBuilder::build_type_internal(const TreePtr<Type>& type) {
     return build_primitive_type(primitive_ty);
   } else if (TreePtr<FunctionType> function_ty = dyn_treeptr_cast<FunctionType>(type)) {
     return build_function_type(function_ty);
+  } else if (TreePtr<DerivedType> derived_ty = dyn_treeptr_cast<DerivedType>(type)) {
+    TvmResult inner = build_type(derived_ty->value_type), upref = build(derived_ty->upref);
+    return TvmResult::type(type->type, inner.value(), inner.primitive(), upref.value());
   } else if (tree_isa<BottomType>(type)) {
     type.compile_context().error_throw(type.location(), "Bottom type cannot be lowered to TVM");
   } else {
@@ -356,10 +359,16 @@ TvmResult TvmFunctionalBuilder::build_constructor(const TreePtr<Constructor>& va
     } else {
       PSI_NOT_IMPLEMENTED();
     }
-  } else if (TreePtr<StructValue> struct_value = dyn_treeptr_cast<StructValue>(struct_value)) {
+  } else if (TreePtr<StructValue> struct_value = dyn_treeptr_cast<StructValue>(value)) {
     PSI_NOT_IMPLEMENTED();
-  } else if (TreePtr<ArrayValue> array_value = dyn_treeptr_cast<ArrayValue>(array_value)) {
+  } else if (TreePtr<ArrayValue> array_value = dyn_treeptr_cast<ArrayValue>(value)) {
     PSI_NOT_IMPLEMENTED();
+  } else if (TreePtr<UpwardReference> upref_value = dyn_treeptr_cast<UpwardReference>(value)) {
+    Tvm::ValuePtr<> outer_type = build_type(upref_value->outer_type).value();
+    Tvm::ValuePtr<> outer_index = build_value(upref_value->outer_index);
+    Tvm::ValuePtr<> next = upref_value->next ? build_value(upref_value->next) : Tvm::ValuePtr<>();
+    Tvm::ValuePtr<> upref = Tvm::FunctionalBuilder::upref(outer_type, outer_index, next, upref_value.location());
+    return TvmResult::in_register(upref_value->type, tvm_storage_functional, upref);
   } else {
     PSI_FAIL(si_vptr(value.get())->classname);
   }

@@ -399,85 +399,6 @@ namespace Psi {
       /// \brief Index of member to get.
       TreePtr<Term> index;
     };
-    
-    /**
-     * \brief An aggregate type whose members are functional values.
-     */
-    class IntroduceType : public Type {
-    public:
-      static const TermVtable vtable;
-      static const bool match_parameterized = true;
-      IntroduceType(CompileContext& compile_context, const SourceLocation& location);
-      IntroduceType(const PSI_STD::vector<TreePtr<Term> >& introduced_types, const TreePtr<Term>& value_type, const SourceLocation& location);
-      
-      /**
-       * \brief Introduced types.
-       * 
-       * This may only contain types whose values can be functional.
-       */
-      PSI_STD::vector<TreePtr<Term> > introduced_types;
-      /**
-       * \brief  Value type, which may depend on introduced values.
-       * 
-       * This may have any type.
-       */
-      TreePtr<Term> value_type;
-    };
-    
-    /**
-     * \brief Value of IntroduceType.
-     */
-    class IntroduceValue : public Constructor {
-    public:
-      static const TermVtable vtable;
-      IntroduceValue(CompileContext& compile_context, const SourceLocation& location);
-      IntroduceValue(const PSI_STD::vector<TreePtr<Term> >& introduced_values, const TreePtr<Term>& value, const SourceLocation& location);
-      
-      /**
-       * \brief Introduced types.
-       * 
-       * This may only contain types whose values can be functional.
-       */
-      PSI_STD::vector<TreePtr<Term> > introduced_values;
-      /// \brief  Value type, which may depend on introduced values.
-      TreePtr<Term> value;
-    };
-    
-    /**
-     * \brief Evaluate a term using constant data from an introduced term.
-     */
-    class IntroduceEvaluate : public Term {
-    public:
-      static const TermVtable vtable;
-      IntroduceEvaluate(CompileContext& context, const SourceLocation& location);
-      IntroduceEvaluate(const TreePtr<Term>& introduce, const TreePtr<Term>& value, const SourceLocation& location);
-      
-      /// \brief Term containing introduced types and value
-      TreePtr<Term> introduce;
-      /// \brief Term to evaluate
-      TreePtr<Term> value;
-      /// \brief Anonymous variables to be replaced by introduced constant terms
-      PSI_STD::vector<TreePtr<Anonymous> > introduced_constants;
-      /// \brief Anonymous value to be replaced by introduced value
-      TreePtr<Anonymous> introduced_value;
-    };
-    
-    /**
-     * \brief Initialize an introduced type from a pointer.
-     */
-    class IntroduceInitialize : public Term {
-    public:
-      static const TermVtable vtable;
-      
-      /// \brief Reference to introduced value
-      TreePtr<Term> introduce;
-      /// \brief Value to evaluate after initialization
-      TreePtr<Term> value;
-      /// \brief Reference to inner value after introduction
-      TreePtr<Anonymous> introduced_value;
-      /// \brief Introduced constants which must be stored to \c introduce
-      PSI_STD::vector<TreePtr<Term> > introduced_constants;
-    };
 
     /**
      * \brief Structure type.
@@ -570,15 +491,15 @@ namespace Psi {
     public:
       static const TermVtable vtable;
       UpwardReference(CompileContext& context, const SourceLocation& location);
-      UpwardReference(const Term& outer_type, const Term& outer_index, const Term& next, const SourceLocation& location);
+      UpwardReference(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief Type of outer data structure.
-      Term outer_type;
+      TreePtr<Term> outer_type;
       /// \brief Index of pointer in outer data structure.
-      Term outer_index;
+      TreePtr<Term> outer_index;
       /// \brief Next upward reference in the chain
-      Term next;
+      TreePtr<Term> next;
     };
     
     /**
@@ -593,13 +514,13 @@ namespace Psi {
     public:
       static const TermVtable vtable;
       DerivedType(CompileContext& compile_context, const SourceLocation& location);
-      DerivedType(const Term& value_type, const Term& upref, const SourceLocation& location);
+      DerivedType(const TreePtr<Term>& value_type, const TreePtr<Term>& upref, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief Type of the value associated with this inner pointer/reference.
-      Term value_type;
+      TreePtr<Term> value_type;
       /// \brief Upward reference information.
-      Term upref;
+      TreePtr<Term> upref;
     };
     
     class InterfaceValue;

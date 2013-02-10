@@ -129,6 +129,7 @@ namespace Psi {
       metatype.reset(new Metatype(compile_context, psi_location.named_child("Type")));
       empty_type.reset(new EmptyType(compile_context, psi_location.named_child("Empty")));
       bottom_type.reset(new BottomType(compile_context, psi_location.named_child("Bottom")));
+      upref_type.reset(new UpwardReferenceType(compile_context, psi_location.named_child("UpwardReference")));
       
       SourceLocation macro_location = psi_compiler_location.named_child("Macro");
       macro_tag = make_tag<Macro>(metatype, macro_location, default_macro_impl(compile_context, macro_location));
