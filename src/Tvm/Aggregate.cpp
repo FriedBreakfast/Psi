@@ -237,7 +237,7 @@ namespace Psi {
       v("value", &ConstantType::m_value);
     }
     
-    PSI_TVM_FUNCTIONAL_IMPL(ConstantType, Type, const);
+    PSI_TVM_FUNCTIONAL_IMPL(ConstantType, Type, constant);
     
     PointerCast::PointerCast(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location)
     : AggregateOp(pointer->context(), location),

@@ -259,11 +259,29 @@ namespace Psi {
         "  return %a;\n"
         "};\n";
 
-        typedef Jit::Int32 (*func_type) (Jit::Int32);
+      typedef Jit::Int32 (*func_type) (Jit::Int32);
       func_type f = reinterpret_cast<func_type>(jit_single("f", src));
 
       Jit::Int32 v = 42350898;
       BOOST_CHECK_EQUAL(f(v), v);
+    }
+    
+    BOOST_AUTO_TEST_CASE(ConstantTypeZeroTest) {
+      const char *src = 
+        "%f = function(%a : i32, %p : pointer (constant %a)) > (constant %a) {\n"
+        "  %z = zero (constant %a);\n"
+        "  store %z %p;\n"
+        "  return %z;\n"
+        "};\n";
+        
+      typedef Jit::Int32 (*func_type) (Jit::Int32, Jit::Int32*);
+      func_type f = reinterpret_cast<func_type>(jit_single("f", src));
+      
+      Jit::Int32 v = -1985092;
+      Jit::Int32 a, b;
+      a = f(v, &b);
+      BOOST_CHECK_EQUAL(a, v);
+      BOOST_CHECK_EQUAL(b, v);
     }
 
     BOOST_AUTO_TEST_SUITE_END()    

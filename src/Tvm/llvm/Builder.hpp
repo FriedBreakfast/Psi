@@ -9,8 +9,10 @@
 #include <llvm/LLVMContext.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IRBuilder.h>
+#include <llvm/PassManager.h>
 #include <llvm/Support/TargetFolder.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Value.h>
 
 #ifdef PSI_DEBUG
@@ -72,7 +74,7 @@ namespace Psi {
 
       class ModuleBuilder {
       public:
-        ModuleBuilder(llvm::LLVMContext*, llvm::TargetMachine*, llvm::Module*, TargetCallback*);
+        ModuleBuilder(llvm::LLVMContext*, llvm::TargetMachine*, llvm::Module*, llvm::FunctionPassManager*, TargetCallback*);
         ~ModuleBuilder();
 
         /// \brief Get the LLVM context used to create IR.
@@ -104,6 +106,7 @@ namespace Psi {
       protected:
         llvm::LLVMContext *m_llvm_context;
         llvm::TargetMachine *m_llvm_target_machine;
+        llvm::FunctionPassManager *m_llvm_function_pass;
         Module *m_module;
         llvm::Module *m_llvm_module;
         TargetCallback *m_target_callback;
@@ -194,6 +197,9 @@ namespace Psi {
 
       private:
         llvm::LLVMContext m_llvm_context;
+        llvm::PassManagerBuilder m_llvm_pass_builder;
+        llvm::PassManager m_llvm_module_pass;
+        llvm::CodeGenOpt::Level m_llvm_opt;
         boost::shared_ptr<TargetCallback> m_target_fixes;
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
         boost::unordered_map<Module*, ModuleMapping> m_modules;
@@ -202,6 +208,7 @@ namespace Psi {
 #endif
         boost::shared_ptr<llvm::ExecutionEngine> m_llvm_engine;
 
+        void init_llvm_passes();
         void init_llvm_engine(llvm::Module*);
       };
     }

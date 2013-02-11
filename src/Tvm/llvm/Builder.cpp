@@ -6,17 +6,17 @@
 #include "../Functional.hpp"
 #include "../Recursive.hpp"
 
+#include <boost/lexical_cast.hpp>
 #include <boost/make_shared.hpp>
 
 #include <llvm/DerivedTypes.h>
+#include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/Module.h>
-#include <llvm/IRBuilder.h>
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Support/Host.h>
-#include <llvm/ExecutionEngine/JITEventListener.h>
-#include <llvm/Target/TargetMachine.h>
 #include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/Target/TargetLibraryInfo.h>
 
 #ifdef PSI_DEBUG
 #include <iostream>
@@ -182,8 +182,10 @@ namespace Psi {
         }
       }
 
-      ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module, TargetCallback *target_callback)
-        : m_llvm_context(llvm_context), m_llvm_target_machine(target_machine), m_llvm_module(llvm_module), m_target_callback(target_callback) {
+      ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module,
+                                   llvm::FunctionPassManager *llvm_function_pass, TargetCallback *target_callback)
+        : m_llvm_context(llvm_context), m_llvm_target_machine(target_machine),
+        m_llvm_function_pass(llvm_function_pass), m_llvm_module(llvm_module), m_target_callback(target_callback) {
         m_llvm_memcpy = intrinsic_memcpy(*llvm_module, target_machine);
         m_llvm_memset = intrinsic_memset(*llvm_module, target_machine);
         m_llvm_stacksave = intrinsic_stacksave(*llvm_module);
@@ -252,8 +254,10 @@ namespace Psi {
           if (rewritten_term->term_type() == term_function) {
             ValuePtr<Function> func = value_cast<Function>(rewritten_term);
             if (!func->blocks().empty()) {
-              FunctionBuilder fb(this, func, llvm::cast<llvm::Function>(llvm_term));
+              llvm::Function *llvm_func = llvm::cast<llvm::Function>(llvm_term);
+              FunctionBuilder fb(this, func, llvm_func);
               fb.run();
+              m_llvm_function_pass->run(*llvm_func);
             }
           } else {
             PSI_ASSERT(term->term_type() == term_global_variable);
@@ -416,9 +420,29 @@ namespace Psi {
         : Jit(jit_factory),
           m_target_fixes(create_target_fixes(&m_llvm_context, host_machine, host_triple)),
           m_target_machine(host_machine) {
+        init_llvm_passes();
       }
 
       LLVMJit::~LLVMJit() {
+      }
+      
+      void LLVMJit::init_llvm_passes() {
+        m_llvm_pass_builder.OptLevel = 0;
+        
+        if (const char *opt_mode = std::getenv("PSI_LLVM_OPT")) {
+          try {
+            m_llvm_pass_builder.OptLevel = boost::lexical_cast<unsigned>(opt_mode);
+          } catch (boost::bad_lexical_cast&) {
+          }
+        }
+        
+        if (m_llvm_pass_builder.OptLevel >= 2)
+          m_llvm_opt = llvm::CodeGenOpt::Aggressive;         
+        else
+          m_llvm_opt = llvm::CodeGenOpt::Default;
+        
+        m_llvm_pass_builder.LibraryInfo = new llvm::TargetLibraryInfo(llvm::Triple(m_target_machine->getTargetTriple()));
+        m_llvm_pass_builder.populateModulePassManager(m_llvm_module_pass);
       }
 
       void LLVMJit::add_module(Module *module) {
@@ -427,8 +451,16 @@ namespace Psi {
           throw BuildError("module already exists in this JIT");
 
         std::auto_ptr<llvm::Module> llvm_module(new llvm::Module(module->name(), m_llvm_context));
-        ModuleBuilder builder(&m_llvm_context, m_target_machine.get(), llvm_module.get(), m_target_fixes.get());
+        llvm_module->setTargetTriple(m_target_machine->getTargetTriple());
+        llvm_module->setDataLayout(m_target_machine->getDataLayout()->getStringRepresentation());
+        
+        llvm::FunctionPassManager fpm(llvm_module.get());
+        m_llvm_pass_builder.populateFunctionPassManager(fpm);
+
+        ModuleBuilder builder(&m_llvm_context, m_target_machine.get(), llvm_module.get(), &fpm, m_target_fixes.get());
         ModuleMapping new_mapping = builder.run(module);
+        
+        m_llvm_module_pass.run(*llvm_module);
 
         mapping = new_mapping;
 
@@ -502,7 +534,7 @@ namespace Psi {
        * Create the LLVM Jit.
        */
       void LLVMJit::init_llvm_engine(llvm::Module *module) {
-        m_llvm_engine.reset(llvm::ExecutionEngine::create(module, false, 0, llvm::CodeGenOpt::Default, false));
+        m_llvm_engine.reset(llvm::ExecutionEngine::create(module, false, 0, m_llvm_opt, false));
         PSI_ASSERT_MSG(m_llvm_engine, "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
         
 #ifdef PSI_DEBUG

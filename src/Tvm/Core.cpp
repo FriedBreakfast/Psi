@@ -167,7 +167,8 @@ namespace Psi {
     Global::Global(Context& context, TermType term_type, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
     : Value(context, term_type, FunctionalBuilder::pointer_type(type, location), location),
       m_name(name),
-      m_module(module) {
+      m_module(module),
+      m_private(false) {
     }
 
     /**

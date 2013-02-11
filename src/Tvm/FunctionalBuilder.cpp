@@ -84,11 +84,6 @@ namespace Psi {
       }
     }
     
-    /// \brief Get the constant type of the specified value
-    ValuePtr<> FunctionalBuilder::constant(const ValuePtr<>& value, const SourceLocation& location) {
-      return value->context().get_functional(ConstantType(value, location));
-    }
-    
     /**
      * \brief Get a function type.
      * 
