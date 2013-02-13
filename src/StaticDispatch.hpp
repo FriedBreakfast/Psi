@@ -51,13 +51,23 @@ namespace Psi {
     class Interface : public OverloadType {
     public:
       struct InterfaceBase {
-        PSI_STD::vector<TreePtr<Term> > parameters;
+        /// \brief Base interface
         TreePtr<Interface> interface;
+        /// \brief Parameters to base interface
+        PSI_STD::vector<TreePtr<Term> > parameters;
+
+        /** \brief How to find the base interface in the derived interface value.
+         * 
+         * Path of ElementValue operations to use to find a pointer to the base
+         * interface.
+         */
+        PSI_STD::vector<int> path;
         
         template<typename V>
         static void visit(V& v) {
-          v("parameters", &InterfaceBase::parameters)
-          ("interface", &InterfaceBase::interface);
+          v("interface", &InterfaceBase::interface)
+          ("parameters", &InterfaceBase::parameters)
+          ("path", &InterfaceBase::path);
         }
       };
       
@@ -188,17 +198,24 @@ namespace Psi {
       TreePtr<Term> value;
     };
     
-    TreePtr<> metadata_lookup(const TreePtr<MetadataType>&, const PSI_STD::vector<TreePtr<Term> >&, const SourceLocation&);
+    std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> >
+    overload_lookup(const TreePtr<OverloadType>& type, const TreePtr<EvaluateContext>& context,
+                    const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);
+    
+    TreePtr<> metadata_lookup(const TreePtr<MetadataType>& interface, const TreePtr<EvaluateContext>& context,
+                              const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);
 
     template<typename T>
-    TreePtr<T> metadata_lookup_as(const TreePtr<MetadataType>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
-      return treeptr_cast<T>(metadata_lookup(interface, parameters, location));
+    TreePtr<T> metadata_lookup_as(const TreePtr<MetadataType>& interface, const TreePtr<EvaluateContext>& context,
+                                  const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
+      return treeptr_cast<T>(metadata_lookup(interface, context, parameters, location));
     }
 
     template<typename T>
-    TreePtr<T> metadata_lookup_as(const TreePtr<MetadataType>& interface, const TreePtr<Term>& parameter, const SourceLocation& location) {
+    TreePtr<T> metadata_lookup_as(const TreePtr<MetadataType>& interface, const TreePtr<EvaluateContext>& context, 
+                                  const TreePtr<Term>& parameter, const SourceLocation& location) {
       PSI_STD::vector<TreePtr<Term> > parameters(1, parameter);
-      return metadata_lookup_as<T>(interface, parameters, location);
+      return metadata_lookup_as<T>(interface, context, parameters, location);
     }
   }
 }

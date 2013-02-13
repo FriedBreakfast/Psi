@@ -372,6 +372,23 @@ namespace Psi {
     
     const TermVtable BottomType::vtable = PSI_COMPILER_TERM(BottomType, "psi.compiler.BottomType", Type);
 
+    ConstantType::ConstantType(CompileContext& compile_context, const SourceLocation& location)
+    : Type(&vtable, compile_context, location) {
+    }
+
+    ConstantType::ConstantType(const TreePtr<Term>& value_, const SourceLocation& location)
+    : Type(&vtable, value_.compile_context(), location),
+    value(value_) {
+    }
+    
+    template<typename V>
+    void ConstantType::visit(V& v) {
+      visit_base<Type>(v);
+      v("value", &ConstantType::value);
+    }
+    
+    const TermVtable ConstantType::vtable = PSI_COMPILER_TERM(ConstantType, "psi.compiler.ConstantType", Type);
+
     EmptyType::EmptyType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
     }
@@ -766,7 +783,7 @@ namespace Psi {
     GenericType::GenericType(const PSI_STD::vector<TreePtr<Term> >& pattern_,
                              const TreePtr<Term>& member_type_,
                              const PSI_STD::vector<TreePtr<OverloadValue> >& overloads_,
-                             int primitive_mode_,
+                             GenericTypePrimitive primitive_mode_,
                              const SourceLocation& location)
     : Tree(&vtable, member_type_.compile_context(), location),
     pattern(pattern_),
@@ -1026,6 +1043,25 @@ namespace Psi {
 
     const TermVtable FunctionCall::vtable = PSI_COMPILER_TERM(FunctionCall, "psi.compiler.FunctionCall", Term);
 
+    SolidifyDuring::SolidifyDuring(CompileContext& context, const SourceLocation& location)
+    : Term(&vtable, context, location) {
+    }
+    
+    SolidifyDuring::SolidifyDuring(const TreePtr<Term>& value_, const TreePtr<Term>& body_, const SourceLocation& location)
+    : Term(&vtable, value_.compile_context(), location),
+    value(value_),
+    body(body_) {
+    }
+    
+    template<typename V>
+    void SolidifyDuring::visit(V& v) {
+      visit_base<Term>(v);
+      v("value", &SolidifyDuring::value)
+      ("body", &SolidifyDuring::body);
+    }
+    
+    const TermVtable SolidifyDuring::vtable = PSI_COMPILER_TERM(SolidifyDuring, "psi.compiler.SolidifyDuring", Term);
+    
     PrimitiveType::PrimitiveType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
     }

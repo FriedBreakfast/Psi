@@ -59,9 +59,8 @@ namespace Psi {
                               const PSI_STD::vector<TreePtr<Statement> >& statements, unsigned depth) const {
         return tree_from_base_take<Term>(derived_vptr(this)->anonymize(this, &location, &parameter_types, &parameter_map, &statements, depth));
       }
-
+      
       bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
-      bool equivalent(const TreePtr<Term>& value) const;
       
       /**
        * \brief Find module-level globals on which this term depends.

@@ -274,7 +274,7 @@ namespace Psi {
           self.compile_context().error_throw(location, "Namespace member argument is not an identifier");
         
         String member_name(name->text.begin, name->text.end);
-        TreePtr<Namespace> ns = metadata_lookup_as<Namespace>(self.compile_context().builtins().namespace_tag, value, location);
+        TreePtr<Namespace> ns = metadata_lookup_as<Namespace>(self.compile_context().builtins().namespace_tag, evaluate_context, value, location);
         PSI_STD::map<String, TreePtr<Term> >::const_iterator ns_it = ns->members.find(member_name);
         if (ns_it == ns->members.end())
           self.compile_context().error_throw(location, boost::format("Namespace '%s' has no member '%s'") % value->location().logical->error_name(location.logical) % member_name);
@@ -283,7 +283,7 @@ namespace Psi {
         if (parameters.empty())
           return member_value;
         
-        TreePtr<Macro> member_value_macro = metadata_lookup_as<Macro>(self.compile_context().builtins().macro_tag, member_value, location);
+        TreePtr<Macro> member_value_macro = metadata_lookup_as<Macro>(self.compile_context().builtins().macro_tag, evaluate_context, member_value, location);
         return member_value_macro->evaluate(member_value, parameters, evaluate_context, location);
       }
     };
@@ -557,7 +557,7 @@ namespace Psi {
         
         SharedPtr<Parser::Expression> type_expr = Parser::parse_expression(type_text->text);
         TreePtr<Term> type = compile_expression(type_expr, evaluate_context, location.logical);
-        TreePtr<Library> library = metadata_lookup_as<Library>(self.compile_context().builtins().library_tag, value, location);
+        TreePtr<Library> library = metadata_lookup_as<Library>(self.compile_context().builtins().library_tag, evaluate_context, value, location);
 
         return TreePtr<Term>(new LibrarySymbol(library, callback, type, location));
       }

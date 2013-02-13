@@ -385,6 +385,12 @@ namespace Psi {
           return lookup_result_none;
         }
       }
+      
+      static void overload_list_impl(const EvaluateContextDictionary& self, const TreePtr<OverloadType>& overload_type,
+                                     PSI_STD::vector<TreePtr<OverloadValue> >& overload_list) {
+        if (self.next)
+          self.next->overload_list(overload_type, overload_list);
+      }
     };
 
     const EvaluateContextVtable EvaluateContextDictionary::vtable =
@@ -426,6 +432,12 @@ namespace Psi {
 
       static LookupResult<TreePtr<Term> > lookup_impl(const EvaluateContextModule& self, const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) {
         return self.next->lookup(name, location, evaluate_context);
+      }
+      
+      static void overload_list_impl(const EvaluateContextModule& self, const TreePtr<OverloadType>& overload_type,
+                                     PSI_STD::vector<TreePtr<OverloadValue> >& overload_list) {
+        if (self.next)
+          self.next->overload_list(overload_type, overload_list);
       }
     };
 

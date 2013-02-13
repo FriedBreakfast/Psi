@@ -264,6 +264,11 @@ namespace Psi {
     return x;
   }
   
+  template<typename T, typename U>
+  PSI_STD::vector<T> vector_from(const U& u) {
+    return PSI_STD::vector<T>(u.begin(), u.end());
+  }
+  
   /**
    * Sort the elements of a container and remove any duplicates.
    */

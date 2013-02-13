@@ -167,10 +167,14 @@ namespace Psi {
     }
     
     /**
-     * \brief Get an overloaded value.
+     * \brief Perform a generic overloaded value search.
+     * 
+     * This is the base implementation for both metadata_lookup and implementation_lookup,
+     * and should be used for anything else which subclasses OverloadType.
      */
     std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> >
-    overload_lookup(const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
+    overload_lookup(const TreePtr<OverloadType>& type, const TreePtr<EvaluateContext>& context,
+                    const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
       std::vector<std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> > > results;
       PSI_STD::vector<TreePtr<Term> > match_scratch;
 
@@ -179,6 +183,17 @@ namespace Psi {
         const TreePtr<OverloadValue>& v = type->values[ii];
         if(v && (type == v->overload_type) && overload_pattern_match(v->pattern, parameters, v->n_wildcards, match_scratch))
           results.push_back(std::make_pair(match_scratch, v));
+      }
+      
+      if (context) {
+        PSI_STD::vector<TreePtr<OverloadValue> > context_list;
+        context->overload_list(type, context_list);
+        for (PSI_STD::vector<TreePtr<OverloadValue> >::const_iterator ii = context_list.begin(), ie = context_list.end(); ii != ie; ++ii) {
+          const TreePtr<OverloadValue>& v = *ii;
+          PSI_ASSERT(v && (type == v->overload_type));
+          if(overload_pattern_match(v->pattern, parameters, v->n_wildcards, match_scratch))
+            results.push_back(std::make_pair(match_scratch, v));
+        }
       }
       
       for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
@@ -240,10 +255,13 @@ namespace Psi {
      * \brief Locate an interface implementation for a given set of parameters.
      *
      * \param metadata_type Metadata type to look up.
+     * \param context Context to perform search in, which may supply additional interfaces to be
+     * searched, particularly in case virtual functions.
      * \param parameters Parameters.
      */    
-    TreePtr<> metadata_lookup(const TreePtr<MetadataType>& metadata_type, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
-      TreePtr<Metadata> md = treeptr_cast<Metadata>(overload_lookup(metadata_type, parameters, location).second);
+    TreePtr<> metadata_lookup(const TreePtr<MetadataType>& metadata_type, const TreePtr<EvaluateContext>& context,
+                              const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
+      TreePtr<Metadata> md = treeptr_cast<Metadata>(overload_lookup(metadata_type, context, parameters, location).second);
       if (!metadata_type->type.isa(md->value.get()))
         metadata_type.compile_context().error_throw(location, boost::format("Value of metadata does not have the expected type: %s") % metadata_type->type->classname);
       return md->value;

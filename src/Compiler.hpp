@@ -165,6 +165,9 @@ namespace Psi {
       /// \brief Name of this module. Used for diagnositc messages only.
       String name;
     };
+    
+    class OverloadType;
+    class OverloadValue;
 
     /**
      * \see EvaluateContext
@@ -172,6 +175,7 @@ namespace Psi {
     struct EvaluateContextVtable {
       TreeVtable base;
       void (*lookup) (LookupResult<TreePtr<Term> >*, const EvaluateContext*, const String*, const SourceLocation*, const TreeBase*);
+      void (*overload_list) (const EvaluateContext*, const TreeBase*, PSI_STD::vector<TreePtr<OverloadValue> >*);
     };
 
     class EvaluateContext : public Tree {
@@ -196,6 +200,11 @@ namespace Psi {
         return lookup(name, location, TreePtr<EvaluateContext>(this));
       }
       
+      /// \brief Get all overloads of a certain type.
+      void overload_list(const TreePtr<OverloadType>& overload_type, PSI_STD::vector<TreePtr<OverloadValue> >& overload_list) const {
+        derived_vptr(this)->overload_list(this, overload_type.raw_get(), &overload_list);
+      }
+      
       const TreePtr<Module>& module() const {return m_module;}
       
       template<typename V> static void visit(V& v) {visit_base<Tree>(v); v("module", &EvaluateContext::m_module);}
@@ -209,11 +218,16 @@ namespace Psi {
       static void lookup(LookupResult<TreePtr<Term> > *result, const EvaluateContext *self, const String *name, const SourceLocation *location, const TreeBase* evaluate_context) {
         new (result) LookupResult<TreePtr<Term> >(Impl::lookup_impl(*static_cast<const Derived*>(self), *name, *location, tree_from_base<EvaluateContext>(evaluate_context)));
       }
+      
+      static void overload_list(const EvaluateContext *self, const TreeBase *overload_type, PSI_STD::vector<TreePtr<OverloadValue> > *overload_list) {
+        Impl::overload_list_impl(*static_cast<const Derived*>(self), tree_from_base<OverloadType>(overload_type), *overload_list);
+      }
     };
 
 #define PSI_COMPILER_EVALUATE_CONTEXT(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
-    &EvaluateContextWrapper<derived>::lookup \
+    &EvaluateContextWrapper<derived>::lookup, \
+    &EvaluateContextWrapper<derived>::overload_list \
   }
 
     class MacroMemberCallback;

@@ -293,11 +293,10 @@ lifecycle {$$.clear(); if ($1.front()) $$.push_back($1.front());}
 ;
 
 open_bracket: {PSI_ASSERT(yychar == YYEMPTY); arguments.bracket_literal = true;} '(';
-close_bracket: {PSI_ASSERT(yychar == YYEMPTY); arguments.bracket_literal = true;} ')';
 
 lifecycle: {$$.clear();}
-| IDENTIFIER open_bracket IDENTIFIER close_bracket BLOCK {SharedPtr<Lifecycle> c(new Lifecycle(@$, $1, $3, boost::none, $5)); $$.assign(1, c);}
-| IDENTIFIER open_bracket IDENTIFIER ',' IDENTIFIER close_bracket BLOCK {SharedPtr<Lifecycle> c(new Lifecycle(@$, $1, $3, $5, $7)); $$.assign(1, c);}
+| IDENTIFIER open_bracket IDENTIFIER ')' BLOCK {SharedPtr<Lifecycle> c(new Lifecycle(@$, $1, $3, boost::none, $5)); $$.assign(1, c);}
+| IDENTIFIER open_bracket IDENTIFIER ',' IDENTIFIER ')' BLOCK {SharedPtr<Lifecycle> c(new Lifecycle(@$, $1, $3, $5, $7)); $$.assign(1, c);}
 | '!' IDENTIFIER {SharedPtr<Lifecycle> c(new Lifecycle(@$, $2, default_, default_, default_)); $$.assign(1, c);}
 ;
 
@@ -466,26 +465,38 @@ namespace {
       return result;
     }
 
-  next_char:
-    llocp->begin = llocp->end;
-    llocp->location.first_line = llocp->location.last_line;
-    llocp->location.first_column = llocp->location.last_column;
-    PSI_ASSERT(llocp->begin == self.current);
-
-    if (self.current == self.end)
-      return 0;
-
 #define SCANNER_RETURN(val) do {lvalp->text = *llocp; return (val);} while(0)
 #define SCANNER_ACCEPT() (++self.current, ++llocp->end, ++llocp->location.last_column)
 #define SCANNER_NEWLINE() (++llocp->location.last_line, llocp->location.last_column = 1)
+    
+    // Skip leading spaces and newlines
+    while (true) {
+      llocp->begin = llocp->end;
+      llocp->location.first_line = llocp->location.last_line;
+      llocp->location.first_column = llocp->location.last_column;
+      PSI_ASSERT(llocp->begin == self.current);
 
-    c = *self.current;
+      if (self.current == self.end)
+        return 0;
+      
+      c = *self.current;
+
+      if (std::strchr(" \t\r\v", c)) {
+        SCANNER_ACCEPT();
+      } else if (c == '\n') {
+        SCANNER_ACCEPT();
+        SCANNER_NEWLINE();
+      } else {
+        break;
+      }
+    }
     
     if (self.bracket_literal) {
       self.bracket_literal = false;
       if (!std::strchr("()[]{}", c))
         SCANNER_RETURN(INVALID);
-      return c;
+      SCANNER_ACCEPT();
+      SCANNER_RETURN(c);
     }
 
     if (c_isdigit(c)) {
@@ -639,13 +650,6 @@ namespace {
           SCANNER_RETURN(INVALID);
         }
       }
-    } else if (std::strchr(" \t\r\v", c)) {
-      SCANNER_ACCEPT();
-      goto next_char;
-    } else if (c == '\n') {
-      SCANNER_ACCEPT();
-      SCANNER_NEWLINE();
-      goto next_char;
     } else {
       SCANNER_ACCEPT();
       SCANNER_RETURN(c);

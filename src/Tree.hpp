@@ -200,10 +200,16 @@ namespace Psi {
     public:
       static const TreeVtable vtable;
 
+      enum GenericTypePrimitive {
+        primitive_recurse=0, ///< Primitive if the evaluated member_type is primitive
+        primitive_never=1, ///< Never primitive
+        primitive_always=2, ///< Always primitive
+      };
+
       GenericType(const PSI_STD::vector<TreePtr<Term> >& pattern,
                   const TreePtr<Term>& member_type,
                   const PSI_STD::vector<TreePtr<OverloadValue> >& overloads,
-                  int primitive_mode,
+                  GenericTypePrimitive primitive_mode,
                   const SourceLocation& location);
 
       template<typename Visitor> static void visit(Visitor& v);
@@ -215,11 +221,6 @@ namespace Psi {
       /// \brief Overloads carried by this type.
       PSI_STD::vector<TreePtr<OverloadValue> > overloads;
       
-      enum GenericTypePrimitive {
-        primitive_recurse=0, ///< Primitive if the evaluated member_type is primitive
-        primitive_never=1, ///< Never primitive
-        primitive_always=2, ///< Always primitive
-      };
       /// \brief Primitive mode: whether or not this type is primitive
       int primitive_mode;
     };
@@ -276,6 +277,25 @@ namespace Psi {
 
       BottomType(CompileContext&, const SourceLocation&);
       template<typename V> static void visit(V& v);
+    };
+    
+    /**
+     * \brief Constant type.
+     * 
+     * Objects of this type can only take on a single value, hence the type
+     * is known as "constant". This allows values of this type to be used to
+     * fill in for "exists" quantified variables.
+     */
+    class ConstantType : public Type {
+    public:
+      static const TermVtable vtable;
+      
+      ConstantType(CompileContext& compile_context, const SourceLocation& location);
+      ConstantType(const TreePtr<Term>& value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Constant value
+      TreePtr<Term> value;
     };
 
     /**
@@ -782,6 +802,23 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Term> > arguments;
       
       TreePtr<FunctionType> target_type();
+    };
+    
+    /**
+     * \brief Provide a value for a phantom term during evaluation of a tree.
+     */
+    class SolidifyDuring : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      SolidifyDuring(CompileContext& context, const SourceLocation& location);
+      SolidifyDuring(const TreePtr<Term>& value, const TreePtr<Term>& body, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Value being supplied; must have type ConstantType
+      TreePtr<Term> value;
+      /// \brief Tree to be evaluated.
+      TreePtr<Term> body;
     };
     
     /**

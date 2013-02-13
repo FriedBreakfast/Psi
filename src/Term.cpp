@@ -19,6 +19,9 @@ namespace Psi {
      * \param value Tree to match to.
      * \param wildcards Substitutions to be identified.
      * \param depth Number of parameter-enclosing terms above this match.
+     * 
+     * Note that it is important that when \c wildcards is empty, this function simply
+     * checks that this tree and \c value are the same.
      */
     bool Term::match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const {
       const Term *self = this;
@@ -35,7 +38,8 @@ namespace Psi {
 
           TreePtr<Term>& wildcard = wildcards[parameter->index];
           if (wildcard) {
-            return wildcard->equivalent(TreePtr<Term>(other));
+            PSI_STD::vector<TreePtr<Term> > empty;
+            return wildcard->match(TreePtr<Term>(other), empty, 0);
           } else {
             wildcards[parameter->index].reset(other);
             return true;
@@ -49,19 +53,6 @@ namespace Psi {
       } else {
         return false;
       }
-    }
-
-    /**
-     * \brief Check whether this term is equivalent to another.
-     * 
-     * This is transitive.
-     * 
-     * It is possible that transitivity is bugged since this is implemented
-     * via match().
-     */
-    bool Term::equivalent(const TreePtr<Term>& value) const {
-      PSI_STD::vector<TreePtr<Term> > empty;
-      return match(value, empty, 0);
     }
 
     bool Term::match_impl(const Term&, const Term&, PSI_STD::vector<TreePtr<Term> >&, unsigned) {

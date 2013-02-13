@@ -10,8 +10,8 @@ namespace Psi {
     /**
      * Get the Macro tree associated with an expression.
      */
-    TreePtr<Macro> expression_macro(const TreePtr<Term>& expr, const SourceLocation& location) {
-      return metadata_lookup_as<Macro>(expr.compile_context().builtins().macro_tag, expr, location);
+    TreePtr<Macro> expression_macro(const TreePtr<EvaluateContext>& context, const TreePtr<Term>& expr, const SourceLocation& location) {
+      return metadata_lookup_as<Macro>(expr.compile_context().builtins().macro_tag, context, expr, location);
     }
     
     /**
@@ -35,14 +35,14 @@ namespace Psi {
         TreePtr<Term> first = compile_expression(macro_expression.object, evaluate_context, source->new_anonymous_child());
         PSI_STD::vector<SharedPtr<Parser::Expression> > parameters_copy(macro_expression.parameters);
 
-        return expression_macro(first, location)->evaluate(first, list_from_stl(parameters_copy), evaluate_context, location);
+        return expression_macro(evaluate_context, first, location)->evaluate(first, list_from_stl(parameters_copy), evaluate_context, location);
       }
 
       case Parser::expression_dot: {
         const Parser::DotExpression& dot_expression = checked_cast<Parser::DotExpression&>(*expression);
         TreePtr<Term> obj = compile_expression(dot_expression.object, evaluate_context, source);
         PSI_STD::vector<SharedPtr<Parser::Expression> > parameters_copy(dot_expression.parameters);
-        return expression_macro(obj, location)->dot(obj, dot_expression.member, list_from_stl(parameters_copy), evaluate_context, location);
+        return expression_macro(evaluate_context, obj, location)->dot(obj, dot_expression.member, list_from_stl(parameters_copy), evaluate_context, location);
       }
 
       case Parser::expression_token: {
@@ -74,7 +74,7 @@ namespace Psi {
 
           boost::array<SharedPtr<Parser::Expression>, 1> expression_list;
           expression_list[0] = expression;
-          return expression_macro(first.value(), location)->evaluate(first.value(), list_from_stl(expression_list), evaluate_context, location);
+          return expression_macro(evaluate_context, first.value(), location)->evaluate(first.value(), list_from_stl(expression_list), evaluate_context, location);
         }
 
         case Parser::TokenExpression::identifier: {
@@ -108,7 +108,7 @@ namespace Psi {
 
           boost::array<SharedPtr<Parser::Expression>, 1> expression_list;
           expression_list[0] = expression;
-          return expression_macro(first.value(), location)->evaluate(first.value(), list_from_stl(expression_list), evaluate_context, location);
+          return expression_macro(evaluate_context, first.value(), location)->evaluate(first.value(), list_from_stl(expression_list), evaluate_context, location);
         }
 
         default:
@@ -220,6 +220,12 @@ namespace Psi {
         } else {
           return lookup_result_none;
         }
+      }
+      
+      static void overload_list_impl(const BlockContext& self, const TreePtr<OverloadType>& overload_type,
+                                     PSI_STD::vector<TreePtr<OverloadValue> >& overload_list) {
+        if (self.next)
+          self.next->overload_list(overload_type, overload_list);
       }
     };
 
@@ -377,6 +383,12 @@ namespace Psi {
         } else {
           return lookup_result_none;
         }
+      }
+      
+      static void overload_list_impl(const NamespaceContext& self, const TreePtr<OverloadType>& overload_type,
+                                     PSI_STD::vector<TreePtr<OverloadValue> >& overload_list) {
+        if (self.next)
+          self.next->overload_list(overload_type, overload_list);
       }
     };
 

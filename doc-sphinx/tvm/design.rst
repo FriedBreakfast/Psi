@@ -151,3 +151,20 @@ registers may now act on the stack and thus require memory-to-memory
 rather than register-to-memory operations,
 and it is easier to have instructions and types present to handle
 these cases than to call external functions.
+
+Notes on ``exists``
+-------------------
+
+``exists {a} > pointer {b}`` is not equivalent to ``pointer (exists {a} > {b})``.
+To see this, consider the implication of making this relation transitive, then::
+
+  pointer (pointer (exists {a} > {b}))
+
+would be equivalent to::
+
+  exists {a} > pointer (pointer {b})
+
+which cannot possibly be the case since in the first case the inner pointer can
+clearly be assigned to any memory location matching the pattern and in the
+second case this is not allowed because it is the pointer itself whose type is
+not fully known.

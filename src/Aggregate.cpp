@@ -36,7 +36,7 @@ struct AggregateLifecycleImpl {
    * Doesn't hold any Tree references so don't bother with proper visit() implementation
    */
   template<typename V>
-  static void visit(V& v) {}
+  static void visit(V& PSI_UNUSED(v)) {}
 };
 
 /**
@@ -52,14 +52,16 @@ struct AggregateMacroCommon {
   
   PSI_STD::vector<String> argument_names;
   PSI_STD::vector<TreePtr<Anonymous> > argument_list;
-  PSI_STD::vector<TreePtr<Term> > argument_type_list;
+  /// Generic argument pattern. This has been parameterized, i.e. uses Parameter rather than Anonymous.
+  PSI_STD::vector<TreePtr<Term> > argument_pattern;
 
   void parse_arguments(const TreePtr<EvaluateContext>& evaluate_context,
                        const SourceLocation& location);
   
   TreePtr<EvaluateContext> member_context;
-  PSI_STD::vector<TreePtr<Term> > member_types;
   std::map<String, unsigned> member_names;
+  /// Member type list. This has been parameterized, i.e. uses Parameter rather than Anonymous.
+  PSI_STD::vector<TreePtr<Term> > member_types;
 
   void parse_members(const SourceLocation& location);
 
@@ -131,7 +133,7 @@ void AggregateMacroCommon::parse_arguments(const TreePtr<EvaluateContext>& evalu
 
     TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_names, evaluate_context);
     TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
-    argument_type_list.push_back(argument_type->parameterize(argument_location, argument_list));
+    argument_pattern.push_back(argument_type->parameterize(argument_location, argument_list));
     TreePtr<Anonymous> argument(new Anonymous(argument_type, argument_location));
     argument_list.push_back(argument);
 
@@ -208,7 +210,7 @@ void AggregateMacroCommon::parse_constructors(const SourceLocation& location) {
     if (lc_impl->mode != AggregateLifecycleImpl::mode_default)
       member_context.compile_context().error_throw(location, boost::format("Duplicate lifecycle function: %s") % function_name);
     
-    if (!lc_impl->body) {
+    if (!lc.body) {
       if (!nullable)
         member_context.compile_context().error_throw(location, boost::format("Lifecycle function cannot be deleted: %s") % function_name);
     } else {
@@ -292,7 +294,7 @@ public:
   static void visit(V& v) {
     v("generic", &AggregateLifecycleBase::m_generic)
     ("evaluate_context", &AggregateLifecycleBase::m_evaluate_context)
-    ("argument_names", &AggregateLifecycleBase::m_argument_names);
+    ("argument_names", &AggregateLifecycleBase::m_argument_names)
     ("member_types", &AggregateLifecycleBase::m_member_types);
   }
   
@@ -724,7 +726,7 @@ public:
     overloads.push_back(copyable_impl);
 
     TreePtr<StructType> member_type(new StructType(self.compile_context(), helper.member_types, self.location()));
-    TreePtr<GenericType> generic(new GenericType(helper.argument_type_list, member_type, overloads, primitive_mode, self.location()));
+    TreePtr<GenericType> generic(new GenericType(helper.argument_pattern, member_type, overloads, primitive_mode, self.location()));
     
     return generic;
   }
@@ -749,15 +751,17 @@ public:
                                      const List<SharedPtr<Parser::Expression> >& parameters,
                                      const TreePtr<EvaluateContext>& evaluate_context,
                                      const SourceLocation& location) {
-    PSI_NOT_IMPLEMENTED();
-#if 0
+    AggregateMacroCommon helper;
+    helper.run(parameters.to_vector(), evaluate_context, location);
+    
+    TreePtr<Term> struct_type(new StructType(self.compile_context(), helper.member_types, location));
+    TreePtr<GenericType> generic(new GenericType(helper.argument_pattern, struct_type, GenericType::primitive_recurse, location));
+
     if (helper.argument_list.empty()) {
-      TreePtr<TypeInstance> inst(new TypeInstance(generic, default_, location));
-      return inst;
+      return TreePtr<TypeInstance>(new TypeInstance(generic, default_, location));
     } else {
       PSI_NOT_IMPLEMENTED();
     }
-#endif
   }
 };
 
