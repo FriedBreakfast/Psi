@@ -714,7 +714,7 @@ public:
     AggregateMacroCommon helper;
     helper.run(m_parameters, m_evaluate_context, self.location());
     
-    int primitive_mode = GenericType::primitive_recurse;
+    GenericType::GenericTypePrimitive primitive_mode = GenericType::primitive_recurse;
     if (helper.lc_init.mode || helper.lc_fini.mode || helper.lc_move.mode || helper.lc_copy.mode)
       primitive_mode = GenericType::primitive_never;
     
@@ -755,7 +755,7 @@ public:
     helper.run(parameters.to_vector(), evaluate_context, location);
     
     TreePtr<Term> struct_type(new StructType(self.compile_context(), helper.member_types, location));
-    TreePtr<GenericType> generic(new GenericType(helper.argument_pattern, struct_type, GenericType::primitive_recurse, location));
+    TreePtr<GenericType> generic(new GenericType(helper.argument_pattern, struct_type, default_, GenericType::primitive_recurse, location));
 
     if (helper.argument_list.empty()) {
       return TreePtr<TypeInstance>(new TypeInstance(generic, default_, location));

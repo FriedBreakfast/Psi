@@ -11,3 +11,4 @@ Internals
    overloading
    trees
    tvm_lowering
+   setup

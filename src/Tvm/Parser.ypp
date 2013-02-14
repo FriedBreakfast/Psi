@@ -33,10 +33,19 @@
 #define YYFREE(x)
 #define YYSTACK_USE_ALLOCA 1
 
-using namespace Psi;
-using namespace Psi::Tvm;
+#ifdef _MSC_VER
+#include <malloc.h>
+#define YYSTACK_ALLOC _alloca
+#endif
+
 using namespace Psi::Tvm::Parser;
 using namespace Psi::Tvm::ParserUtility;
+
+using Psi::checked_cast;
+using Psi::BisonHelper;
+using Psi::UniquePtr;
+using Psi::Tvm::CallingConvention;
+using Psi::Tvm::UniqueList;
 
 namespace {
   struct ParserValue {
@@ -161,21 +170,21 @@ global: function | constant | global_variable | recursive;
 global_variable:
 GLOBAL expression {
   UniquePtr<Expression> type(list_to_ptr($2));
-  $$ = list_one<GlobalElement>(new Parser::GlobalVariable(@$, false, type));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, false, type));
 }
 | GLOBAL expression expression {
   UniquePtr<Expression> type(list_to_ptr($2));
   UniquePtr<Expression> value(list_to_ptr($3));
-  $$ = list_one<GlobalElement>(new Parser::GlobalVariable(@$, false, type, value));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, false, type, value));
 }
 | GLOBAL CONST expression {
   UniquePtr<Expression> type(list_to_ptr($3));
-  $$ = list_one<GlobalElement>(new Parser::GlobalVariable(@$, true, type));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, true, type));
 }
 | GLOBAL CONST expression expression {
   UniquePtr<Expression> type(list_to_ptr($3));
   UniquePtr<Expression> value(list_to_ptr($4));
-  $$ = list_one<GlobalElement>(new Parser::GlobalVariable(@$, true, type, value));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, true, type, value));
 }
 ;
 
@@ -188,34 +197,34 @@ recursive:
 RECURSIVE '(' parameter_list ')' '>' expression {
   UniqueList<NamedExpression> phantom_parameters;
   UniquePtr<Expression> result_type, result(list_to_ptr($6));
-  $$ = list_one<GlobalElement>(new Parser::RecursiveType(@$, phantom_parameters, *$3, result_type, result));
+  $$ = list_one<GlobalElement>(new RecursiveType(@$, phantom_parameters, *$3, result_type, result));
 }
 | RECURSIVE '(' parameter_list ')' '>' expression '>' expression {
   UniqueList<NamedExpression> phantom_parameters;
   UniquePtr<Expression> result_type(list_to_ptr($6)), result(list_to_ptr($8));
-  $$ = list_one<GlobalElement>(new Parser::RecursiveType(@$, phantom_parameters, *$3, result_type, result));
+  $$ = list_one<GlobalElement>(new RecursiveType(@$, phantom_parameters, *$3, result_type, result));
 }
 | RECURSIVE '(' parameter_list '|' parameter_list ')' '>' expression {
   UniquePtr<Expression> result_type, result(list_to_ptr($8));
-  $$ = list_one<GlobalElement>(new Parser::RecursiveType(@$, *$3, *$5, result_type, result));
+  $$ = list_one<GlobalElement>(new RecursiveType(@$, *$3, *$5, result_type, result));
 }
 | RECURSIVE '(' parameter_list '|' parameter_list ')' '>' expression '>' expression {
   UniquePtr<Expression> result_type(list_to_ptr($8)), result(list_to_ptr($10));
-  $$ = list_one<GlobalElement>(new Parser::RecursiveType(@$, *$3, *$5, result_type, result));
+  $$ = list_one<GlobalElement>(new RecursiveType(@$, *$3, *$5, result_type, result));
 }
 ;
 
 function:
 function_type {
   UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($1)));
-  $$ = list_one<GlobalElement>(new Parser::Function(@$, ft));
+  $$ = list_one<GlobalElement>(new Function(@$, ft));
 }
 | function_type '{' statement_list block_list '}' {
   UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($1)));
   UniqueList<Block> blocks;
   blocks.push_back(*new Block(@3, false, *$3));
   blocks.splice(blocks.end(), *$4);
-  $$ = list_one<GlobalElement>(new Parser::Function(@$, ft, blocks));
+  $$ = list_one<GlobalElement>(new Function(@$, ft, blocks));
 }
 ;
 
@@ -230,7 +239,7 @@ FUNCTION calling_convention sret '(' parameter_list ')' '>' expression {
   $$ = list_one<Expression>(new FunctionTypeExpression(@$, $2, $3, *$5, *$7, result));
 };
 
-calling_convention: {$$=cconv_c;} | CC_C {$$=cconv_c;};
+calling_convention: {$$=Psi::Tvm::cconv_c;} | CC_C {$$=Psi::Tvm::cconv_c;};
 sret: {$$=false;} | SRET {$$=true;}
 
 parameter_list: {$$ = list_empty<NamedExpression>();} | parameter_list_nonempty
@@ -486,7 +495,7 @@ namespace {
 
       boost::unordered_map<char, LiteralType>::const_iterator it;
       std::string literal_text;
-      PhysicalSourceLocation literal_loc(*llocp);
+      Psi::PhysicalSourceLocation literal_loc(*llocp);
       if (text[0] == 'u') {
         it = unsigned_literals.find(text[1]);
         if (it == unsigned_literals.end())
@@ -674,7 +683,7 @@ namespace Psi {
       }
     }
 
-    void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin, const char *end) {
+    void parse(UniqueList<NamedGlobalElement>& result, const char *begin, const char *end) {
       ParserInternalArguments ia(begin, end);
       yyparse(ia);
       if (!ia.error_message.empty()) {
@@ -684,7 +693,7 @@ namespace Psi {
       }
     }
 
-    void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin) {
+    void parse(UniqueList<NamedGlobalElement>& result, const char *begin) {
       parse(result, begin, begin+std::strlen(begin));
     }
   }

@@ -562,7 +562,7 @@ namespace Psi {
   }
 }
 
-extern "C" boost::shared_ptr<Psi::Tvm::Jit> tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory) {
+extern "C" void tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory, boost::shared_ptr<Psi::Tvm::Jit>& result) {
   llvm::InitializeNativeTarget();
   std::string host = llvm::sys::getDefaultTargetTriple();
 
@@ -575,5 +575,5 @@ extern "C" boost::shared_ptr<Psi::Tvm::Jit> tvm_jit_new(const boost::shared_ptr<
   if (!tm)
     throw Psi::Tvm::LLVM::BuildError("Failed to create target machine");
   
-  return boost::make_shared<Psi::Tvm::LLVM::LLVMJit>(factory, host, tm);
+  result = boost::make_shared<Psi::Tvm::LLVM::LLVMJit>(factory, host, tm);
 }

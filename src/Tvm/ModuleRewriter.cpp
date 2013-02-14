@@ -61,12 +61,12 @@ namespace Psi {
     
     /// \copydoc ModuleRewriter::target_symbol(GlobalTerm*)
     ValuePtr<Function> ModuleRewriter::target_symbol(const ValuePtr<Function>& term) {
-      return value_cast<Function>(target_symbol(term));
+      return value_cast<Function>(target_symbol(ValuePtr<Global>(term)));
     }
     
     /// \copydoc ModuleRewriter::target_symbol(GlobalTerm*)
     ValuePtr<GlobalVariable> ModuleRewriter::target_symbol(const ValuePtr<GlobalVariable>& term) {
-      return value_cast<GlobalVariable>(target_symbol(term));
+      return value_cast<GlobalVariable>(target_symbol(ValuePtr<Global>(term)));
     }
     
     /**

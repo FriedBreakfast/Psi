@@ -29,7 +29,7 @@ namespace Psi {
 
   template<std::size_t N>
   class StackBuffer : boost::noncopyable {
-    char m_buffer[N] PSI_ATTRIBUTE((PSI_ALIGNED_MAX));
+    PSI_ATTRIBUTE((PSI_ALIGNED_MAX)) char m_buffer[N];
     void *m_ptr;
     std::size_t m_size;
 
@@ -400,7 +400,7 @@ namespace Psi {
     PropertyValue& operator = (const PropertyMap& src) {assign(src); return *this;}
     PropertyValue& operator = (const PropertyList& src) {assign(src); return *this;}
     
-    bool boolean() const {PSI_ASSERT(m_type == t_boolean); return m_value.integer;}
+    bool boolean() const {PSI_ASSERT(m_type == t_boolean); return (m_value.integer != 0);}
     int integer() const {PSI_ASSERT(m_type == t_integer); return m_value.integer;}
     double real() const {PSI_ASSERT(m_type == t_real); return m_value.real;}
     const String& str() const {PSI_ASSERT(m_type == t_str); return *m_value.str.ptr();}

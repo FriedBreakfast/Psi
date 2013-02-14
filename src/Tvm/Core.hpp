@@ -795,6 +795,7 @@ namespace Psi {
     
     using boost::hash_value;
 
+#if BOOST_VERSION > 150000
     template<typename T, std::size_t N>
     std::size_t hash_value(const boost::array<T,N>& x) {
       std::size_t h = 0;
@@ -804,6 +805,7 @@ namespace Psi {
       }
       return h;
     }
+#endif
     
     template<typename T>
     class HashVisitor {

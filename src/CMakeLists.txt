@@ -79,15 +79,11 @@ set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS ${LLVM_CXX_FLAGS})
 target_link_libraries(psi-tvm-llvm ${LLVM_LIBS} debug psi-assert ${LLVM_LDFLAGS})
 
 if(UNIX)
-set(PSI_RUNTIME_SOURCES Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
 set(PSI_COMPILER_SOURCES PlatformLinux.cpp)
+add_library(psi-runtime SHARED Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
 elseif(WIN32)
 set(PSI_COMPILER_SOURCES PlatformWindows.cpp)
 endif()
-
-add_library(psi-runtime SHARED
-  ${PSI_RUNTIME_SOURCES}
-)
 
 bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated)
 set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")

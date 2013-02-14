@@ -333,7 +333,7 @@ namespace Psi {
       void set_error_occurred() {m_error_occurred = true;}
 
       void error(const SourceLocation&, const std::string&, unsigned=0);
-      void error_throw(const SourceLocation&, const std::string&, unsigned=0) PSI_ATTRIBUTE((PSI_NORETURN));
+      PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation&, const std::string&, unsigned=0);
 
       template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, CompileError::to_str(message), flags);}
       template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, CompileError::to_str(message), flags);}

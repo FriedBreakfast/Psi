@@ -5,9 +5,10 @@
 #include <cstring>
 #include <stdexcept>
 
-#include <json/json_tokener.h>
-#include <json/linkhash.h>
-#include <json/arraylist.h>
+// JSON-C header files
+#include <json_tokener.h>
+#include <linkhash.h>
+#include <arraylist.h>
 
 namespace Psi {
   void* checked_alloc(std::size_t n) {
@@ -31,10 +32,17 @@ namespace Psi {
    * have the same sign according to signbit() and if finite, have the same value.
    */
   bool fpequiv(double a, double b) {
+#if defined(_MSC_VER)
+    if (_finite(a))
+      return a == b;
+    else
+      return (_fpclass(a) == _fpclass(b));
+#else
     if (std::isfinite(a))
       return a == b;
     else // Handling Inf and NaN is more complicated
       return (std::fpclassify(a) == std::fpclassify(b)) && (std::signbit(a) == std::signbit(b));
+#endif
   }
 
   namespace {

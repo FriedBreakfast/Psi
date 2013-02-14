@@ -303,7 +303,7 @@ namespace Psi {
       RunningTreeCallback(TreeCallback *callback);
       ~RunningTreeCallback();
 
-      static void throw_circular_dependency(TreeCallback *callback) PSI_ATTRIBUTE((PSI_NORETURN));
+      PSI_ATTRIBUTE((PSI_NORETURN)) static void throw_circular_dependency(TreeCallback *callback);
     };
 
     template<typename Derived>
