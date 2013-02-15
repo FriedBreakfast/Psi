@@ -103,10 +103,13 @@ namespace Psi {
     m_pattern_interfaces(pattern_interfaces) {
       PSI_STD::vector<TreePtr<Term> > type_pattern;
       
-      TreePtr<TypeInstance> interface_inst = dyn_treeptr_cast<TypeInstance>(m_interface->type);
-      if (!interface_inst)
-        interface.compile_context().error_throw(location, "ImplementationHelper is only suitable for interfaces whose value is a generic", CompileError::error_internal);
-      m_generic = interface_inst->generic;
+      if (TreePtr<Exists> interface_exists = dyn_treeptr_cast<Exists>(m_interface->type))
+        if (TreePtr<DerivedType> interface_derived = dyn_treeptr_cast<DerivedType>(interface_exists->result))
+          if (TreePtr<TypeInstance> interface_inst = dyn_treeptr_cast<TypeInstance>(interface_derived->value_type))
+            m_generic = interface_inst->generic;
+        
+      if (!m_generic)
+        interface.compile_context().error_throw(location, "ImplementationHelper is only suitable for interfaces whose value is of the form Exists.Derived.Instance", CompileError::error_internal);
       
       for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = pattern_parameters.begin(), ie = pattern_parameters.end(); ii != ie; ++ii) {
         TreePtr<Term> parameterized = (*ii)->parameterize(location, pattern_parameters);
@@ -143,8 +146,8 @@ namespace Psi {
       
       PSI_STD::vector<TreePtr<Term> > previous_arguments;
       for (std::size_t ii = 0, ie = type->parameter_types.size(); ii != ie; ++ii) {
-        const SourceLocation& loc = (ie - ii - 1) < parameter_locations.size() ?
-          parameter_locations[parameter_locations.size() - (ie - ii - 1)] : location;
+        const SourceLocation& loc = (ie - ii) <= parameter_locations.size() ?
+          parameter_locations[parameter_locations.size() - (ie - ii)] : location;
         TreePtr<Term> ty = type->parameter_type_after(loc, previous_arguments);
         TreePtr<Anonymous> param(new Anonymous(ty, location));
         previous_arguments.push_back(param);
@@ -159,8 +162,6 @@ namespace Psi {
         result.interface_values.push_back(TreePtr<Statement>(new Statement(value, statement_mode_functional, location)));
       }
       
-      PSI_NOT_IMPLEMENTED(); // setup interfaces
-      
       return result;
     }
     
@@ -173,6 +174,10 @@ namespace Psi {
         wrapped_body.reset(new SolidifyDuring(value, wrapped_body, setup.location));
       }
       
+#if 0
+      PSI_NOT_IMPLEMENTED(); // setup interfaces
+#endif
+
       TreePtr<Function> f(new Function(module, false, setup.function_type,
                                        setup.parameters, wrapped_body, return_target, setup.location));
       return f;
@@ -185,8 +190,38 @@ namespace Psi {
       TreePtr<Term> value(new StructValue(m_wrapper_struct, m_wrapper_member_types, m_location));
       value.reset(new TypeInstanceValue(m_wrapper_instance, value, m_location));
       
-      TreePtr<Implementation> impl(new Implementation(default_, value, m_interface, 0, default_, m_location));
+      TreePtr<Implementation> impl(new Implementation(default_, value, m_interface, 0, default_,
+                                                      vector_of<int>(m_wrapper_member_types.size()-1), m_location));
       return impl;
+    }
+
+    TreePtr<FunctionType> ImplementationHelper::member_function_type(int index, const SourceLocation& location) {
+      if (!m_generic_unwrapped)
+        m_generic_unwrapped = m_generic_instance->unwrap();
+      
+      TreePtr<StructType> st = dyn_treeptr_cast<StructType>(m_generic_unwrapped);
+      if (!st)
+        m_generic.compile_context().error_throw(location, "ImplementationHelper::member_function_type used on generic which is not a struct", CompileError::error_internal);
+      
+      TreePtr<PointerType> pt = dyn_treeptr_cast<PointerType>(st->members[index]);
+      if (!pt)
+        m_generic.compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a pointer", CompileError::error_internal);
+      
+      TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(pt->target_type);
+      if (!ft)
+        m_generic.compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a function pointer", CompileError::error_internal);
+      
+      return ft;
+    }
+    
+    /**
+     * Shortcut for:
+     * 
+     * \code this->function_setup(this->member_function_type(index, location), location, parameter_locations) \endcode
+     */
+    ImplementationHelper::FunctionSetup ImplementationHelper::member_function_setup(int index, const SourceLocation& location,
+                                                                                    const PSI_STD::vector<SourceLocation>& parameter_locations) {
+      return function_setup(member_function_type(index, location), location, parameter_locations);
     }
   }
 }

@@ -15,11 +15,13 @@
 #include "TreeBase.hpp"
 #include "Term.hpp"
 #include "Platform.hpp"
+#include "Enums.hpp"
 
 namespace Psi {
   namespace Parser {
     struct Expression;
     struct Statement;
+    struct TokenExpression;
   }
   
   namespace Tvm {
@@ -273,14 +275,16 @@ namespace Psi {
       BuiltinTypes();
       void initialize(CompileContext& compile_context);
 
+      /// \brief The type of types
+      TreePtr<Term> metatype;
       /// \brief The empty type.
       TreePtr<Type> empty_type;
+      /// \brief Value of the empty type.
+      TreePtr<Term> empty_value;
       /// \brief The bottom type.
       TreePtr<Type> bottom_type;
       /// \brief The type of upward references
       TreePtr<Type> upref_type;
-      /// \brief The type of types
-      TreePtr<Term> metatype;
       
       /// \brief The Macro interface.
       TreePtr<MetadataType> macro_tag;
@@ -354,6 +358,7 @@ namespace Psi {
 
     TreePtr<Term> compile_expression(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
     TreePtr<Block> compile_block(const PSI_STD::vector<SharedPtr<Parser::Statement> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
+    TreePtr<Block> compile_from_bracket(const SharedPtr<Parser::TokenExpression>& expr, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
     TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
 
     TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);

@@ -356,7 +356,7 @@ namespace Psi {
         my_result = result;
       } else {
         PSI_ASSERT(!values.empty());
-        my_result.reset(new DefaultValue(values.front().compile_context().builtins().empty_type, location));
+        my_result = values.front().compile_context().builtins().empty_value;
       }
       return TreePtr<Term>(new Block(statements, my_result, location));
     }
@@ -408,10 +408,6 @@ namespace Psi {
     : Type(&vtable, compile_context, location) {
     }
 
-    TreePtr<Term> EmptyType::value(CompileContext& compile_context, const SourceLocation& location) {
-      return TreePtr<Term>(new DefaultValue(compile_context.builtins().empty_type, location));
-    }
-    
     template<typename V>
     void EmptyType::visit(V& v) {
       visit_base<Type>(v);
@@ -530,6 +526,11 @@ namespace Psi {
           return TreePtr<Term>(new DerivedType(un->members[index_int], upref, location));
         } else if (TreePtr<ArrayType> ar = dyn_treeptr_cast<ArrayType>(my_aggregate_type)) {
           return TreePtr<Term>(new DerivedType(ar->element_type, upref, location));
+        } else if (TreePtr<TypeInstance> inst = dyn_treeptr_cast<TypeInstance>(my_aggregate_type)) {
+          int index_int = index_to_int(index, location);
+          if (index_int != 0)
+            compile_context.error_throw(location, "Generic instance member index must be zero");
+          return TreePtr<Term>(new DerivedType(inst->unwrap(), upref, location));
         } else {
           CompileError err(compile_context, location);
           err.info("Element lookup argument is not an aggregate type");
@@ -770,7 +771,7 @@ namespace Psi {
     }
     
     StructValue::StructValue(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& members_, const SourceLocation& location)
-    : Constructor(&vtable, make_struct_type(compile_context, members, location), location),
+    : Constructor(&vtable, make_struct_type(compile_context, members_, location), location),
     members(members_) {
     }
 

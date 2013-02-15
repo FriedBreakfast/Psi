@@ -99,6 +99,7 @@ set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I
 add_library(psi-compiler SHARED
   Aggregate.cpp
   Array.hpp
+  BuiltinTypes.cpp
   CppCompiler.hpp
   Compiler.cpp Compiler.hpp
   DefaultLifecycle.cpp

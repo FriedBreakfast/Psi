@@ -169,10 +169,8 @@ TreePtr<Term> lifecycle_postinit_common(const TreePtr<Term>& dest, const TreePtr
       }
     }
     
-    if (!statements.empty()) {
-      TreePtr<Term> empty(new DefaultValue(compile_context.builtins().empty_type, location));
-      return TreePtr<Term>(new Block(statements, empty, location));
-    }
+    if (!statements.empty())
+      return TreePtr<Term>(new Block(statements, compile_context.builtins().empty_value, location));
   } else if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(type)) {
     if (!lifecycle_primitive(inst_type)) {
       switch (which) {

@@ -53,7 +53,15 @@ namespace Psi {
       struct InterfaceBase {
         /// \brief Base interface
         TreePtr<Interface> interface;
-        /// \brief Parameters to base interface
+        /**
+         * \brief Parameters to base interface, including derived parameters.
+         * 
+         * For base classes, the values of derived parameters must be explicitly given
+         * because we cannot know which overload will be used.
+         * This makes any interfaces with a base that uses derived parameters rather
+         * closely coupled to the base since the value of derived parameters must be
+         * known.
+         */
         PSI_STD::vector<TreePtr<Term> > parameters;
 
         /** \brief How to find the base interface in the derived interface value.
@@ -62,7 +70,7 @@ namespace Psi {
          * interface.
          */
         PSI_STD::vector<int> path;
-        
+
         template<typename V>
         static void visit(V& v) {
           v("interface", &InterfaceBase::interface)
@@ -85,6 +93,9 @@ namespace Psi {
                 const PSI_STD::vector<TreePtr<Term> >& derived_pattern,
                 const SourceLocation& location);
       template<typename V> static void visit(V& v);
+      
+      TreePtr<Term> type_after(const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) const;
+      TreePtr<Term> pointer_type_after(const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) const;
       
       /// \brief The derived parameter pattern.
       PSI_STD::vector<TreePtr<Term> > derived_pattern;
@@ -184,7 +195,8 @@ namespace Psi {
     public:
       static const TreeVtable vtable;
       Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent, const TreePtr<Term>& value, const TreePtr<Interface>& interface,
-                     unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
+                     unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const PSI_STD::vector<int>& path,
+                     const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /**
@@ -201,6 +213,11 @@ namespace Psi {
        * rewritten according to the values of the interface parameters.
        */
       TreePtr<Term> value;
+      
+      /**
+       * \brief Path of ElementValue operations to use on \c value to get the correct value type of the interface.
+       */
+      PSI_STD::vector<int> path;
     };
     
     std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> >

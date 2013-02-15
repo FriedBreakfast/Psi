@@ -20,6 +20,7 @@ class ImplementationHelper {
   TreePtr<Interface> m_interface;
   TreePtr<GenericType> m_generic;
   TreePtr<TypeInstance> m_generic_instance;
+  TreePtr<Term> m_generic_unwrapped;
   PSI_STD::vector<TreePtr<Anonymous> > m_pattern_parameters;
   PSI_STD::vector<TreePtr<Term> > m_generic_parameters;
   PSI_STD::vector<TreePtr<InterfaceValue> > m_pattern_interfaces;
@@ -45,6 +46,8 @@ public:
     PSI_STD::vector<TreePtr<Statement> > interface_values;
   };
   
+  FunctionSetup member_function_setup(int index, const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations);
+  TreePtr<FunctionType> member_function_type(int index, const SourceLocation& location);
   FunctionSetup function_setup(const TreePtr<FunctionType>& type, const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations);
   TreePtr<Term> function_finish(const ImplementationHelper::FunctionSetup& setup, const TreePtr<Module>& module, const TreePtr<Term>& body, const TreePtr<JumpTarget>& return_target=TreePtr<JumpTarget>());
   

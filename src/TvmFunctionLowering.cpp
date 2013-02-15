@@ -1049,9 +1049,8 @@ bool TvmFunctionLowering::is_primitive(Scope& scope, const TreePtr<Term>& type) 
 void TvmFunctionLowering::default_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location) {
   TreePtr<Term> ptr_type(new PointerType(type, location));
   TreePtr<Anonymous> dest_ptr(new Anonymous(ptr_type, location));
-  TreePtr<Term> empty(new DefaultValue(compile_context().builtins().empty_type, location));
-  TreePtr<Term> init = lifecycle_init(dest_ptr, location, empty);
-  if (init != empty) {
+  TreePtr<Term> init = lifecycle_init(dest_ptr, location, compile_context().builtins().empty_value);
+  if (init != compile_context().builtins().empty_value) {
     VariableMapType::value_type locals[1] = {VariableMapType::value_type(dest_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, dest))};
     Scope my_scope(scope, location, locals);
     run_void(my_scope, init);
@@ -1063,9 +1062,8 @@ void TvmFunctionLowering::default_construct(Scope& scope, const TreePtr<Term>& t
 void TvmFunctionLowering::copy_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {  
   TreePtr<Term> ptr_type(new PointerType(type, location));
   TreePtr<Anonymous> dest_ptr(new Anonymous(ptr_type, location)), src_ptr(new Anonymous(ptr_type, location));
-  TreePtr<Term> empty(new DefaultValue(compile_context().builtins().empty_type, location));
-  TreePtr<Term> copy_init = lifecycle_copy_init(dest_ptr, src_ptr, location, empty);
-  if (copy_init != empty) {
+  TreePtr<Term> copy_init = lifecycle_copy_init(dest_ptr, src_ptr, location, compile_context().builtins().empty_value);
+  if (copy_init != compile_context().builtins().empty_value) {
     VariableMapType::value_type locals[2] = {
       VariableMapType::value_type(dest_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, dest)),
       VariableMapType::value_type(src_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, src))
@@ -1080,9 +1078,8 @@ void TvmFunctionLowering::copy_construct(Scope& scope, const TreePtr<Term>& type
 void TvmFunctionLowering::move_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {
   TreePtr<Term> ptr_type(new PointerType(type, location));
   TreePtr<Anonymous> dest_ptr(new Anonymous(ptr_type, location)), src_ptr(new Anonymous(ptr_type, location));
-  TreePtr<Term> empty(new DefaultValue(compile_context().builtins().empty_type, location));
-  TreePtr<Term> move_init = lifecycle_move_init(dest_ptr, src_ptr, location, empty);
-  if (move_init != empty) {
+  TreePtr<Term> move_init = lifecycle_move_init(dest_ptr, src_ptr, location, compile_context().builtins().empty_value);
+  if (move_init != compile_context().builtins().empty_value) {
     VariableMapType::value_type locals[2] = {
       VariableMapType::value_type(dest_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, dest)),
       VariableMapType::value_type(src_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, src))

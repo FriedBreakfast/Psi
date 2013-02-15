@@ -14,6 +14,16 @@ namespace Psi {
       return metadata_lookup_as<Macro>(expr.compile_context().builtins().macro_tag, context, expr, location);
     }
     
+    std::pair<const char*, const char*> bracket_token_strings(Parser::TokenExpressionType type) {
+      const char *bracket_operation, *bracket_str;
+      switch (type) {
+      case Parser::token_bracket: return std::make_pair("__bracket__", "(...)");
+      case Parser::token_brace: return std::make_pair("__brace__", "{...}");
+      case Parser::token_square_bracket: return std::make_pair("__squareBracket__", "[...]");
+      default: PSI_FAIL("unreachable");
+      }
+    }
+    
     /**
      * \brief Compile an expression.
      *
@@ -49,35 +59,29 @@ namespace Psi {
         const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*expression);
 
         switch (token_expression.token_type) {
-        case Parser::TokenExpression::bracket:
-        case Parser::TokenExpression::brace:
-        case Parser::TokenExpression::square_bracket: {
-          const char *bracket_operation, *bracket_str;
-          switch (token_expression.token_type) {
-          case Parser::TokenExpression::bracket: bracket_operation = "__bracket__"; bracket_str = "(...)"; break;
-          case Parser::TokenExpression::brace: bracket_operation = "__brace__"; bracket_str = "{...}"; break;
-          case Parser::TokenExpression::square_bracket: bracket_operation = "__squareBracket__"; bracket_str = "[...]"; break;
-          default: PSI_FAIL("unreachable");
-          }
+        case Parser::token_bracket:
+        case Parser::token_brace:
+        case Parser::token_square_bracket: {
+          std::pair<const char*, const char*> bracket_type = bracket_token_strings(token_expression.token_type);
 
-          LookupResult<TreePtr<Term> > first = evaluate_context->lookup(bracket_operation, location);
+          LookupResult<TreePtr<Term> > first = evaluate_context->lookup(bracket_type.first, location);
           switch (first.type()) {
           case lookup_result_type_none:
-            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator missing") % bracket_str % bracket_operation);
+            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator missing") % bracket_type.second % bracket_type.first);
           case lookup_result_type_conflict:
-            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator lookup ambiguous") % bracket_str % bracket_operation);
+            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator lookup ambiguous") % bracket_type.second % bracket_type.first);
           default: break;
           }
 
           if (!first.value())
-            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: successful lookup of '%s' returned NULL value") % bracket_str % bracket_operation, CompileError::error_internal);
+            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: successful lookup of '%s' returned NULL value") % bracket_type.second % bracket_type.first, CompileError::error_internal);
 
           boost::array<SharedPtr<Parser::Expression>, 1> expression_list;
           expression_list[0] = expression;
           return expression_macro(evaluate_context, first.value(), location)->evaluate(first.value(), list_from_stl(expression_list), evaluate_context, location);
         }
 
-        case Parser::TokenExpression::identifier: {
+        case Parser::token_identifier: {
           String name = token_expression.text.to_string();
           LookupResult<TreePtr<Term> > result = evaluate_context->lookup(name, location);
 
@@ -93,7 +97,7 @@ namespace Psi {
           return result.value();
         }
         
-        case Parser::TokenExpression::number: {
+        case Parser::token_number: {
           LookupResult<TreePtr<Term> > first = evaluate_context->lookup("__number__", location);
           switch (first.type()) {
           case lookup_result_type_none:
@@ -305,6 +309,22 @@ namespace Psi {
                                  const SourceLocation& location) {
       TreePtr<BlockCompileData> t = tree_callback<BlockCompileData>(evaluate_context.compile_context(), location, BlockCompiler(statements, evaluate_context));
       return TreePtr<Block>(new Block(t->entries, t->block_value, location));
+    }
+
+    /**
+     * Utility function to compile contents of different bracket types as a sequence of statements.
+     */
+    TreePtr<Block> compile_from_bracket(const SharedPtr<Parser::TokenExpression>& expr,
+                                        const TreePtr<EvaluateContext>& evaluate_context,
+                                        const SourceLocation& location) {
+      PSI_STD::vector<SharedPtr<Parser::Statement> > statements;
+      try {
+        statements = Parser::parse_statement_list(expr->text);
+      } catch (Parser::ParseError& ex) {
+        SourceLocation error_loc = location.relocate(ex.location());
+        evaluate_context.compile_context().error_throw(error_loc, ex.what());
+      }
+      return compile_block(statements, evaluate_context, location);
     }
 
     class NamespaceEntry {

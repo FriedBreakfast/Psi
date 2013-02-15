@@ -309,8 +309,6 @@ namespace Psi {
       friend class CompileContext;
     public:
       static const TermVtable vtable;
-      static TreePtr<Term> value(CompileContext& compile_context, const SourceLocation& location);
-
       EmptyType(CompileContext&, const SourceLocation&);
       template<typename V> static void visit(V& v);
     };

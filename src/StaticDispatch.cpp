@@ -34,7 +34,7 @@ namespace Psi {
                          const PSI_STD::vector<TreePtr<Implementation> >& values,
                          const std::vector<TreePtr<Term> >& derived_pattern_,
                          const SourceLocation& location)
-    : OverloadType(&vtable, type.compile_context(), n_implicit, pattern, PSI_STD::vector<TreePtr<OverloadValue> >(values.begin(), values.end()), location),
+    : OverloadType(&vtable, type_.compile_context(), n_implicit, pattern, PSI_STD::vector<TreePtr<OverloadValue> >(values.begin(), values.end()), location),
     derived_pattern(derived_pattern_),
     type(type_),
     bases(bases_) {
@@ -47,14 +47,32 @@ namespace Psi {
       ("type", &Interface::type)
       ("bases", &Interface::bases);
     }
+
+    /**
+     * \brief Get the value type of this interface for a given set of parameters.
+     */
+    TreePtr<Term> Interface::type_after(const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& result_location) const {
+      if (parameters.size() != pattern.size() + derived_pattern.size())
+        compile_context().error_throw(result_location, boost::format("Incorrect number of parameters to interface") % location().logical->error_name(result_location.logical));
+      return type->specialize(result_location, parameters);
+    }
+    
+    /**
+     * \brief Utility function for getting a pointer to the result of type_after.
+     */
+    TreePtr<Term> Interface::pointer_type_after(const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) const {
+      TreePtr<Term> inner = type_after(parameters, location);
+      return TreePtr<Term>(new PointerType(inner, location));
+    }
     
     const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", OverloadType);
     
     Implementation::Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent_, const TreePtr<Term>& value_, const TreePtr<Interface>& interface,
-                                   unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location)
+                                   unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const PSI_STD::vector<int>& path_, const SourceLocation& location)
     : OverloadValue(&vtable, interface, n_wildcards, pattern, location),
     dependent(dependent_),
-    value(value_) {
+    value(value_),
+    path(path_) {
     }
     
     template<typename V>

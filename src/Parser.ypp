@@ -133,7 +133,7 @@ namespace {
     text.begin = op;
     text.end = op + std::strlen(op);
 
-    return SharedPtr<Expression>(new TokenExpression(loc, TokenExpression::identifier, text));
+    return SharedPtr<Expression>(new TokenExpression(loc, token_identifier, text));
   }
 
   SharedPtr<Expression> binary_expr(const ParserLocation& origin,
@@ -439,8 +439,8 @@ token_expression {$$.clear(); $$.push_back($1);}
 ;
 
 token_expression:
-IDENTIFIER {$$.reset(new TokenExpression(@$, TokenExpression::identifier, $1));}
-| NUMBER {$$.reset(new TokenExpression(@$, TokenExpression::number, $1));}
+IDENTIFIER {$$.reset(new TokenExpression(@$, token_identifier, $1));}
+| NUMBER {$$.reset(new TokenExpression(@$, token_number, $1));}
 | BLOCK {$$ = $1;}
 ;
 
@@ -598,12 +598,12 @@ namespace {
       SCANNER_RETURN(c);
     } else if (std::strchr("{[(", c)) {
       int brace_depth = 0, square_bracket_depth = 0, bracket_depth = 0;
-      TokenExpression::TokenType block_type;
+      TokenExpressionType block_type;
 
       switch(c) {
-      case '(': block_type = TokenExpression::bracket; break;
-      case '[': block_type = TokenExpression::square_bracket; break;
-      case '{': block_type = TokenExpression::brace; break;
+      case '(': block_type = token_bracket; break;
+      case '[': block_type = token_square_bracket; break;
+      case '{': block_type = token_brace; break;
       default: PSI_FAIL("should not reach this point");
       }
 
@@ -684,7 +684,7 @@ namespace Psi {
     Expression::~Expression() {
     }
 
-    TokenExpression::TokenExpression(const ParserLocation& location_, TokenType token_type_, const ParserLocation& text_)
+    TokenExpression::TokenExpression(const ParserLocation& location_, TokenExpressionType token_type_, const ParserLocation& text_)
       : Expression(location_, expression_token),
 	token_type(token_type_),
 	text(text_) {
@@ -819,7 +819,7 @@ namespace Psi {
       while (true) {
         int tok = yylex(&lval, &lloc, args);
         if (tok == IDENTIFIER) {
-          result.push_back(TokenExpression(lloc, TokenExpression::identifier, lval.text));
+          result.push_back(TokenExpression(lloc, token_identifier, lval.text));
         } else if (tok == 0) {
           break;
         } else if (tok != ',') {
@@ -852,7 +852,7 @@ namespace Psi {
       return args.result_argument_implicit;
     }
 
-    SharedPtr<Parser::TokenExpression> expression_as_token_type(const SharedPtr<Parser::Expression>& expr, Parser::TokenExpression::TokenType type) {
+    SharedPtr<Parser::TokenExpression> expression_as_token_type(const SharedPtr<Parser::Expression>& expr, Parser::TokenExpressionType type) {
       if (expr->expression_type != Parser::expression_token)
         return SharedPtr<Parser::TokenExpression>();
 

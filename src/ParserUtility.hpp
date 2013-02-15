@@ -1,6 +1,7 @@
 #ifndef HPP_PSI_PARSER_UTILITY
 #define HPP_PSI_PARSER_UTILITY
 
+#include "Array.hpp"
 #include "Utility.hpp"
 
 namespace Psi {

@@ -28,12 +28,6 @@ namespace Psi {
       ParserLocation location;
     };
 
-    enum ExpressionType {
-      expression_token,
-      expression_evaluate,
-      expression_dot
-    };
-
     struct Expression : Element {
       Expression(const ParserLocation& location_, ExpressionType expression_type_);
       virtual ~Expression();
@@ -42,18 +36,10 @@ namespace Psi {
     };
 
     struct TokenExpression : Expression {
-      enum TokenType {
-	identifier,
-        number,
-	brace,
-	square_bracket,
-	bracket
-      };
-
-      TokenExpression(const ParserLocation& location_, TokenType token_type_, const ParserLocation& text_);
+      TokenExpression(const ParserLocation& location_, TokenExpressionType token_type_, const ParserLocation& text_);
       virtual ~TokenExpression();
 
-      TokenType token_type;
+      TokenExpressionType token_type;
       ParserLocation text;
     };
 
@@ -145,7 +131,7 @@ namespace Psi {
 
     ArgumentDeclarations parse_function_argument_declarations(const ParserLocation&);
     ImplicitArgumentDeclarations parse_function_argument_implicit_declarations(const ParserLocation& text);
-    SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpression::TokenType type);
+    SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpressionType type);
   }
 }
 

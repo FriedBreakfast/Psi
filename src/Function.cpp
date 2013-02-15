@@ -25,8 +25,7 @@ namespace Psi {
       }
 
       TreePtr<Term> evaluate(const TreePtr<Term>& self) {
-        PSI_STD::vector<SharedPtr<Parser::Statement> > statements = Parser::parse_statement_list(m_body->text);
-        return compile_block(statements, m_body_context, self.location());
+        return compile_from_bracket(m_body, m_body_context, self.location());
       }
     };
 
@@ -68,10 +67,10 @@ namespace Psi {
       FunctionInfo result;
 
       SharedPtr<Parser::TokenExpression> implicit_arguments_expr, explicit_arguments_expr;
-      if (implicit_arguments && !(implicit_arguments_expr = expression_as_token_type(implicit_arguments, Parser::TokenExpression::bracket)))
+      if (implicit_arguments && !(implicit_arguments_expr = expression_as_token_type(implicit_arguments, Parser::token_bracket)))
         compile_context.error_throw(location, "Implicit function arguments not enclosed in (...)");
 
-      if (!(explicit_arguments_expr = expression_as_token_type(explicit_arguments, Parser::TokenExpression::bracket)))
+      if (!(explicit_arguments_expr = expression_as_token_type(explicit_arguments, Parser::token_bracket)))
         compile_context.error_throw(location, "Explicit function arguments not enclosed in (...)");
 
       Parser::ImplicitArgumentDeclarations parsed_implicit_arguments;
@@ -296,7 +295,7 @@ namespace Psi {
         compile_context.error_throw(location, boost::format("function incovation expects one macro arguments, got %s") % arguments.size());
       
       SharedPtr<Parser::TokenExpression> parameters_expr;
-      if (!(parameters_expr = expression_as_token_type(arguments[0], Parser::TokenExpression::bracket)))
+      if (!(parameters_expr = expression_as_token_type(arguments[0], Parser::token_bracket)))
         compile_context.error_throw(location, "Parameters argument to function invocation is not a (...)");
 
       PSI_STD::vector<SharedPtr<Parser::Expression> > parsed_arguments = Parser::parse_positional_list(parameters_expr->text);
@@ -373,7 +372,7 @@ namespace Psi {
       }
 
       SharedPtr<Parser::TokenExpression> body;
-      if (!(body = expression_as_token_type(arguments[arguments.size()-1], Parser::TokenExpression::square_bracket)))
+      if (!(body = expression_as_token_type(arguments[arguments.size()-1], Parser::token_square_bracket)))
         compile_context.error_throw(location, "Last (body) parameter to function definition is not a [...]");
 
       FunctionInfo common = compile_function_common(type_arg_1, type_arg_2, compile_context, evaluate_context, location);

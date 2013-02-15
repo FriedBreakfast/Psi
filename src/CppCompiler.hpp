@@ -11,6 +11,7 @@ namespace Psi {
 #define PSI_ALIGNED_MAX aligned(__BIGGEST_ALIGNMENT__)
 #define PSI_NORETURN noreturn
 #define PSI_UNUSED_ATTR unused
+#define PSI_ASSUME(x) void()
 
   struct DebugLocation {
     const char *file;
@@ -37,6 +38,7 @@ namespace Psi {
 #define PSI_ALIGNED(x) align(x)
 #define PSI_ALIGNED_MAX align(16)
 #define PSI_UNREACHABLE() __assume(false)
+#define PSI_ASSUME(x) __assume(x)
 
   struct DebugLocation {
     const char *file;
@@ -56,6 +58,13 @@ namespace Psi {
 #define PSI_NORETURN
 #define PSI_UNUSED_ATTR
 #define PSI_UNREACHABLE() void()
+  /**
+   * \brief Assume that a condition is true.
+   * 
+   * The expression \c x is not evaluated, this merely informs the optimizer what
+   * to expect were the expression evaluated.
+   */
+#define PSI_ASSUME(x) void()
 
   struct DebugLocation {
     const char *file;

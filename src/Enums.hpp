@@ -69,6 +69,22 @@ namespace Psi {
       interface_copyable_copy=2
     };
   }
+  
+  namespace Parser {
+    enum ExpressionType {
+      expression_token,
+      expression_evaluate,
+      expression_dot
+    };
+
+    enum TokenExpressionType {
+      token_identifier,
+      token_number,
+      token_brace,
+      token_square_bracket,
+      token_bracket
+    };
+  }    
 }
 
 #endif

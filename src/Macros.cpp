@@ -188,8 +188,7 @@ namespace Psi {
      * \brief Create a Term which carries multiple metadata annotations and has an empty value.
      */
     TreePtr<Term> make_annotated_value(CompileContext& compile_context, const MetadataListType& metadata, const SourceLocation& location) {
-      TreePtr<Term> value(new DefaultValue(compile_context.builtins().empty_type, location));
-      return make_annotated_value(value, metadata, location);
+      return make_annotated_value(compile_context.builtins().empty_value, metadata, location);
     }
     
     /**
@@ -227,7 +226,7 @@ namespace Psi {
           self.compile_context().error_throw(location, "Pointer macro expects 1 parameter");
         
         SharedPtr<Parser::TokenExpression> name;
-        if (!(name = expression_as_token_type(parameters[0], Parser::TokenExpression::bracket)))
+        if (!(name = expression_as_token_type(parameters[0], Parser::token_bracket)))
           self.compile_context().error_throw(location, "Parameter to pointer macro is not a (...)");
         
         SharedPtr<Parser::Expression> target_expr = Parser::parse_expression(name->text);
@@ -270,7 +269,7 @@ namespace Psi {
                                     const TreePtr<EvaluateContext>& evaluate_context,
                                     const SourceLocation& location) {
         SharedPtr<Parser::TokenExpression> name;
-        if (!(name = expression_as_token_type(parameters[0], Parser::TokenExpression::identifier)))
+        if (!(name = expression_as_token_type(parameters[0], Parser::token_identifier)))
           self.compile_context().error_throw(location, "Namespace member argument is not an identifier");
         
         String member_name = name->text.to_string();
@@ -307,7 +306,7 @@ namespace Psi {
           self.compile_context().error_throw(location, "Namespace macro expects 1 parameter");
         
         SharedPtr<Parser::TokenExpression> name;
-        if (!(name = expression_as_token_type(parameters[0], Parser::TokenExpression::square_bracket)))
+        if (!(name = expression_as_token_type(parameters[0], Parser::token_square_bracket)))
           self.compile_context().error_throw(location, "Parameter to namespace macro is not a [...]");
         
         PSI_STD::vector<SharedPtr<Parser::Statement> > statements = Parser::parse_namespace(name->text);
@@ -346,7 +345,7 @@ namespace Psi {
           self.compile_context().error_throw(location, "Wrong number of parameters to builtin type macro");
         
         SharedPtr<Parser::TokenExpression> name;
-        if (!(name = expression_as_token_type(parameters[0], Parser::TokenExpression::brace)))
+        if (!(name = expression_as_token_type(parameters[0], Parser::token_brace)))
           self.compile_context().error_throw(location, "Parameter to builtin type macro is not a {...}");
         
         String name_s = name->text.to_string();
@@ -378,10 +377,10 @@ namespace Psi {
           self.compile_context().error_throw(location, "Wrong number of parameters to builtin function macro (expected 2)");
         
         SharedPtr<Parser::TokenExpression> name, arguments;
-        if (!(name = expression_as_token_type(parameters[0], Parser::TokenExpression::brace)))
+        if (!(name = expression_as_token_type(parameters[0], Parser::token_brace)))
           self.compile_context().error_throw(location, "First parameter to builtin function macro is not a {...}");
         
-        if (!(arguments = expression_as_token_type(parameters[1], Parser::TokenExpression::bracket)))
+        if (!(arguments = expression_as_token_type(parameters[1], Parser::token_bracket)))
           self.compile_context().error_throw(location, "Second parameter to builtin function macro is not a (...)");
         
         PSI_STD::vector<TreePtr<Term> > argument_types;
@@ -429,13 +428,13 @@ namespace Psi {
           self.compile_context().error_throw(location, "Wrong number of parameters to builtin value macro (expected 3)");
         
         SharedPtr<Parser::TokenExpression> constructor, data, type_expr;
-        if (!(type_expr = expression_as_token_type(parameters[0], Parser::TokenExpression::bracket)))
+        if (!(type_expr = expression_as_token_type(parameters[0], Parser::token_bracket)))
           self.compile_context().error_throw(location, "First parameter to builtin function macro is not a {...}");
 
-        if (!(constructor = expression_as_token_type(parameters[1], Parser::TokenExpression::brace)))
+        if (!(constructor = expression_as_token_type(parameters[1], Parser::token_brace)))
           self.compile_context().error_throw(location, "Second parameter to builtin function macro is not a {...}");
         
-        if (!(data = expression_as_token_type(parameters[2], Parser::TokenExpression::brace)))
+        if (!(data = expression_as_token_type(parameters[2], Parser::token_brace)))
           self.compile_context().error_throw(location, "Third parameter to builtin function macro is not a {...}");
         
         TreePtr<Term> type = compile_expression(Parser::parse_expression(type_expr->text), evaluate_context, location.logical);
@@ -482,7 +481,7 @@ namespace Psi {
                                                        const SourceLocation& location,
                                                        const SharedPtr<Parser::Expression>& value) {
       SharedPtr<Parser::TokenExpression> value_cast;
-      if (!(value_cast = expression_as_token_type(value, Parser::TokenExpression::brace)))
+      if (!(value_cast = expression_as_token_type(value, Parser::token_brace)))
         compile_context.error_throw(location, "First parameter to library macro is not a {...}");
       
       PropertyValue pv;
@@ -502,10 +501,10 @@ namespace Psi {
                                                  const TreePtr<EvaluateContext>& evaluate_context) {
       
       SharedPtr<Parser::TokenExpression> parameter_names_cast, body_cast;
-      if (!(parameter_names_cast = expression_as_token_type(parameter_names_expr, Parser::TokenExpression::bracket)))
+      if (!(parameter_names_cast = expression_as_token_type(parameter_names_expr, Parser::token_bracket)))
         compile_context.error_throw(location, "First parameter to library macro is not a (...)");
 
-      if (!(body_cast = expression_as_token_type(body_expr, Parser::TokenExpression::square_bracket)))
+      if (!(body_cast = expression_as_token_type(body_expr, Parser::token_square_bracket)))
         compile_context.error_throw(location, "Second parameter to library macro is not a [...]");
 
       std::map<String, TreePtr<Term> > parameter_dict;
@@ -552,7 +551,7 @@ namespace Psi {
         }
         
         SharedPtr<Parser::TokenExpression> type_text;
-        if (!(type_text = expression_as_token_type(parameters[0], Parser::TokenExpression::bracket)))
+        if (!(type_text = expression_as_token_type(parameters[0], Parser::token_bracket)))
           self.compile_context().error_throw(location, "First argument to library symbol macro is not a (...)");
         
         SharedPtr<Parser::Expression> type_expr = Parser::parse_expression(type_text->text);
@@ -621,7 +620,7 @@ namespace Psi {
           self.compile_context().error_throw(location, "String macro expects one argument");
         
         SharedPtr<Parser::TokenExpression> value_text;
-        if (!(value_text = expression_as_token_type(parameters[0], Parser::TokenExpression::brace)))
+        if (!(value_text = expression_as_token_type(parameters[0], Parser::token_brace)))
           self.compile_context().error_throw(location, "Argument to string macro is not a {...}");
         
         std::vector<char> utf8_data(value_text->text.begin, value_text->text.end);
