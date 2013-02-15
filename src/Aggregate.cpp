@@ -191,7 +191,7 @@ void AggregateMacroCommon::parse_constructors(const SourceLocation& location) {
     const Parser::Lifecycle& lc = **ii;
     AggregateLifecycleImpl *lc_impl;
     bool binary = true, nullable = false;
-    String function_name(lc.function_name.begin, lc.function_name.end);
+    String function_name = lc.function_name.to_string();
     if (function_name == "init") {
       binary = false;
       lc_impl = &lc_init;
@@ -275,19 +275,20 @@ void AggregateMacroCommon::run(const PSI_STD::vector<SharedPtr<Parser::Expressio
 }
 
 class AggregateLifecycleBase {
+protected:
   TreePtr<GenericType> m_generic;
   TreePtr<EvaluateContext> m_evaluate_context;
   PSI_STD::vector<String> m_argument_names;
-  PSI_STD::vector<TreePtr<Term> > m_member_types;
-
+  PSI_STD::vector<TreePtr<Anonymous> > m_argument_list;
+  
 public:
   typedef Implementation TreeResultType;
   
-  AggregateLifecycleBase(const TreePtr<GenericType>& generic, const TreePtr<EvaluateContext>& evaluate_context, const AggregateMacroCommon& helper)
+  AggregateLifecycleBase(const TreePtr<GenericType>& generic, const TreePtr<EvaluateContext>& evaluate_context, const AggregateMacroCommon& common)
   : m_generic(generic),
   m_evaluate_context(evaluate_context),
-  m_argument_names(helper.argument_names),
-  m_member_types(helper.member_types) {
+  m_argument_names(common.argument_names),
+  m_argument_list(common.argument_list) {
   }
   
   template<typename V>
@@ -295,405 +296,172 @@ public:
     v("generic", &AggregateLifecycleBase::m_generic)
     ("evaluate_context", &AggregateLifecycleBase::m_evaluate_context)
     ("argument_names", &AggregateLifecycleBase::m_argument_names)
-    ("member_types", &AggregateLifecycleBase::m_member_types);
+    ("argument_list", &AggregateLifecycleBase::m_argument_list);
   }
   
-  const TreePtr<GenericType>& generic() const {return m_generic;}
-  const TreePtr<EvaluateContext>& evaluate_context() const {return m_evaluate_context;}
-  const PSI_STD::vector<String>& argument_names() const {return m_argument_names;}
-  const PSI_STD::vector<TreePtr<Term> >& member_types() const {return m_member_types;}
-};
-
-class StructLifecycleMain {
-protected:
-  TreePtr<Term> m_empty_type, m_empty_value;
-
-  SourceLocation m_location;
-  TreePtr<EvaluateContext> m_evaluate_context;
-  TreePtr<Interface> m_movable_interface, m_copyable_interface;
-
-  TreePtr<Term> m_outer_type;
+  TreePtr<Term> generic_instance(const SourceLocation& location) {
+    return TreePtr<Term>(new TypeInstance(m_generic, vector_from<TreePtr<Term> >(m_argument_list), location));
+  }
   
-  PSI_STD::vector<TreePtr<Term> > m_member_movable;
-  PSI_STD::vector<TreePtr<Term> > m_member_copyable;
-  
-  /// Type of movable and copyable interface specific to this class
-  TreePtr<Term> m_movable_type, m_copyable_type;
-  
-  struct LifecycleFunctionSetup {
-    SourceLocation location;
-    TreePtr<FunctionType> function_type;
-    TreePtr<StructType> type_instance;
-    TreePtr<Term> body;
-    PSI_STD::vector<TreePtr<Anonymous> > instance_arguments;
-    TreePtr<Term> src_argument, dest_argument;
-    PSI_STD::vector<TreePtr<Term> > pattern;
-    TreePtr<Term> pattern_instance;
-    
-    PSI_STD::vector<TreePtr<Anonymous> > arguments; ///< Should be removed, I'm putting it back to make this file compile.
-  };
-  
-public:
-  StructLifecycleMain(const TreePtr<Implementation>& self, const AggregateLifecycleBase& base, bool with_copy) {
-    m_location = self.location();
-    m_evaluate_context = base.evaluate_context();
-    m_empty_type = self.compile_context().builtins().empty_type;
-    m_empty_value.reset(new DefaultValue(m_empty_type, m_location));
-
-    m_movable_interface = self.compile_context().builtins().movable_interface;
-    m_copyable_interface = self.compile_context().builtins().copyable_interface;
-    for (std::size_t ii = 0, ie = base.member_types().size(); ii != ie; ++ii) {
-      TreePtr<Term> move_value(new InterfaceValue(m_movable_interface, vector_of(base.member_types()[ii]), m_location));
-      m_member_movable.push_back(move_value);
-      TreePtr<Term> copy_value(new InterfaceValue(m_copyable_interface, vector_of(base.member_types()[ii]), m_location));
-      m_member_copyable.push_back(copy_value);
-    }
-    
-#if 0
-    // Construct value type of implementation
-    TreePtr<Term> introduce_type(new IntroduceType(base.generic()->pattern, m_empty_type, self.location()));
-    TreePtr<GenericType> movable_generic;
-    TreePtr<Term> generic_instance(new TypeInstance(base.generic(), base.generic()->pattern, self.location()));
-    m_outer_type = interface_type(movable_generic, base.generic()->pattern, PSI_STD::vector<TreePtr<Term> >(1, generic_instance));
-#else
+  TreePtr<FunctionType> binary_function_type() {
     PSI_NOT_IMPLEMENTED();
-#endif
   }
   
-  /**
-   * \param empty_value Whether to assign LifecycleFunctionSetup::body an empty value when no body is present;
-   * otherwise this value is null.
-   */
-  LifecycleFunctionSetup lifecycle_setup(const AggregateLifecycleImpl& impl, const LogicalSourceLocationPtr& location, bool empty_value) {
-    LifecycleFunctionSetup lf;
-    lf.location = SourceLocation(impl.physical_location, location);
-    
-    // Set up template arguments
-    PSI_STD::vector<FunctionParameterType> argument_types;
-    argument_types.push_back(FunctionParameterType(parameter_mode_input, m_outer_type));
-#if 0
-    argument_types.push_back(FunctionParameterType(parameter_mode_functional, m_pattern_instance));
-    if (impl.binary)
-      argument_types.push_back(FunctionParameterType(parameter_mode_functional, m_pattern_instance));
-#else
+  TreePtr<FunctionType> unary_function_type() {
     PSI_NOT_IMPLEMENTED();
-#endif
-    
-    /// \todo Need to import interfaces specified for the generic type!
-    lf.function_type.reset(new FunctionType(result_mode_by_value, m_empty_type, argument_types,
-                                            default_, SourceLocation(impl.physical_location, location)));
-    
-    PSI_STD::vector<TreePtr<Term> > arguments;
-    for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = argument_types.begin(), ie = argument_types.end(); ii != ie; ++ii) {
-      TreePtr<Term> ty = lf.function_type->parameter_type_after(lf.location, arguments);
-      lf.arguments.push_back(TreePtr<Anonymous>(new Anonymous(ty, lf.location)));
-      arguments.push_back(lf.arguments.back());
-    }
-
-    if (impl.binary) {
-      lf.src_argument = lf.arguments[lf.arguments.size()-2];
-      lf.dest_argument = lf.arguments[lf.arguments.size()-1];
-    } else {
-      lf.src_argument = lf.arguments.back();
-    }
-    
-    if (impl.mode == AggregateLifecycleImpl::mode_impl) {
-      PSI_ASSERT(impl.body);
-      lf.body = compile_expression(impl.body, m_evaluate_context, location);
-    } else {
-      PSI_ASSERT(!impl.body);
-      if (empty_value)
-        lf.body = m_empty_value;
-    }
-    
-    return lf;
   }
   
-  TreePtr<Implementation> lifecycle_implementation(const TreePtr<Interface>& interface,
-                                                   const PSI_STD::vector<TreePtr<Function> >& value,
-                                                   const SourceLocation& location) {
-#if 0
-    PSI_STD::vector<TreePtr<Term> > wrapped_values;
-    for (PSI_STD::vector<TreePtr<Function> >::const_iterator ii = value.begin(), ie = value.end(); ii != ie; ++ii) {
-      TreePtr<Function> wrapper(new Function(result_mode_by_value, m_empty_type, XX, default_, ii->location()));
-    }
-    return TreePtr<Implementation>(new Implementation(default_, value, interface, m_generic->pattern.size(), vector_of(m_pattern_instance), location));
-#else
-    PSI_NOT_IMPLEMENTED();
-#endif
+  SourceLocation parameter_location(const SourceLocation& parent, const Parser::ParserLocation& name) {
+    return parent.named_child(name.to_string()).relocate(name.location);
   }
   
-  TreePtr<Function> build_init_like(const LifecycleFunctionSetup& lf, const SourceLocation& location) {
-    TreePtr<Term> inner = lf.body;
+  TreePtr<Term> build_body(const SourceLocation& location, const AggregateLifecycleImpl& impl,
+                           const TreePtr<Term>& dest_ptr, const TreePtr<Term>& src_ptr=TreePtr<Term>()) {
+    if (!impl.body)
+      return TreePtr<Term>();
     
-    const TreePtr<Term>& argument = lf.arguments.front();
-    for (std::size_t ii = 0, ie = m_member_movable.size(); ii != ie; ++ii) {
-      std::size_t idx = ie - ii - 1;
-      const TreePtr<Term>& ty_interface = m_member_movable[idx];
-      
-      PSI_STD::vector<TreePtr<Statement> > statements;
-      TreePtr<Term> member_ptr(new ElementPtr(argument, idx, location));
-      TreePtr<Statement> member_ptr_stmt(new Statement(member_ptr, statement_mode_value, member_ptr.location()));
-      statements.push_back(member_ptr_stmt);
-      TreePtr<Term> member_ptr_ref(new StatementRef(member_ptr_stmt, member_ptr_stmt.location()));
-      
-      TreePtr<Term> construct_func(new ElementValue(ty_interface, interface_movable_init, location));
-      TreePtr<Term> construct(new FunctionCall(construct_func, vector_of(member_ptr_ref), location));
-      TreePtr<Statement> construct_stmt(new Statement(construct, statement_mode_destroy, construct.location()));
-      statements.push_back(construct_stmt);
-      
-      TreePtr<Term> cleanup_func(new ElementValue(ty_interface, interface_movable_fini, location));
-      TreePtr<Term> cleanup(new FunctionCall(cleanup_func, vector_of(member_ptr_ref), location));
-      TreePtr<Term> result(new TryFinally(inner, cleanup, true, location));
-      
-      inner.reset(new Block(statements, result, location));
-    }
+    std::map<String, TreePtr<Term> > names;
+    names[impl.dest_name.to_string()] = dest_ptr;
+    if (src_ptr)
+      names[impl.src_name.to_string()] = src_ptr;
+    TreePtr<EvaluateContext> local_context = evaluate_context_dictionary(m_evaluate_context->module(), location, names, m_evaluate_context);
     
-    return TreePtr<Function>(new Function(m_evaluate_context->module(), false, lf.function_type,
-                                          lf.arguments, inner, default_, location));
+    return compile_expression(impl.body, local_context, location.logical);
   }
 };
 
-class StructMovableMain : public StructLifecycleMain {
-public:
-  StructMovableMain(const TreePtr<Implementation>& self, const AggregateLifecycleBase& base) : StructLifecycleMain(self, base, false) {
-  }
-  
-  TreePtr<Function> build_init(const AggregateLifecycleImpl& lc_init) {
-    LifecycleFunctionSetup lf = lifecycle_setup(lc_init, default_, true);
-    SourceLocation location = m_location.named_child("init").relocate(lc_init.physical_location);
-    return build_init_like(lf, location);
-  }
-
-  TreePtr<Function> build_fini(const AggregateLifecycleImpl& lc_fini) {
-    LifecycleFunctionSetup lf = lifecycle_setup(lc_fini, default_, false);
-
-    SourceLocation location = m_location.named_child("fini").relocate(lc_fini.physical_location);
-    const TreePtr<Term>& argument = lf.arguments.front();
-    PSI_STD::vector<TreePtr<Statement> > statements;
-    if (lf.body) {
-      TreePtr<Statement> body(new Statement(lf.body, statement_mode_destroy, lf.body.location()));
-      statements.push_back(body);
-    }
-    
-    for (std::size_t ii = 0, ie = m_member_movable.size(); ii != ie; ++ii) {
-      std::size_t idx = ie - ii - 1;
-      const TreePtr<Term>& ty_interface = m_member_movable[idx];
-      
-      TreePtr<Term> member_ptr(new ElementPtr(argument, idx, location));
-      TreePtr<Term> cleanup_func(new ElementValue(ty_interface, interface_movable_fini, location));
-      TreePtr<Term> cleanup(new FunctionCall(cleanup_func, vector_of(member_ptr), location));
-      TreePtr<Statement> cleanup_stmt(new Statement(cleanup, statement_mode_destroy, cleanup.location()));
-      statements.push_back(cleanup_stmt);
-    }
-    TreePtr<Term> body(new Block(statements, m_empty_value, location));
-    
-    return TreePtr<Function>(new Function(m_evaluate_context->module(), false, lf.function_type,
-                                          lf.arguments, body, default_, location));
-  }
-  
-  TreePtr<Function> build_move_init(const AggregateLifecycleImpl& lc_move) {
-    LifecycleFunctionSetup lf = lifecycle_setup(lc_move, default_, true);
-    SourceLocation location = m_location.named_child("move_init").relocate(lc_move.physical_location);
-    if (lc_move.mode == AggregateLifecycleImpl::mode_impl) {
-      return build_init_like(lf, location);
-    } else {
-      TreePtr<Term> value = m_empty_value;
-      const TreePtr<Term>& dest = lf.dest_argument;
-      const TreePtr<Term>& src = lf.src_argument;
-      for (std::size_t ii = 0, ie = m_member_movable.size(); ii != ie; ++ii) {
-        std::size_t idx = ie - ii - 1;
-        const TreePtr<Term>& ty_interface = m_member_movable[idx];
-        
-        PSI_STD::vector<TreePtr<Statement> > statements;
-        TreePtr<Term> dest_member_ptr(new ElementPtr(dest, idx, location));
-        TreePtr<Statement> dest_member_ptr_stmt(new Statement(dest_member_ptr, statement_mode_value, dest_member_ptr.location()));
-        statements.push_back(dest_member_ptr_stmt);
-        TreePtr<Term> dest_member_ptr_ref(new StatementRef(dest_member_ptr_stmt, dest_member_ptr_stmt.location()));
-        
-        TreePtr<Term> src_member_ptr(new ElementPtr(src, idx, location));
-
-        TreePtr<Term> construct_func(new ElementValue(ty_interface, interface_movable_move_init, location));
-        TreePtr<Term> construct(new FunctionCall(construct_func, vector_of(dest_member_ptr_ref, src_member_ptr), location));
-        TreePtr<Statement> construct_stmt(new Statement(construct, statement_mode_destroy, construct.location()));
-        statements.push_back(construct_stmt);
-        
-        TreePtr<Term> cleanup_func(new ElementValue(ty_interface, interface_movable_fini, location));
-        TreePtr<Term> cleanup(new FunctionCall(cleanup_func, vector_of(dest_member_ptr_ref), location));
-        TreePtr<Term> result(new TryFinally(value, cleanup, true, location));
-        
-        value.reset(new Block(statements, result, location));
-      }
-      
-      return TreePtr<Function>(new Function(m_evaluate_context->module(), false, lf.function_type,
-                                            lf.arguments, value, default_, location));
-    }
-  }
-  
-  TreePtr<Function> build_move(const AggregateLifecycleImpl& lc_move) {
-    LifecycleFunctionSetup lf = lifecycle_setup(lc_move, default_, false);
-    SourceLocation location = m_location.named_child("move").relocate(lc_move.physical_location);
-    TreePtr<Term> body;
-    if (lf.body) {
-      body = lf.body;
-    } else {
-      const TreePtr<Term>& dest = lf.dest_argument;
-      const TreePtr<Term>& src = lf.src_argument;
-      PSI_STD::vector<TreePtr<Statement> > statements;
-      for (std::size_t ii = 0, ie = m_member_movable.size(); ii != ie; ++ii) {
-        std::size_t idx = ie - ii - 1;
-        const TreePtr<Term>& ty_interface = m_member_movable[idx];
-        
-        TreePtr<Term> dest_member_ptr(new ElementPtr(dest, idx, location));
-        TreePtr<Term> src_member_ptr(new ElementPtr(src, idx, location));
-        TreePtr<Term> move_func(new ElementValue(ty_interface, interface_movable_move, location));
-        TreePtr<Term> move_call(new FunctionCall(move_func, vector_of(dest_member_ptr, src_member_ptr), location));
-        TreePtr<Statement> move_stmt(new Statement(move_call, statement_mode_destroy, location));
-        statements.push_back(move_stmt);
-      }
-      body.reset(new Block(statements, m_empty_value, location));
-    }
-    
-    return TreePtr<Function>(new Function(m_evaluate_context->module(), false, lf.function_type,
-                                          lf.arguments, body, default_, location));
-  }
-};
-
-class StructMovableCallback : public AggregateLifecycleBase {
+class AggregateMovableCallback : public AggregateLifecycleBase {
   AggregateLifecycleImpl m_lc_init, m_lc_fini, m_lc_move;
   
+  TreePtr<Term> build_init(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
+    SourceLocation location = self.location().named_child("init");
+    ImplementationHelper::FunctionSetup f = helper.function_setup(unary_function_type(), location,
+                                                                  vector_of(parameter_location(location, m_lc_init.src_name)));
+    TreePtr<Term> extra = build_body(location, m_lc_init, f.parameters[1]);
+    return helper.function_finish(f, m_evaluate_context->module(),
+                                  lifecycle_init(f.parameters[1], location, extra));
+  }
+  
+  TreePtr<Term> build_fini(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
+    SourceLocation location = self.location().named_child("fini");
+    ImplementationHelper::FunctionSetup f = helper.function_setup(unary_function_type(), location,
+                                                                  vector_of(parameter_location(location, m_lc_fini.src_name)));
+    TreePtr<Term> extra = build_body(location, m_lc_fini, f.parameters[1]);
+    return helper.function_finish(f, m_evaluate_context->module(),
+                                  lifecycle_fini(f.parameters[1], location));
+  }
+  
+  TreePtr<Term> build_move_init(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
+    SourceLocation location = self.location().named_child("move_init");
+    ImplementationHelper::FunctionSetup f = helper.function_setup(binary_function_type(), location,
+                                                                  vector_of(parameter_location(location, m_lc_move.src_name),
+                                                                            parameter_location(location, m_lc_move.dest_name)));
+
+    TreePtr<Term> body, custom = build_body(location, m_lc_move, f.parameters[1], f.parameters[2]);
+    if (custom) {
+      body = lifecycle_init(f.parameters[1], location, custom);
+    } else {
+      TreePtr<Term> empty(new DefaultValue(self.compile_context().builtins().empty_type, self.location()));
+      body = lifecycle_move_init(f.parameters[1], f.parameters[2], location, empty);
+    }
+    return helper.function_finish(f, m_evaluate_context->module(), body);
+  }
+  
+  TreePtr<Term> build_move(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
+    SourceLocation location = self.location().named_child("move");
+    ImplementationHelper::FunctionSetup f = helper.function_setup(binary_function_type(), location,
+                                                                  vector_of(parameter_location(location, m_lc_move.src_name),
+                                                                            parameter_location(location, m_lc_move.dest_name)));
+    TreePtr<Term> body = build_body(location, m_lc_move, f.parameters[1], f.parameters[2]);
+    if (!body)
+      body = lifecycle_move(f.parameters[1], f.parameters[2], location);
+    return helper.function_finish(f, m_evaluate_context->module(), body);
+  }
+  
 public:
-  StructMovableCallback(const TreePtr<GenericType>& generic, const AggregateMacroCommon& helper)
-  : AggregateLifecycleBase(generic, default_, helper),
+  AggregateMovableCallback(const TreePtr<GenericType>& generic, const TreePtr<EvaluateContext>& evaluate_context, const AggregateMacroCommon& helper)
+  : AggregateLifecycleBase(generic, evaluate_context, helper),
   m_lc_init(helper.lc_init),
   m_lc_fini(helper.lc_fini),
   m_lc_move(helper.lc_move) {
   }
   
   TreePtr<Implementation> evaluate(const TreePtr<Implementation>& self) {
-    StructMovableMain main(self, *this);
-
-    PSI_STD::vector<TreePtr<Function> > members(4);
-    members[interface_movable_init] = main.build_init(m_lc_init);
-    members[interface_movable_fini] = main.build_fini(m_lc_fini);
-    members[interface_movable_move_init] = main.build_move_init(m_lc_move);
-    members[interface_movable_move] = main.build_move(m_lc_move);
-    return main.lifecycle_implementation(default_, members, self.location());
+    TreePtr<Term> instance = generic_instance(self.location());
+    ImplementationHelper helper(self.location(), self.compile_context().builtins().movable_interface,
+                                m_argument_list, vector_of(instance), default_);
+    
+    PSI_STD::vector<TreePtr<Term> > members(4);
+    members[interface_movable_init] = build_init(self, helper);
+    members[interface_movable_fini] = build_fini(self, helper);
+    members[interface_movable_move_init] = build_move_init(self, helper);
+    members[interface_movable_move] = build_move(self, helper);
+    TreePtr<Term> value(new StructValue(self.compile_context(), members, self.location()));
+    return helper.finish(value);
   }
   
   template<typename V>
   static void visit(V& v) {
     visit_base<AggregateLifecycleBase>(v);
-    v("lc_init", &StructMovableCallback::m_lc_init)
-    ("lc_fini", &StructMovableCallback::m_lc_fini)
-    ("lc_move", &StructMovableCallback::m_lc_move);
+    v("lc_init", &AggregateMovableCallback::m_lc_init)
+    ("lc_fini", &AggregateMovableCallback::m_lc_fini)
+    ("lc_move", &AggregateMovableCallback::m_lc_move);
   }
 };
 
-class StructCopyableMain : public StructLifecycleMain {
-public:
-  StructCopyableMain(const TreePtr<Implementation>& self, const AggregateLifecycleBase& base)
-  : StructLifecycleMain(self, base, true) {
-  }
-  
-  TreePtr<Function> build_copy_init(const AggregateLifecycleImpl& lc_copy_init, const AggregateLifecycleImpl& lc_copy) {
-    LifecycleFunctionSetup lf = lifecycle_setup(lc_copy_init, default_, true);
-    SourceLocation location = m_location.named_child("copy_init").relocate(lc_copy_init.physical_location);
-    if (lc_copy_init.mode == AggregateLifecycleImpl::mode_impl) {
-      return build_init_like(lf, location);
-    } else {
-      TreePtr<Term> value = m_empty_value;
-      const TreePtr<Term>& dest = lf.dest_argument;
-      const TreePtr<Term>& src = lf.src_argument;
-      for (std::size_t ii = 0, ie = m_member_movable.size(); ii != ie; ++ii) {
-        std::size_t idx = ie - ii - 1;
-        const TreePtr<Term>& move_interface = m_member_movable[idx];
-        const TreePtr<Term>& copy_interface = m_member_copyable[idx];
-        
-        PSI_STD::vector<TreePtr<Statement> > statements;
-        TreePtr<Term> dest_member_ptr(new ElementPtr(dest, idx, location));
-        TreePtr<Statement> dest_member_ptr_stmt(new Statement(dest_member_ptr, statement_mode_value, dest_member_ptr.location()));
-        statements.push_back(dest_member_ptr_stmt);
-        TreePtr<Term> dest_member_ptr_ref(new StatementRef(dest_member_ptr_stmt, dest_member_ptr_stmt.location()));
-        
-        TreePtr<Term> src_member_ptr(new ElementPtr(src, idx, location));
-
-        TreePtr<Term> construct_func(new ElementValue(copy_interface, interface_copyable_copy_init, location));
-        TreePtr<Term> construct(new FunctionCall(construct_func, vector_of(dest_member_ptr_ref, src_member_ptr), location));
-        TreePtr<Statement> construct_stmt(new Statement(construct, statement_mode_destroy, construct.location()));
-        statements.push_back(construct_stmt);
-        
-        TreePtr<Term> cleanup_func(new ElementValue(move_interface, interface_movable_fini, location));
-        TreePtr<Term> cleanup(new FunctionCall(cleanup_func, vector_of(dest_member_ptr_ref), location));
-        TreePtr<Term> result(new TryFinally(value, cleanup, true, location));
-        
-        value.reset(new Block(statements, result, location));
-      }
-      
-      return TreePtr<Function>(new Function(m_evaluate_context->module(), false, lf.function_type,
-                                            lf.arguments, value, default_, location));
-    }
-  }
-  
-  TreePtr<Function> build_copy(const AggregateLifecycleImpl& lc_copy) {
-    LifecycleFunctionSetup lf = lifecycle_setup(lc_copy, default_, false);
-    SourceLocation location = m_location.named_child("copy").relocate(lc_copy.physical_location);
-    TreePtr<Term> body;
-    if (lf.body) {
-      body = lf.body;
-    } else {
-      const TreePtr<Term>& dest = lf.dest_argument;
-      const TreePtr<Term>& src = lf.src_argument;
-      PSI_STD::vector<TreePtr<Statement> > statements;
-      for (std::size_t ii = 0, ie = m_member_copyable.size(); ii != ie; ++ii) {
-        std::size_t idx = ie - ii - 1;
-        const TreePtr<Term>& ty_interface = m_member_copyable[idx];
-        
-        TreePtr<Term> dest_member_ptr(new ElementPtr(dest, idx, location));
-        TreePtr<Term> src_member_ptr(new ElementPtr(src, idx, location));
-        TreePtr<Term> move_func(new ElementValue(ty_interface, interface_copyable_copy, location));
-        TreePtr<Term> move_call(new FunctionCall(move_func, vector_of(dest_member_ptr, src_member_ptr), location));
-        TreePtr<Statement> move_stmt(new Statement(move_call, statement_mode_destroy, location));
-        statements.push_back(move_stmt);
-      }
-      body.reset(new Block(statements, m_empty_value, location));
-    }
-    
-    return TreePtr<Function>(new Function(m_evaluate_context->module(), false, lf.function_type,
-                                          lf.arguments, body, default_, location));
-  }
-};
-
-/**
- * \brief Copy 
- */
-class StructCopyableCallback : public AggregateLifecycleBase {
+class AggregateCopyableCallback : public AggregateLifecycleBase {
   AggregateLifecycleImpl m_lc_copy;
-  PSI_STD::vector<TreePtr<Term> > m_member_copyable;
-  SourceLocation m_location;
+
+  TreePtr<Term> build_copy_init(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
+    SourceLocation location = self.location().named_child("copy_init");
+    ImplementationHelper::FunctionSetup f = helper.function_setup(binary_function_type(), location,
+                                                                  vector_of(parameter_location(location, m_lc_copy.src_name),
+                                                                            parameter_location(location, m_lc_copy.dest_name)));
+    TreePtr<Term> body, custom = build_body(location, m_lc_copy, f.parameters[1], f.parameters[2]);
+    if (custom) {
+      body = lifecycle_init(f.parameters[1], location, custom);
+    } else {
+      TreePtr<Term> empty(new DefaultValue(self.compile_context().builtins().empty_type, self.location()));
+      body = lifecycle_copy_init(f.parameters[1], f.parameters[2], location, empty);
+    }
+    return helper.function_finish(f, m_evaluate_context->module(), body);
+  }
+  
+  TreePtr<Term> build_copy(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
+    SourceLocation location = self.location().named_child("copy");
+    ImplementationHelper::FunctionSetup f = helper.function_setup(binary_function_type(), location,
+                                                                  vector_of(parameter_location(location, m_lc_copy.src_name),
+                                                                            parameter_location(location, m_lc_copy.dest_name)));
+    
+    TreePtr<Term> body = build_body(location, m_lc_copy, f.parameters[1], f.parameters[2]);
+    if (!body)
+      body = lifecycle_move(f.parameters[1], f.parameters[2], location);
+    return helper.function_finish(f, m_evaluate_context->module(), body);
+  }
   
 public:
-  typedef Implementation TreeResultType;
-  
-  StructCopyableCallback(const AggregateMacroCommon& helper)
-  : AggregateLifecycleBase(default_, default_, helper),
+  AggregateCopyableCallback(const TreePtr<GenericType>& generic, const TreePtr<EvaluateContext>& evaluate_context, const AggregateMacroCommon& helper)
+  : AggregateLifecycleBase(generic, evaluate_context, helper),
   m_lc_copy(helper.lc_copy) {
   }
   
   TreePtr<Implementation> evaluate(const TreePtr<Implementation>& self) {
-    StructCopyableMain main(self, *this);
+    TreePtr<Term> instance = generic_instance(self.location());
+    ImplementationHelper helper(self.location(), self.compile_context().builtins().movable_interface,
+                                m_argument_list, vector_of(instance), default_);
 
-    PSI_STD::vector<TreePtr<Function> > members(2);
-    members[interface_copyable_copy] = main.build_copy(m_lc_copy);
-    members[interface_copyable_copy_init] = main.build_copy_init(m_lc_copy, m_lc_copy);
-    return main.lifecycle_implementation(default_, members, self.location());
+    PSI_STD::vector<TreePtr<Term> > members(3);
+    members[interface_copyable_movable].reset(new InterfaceValue(self.compile_context().builtins().movable_interface, vector_of(instance), self.location()));
+    members[interface_copyable_copy] = build_copy(self, helper);
+    members[interface_copyable_copy_init] = build_copy_init(self, helper);
+    TreePtr<Term> value(new StructValue(self.compile_context(), members, self.location()));
+    return helper.finish(value);
   }
-
+  
   template<typename V>
   static void visit(V& v) {
     visit_base<AggregateLifecycleBase>(v);
-    v("lc_copy", &StructCopyableCallback::m_lc_copy)
-    ("member_copyable", &StructCopyableCallback::m_member_copyable);
+    v("lc_copy", &AggregateCopyableCallback::m_lc_copy);
   }
 };
 
@@ -718,12 +486,11 @@ public:
     if (helper.lc_init.mode || helper.lc_fini.mode || helper.lc_move.mode || helper.lc_copy.mode)
       primitive_mode = GenericType::primitive_never;
     
-    TreePtr<Implementation> movable_impl = tree_callback(self.compile_context(), self.location(), StructMovableCallback(default_, helper));
-    TreePtr<Implementation> copyable_impl = tree_callback(self.compile_context(), self.location(), StructCopyableCallback(helper));
-    
     PSI_STD::vector<TreePtr<OverloadValue> > overloads;
+    TreePtr<Implementation> movable_impl = tree_callback(self.compile_context(), self.location(), AggregateMovableCallback(self, m_evaluate_context, helper));
     overloads.push_back(movable_impl);
-    overloads.push_back(copyable_impl);
+    if (helper.lc_copy.mode != AggregateLifecycleImpl::mode_delete)
+      overloads.push_back(tree_callback(self.compile_context(), self.location(), AggregateCopyableCallback(self, m_evaluate_context, helper)));
 
     TreePtr<StructType> member_type(new StructType(self.compile_context(), helper.member_types, self.location()));
     TreePtr<GenericType> generic(new GenericType(helper.argument_pattern, member_type, overloads, primitive_mode, self.location()));
@@ -751,13 +518,9 @@ public:
                                      const List<SharedPtr<Parser::Expression> >& parameters,
                                      const TreePtr<EvaluateContext>& evaluate_context,
                                      const SourceLocation& location) {
-    AggregateMacroCommon helper;
-    helper.run(parameters.to_vector(), evaluate_context, location);
-    
-    TreePtr<Term> struct_type(new StructType(self.compile_context(), helper.member_types, location));
-    TreePtr<GenericType> generic(new GenericType(helper.argument_pattern, struct_type, default_, GenericType::primitive_recurse, location));
+    TreePtr<GenericType> generic = tree_callback(self.compile_context(), self.location(), StructCreateCallback(parameters, evaluate_context));
 
-    if (helper.argument_list.empty()) {
+    if (generic->pattern.empty()) {
       return TreePtr<TypeInstance>(new TypeInstance(generic, default_, location));
     } else {
       PSI_NOT_IMPLEMENTED();

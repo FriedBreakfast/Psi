@@ -102,7 +102,7 @@ namespace Psi {
           self.compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % self.location().logical->error_name(location.logical));
 
         const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*member);
-        String member_name(token_expression.text.begin, token_expression.text.end);
+        String member_name = token_expression.text.to_string();
         NameMapType::const_iterator it = self.m_members.find(member_name);
 
         if (it == self.m_members.end())
@@ -273,7 +273,7 @@ namespace Psi {
         if (!(name = expression_as_token_type(parameters[0], Parser::TokenExpression::identifier)))
           self.compile_context().error_throw(location, "Namespace member argument is not an identifier");
         
-        String member_name(name->text.begin, name->text.end);
+        String member_name = name->text.to_string();
         TreePtr<Namespace> ns = metadata_lookup_as<Namespace>(self.compile_context().builtins().namespace_tag, evaluate_context, value, location);
         PSI_STD::map<String, TreePtr<Term> >::const_iterator ns_it = ns->members.find(member_name);
         if (ns_it == ns->members.end())
@@ -349,7 +349,7 @@ namespace Psi {
         if (!(name = expression_as_token_type(parameters[0], Parser::TokenExpression::brace)))
           self.compile_context().error_throw(location, "Parameter to builtin type macro is not a {...}");
         
-        String name_s(name->text.begin, name->text.end);
+        String name_s = name->text.to_string();
         return TreePtr<Term>(new PrimitiveType(self.compile_context(), name_s, location));
       }
     };
@@ -395,7 +395,7 @@ namespace Psi {
         TreePtr<Term> result_type = argument_types.back();
         argument_types.pop_back();
        
-        String name_s(name->text.begin, name->text.end);
+        String name_s = name->text.to_string();
         PSI_NOT_IMPLEMENTED();
       }
       
@@ -440,8 +440,8 @@ namespace Psi {
         
         TreePtr<Term> type = compile_expression(Parser::parse_expression(type_expr->text), evaluate_context, location.logical);
 
-        String constructor_s(constructor->text.begin, constructor->text.end);
-        String data_s(data->text.begin, data->text.end);
+        String constructor_s = constructor->text.to_string();
+        String data_s = data->text.to_string();
        
         return TreePtr<Term>(new BuiltinValue(constructor_s, data_s, type, location));
       }
@@ -513,8 +513,8 @@ namespace Psi {
       PSI_STD::vector<Parser::TokenExpression> parameter_names = parse_identifier_list(parameter_names_cast->text);
       switch (parameter_names.size()) {
       default: compile_context.error_throw(location, "Expected zero, one or two argument names specified for library macro");
-      case 2: parameter_dict.insert(std::make_pair(String(parameter_names[1].text.begin, parameter_names[1].text.end), TreePtr<Term>()));
-      case 1: parameter_dict.insert(std::make_pair(String(parameter_names[0].text.begin, parameter_names[0].text.end), TreePtr<Term>()));
+      case 2: parameter_dict.insert(std::make_pair(parameter_names[1].text.to_string(), TreePtr<Term>()));
+      case 1: parameter_dict.insert(std::make_pair(parameter_names[0].text.to_string(), TreePtr<Term>()));
       case 0: break;
       }
       

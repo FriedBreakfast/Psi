@@ -7,10 +7,20 @@ add_library(psi-assert SHARED Assert.cpp Assert.hpp)
 bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated)
 set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
 
+if(WIN32)
+set(PSI_COMPILER_COMMON_SOURCES UtilityWindows.cpp UtilityWindows.hpp)
+set(PSI_COMPILER_SOURCES PlatformWindows.cpp)
+set(PSI_TVM_SOURCES Tvm/JitWindows.cpp)
+elseif(UNIX)
+set(PSI_COMPILER_SOURCES PlatformLinux.cpp)
+set(PSI_TVM_SOURCES Tvm/JitLinux.cpp)
+endif()
+
 add_library(psi-compiler-common SHARED
   Runtime.cpp Runtime.hpp
   SourceLocation.cpp SourceLocation.hpp
   Utility.cpp Utility.hpp
+  ${PSI_COMPILER_COMMON_SOURCES}
 )
 
 target_link_libraries(psi-compiler-common ${JSONC_LIB})
@@ -38,6 +48,7 @@ add_library(psi-tvm SHARED
   Tvm/TermOperationMap.hpp
   Tvm/Utility.hpp
   Tvm/ValueList.hpp
+  ${PSI_TVM_SOURCES}
 )
 
 target_link_libraries(psi-tvm psi-compiler-common debug psi-assert)
@@ -79,10 +90,7 @@ set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS ${LLVM_CXX_FLAGS})
 target_link_libraries(psi-tvm-llvm ${LLVM_LIBS} debug psi-assert ${LLVM_LDFLAGS})
 
 if(UNIX)
-set(PSI_COMPILER_SOURCES PlatformLinux.cpp)
 add_library(psi-runtime SHARED Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
-elseif(WIN32)
-set(PSI_COMPILER_SOURCES PlatformWindows.cpp)
 endif()
 
 bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated)
@@ -93,6 +101,7 @@ add_library(psi-compiler SHARED
   Array.hpp
   CppCompiler.hpp
   Compiler.cpp Compiler.hpp
+  DefaultLifecycle.cpp
   ExpressionCompiler.cpp
   Function.cpp
   Interface.cpp

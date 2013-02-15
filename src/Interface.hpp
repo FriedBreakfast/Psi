@@ -13,28 +13,11 @@
 namespace Psi {
 namespace Compiler {
 /**
- * \brief Indices of members in the Movable interface
- */
-enum InterfaceMovableMembers {
-  interface_movable_init=0,
-  interface_movable_fini=1,
-  interface_movable_move_init=2,
-  interface_movable_move=3
-};
-
-/**
- * \brief Indices of members in the Copyable interface
- */
-enum InterfaceCopyableMembers {
-  interface_copyable_copy_init=0,
-  interface_copyable_copy=1
-};
-
-/**
  * \brief Helper class for implementing interfaces.
  */
 class ImplementationHelper {
   SourceLocation m_location;
+  TreePtr<Interface> m_interface;
   TreePtr<GenericType> m_generic;
   TreePtr<TypeInstance> m_generic_instance;
   PSI_STD::vector<TreePtr<Anonymous> > m_pattern_parameters;
@@ -49,24 +32,23 @@ class ImplementationHelper {
   
 public:
   ImplementationHelper(const SourceLocation& location,
-                        const TreePtr<GenericType>& generic,
-                        const PSI_STD::vector<TreePtr<Anonymous> >& pattern_parameters,
-                        const PSI_STD::vector<TreePtr<Term> >& generic_parameters,
-                        const PSI_STD::vector<TreePtr<InterfaceValue> >& pattern_interfaces);
+                       const TreePtr<Interface>& interface,
+                       const PSI_STD::vector<TreePtr<Anonymous> >& pattern_parameters,
+                       const PSI_STD::vector<TreePtr<Term> >& generic_parameters,
+                       const PSI_STD::vector<TreePtr<InterfaceValue> >& pattern_interfaces);
   
   struct FunctionSetup {
     SourceLocation location;
     TreePtr<FunctionType> function_type;
+    TreePtr<Term> implementation;
     PSI_STD::vector<TreePtr<Anonymous> > parameters;
     PSI_STD::vector<TreePtr<Statement> > interface_values;
-    TreePtr<EvaluateContext> context;
   };
   
-  FunctionSetup function_setup(const TreePtr<FunctionType>& type, const TreePtr<EvaluateContext>& context,
-                                const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations);
-  TreePtr<Term> function_finish(const ImplementationHelper::FunctionSetup& setup, const TreePtr<Term>& body, const TreePtr<JumpTarget>& return_target=TreePtr<JumpTarget>());
+  FunctionSetup function_setup(const TreePtr<FunctionType>& type, const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations);
+  TreePtr<Term> function_finish(const ImplementationHelper::FunctionSetup& setup, const TreePtr<Module>& module, const TreePtr<Term>& body, const TreePtr<JumpTarget>& return_target=TreePtr<JumpTarget>());
   
-  TreePtr<Implementation> finish(const TreePtr<Interface>& interface, const TreePtr<Term>& inner_value);
+  TreePtr<Implementation> finish(const TreePtr<Term>& inner_value);
 };
 }
 }

@@ -18,6 +18,8 @@ namespace Psi {
     struct ParserLocation {
       PhysicalSourceLocation location;
       const char *begin, *end;
+      
+      String to_string() const {return String(begin, end);}
     };
 
     struct Element {

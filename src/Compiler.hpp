@@ -374,6 +374,13 @@ namespace Psi {
     
     TreePtr<Term> int_to_index(unsigned index, CompileContext& compile_context, const SourceLocation& location);
     unsigned index_to_int(const TreePtr<Term>& index, const SourceLocation& location);
+    
+    TreePtr<Term> lifecycle_init(const TreePtr<Term>& pointer, const SourceLocation& location, const TreePtr<Term>& extra);
+    TreePtr<Term> lifecycle_fini(const TreePtr<Term>& pointer, const SourceLocation& location);
+    TreePtr<Term> lifecycle_move_init(const TreePtr<Term>& dest_pointer, const TreePtr<Term>& src_pointer, const SourceLocation& location, const TreePtr<Term>& extra);
+    TreePtr<Term> lifecycle_move(const TreePtr<Term>& dest_pointer, const TreePtr<Term>& src_pointer, const SourceLocation& location);
+    TreePtr<Term> lifecycle_copy_init(const TreePtr<Term>& dest_pointer, const TreePtr<Term>& src_pointer, const SourceLocation& location, const TreePtr<Term>& extra);
+    TreePtr<Term> lifecycle_copy(const TreePtr<Term>& dest_pointer, const TreePtr<Term>& src_pointer, const SourceLocation& location);
   }
 }
 

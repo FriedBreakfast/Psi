@@ -14,7 +14,7 @@
 #include <boost/foreach.hpp>
 #include <boost/format.hpp>
 
-#ifdef PSI_DEBUG
+#if defined(PSI_DEBUG) && defined(__GNUC__) && defined(__ELF__)
 extern "C" {
 size_t psi_gcchecker_blocks(psi_gcchecker_block **ptr) __attribute__((weak));
 
@@ -135,6 +135,15 @@ namespace Psi {
       macro_tag = make_tag<Macro>(metatype, macro_location, default_macro_impl(compile_context, macro_location));
       library_tag = make_tag<Library>(metatype, psi_compiler_location.named_child("Library"));
       namespace_tag = make_tag<Namespace>(metatype, psi_compiler_location.named_child("Namespace"));
+      
+      /// \todo Need to add default implementations of Movable and Copyable for builtin types
+      TreePtr<Term> movable_type;
+      movable_interface.reset(new Interface(default_, movable_type, 0, vector_of(metatype), default_, default_, psi_location.named_child("Movable")));
+      SourceLocation copyable_location = psi_location.named_child("Copyable");
+      TreePtr<Term> parameter0(new Parameter(metatype, 0, 0, copyable_location));
+      Interface::InterfaceBase movable_base(movable_interface, vector_of(parameter0), vector_of<int>(interface_copyable_movable));
+      TreePtr<Term> copyable_type;
+      copyable_interface.reset(new Interface(vector_of(movable_base), copyable_type, 0, vector_of(metatype), default_, default_, copyable_location));
     }
 
     CompileContext::CompileContext(std::ostream *error_stream)
@@ -221,6 +230,7 @@ namespace Psi {
           failed = true;
       }
       
+#if defined(__GNUC__) && defined(__ELF__)
       if (failed) {
         PSI_WARNING_FAIL("Incorrect reference count during context destruction: either dangling reference or multiple release");
         
@@ -301,6 +311,7 @@ namespace Psi {
             PSI_WARNING_FAIL(t.m_vptr->classname);
         }
       }
+#endif
 #endif
 
       m_gc_list.clear_and_dispose(ObjectDisposer());

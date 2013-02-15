@@ -184,6 +184,8 @@ namespace Psi {
 
       PSI_STD::vector<TreePtr<Statement> > statements;
       TreePtr<Term> value;
+      
+      static TreePtr<Term> make(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, const TreePtr<Term>& result=TreePtr<Term>());
     };
 
     /**
@@ -418,6 +420,36 @@ namespace Psi {
       TreePtr<Term> value;
       /// \brief Index of member to get.
       TreePtr<Term> index;
+    };
+    
+    /**
+     * \brief Get a reference to a containing structure from a reference to an inner value.
+     */
+    class OuterPtr : public Functional {
+    public:
+      static const TermVtable vtable;
+      static const bool match_visit = true;
+      OuterPtr(CompileContext& compile_context, const SourceLocation& location);
+      OuterPtr(const TreePtr<Term>& value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Pointer to data structure, which must have type DerivedType
+      TreePtr<Term> value;
+    };
+    
+    /**
+     * \brief Get a reference to a containing structure from a reference to an inner value.
+     */
+    class OuterValue : public Functional {
+    public:
+      static const TermVtable vtable;
+      static const bool match_visit = true;
+      OuterValue(CompileContext& compile_context, const SourceLocation& location);
+      OuterValue(const TreePtr<Term>& value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Pointer to data structure, which must have type DerivedType
+      TreePtr<Term> value;
     };
 
     /**

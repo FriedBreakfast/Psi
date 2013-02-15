@@ -20,7 +20,7 @@ namespace Psi {
     DebugLocation(const char *file_, int line_, const char *function_)
       : file(file_), line(line_), function(function_) {}
   };
-#define PSI_DEBUG_LOCATION() DebugLocation(__FILE__, __LINE__, __PRETTY_FUNCTION__)
+#define PSI_DEBUG_LOCATION() ::Psi::DebugLocation(__FILE__, __LINE__, __PRETTY_FUNCTION__)
 
 #if (__GNUC__ >= 4) && (__GNUC_MINOR__ >= 5)
 #define PSI_UNREACHABLE() __builtin_unreachable()
@@ -47,7 +47,7 @@ namespace Psi {
       : file(file_), line(line_), function(function_) {}
   };
 
-#define PSI_DEBUG_LOCATION() DebugLocation(__FILE__, __LINE__, __FUNCTION__)
+#define PSI_DEBUG_LOCATION() ::Psi::DebugLocation(__FILE__, __LINE__, __FUNCTION__)
 #else
 #error Unsupported compiler!
 #define PSI_STD std

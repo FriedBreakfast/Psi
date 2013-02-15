@@ -69,6 +69,11 @@ namespace Psi {
           ("parameters", &InterfaceBase::parameters)
           ("path", &InterfaceBase::path);
         }
+        
+        InterfaceBase(const TreePtr<Interface>& interface_,
+                      const PSI_STD::vector<TreePtr<Term> >& parameters_,
+                      const PSI_STD::vector<int>& path_)
+        : interface(interface_), parameters(parameters_), path(path_) {}
       };
       
       static const TreeVtable vtable;

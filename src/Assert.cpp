@@ -5,9 +5,7 @@
 
 namespace Psi {
   void print_debug_location(DebugLocation location) {
-#if defined(__GNUC__)
-    std::cerr << location.file << ':' << location.function << ':' << location.line;
-#elif defined (_MSC_VER)
+#if defined(__GNUC__) || defined(_MSC_VER)
     std::cerr << location.file << ':' << location.function << ':' << location.line;
 #else
     std::cerr << location.file << ':' << location.line;

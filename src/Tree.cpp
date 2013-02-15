@@ -346,6 +346,21 @@ namespace Psi {
     value(value_) {
     }
 
+    TreePtr<Term> Block::make(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, const TreePtr<Term>& result) {
+      PSI_STD::vector<TreePtr<Statement> > statements;
+      statements.reserve(values.size());
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = values.begin(), ie = values.end(); ii != ie; ++ii)
+        statements.push_back(TreePtr<Statement>(new Statement(*ii, statement_mode_destroy, location)));
+      TreePtr<Term> my_result;
+      if (result) {
+        my_result = result;
+      } else {
+        PSI_ASSERT(!values.empty());
+        my_result.reset(new DefaultValue(values.front().compile_context().builtins().empty_type, location));
+      }
+      return TreePtr<Term>(new Block(statements, my_result, location));
+    }
+
     template<typename Visitor>
     void Block::visit(Visitor& v) {
       visit_base<Term>(v);
@@ -525,17 +540,17 @@ namespace Psi {
       }
       
       class ElementPtrType {
-        TreePtr<Term> m_aggregate_ptr_type;
+        TreePtr<Term> m_aggregate_ptr;
         TreePtr<Term> m_index;
         
       public:
         typedef Term TreeResultType;
         
-        ElementPtrType(const TreePtr<Term>& aggregate_ptr_type, const TreePtr<Term>& index)
-        : m_aggregate_ptr_type(aggregate_ptr_type), m_index(index) {}
+        ElementPtrType(const TreePtr<Term>& aggregate_ptr, const TreePtr<Term>& index)
+        : m_aggregate_ptr(aggregate_ptr), m_index(index) {}
         
         TreePtr<Term> evaluate(const TreePtr<Term>& self) {
-          TreePtr<PointerType> ty = dyn_treeptr_cast<PointerType>(m_aggregate_ptr_type);
+          TreePtr<PointerType> ty = dyn_treeptr_cast<PointerType>(m_aggregate_ptr->type);
           if (!ty)
             self.compile_context().error_throw(self.location(), "Argument to element pointer operation is not a pointer");
           
@@ -545,28 +560,28 @@ namespace Psi {
         
         template<typename V>
         static void visit(V& v) {
-          v("aggregate_ptr_type", &ElementPtrType::m_aggregate_ptr_type)
+          v("aggregate_ptr", &ElementPtrType::m_aggregate_ptr)
           ("index", &ElementPtrType::m_index);
         };
       };
 
       class ElementValueType {
-        TreePtr<Term> m_aggregate_type;
+        TreePtr<Term> m_aggregate_value;
         TreePtr<Term> m_index;
         
       public:
         typedef Term TreeResultType;
 
-        ElementValueType(const TreePtr<Term>& aggregate_type, const TreePtr<Term>& index)
-        : m_aggregate_type(aggregate_type), m_index(index) {}
+        ElementValueType(const TreePtr<Term>& aggregate_value, const TreePtr<Term>& index)
+        : m_aggregate_value(aggregate_value), m_index(index) {}
         
         TreePtr<Term> evaluate(const TreePtr<Term>& self) {
-          return element_type(m_aggregate_type, m_index, self.location());
+          return element_type(m_aggregate_value->type, m_index, self.location());
         }
         
         template<typename V>
         static void visit(V& v) {
-          v("aggregate_type", &ElementValueType::m_aggregate_type)
+          v("aggregate_value", &ElementValueType::m_aggregate_value)
           ("index", &ElementValueType::m_index);
         }
       };
@@ -577,13 +592,13 @@ namespace Psi {
     }
 
     ElementPtr::ElementPtr(const TreePtr<Term>& value_, const TreePtr<Term>& index_, const SourceLocation& location)
-    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(tree_attribute(value_, &Term::type), index_)), location),
+    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(value_, index_)), location),
     value(value_),
     index(index_) {
     }
 
     ElementPtr::ElementPtr(const TreePtr<Term>& value_, int index_, const SourceLocation& location)
-    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(tree_attribute(value_, &Term::type), int_to_index(index_, value_.compile_context(), location))), location),
+    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(value_, int_to_index(index_, value_.compile_context(), location))), location),
     value(value_),
     index(int_to_index(index_, value_.compile_context(), location)) {
     }
@@ -625,6 +640,97 @@ namespace Psi {
     }
 
     const TermVtable ElementValue::vtable = PSI_COMPILER_TERM(ElementValue, "psi.compiler.ElementValue", Functional);
+    
+    namespace {
+      TreePtr<Term> outer_type(const TreePtr<Term>& inner_type, const SourceLocation& location) {
+        CompileContext& compile_context = inner_type.compile_context();
+        
+        TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(inner_type);
+        if (!derived)
+          compile_context.error_throw(location, "Outer value operation called on value with no upward reference");
+        
+        TreePtr<UpwardReference> upref = dyn_treeptr_cast<UpwardReference>(derived->upref);
+        if (!upref)
+          compile_context.error_throw(location, "Outer value operation called on value with unknown upward reference");
+        
+        return TreePtr<Term>(new DerivedType(upref->outer_type, upref->next, location));
+      }
+      
+      class OuterPtrType {
+        TreePtr<Term> m_ptr;
+        
+      public:
+        typedef Term TreeResultType;
+        
+        OuterPtrType(const TreePtr<Term>& ptr) : m_ptr(ptr) {}
+        
+        TreePtr<Term> evaluate(const TreePtr<Term>& self) {
+          TreePtr<PointerType> ty = dyn_treeptr_cast<PointerType>(m_ptr->type);
+          if (!ty)
+            self.compile_context().error_throw(self.location(), "Argument to outer pointer operation is not a pointer");
+          
+          TreePtr<Term> target_ty = outer_type(ty->target_type, self.location());
+          return TreePtr<Term>(new PointerType(target_ty, self.location()));
+        }
+        
+        template<typename V>
+        static void visit(V& v) {
+          v("ptr", &OuterPtrType::m_ptr);
+        };
+      };
+
+      class OuterValueType {
+        TreePtr<Term> m_value;
+        
+      public:
+        typedef Term TreeResultType;
+
+        OuterValueType(const TreePtr<Term>& value) : m_value(value) {}
+        
+        TreePtr<Term> evaluate(const TreePtr<Term>& self) {
+          return outer_type(m_value->type, self.location());
+        }
+        
+        template<typename V>
+        static void visit(V& v) {
+          v("value", &OuterValueType::m_value);
+        }
+      };
+    }
+
+    OuterPtr::OuterPtr(CompileContext& compile_context, const SourceLocation& location)
+    : Functional(&vtable, compile_context, location) {
+    }
+    
+    OuterPtr::OuterPtr(const TreePtr<Term>& value_, const SourceLocation& location)
+    : Functional(&vtable, tree_callback(value_.compile_context(), location, OuterPtrType(value_)), location),
+    value(value_) {
+    }
+    
+    template<typename V>
+    void OuterPtr::visit(V& v) {
+      visit_base<Functional>(v);
+      v("value", &OuterPtr::value);
+    }
+    
+    const TermVtable OuterPtr::vtable = PSI_COMPILER_TERM(OuterPtr, "psi.compiler.OuterPtr", Functional);
+    
+    OuterValue::OuterValue(CompileContext& compile_context, const SourceLocation& location)
+    : Functional(&vtable, compile_context, location) {
+    }
+    
+    OuterValue::OuterValue(const TreePtr<Term>& value_, const SourceLocation& location)
+    : Functional(&vtable, tree_callback(value_.compile_context(), location, OuterValueType(value_)), location),
+    value(value_) {
+    }
+    
+    template<typename V>
+    void OuterValue::visit(V& v) {
+      visit_base<Functional>(v);
+      v("value", &OuterValue::value);
+    }
+    
+    const TermVtable OuterValue::vtable = PSI_COMPILER_TERM(OuterValue, "psi.compiler.OuterValue", Functional);
     
     StructType::StructType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {

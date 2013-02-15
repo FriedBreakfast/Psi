@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <boost/optional.hpp>
 
+#include "../Array.hpp"
 #include "../Utility.hpp"
 #include "../Visitor.hpp"
 

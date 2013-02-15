@@ -2,6 +2,7 @@
 #define HPP_PSI_ARRAY
 
 #include <boost/noncopyable.hpp>
+#include <vector>
 
 #include "Assert.hpp"
 
@@ -48,6 +49,7 @@ namespace Psi {
     ArrayPtr() {}
     ArrayPtr(T *ptr, std::size_t size) : ArrayWithLength<T>(ptr, size) {}
     ArrayPtr(const ArrayPtr& src) : ArrayWithLength<T>(src.get(), src.size()) {}
+    template<std::size_t N> ArrayPtr(T (&ptr) [N]) : ArrayWithLength<T>(ptr, N) {}
     template<typename U> ArrayPtr(const ArrayWithLength<U>& src) : ArrayWithLength<T>(src.get(), src.size()) {}
     template<typename U, typename Alloc>
     ArrayPtr(const std::vector<U, Alloc>& src) : ArrayWithLength<T>(src.empty() ? NULL : &src.front(), src.size()) {}

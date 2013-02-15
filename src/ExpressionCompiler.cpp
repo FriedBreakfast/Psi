@@ -78,7 +78,7 @@ namespace Psi {
         }
 
         case Parser::TokenExpression::identifier: {
-          String name(token_expression.text.begin, token_expression.text.end);
+          String name = token_expression.text.to_string();
           LookupResult<TreePtr<Term> > result = evaluate_context->lookup(name, location);
 
           switch (result.type()) {

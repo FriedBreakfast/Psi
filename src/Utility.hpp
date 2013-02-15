@@ -9,9 +9,9 @@
 #include <boost/aligned_storage.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/noncopyable.hpp>
 
 #include "Assert.hpp"
-#include "Array.hpp"
 
 namespace Psi {
   template<bool v> struct static_bool {static const bool value = v;};
@@ -252,6 +252,7 @@ namespace Psi {
   template<typename T>
   PSI_STD::vector<T> vector_of(const T& t1) {
     PSI_STD::vector<T> x;
+    x.reserve(1);
     x.push_back(t1);
     return x;
   }
@@ -259,8 +260,19 @@ namespace Psi {
   template<typename T>
   PSI_STD::vector<T> vector_of(const T& t1, const T& t2) {
     PSI_STD::vector<T> x;
+    x.reserve(2);
     x.push_back(t1);
     x.push_back(t2);
+    return x;
+  }
+  
+  template<typename T>
+  PSI_STD::vector<T> vector_of(const T& t1, const T& t2, const T& t3) {
+    PSI_STD::vector<T> x;
+    x.reserve(3);
+    x.push_back(t1);
+    x.push_back(t2);
+    x.push_back(t3);
     return x;
   }
   

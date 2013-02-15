@@ -4,6 +4,7 @@
 #include "TypeMapping.hpp"
 #include "TvmLowering.hpp"
 #include "SharedMap.hpp"
+#include "Array.hpp"
 
 #include "Tvm/Core.hpp"
 #include "Tvm/InstructionBuilder.hpp"
@@ -103,6 +104,7 @@ class TvmFunctionLowering {
     Scope(Scope& parent, const SourceLocation& location, const TvmResult& result, VariableSlot& slot, const TreePtr<>& key=TreePtr<>());
     Scope(Scope& parent, const SourceLocation& location, CleanupCallback *cleanup, bool cleanup_except_only);
     Scope(Scope& parent, const SourceLocation& location, const JumpMapType& initial_jump_map);
+    Scope(Scope& parent, const SourceLocation& location, const ArrayPtr<VariableMapType::value_type>& new_variables);
     
     CompileContext& compile_context() {return m_shared->compile_context();}
 
@@ -137,15 +139,14 @@ class TvmFunctionLowering {
   bool going_out_of_scope(Scope& scope, const Tvm::ValuePtr<>& var, Scope& following_scope);
   void destroy_variable(Scope& scope);
   
-  Tvm::ValuePtr<> move_constructible_interface(const TreePtr<Term>& type);
-  Tvm::ValuePtr<> copy_constructible_interface(const TreePtr<Term>& type);
   bool is_primitive(Scope& scope, const TreePtr<Term>& type);
   void default_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location);
   void copy_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
   void move_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
   void move_construct_destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
   void destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& ptr, const SourceLocation& location);
-  
+
+  void run_void(Scope& scope, const TreePtr<Term>& term);
   TvmResult run(Scope& scope, const TreePtr<Term>& term, const VariableSlot& slot, Scope& following_scope);
   TvmResult run_block(Scope& scope, const TreePtr<Block>& block, const VariableSlot& slot, Scope& following_scope);
   TvmResult run_if_then_else(Scope& scope, const TreePtr<IfThenElse>& if_then_else, const VariableSlot& slot, Scope& following_scope);
@@ -228,6 +229,16 @@ TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location,
 : m_location(location) {
   init(parent);
   m_jump_map = initial_jump_map;
+}
+
+TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location, const ArrayPtr<VariableMapType::value_type>& new_variables) {
+  init(parent);
+  
+  for (std::size_t ii = 0, ie = new_variables.size(); ii != ie; ++ii) {
+    const VariableMapType::value_type& value = new_variables[ii];
+    if (!m_variables.insert(value))
+      m_shared->compile_context().error_throw(location, "Overlapping variable definitions");
+  }
 }
 
 /**
@@ -446,6 +457,16 @@ TvmResult TvmFunctionLowering::run_type(Scope& scope, const TreePtr<Term>& type)
   FunctionalBuilderCallback cb(&scope);
   TvmFunctionalBuilder builder(&compile_context(), &tvm_context(), &cb);
   return builder.build_type(type);
+}
+
+/**
+ * \brief Lower a tree where the result is ignored.
+ */
+void TvmFunctionLowering::run_void(Scope& scope, const TreePtr<Term>& term) {
+  VariableSlot slot(scope, term);
+  TvmResult result = run(scope, term, slot, scope);
+  // Destroy the result value of term or spuriously created stack space
+  Scope(scope, term.location(), result, slot).cleanup();
 }
 
 Tvm::ValuePtr<> TvmFunctionLowering::run_functional(Scope& scope, const TreePtr<Term>& term) {
@@ -1015,16 +1036,6 @@ void TvmFunctionLowering::destroy_variable(Scope& scope) {
     destroy(scope, scope.variable().type(), scope.variable().value(), scope.location());
 }
 
-/// \brief Get a pointer to the CopyConstructible interface for a given type.
-Tvm::ValuePtr<> TvmFunctionLowering::move_constructible_interface(const TreePtr<Term>& type) {
-  PSI_NOT_IMPLEMENTED();
-}
-
-/// \brief Get a pointer to the CopyConstructible interface for a given type.
-Tvm::ValuePtr<> TvmFunctionLowering::copy_constructible_interface(const TreePtr<Term>& type) {
-  PSI_NOT_IMPLEMENTED();
-}
-
 /**
  * \brief Determine whether a type is primitive, in which case MoveConstructible an CopyConstructible interfaces can be short-cut.
  */
@@ -1036,51 +1047,62 @@ bool TvmFunctionLowering::is_primitive(Scope& scope, const TreePtr<Term>& type) 
 
 /// \brief Generate default constructor call
 void TvmFunctionLowering::default_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location) {
-  if (is_primitive(scope, type)) {
-    // Should this be undef?
-    builder().store(Tvm::FunctionalBuilder::zero(Tvm::value_cast<Tvm::PointerType>(dest->type())->target_type(), location), dest, location);
-    return;
+  TreePtr<Term> ptr_type(new PointerType(type, location));
+  TreePtr<Anonymous> dest_ptr(new Anonymous(ptr_type, location));
+  TreePtr<Term> empty(new DefaultValue(compile_context().builtins().empty_type, location));
+  TreePtr<Term> init = lifecycle_init(dest_ptr, location, empty);
+  if (init != empty) {
+    VariableMapType::value_type locals[1] = {VariableMapType::value_type(dest_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, dest))};
+    Scope my_scope(scope, location, locals);
+    run_void(my_scope, init);
+    my_scope.cleanup();
   }
-  
-  Tvm::ValuePtr<> mc = move_constructible_interface(type);
-  Tvm::ValuePtr<> fp = Tvm::FunctionalBuilder::element_ptr(mc, MoveConstructible::m_construct, location);
-  builder().call2(fp, mc, dest, location);
 }
 
 /// \brief Generate copy constructor call
 void TvmFunctionLowering::copy_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {  
-  if (is_primitive(scope, type)) {
-    Tvm::ValuePtr<> value = builder().load(src, location);
-    builder().store(value, dest, location);
-    return;
+  TreePtr<Term> ptr_type(new PointerType(type, location));
+  TreePtr<Anonymous> dest_ptr(new Anonymous(ptr_type, location)), src_ptr(new Anonymous(ptr_type, location));
+  TreePtr<Term> empty(new DefaultValue(compile_context().builtins().empty_type, location));
+  TreePtr<Term> copy_init = lifecycle_copy_init(dest_ptr, src_ptr, location, empty);
+  if (copy_init != empty) {
+    VariableMapType::value_type locals[2] = {
+      VariableMapType::value_type(dest_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, dest)),
+      VariableMapType::value_type(src_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, src))
+    };
+    Scope my_scope(scope, location, locals);
+    run_void(my_scope, copy_init);
+    my_scope.cleanup();
   }
-
-  Tvm::ValuePtr<> mc = copy_constructible_interface(type);
-  Tvm::ValuePtr<> fp = Tvm::FunctionalBuilder::element_ptr(mc, CopyConstructible::m_copy, location);
-  builder().call3(fp, mc, dest, src, location);
 }
 
 /// \brief Generate move constructor call
 void TvmFunctionLowering::move_construct(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location) {
-  if (is_primitive(scope, type)) {
-    Tvm::ValuePtr<> value = builder().load(src, location);
-    builder().store(value, dest, location);
-    return;
+  TreePtr<Term> ptr_type(new PointerType(type, location));
+  TreePtr<Anonymous> dest_ptr(new Anonymous(ptr_type, location)), src_ptr(new Anonymous(ptr_type, location));
+  TreePtr<Term> empty(new DefaultValue(compile_context().builtins().empty_type, location));
+  TreePtr<Term> move_init = lifecycle_move_init(dest_ptr, src_ptr, location, empty);
+  if (move_init != empty) {
+    VariableMapType::value_type locals[2] = {
+      VariableMapType::value_type(dest_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, dest)),
+      VariableMapType::value_type(src_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, src))
+    };
+    Scope my_scope(scope, location, locals);
+    run_void(my_scope, move_init);
+    my_scope.cleanup();
   }
-  
-  Tvm::ValuePtr<> mc = move_constructible_interface(type);
-  Tvm::ValuePtr<> fp = Tvm::FunctionalBuilder::element_ptr(mc, MoveConstructible::m_move, location);
-  builder().call3(fp, mc, dest, src, location);
 }
 
 ///  \brief Generate destructor call
-void TvmFunctionLowering::destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& ptr, const SourceLocation& location) {
-  if (is_primitive(scope, type))
-    return;
-  
-  Tvm::ValuePtr<> mc = move_constructible_interface(type);
-  Tvm::ValuePtr<> fp = Tvm::FunctionalBuilder::element_ptr(mc, MoveConstructible::m_destroy, location);
-  builder().call2(fp, mc, ptr, location);
+void TvmFunctionLowering::destroy(Scope& scope, const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const SourceLocation& location) {
+  TreePtr<Term> ptr_type(new PointerType(type, location));
+  TreePtr<Anonymous> dest_ptr(new Anonymous(ptr_type, location));
+  if (TreePtr<Term> fini = lifecycle_fini(dest_ptr, location)) {
+    VariableMapType::value_type locals[1] = {VariableMapType::value_type(dest_ptr, TvmResult::in_register(ptr_type, tvm_storage_functional, dest))};
+    Scope my_scope(scope, location, locals);
+    run_void(my_scope, lifecycle_fini(dest_ptr, location));
+    my_scope.cleanup();
+  }
 }
 
 /**

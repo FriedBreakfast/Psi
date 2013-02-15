@@ -16,6 +16,7 @@
 
 #include "../SourceLocation.hpp"
 #include "../Utility.hpp"
+#include "../Array.hpp"
 
 namespace Psi {
   /**
@@ -795,7 +796,7 @@ namespace Psi {
     
     using boost::hash_value;
 
-#if BOOST_VERSION > 150000
+#if BOOST_VERSION < 105000
     template<typename T, std::size_t N>
     std::size_t hash_value(const boost::array<T,N>& x) {
       std::size_t h = 0;
