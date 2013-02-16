@@ -177,6 +177,7 @@ namespace Psi {
       llvm::Function* target_exception_personality_linux(llvm::Module*, const std::string&);
 
       boost::shared_ptr<TargetCallback> create_target_fixes_amd64(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&);
+      boost::shared_ptr<TargetCallback> create_target_fixes_linux_x86(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&);
     }
   }
 }

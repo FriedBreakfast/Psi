@@ -82,6 +82,7 @@ add_library(psi-tvm-llvm MODULE
   Tvm/llvm/FunctionalInstruction.cpp
   Tvm/llvm/Instructions.cpp
   Tvm/llvm/Target.cpp Tvm/llvm/Target.hpp
+  Tvm/llvm/Target_Linux_x86.cpp
   Tvm/llvm/Target_AMD64.cpp
   Tvm/llvm/Type.cpp
 )

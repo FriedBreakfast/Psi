@@ -182,6 +182,7 @@ namespace Psi {
           byte_offset = offset + result_size_align.size - value_size_align.size;
         else
           byte_offset = -offset;
+        PSI_ASSERT(std::abs(byte_offset) < max_size);
         ValuePtr<> value_shifted = FunctionalBuilder::bit_shift(value_cast, byte_offset*8, location);
         return FunctionalBuilder::bit_cast(value_shifted, result_type, location);
       }
@@ -420,6 +421,13 @@ namespace Psi {
         case llvm::Triple::x86_64:
           switch (parsed_triple.getOS()) {
           case llvm::Triple::Linux: return create_target_fixes_amd64(context, target_machine);
+          default: break;
+          }
+          break;
+          
+        case llvm::Triple::x86:
+          switch (parsed_triple.getOS()) {
+          case llvm::Triple::Linux: return create_target_fixes_linux_x86(context, target_machine);
           default: break;
           }
           break;

@@ -796,7 +796,7 @@ namespace Psi {
       if (isa<IntegerType>(type) || isa<PointerType>(type) || isa<FloatType>(type)) {
         ExplodeEntry start = {offset, {0,0}, ValuePtr<>()}, end = {offset + tsa.size, {0,0}, ValuePtr<>()};
         std::vector<ExplodeEntry>::const_iterator first = std::upper_bound(entries.begin(), entries.end(), start, ExplodeCompareEnd());
-        std::vector<ExplodeEntry>::const_iterator last = std::upper_bound(entries.begin(), entries.end(), end, ExplodeCompareStart());
+        std::vector<ExplodeEntry>::const_iterator last = std::lower_bound(entries.begin(), entries.end(), end, ExplodeCompareStart());
     
         ValuePtr<> result;
         if ((std::distance(first, last) == 1) && (first->tsa.size == tsa.size) && (first->offset == offset)) {

@@ -11,61 +11,46 @@ namespace Psi {
   namespace Tvm {
     namespace LLVM {
       /**
-       * \brief Target specific fixes for X86-64 on platforms using
-       * the AMD64 ABI.
-       *
-       * In practise, this means every OS except Windows.
-       *
-       * There's no point really in trying to reverse-engineer
-       * everything LLVM is doing. Just implement most of the ABI
-       * right here.
-       *
-       * \see <a
-       * href="http://x86-64.org/documentation/abi.pdf">System V
-       * Application Binary Interface AMD64 Architecture Processor
-       * Supplement</a>
+       * X86 calling convention with GCC seems to work in a somewhat similar
+       * way to X86-64, so I've cloned that code as a start.
        */
-      class TargetFixes_AMD64_AggregateLowering : public TargetCommon {
+      class TargetFixes_Linux_X86_AggregateLowering : public TargetCommon {
         /**
          * Used to classify how each parameter should be passed (or
          * returned).
          */
-        enum AMD64_Class {
-          amd64_integer,
-          amd64_sse,
-          //amd64_sse_up,
-          amd64_x87,
-          //amd64_x87_up,
-          amd64_no_class,
-          amd64_memory
+        enum X86_Class {
+          x86_integer,
+          x86_sse,
+          //x86_sse_up,
+          x86_x87,
+          //x86_x87_up,
+          x86_no_class,
+          x86_memory
         };
 
-        /**
-         * Get the parameter class resulting from two separate
-         * classes. Described on page 19 of the ABI.
-         */
-        static AMD64_Class merge_amd64_class(AMD64_Class left, AMD64_Class right) {
+        static X86_Class merge_x86_class(X86_Class left, X86_Class right) {
           if (left == right) {
             return left;
-          } else if (left == amd64_no_class) {
+          } else if (left == x86_no_class) {
             return right;
-          } else if (right == amd64_no_class) {
+          } else if (right == x86_no_class) {
             return left;
-          } else if ((left == amd64_memory) || (right == amd64_memory)) {
-            return amd64_memory;
-          } else if ((left == amd64_integer) || (right == amd64_integer)) {
-            return amd64_integer;
+          } else if ((left == x86_memory) || (right == x86_memory)) {
+            return x86_memory;
+          } else if ((left == x86_integer) || (right == x86_integer)) {
+            return x86_integer;
           } else {
-            return amd64_sse;
+            return x86_sse;
           }
         }
 
         struct ElementTypeInfo {
-          ElementTypeInfo(TargetParameterCategory category_, AMD64_Class amd64_class_, uint64_t size_, uint64_t align_, unsigned n_elements_)
-            : category(category_), amd64_class(amd64_class_), size(size_), align(align_), n_elements(n_elements_) {}
+          ElementTypeInfo(TargetParameterCategory category_, X86_Class x86_class_, uint64_t size_, uint64_t align_, unsigned n_elements_)
+            : category(category_), x86_class(x86_class_), size(size_), align(align_), n_elements(n_elements_) {}
 
           TargetParameterCategory category;
-          AMD64_Class amd64_class;
+          X86_Class x86_class;
           uint64_t size;
           uint64_t align;
           unsigned n_elements;
@@ -84,9 +69,9 @@ namespace Psi {
          * Get the type used to pass a parameter of a given class with a
          * given size in bytes.
          */
-        ValuePtr<> type_from_amd64_class_and_size(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, AMD64_Class amd64_class, uint64_t size, const SourceLocation& location) {
-          switch (amd64_class) {
-          case amd64_sse: {
+        ValuePtr<> type_from_x86_class_and_size(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, X86_Class x86_class, uint64_t size, const SourceLocation& location) {
+          switch (x86_class) {
+          case x86_sse: {
             FloatType::Width width;
             switch (size) {
             case 4:  width = FloatType::fp32; break;
@@ -97,25 +82,29 @@ namespace Psi {
             return FunctionalBuilder::float_type(rewriter.context(), width, location);
           }
 
-          case amd64_x87:
+          case x86_x87:
             PSI_ASSERT(size == 16);
             return FunctionalBuilder::float_type(rewriter.context(), FloatType::fp_x86_80, location);
 
-          case amd64_integer: {
+          case x86_integer: {
             IntegerType::Width width;
+            unsigned count = 1;
             switch (size) {
             case 1:  width = IntegerType::i8; break;
             case 2:  width = IntegerType::i16; break;
             case 4:  width = IntegerType::i32; break;
-            case 8:  width = IntegerType::i64; break;
-            case 16: width = IntegerType::i128; break;
-            default: PSI_FAIL("unknown integer width in AMD64 parameter passing");
+            case 8:  width = IntegerType::i32; count = 2; break;
+            case 16: width = IntegerType::i32; count = 4; break;
+            default: PSI_FAIL("unknown integer width in X86 parameter passing");
             }
-            return FunctionalBuilder::int_type(rewriter.context(), width, false, location);
+            ValuePtr<> ty = FunctionalBuilder::int_type(rewriter.context(), width, false, location);
+            if (count > 1)
+              ty = FunctionalBuilder::array_type(ty, count, location);
+            return ty;
           }
 
           default:
-            PSI_FAIL("unexpected amd64 parameter class here");
+            PSI_FAIL("unexpected x86 parameter class here");
           }
         }
 
@@ -124,9 +113,9 @@ namespace Psi {
          * single EVT in LLVM, and is accurately represented by this
          * type.
          */
-        ElementTypeInfo primitive_element_info(const ValuePtr<>& type, AMD64_Class amd_class) {
+        ElementTypeInfo primitive_element_info(const ValuePtr<>& type, X86_Class x86_class) {
           TypeSizeAlignment size_align = type_size_alignment(type);
-          return ElementTypeInfo(TargetParameterCategory::simple, amd_class, size_align.size, size_align.alignment, 1);
+          return ElementTypeInfo(TargetParameterCategory::simple, x86_class, size_align.size, size_align.alignment, 1);
         }
 
         /**
@@ -139,19 +128,19 @@ namespace Psi {
             TargetParameterCategory category = TargetParameterCategory::simple;
             uint64_t size = 0, align = 1;
             unsigned n_elements = 0;
-            AMD64_Class amd64_class = amd64_no_class;
+            X86_Class x86_class = x86_no_class;
             for (unsigned i = 0, e = struct_ty->n_members(); i != e; ++i) {
               ElementTypeInfo child = get_element_info(rewriter, struct_ty->member_type(i));
               n_elements += child.n_elements;
               size = align_to(size, child.align);
               size += child.size;
               align = std::max(align, child.align);
-              amd64_class = merge_amd64_class(amd64_class, child.amd64_class);
+              x86_class = merge_x86_class(x86_class, child.x86_class);
               category = TargetParameterCategory::merge(category, child.category);
             }
 
             size = align_to(size, align);
-            return ElementTypeInfo(category, amd64_class, size, align, n_elements);
+            return ElementTypeInfo(category, x86_class, size, align, n_elements);
           } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(element)) {
             ElementTypeInfo child = get_element_info(rewriter, array_ty->element_type());
             ValuePtr<IntegerValue> length = value_cast<IntegerValue>(rewriter.rewrite_value_register(array_ty->length()).value);
@@ -165,22 +154,22 @@ namespace Psi {
             TargetParameterCategory category = TargetParameterCategory::altered;
             uint64_t size = 0, align = 1;
             unsigned n_elements = 0;
-            AMD64_Class amd64_class = amd64_no_class;
+            X86_Class x86_class = x86_no_class;
             for (unsigned i = 0, e = union_ty->n_members(); i != e; ++i) {
               ElementTypeInfo child = get_element_info(rewriter, union_ty->member_type(i));
               n_elements = std::max(n_elements, child.n_elements);
               size = std::max(size, child.size);
               align = std::max(align, child.align);
-              amd64_class = merge_amd64_class(amd64_class, child.amd64_class);
+              x86_class = merge_x86_class(x86_class, child.x86_class);
               category = TargetParameterCategory::merge(category, child.category);
             }
 
             size = align_to(size, align);
-            return ElementTypeInfo(category, amd64_class, size, align, n_elements);
+            return ElementTypeInfo(category, x86_class, size, align, n_elements);
           } else if (isa<PointerType>(element) || isa<BooleanType>(element) || isa<IntegerType>(element)) {
-            return primitive_element_info(element, amd64_integer);
+            return primitive_element_info(element, x86_integer);
           } else if (ValuePtr<FloatType> float_ty = dyn_cast<FloatType>(element)) {
-            return primitive_element_info(element, (float_ty->width() != FloatType::fp_x86_80) ? amd64_sse : amd64_x87);
+            return primitive_element_info(element, (float_ty->width() != FloatType::fp_x86_80) ? x86_sse : x86_x87);
           } else {
             PSI_ASSERT_MSG(!dyn_cast<ParameterPlaceholder>(element) && !dyn_cast<FunctionParameter>(element),
                            "low-level parameter type should not depend on function type parameters");
@@ -191,37 +180,35 @@ namespace Psi {
         ElementTypeInfo get_parameter_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type) {
           ElementTypeInfo result = get_element_info(rewriter, type);
 
-          switch (result.amd64_class) {
-          case amd64_sse:
-          case amd64_x87:
+          switch (result.x86_class) {
+          case x86_sse:
+          case x86_x87:
             if (result.n_elements > 1)
-              result.amd64_class = amd64_memory;
+              result.x86_class = x86_memory;
             break;
 
-          case amd64_integer:
-            if (result.size > 16) {
-              // LLVM should handle this fine, so just set the AMD64 class
-              result.amd64_class = amd64_memory;
+          case x86_integer:
+            if (result.size > 8) {
+              // LLVM should handle this fine, so just set the X86 class
+              result.x86_class = x86_memory;
               if (result.category == TargetParameterCategory::altered)
                 result.category = TargetParameterCategory::force_ptr;
             } else if (result.n_elements > 2) {
-              // more than two elements means that it will not be passed
-              // as 2xi64 in two integer registers, so we must re-pack it.
               result.category = TargetParameterCategory::altered;
-            } else if ((result.n_elements == 2) && (result.size < 16)) {
-              PSI_ASSERT(result.size <= 8);
+            } else if ((result.n_elements == 2) && (result.size < 8)) {
+              PSI_ASSERT(result.size <= 4);
               // In this case there are two elements, but they fit
-              // into one 64-bit register so must be packed.
+              // into one 32-bit register so must be packed.
               result.category = TargetParameterCategory::altered;
             } else {
               PSI_ASSERT(result.category != TargetParameterCategory::force_ptr);
             }
             break;
 
-          case amd64_memory:
+          case x86_memory:
             break;
 
-          case amd64_no_class:
+          case x86_no_class:
             PSI_ASSERT(!result.size && !result.n_elements);
             break;
           }
@@ -230,8 +217,8 @@ namespace Psi {
         }
 
         struct FunctionCallCommonCallback : TargetCommon::Callback {
-          TargetFixes_AMD64_AggregateLowering *self;
-          FunctionCallCommonCallback(TargetFixes_AMD64_AggregateLowering *self_) : self(self_) {}
+          TargetFixes_Linux_X86_AggregateLowering *self;
+          FunctionCallCommonCallback(TargetFixes_Linux_X86_AggregateLowering *self_) : self(self_) {}
 
           /**
            * Special handling is required in the following cases:
@@ -260,7 +247,7 @@ namespace Psi {
               return TargetCommon::parameter_handler_simple(rewriter, type);
 
             case TargetParameterCategory::altered: {
-              ValuePtr<> lowered_type = self->type_from_amd64_class_and_size(rewriter, info.amd64_class, info.size, type->location());
+              ValuePtr<> lowered_type = self->type_from_x86_class_and_size(rewriter, info.x86_class, info.size, type->location());
               return TargetCommon::parameter_handler_change_type_by_memory(rewriter, type, lowered_type);
             }
 
@@ -288,18 +275,18 @@ namespace Psi {
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
 
       public:
-        TargetFixes_AMD64_AggregateLowering(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine)
+        TargetFixes_Linux_X86_AggregateLowering(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine)
         : TargetCommon(&m_function_call_callback, context, target_machine->getDataLayout()),
         m_function_call_callback(this),
         m_target_machine(target_machine) {
         }
       };
       
-      class TargetFixes_AMD64 : public TargetCallback {
-        TargetFixes_AMD64_AggregateLowering m_aggregate_lowering_callback;
+      class TargetFixes_Linux_X86 : public TargetCallback {
+        TargetFixes_Linux_X86_AggregateLowering m_aggregate_lowering_callback;
         
       public:
-        TargetFixes_AMD64(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine)
+        TargetFixes_Linux_X86(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine)
         : m_aggregate_lowering_callback(context, target_machine) {
         }
 
@@ -313,13 +300,14 @@ namespace Psi {
       };
 
       /**
-       * \brief Create TargetFixes instance for the AMD64 platform.
+       * \brief Create TargetFixes instance for the Linux_x86 platform.
        *
-       * \see TargetFixes_AMD64
+       * \see TargetFixes_Linux_x86
        */
-      boost::shared_ptr<TargetCallback> create_target_fixes_amd64(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine) {
-        return boost::make_shared<TargetFixes_AMD64>(context, target_machine);
+      boost::shared_ptr<TargetCallback> create_target_fixes_linux_x86(llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine) {
+        return boost::make_shared<TargetFixes_Linux_X86>(context, target_machine);
       }
     }
   }
 }
+
