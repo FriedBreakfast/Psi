@@ -632,10 +632,10 @@ namespace Psi {
         TreePtr<Term> zero_size(new IntegerValue(length_type, 0, location));
         TreePtr<Term> string_val(new StringValue(self.compile_context(), utf8_str, location));
         TreePtr<GlobalVariable> string_global(new GlobalVariable(evaluate_context->module(), true, string_val, true, true, location));
-        TreePtr<Term> string_global_ptr(new PointerTo(string_global, location));
-        TreePtr<Term> string_global_base_ptr(new ElementPtr(string_global_ptr, zero_size, location));
+        TreePtr<Term> string_base_ref(new ElementValue(string_global, zero_size, location));
+        TreePtr<Term> string_ptr(new PointerTo(string_base_ref, location));
 
-        return string_global_base_ptr;
+        return string_ptr;
       }
     };
     
@@ -646,6 +646,37 @@ namespace Psi {
      */
     TreePtr<Term> string_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<MacroMemberCallback> callback(new StringMacro(compile_context, location));
+      return make_macro_term(make_macro(compile_context, location, callback), location);
+    }
+
+    class NewMacro : public MacroMemberCallback {
+    public:
+      static const MacroMemberCallbackVtable vtable;
+      
+      NewMacro(CompileContext& compile_context, const SourceLocation& location)
+      : MacroMemberCallback(&vtable, compile_context, location) {
+      }
+
+      static TreePtr<Term> evaluate_impl(const NewMacro& self,
+                                         const TreePtr<Term>&,
+                                         const List<SharedPtr<Parser::Expression> >& parameters,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
+        if (parameters.size() != 1)
+          self.compile_context().error_throw(location, "new macro expects one argument");
+        
+        TreePtr<Term> type = compile_expression(parameters[0], evaluate_context, location.logical);
+        return TreePtr<Term>(new DefaultValue(type, location));
+      }
+    };
+    
+    const MacroMemberCallbackVtable NewMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(NewMacro, "psi.compiler.NewMacro", MacroMemberCallback);
+
+    /**
+     * \brief Macro which constructs default values.
+     */
+    TreePtr<Term> new_macro(CompileContext& compile_context, const SourceLocation& location) {
+      TreePtr<MacroMemberCallback> callback(new NewMacro(compile_context, location));
       return make_macro_term(make_macro(compile_context, location, callback), location);
     }
   }

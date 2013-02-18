@@ -715,7 +715,31 @@ namespace Psi {
     ValuePtr<Function> Module::new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location) {
       PSI_ASSERT(type);
       ValuePtr<Function> result(::new Function(context(), type, name, this, location));
+      result->set_private(true);
       add_member(result);
+      return result;
+    }
+    
+    /**
+     * \brief Create a new constructor function.
+     */
+    ValuePtr<Function> Module::new_constructor(const std::string& name, const SourceLocation& location) {
+      ValuePtr<FunctionType> type = FunctionalBuilder::constructor_type(context(), location);
+      ValuePtr<Function> result(::new Function(context(), type, name, this, location));
+      result->set_private(true);
+      add_member(result);
+      m_constructors.push_back(result);
+      return result;
+    }
+    
+    /**
+     * \brief Create a new destructor function.
+     */
+    ValuePtr<Function> Module::new_destructor(const std::string& name, const SourceLocation& location) {
+      ValuePtr<FunctionType> type = FunctionalBuilder::constructor_type(context(), location);
+      ValuePtr<Function> result(::new Function(context(), type, name, this, location));
+      add_member(result);
+      m_destructors.push_back(result);
       return result;
     }
     

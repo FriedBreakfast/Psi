@@ -3,6 +3,8 @@
 
 namespace Psi {
   namespace Compiler {
+    const SIVtable EvaluateContext::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.EvaluateContext", Tree);
+
     Functional::Functional(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location)
     : Term(vptr, compile_context, location) {
     }
@@ -540,32 +542,6 @@ namespace Psi {
         }
       }
       
-      class ElementPtrType {
-        TreePtr<Term> m_aggregate_ptr;
-        TreePtr<Term> m_index;
-        
-      public:
-        typedef Term TreeResultType;
-        
-        ElementPtrType(const TreePtr<Term>& aggregate_ptr, const TreePtr<Term>& index)
-        : m_aggregate_ptr(aggregate_ptr), m_index(index) {}
-        
-        TreePtr<Term> evaluate(const TreePtr<Term>& self) {
-          TreePtr<PointerType> ty = dyn_treeptr_cast<PointerType>(m_aggregate_ptr->type);
-          if (!ty)
-            self.compile_context().error_throw(self.location(), "Argument to element pointer operation is not a pointer");
-          
-          TreePtr<Term> element_ty = element_type(ty->target_type, m_index, self.location());
-          return TreePtr<Term>(new PointerType(element_ty, self.location()));
-        }
-        
-        template<typename V>
-        static void visit(V& v) {
-          v("aggregate_ptr", &ElementPtrType::m_aggregate_ptr)
-          ("index", &ElementPtrType::m_index);
-        };
-      };
-
       class ElementValueType {
         TreePtr<Term> m_aggregate_value;
         TreePtr<Term> m_index;
@@ -588,37 +564,12 @@ namespace Psi {
       };
     }
     
-    ElementPtr::ElementPtr(CompileContext& compile_context, const SourceLocation& location)
-    : Functional(&vtable, compile_context, location) {
-    }
-
-    ElementPtr::ElementPtr(const TreePtr<Term>& value_, const TreePtr<Term>& index_, const SourceLocation& location)
-    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(value_, index_)), location),
-    value(value_),
-    index(index_) {
-    }
-
-    ElementPtr::ElementPtr(const TreePtr<Term>& value_, int index_, const SourceLocation& location)
-    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementPtrType(value_, int_to_index(index_, value_.compile_context(), location))), location),
-    value(value_),
-    index(int_to_index(index_, value_.compile_context(), location)) {
-    }
-
-    template<typename V>
-    void ElementPtr::visit(V& v) {
-      visit_base<Functional>(v);
-      v("value", &ElementPtr::value)
-      ("index", &ElementPtr::index);
-    }
-
-    const TermVtable ElementPtr::vtable = PSI_COMPILER_TERM(ElementPtr, "psi.compiler.ElementPtr", Functional);
-    
     ElementValue::ElementValue(CompileContext& compile_context, const SourceLocation& location)
     : Functional(&vtable, compile_context, location) {
     }
 
     ElementValue::ElementValue(const TreePtr<Term>& value_, const TreePtr<Term>& index_, const SourceLocation& location)
-    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementValueType(tree_attribute(value_, &Term::type), index_)), location),
+    : Functional(&vtable, tree_callback(value_.compile_context(), location, ElementValueType(value_, index_)), location),
     value(value_),
     index(index_) {
     }
@@ -626,8 +577,7 @@ namespace Psi {
     ElementValue::ElementValue(const TreePtr<Term>& value_, int index_, const SourceLocation& location)
     : Functional(&vtable,
                  tree_callback(value_.compile_context(), location,
-                               ElementValueType(tree_attribute(value_, &Term::type),
-                                                int_to_index(index_, value_.compile_context(), location))),
+                               ElementValueType(value_, int_to_index(index_, value_.compile_context(), location))),
                  location),
     value(value_),
     index(int_to_index(index_, value_.compile_context(), location)) {
@@ -657,29 +607,6 @@ namespace Psi {
         return TreePtr<Term>(new DerivedType(upref->outer_type, upref->next, location));
       }
       
-      class OuterPtrType {
-        TreePtr<Term> m_ptr;
-        
-      public:
-        typedef Term TreeResultType;
-        
-        OuterPtrType(const TreePtr<Term>& ptr) : m_ptr(ptr) {}
-        
-        TreePtr<Term> evaluate(const TreePtr<Term>& self) {
-          TreePtr<PointerType> ty = dyn_treeptr_cast<PointerType>(m_ptr->type);
-          if (!ty)
-            self.compile_context().error_throw(self.location(), "Argument to outer pointer operation is not a pointer");
-          
-          TreePtr<Term> target_ty = outer_type(ty->target_type, self.location());
-          return TreePtr<Term>(new PointerType(target_ty, self.location()));
-        }
-        
-        template<typename V>
-        static void visit(V& v) {
-          v("ptr", &OuterPtrType::m_ptr);
-        };
-      };
-
       class OuterValueType {
         TreePtr<Term> m_value;
         
@@ -698,23 +625,6 @@ namespace Psi {
         }
       };
     }
-
-    OuterPtr::OuterPtr(CompileContext& compile_context, const SourceLocation& location)
-    : Functional(&vtable, compile_context, location) {
-    }
-    
-    OuterPtr::OuterPtr(const TreePtr<Term>& value_, const SourceLocation& location)
-    : Functional(&vtable, tree_callback(value_.compile_context(), location, OuterPtrType(value_)), location),
-    value(value_) {
-    }
-    
-    template<typename V>
-    void OuterPtr::visit(V& v) {
-      visit_base<Functional>(v);
-      v("value", &OuterPtr::value);
-    }
-    
-    const TermVtable OuterPtr::vtable = PSI_COMPILER_TERM(OuterPtr, "psi.compiler.OuterPtr", Functional);
     
     OuterValue::OuterValue(CompileContext& compile_context, const SourceLocation& location)
     : Functional(&vtable, compile_context, location) {
@@ -835,6 +745,23 @@ namespace Psi {
     }
 
     const TermVtable UnionType::vtable = PSI_COMPILER_TERM(UnionType, "psi.compiler.UnionType", Type);
+    
+    UnionValue::UnionValue(CompileContext& compile_context, const SourceLocation& location)
+    : Constructor(&vtable, compile_context, location) {
+    }
+    
+    UnionValue::UnionValue(const TreePtr<UnionType>& type, const TreePtr<Term>& member_value_, const SourceLocation& location)
+    : Constructor(&vtable, type, location),
+    member_value(member_value_) {
+    }
+    
+    template<typename V>
+    void UnionValue::visit(V& v) {
+      visit_base<Constructor>(v);
+      v("member_value", &UnionValue::member_value);
+    }
+    
+    const TermVtable UnionValue::vtable = PSI_COMPILER_TERM(UnionValue, "psi.compiler.UnionValue", Constructor);
     
     UpwardReferenceType::UpwardReferenceType(CompileContext& compile_context, const SourceLocation& location)
     : Type(&vtable, compile_context, location) {
@@ -1366,6 +1293,77 @@ namespace Psi {
     
     const TermVtable InterfaceValue::vtable = PSI_COMPILER_TERM(InterfaceValue, "psi.compiler.InterfaceValue", Term);
 
-    const SIVtable EvaluateContext::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.EvaluateContext", Tree);
+    MovableValue::MovableValue(CompileContext& context, const SourceLocation& location)
+    : Term(&vtable, context, location) {
+    }
+    
+    MovableValue::MovableValue(const TreePtr<Term>& value_, const SourceLocation& location)
+    : Term(&vtable, tree_attribute(value_, &Term::type), location),
+    value(value_) {
+    }
+    
+    template<typename V>
+    void MovableValue::visit(V& v) {
+      visit_base<Term>(v);
+      v("value", &MovableValue::value);
+    }
+    
+    const TermVtable MovableValue::vtable = PSI_COMPILER_TERM(MovableValue, "psi.compiler.MovableValue", Term);
+    
+    InitializePointer::InitializePointer(CompileContext& context, const SourceLocation& location)
+    : Term(&vtable, context, location) {
+    }
+    
+    InitializePointer::InitializePointer(const TreePtr<Term>& target_ptr_, const TreePtr<Term>& assign_value_, const TreePtr<Term>& inner_, const SourceLocation& location)
+    : Term(&vtable, tree_attribute(inner_, &Term::type), location),
+    target_ptr(target_ptr_),
+    assign_value(assign_value_),
+    inner(inner_) {
+    }
+    
+    template<typename V>
+    void InitializePointer::visit(V& v) {
+      visit_base<Term>(v);
+      v("target_ptr", &InitializePointer::target_ptr)
+      ("assign_value", &InitializePointer::assign_value)
+      ("inner", &InitializePointer::inner);
+    }
+    
+    const TermVtable InitializePointer::vtable = PSI_COMPILER_TERM(InitializePointer, "psi.compiler.InitializePointer", Term);
+    
+    AssignPointer::AssignPointer(CompileContext& context, const SourceLocation& location)
+    : Term(&vtable, context, location) {
+    }
+    
+    AssignPointer::AssignPointer(const TreePtr<Term>& target_ptr_, const TreePtr<Term>& assign_value_, const SourceLocation& location)
+    : Term(&vtable, target_ptr_.compile_context().builtins().empty_type, location),
+    target_ptr(target_ptr_),
+    assign_value(assign_value_) {
+    }
+    
+    template<typename V>
+    void AssignPointer::visit(V& v) {
+      visit_base<Term>(v);
+      v("target_ptr", &AssignPointer::target_ptr)
+      ("assign_value", &AssignPointer::assign_value);
+    }
+
+    const TermVtable AssignPointer::vtable = PSI_COMPILER_TERM(AssignPointer, "psi.compiler.AssignPointer", Term);
+    
+    FinalizePointer::FinalizePointer(CompileContext& context, const SourceLocation& location)
+    : Term(&vtable, context, location) {
+    }
+    
+    FinalizePointer::FinalizePointer(const TreePtr<Term>& target_ptr_, const SourceLocation& location)
+    : Term(&vtable, target_ptr_.compile_context().builtins().empty_type, location) {
+    }
+    
+    template<typename V>
+    void FinalizePointer::visit(V& v) {
+      visit_base<Term>(v);
+      v("target_ptr", &FinalizePointer::target_ptr);
+    }
+    
+    const TermVtable FinalizePointer::vtable = PSI_COMPILER_TERM(FinalizePointer, "psi.compiler.FinalizePointer", Term);
   }
 }

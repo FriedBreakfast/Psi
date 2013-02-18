@@ -45,7 +45,8 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   
   global_names["pointer"] = pointer_macro(compile_context, psi_location.named_child("pointer"));
   global_names["struct"] = struct_macro(compile_context, psi_location.named_child("struct"));
-  
+
+  global_names["new"] = new_macro(compile_context, psi_location.named_child("new"));
   global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));
   global_names["implement"] = implementation_define_macro(compile_context, psi_location.named_child("implement"));
   global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));

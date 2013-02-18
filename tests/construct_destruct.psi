@@ -11,6 +11,6 @@ test_type : struct () [
 );
 
 main : function () [
-  t : test_type;
+  t : new test_type;
 ];
 

@@ -95,6 +95,13 @@ namespace Psi {
     }
     
     /**
+     * \brief Get the type of constructor and destructor functions.
+     */
+    ValuePtr<FunctionType> FunctionalBuilder::constructor_type(Context& context, const SourceLocation& location) {
+      return function_type(cconv_c, empty_type(context, location), default_, 0, false, location);
+    }
+    
+    /**
      * \brief Get a ResolvedParameter.
      * 
      * This is used in function types to implement dependent parameter types.

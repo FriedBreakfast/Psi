@@ -73,11 +73,12 @@ namespace Psi {
 
           if (m_movable) {
             TreePtr<Term> unary_type(new FunctionType(result_mode_by_value, builtins.empty_type, vector_of(self_derived_p, param_ptr_p), default_, self.location().named_child("UnaryType")));
-            TreePtr<Term> unary_ptr_type(new PointerType(binary_type, self.location().named_child("UnaryTypePtr")));
+            TreePtr<Term> unary_ptr_type(new PointerType(unary_type, self.location().named_child("UnaryTypePtr")));
             
-            members.resize(4);
+            members.resize(5);
             members[interface_movable_init] = unary_ptr_type;
             members[interface_movable_fini] = unary_ptr_type;
+            members[interface_movable_clear] = unary_ptr_type;
             members[interface_movable_move] = binary_ptr_type;
             members[interface_movable_move_init] = binary_ptr_type;
           } else {

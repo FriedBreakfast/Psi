@@ -38,18 +38,24 @@ namespace Psi {
       TreePtr<Term> m_type;
       TvmStorage m_storage;
       Tvm::ValuePtr<> m_value, m_upref;
-      bool m_primitive;
+      bool m_primitive, m_register, m_constant;
       
-      TvmResult(const TreePtr<Term>& type, TvmStorage storage, const Tvm::ValuePtr<>& value, const Tvm::ValuePtr<>& upref, bool primitive)
-      : m_type(type), m_storage(storage), m_value(value), m_upref(upref), m_primitive(primitive) {}
+      TvmResult(const TreePtr<Term>& type, TvmStorage storage, const Tvm::ValuePtr<>& value, const Tvm::ValuePtr<>& upref, bool primitive, bool register_)
+      : m_type(type), m_storage(storage), m_value(value), m_upref(upref), m_primitive(primitive), m_register(register_) {}
 
     public:
       TvmResult() : m_storage(tvm_storage_bottom) {}
       
-      static TvmResult bottom() {return TvmResult(TreePtr<Term>(), tvm_storage_bottom, Tvm::ValuePtr<>(), Tvm::ValuePtr<>(), false);}
-      static TvmResult on_stack(const TreePtr<Term>& type, const Tvm::ValuePtr<>& value) {return TvmResult(type, tvm_storage_stack, value, Tvm::ValuePtr<>(), false);}
-      static TvmResult in_register(const TreePtr<Term>& type, TvmStorage storage, const Tvm::ValuePtr<>& value) {return TvmResult(type, storage, value, Tvm::ValuePtr<>(), false);}
-      static TvmResult type(const TreePtr<Term>& type, const Tvm::ValuePtr<>& value, bool primitive, const Tvm::ValuePtr<>& upref=Tvm::ValuePtr<>()) {return TvmResult(type, tvm_storage_functional, value, upref, primitive);}
+      static TvmResult bottom()
+      {return TvmResult(TreePtr<Term>(), tvm_storage_bottom, Tvm::ValuePtr<>(), Tvm::ValuePtr<>(), false, false);}
+      static TvmResult on_stack(const TreePtr<Term>& type, const Tvm::ValuePtr<>& value)
+      {return TvmResult(type, tvm_storage_stack, value, Tvm::ValuePtr<>(), false, false);}
+      static TvmResult in_register(const TreePtr<Term>& type, TvmStorage storage, const Tvm::ValuePtr<>& value)
+      {return TvmResult(type, storage, value, Tvm::ValuePtr<>(), false, false);}
+      static TvmResult functional(const TreePtr<Term>& type, const Tvm::ValuePtr<>& value, bool constant)
+      {return TvmResult(type, tvm_storage_functional, value, Tvm::ValuePtr<>(), false, constant);}
+      static TvmResult type(const TreePtr<Term>& type, const Tvm::ValuePtr<>& value, bool primitive, bool register_, const Tvm::ValuePtr<>& upref=Tvm::ValuePtr<>())
+      {return TvmResult(type, tvm_storage_functional, value, upref, primitive, register_);}
 
       const TreePtr<Term>& type() const {return m_type;}
       /// \brief Storage type of this result
@@ -60,6 +66,8 @@ namespace Psi {
       const Tvm::ValuePtr<>& upref() const {return m_upref;}
       /// \brief If this is a type, this is true if the type is primitive.
       bool primitive() const {return m_primitive;}
+      /// \brief If this type can be stored in a register, or if this is a value, whether values whose size is based on it can be stored in a register.
+      bool register_() const {return m_register;}
     };
     
     /**
@@ -99,15 +107,18 @@ namespace Psi {
       TvmResult build_type_instance(const TreePtr<TypeInstance>& type);
       TvmResult build_constructor(const TreePtr<Constructor>& value);
       TvmResult build_other(const TreePtr<Functional>& value);
-      
+      bool check_constant(const TreePtr<Term>& value);
+      std::pair<bool, bool> check_primitive_register(const TreePtr<Term>& type);
+
     public:
       TvmFunctionalBuilder(CompileContext *compile_context, Tvm::Context *tvm_context, TvmFunctionalBuilderCallback *callback);
       CompileContext& compile_context() {return *m_compile_context;}
       Tvm::Context& tvm_context() {return *m_tvm_context;}
       TvmResult build(const TreePtr<Term>& term);
       TvmResult build_type(const TreePtr<Term>& term);
-      Tvm::ValuePtr<> build_value(const TreePtr<Term>& term);
+      TvmResult build_value(const TreePtr<Term>& term);
       bool is_primitive(const TreePtr<Term>& term);
+      bool is_register(const TreePtr<Term>& term);
     };
     
     /**

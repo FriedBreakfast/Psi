@@ -56,8 +56,9 @@ namespace Psi {
     enum InterfaceMovableMembers {
       interface_movable_init=0,
       interface_movable_fini=1,
-      interface_movable_move_init=2,
-      interface_movable_move=3
+      interface_movable_clear=2,
+      interface_movable_move_init=3,
+      interface_movable_move=4
     };
 
     /**

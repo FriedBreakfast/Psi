@@ -85,9 +85,10 @@ namespace Psi {
         
         TargetCallback *target_callback() {return m_target_callback;}
 
-        virtual llvm::Type* build_type(const ValuePtr<>& term);
-        virtual llvm::Constant* build_constant(const ValuePtr<>& term);
+        llvm::Type* build_type(const ValuePtr<>& term);
+        llvm::Constant* build_constant(const ValuePtr<>& term);
         llvm::GlobalValue* build_global(const ValuePtr<Global>& term);
+        void build_constructor_list(const char *name, const Module::ConstructorList& constructors);
 
         const llvm::APInt& build_constant_integer(const ValuePtr<>& term);
         
@@ -103,11 +104,10 @@ namespace Psi {
         llvm::Function* llvm_eh_selector() {return m_llvm_eh_selector;}
         llvm::Function* llvm_eh_typeid_for() {return m_llvm_eh_typeid_for;}
 
-      protected:
+      private:
         llvm::LLVMContext *m_llvm_context;
         llvm::TargetMachine *m_llvm_target_machine;
         llvm::FunctionPassManager *m_llvm_function_pass;
-        Module *m_module;
         llvm::Module *m_llvm_module;
         TargetCallback *m_target_callback;
 

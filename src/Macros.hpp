@@ -7,6 +7,7 @@
 namespace Psi {
   namespace Compiler {
     TreePtr<> default_macro_impl(CompileContext& compile_context, const SourceLocation& location);
+    TreePtr<Term> new_macro(CompileContext& compile_context, const SourceLocation& location);
     TreePtr<Term> namespace_macro(CompileContext& compile_context, const SourceLocation& location);
     TreePtr<Term> builtin_type_macro(CompileContext& compile_context, const SourceLocation& location);
     TreePtr<Term> builtin_function_macro(CompileContext& compile_context, const SourceLocation& location);

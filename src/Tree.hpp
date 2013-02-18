@@ -336,6 +336,8 @@ namespace Psi {
       
       /// \brief Get the type referenced by this pointer type.
       TreePtr<Term> target_type;
+      
+      static TreePtr<Term> target_of(const TreePtr<Term>& term);
     };
     
     /**
@@ -385,24 +387,6 @@ namespace Psi {
     };
     
     /**
-     * \brief Get a pointer to an element from a pointer to a value.
-     */
-    class ElementPtr : public Functional {
-    public:
-      static const TermVtable vtable;
-      static const bool match_visit = true;
-      ElementPtr(CompileContext& compile_context, const SourceLocation& location);
-      ElementPtr(const TreePtr<Term>& value, const TreePtr<Term>& index, const SourceLocation& location);
-      ElementPtr(const TreePtr<Term>& value, int index, const SourceLocation& location);
-      template<typename V> static void visit(V& v);
-      
-      /// \brief Value of pointer to aggregate.
-      TreePtr<Term> value;
-      /// \brief Index of member to get.
-      TreePtr<Term> index;
-    };
-    
-    /**
      * \brief Get a reference to a member from a reference to a value.
      */
     class ElementValue : public Functional {
@@ -418,21 +402,6 @@ namespace Psi {
       TreePtr<Term> value;
       /// \brief Index of member to get.
       TreePtr<Term> index;
-    };
-    
-    /**
-     * \brief Get a reference to a containing structure from a reference to an inner value.
-     */
-    class OuterPtr : public Functional {
-    public:
-      static const TermVtable vtable;
-      static const bool match_visit = true;
-      OuterPtr(CompileContext& compile_context, const SourceLocation& location);
-      OuterPtr(const TreePtr<Term>& value, const SourceLocation& location);
-      template<typename V> static void visit(V& v);
-      
-      /// \brief Pointer to data structure, which must have type DerivedType
-      TreePtr<Term> value;
     };
     
     /**
@@ -522,6 +491,19 @@ namespace Psi {
       template<typename V> static void visit(V& v);
 
       PSI_STD::vector<TreePtr<Term> > members;
+    };
+    
+    /**
+     * \brief Union value.
+     */
+    class UnionValue : public Constructor {
+    public:
+      static const TermVtable vtable;
+      UnionValue(CompileContext& compile_context, const SourceLocation& location);
+      UnionValue(const TreePtr<UnionType>& type, const TreePtr<Term>& member_value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      TreePtr<Term> member_value;
     };
     
     /**
@@ -1050,6 +1032,83 @@ namespace Psi {
       TreePtr<Interface> interface;
       /// \brief List of parameters, including implicit parameters.
       PSI_STD::vector<TreePtr<Term> > parameters;
+    };
+    
+    /**
+     * \brief Make the value movable.
+     * 
+     * If the argument to this is an lvalue ref, the result is an rvalue ref
+     * of the same type.
+     */
+    class MovableValue : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      MovableValue(CompileContext& context, const SourceLocation& location);
+      MovableValue(const TreePtr<Term>& value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Argument value
+      TreePtr<Term> value;
+    };
+    
+    /**
+     * \brief Initialize a value at a pointer.
+     * 
+     * Performs the role of a constructor in C++.
+     */
+    class InitializePointer : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      InitializePointer(CompileContext& context, const SourceLocation& location);
+      InitializePointer(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const TreePtr<Term>& inner, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Pointer to address to be initialized
+      TreePtr<Term> target_ptr;
+      /// \brief Value to be used to initialize target
+      TreePtr<Term> assign_value;
+      /**
+       * This tree is evaluated after constructors are run but
+       * if this term throws an exception the value at the pointer
+       * is destroyed.
+       */
+      TreePtr<Term> inner;
+    };
+    
+    /**
+     * \brief Assign a value at a pointer.
+     * 
+     * This assumes the memory at the pointer has already been initialized.
+     */
+    class AssignPointer : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      AssignPointer(CompileContext& context, const SourceLocation& location);
+      AssignPointer(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Pointer to address to be assigned.
+      TreePtr<Term> target_ptr;
+      /// \brief Value to be assign to target.
+      TreePtr<Term> assign_value;
+    };
+    
+    /**
+     * \brief Finalize (destroy) the object at a pointer.
+     */
+    class FinalizePointer : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      FinalizePointer(CompileContext& context, const SourceLocation& location);
+      FinalizePointer(const TreePtr<Term>& target_ptr, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /// \brief Pointer to object to be destroyed.
+      TreePtr<Term> target_ptr;
     };
   }
 }

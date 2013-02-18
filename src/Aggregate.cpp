@@ -336,52 +336,70 @@ public:
 class AggregateMovableCallback : public AggregateLifecycleBase {
   AggregateLifecycleImpl m_lc_init, m_lc_fini, m_lc_move;
   
-  TreePtr<Term> build_init(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
-    SourceLocation location = self.location().named_child("init");
+  TreePtr<Term> build_init(const TreePtr<Term>& instance, ImplementationHelper& helper) {
+    SourceLocation location = instance.location().named_child("init");
     ImplementationHelper::FunctionSetup f = helper.member_function_setup(interface_movable_init, location,
                                                                          !m_lc_init.body ? default_ :
                                                                          vector_of(parameter_location(location, m_lc_init.dest_name)));
     TreePtr<Term> extra = build_body(location, m_lc_init, f.parameters[1]);
-    return helper.function_finish(f, m_evaluate_context->module(),
-                                  lifecycle_init(f.parameters[1], location, extra));
+    if (!extra)
+      extra = instance.compile_context().builtins().empty_value;
+    TreePtr<Term> value(new DefaultValue(instance, location));
+    TreePtr<Term> init(new InitializePointer(f.parameters[1], value, extra, location));
+    return helper.function_finish(f, m_evaluate_context->module(), init);
   }
   
-  TreePtr<Term> build_fini(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
-    SourceLocation location = self.location().named_child("fini");
+  TreePtr<Term> build_fini(const TreePtr<Term>& instance, ImplementationHelper& helper) {
+    SourceLocation location = instance.location().named_child("fini");
     ImplementationHelper::FunctionSetup f = helper.member_function_setup(interface_movable_fini, location,
                                                                          !m_lc_fini.body ? default_ :
                                                                          vector_of(parameter_location(location, m_lc_fini.dest_name)));
     TreePtr<Term> extra = build_body(location, m_lc_fini, f.parameters[1]);
-    TreePtr<Term> cleanup = lifecycle_fini(f.parameters[1], location);
+    TreePtr<Term> cleanup(new FinalizePointer(f.parameters[1], location));
     return helper.function_finish(f, m_evaluate_context->module(), combine_body(extra, cleanup, location));
   }
   
-  TreePtr<Term> build_move_init(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
-    SourceLocation location = self.location().named_child("move_init");
+  TreePtr<Term> build_clear(const TreePtr<Term>& instance, ImplementationHelper& helper) {
+    SourceLocation location = instance.location().named_child("clear");
+    ImplementationHelper::FunctionSetup f = helper.member_function_setup(interface_movable_clear, location,
+                                                                         !m_lc_fini.body ? default_ :
+                                                                         vector_of(parameter_location(location, m_lc_fini.dest_name)));
+    TreePtr<Term> extra = build_body(location, m_lc_fini, f.parameters[1]);
+    TreePtr<Term> cleanup(new FinalizePointer(f.parameters[1], location));
+    return helper.function_finish(f, m_evaluate_context->module(), combine_body(extra, cleanup, location));
+  }
+  
+  TreePtr<Term> build_move_init(const TreePtr<Term>& instance, ImplementationHelper& helper) {
+    SourceLocation location = instance.location().named_child("move_init");
     ImplementationHelper::FunctionSetup f = helper.member_function_setup(interface_movable_move_init, location,
                                                                          !m_lc_move.body ? default_ :
                                                                          vector_of(parameter_location(location, m_lc_move.dest_name),
                                                                                    parameter_location(location, m_lc_move.src_name)));
 
     TreePtr<Term> body, custom = build_body(location, m_lc_move, f.parameters[1], f.parameters[2]);
-    if (custom)
-      body = lifecycle_init(f.parameters[1], location, custom);
-    else
-      body = lifecycle_move_init(f.parameters[1], f.parameters[2], location, self.compile_context().builtins().empty_value);
+    if (custom) {
+      TreePtr<Term> value(new DefaultValue(instance, location));
+      body.reset(new InitializePointer(f.parameters[1], value, custom, location));
+    } else {
+      TreePtr<Term> value(new PointerTarget(f.parameters[2], location));
+      TreePtr<Term> move_value(new MovableValue(value, location));
+      body.reset(new InitializePointer(f.parameters[1], move_value, instance.compile_context().builtins().empty_value, location));
+    }
     return helper.function_finish(f, m_evaluate_context->module(), body);
   }
   
-  TreePtr<Term> build_move(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
-    SourceLocation location = self.location().named_child("move");
+  TreePtr<Term> build_move(const TreePtr<Term>& instance, ImplementationHelper& helper) {
+    SourceLocation location = instance.location().named_child("move");
     ImplementationHelper::FunctionSetup f = helper.member_function_setup(interface_movable_move, location,
                                                                          !m_lc_move.body ? default_ :
                                                                          vector_of(parameter_location(location, m_lc_move.src_name),
                                                                                    parameter_location(location, m_lc_move.dest_name)));
     TreePtr<Term> body = build_body(location, m_lc_move, f.parameters[1], f.parameters[2]);
-    if (!body)
-      body = lifecycle_move(f.parameters[1], f.parameters[2], location);
-    if (!body)
-      body = self.compile_context().builtins().empty_value;
+    if (!body) {
+      TreePtr<Term> value(new PointerTarget(f.parameters[2], location));
+      TreePtr<Term> move_value(new MovableValue(value, location));
+      body.reset(new AssignPointer(f.parameters[1], move_value, location));
+    }
     return helper.function_finish(f, m_evaluate_context->module(), body);
   }
   
@@ -399,10 +417,11 @@ public:
                                 m_argument_list, vector_of(instance), default_);
     
     PSI_STD::vector<TreePtr<Term> > members(4);
-    members[interface_movable_init] = build_init(self, helper);
-    members[interface_movable_fini] = build_fini(self, helper);
-    members[interface_movable_move_init] = build_move_init(self, helper);
-    members[interface_movable_move] = build_move(self, helper);
+    members[interface_movable_init] = build_init(instance, helper);
+    members[interface_movable_fini] = build_fini(instance, helper);
+    members[interface_movable_clear] = build_clear(instance, helper);
+    members[interface_movable_move_init] = build_move_init(instance, helper);
+    members[interface_movable_move] = build_move(instance, helper);
     TreePtr<Term> value(new StructValue(self.compile_context(), members, self.location()));
     return helper.finish(value);
   }
@@ -419,32 +438,35 @@ public:
 class AggregateCopyableCallback : public AggregateLifecycleBase {
   AggregateLifecycleImpl m_lc_copy;
 
-  TreePtr<Term> build_copy_init(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
-    SourceLocation location = self.location().named_child("copy_init");
+  TreePtr<Term> build_copy_init(const TreePtr<Term>& instance, ImplementationHelper& helper) {
+    SourceLocation location = instance.location().named_child("copy_init");
     ImplementationHelper::FunctionSetup f = helper.member_function_setup(interface_copyable_copy_init, location,
                                                                          !m_lc_copy.body ? default_ :
                                                                          vector_of(parameter_location(location, m_lc_copy.dest_name),
                                                                                    parameter_location(location, m_lc_copy.src_name)));
     TreePtr<Term> body, custom = build_body(location, m_lc_copy, f.parameters[1], f.parameters[2]);
-    if (custom)
-      body = lifecycle_init(f.parameters[1], location, custom);
-    else
-      body = lifecycle_copy_init(f.parameters[1], f.parameters[2], location, self.compile_context().builtins().empty_value);
+    if (custom) {
+      TreePtr<Term> value(new DefaultValue(instance, location));
+      body.reset(new InitializePointer(f.parameters[1], value, custom, location));
+    } else {
+      TreePtr<Term> value(new PointerTarget(f.parameters[2], location));
+      body.reset(new InitializePointer(f.parameters[1], value, instance.compile_context().builtins().empty_value, location));
+    }
     return helper.function_finish(f, m_evaluate_context->module(), body);
   }
   
-  TreePtr<Term> build_copy(const TreePtr<Implementation>& self, ImplementationHelper& helper) {
-    SourceLocation location = self.location().named_child("copy");
+  TreePtr<Term> build_copy(const TreePtr<Term>& instance, ImplementationHelper& helper) {
+    SourceLocation location = instance.location().named_child("copy");
     ImplementationHelper::FunctionSetup f = helper.member_function_setup(interface_copyable_copy, location,
                                                                          !m_lc_copy.body ? default_ :
                                                                          vector_of(parameter_location(location, m_lc_copy.src_name),
                                                                                    parameter_location(location, m_lc_copy.dest_name)));
     
     TreePtr<Term> body = build_body(location, m_lc_copy, f.parameters[1], f.parameters[2]);
-    if (!body)
-      body = lifecycle_move(f.parameters[1], f.parameters[2], location);
-    if (!body)
-      body = self.compile_context().builtins().empty_value;
+    if (!body) {
+      TreePtr<Term> value(new PointerTarget(f.parameters[2], location));
+      body.reset(new AssignPointer(f.parameters[1], value, location));
+    }
     return helper.function_finish(f, m_evaluate_context->module(), body);
   }
   
@@ -456,13 +478,13 @@ public:
   
   TreePtr<Implementation> evaluate(const TreePtr<Implementation>& self) {
     TreePtr<Term> instance = generic_instance(self.location());
-    ImplementationHelper helper(self.location(), self.compile_context().builtins().movable_interface,
+    ImplementationHelper helper(self.location(), self.compile_context().builtins().copyable_interface,
                                 m_argument_list, vector_of(instance), default_);
 
     PSI_STD::vector<TreePtr<Term> > members(3);
     members[interface_copyable_movable].reset(new InterfaceValue(self.compile_context().builtins().movable_interface, vector_of(instance), self.location()));
-    members[interface_copyable_copy] = build_copy(self, helper);
-    members[interface_copyable_copy_init] = build_copy_init(self, helper);
+    members[interface_copyable_copy] = build_copy(instance, helper);
+    members[interface_copyable_copy_init] = build_copy_init(instance, helper);
     TreePtr<Term> value(new StructValue(self.compile_context(), members, self.location()));
     return helper.finish(value);
   }

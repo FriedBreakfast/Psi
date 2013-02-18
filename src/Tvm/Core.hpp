@@ -643,12 +643,14 @@ namespace Psi {
       struct GlobalHasher {std::size_t operator () (const Global&) const;};
       
       typedef std::map<std::string, ValuePtr<Global> > ModuleMemberList;
+      typedef std::vector<ValuePtr<Function> > ConstructorList;
                                               
     private:
       Context *m_context;
       SourceLocation m_location;
       std::string m_name;
       ModuleMemberList m_members;
+      ConstructorList m_constructors, m_destructors;
       
       void add_member(const ValuePtr<Global>& global);
       
@@ -664,6 +666,10 @@ namespace Psi {
       ModuleMemberList& members() {return m_members;}
       /// \brief Get the name of this module
       const std::string& name() {return m_name;}
+      /// \brief List of constructor functions
+      const ConstructorList& constructors() {return m_constructors;}
+      /// \brief List of destructor functions
+      const ConstructorList& destructors() {return m_destructors;}
       
 #ifdef PSI_DEBUG
       void dump();
@@ -674,6 +680,9 @@ namespace Psi {
       ValuePtr<GlobalVariable> new_global_variable(const std::string& name, const ValuePtr<>& type, const SourceLocation& location);
       ValuePtr<GlobalVariable> new_global_variable_set(const std::string&, const ValuePtr<>& value, const SourceLocation& location);
       ValuePtr<Function> new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location);
+      
+      ValuePtr<Function> new_constructor(const std::string& name, const SourceLocation& location);
+      ValuePtr<Function> new_destructor(const std::string& name, const SourceLocation& location);
     };
 
     /**

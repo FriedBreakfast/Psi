@@ -15,7 +15,6 @@ namespace Psi {
     }
     
     std::pair<const char*, const char*> bracket_token_strings(Parser::TokenExpressionType type) {
-      const char *bracket_operation, *bracket_str;
       switch (type) {
       case Parser::token_bracket: return std::make_pair("__bracket__", "(...)");
       case Parser::token_brace: return std::make_pair("__brace__", "{...}");

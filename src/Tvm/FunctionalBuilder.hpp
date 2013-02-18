@@ -47,6 +47,7 @@ namespace Psi {
       //@{
       static ValuePtr<FunctionType> function_type(CallingConvention calling_convention, const ValuePtr<>& result_type,
                                                   const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, bool sret, const SourceLocation& location);
+      static ValuePtr<FunctionType> constructor_type(Context& context, const SourceLocation& location);
       static ValuePtr<> parameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
       //@}
       

@@ -20,7 +20,6 @@ namespace Psi {
       PsiBool (*match) (const Term*, const Term*, PSI_STD::vector<TreePtr<Term> >*, unsigned);
       
       void (*global_dependencies) (const Term*, PSI_STD::set<TreePtr<ModuleGlobal> > *globals);
-      PsiBool (*pure_functional) (const Term*);
     };
     
     class Term : public Tree {
@@ -69,13 +68,6 @@ namespace Psi {
         derived_vptr(this)->global_dependencies(this, &globals);
       }
       
-      /**
-       * \brief Whether calculation of this term requires evaluating non-functional operands.
-       */
-      bool pure_functional() const {
-        return derived_vptr(this)->pure_functional(this);
-      }
-      
       static bool match_impl(const Term& lhs, const Term& rhs, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth);
       static TreePtr<Term> parameterize_impl(const Term& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements, unsigned depth);
       static TreePtr<Term> specialize_impl(const Term& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, unsigned depth);
@@ -83,7 +75,6 @@ namespace Psi {
                                           PSI_STD::vector<TreePtr<Term> >& parameter_types, PSI_STD::map<TreePtr<Statement>, unsigned>& parameter_map,
                                           const PSI_STD::vector<TreePtr<Statement> >& statements, unsigned depth);
       static void global_dependencies_impl(const Term& self, PSI_STD::set<TreePtr<ModuleGlobal> >& globals);
-      static PsiBool pure_functional_impl(const Term& self);
 
       template<typename Visitor> static void visit(Visitor& v) {
         visit_base<Tree>(v);
@@ -361,19 +352,6 @@ namespace Psi {
           ptr->global_dependencies(*m_dependencies);
       }
     };
-
-    class PureFunctionalVisitor : public UnaryTreePtrVisitor<GlobalDependenciesVisitor> {
-    public:
-      PureFunctionalVisitor() : pure(true) {}
-      
-      bool pure;
-      
-      template<typename T>
-      void visit_tree_ptr(const TreePtr<T>& ptr) {
-        if (pure && ptr)
-          pure = pure && ptr->pure_functional();
-      }
-    };
     
     template<typename Derived>
     struct TermWrapper : NonConstructible {
@@ -465,21 +443,6 @@ namespace Psi {
       static void global_dependencies(const Term *self, PSI_STD::set<TreePtr<ModuleGlobal> > *globals) {
         return global_dependencies_helper(static_bool<Derived::match_visit>(), self, globals);
       }
-      
-      static PsiBool pure_functional_helper(static_bool<false>, const Term *self) {
-        return Derived::pure_functional_impl(*static_cast<const Derived*>(self));
-      }
-      
-      static PsiBool pure_functional_helper(static_bool<true>, const Term *self) {
-        PureFunctionalVisitor pv;
-        boost::array<const Derived*,1> ptrs = {{static_cast<const Derived*>(self)}};
-        visit_members(pv, ptrs);
-        return pv.pure;
-      }
-      
-      static PsiBool pure_functional(const Term *self) {
-        return pure_functional_helper(static_bool<Derived::match_visit>(), self);
-      }
     };
 
 #define PSI_COMPILER_TERM(derived,name,super) { \
@@ -488,8 +451,7 @@ namespace Psi {
     &::Psi::Compiler::TermWrapper<derived>::specialize, \
     &::Psi::Compiler::TermWrapper<derived>::anonymize, \
     &::Psi::Compiler::TermWrapper<derived>::match, \
-    &::Psi::Compiler::TermWrapper<derived>::global_dependencies, \
-    &::Psi::Compiler::TermWrapper<derived>::pure_functional \
+    &::Psi::Compiler::TermWrapper<derived>::global_dependencies \
   }
 
     /**

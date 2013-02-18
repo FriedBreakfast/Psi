@@ -268,6 +268,9 @@ namespace Psi {
           }
         }
         
+        build_constructor_list("llvm.global_ctors", module->constructors());
+        build_constructor_list("llvm.global_dtors", module->destructors());
+        
         return module_result;
       }
       
@@ -387,6 +390,29 @@ namespace Psi {
         
         itp.first->second = t;
         return t;
+      }
+      
+      /**
+       * \brief Build a constructor or destructor list.
+       */
+      void ModuleBuilder::build_constructor_list(const char *name, const Module::ConstructorList& constructors) {
+        if (constructors.empty())
+          return;
+        
+        unsigned priority = 65535;
+        std::vector<llvm::Constant*> elements;
+        llvm::Type *priority_type = llvm::Type::getInt32Ty(llvm_context());
+        llvm::Type *constructor_ptr_type = llvm::FunctionType::get(llvm::Type::getVoidTy(llvm_context()), false)->getPointerTo();
+        llvm::StructType *element_type = llvm::StructType::get(priority_type, constructor_ptr_type);
+        for (Module::ConstructorList::const_iterator ii = constructors.begin(), ie = constructors.end(); ii != ie; ++ii, ++priority) {
+          llvm::Constant *values[2] = {llvm::ConstantInt::get(priority_type, priority), build_global(*ii)};
+          elements.push_back(llvm::ConstantStruct::getAnon(values));
+        }
+        llvm::ArrayType *constructor_list_type = llvm::ArrayType::get(element_type, elements.size());
+        llvm::Constant *constructor_list = llvm::ConstantArray::get(constructor_list_type, elements);
+        
+        new llvm::GlobalVariable(*m_llvm_module, constructor_list_type,
+                                 true, llvm::GlobalValue::AppendingLinkage, constructor_list, name);
       }
       
       llvm::IntegerType* integer_type(llvm::LLVMContext& context, const llvm::DataLayout *target_data, IntegerType::Width width) {

@@ -103,7 +103,6 @@ add_library(psi-compiler SHARED
   BuiltinTypes.cpp
   CppCompiler.hpp
   Compiler.cpp Compiler.hpp
-  DefaultLifecycle.cpp
   ExpressionCompiler.cpp
   Function.cpp
   Interface.cpp
@@ -115,8 +114,9 @@ add_library(psi-compiler SHARED
   Tree.cpp Tree.hpp
   TreeBase.cpp TreeBase.hpp
   Term.cpp Term.hpp
-  TvmFunctionLowering.cpp
+  TvmFunctionLowering.cpp TvmFunctionLowering.hpp
   TvmFunctionalLowering.cpp
+  TvmLifecycle.cpp
   TvmLowering.cpp TvmLowering.hpp
   Visitor.hpp
   ${PSI_COMPILER_SOURCES}
