@@ -19,7 +19,8 @@ namespace Psi {
       parameter_mode_output, ///< Output parameter
       parameter_mode_io, ///< Input/Output parameter
       parameter_mode_rvalue, ///< R-value reference
-      parameter_mode_functional ///< Funtional value
+      parameter_mode_functional, ///< Funtional value
+      parameter_mode_phantom ///< Phantom value
     };
     
     PSI_VISIT_SIMPLE(ParameterMode);

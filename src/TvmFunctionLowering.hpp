@@ -167,6 +167,9 @@ class TvmFunctionLowering {
   TvmResult run_constructor(Scope& scope, const TreePtr<Term>& value, const VariableSlot& slot, Scope& following_scope);
   
   Tvm::ValuePtr<> run_functional(Scope& scope, const TreePtr<Term>& term);
+  Tvm::ValuePtr<> run_reference(Scope& scope, const TreePtr<Term>& term);
+  Tvm::ValuePtr<> get_implementation(Scope& scope, const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                                     const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation=TreePtr<Implementation>());
   
   typedef std::vector<std::pair<Tvm::ValuePtr<Tvm::Block>, TvmResult> > MergeExitList;
   static bool merge_exit_list_entry_bottom(const MergeExitList::value_type& el);

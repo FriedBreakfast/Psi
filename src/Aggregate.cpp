@@ -416,7 +416,7 @@ public:
     ImplementationHelper helper(self.location(), self.compile_context().builtins().movable_interface,
                                 m_argument_list, vector_of(instance), default_);
     
-    PSI_STD::vector<TreePtr<Term> > members(4);
+    PSI_STD::vector<TreePtr<Term> > members(5);
     members[interface_movable_init] = build_init(instance, helper);
     members[interface_movable_fini] = build_fini(instance, helper);
     members[interface_movable_clear] = build_clear(instance, helper);
@@ -482,7 +482,7 @@ public:
                                 m_argument_list, vector_of(instance), default_);
 
     PSI_STD::vector<TreePtr<Term> > members(3);
-    members[interface_copyable_movable].reset(new InterfaceValue(self.compile_context().builtins().movable_interface, vector_of(instance), self.location()));
+    members[interface_copyable_movable].reset(new InterfaceValue(self.compile_context().builtins().movable_interface, vector_of(instance), default_, self.location()));
     members[interface_copyable_copy] = build_copy(instance, helper);
     members[interface_copyable_copy_init] = build_copy_init(instance, helper);
     TreePtr<Term> value(new StructValue(self.compile_context(), members, self.location()));
@@ -518,10 +518,12 @@ public:
       primitive_mode = GenericType::primitive_never;
     
     PSI_STD::vector<TreePtr<OverloadValue> > overloads;
-    TreePtr<Implementation> movable_impl = tree_callback(self.compile_context(), self.location(), AggregateMovableCallback(self, m_evaluate_context, helper));
+    TreePtr<Implementation> movable_impl = tree_callback(self.compile_context(), self.location().named_child("Movable"),
+                                                         AggregateMovableCallback(self, m_evaluate_context, helper));
     overloads.push_back(movable_impl);
     if (helper.lc_copy.mode != AggregateLifecycleImpl::mode_delete)
-      overloads.push_back(tree_callback(self.compile_context(), self.location(), AggregateCopyableCallback(self, m_evaluate_context, helper)));
+      overloads.push_back(tree_callback(self.compile_context(), self.location().named_child("Copyable"),
+                                        AggregateCopyableCallback(self, m_evaluate_context, helper)));
 
     TreePtr<StructType> member_type(new StructType(self.compile_context(), helper.member_types, self.location()));
     TreePtr<GenericType> generic(new GenericType(helper.argument_pattern, member_type, overloads, primitive_mode, self.location()));

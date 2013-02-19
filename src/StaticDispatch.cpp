@@ -68,18 +68,22 @@ namespace Psi {
     const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", OverloadType);
     
     Implementation::Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent_, const TreePtr<Term>& value_, const TreePtr<Interface>& interface,
-                                   unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const PSI_STD::vector<int>& path_, const SourceLocation& location)
+                                   unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, bool dynamic_, const PSI_STD::vector<int>& path_, const SourceLocation& location)
     : OverloadValue(&vtable, interface, n_wildcards, pattern, location),
     dependent(dependent_),
     value(value_),
+    dynamic(dynamic_),
     path(path_) {
+      PSI_ASSERT(!dynamic || path.empty());
     }
     
     template<typename V>
     void Implementation::visit(V& v) {
       visit_base<OverloadValue>(v);
       v("dependent", &Implementation::dependent)
-      ("value", &Implementation::value);
+      ("value", &Implementation::value)
+      ("dynamic", &Implementation::dynamic)
+      ("path", &Implementation::path);
     }
     
     const TreeVtable Implementation::vtable = PSI_COMPILER_TREE(Implementation, "psi.compiler.Implementation", OverloadValue);
@@ -190,9 +194,8 @@ namespace Psi {
      * This is the base implementation for both metadata_lookup and implementation_lookup,
      * and should be used for anything else which subclasses OverloadType.
      */
-    std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> >
-    overload_lookup(const TreePtr<OverloadType>& type, const TreePtr<EvaluateContext>& context,
-                    const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
+    TreePtr<OverloadValue> overload_lookup(const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                                           const SourceLocation& location, const PSI_STD::vector<TreePtr<OverloadValue> >& extra) {
       std::vector<std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> > > results;
       PSI_STD::vector<TreePtr<Term> > match_scratch;
 
@@ -203,15 +206,11 @@ namespace Psi {
           results.push_back(std::make_pair(match_scratch, v));
       }
       
-      if (context) {
-        PSI_STD::vector<TreePtr<OverloadValue> > context_list;
-        context->overload_list(type, context_list);
-        for (PSI_STD::vector<TreePtr<OverloadValue> >::const_iterator ii = context_list.begin(), ie = context_list.end(); ii != ie; ++ii) {
-          const TreePtr<OverloadValue>& v = *ii;
-          PSI_ASSERT(v && (type == v->overload_type));
-          if(overload_pattern_match(v->pattern, parameters, v->n_wildcards, match_scratch))
-            results.push_back(std::make_pair(match_scratch, v));
-        }
+      for (PSI_STD::vector<TreePtr<OverloadValue> >::const_iterator ii = extra.begin(), ie = extra.end(); ii != ie; ++ii) {
+        const TreePtr<OverloadValue>& v = *ii;
+        PSI_ASSERT(v && (type == v->overload_type));
+        if(overload_pattern_match(v->pattern, parameters, v->n_wildcards, match_scratch))
+          results.push_back(std::make_pair(match_scratch, v));
       }
       
       for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
@@ -266,7 +265,7 @@ namespace Psi {
           goto ambiguous_match;
       }
       
-      return results[best_idx];
+      return results[best_idx].second;
     }
 
     /**
@@ -279,7 +278,9 @@ namespace Psi {
      */    
     TreePtr<> metadata_lookup(const TreePtr<MetadataType>& metadata_type, const TreePtr<EvaluateContext>& context,
                               const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
-      TreePtr<Metadata> md = treeptr_cast<Metadata>(overload_lookup(metadata_type, context, parameters, location).second);
+      PSI_STD::vector<TreePtr<OverloadValue> > context_list;
+      context->overload_list(metadata_type, context_list);
+      TreePtr<Metadata> md = treeptr_cast<Metadata>(overload_lookup(metadata_type, parameters, location, context_list));
       if (!metadata_type->type.isa(md->value.get()))
         metadata_type.compile_context().error_throw(location, boost::format("Value of metadata does not have the expected type: %s") % metadata_type->type->classname);
       return md->value;

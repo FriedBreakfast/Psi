@@ -57,13 +57,14 @@ namespace Psi {
         TreePtr<GenericType> evaluate(const TreePtr<GenericType>& self) {
           const BuiltinTypes& builtins = self.compile_context().builtins();
           CompileContext& compile_context = builtins.metatype.compile_context();
-          TreePtr<Term> upref(new Parameter(builtins.upref_type, 0, 0, self.location().named_child("x0")));
-          TreePtr<Term> param(new Parameter(builtins.metatype, 0, 1, self.location().named_child("x1")));
+          TreePtr<Term> upref(new Parameter(builtins.upref_type, 1, 0, self.location().named_child("x0")));
+          TreePtr<Term> param1(new Parameter(builtins.metatype, 1, 1, self.location().named_child("x1")));
+          TreePtr<Term> param0(new Parameter(builtins.metatype, 0, 1, self.location().named_child("x1")));
           PSI_STD::vector<TreePtr<Term> > members;
           
-          TreePtr<Term> self_instance(new TypeInstance(self, vector_of(upref, param), self.location()));
+          TreePtr<Term> self_instance(new TypeInstance(self, vector_of(upref, param1), self.location()));
           TreePtr<Term> self_derived(new DerivedType(self_instance, upref, self.location()));
-          TreePtr<Term> param_ptr(new PointerType(param, self.location()));
+          TreePtr<Term> param_ptr(new PointerType(param1, self.location()));
           
           FunctionParameterType self_derived_p(parameter_mode_input, self_derived);
           FunctionParameterType param_ptr_p(parameter_mode_functional, param_ptr);
@@ -83,13 +84,13 @@ namespace Psi {
             members[interface_movable_move_init] = binary_ptr_type;
           } else {
             members.resize(3);
-            members[interface_copyable_movable] = self.compile_context().builtins().movable_interface->pointer_type_after(vector_of(param), self.location().named_child("MovableBasePointer"));
+            members[interface_copyable_movable] = self.compile_context().builtins().movable_interface->pointer_type_after(vector_of(param0), self.location().named_child("MovableBasePointer"));
             members[interface_copyable_copy] = binary_ptr_type;
             members[interface_copyable_copy_init] = binary_ptr_type;
           }
           
           TreePtr<StructType> st(new StructType(compile_context, members, self.location()));
-          return TreePtr<GenericType>(new GenericType(vector_of(upref, param), st, default_, GenericType::primitive_always, self.location()));
+          return TreePtr<GenericType>(new GenericType(vector_of(upref->type, param0->type), st, default_, GenericType::primitive_always, self.location()));
         }
         
         template<typename V> static void visit(V&) {}

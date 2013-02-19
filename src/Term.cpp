@@ -2,6 +2,8 @@
 #include "Tree.hpp"
 #include "Compiler.hpp"
 
+#include <boost/format.hpp>
+
 namespace Psi {
   namespace Compiler {
     Term::Term(const TermVtable *vptr, const TreePtr<Term>& type_, const SourceLocation& location)
@@ -109,6 +111,15 @@ namespace Psi {
       visit_base<Term>(v);
     }
 
+    TreePtr<Term> Anonymous::parameterize_impl(const Anonymous& self, const SourceLocation& location,
+                                               const PSI_STD::vector<TreePtr<Anonymous> >& values, unsigned depth) {
+      for (std::size_t ii = 0, ie = values.size(); ii != ie; ++ii) {
+        if (values[ii].get() == &self)
+          return TreePtr<Term>(new Parameter(self.type->parameterize(location, values, depth), depth, ii, location));
+      }
+      return TreePtr<Term>(&self);
+    }
+
     const TermVtable Anonymous::vtable = PSI_COMPILER_TERM(Anonymous, "psi.compiler.Anonymous", Term);
 
     Parameter::Parameter(CompileContext& compile_context, const SourceLocation& location)
@@ -126,6 +137,16 @@ namespace Psi {
       visit_base<Term>(v);
       v("depth", &Parameter::depth)
       ("index", &Parameter::index);
+    }
+    
+    TreePtr<Term> Parameter::specialize_impl(const Parameter& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, unsigned depth) {
+      if (self.depth == depth) {
+        if (self.index >= values.size())
+          self.compile_context().error_throw(location, boost::format("Too few values given for specialization: parameter index %d encountered") % self.index);
+        return values[self.index];
+      } else {
+        return TreePtr<Term>(&self);
+      }
     }
 
     const TermVtable Parameter::vtable = PSI_COMPILER_TERM(Parameter, "psi.compiler.Parameter", Term);

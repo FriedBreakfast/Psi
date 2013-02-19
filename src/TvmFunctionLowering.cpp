@@ -100,7 +100,8 @@ TvmFunctionLowering::Scope::~Scope() {
 void TvmFunctionLowering::Scope::cleanup(bool except) {
   if (m_cleanup) {
     PSI_ASSERT(m_variable.storage() == tvm_storage_bottom);
-    m_cleanup->run(*this);
+    if (!m_cleanup_except_only || except)
+      m_cleanup->run(*this);
   } else if (m_variable.storage() == tvm_storage_stack) {
     shared().object_destroy(*this, m_variable.value(), m_variable.type(), m_location);
   }
@@ -354,6 +355,27 @@ Tvm::ValuePtr<> TvmFunctionLowering::run_functional(Scope& scope, const TreePtr<
   return tvm_result;
 }
 
+Tvm::ValuePtr<> TvmFunctionLowering::run_reference(Scope& scope, const TreePtr<Term>& term) {
+  VariableSlot slot(scope, term->type);
+  TvmResult result = run(scope, term, slot, scope);
+  Scope var_scope(scope, term->location(), result, slot);
+
+  Tvm::ValuePtr<> tvm_result;
+  switch (result.storage()) {
+  case tvm_storage_lvalue_ref:
+  case tvm_storage_rvalue_ref:
+    tvm_result = result.value();
+    break;
+
+  default:
+    compile_context().error_throw(term.location(), "Term does not produce a reference as expected.");
+  }
+  
+  var_scope.cleanup(false);
+  
+  return tvm_result;
+}
+
 TvmResult TvmFunctionLowering::run(Scope& scope, const TreePtr<Term>& term, const VariableSlot& slot, Scope& following_scope) {
   if (TreePtr<Global> global = dyn_treeptr_cast<Global>(term)) {
     return TvmResult::in_register(global->type, tvm_storage_lvalue_ref, tvm_compiler().build_global(global, m_module));
@@ -383,6 +405,10 @@ TvmResult TvmFunctionLowering::run(Scope& scope, const TreePtr<Term>& term, cons
     return run_finalize(scope, ptr_fini, slot, following_scope);
   } else if (tree_isa<Constructor>(term) && !is_register(scope, term->type)) {
     return run_constructor(scope, term, slot, following_scope);
+  } else if (TreePtr<InterfaceValue> interface_value = dyn_treeptr_cast<InterfaceValue>(term)) {
+    Tvm::ValuePtr<> val = get_implementation(scope, interface_value->interface, interface_value->parameters,
+                                             interface_value.location(), interface_value->implementation);
+    return TvmResult::in_register(interface_value->type, tvm_storage_lvalue_ref, val);
   } else {
     FunctionalBuilderCallback callback(&scope);
     TvmFunctionalBuilder builder(&compile_context(), &tvm_context(), &callback);
@@ -910,6 +936,23 @@ bool TvmFunctionLowering::is_register(Scope& scope, const TreePtr<Term>& type) {
   FunctionalBuilderCallback cb(&scope);
   TvmFunctionalBuilder builder(&compile_context(), &tvm_context(), &cb);
   return builder.is_register(type);
+}
+
+Tvm::ValuePtr<> TvmFunctionLowering::get_implementation(TvmFunctionLowering::Scope& scope, const TreePtr<Interface>& interface,
+                                                        const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location,
+                                                        const TreePtr<Implementation>& maybe_implementation) {
+  TreePtr<Implementation> implementation;
+  if (!maybe_implementation) {
+    PSI_STD::vector<TreePtr<OverloadValue> > scope_extra;
+    implementation = treeptr_cast<Implementation>(overload_lookup(interface, parameters, location, scope_extra));
+  } else {
+    implementation = maybe_implementation;
+  }
+  
+  if (implementation->dynamic)
+    return run_reference(scope, implementation->value);
+  
+  PSI_NOT_IMPLEMENTED();
 }
 }
 }

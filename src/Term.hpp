@@ -34,6 +34,8 @@ namespace Psi {
       static const bool match_visit = false;
       /// \brief If matching is performed by a visitor, this determines whether to increment the parameter depth count.
       static const bool match_parameterized = false;
+      /// \brief If parameterization is performed by a visitor
+      static const bool specialize_visit = false;
 
       Term(const TermVtable *vtable, CompileContext& context, const SourceLocation& location);
       Term(const TermVtable *vtable, const TreePtr<Term>&, const SourceLocation&);
@@ -274,7 +276,7 @@ namespace Psi {
     public:
       SpecializeVisitor(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> > *values, unsigned depth)
       : m_location(location), m_values(values), m_depth(depth) {}
-
+      
       TreePtr<Term> visit_tree_ptr(const TreePtr<Term>& ptr) {
         return ptr ? ptr->specialize(m_location, *m_values, m_depth) : TreePtr<Term>();
       }
@@ -405,7 +407,7 @@ namespace Psi {
       }
 
       static const TreeBase* specialize(const Term *self, const SourceLocation *location, const PSI_STD::vector<TreePtr<Term> > *values, unsigned depth) {
-        return specialize_helper(static_bool<Derived::match_visit>(), self, location, values, depth);
+        return specialize_helper(static_bool<Derived::specialize_visit>(), self, location, values, depth);
       }
 
       static const TreeBase* anonymize_helper(static_bool<false>, const Term *self, const SourceLocation *location,
@@ -464,6 +466,7 @@ namespace Psi {
     public:
       static const SIVtable vtable;
       static const bool match_visit = true;
+      static const bool specialize_visit = true;
       Functional(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location);
       Functional(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -480,7 +483,6 @@ namespace Psi {
     class Type : public Functional {
     public:
       static const SIVtable vtable;
-      static const bool match_visit = true;
       Type(const TermVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v) {visit_base<Term>(v);}
     };
@@ -517,6 +519,8 @@ namespace Psi {
       Anonymous(CompileContext& compile_context, const SourceLocation& location);
       Anonymous(const TreePtr<Term>& type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
+      
+      static TreePtr<Term> parameterize_impl(const Anonymous& self, const SourceLocation&, const PSI_STD::vector<TreePtr<Anonymous> >&, unsigned depth);
     };
 
     /**
@@ -535,6 +539,8 @@ namespace Psi {
       unsigned depth;
       /// Index of this parameter in its scope.
       unsigned index;
+      
+      static TreePtr<Term> specialize_impl(const Parameter& self, const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, unsigned depth);
     };
 
     TreePtr<Term> anonymize_term(const TreePtr<Term>& term, const SourceLocation& location,

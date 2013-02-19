@@ -780,6 +780,13 @@ namespace Psi {
     outer_index(outer_index_),
     next(next_) {
     }
+
+    UpwardReference::UpwardReference(const TreePtr<Term>& outer_type_, int outer_index_, const TreePtr<Term>& next_, const SourceLocation& location)
+    : Constructor(&vtable, outer_type_.compile_context().builtins().upref_type, location),
+    outer_type(outer_type_),
+    outer_index(int_to_index(outer_index_, outer_type_.compile_context(), location)),
+    next(next_) {
+    }
     
     UpwardReference::UpwardReference(CompileContext& context, const SourceLocation& location)
     : Constructor(&vtable, context, location) {
@@ -832,7 +839,8 @@ namespace Psi {
       visit_base<Tree>(v);
       v("pattern", &GenericType::pattern)
       ("member_type", &GenericType::member_type)
-      ("overloads", &GenericType::overloads);
+      ("overloads", &GenericType::overloads)
+      ("primitive_mode", &GenericType::primitive_mode);
     }
 
     const TreeVtable GenericType::vtable = PSI_COMPILER_TREE(GenericType, "psi.compiler.GenericType", Tree);
@@ -853,6 +861,7 @@ namespace Psi {
      * \brief Get the inner type of this instance.
      */
     TreePtr<Term> TypeInstance::unwrap() const {
+      PSI_ASSERT(generic->pattern.size() == parameters.size());
       return generic->member_type->specialize(location(), parameters);
     }
 
@@ -897,7 +906,7 @@ namespace Psi {
     const TermVtable TypeInstanceValue::vtable = PSI_COMPILER_TERM(TypeInstanceValue, "psi.compiler.TypeInstanceValue", Constructor);
     
     IfThenElse::IfThenElse(CompileContext& compile_context, const SourceLocation& location)
-    : Term(&vtable, compile_context, location) {
+    : Functional(&vtable, compile_context, location) {
     }
     
     namespace {
@@ -926,7 +935,7 @@ namespace Psi {
     }
 
     IfThenElse::IfThenElse(const TreePtr<Term>& condition_, const TreePtr<Term>& true_value_, const TreePtr<Term>& false_value_, const SourceLocation& location)
-    : Term(&vtable, tree_callback<Term>(condition_.compile_context(), location, IfThenElseType(true_value_, false_value_)), location),
+    : Functional(&vtable, tree_callback<Term>(condition_.compile_context(), location, IfThenElseType(true_value_, false_value_)), location),
     condition(condition_),
     true_value(true_value_),
     false_value(false_value_) {
@@ -934,7 +943,7 @@ namespace Psi {
     
     template<typename V>
     void IfThenElse::visit(V& v) {
-      visit_base<Term>(v);
+      visit_base<Functional>(v);
       v("condition", &IfThenElse::condition)
       ("true_value", &IfThenElse::true_value)
       ("false_value", &IfThenElse::false_value);
@@ -1278,17 +1287,20 @@ namespace Psi {
     : Term(&vtable, context, location) {
     }
     
-    InterfaceValue::InterfaceValue(const TreePtr<Interface>& interface_, const PSI_STD::vector<TreePtr<Term> >& parameters_, const SourceLocation& location)
+    InterfaceValue::InterfaceValue(const TreePtr<Interface>& interface_, const PSI_STD::vector<TreePtr<Term> >& parameters_,
+                                   const TreePtr<Implementation>& implementation_, const SourceLocation& location)
     : Term(&vtable, interface_.compile_context(), location),
     interface(interface_),
-    parameters(parameters_) {
+    parameters(parameters_),
+    implementation(implementation_) {
     }
     
     template<typename V>
     void InterfaceValue::visit(V& v) {
       visit_base<Term>(v);
       v("interface", &InterfaceValue::interface)
-      ("parameters", &InterfaceValue::parameters);
+      ("parameters", &InterfaceValue::parameters)
+      ("implementation", &InterfaceValue::implementation);
     }
     
     const TermVtable InterfaceValue::vtable = PSI_COMPILER_TERM(InterfaceValue, "psi.compiler.InterfaceValue", Term);
@@ -1365,5 +1377,24 @@ namespace Psi {
     }
     
     const TermVtable FinalizePointer::vtable = PSI_COMPILER_TERM(FinalizePointer, "psi.compiler.FinalizePointer", Term);
+
+    IntroduceImplementation::IntroduceImplementation(CompileContext& context, const SourceLocation& location)
+    : Term(&vtable, context, location) {
+    }
+    
+    IntroduceImplementation::IntroduceImplementation(const TreePtr<Term>& value_, const PSI_STD::vector<TreePtr<Implementation> >& implementations_, const SourceLocation& location)
+    : Term(&vtable, tree_attribute(value_, &Term::type), location),
+    value(value_),
+    implementations(implementations_) {
+    }
+    
+    template<typename V>
+    void IntroduceImplementation::visit(V& v) {
+      visit_base<Term>(v);
+      v("value", &IntroduceImplementation::value)
+      ("implementations", &IntroduceImplementation::implementations);
+    }
+    
+    const TermVtable IntroduceImplementation::vtable = PSI_COMPILER_TERM(IntroduceImplementation, "psi.compiler.IntroduceImplementation", Term);
   }
 }

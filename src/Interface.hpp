@@ -18,18 +18,14 @@ namespace Compiler {
 class ImplementationHelper {
   SourceLocation m_location;
   TreePtr<Interface> m_interface;
-  TreePtr<GenericType> m_generic;
-  TreePtr<TypeInstance> m_generic_instance;
-  TreePtr<Term> m_generic_unwrapped;
   PSI_STD::vector<TreePtr<Anonymous> > m_pattern_parameters;
   PSI_STD::vector<TreePtr<Term> > m_generic_parameters;
   PSI_STD::vector<TreePtr<InterfaceValue> > m_pattern_interfaces;
-  
-  PSI_STD::vector<TreePtr<Term> > m_wrapper_member_types, m_wrapper_member_values;
+
+  TreePtr<GenericType> m_generic;
   
   TreePtr<GenericType> m_wrapper_generic;
-  TreePtr<StructType> m_wrapper_struct;
-  TreePtr<TypeInstance> m_wrapper_instance;
+  PSI_STD::vector<TreePtr<Term> > m_wrapper_member_values;
   
 public:
   ImplementationHelper(const SourceLocation& location,
@@ -43,7 +39,6 @@ public:
     TreePtr<FunctionType> function_type;
     TreePtr<Term> implementation;
     PSI_STD::vector<TreePtr<Anonymous> > parameters;
-    PSI_STD::vector<TreePtr<Statement> > interface_values;
   };
   
   FunctionSetup member_function_setup(int index, const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations);

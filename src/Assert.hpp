@@ -14,6 +14,7 @@ namespace Psi {
 #define PSI_NOT_IMPLEMENTED() (Psi::assert_fail(PSI_DEBUG_LOCATION(), NULL, "Not implemented"))
 #define PSI_WARNING(cond) (cond ? void() : Psi::warning_fail(PSI_DEBUG_LOCATION(), #cond, NULL))
 #define PSI_WARNING_FAIL(msg) (Psi::warning_fail(PSI_DEBUG_LOCATION(), NULL, msg))
+#define PSI_WARNING_FAIL2(msg1,msg2) (Psi::warning_fail(PSI_DEBUG_LOCATION(), msg1, msg2))
 #define PSI_CHECK(cond) PSI_ASSERT(cond)
   void assert_fail(DebugLocation, const char *test, const char *msg) PSI_ATTRIBUTE((PSI_NORETURN));
   void warning_fail(DebugLocation, const char *test, const char *msg);
@@ -23,6 +24,7 @@ namespace Psi {
 #define PSI_FAIL(msg) PSI_UNREACHABLE()
 #define PSI_WARNING(cond) void()
 #define PSI_WARNING_FAIL(msg) void()
+#define PSI_WARNING_FAIL(msg1,msg2) void()
 #define PSI_NOT_IMPLEMENTED() (std::abort())
 #define PSI_CHECK(cond) do {if (!(cond)) PSI_UNREACHABLE();} while(false)
 #else

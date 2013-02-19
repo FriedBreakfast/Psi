@@ -156,16 +156,28 @@ namespace Psi {
       // Check for dangling references
       bool failed = false;
       for (GCListType::iterator ii = m_gc_list.begin(), ie = m_gc_list.end(); ii != ie; ++ii) {
-        if (ii->m_reference_count != PSI_COMPILE_CONTEXT_REFERENCE_GUARD)
-          failed = true;
+        if (ii->m_reference_count != PSI_COMPILE_CONTEXT_REFERENCE_GUARD) {
+          if (!failed) {
+            failed = true;
+            PSI_WARNING_FAIL("Incorrect reference count during context destruction");
+          }
+          
+          const char *name = si_vptr(&*ii)->classname;
+          if (ii->m_reference_count < PSI_COMPILE_CONTEXT_REFERENCE_GUARD)
+            PSI_WARNING_FAIL2("Multiple release", name);
+          else if (ii->m_reference_count > PSI_COMPILE_CONTEXT_REFERENCE_GUARD)
+            PSI_WARNING_FAIL2("Dangling references", name);
+        }
       }
       
-#if defined(__GNUC__) && defined(__ELF__)
       if (failed) {
-        PSI_WARNING_FAIL("Incorrect reference count during context destruction: either dangling reference or multiple release");
-        
+#if defined(__GNUC__) && defined(__ELF__)
         psi_gcchecker_block *blocks;
         size_t n_blocks = psi_gcchecker_blocks(&blocks);
+#else
+        psi_gcchecker_block *blocks = NULL;
+        size_t n_blocks = 0;
+#endif
         if (blocks) {
           std::set<const char*> suspects;
           
@@ -241,7 +253,6 @@ namespace Psi {
             PSI_WARNING_FAIL(t.m_vptr->classname);
         }
       }
-#endif
 #endif
 
       m_gc_list.clear_and_dispose(ObjectDisposer());

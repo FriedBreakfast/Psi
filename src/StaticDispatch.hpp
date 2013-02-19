@@ -20,7 +20,13 @@ namespace Psi {
                    const PSI_STD::vector<TreePtr<OverloadValue> >& values,
                    const SourceLocation& location);
     
-      /// \brief The number of implicit parameters which are found by pattern matching
+      /**
+       * \brief The number of implicit parameters which are found by pattern matching
+       * 
+       * This facility basically exists to handle one case, which is when
+       * \code a:Type, b:a \endcode
+       * is used, and \c a is to be discovered by matching.
+       */
       unsigned n_implicit;
       /// \brief Parameter type patterns.
       PSI_STD::vector<TreePtr<Term> > pattern;
@@ -195,7 +201,7 @@ namespace Psi {
     public:
       static const TreeVtable vtable;
       Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent, const TreePtr<Term>& value, const TreePtr<Interface>& interface,
-                     unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const PSI_STD::vector<int>& path,
+                     unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, bool dynamic, const PSI_STD::vector<int>& path,
                      const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
@@ -215,14 +221,22 @@ namespace Psi {
       TreePtr<Term> value;
       
       /**
+       * \brief True if this implementation is in a dynamic rather than static scope.
+       * 
+       * This means that \c value is a direct reference to the correct value for the interface
+       * rather than a template to be used to build such a value, which is what is done if
+       * the implementation is global. If \c dynamic is true, \c path must be empty.
+       */
+      PsiBool dynamic;
+      
+      /**
        * \brief Path of ElementValue operations to use on \c value to get the correct value type of the interface.
        */
       PSI_STD::vector<int> path;
     };
     
-    std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> >
-    overload_lookup(const TreePtr<OverloadType>& type, const TreePtr<EvaluateContext>& context,
-                    const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);
+    TreePtr<OverloadValue> overload_lookup(const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                                           const SourceLocation& location, const PSI_STD::vector<TreePtr<OverloadValue> >& extra);
     
     TreePtr<> metadata_lookup(const TreePtr<MetadataType>& interface, const TreePtr<EvaluateContext>& context,
                               const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);

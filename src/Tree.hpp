@@ -234,6 +234,7 @@ namespace Psi {
     public:
       static const TermVtable vtable;
       static const bool match_visit = false;
+      static const bool specialize_visit = false;
 
       TypeInstance(CompileContext& compile_context, const SourceLocation& location);
       TypeInstance(const TreePtr<GenericType>& generic,
@@ -392,7 +393,6 @@ namespace Psi {
     class ElementValue : public Functional {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = true;
       ElementValue(CompileContext& compile_context, const SourceLocation& location);
       ElementValue(const TreePtr<Term>& value, const TreePtr<Term>& index, const SourceLocation& location);
       ElementValue(const TreePtr<Term>& value, int index, const SourceLocation& location);
@@ -410,7 +410,6 @@ namespace Psi {
     class OuterValue : public Functional {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = true;
       OuterValue(CompileContext& compile_context, const SourceLocation& location);
       OuterValue(const TreePtr<Term>& value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -440,7 +439,6 @@ namespace Psi {
     class StructValue : public Constructor {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = true;
       
       StructValue(CompileContext& compile_context, const SourceLocation& location);
       StructValue(const TreePtr<StructType>& type, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
@@ -524,6 +522,7 @@ namespace Psi {
       static const TermVtable vtable;
       UpwardReference(CompileContext& context, const SourceLocation& location);
       UpwardReference(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next, const SourceLocation& location);
+      UpwardReference(const TreePtr<Term>& outer_type, int outer_index, const TreePtr<Term>& next, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief Type of outer data structure.
@@ -725,10 +724,9 @@ namespace Psi {
     /**
      * \brief If-Then-Else.
      */
-    class IfThenElse : public Term {
+    class IfThenElse : public Functional {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = true;
       
       IfThenElse(CompileContext& compile_context, const SourceLocation& location);
       IfThenElse(const TreePtr<Term>& condition, const TreePtr<Term>& true_value, const TreePtr<Term>& false_value, const SourceLocation& location);
@@ -842,7 +840,6 @@ namespace Psi {
     class PrimitiveType : public Type {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = true;
       
       PrimitiveType(CompileContext& compile_context, const SourceLocation& location);
       PrimitiveType(CompileContext& compile_context, const String& name, const SourceLocation& location);
@@ -857,7 +854,6 @@ namespace Psi {
     class BuiltinValue : public Constant {
     public:
       static const TermVtable vtable;
-      static const bool match_visit = true;
       
       BuiltinValue(CompileContext& compile_context, const SourceLocation& location);
       BuiltinValue(const String& constructor, const String& data, const TreePtr<Term>& type, const SourceLocation& location);
@@ -1025,13 +1021,22 @@ namespace Psi {
       static const TermVtable vtable;
       
       InterfaceValue(CompileContext& context, const SourceLocation& location);
-      InterfaceValue(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);
+      InterfaceValue(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const TreePtr<Implementation>& implementation, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief Interface.
       TreePtr<Interface> interface;
-      /// \brief List of parameters, including implicit parameters.
+      /// \brief List of parameters, including implicit and derived parameters.
       PSI_STD::vector<TreePtr<Term> > parameters;
+      /**
+       * \brief Which overload is used.
+       * 
+       * This is only required to be non-NULL if the interface has derived parameters, in which case
+       * the overload must be identified in order to know what they are. If this is NULL the which
+       * overload is to be used can be discovered at compile time; obviously this requires that the
+       * list used for lookup during either stage is consistent.
+       */
+      TreePtr<Implementation> implementation;
     };
     
     /**
@@ -1109,6 +1114,31 @@ namespace Psi {
       
       /// \brief Pointer to object to be destroyed.
       TreePtr<Term> target_ptr;
+    };
+    
+    /**
+     * \brief Introduce implementations which are not globally visible.
+     * 
+     * This is usually used to make the compiler aware of implementations passed as function parameters
+     * or base implementations of such parameters.
+     */
+    class IntroduceImplementation : public Term {
+    public:
+      static const TermVtable vtable;
+      
+      IntroduceImplementation(CompileContext& context, const SourceLocation& location);
+      IntroduceImplementation(const TreePtr<Term>& value, const PSI_STD::vector<TreePtr<Implementation> >& implementations, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      
+      /**
+       * \brief Value to be evaluated
+       * 
+       * InterfaceValue trees occuring in this value can use implementations introduced
+       * by this tree.
+       */
+      TreePtr<Term> value;
+      /// \brief Implementations to be introduced
+      PSI_STD::vector<TreePtr<Implementation> > implementations;
     };
   }
 }

@@ -37,8 +37,7 @@ void TvmFunctionLowering::object_initialize_default(ScopeList& scope_list, const
     builder().store(dest, Tvm::FunctionalBuilder::zero(tvm_type, location), location);
   } else if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(type)) {
     if (!is_primitive(scope_list.current(), inst_type)) {
-      //TreePtr<Term> movable(new InterfaceValue(compile_context.builtins().movable_interface, vector_of(type), location));
-      Tvm::ValuePtr<> movable;
+      Tvm::ValuePtr<> movable = get_implementation(scope_list.current(), compile_context().builtins().movable_interface, vector_of(type), location);
       Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable, interface_movable_init, location), location);
       builder().call2(init_func, movable, dest, location);
       std::auto_ptr<CleanupCallback> cleanup(new ConstructorCleanup(dest, movable));
@@ -63,8 +62,8 @@ void TvmFunctionLowering::object_initialize_term(ScopeList& scope_list, const Tv
   } else if (TreePtr<UnionValue> union_val = dyn_treeptr_cast<UnionValue>(value)) {
     PSI_NOT_IMPLEMENTED(); // Sort out element_ptr index
     object_initialize_term(scope_list, Tvm::FunctionalBuilder::element_ptr(dest, 0, location), union_val->member_value, location);
-  } else if (!is_primitive(scope_list.current(), value->type)) {
-    // Complex type - should require a constructor
+  } else {
+    // Complex type - may require a constructor call
     VariableSlot r_vs(scope_list.current(), value->type);
     TvmResult r = run(scope_list.current(), value, r_vs, scope_list.current());
     Scope r_scope(scope_list.current(), value.location(), r, r_vs);
@@ -85,12 +84,6 @@ void TvmFunctionLowering::object_initialize_term(ScopeList& scope_list, const Tv
     default: PSI_FAIL("unexpected storage type");
     }
     r_scope.cleanup(false);
-
-    Tvm::ValuePtr<> movable;
-    if (movable) {
-      std::auto_ptr<CleanupCallback> cleanup(new ConstructorCleanup(dest, movable));
-      scope_list.push(new Scope(scope_list.current(), location, cleanup, true));
-    }
   }
 }
 
@@ -109,9 +102,15 @@ void TvmFunctionLowering::object_initialize_move(ScopeList& scope_list, const Tv
     PSI_NOT_IMPLEMENTED();
   } else if (TreePtr<UnionType> union_type = dyn_treeptr_cast<UnionType>(type)) {
     builder().memcpy(dest, src, 1, location);
+  } else if (!is_primitive(scope_list.current(), type)) {
+    Tvm::ValuePtr<> movable = get_implementation(scope_list.current(), compile_context().builtins().movable_interface, vector_of(type), location);
+    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable, interface_movable_move_init, location), location);
+    builder().call3(init_func, movable, dest, src, location);
+    std::auto_ptr<CleanupCallback> cleanup(new ConstructorCleanup(dest, movable));
+    scope_list.push(new Scope(scope_list.current(), location, cleanup, true));
   } else {
-    // Use Movable interface
-    PSI_NOT_IMPLEMENTED();
+    // This must be a TypeInstance because Anonymous types should be non-primitive
+    object_initialize_move(scope_list, dest, src, treeptr_cast<TypeInstance>(type)->unwrap(), location);
   }
 }
 
@@ -130,9 +129,16 @@ void TvmFunctionLowering::object_initialize_copy(ScopeList& scope_list, const Tv
     PSI_NOT_IMPLEMENTED();
   } else if (TreePtr<UnionType> union_type = dyn_treeptr_cast<UnionType>(type)) {
     builder().memcpy(dest, src, 1, location);
+  } else if (!is_primitive(scope_list.current(), type)) {
+    Tvm::ValuePtr<> copyable = get_implementation(scope_list.current(), compile_context().builtins().copyable_interface, vector_of(type), location);
+    Tvm::ValuePtr<> movable = builder().load(Tvm::FunctionalBuilder::element_ptr(copyable, interface_copyable_movable, location), location);
+    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(copyable, interface_copyable_copy_init, location), location);
+    builder().call3(init_func, copyable, dest, src, location);
+    std::auto_ptr<CleanupCallback> cleanup(new ConstructorCleanup(dest, movable));
+    scope_list.push(new Scope(scope_list.current(), location, cleanup, true));
   } else {
-    // Use Copyable interface
-    PSI_NOT_IMPLEMENTED();
+    // This must be a TypeInstance because Anonymous types should be non-primitive
+    object_initialize_copy(scope_list, dest, src, treeptr_cast<TypeInstance>(type)->unwrap(), location);
   }
 }
 
@@ -154,7 +160,7 @@ void TvmFunctionLowering::object_assign_default(Scope& scope, const Tvm::ValuePt
     builder().store(dest, Tvm::FunctionalBuilder::zero(tvm_type, location), location);
   } else {
     // Use movable interface
-    Tvm::ValuePtr<> movable;
+    Tvm::ValuePtr<> movable = get_implementation(scope, compile_context().builtins().movable_interface, vector_of(type), location);
     Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable, interface_movable_clear, location), location);
     builder().call2(init_func, movable, dest, location);
   }
@@ -214,7 +220,9 @@ void TvmFunctionLowering::object_assign_move(Scope& scope, const Tvm::ValuePtr<>
     builder().memcpy(dest, src, 1, location);
   } else {
     // Use Movable interface
-    PSI_NOT_IMPLEMENTED();
+    Tvm::ValuePtr<> movable = get_implementation(scope, compile_context().builtins().movable_interface, vector_of(type), location);
+    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable, interface_movable_move, location), location);
+    builder().call3(init_func, movable, dest, src, location);
   }
 }
 
@@ -235,7 +243,9 @@ void TvmFunctionLowering::object_assign_copy(Scope& scope, const Tvm::ValuePtr<>
     builder().memcpy(dest, src, 1, location);
   } else {
     // Use Copyable interface
-    PSI_NOT_IMPLEMENTED();
+    Tvm::ValuePtr<> copyable = get_implementation(scope, compile_context().builtins().copyable_interface, vector_of(type), location);
+    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(copyable, interface_copyable_copy, location), location);
+    builder().call3(init_func, copyable, dest, src, location);
   }
 }
 
@@ -252,7 +262,7 @@ void TvmFunctionLowering::object_destroy(Scope& scope, const Tvm::ValuePtr<>& de
     PSI_NOT_IMPLEMENTED();
   } else {
     // Use Movable interface
-    Tvm::ValuePtr<> movable;
+    Tvm::ValuePtr<> movable = get_implementation(scope, compile_context().builtins().movable_interface, vector_of(type), location);
     Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable, interface_movable_fini, location), location);
     builder().call2(init_func, movable, dest, location);
   }
@@ -303,7 +313,7 @@ TvmResult TvmFunctionLowering::run_finalize(Scope& scope, const TreePtr<Finalize
   return TvmResult::in_register(finalize->type, tvm_storage_functional, Tvm::FunctionalBuilder::empty_value(tvm_context(), finalize.location()));
 }
 
-TvmResult TvmFunctionLowering::run_constructor(Scope& scope, const TreePtr<Term>& value, const VariableSlot& slot, Scope& following_scope) {
+TvmResult TvmFunctionLowering::run_constructor(Scope& scope, const TreePtr<Term>& value, const VariableSlot& slot, Scope&) {
   ScopeList sl(scope);
   object_initialize_term(sl, slot.slot(), value, value.location());
   sl.cleanup(false);
