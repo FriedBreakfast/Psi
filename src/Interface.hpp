@@ -21,6 +21,7 @@ class ImplementationHelper {
   PSI_STD::vector<TreePtr<Anonymous> > m_pattern_parameters;
   PSI_STD::vector<TreePtr<Term> > m_generic_parameters;
   PSI_STD::vector<TreePtr<InterfaceValue> > m_pattern_interfaces;
+  PSI_STD::vector<TreePtr<Term> > m_interface_parameters;
 
   TreePtr<GenericType> m_generic;
   

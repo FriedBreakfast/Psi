@@ -63,6 +63,12 @@ class TvmFunctionLowering {
   typedef std::map<TreePtr<JumpTarget>, JumpData> JumpMapType;
   typedef SharedMap<TreePtr<>, TvmResult> VariableMapType;
   
+  struct LocalImplementationEntry {
+    boost::shared_ptr<const LocalImplementationEntry> next;
+    TreePtr<IntroduceImplementation> implementations;
+  };
+  typedef boost::shared_ptr<const LocalImplementationEntry> LocalImplementationList;
+  
   class CleanupCallback {
   public:
     virtual ~CleanupCallback();
@@ -87,6 +93,7 @@ class TvmFunctionLowering {
      */
     JumpMapType m_jump_map;
     VariableMapType m_variables;
+    LocalImplementationList m_local_implementations;
     TvmResult m_variable;
     CleanupCallback *m_cleanup;
     bool m_cleanup_except_only;
@@ -101,6 +108,7 @@ class TvmFunctionLowering {
     Scope(Scope& parent, const SourceLocation& location, std::auto_ptr<CleanupCallback>& cleanup, bool cleanup_except_only);
     Scope(Scope& parent, const SourceLocation& location, const JumpMapType& initial_jump_map);
     Scope(Scope& parent, const SourceLocation& location, const ArrayPtr<VariableMapType::value_type>& new_variables);
+    Scope(Scope& parent, const SourceLocation& location, const TreePtr<IntroduceImplementation>& implementations);
     ~Scope();
     
     CompileContext& compile_context() {return m_shared->compile_context();}
@@ -111,6 +119,7 @@ class TvmFunctionLowering {
     const SourceLocation& location() const {return m_location;}
     const JumpMapType& jump_map() const {return m_jump_map;}
     const VariableMapType& variables() const {return m_variables;}
+    const LocalImplementationList& local_implementations() const {return m_local_implementations;}
     TvmResult variable() const {return m_variable;}
     
     bool has_cleanup(bool except) const {return (m_cleanup && (except || !m_cleanup_except_only)) || (m_variable.storage() == tvm_storage_stack);}

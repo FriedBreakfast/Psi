@@ -171,8 +171,16 @@ namespace Psi {
                                 std::vector<std::pair<PSI_STD::vector<TreePtr<Term> >, TreePtr<OverloadValue> > >& results,
                                 PSI_STD::vector<TreePtr<Term> >& scratch) {
       TreePtr<Term> my_term = term;
-      while (TreePtr<PointerType> ptr = dyn_treeptr_cast<PointerType>(term))
-        my_term = ptr->target_type;
+      while (true) {
+        if (TreePtr<PointerType> ptr = dyn_treeptr_cast<PointerType>(my_term))
+          my_term = ptr->target_type;
+        else if (TreePtr<GlobalDefine> def = dyn_treeptr_cast<GlobalDefine>(my_term))
+          my_term = def->value;
+        else if (TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(my_term))
+          my_term = derived->value_type;
+        else
+          break;
+      }
         
       if (TreePtr<TypeInstance> instance = dyn_treeptr_cast<TypeInstance>(my_term)) {
         const PSI_STD::vector<TreePtr<OverloadValue> >& overloads = instance->generic->overloads;

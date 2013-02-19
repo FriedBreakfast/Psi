@@ -167,12 +167,11 @@ namespace Psi {
         m_wrapper_member_values.push_back(value);
       }
       
-      PSI_STD::vector<TreePtr<Term> > generic_pattern;
       for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = generic_parameters.begin(), ie = generic_parameters.end(); ii != ie; ++ii)
-        generic_pattern.push_back((*ii)->parameterize(location, pattern_parameters));
+        m_interface_parameters.push_back((*ii)->parameterize(location, pattern_parameters));
       
       m_wrapper_generic = tree_callback(interface.compile_context(), location,
-                                        ImplementationHelperWrapperGeneric(type_pattern, member_types, m_generic, generic_pattern));
+                                        ImplementationHelperWrapperGeneric(type_pattern, member_types, m_generic, m_interface_parameters));
       
       TreePtr<Term> wrapper_instance(new TypeInstance(m_wrapper_generic, type_pattern, location));
       TreePtr<Term> upref(new UpwardReference(wrapper_instance, m_wrapper_member_values.size(), default_, location));
@@ -275,7 +274,7 @@ namespace Psi {
 
       value.reset(new TypeInstanceValue(wrapper_instance, value, m_location));
       
-      TreePtr<Implementation> impl(new Implementation(default_, value, m_interface, 0, default_, false,
+      TreePtr<Implementation> impl(new Implementation(default_, value, m_interface, 0, m_interface_parameters, false,
                                                       vector_of<int>(0,m_wrapper_member_values.size()-1), m_location));
       return impl;
     }

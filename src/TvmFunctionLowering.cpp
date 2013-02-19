@@ -11,6 +11,7 @@
 #include "Tvm/Aggregate.hpp"
 #include "Tvm/Recursive.hpp"
 
+#include <boost/make_shared.hpp>
 #include <boost/next_prior.hpp>
 
 namespace Psi {
@@ -38,6 +39,7 @@ void TvmFunctionLowering::Scope::init(Scope& parent) {
   m_dominator = parent.m_shared->builder().block();
   m_shared = parent.m_shared;
   m_variables = parent.m_variables;
+  m_local_implementations = parent.m_local_implementations;
 }
 
 TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location, const TvmResult& result, VariableSlot& slot, const TreePtr<>& key)
@@ -79,7 +81,8 @@ TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location,
   m_jump_map = initial_jump_map;
 }
 
-TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location, const ArrayPtr<VariableMapType::value_type>& new_variables) {
+TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location, const ArrayPtr<VariableMapType::value_type>& new_variables)
+: m_location(location) {
   init(parent);
   
   for (std::size_t ii = 0, ie = new_variables.size(); ii != ie; ++ii) {
@@ -87,6 +90,13 @@ TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location,
     if (!m_variables.insert(value))
       m_shared->compile_context().error_throw(location, "Overlapping variable definitions");
   }
+}
+
+TvmFunctionLowering::Scope::Scope(Scope& parent, const SourceLocation& location, const TreePtr<IntroduceImplementation>& implementations)
+: m_location(location) {
+  init(parent);
+  LocalImplementationEntry entry = {m_local_implementations, implementations};
+  m_local_implementations = boost::make_shared<LocalImplementationEntry>(entry);
 }
 
 TvmFunctionLowering::Scope::~Scope() {
@@ -409,6 +419,9 @@ TvmResult TvmFunctionLowering::run(Scope& scope, const TreePtr<Term>& term, cons
     Tvm::ValuePtr<> val = get_implementation(scope, interface_value->interface, interface_value->parameters,
                                              interface_value.location(), interface_value->implementation);
     return TvmResult::in_register(interface_value->type, tvm_storage_lvalue_ref, val);
+  } else if (TreePtr<IntroduceImplementation> introduce_impl = dyn_treeptr_cast<IntroduceImplementation>(term)) {
+    Scope child_scope(scope, introduce_impl.location(), introduce_impl);
+    return run(child_scope, introduce_impl->value, slot, following_scope);
   } else {
     FunctionalBuilderCallback callback(&scope);
     TvmFunctionalBuilder builder(&compile_context(), &tvm_context(), &callback);
@@ -753,6 +766,8 @@ TvmResult TvmFunctionLowering::run_call(Scope& scope, const TreePtr<FunctionCall
         copy_construct(scope, arg_result.type(), copy_var.slot(), arg_result.value(), argument->location());
         sl.push(new Scope(sl.current(), argument->location(), TvmResult::on_stack(argument->type, copy_var.slot()), copy_var));
       }
+      
+      case parameter_mode_phantom: compile_context().error_throw(argument.location(), "Phantom function arguments must be given by functional values");
       }
       break;
 
@@ -763,6 +778,7 @@ TvmResult TvmFunctionLowering::run_call(Scope& scope, const TreePtr<FunctionCall
       case parameter_mode_rvalue: value = arg_result.value(); break;
       case parameter_mode_output: compile_context().error_throw(argument->location(), "Cannot pass rvalue to output argument");
       case parameter_mode_functional: compile_context().error_throw(argument->location(), "Cannot pass rvalue to functional argument");
+      case parameter_mode_phantom: compile_context().error_throw(argument.location(), "Phantom function arguments must be given by functional values");
       }
       break;
       
@@ -774,6 +790,7 @@ TvmResult TvmFunctionLowering::run_call(Scope& scope, const TreePtr<FunctionCall
         break;
       }
       
+      case parameter_mode_phantom:
       case parameter_mode_functional: value = arg_result.value(); break;
       case parameter_mode_output: compile_context().error_throw(argument->location(), "Cannot pass functional value to output argument");
       case parameter_mode_io: compile_context().error_throw(argument->location(), "Cannot pass functional value to I/O argument");
@@ -944,6 +961,12 @@ Tvm::ValuePtr<> TvmFunctionLowering::get_implementation(TvmFunctionLowering::Sco
   TreePtr<Implementation> implementation;
   if (!maybe_implementation) {
     PSI_STD::vector<TreePtr<OverloadValue> > scope_extra;
+    for (LocalImplementationList locals = scope.local_implementations(); locals; locals = locals->next) {
+      for (PSI_STD::vector<TreePtr<Implementation> >::const_iterator ii = locals->implementations->implementations.begin(), ie = locals->implementations->implementations.end(); ii != ie; ++ii) {
+        if ((*ii)->overload_type == interface)
+          scope_extra.push_back(*ii);
+      }
+    }
     implementation = treeptr_cast<Implementation>(overload_lookup(interface, parameters, location, scope_extra));
   } else {
     implementation = maybe_implementation;

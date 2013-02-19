@@ -15,6 +15,24 @@ namespace Psi {
     : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location) {
     }
     
+    namespace {
+      const Term* match_unwrap(const Term *ptr) {
+        while (true) {
+          if (const StatementRef *stmt = dyn_tree_cast<StatementRef>(ptr)) {
+            if (stmt->value->mode != statement_mode_functional)
+              return ptr;
+            ptr = stmt->value->value.get();
+          } else if (const GlobalDefine *def = dyn_tree_cast<GlobalDefine>(ptr)) {
+            if (!def->functional)
+              return ptr;
+            ptr = def->value.get();
+          } else {
+            return ptr;
+          }
+        }
+      }
+    }
+    
     /**
      * \brief Check whether this tree, which is a pattern, matches a given value.
      *
@@ -26,8 +44,8 @@ namespace Psi {
      * checks that this tree and \c value are the same.
      */
     bool Term::match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const {
-      const Term *self = this;
-      const Term *other = value.get();
+      const Term *self = match_unwrap(this);
+      const Term *other = match_unwrap(value.get());
 
       if (const Parameter *parameter = dyn_tree_cast<Parameter>(self)) {
         if (parameter->depth == depth) {
