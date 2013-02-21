@@ -299,8 +299,8 @@ public:
     ("argument_list", &AggregateLifecycleBase::m_argument_list);
   }
   
-  TreePtr<Term> generic_instance(const SourceLocation& location) {
-    return TreePtr<Term>(new TypeInstance(m_generic, vector_from<TreePtr<Term> >(m_argument_list), location));
+  TreePtr<Term> generic_instance() {
+    return TreePtr<Term>(new TypeInstance(m_generic, vector_from<TreePtr<Term> >(m_argument_list), m_generic.location()));
   }
   
   SourceLocation parameter_location(const SourceLocation& parent, const Parser::ParserLocation& name) {
@@ -412,7 +412,7 @@ public:
   }
   
   TreePtr<Implementation> evaluate(const TreePtr<Implementation>& self) {
-    TreePtr<Term> instance = generic_instance(self.location());
+    TreePtr<Term> instance = generic_instance();
     SourceLocation location = self.location().named_child("Movable");
     ImplementationHelper helper(self.location(), self.compile_context().builtins().movable_interface,
                                 m_argument_list, vector_of(instance), default_);
@@ -478,7 +478,7 @@ public:
   }
   
   TreePtr<Implementation> evaluate(const TreePtr<Implementation>& self) {
-    TreePtr<Term> instance = generic_instance(self.location());
+    TreePtr<Term> instance = generic_instance();
     SourceLocation location = self.location().named_child("Movable");
     ImplementationHelper helper(self.location(), self.compile_context().builtins().copyable_interface,
                                 m_argument_list, vector_of(instance), default_);
