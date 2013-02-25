@@ -13,6 +13,7 @@ namespace Psi {
     class Object;
     class CompileContext;
     template<typename> class TreePtr;
+    template<typename, typename> class DelayedValue;
 
     /**
      * \brief Single inheritance dispatch table base.
@@ -26,6 +27,7 @@ namespace Psi {
 #define PSI_COMPILER_SI(classname,super) {reinterpret_cast<const SIVtable*>(super),classname,false}
 #define PSI_COMPILER_SI_ABSTRACT(classname,super) {reinterpret_cast<const SIVtable*>(super),classname,true}
 #define PSI_COMPILER_SI_INIT(vptr) (m_vptr = reinterpret_cast<const SIVtable*>(vptr), PSI_ASSERT(!m_vptr->abstract))
+#define PSI_COMPILER_VPTR_UP(super,vptr) (PSI_ASSERT(si_derived(reinterpret_cast<const SIVtable*>(&super::vtable), reinterpret_cast<const SIVtable*>(vptr))), reinterpret_cast<const super::VtableType*>(vptr))
 
     class SIBase;
     
@@ -59,6 +61,8 @@ namespace Psi {
 
     protected:
       const SIVtable *m_vptr;
+    public:
+      typedef SIVtable VtableType;
     };
 
     inline const SIVtable* si_vptr(const SIBase *self) {return self->m_vptr;}
@@ -79,25 +83,26 @@ namespace Psi {
 
       T *m_ptr;
 
-      void initialize(T *ptr, bool add_ref) {
+      void initialize(T *ptr) {
         m_ptr = ptr;
-        if (add_ref && m_ptr)
+        if (m_ptr)
           ++m_ptr->m_reference_count;
       }
 
     public:
       ~ObjectPtr();
       ObjectPtr() : m_ptr(NULL) {}
-      explicit ObjectPtr(T *ptr, bool add_ref) {initialize(ptr, add_ref);}
-      ObjectPtr(const ObjectPtr& src) {initialize(src.m_ptr, true);}
-      template<typename U> ObjectPtr(const ObjectPtr<U>& src) {initialize(src.get(), true);}
+      explicit ObjectPtr(T *ptr) {initialize(ptr);}
+      ObjectPtr(const ObjectPtr& src) {initialize(src.m_ptr);}
+      template<typename U> ObjectPtr(const ObjectPtr<U>& src) {initialize(src.get());}
       ObjectPtr& operator = (const ObjectPtr& src) {ObjectPtr(src).swap(*this); return *this;}
       template<typename U> ObjectPtr& operator = (const ObjectPtr<U>& src) {ObjectPtr<T>(src).swap(*this); return *this;}
 
       T* get() const {return m_ptr;}
       T* release() {T *tmp = m_ptr; m_ptr = NULL; return tmp;}
       void swap(ObjectPtr& other) {std::swap(m_ptr, other.m_ptr);}
-      void reset(T *ptr=NULL, bool add_ref=true) {ObjectPtr<T>(ptr, add_ref).swap(*this);}
+      void reset() {ObjectPtr<T>().swap(*this);}
+      void reset(T *ptr) {ObjectPtr<T>(ptr).swap(*this);}
 
       T& operator * () const {return *get();}
       T* operator -> () const {return get();}
@@ -129,12 +134,15 @@ namespace Psi {
      */
     class Object : public SIBase, public boost::intrusive::list_base_hook<> {
       friend class CompileContext;
+      friend class Tree;
       friend class GCVisitorIncrement;
       friend class GCVisitorDecrement;
       template<typename> friend class ObjectPtr;
 
       mutable std::size_t m_reference_count;
       CompileContext *m_compile_context;
+
+      Object(const ObjectVtable *vtable);
 
     public:
       typedef ObjectVtable VtableType;
@@ -168,17 +176,26 @@ namespace Psi {
       Derived& derived() {
         return *static_cast<Derived*>(this);
       }
+      
+      template<typename T>
+      void visit_base_helper(const boost::array<T*,1>& c, boost::true_type) {
+        visit_members(derived(), c);
+      }
+
+      template<typename T>
+      void visit_base_helper(const boost::array<T*,1>& c, boost::false_type) {
+        visit_members(derived(), c);
+      }
 
     public:
       template<typename T>
       void visit_base(const boost::array<T*,1>& c) {
-        if (derived().do_visit_base(VisitorTag<T>()))
-          visit_members(derived(), c);
+        visit_base_helper(c, derived().do_visit_base(VisitorTag<T>()));
       }
       
       template<typename T>
-      bool do_visit_base(VisitorTag<T>) {
-        return true;
+      boost::true_type do_visit_base(VisitorTag<T>) {
+        return boost::true_type();
       }
 
       /// Simple types cannot hold references, so we aren't interested in them.
@@ -211,8 +228,24 @@ namespace Psi {
       }
 
       template<typename T>
+      void visit_tree_ptr(TreePtr<T>& ptr) {
+        derived().visit_object_ptr(ptr);
+      }
+
+      template<typename T>
       void visit_object(const char*, const boost::array<TreePtr<T>*, 1>& ptr) {
         derived().visit_tree_ptr(*ptr[0]);
+      }
+      
+      template<typename T, typename U>
+      void visit_delayed(DelayedValue<T,U>& ptr) {
+        boost::array<DelayedValue<T,U>*, 1> obj = {{&ptr}};
+        visit_members(*this, obj);
+      }
+
+      template<typename T, typename U>
+      void visit_object(const char*, const boost::array<DelayedValue<T,U>*, 1>& ptr) {
+        derived().visit_delayed(*ptr[0]);
       }
 
       template<typename T>
@@ -225,14 +258,7 @@ namespace Psi {
 
       template<typename T>
       void visit_map(const char*, const boost::array<T*,1>& maps) {
-        for (typename T::iterator ii = maps[0]->begin(), ie = maps[0]->end(); ii != ie; ++ii) {
-#if 0
-          boost::array<const typename T::key_type*, 1> k = {{&ii->first}};
-          visit_object(NULL, k);
-#endif
-          boost::array<typename T::mapped_type*, 1> v = {{&ii->second}};
-          visit_callback(*this, NULL, v);
-        }
+        visit_sequence(NULL, maps);
       }
     };
 
@@ -246,11 +272,6 @@ namespace Psi {
         if (ptr)
           ++ptr->m_reference_count;
       }
-      
-      template<typename T>
-      void visit_tree_ptr(TreePtr<T>& ptr) {
-        visit_object_ptr(ptr.raw_ptr_get());
-      }
     };
 
     /**
@@ -262,11 +283,6 @@ namespace Psi {
       void visit_object_ptr(const ObjectPtr<T>& ptr) {
         if (ptr)
           --ptr->m_reference_count;
-      }
-      
-      template<typename T>
-      void visit_tree_ptr(TreePtr<T>& ptr) {
-        visit_object_ptr(ptr.raw_ptr_get());
       }
     };
 
@@ -287,11 +303,6 @@ namespace Psi {
 
       template<typename T>
       void visit_object_ptr(ObjectPtr<T>& ptr) {
-        ptr.reset();
-      }
-
-      template<typename T>
-      void visit_tree_ptr(TreePtr<T>& ptr) {
         ptr.reset();
       }
     };

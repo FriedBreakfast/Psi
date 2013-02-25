@@ -265,7 +265,7 @@ argument_mode:
 ;
 
 return_type_declare: /* blank */ {$$.reset();}
-| return_mode expression {$$.reset(new FunctionArgument(@$, boost::none, $1, $2));}
+| return_mode expression {$$.reset(new FunctionArgument(@$, boost::none, (ParameterMode)$1, $2));}
 ;
 
 argument_list_declare: /* blank */ {$$.clear();}
@@ -279,8 +279,8 @@ argument_declare {$$.assign(1, $1);}
 
 argument_declare:
 expression {$$.reset(new FunctionArgument(@$, boost::none, Psi::Compiler::parameter_mode_input, $1));}
-| IDENTIFIER argument_mode expression {$$.reset(new FunctionArgument(@$, $1, $2, $3));}
-| argument_mode expression {$$.reset(new FunctionArgument(@$, boost::none, $1, $2));}
+| IDENTIFIER argument_mode expression {$$.reset(new FunctionArgument(@$, $1, (ParameterMode)$2, $3));}
+| argument_mode expression {$$.reset(new FunctionArgument(@$, boost::none, (ParameterMode)$1, $2));}
 ;
 
 interface_list_declare: /* blank */ {$$.clear();}
@@ -732,7 +732,7 @@ namespace Psi {
     }
 
     FunctionArgument::FunctionArgument(const ParserLocation& source_, const boost::optional<ParserLocation>& name_,
-                                       int mode_, const SharedPtr<Expression>& type_)
+                                       ParameterMode mode_, const SharedPtr<Expression>& type_)
     : Element(source_), name(name_), mode(mode_), type(type_) {
     }
     

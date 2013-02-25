@@ -1,5 +1,6 @@
 #include "StaticDispatch.hpp"
 #include "Tree.hpp"
+#include "TermBuilder.hpp"
 
 #include <boost/format.hpp>
 
@@ -16,10 +17,13 @@ namespace Psi {
     }
     
     const SIVtable OverloadType::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.OverloadType", Tree);
-    
-    OverloadValue::OverloadValue(const TreeVtable *vtable, const TreePtr<OverloadType>& type_, unsigned n_wildcards_,
+
+    /**
+     * \param type_ May be NULL if this overload will be attached to an OverloadType.
+     */
+    OverloadValue::OverloadValue(const TreeVtable *vtable, CompileContext& compile_context, const TreePtr<OverloadType>& type_, unsigned n_wildcards_,
                                  const PSI_STD::vector<TreePtr<Term> >& pattern_, const SourceLocation& location)
-    : Tree(vtable, type_.compile_context(), location),
+    : Tree(vtable, compile_context, location),
     overload_type(type_),
     n_wildcards(n_wildcards_),
     pattern(pattern_) {
@@ -38,6 +42,16 @@ namespace Psi {
     derived_pattern(derived_pattern_),
     type(type_),
     bases(bases_) {
+    }
+    
+    TreePtr<Interface> Interface::new_(const PSI_STD::vector<InterfaceBase>& bases,
+                                       const TreePtr<Term>& type,
+                                       unsigned n_implicit,
+                                       const PSI_STD::vector<TreePtr<Term> >& pattern,
+                                       const PSI_STD::vector<TreePtr<Implementation> >& values,
+                                       const PSI_STD::vector<TreePtr<Term> >& derived_pattern,
+                                       const SourceLocation& location) {
+      return tree_from(::new Interface(bases, type, n_implicit, pattern, values, derived_pattern, location));
     }
     
     template<typename V>
@@ -61,20 +75,25 @@ namespace Psi {
      * \brief Utility function for getting a pointer to the result of type_after.
      */
     TreePtr<Term> Interface::pointer_type_after(const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) const {
-      TreePtr<Term> inner = type_after(parameters, location);
-      return TreePtr<Term>(new PointerType(inner, location));
+      return TermBuilder::pointer(type_after(parameters, location), location);
     }
     
     const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", OverloadType);
     
-    Implementation::Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent_, const TreePtr<Term>& value_, const TreePtr<Interface>& interface,
+    Implementation::Implementation(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& dependent_, const TreePtr<Term>& value_, const TreePtr<Interface>& interface,
                                    unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, bool dynamic_, const PSI_STD::vector<int>& path_, const SourceLocation& location)
-    : OverloadValue(&vtable, interface, n_wildcards, pattern, location),
+    : OverloadValue(&vtable, compile_context, interface, n_wildcards, pattern, location),
     dependent(dependent_),
     value(value_),
     dynamic(dynamic_),
     path(path_) {
       PSI_ASSERT(!dynamic || path.empty());
+    }
+    
+    TreePtr<Implementation> Implementation::new_(const PSI_STD::vector<TreePtr<Term> >& dependent, const TreePtr<Term>& value, const TreePtr<Interface>& interface,
+                                                 unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, bool dynamic, const PSI_STD::vector<int>& path,
+                                                 const SourceLocation& location) {
+      return tree_from(::new Implementation(value.compile_context(), dependent, value, interface, n_wildcards, pattern, dynamic, path, location));
     }
     
     template<typename V>
@@ -98,6 +117,14 @@ namespace Psi {
     type(type_) {
     }
     
+    /**
+     * MetadataType constructor function.
+     */
+    TreePtr<MetadataType> MetadataType::new_(CompileContext& compile_context, unsigned n_implicit, const PSI_STD::vector<TreePtr<Term> >& pattern,
+                                             const PSI_STD::vector<TreePtr<Metadata> >& values, const SIType& type, const SourceLocation& location) {
+      return TreePtr<MetadataType>(::new MetadataType(compile_context, n_implicit, pattern, values, type, location));
+    }
+    
     template<typename V>
     void MetadataType::visit(V& v) {
       visit_base<OverloadType>(v);
@@ -107,8 +134,17 @@ namespace Psi {
     const TreeVtable MetadataType::vtable = PSI_COMPILER_TREE(MetadataType, "psi.compiler.MetadataType", OverloadType);
     
     Metadata::Metadata(const TreePtr<>& value_, const TreePtr<MetadataType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location)
-    : OverloadValue(&vtable, type, n_wildcards, pattern, location),
+    : OverloadValue(&vtable, value_.compile_context(), type, n_wildcards, pattern, location),
     value(value_) {
+      if (type && !type->type.isa(value.get()))
+        compile_context().error_throw(location, "Metadata tree has incorrect type");
+    }
+    
+    /**
+     * Metadata constructor function.
+     */
+    TreePtr<Metadata> Metadata::new_(const TreePtr<>& value, const TreePtr<MetadataType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location) {
+      return tree_from(::new Metadata(value, type, n_wildcards, pattern, location));
     }
     
     template<typename V>
@@ -174,16 +210,24 @@ namespace Psi {
       while (true) {
         if (TreePtr<PointerType> ptr = dyn_treeptr_cast<PointerType>(my_term))
           my_term = ptr->target_type;
-        else if (TreePtr<GlobalDefine> def = dyn_treeptr_cast<GlobalDefine>(my_term))
-          my_term = def->value;
         else if (TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(my_term))
           my_term = derived->value_type;
-        else
+        else if (TreePtr<GlobalStatement> def = dyn_treeptr_cast<GlobalStatement>(my_term)) {
+          if (def->mode == statement_mode_functional)
+            my_term = def->value;
+          else
+            break;
+        } else if (TreePtr<Statement> stmt = dyn_treeptr_cast<Statement>(my_term)) {
+          if (stmt->mode == statement_mode_functional)
+            my_term = stmt->value;
+          else
+            break;
+        } else
           break;
       }
         
       if (TreePtr<TypeInstance> instance = dyn_treeptr_cast<TypeInstance>(my_term)) {
-        const PSI_STD::vector<TreePtr<OverloadValue> >& overloads = instance->generic->overloads;
+        const PSI_STD::vector<TreePtr<OverloadValue> >& overloads = instance->generic->overloads();
         for (unsigned ii = 0, ie = overloads.size(); ii != ie; ++ii) {
           const TreePtr<OverloadValue>& v = overloads[ii];
           if (v && (type == v->overload_type) && overload_pattern_match(v->pattern, parameters, v->n_wildcards, scratch))
@@ -224,8 +268,8 @@ namespace Psi {
       for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
         if (parameters[ii]) {
           overload_lookup_search(type, parameters, parameters[ii], results, match_scratch);
-          if (parameters[ii]->type)
-            overload_lookup_search(type, parameters, parameters[ii]->type, results, match_scratch);
+          if (parameters[ii]->result_type.type)
+            overload_lookup_search(type, parameters, parameters[ii]->result_type.type, results, match_scratch);
         }
       }
       

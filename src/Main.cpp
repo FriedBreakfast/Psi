@@ -17,6 +17,7 @@
 #include "Compiler.hpp"
 #include "Tree.hpp"
 #include "Macros.hpp"
+#include "TermBuilder.hpp"
 
 namespace {
   std::string find_program_name(const char *path) {
@@ -36,7 +37,6 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   
   PSI_STD::map<Psi::String, TreePtr<Term> > global_names;
   global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
-  global_names["__none__"] = module->compile_context().builtins().empty_value;
   //global_names["__number__"] = TreePtr<Term>();
   global_names["__brace__"] = string_macro(compile_context, psi_location.named_child("cstring"));
   global_names["builtin_type"] = builtin_type_macro(compile_context, psi_location.named_child("builtin_type"));
@@ -97,8 +97,8 @@ int main(int argc, char *argv[]) {
   using namespace Psi::Compiler;
 
   CompileContext compile_context(&std::cerr);
-  TreePtr<Module> global_module(new Module(compile_context, "psi", compile_context.root_location().named_child("psi")));
-  TreePtr<Module> my_module(new Module(compile_context, "main", compile_context.root_location()));
+  TreePtr<Module> global_module = Module::new_(compile_context, "psi", compile_context.root_location().named_child("psi"));
+  TreePtr<Module> my_module = Module::new_(compile_context, "main", compile_context.root_location());
   TreePtr<EvaluateContext> root_evaluate_context = create_globals(global_module);
   TreePtr<EvaluateContext> module_evaluate_context = evaluate_context_module(my_module, root_evaluate_context, my_module.location());
   Parser::ParserLocation file_text = url_location(argv[1], source_text.get(), source_text.get() + source_length);
@@ -123,8 +123,8 @@ int main(int argc, char *argv[]) {
     init_tree->complete();
     
     // Create main function
-    TreePtr<FunctionType> main_type(new FunctionType(result_mode_by_value, compile_context.builtins().empty_type, default_, default_, init_location));
-    TreePtr<Function> main_function(new Function(my_module, false, main_type, default_, init_tree, TreePtr<JumpTarget>(), init_location));
+    TreePtr<FunctionType> main_type = TermBuilder::function_type(result_mode_by_value, compile_context.builtins().empty_type, default_, default_, init_location);
+    TreePtr<Global> main_function = TermBuilder::function(my_module, main_type, false, default_, default_, init_location, init_tree);
     
     void (*main_ptr) ();
     *reinterpret_cast<void**>(&main_ptr) = compile_context.jit_compile(main_function);

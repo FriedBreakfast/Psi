@@ -3,11 +3,27 @@
 #include "Parser.hpp"
 #include "Tree.hpp"
 #include "Utility.hpp"
+#include "TermBuilder.hpp"
 
 #include <boost/format.hpp>
 
 namespace Psi {
   namespace Compiler {
+    /**
+     * \brief Convert a ParameterMode to a ResultMode
+     */
+    ResultMode parameter_to_result_mode(ParameterMode mode) {
+      switch (mode) {
+      case parameter_mode_input:
+      case parameter_mode_output:
+      case parameter_mode_io:
+      case parameter_mode_rvalue: return result_mode_lvalue;
+      case parameter_mode_functional:
+      case parameter_mode_phantom: return result_mode_functional;
+      default: PSI_FAIL("unknown enum value");
+      }
+    }
+
     class FunctionBodyCompiler {
       TreePtr<EvaluateContext> m_body_context;
       SharedPtr<Parser::TokenExpression> m_body;
@@ -24,7 +40,7 @@ namespace Psi {
         ("body", &FunctionBodyCompiler::m_body);
       }
 
-      TreePtr<Term> evaluate(const TreePtr<Term>& self) {
+      TreePtr<Term> evaluate(const TreePtr<Function>& self) {
         return compile_from_bracket(m_body, m_body_context, self.location());
       }
     };
@@ -99,7 +115,7 @@ namespace Psi {
 
         TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
         TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
-        TreePtr<Anonymous> argument(new Anonymous(argument_type, argument_location));
+        TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, result_mode_functional, argument_location);
         argument_list.push_back(argument);
         argument_modes.push_back(parameter_mode_functional);
 
@@ -126,9 +142,9 @@ namespace Psi {
 
         TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
         TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
-        TreePtr<Anonymous> argument(new Anonymous(argument_type, argument_location));
+        TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, parameter_to_result_mode(argument_expr.mode), argument_location);
         argument_list.push_back(argument);
-        argument_modes.push_back((ParameterMode)argument_expr.mode);
+        argument_modes.push_back(argument_expr.mode);
 
         if (argument_expr.name) {
           argument_map[expr_name] = argument;
@@ -169,79 +185,14 @@ namespace Psi {
       // Generate function type - parameterize parameters!
       PSI_STD::vector<FunctionParameterType> argument_types;
       for (unsigned ii = 0, ie = argument_list.size(); ii != ie; ++ii)
-        argument_types.push_back(FunctionParameterType(argument_modes[ii], argument_list[ii]->type->parameterize(argument_list[ii].location(), argument_list)));
+        argument_types.push_back(FunctionParameterType(argument_modes[ii], argument_list[ii]->result_type.type->parameterize(argument_list[ii].location(), argument_list)));
       TreePtr<Term> result_type_param = result_type->parameterize(result_type.location(), argument_list);
       for (PSI_STD::vector<TreePtr<InterfaceValue> >::iterator ii = interfaces.begin(), ie = interfaces.end(); ii != ie; ++ii)
         *ii = treeptr_cast<InterfaceValue>((*ii)->parameterize(ii->location(), argument_list));
       
-      result.type.reset(new FunctionType(result_mode, result_type_param, argument_types, interfaces, location));
+      result.type = TermBuilder::function_type(result_mode, result_type_param, argument_types, interfaces, location);
 
       return result;
-    }
-    
-    namespace {
-      struct ArgumentInferrer {
-        TreePtr<FunctionType> m_function_type;
-        std::vector<TreePtr<Term> > m_explicit_arguments;
-        
-      public:
-        typedef std::vector<TreePtr<Term> > result_type;
-        
-        ArgumentInferrer(const TreePtr<FunctionType>& function_type, const std::vector<TreePtr<Term> >& explicit_arguments)
-        : m_function_type(function_type), m_explicit_arguments(explicit_arguments) {
-        }
-        
-        result_type evaluate(const TreePtr<ValueTree<result_type> >& self) {
-          PSI_ASSERT(m_explicit_arguments.size() < m_function_type->parameter_types.size());
-          
-          unsigned n_implicit = m_function_type->parameter_types.size() - m_explicit_arguments.size();
-          PSI_STD::vector<TreePtr<Term> > arguments(n_implicit);
-          // Include all arguments so that type dependencies between explicit arguments can be checked
-          arguments.insert(arguments.end(), m_explicit_arguments.begin(), m_explicit_arguments.end());
-          
-          for (unsigned ii = 0, ie = m_explicit_arguments.size(); ii != ie; ++ii) {
-            if (!m_explicit_arguments[ii]->type->match(m_function_type->parameter_types[ii].type, arguments, 0))
-              self.compile_context().error_throw(m_explicit_arguments[ii].location(), "Incorrect argument type");
-          }
-          
-          // Trim to include only implicit arguments
-          arguments.resize(n_implicit);
-          for (unsigned ii = 0, ie = n_implicit; ii != ie; ++ii) {
-            if (!arguments[ii])
-              self.compile_context().error_throw(self.location(), boost::format("No value inferred for argument %d") % (ii+1));
-          }
-          
-          return arguments;
-        }
-        
-        template<typename V>
-        static void visit(V& v) {
-          v("function_type", &ArgumentInferrer::m_function_type)
-          ("explicit_arguments", &ArgumentInferrer::m_explicit_arguments);
-        }
-      };
-      
-      struct ArgumentExtractor {
-        unsigned m_n;
-        TreePtr<ValueTree<ArgumentInferrer::result_type> > m_implicit_arguments;
-        
-      public:
-        typedef Term TreeResultType;
-        
-        ArgumentExtractor(unsigned n, const TreePtr<ValueTree<ArgumentInferrer::result_type> >& implicit_arguments)
-        : m_n(n), m_implicit_arguments(implicit_arguments) {
-        }
-        
-        TreePtr<Term> evaluate(const TreePtr<Term>&) {
-          return m_implicit_arguments->value[m_n];
-        }
-        
-        template<typename V>
-        static void visit(V& v) {
-          v("n", &ArgumentExtractor::m_n)
-          ("implicit_arguments", &ArgumentExtractor::m_implicit_arguments);
-        }
-      };
     }
     
     /**
@@ -256,7 +207,7 @@ namespace Psi {
     TreePtr<Term> function_call(const TreePtr<Term>& function, const PSI_STD::vector<TreePtr<Term> >& explicit_arguments, const SourceLocation& location) {
       CompileContext& compile_context = function.compile_context();
 
-      TreePtr<FunctionType> ftype = dyn_treeptr_cast<FunctionType>(function->type);
+      TreePtr<FunctionType> ftype = dyn_treeptr_cast<FunctionType>(function->result_type.type);
       if (!ftype)
         compile_context.error_throw(location, "Call target does not have function type");
 
@@ -269,14 +220,16 @@ namespace Psi {
           compile_context.error_throw(location, boost::format("Too few arguments passed to function, expected between %d and %d") % (ftype->parameter_types.size() - ii) % ftype->parameter_types.size());
       }
 
-      TreePtr<ValueTree<ArgumentInferrer::result_type> > implicit_args_tree = value_callback(compile_context, location, ArgumentInferrer(ftype, explicit_arguments));
-      
-      PSI_STD::vector<TreePtr<Term> > all_arguments;
-      for (unsigned ii = 0, ie = n_implicit; ii != ie; ++ii)
-        all_arguments.push_back(tree_callback(compile_context, location, ArgumentExtractor(ii, implicit_args_tree)));
+      PSI_STD::vector<TreePtr<Term> > all_arguments(n_implicit);
+      // Include all arguments so that type dependencies between explicit arguments can be checked
       all_arguments.insert(all_arguments.end(), explicit_arguments.begin(), explicit_arguments.end());
+      
+      for (unsigned ii = 0, ie = explicit_arguments.size(); ii != ie; ++ii) {
+        if (!explicit_arguments[ii]->result_type.type->match(ftype->parameter_types[ii].type, all_arguments, 0))
+          function.compile_context().error_throw(explicit_arguments[ii].location(), "Incorrect argument type");
+      }
 
-      return TreePtr<Term>(new FunctionCall(function, all_arguments, location));
+      return TermBuilder::function_call(function, all_arguments, location);
     }
 
     /**
@@ -286,7 +239,7 @@ namespace Psi {
      * but for now the exact semantics are not going to be guaranteed).
      */
     TreePtr<Term> compile_function_invocation(const TreePtr<Term>& function,
-                                              const List<SharedPtr<Parser::Expression> >& arguments,
+                                              const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location) {
       CompileContext& compile_context = evaluate_context.compile_context();
@@ -328,7 +281,7 @@ namespace Psi {
 
       static TreePtr<Term> evaluate_impl(const FunctionInvokeCallback& self,
                                          const TreePtr<Term>&,
-                                         const List<SharedPtr<Parser::Expression> >& arguments,
+                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
         return compile_function_invocation(self.function, arguments, evaluate_context, location);
@@ -346,7 +299,7 @@ namespace Psi {
      * expected by \c info.
      */
     TreePtr<Term> function_invoke_macro(const TreePtr<Term>& func, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(new FunctionInvokeCallback(func, location));
+      TreePtr<MacroMemberCallback> callback(::new FunctionInvokeCallback(func, location));
       TreePtr<Macro> macro = make_macro(func.compile_context(), location, callback);
       return make_macro_term(macro, location);
     }
@@ -356,7 +309,7 @@ namespace Psi {
      *
      * \todo Implement return jump target.
      */
-    TreePtr<Term> compile_function_definition(const List<SharedPtr<Parser::Expression> >& arguments,
+    TreePtr<Term> compile_function_definition(const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location) {
       CompileContext& compile_context = evaluate_context.compile_context();
@@ -380,7 +333,7 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Term> > parameter_trees_term; // This exists because C++ won't convert vector<derived> to vector<base>
       PSI_STD::vector<TreePtr<Anonymous> > parameter_trees;
       for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = common.type->parameter_types.begin(), ie = common.type->parameter_types.end(); ii != ie; ++ii) {
-        TreePtr<Anonymous> param(new Anonymous(common.type->parameter_type_after(ii->type.location(), parameter_trees_term), ii->type.location()));
+        TreePtr<Anonymous> param = common.type->parameter_after(ii->type.location(), parameter_trees_term);
         parameter_trees.push_back(param);
         parameter_trees_term.push_back(param);
       }
@@ -390,9 +343,9 @@ namespace Psi {
         argument_values[ii->first] = parameter_trees[ii->second];
 
       TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_values, evaluate_context);
-      TreePtr<Term> body_tree = tree_callback<Term>(compile_context, location, FunctionBodyCompiler(body_context, body));
 
-      return TreePtr<Function>(new Function(evaluate_context->module(), false, common.type, parameter_trees, body_tree, TreePtr<JumpTarget>(), location));
+      return TermBuilder::function(evaluate_context->module(), common.type, false, parameter_trees, TreePtr<JumpTarget>(), location,
+                                   FunctionBodyCompiler(body_context, body));
     }
 
     /**
@@ -408,7 +361,7 @@ namespace Psi {
       
       static TreePtr<Term> evaluate_impl(const FunctionDefineCallback&,
                                          const TreePtr<Term>&,
-                                         const List<SharedPtr<Parser::Expression> >& arguments,
+                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
         return compile_function_definition(arguments, evaluate_context, location);
@@ -427,7 +380,7 @@ namespace Psi {
      * \brief Create a callback to the function definition function.
      */
     TreePtr<Term> function_definition_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(new FunctionDefineCallback(compile_context, location));
+      TreePtr<MacroMemberCallback> callback(::new FunctionDefineCallback(compile_context, location));
       TreePtr<Macro> macro = make_macro(compile_context, location, callback);
       return make_macro_term(macro, location);
     }
@@ -437,7 +390,7 @@ namespace Psi {
      *
      * \todo Implement return jump target.
      */
-    TreePtr<Term> compile_function_type(const List<SharedPtr<Parser::Expression> >& arguments,
+    TreePtr<Term> compile_function_type(const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                         const TreePtr<EvaluateContext>& evaluate_context,
                                         const SourceLocation& location) {
       CompileContext& compile_context = evaluate_context.compile_context();
@@ -465,7 +418,7 @@ namespace Psi {
 
       static TreePtr<Term> evaluate_impl(const FunctionTypeCallback&,
                                          const TreePtr<Term>&,
-                                         const List<SharedPtr<Parser::Expression> >& arguments,
+                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
         return compile_function_type(arguments, evaluate_context, location);
@@ -481,7 +434,7 @@ namespace Psi {
     PSI_COMPILER_MACRO_MEMBER_CALLBACK(FunctionTypeCallback, "psi.compiler.FunctionTypeCallback", MacroMemberCallback);
 
     TreePtr<Term> function_type_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(new FunctionTypeCallback(compile_context, location));
+      TreePtr<MacroMemberCallback> callback(::new FunctionTypeCallback(compile_context, location));
       TreePtr<Macro> macro = make_macro(compile_context, location, callback);
       return make_macro_term(macro, location);
     }

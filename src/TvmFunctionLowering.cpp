@@ -1,10 +1,10 @@
 #include "Compiler.hpp"
 #include "Tree.hpp"
 #include "Interface.hpp"
-#include "TypeMapping.hpp"
 #include "TvmLowering.hpp"
 #include "TvmFunctionLowering.hpp"
 #include "Array.hpp"
+#include "TermBuilder.hpp"
 
 #include "Tvm/Core.hpp"
 #include "Tvm/FunctionalBuilder.hpp"
@@ -157,15 +157,15 @@ void TvmFunctionLowering::run_body(TvmCompiler *tvm_compiler, const TreePtr<Func
   // We need this to be non-NULL
   m_return_target = function->return_target;
   if (!m_return_target) {
-    TreePtr<Anonymous> return_argument(new Anonymous(ftype->result_type, function.location()));
-    m_return_target.reset(new JumpTarget(compile_context(), TreePtr<Term>(), exit_result_mode, return_argument, function.location()));
+    TreePtr<Anonymous> return_argument = TermBuilder::anonymous(ftype->result_type, function.location());
+    m_return_target = TermBuilder::exit_target(exit_result_mode, return_argument, function.location());
   }
   
   Tvm::ValuePtr<Tvm::Block> entry_block = output->new_block(function.location());
   m_builder.set_insert_point(entry_block);
 
   Scope outer_scope(this, function->location());
-  TreePtr<JumpTo> exit_jump(new JumpTo(m_return_target, function->body, function.location()));
+  TreePtr<JumpTo> exit_jump = TermBuilder::jump_to(m_return_target, function->body(), function.location());
   VariableSlot dummy_var(outer_scope, exit_jump);
   run_jump(outer_scope, exit_jump, dummy_var, outer_scope);
 }
@@ -288,8 +288,8 @@ public:
   FunctionalBuilderCallback(Scope *scope) : m_scope(scope) {}
   
   virtual TvmResult build_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<Term>& term) {
-    if (TreePtr<StatementRef> st = dyn_treeptr_cast<StatementRef>(term)) {
-      const TvmResult *var = m_scope->variables().lookup(st->value);
+    if (TreePtr<Statement> st = dyn_treeptr_cast<Statement>(term)) {
+      const TvmResult *var = m_scope->variables().lookup(st);
       if (!var)
         m_scope->shared().compile_context().error_throw(st->location(), "Variable is not in scope");
       if (var->storage() != tvm_storage_functional)
@@ -399,8 +399,8 @@ TvmResult TvmFunctionLowering::run(Scope& scope, const TreePtr<Term>& term, cons
     return run_jump(scope, jump_to, slot, following_scope);
   } else if (TreePtr<TryFinally> try_finally = dyn_treeptr_cast<TryFinally>(term)) {
     return run_try_finally(scope, try_finally, slot, following_scope);
-  } else if (TreePtr<StatementRef> statement = dyn_treeptr_cast<StatementRef>(term)) {
-    const TvmResult *var = scope.variables().lookup(statement->value);
+  } else if (TreePtr<Statement> statement = dyn_treeptr_cast<Statement>(term)) {
+    const TvmResult *var = scope.variables().lookup(statement);
     if (!var)
       compile_context().error_throw(statement->location(), "Variable is not in scope");
     return (var->storage() == tvm_storage_stack) ?

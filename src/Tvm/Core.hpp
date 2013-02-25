@@ -618,7 +618,6 @@ namespace Psi {
 
       bool m_constant;
       bool m_merge;
-      bool m_private;
       ValuePtr<> m_value;
     };
 

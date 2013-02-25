@@ -1,124 +1,80 @@
 #include "TreeBase.hpp"
 #include "Compiler.hpp"
 
+#include <boost/format.hpp>
+
+#ifdef PSI_DEBUG
+#include <iostream>
+#endif
+
 namespace Psi {
   namespace Compiler {
-    void TreePtrBase::update_chain(const TreeBase *ptr) const {
-      const TreePtrBase *hook = this;
-      ObjectPtr<const TreeCallback> ptr_cb;
-      while (hook->m_ptr.get() != ptr) {
-        PSI_ASSERT(derived_vptr(hook->m_ptr.get())->is_callback);
-        ObjectPtr<const TreeCallback> next_ptr_cb(static_cast<const TreeCallback*>(hook->m_ptr.get()), true);
-        const TreePtrBase *next_hook = &next_ptr_cb->m_value;
-        hook->m_ptr.reset(ptr);
-        hook = next_hook;
-        ptr_cb.swap(next_ptr_cb);
-      }
+    RunningTreeCallback::RunningTreeCallback(DelayedEvaluation *callback)
+      : m_callback(callback) {
+      m_parent = callback->compile_context().m_running_completion_stack;
+      callback->compile_context().m_running_completion_stack = this;
+    }
+
+    RunningTreeCallback::~RunningTreeCallback() {
+      m_callback->compile_context().m_running_completion_stack = m_parent;
+    }
+
+    /**
+     * \brief Throw a circular dependency error caused by something depending on
+     * its own value for evaluation.
+     * 
+     * \param callback Callback being recursively evaluated.
+     */
+    void RunningTreeCallback::throw_circular_dependency() {
+      CompileError error(m_callback->compile_context(), m_callback->location());
+      error.info("Circular dependency found");
+      boost::format fmt("via: '%s'");
+      for (RunningTreeCallback *ancestor = m_callback->compile_context().m_running_completion_stack;
+           ancestor && (ancestor->m_callback != m_callback); ancestor = ancestor->m_parent)
+        error.info(ancestor->m_callback->location(), fmt % ancestor->m_callback->location().logical->error_name(m_callback->location().logical));
+      error.end();
+      throw CompileException();
+    }
+
+    DelayedEvaluation::DelayedEvaluation(const DelayedEvaluationVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
+    : Object(PSI_COMPILER_VPTR_UP(Object, vptr), compile_context), m_location(location), m_state(state_ready) {
     }
     
     /**
-     * Evaluate a lazily evaluated Tree (recursively if necessary).
-     * 
-     * \param vptr If non-NULL, this indicates that a cast is being attempted, and we only need
-     * evaluate as far as required to establish whether the cast is correct or not.
-     * 
-     * \return True if fully evaluated, false if only partially evaluated, which requires
-     * that \c vptr is not null.
+     * Evaluate a delayed evaluation tree.
      */
-    bool TreePtrBase::evaluate(const TreeVtable *vptr) const {
-      PSI_ASSERT(m_ptr);
-      bool full_eval = true;
-
-      /*
-       * Evaluate chain of hooks until either a NULL is found or a non-callback
-       * value is reached.
-       */
-      const TreePtrBase *hook = this;
-      while (true) {
-        if (!hook->m_ptr)
-          break;
-        
-        const TreeBaseVtable *vtable = derived_vptr(hook->m_ptr.get());
-        if (!vtable->is_callback)
-          break;
-
-        TreeCallback *ptr_cb = static_cast<TreeCallback*>(const_cast<TreeBase*>(hook->m_ptr.get()));
-        
-        if (vptr && si_derived(reinterpret_cast<const SIVtable*>(vptr), reinterpret_cast<const SIVtable*>(ptr_cb->m_result_vptr))) {
-          full_eval = false;
-          break;
+    void DelayedEvaluation::evaluate(void *ptr, void *arg) {
+      switch (m_state) {
+      case state_ready: {
+        RunningTreeCallback running(this);
+        m_state = state_running;
+        try {
+          derived_vptr(this)->evaluate(ptr, this, arg);
+        } catch (...) {
+          m_state = state_failed;
+          throw;
         }
-
-        hook = &ptr_cb->m_value;
-
-        switch (ptr_cb->m_state) {
-        case TreeCallback::state_ready: {
-          const TreeCallbackVtable *vtable_cb = reinterpret_cast<const TreeCallbackVtable*>(vtable);
-          RunningTreeCallback running(ptr_cb);
-          ptr_cb->m_state = TreeCallback::state_running;
-          const TreeBase *eval_ptr;
-          try {
-            eval_ptr = vtable_cb->evaluate(ptr_cb);
-          } catch (...) {
-            ptr_cb->m_state = TreeCallback::state_failed;
-            update_chain(ptr_cb);
-            throw;
-          }
-          PSI_ASSERT(!hook->m_ptr);
-          hook->m_ptr.reset(eval_ptr, false);
-          ptr_cb->m_state = TreeCallback::state_finished;
-          break;
-        }
-
-        case TreeCallback::state_running:
-          update_chain(ptr_cb);
-          RunningTreeCallback::throw_circular_dependency(ptr_cb);
-          PSI_FAIL("Previous line should have thrown an exception");
-
-        case TreeCallback::state_finished:
-          break;
-
-        case TreeCallback::state_failed:
-          update_chain(ptr_cb);
-          throw CompileException();
-        }
+        m_state = state_finished;
+        return;
       }
 
-      update_chain(hook->m_ptr.get());
-      return full_eval;
-    }
-    
-    /**
-     * Evaluate a lazily evaluated Tree (recursively if necessary) and return the final result.
-     */
-    const Tree* TreePtrBase::get_helper() const {
-      evaluate(NULL);
-      PSI_ASSERT(!m_ptr || !derived_vptr(m_ptr.get())->is_callback);
-      return static_cast<const Tree*>(m_ptr.get());
-    }
-    
-    /**
-     * \brief Check whether a Tree can be cast to the given type.
-     * 
-     * This may or may not fully evaluate this tree, depending on whether the evaluation
-     * functions specify a more specific type or not. Note that a NULL value is counted
-     * as castable to any type.
-     */
-    bool TreePtrBase::is_a(const TreeVtable *vptr) const {
-      if (!m_ptr)
-        return true;
-      
-      if (derived_vptr(m_ptr.get())->is_callback)
-        if (!evaluate(vptr))
-          return true;
-      
-      PSI_ASSERT(!m_ptr || !derived_vptr(m_ptr.get())->is_callback);
-      return !m_ptr || si_derived(reinterpret_cast<const SIVtable*>(vptr), si_vptr(m_ptr.get()));
+      case state_running:
+        RunningTreeCallback(this).throw_circular_dependency();
+        PSI_FAIL("Previous line should have thrown an exception");
+
+      case state_finished:
+        compile_context().error_throw(m_location, "Delayed evaluation tree evaluated a second time", CompileError::error_internal);
+        PSI_FAIL("Previous line should have thrown an exception");
+
+      case state_failed:
+        compile_context().error_throw(m_location, "Delayed evaluation tree previously failed", CompileError::error_internal);
+        PSI_FAIL("Previous line should have thrown an exception");
+      }
     }
 
 #ifdef PSI_DEBUG
-    void TreePtrBase::debug_print() const {
-      if (!m_ptr) {
+    void Tree::debug_print() const {
+      if (!this) {
         std::cerr << "(null)" << std::endl;
         return;
       }
@@ -126,9 +82,20 @@ namespace Psi {
       const SourceLocation& loc = location();
       std::cerr << loc.physical.file->url << ':' << loc.physical.first_line << ": "
       << loc.logical->error_name(LogicalSourceLocationPtr())
-      << " : " << si_vptr(m_ptr.get())->classname << std::endl;
+      << " : " << si_vptr(this)->classname << std::endl;
     }
-#endif    
+#endif
+
+    /**
+     * Overload of object constructor which does not insert the object into a contexts
+     * linked list. This is used by FunctionalTerm and its derived types only.
+     */
+    Object::Object(const ObjectVtable *vtable)
+    : m_reference_count(0),
+    m_compile_context(&compile_context) {
+      PSI_COMPILER_SI_INIT(vtable);
+      PSI_ASSERT(!m_vptr->abstract);
+    }
 
     Object::Object(const ObjectVtable *vtable, CompileContext& compile_context)
     : m_reference_count(0),
@@ -145,15 +112,15 @@ namespace Psi {
     
     const SIVtable Object::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Object", NULL);
 
-    TreeBase::TreeBase(const TreeBaseVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
-    : Object(PSI_COMPILER_VPTR_UP(Object, vptr), compile_context),
+    /// \copydoc Object::Object(const ObjectVtable*)
+    Tree::Tree(const TreeVtable *vptr, const SourceLocation& location)
+    : Object(PSI_COMPILER_VPTR_UP(Object, vptr)),
     m_location(location) {
     }
-    
-    const SIVtable TreeBase::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeBase", &Object::vtable);
 
     Tree::Tree(const TreeVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
-    : TreeBase(PSI_COMPILER_VPTR_UP(TreeBase, vptr), compile_context, location) {
+    : Object(PSI_COMPILER_VPTR_UP(Object, vptr), compile_context),
+    m_location(location) {
     }
     
     /**
@@ -170,12 +137,6 @@ namespace Psi {
       }
     }
 
-    const SIVtable Tree::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Tree", &TreeBase::vtable);
-
-    TreeCallback::TreeCallback(const TreeCallbackVtable *vptr, CompileContext& compile_context, const TreeVtable *result_vptr, const SourceLocation& location)
-    : TreeBase(PSI_COMPILER_VPTR_UP(TreeBase, vptr), compile_context, location), m_state(state_ready), m_result_vptr(result_vptr) {
-    }
-
-    const SIVtable TreeCallback::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TreeCallback", &TreeBase::vtable);
+    const SIVtable Tree::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Tree", &Object::vtable);
   }
 }

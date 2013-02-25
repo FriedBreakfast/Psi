@@ -2,7 +2,6 @@
 #include "TvmLowering.hpp"
 
 #ifdef PSI_DEBUG
-#include <iostream>
 #include <cstdlib>
 #include "GCChecker.h"
 #endif
@@ -276,34 +275,6 @@ namespace Psi {
       return m_tvm_compiler->jit_compile(global);
     }
 
-    RunningTreeCallback::RunningTreeCallback(TreeCallback *callback)
-      : m_callback(callback) {
-      m_parent = callback->compile_context().m_running_completion_stack;
-      callback->compile_context().m_running_completion_stack = this;
-    }
-
-    RunningTreeCallback::~RunningTreeCallback() {
-      m_callback->compile_context().m_running_completion_stack = m_parent;
-    }
-
-    /**
-     * \brief Throw a circular dependency error caused by something depending on
-     * its own value for evaluation.
-     * 
-     * \param callback Callback being recursively evaluated.
-     */
-    void RunningTreeCallback::throw_circular_dependency(TreeCallback *callback) {
-      PSI_ASSERT(callback->m_state == TreeCallback::state_running);
-      CompileError error(callback->compile_context(), callback->m_location);
-      error.info("Circular dependency found");
-      boost::format fmt("via: '%s'");
-      for (RunningTreeCallback *ancestor = callback->compile_context().m_running_completion_stack;
-           ancestor && (ancestor->m_callback != callback); ancestor = ancestor->m_parent)
-        error.info(ancestor->m_callback->m_location, fmt % ancestor->m_callback->m_location.logical->error_name(callback->m_location.logical));
-      error.end();
-      throw CompileException();
-    }
-    
     class EvaluateContextDictionary : public EvaluateContext {
     public:
       static const EvaluateContextVtable vtable;
@@ -352,7 +323,7 @@ namespace Psi {
      * \brief Create an evaluation context based on a dictionary.
      */
     TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>& module, const SourceLocation& location, const std::map<String, TreePtr<Term> >& entries, const TreePtr<EvaluateContext>& next) {
-      return TreePtr<EvaluateContext>(new EvaluateContextDictionary(module, location, entries, next));
+      return TreePtr<EvaluateContext>(::new EvaluateContextDictionary(module, location, entries, next));
     }
 
     /**
@@ -400,27 +371,7 @@ namespace Psi {
      * \brief Evaluate context which changes target module but forwards name lookups.
      */
     TreePtr<EvaluateContext> evaluate_context_module(const TreePtr<Module>& module, const TreePtr<EvaluateContext>& next, const SourceLocation& location) {
-      return TreePtr<EvaluateContext>(new EvaluateContextModule(module, next, location));
-    }
-
-    /**
-     * \brief Create an index term from an integer.
-     */
-    TreePtr<Term> int_to_index(unsigned index, CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<Term> ty(new PrimitiveType(compile_context, "core.uint.i32", location));
-      return TreePtr<IntegerValue>(new IntegerValue(ty, index, location));
-    }
-    
-    /**
-     * \brief Convert a constant index to an integer.
-     * 
-     * \param location Location for error reporting.
-     */
-    unsigned index_to_int(const TreePtr<Term>& index, const SourceLocation& location) {
-      TreePtr<IntegerValue> iv = dyn_treeptr_cast<IntegerValue>(index);
-      if (!iv)
-        index.compile_context().error_throw(location, "Index into aggregate type is not an IntegerValue term");
-      return iv->value;
+      return TreePtr<EvaluateContext>(::new EvaluateContextModule(module, next, location));
     }
   }
 }

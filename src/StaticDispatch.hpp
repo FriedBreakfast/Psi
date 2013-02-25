@@ -8,6 +8,7 @@ namespace Psi {
     class OverloadValue;
     class Implementation;
     class Metadata;
+    class EvaluateContext;
     
     /**
      * \brief Common base class for types which are located by global pattern matching.
@@ -91,14 +92,14 @@ namespace Psi {
       };
       
       static const TreeVtable vtable;
-      Interface(const PSI_STD::vector<InterfaceBase>& bases,
-                const TreePtr<Term>& type,
-                unsigned n_implicit,
-                const PSI_STD::vector<TreePtr<Term> >& pattern,
-                const PSI_STD::vector<TreePtr<Implementation> >& values,
-                const PSI_STD::vector<TreePtr<Term> >& derived_pattern,
-                const SourceLocation& location);
       template<typename V> static void visit(V& v);
+      static TreePtr<Interface> new_(const PSI_STD::vector<InterfaceBase>& bases,
+                                     const TreePtr<Term>& type,
+                                     unsigned n_implicit,
+                                     const PSI_STD::vector<TreePtr<Term> >& pattern,
+                                     const PSI_STD::vector<TreePtr<Implementation> >& values,
+                                     const PSI_STD::vector<TreePtr<Term> >& derived_pattern,
+                                     const SourceLocation& location);
       
       TreePtr<Term> type_after(const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) const;
       TreePtr<Term> pointer_type_after(const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) const;
@@ -124,6 +125,15 @@ namespace Psi {
        * \brief Base interfaces.
        */
       PSI_STD::vector<InterfaceBase> bases;
+      
+    private:
+      Interface(const PSI_STD::vector<InterfaceBase>& bases,
+                const TreePtr<Term>& type,
+                unsigned n_implicit,
+                const PSI_STD::vector<TreePtr<Term> >& pattern,
+                const PSI_STD::vector<TreePtr<Implementation> >& values,
+                const PSI_STD::vector<TreePtr<Term> >& derived_pattern,
+                const SourceLocation& location);
     };
     
     /**
@@ -132,14 +142,15 @@ namespace Psi {
      * Metadata is located by global pattern matching on a set of Term variables.
      */
     class MetadataType : public OverloadType {
-    public:
-      static const TreeVtable vtable;
       MetadataType(CompileContext& compile_context,
                    unsigned n_implicit,
                    const PSI_STD::vector<TreePtr<Term> >& pattern,
                    const PSI_STD::vector<TreePtr<Metadata> >& values,
                    const SIType& type,
                    const SourceLocation& location);
+
+    public:
+      static const TreeVtable vtable;
       template<typename V> static void visit(V& v);
       
       /**
@@ -148,6 +159,9 @@ namespace Psi {
        * Note that this is a Tree type rather than a run-time type.
        */
       SIType type;
+      
+      static TreePtr<MetadataType> new_(CompileContext& compile_context, unsigned n_implicit, const PSI_STD::vector<TreePtr<Term> >& pattern,
+                                        const PSI_STD::vector<TreePtr<Metadata> >& values, const SIType& type, const SourceLocation& location);
     };
     
     /**
@@ -156,9 +170,13 @@ namespace Psi {
     class OverloadValue : public Tree {
     public:
       static const SIVtable vtable;
-      OverloadValue(const TreeVtable *vtable, const TreePtr<OverloadType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
+      OverloadValue(const TreeVtable *vtable, CompileContext& compile_context, const TreePtr<OverloadType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
       
-      /// \brief Get what this overloads.
+      /**
+       * \brief Get what this overloads.
+       * 
+       * This may be NULL if this OverloadValue is attached to the OverloadType directly.
+       */
       TreePtr<OverloadType> overload_type;
       
       /// \brief Number of wildcards to be matched.
@@ -185,24 +203,28 @@ namespace Psi {
      * \brief Class for values associated with MetadataType.
      */
     class Metadata : public OverloadValue {
+      Metadata(const TreePtr<>& value, const TreePtr<MetadataType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
+
     public:
       static const TreeVtable vtable;
-      Metadata(const TreePtr<>& value, const TreePtr<MetadataType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief The value of this metadata
       TreePtr<> value;
+      
+      static TreePtr<Metadata> new_(const TreePtr<>& value, const TreePtr<MetadataType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
     };
     
     /**
      * \brief Class for values associated with Interface.
      */
     class Implementation : public OverloadValue {
-    public:
-      static const TreeVtable vtable;
-      Implementation(const PSI_STD::vector<TreePtr<Term> >& dependent, const TreePtr<Term>& value, const TreePtr<Interface>& interface,
+      Implementation(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& dependent, const TreePtr<Term>& value, const TreePtr<Interface>& interface,
                      unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, bool dynamic, const PSI_STD::vector<int>& path,
                      const SourceLocation& location);
+
+    public:
+      static const TreeVtable vtable;
       template<typename V> static void visit(V& v);
       
       /**
@@ -233,6 +255,10 @@ namespace Psi {
        * \brief Path of ElementValue operations to use on \c value to get the correct value type of the interface.
        */
       PSI_STD::vector<int> path;
+
+      static TreePtr<Implementation> new_(const PSI_STD::vector<TreePtr<Term> >& dependent, const TreePtr<Term>& value, const TreePtr<Interface>& interface,
+                                          unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, bool dynamic, const PSI_STD::vector<int>& path,
+                                          const SourceLocation& location);
     };
     
     TreePtr<OverloadValue> overload_lookup(const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& parameters,

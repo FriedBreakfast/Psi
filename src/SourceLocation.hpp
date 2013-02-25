@@ -2,6 +2,7 @@
 #define HPP_PSI_SOURCE_LOCATION
 
 #include "Runtime.hpp"
+#include "Visitor.hpp"
 
 #include <boost/intrusive/avl_set.hpp>
 
@@ -92,6 +93,8 @@ namespace Psi {
     
     static SourceLocation root_location(const String& name);
   };
+  
+  PSI_VISIT_SIMPLE(SourceLocation);
 }
 
 #endif

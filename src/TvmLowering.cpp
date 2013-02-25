@@ -1,4 +1,5 @@
 #include "TvmLowering.hpp"
+#include "TermBuilder.hpp"
 
 #include "Tvm/FunctionalBuilder.hpp"
 #include "Tvm/Function.hpp"
@@ -191,6 +192,26 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_library_symbol(const TreePtr<Libra
   return sym.value;
 }
 
+namespace {
+  class GlobalDependenciesVisitor : public TermVisitor {
+    PSI_STD::set<TreePtr<Term> > m_visited;
+    PSI_STD::set<TreePtr<ModuleGlobal> > *m_globals;
+    
+  public:
+    static const VtableType vtable;
+    GlobalDependenciesVisitor(PSI_STD::set<TreePtr<ModuleGlobal> >& globals) : TermVisitor(&vtable), m_globals(&globals) {}
+    
+    static void visit_impl(GlobalDependenciesVisitor& self, const TreePtr<Term>& term) {
+      if (TreePtr<ModuleGlobal> global = dyn_treeptr_cast<ModuleGlobal>(term))
+        self.m_globals->insert(global);
+      else if (self.m_visited.insert(term).second)
+        term->visit_terms(self);
+    }
+  };
+  
+  const TermVisitorVtable GlobalDependenciesVisitor::vtable = PSI_COMPILER_TERM_VISITOR(GlobalDependenciesVisitor, "psi.compiler.GlobalDependenciesVisitor", TermVisitor);
+}
+
 /**
  * \brief Build a module global.
  * 
@@ -208,7 +229,8 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_module_global(const TreePtr<Module
     queue.pop_back();
 
     PSI_STD::set<TreePtr<ModuleGlobal> >& dependencies = dependency_map[current];
-    current->global_dependencies(dependencies);
+    GlobalDependenciesVisitor visitor(dependencies);
+    current->visit_terms(visitor);
     
     for (PSI_STD::set<TreePtr<ModuleGlobal> >::const_iterator ii = dependencies.begin(), ie = dependencies.end(); ii != ie; ++ii) {
       // If this global is "in progress", it cannot be built because we must
@@ -394,7 +416,7 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
   
   // Generate constant globals
   for (GlobalVariableList::const_iterator ii = functional_globals.begin(), ie = functional_globals.end(); ii != ie; ++ii) {
-    TvmResult value = build(ii->first->value, module);
+    TvmResult value = build(ii->first->value(), module);
     PSI_ASSERT(value.storage() == tvm_storage_functional);
     ii->second->set_value(value.value());
     ii->second->set_constant(ii->first->constant);
@@ -406,23 +428,21 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
     bool require_dtor = false;
     std::string ctor_name = str(boost::format("_Y_ctor%d") % tvm_module.module->constructors().size());
     Tvm::ValuePtr<Tvm::Function> constructor = tvm_module.module->new_constructor(ctor_name, module.location());
-    TreePtr<Term> ctor_tree = compile_context().builtins().empty_value;
-    for (GlobalVariableList::const_iterator ii = constructor_globals.begin(), ie = constructor_globals.end(); ii != ie; ++ii) {
-      TreePtr<Term> ptr(new PointerTo(ii->first, ii->first.location()));
-      ctor_tree.reset(new InitializePointer(ptr, ii->first->value, ctor_tree, module.location()));
-    }
+    TreePtr<Term> ctor_tree = TermBuilder::empty_value(compile_context());
+    for (GlobalVariableList::const_iterator ii = constructor_globals.begin(), ie = constructor_globals.end(); ii != ie; ++ii)
+      ctor_tree = TermBuilder::initialize_ptr(TermBuilder::ptr_to(ii->first, ii->first.location()),
+                                              ii->first->value(), ctor_tree, module.location());
     PSI_NOT_IMPLEMENTED();
     
     if (require_dtor) {
       std::string dtor_name = str(boost::format("_Y_dtor%d") % tvm_module.module->destructors().size());
       Tvm::ValuePtr<Tvm::Function> destructor = tvm_module.module->new_destructor(dtor_name, module.location());
       PSI_STD::vector<TreePtr<Term> > dtor_list;
-      for (GlobalVariableList::const_iterator ii = constructor_globals.begin(), ie = constructor_globals.end(); ii != ie; ++ii) {
-        TreePtr<Term> ptr(new PointerTo(ii->first, ii->first.location()));
-        TreePtr<Term> dtor_entry(new FinalizePointer(ptr, ii->first.location()));
-        dtor_list.push_back(dtor_entry);
-      }
-      TreePtr<Term> body = Block::make(module.location(), dtor_list, compile_context().builtins().empty_value);
+      for (GlobalVariableList::const_iterator ii = constructor_globals.begin(), ie = constructor_globals.end(); ii != ie; ++ii)
+        dtor_list.push_back(TermBuilder::finalize_ptr(TermBuilder::ptr_to(ii->first, ii->first.location()), ii->first.location()));
+
+      PSI_ASSERT(!dtor_list.empty());
+      TreePtr<Term> body = TermBuilder::block(module.location(), dtor_list, compile_context().builtins().empty_value);
       PSI_NOT_IMPLEMENTED();
     }
   }
@@ -499,7 +519,7 @@ TvmGenericResult TvmCompiler::build_generic(const TreePtr<GenericType>& generic)
     // Need to rewrite parameter to anonymous to build lowered type with RecursiveParameter
     // Would've made more seense if I'd built the two systems with a more similar parameter convention.
     TreePtr<Term> rewrite_type = (*ii)->type->specialize(generic->location(), anonymous_list);
-    TreePtr<Anonymous> rewrite_anon(new Anonymous(rewrite_type, rewrite_type->location()));
+    TreePtr<Anonymous> rewrite_anon = TermBuilder::anonymous(rewrite_type, rewrite_type->location());
     anonymous_list.push_back(rewrite_anon);
     Tvm::ValuePtr<> type = TvmFunctionalBuilder(m_compile_context, &m_tvm_context, &type_callback).build_type((*ii)->type).value();
     Tvm::ValuePtr<Tvm::RecursiveParameter> param = Tvm::RecursiveParameter::create(type, false, ii->location());
@@ -518,7 +538,7 @@ TvmGenericResult TvmCompiler::build_generic(const TreePtr<GenericType>& generic)
   
   GenericTypeCallback builder_callback(this, &parameter_map);
   TvmFunctionalBuilder builder(m_compile_context, &m_tvm_context, &builder_callback);
-  recursive->resolve(builder.build_value(generic->member_type).value());
+  recursive->resolve(builder.build_value(generic->member_type()).value());
   
   return result;
 }

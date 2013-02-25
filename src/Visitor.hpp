@@ -72,8 +72,14 @@ namespace Psi {
   
   PSI_VISIT_SIMPLE(bool)
   PSI_VISIT_SIMPLE(char)
+  PSI_VISIT_SIMPLE(signed char)
+  PSI_VISIT_SIMPLE(unsigned char)
+  PSI_VISIT_SIMPLE(short)
+  PSI_VISIT_SIMPLE(unsigned short)
   PSI_VISIT_SIMPLE(int)
+  PSI_VISIT_SIMPLE(long)
   PSI_VISIT_SIMPLE(unsigned)
+  PSI_VISIT_SIMPLE(unsigned long)
   PSI_VISIT_SIMPLE(std::string)
 
   template<typename V, typename T, typename A, typename D>

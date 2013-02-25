@@ -84,7 +84,7 @@ namespace Psi {
     class TvmFunctionalBuilderCallback {
     public:
       virtual TvmResult build_hook(TvmFunctionalBuilder& builder, const TreePtr<Term>& term) = 0;
-      virtual TvmResult build_define_hook(TvmFunctionalBuilder& builder, const TreePtr<GlobalDefine>& define) = 0;
+      virtual TvmResult build_define_hook(TvmFunctionalBuilder& builder, const TreePtr<GlobalStatement>& define) = 0;
       virtual TvmGenericResult build_generic_hook(TvmFunctionalBuilder& builder, const TreePtr<GenericType>& generic) = 0;
       virtual Tvm::ValuePtr<> load_hook(TvmFunctionalBuilder& builder, const Tvm::ValuePtr<>& ptr, const SourceLocation& location) = 0;
     };

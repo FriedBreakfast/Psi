@@ -28,7 +28,7 @@ namespace Psi {
    * out entire types.
    */
   struct DefaultConstructor {
-    template<typename T> operator T () {
+    template<typename T> operator T () const {
       return T();
     }
   };

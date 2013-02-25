@@ -11,6 +11,7 @@ namespace Psi {
 #define PSI_ALIGNED_MAX aligned(__BIGGEST_ALIGNMENT__)
 #define PSI_NORETURN noreturn
 #define PSI_UNUSED_ATTR unused
+#define PSI_SMALL_ENUM(name) enum __attribute__((packed)) name
 #define PSI_ASSUME(x) void()
 
   struct DebugLocation {
@@ -39,6 +40,7 @@ namespace Psi {
 #define PSI_ALIGNED_MAX align(16)
 #define PSI_UNREACHABLE() __assume(false)
 #define PSI_ASSUME(x) __assume(x)
+#define PSI_SMALL_ENUM(name) enum name : unsigned char
 
   struct DebugLocation {
     const char *file;
@@ -65,6 +67,11 @@ namespace Psi {
    * to expect were the expression evaluated.
    */
 #define PSI_ASSUME(x) void()
+
+  /**
+   * \brief Create an enumeration which only takes one byte.
+   */
+#define PSI_SMALL_ENUM(name) typedef unsigned char name; enum name##_enum_values
 
   struct DebugLocation {
     const char *file;

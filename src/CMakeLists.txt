@@ -37,7 +37,7 @@ add_library(psi-tvm SHARED
   Tvm/DisassemblerSource.cpp
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
-  Tvm/FunctionalBuilder.cpp Tvm/FunctionalBuilder.hpp
+  Tvm/FunctionalBuilder.cpp
   Tvm/Jit.cpp Tvm/Jit.hpp
   Tvm/Instructions.cpp Tvm/Instructions.hpp
   Tvm/InstructionBuilder.cpp Tvm/InstructionBuilder.hpp
@@ -110,10 +110,11 @@ add_library(psi-compiler SHARED
   Macros.cpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
   Platform.cpp Platform.hpp
-  StaticDispatch.cpp Term.hpp
+  StaticDispatch.cpp StaticDispatch.hpp
+  Term.cpp Term.hpp
+  TermBuilder.cpp TermBuilder.hpp
   Tree.cpp Tree.hpp
   TreeBase.cpp TreeBase.hpp
-  Term.cpp Term.hpp
   TvmFunctionLowering.cpp TvmFunctionLowering.hpp
   TvmFunctionalLowering.cpp
   TvmLifecycle.cpp

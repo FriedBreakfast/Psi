@@ -92,10 +92,10 @@ namespace Psi {
     
     struct FunctionArgument : Element {
       FunctionArgument(const ParserLocation& source_, const boost::optional<ParserLocation>& name_,
-                       int mode_, const SharedPtr<Expression>& type_);
+                       ParameterMode mode_, const SharedPtr<Expression>& type_);
 
       boost::optional<ParserLocation> name;
-      int mode;
+      ParameterMode mode;
       SharedPtr<Expression> type;
     };
 

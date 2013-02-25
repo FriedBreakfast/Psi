@@ -44,6 +44,11 @@ Namely:
 
 * uprefs with a non-NULL next pointer can substitute for one with a NULL next pointer.
 
+Term rewriting
+--------------
+
+Specialize, parameterize and anonymize all need to be re-checked.
+
 Faster term lowering
 --------------------
 

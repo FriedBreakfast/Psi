@@ -1,0 +1,141 @@
+#ifndef HPP_PSI_TERM_BUILDER
+#define HPP_PSI_TERM_BUILDER
+
+#include "Utility.hpp"
+#include "Tree.hpp"
+
+namespace Psi {
+namespace Compiler {
+struct TermBuilder : NonConstructible {
+/// \name Types
+//@{
+  static TreePtr<Term> metatype(CompileContext& compile_context);
+  static TreePtr<Term> size_type(CompileContext& compile_context);
+  static TreePtr<Term> string_element_type(CompileContext& compile_context);
+
+  static TreePtr<Term> primitive_type(CompileContext& compile_context, const String& name, const SourceLocation& location);
+  static TreePtr<Term> derived(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location);
+  static TreePtr<Term> pointer(const TreePtr<Term>& type, const SourceLocation& location);
+  static TreePtr<Term> exists(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& parameter_types, const SourceLocation& location);
+  static TreePtr<Term> constant(const TreePtr<Term>& value, const SourceLocation& location);
+  static TreePtr<FunctionType> function_type(ResultMode result_mode, const TreePtr<Term>& result_type,
+                                             const PSI_STD::vector<FunctionParameterType>& parameter_types,
+                                             const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces, const SourceLocation& location);
+  static TreePtr<ArrayType> array_type(const TreePtr<Term>& element_type, const TreePtr<Term>& length, const SourceLocation& location);
+  static TreePtr<ArrayType> array_type(const TreePtr<Term>& element_type, unsigned length, const SourceLocation& location);
+  static TreePtr<StructType> struct_type(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& member_types, const SourceLocation& location);
+  
+  static TreePtr<Term> string_type(const TreePtr<Term>& length, const SourceLocation& location);
+  static TreePtr<Term> string_type(unsigned length, CompileContext& compile_context, const SourceLocation& location);
+
+  /**
+   * \brief Create a new generic type
+   */
+  template<typename T, typename U>
+  static TreePtr<GenericType> generic(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& pattern,
+                                      GenericType::GenericTypePrimitive primitive_mode, const SourceLocation& location,
+                                      const T& member_callback, const U& overloads_callback) {
+    return tree_from(::new GenericType(compile_context, pattern, member_callback, overloads_callback, primitive_mode, location));
+  }
+
+  /**
+   * \brief Create a new generic type
+   */
+  template<typename T>
+  static TreePtr<GenericType> generic(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& pattern,
+                                      GenericType::GenericTypePrimitive primitive_mode, const SourceLocation& location,
+                                      const T& member_callback) {
+    return tree_from(::new GenericType(compile_context, pattern, member_callback, default_, primitive_mode, location));
+  }
+  
+  static TreePtr<TypeInstance> instance(const TreePtr<GenericType>& generic, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);
+//@}
+  
+/// \name Constructors
+//@{
+  static TreePtr<Term> empty_value(CompileContext& compile_context);
+  static TreePtr<Term> movable(const TreePtr<Term>& value, const SourceLocation& location);
+  static TreePtr<Term> default_value(const TreePtr<Term>& type, const SourceLocation& location);
+  static TreePtr<Term> builtin_value(const String& constructor, const String& data, const TreePtr<Term>& type, const SourceLocation& location);
+  static TreePtr<Term> upref(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next, const SourceLocation& location);
+  static TreePtr<Term> upref(const TreePtr<Term>& outer_type, unsigned outer_index, const TreePtr<Term>& next, const SourceLocation& location);
+  
+  static TreePtr<Term> size_value(unsigned index, CompileContext& compile_context, const SourceLocation& location);
+  static unsigned size_from(const TreePtr<Term>& value, const SourceLocation& location);
+  
+  static TreePtr<Term> struct_value(const TreePtr<StructType>& type, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
+  static TreePtr<Term> struct_value(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
+  static TreePtr<Term> string_value(CompileContext& compile_context, const String& data, const SourceLocation& location);
+  static TreePtr<Term> instance_value(const TreePtr<TypeInstance>& instance, const TreePtr<Term>& member_value, const SourceLocation& location);
+
+  static TreePtr<Term> interface_value(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const TreePtr<Implementation>& implementation, const SourceLocation& location);
+  static TreePtr<Term> interface_value(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);
+//@}
+  
+/// \brief Aggregate type access
+//@{
+  static TreePtr<Term> element_value(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location);
+  static TreePtr<Term> element_value(const TreePtr<Term>& aggregate, unsigned index, const SourceLocation& location);
+  static TreePtr<Term> ptr_target(const TreePtr<Term>& pointer, const SourceLocation& location);
+  static TreePtr<Term> ptr_to(const TreePtr<Term>& value, const SourceLocation& location);
+  static TreePtr<Term> outer_value(const TreePtr<Term>& reference, const SourceLocation& location);
+//@}
+
+/// \name Lifecycle functions
+//@{
+  static TreePtr<Term> initialize_ptr(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const TreePtr<Term>& inner, const SourceLocation& location);
+  static TreePtr<Term> finalize_ptr(const TreePtr<Term>& target_ptr, const SourceLocation& location);
+  static TreePtr<Term> assign_ptr(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const SourceLocation& location);
+//@}
+  
+/// \name Control flow
+//@{
+  static TreePtr<Statement> statement(const TreePtr<Term>& value, StatementMode mode, const SourceLocation& location);
+  static TreePtr<Term> block(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& result, const SourceLocation& location);
+  static TreePtr<Term> block(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, const TreePtr<Term>& result=TreePtr<Term>());
+  static TreePtr<Term> function_call(const TreePtr<Term>& function, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+  static TreePtr<Term> solidify_during(const PSI_STD::vector<TreePtr<Term> >& value, const TreePtr<Term>& body, const SourceLocation& location);
+  static TreePtr<Term> introduce_implementation(const PSI_STD::vector<TreePtr<Implementation> >& implementations, const TreePtr<Term>& value, const SourceLocation& location);
+  static TreePtr<JumpTo> jump_to(const TreePtr<JumpTarget>& target, const TreePtr<Term>& argument, const SourceLocation& location);
+  static TreePtr<JumpTarget> jump_target(const TreePtr<Term>& value, ResultMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location);
+  static TreePtr<JumpTarget> exit_target(ResultMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location);
+//@}
+  
+/// \name Globals
+//@{
+  /**
+   * \brief Create a global function.
+   */
+  template<typename T>
+  static TreePtr<Global> function(const TreePtr<Module>& module, const TreePtr<FunctionType>& type, bool local,
+                                  const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
+                                  const TreePtr<JumpTarget>& return_target, const SourceLocation& location, const T& body_callback) {
+    return tree_from(::new Function(module, type, local, arguments, return_target, location, body_callback));
+  }
+  
+  /**
+   * \brief Create a global variable.
+   */
+  template<typename T>
+  static TreePtr<Global> global_variable(const TreePtr<Module>& module, const TreePtr<Term>& type, bool local, bool constant, bool merge, const SourceLocation& location,
+                                         const T& value_callback) {
+    return tree_from(::new GlobalVariable(module, type, local, constant, merge, location, value_callback));
+  }
+
+  static TreePtr<Global> global_variable(const TreePtr<Module>& module, bool local, bool constant, bool merge, const SourceLocation& location, const TreePtr<Term>& value);
+  static TreePtr<GlobalStatement> global_statement(const TreePtr<Module>& module, const TreePtr<Term>& value, StatementMode mode, const SourceLocation& location);
+//@}
+
+/// \name External functions
+//@{
+  static TreePtr<Library> library(const TreePtr<TargetCallback>& callback, const SourceLocation& location);
+  static TreePtr<Term> library_symbol(const TreePtr<Library>& library, const TreePtr<TargetCallback>& callback, const TreePtr<Term>& type, const SourceLocation& location);
+//@}
+  
+  static TreePtr<Term> parameter(const TreePtr<Term>& type, unsigned depth, unsigned index, const SourceLocation& location);
+  static TreePtr<Anonymous> anonymous(const TreePtr<Term>& type, ResultMode mode, const SourceLocation& location);
+};
+}
+}
+
+#endif

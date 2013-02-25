@@ -12,134 +12,22 @@
 
 namespace Psi {
   namespace Compiler {
-    class TreeBase;
-    class TreeCallback;
     class Tree;
-    class Term;
     class CompileContext;
-    struct TreeVtable;
-
-    class TreePtrBase {
-      typedef void (TreePtrBase::*safe_bool_type) () const;
-      void safe_bool_true() const {}
-
-      mutable ObjectPtr<const TreeBase> m_ptr;
-
-      bool evaluate(const TreeVtable *ptr) const;
-      const Tree* get_helper() const;
-      void update_chain(const TreeBase *ptr) const;
-
-    protected:
-      void swap(TreePtrBase& other) {m_ptr.swap(other.m_ptr);}
-      
-    public:
-      TreePtrBase() {}
-      explicit TreePtrBase(const TreeBase *ptr, bool add_ref) : m_ptr(ptr, add_ref) {}
-      
-      bool is_a(const TreeVtable *vptr) const;
-      const Tree* get() const;
-      const TreeBase* raw_get() const {return m_ptr.get();}
-      const ObjectPtr<const TreeBase>& raw_ptr_get() const {return m_ptr;}
-      const TreeBase* release() {return m_ptr.release();}
-
-      operator safe_bool_type () const {return get() ? &TreePtrBase::safe_bool_true : 0;}
-      bool operator ! () const {return !get();}
-      bool operator == (const TreePtrBase& other) const {return get() == other.get();};
-      bool operator != (const TreePtrBase& other) const {return get() != other.get();};
-      bool operator < (const TreePtrBase& other) const {return get() < other.get();};
-
-      /// \brief Get the compile context for this Tree, without evaluating the Tree.
-      CompileContext& compile_context() const {return m_ptr.compile_context();}
-      const SourceLocation& location() const;
-      
-#ifdef PSI_DEBUG
-      void debug_print() const;
-#endif
-    };
     
-    inline std::size_t hash_value(const TreePtrBase& ptr) {return boost::hash_value(ptr.get());}
-
     template<typename T=Tree>
-    class TreePtr : public TreePtrBase {
-      template<typename U> friend TreePtr<U> tree_from_base(const TreeBase*);
-      template<typename U> friend TreePtr<U> tree_from_base_take(const TreeBase*);
-      TreePtr(const TreeBase *src, bool add_ref) : TreePtrBase(src, add_ref) {}
-
+    class TreePtr : public ObjectPtr<const T> {
     public:
       TreePtr() {}
-      explicit TreePtr(const T *ptr) : TreePtrBase(ptr, true) {}
-      template<typename U> TreePtr(const TreePtr<U>& src) : TreePtrBase(src) {BOOST_STATIC_ASSERT((boost::is_convertible<U*, T*>::value));}
-      template<typename U> TreePtr& operator = (const TreePtr<U>& src) {TreePtr<T>(src).swap(*this); return *this;}
+      explicit TreePtr(const T *ptr) : ObjectPtr<const T>(ptr) {}
+      template<typename U> TreePtr(const TreePtr<U>& src) : ObjectPtr<const T>(src) {}
 
-      const T* get() const;
-      const T* operator -> () const {return get();}
-
-      void reset(const T *ptr=NULL) {TreePtr<T>(ptr).swap(*this);}
-      void swap(TreePtr<T>& other) {TreePtrBase::swap(other);}
+      /// \brief Get the location of this tree
+      const SourceLocation& location() const {return this->get()->location();}
     };
-
-    /**
-     * Get a TreePtr from a point to a TreeBase.
-     *
-     * This should only be used in wrapper functions, since otherwise the type of \c base
-     * should be statically known.
-     */
-    template<typename T>
-    TreePtr<T> tree_from_base(const TreeBase *base) {
-      return TreePtr<T>(base, true);
-    }
     
-    /**
-     * Get a TreePtr from a pointer to a TreeBase.
-     * 
-     * This is used where pointers are returned to wrapper functions so that the reference
-     * count need not be incremented. This is a separate function to tree_from_base because
-     * this sort of manual reference count management can easily lead to bugs, and and additional
-     * function makes this easier to look for.
-     */
-    template<typename T>
-    TreePtr<T> tree_from_base_take(const TreeBase *base) {
-      return TreePtr<T>(base, false);
-    };
-
-    /// \see TreeBase
-    struct TreeBaseVtable {
-      ObjectVtable base;
-      bool is_callback;
-    };
-
-    /**
-     * Extends Object for lazy evaluation of Trees.
-     *
-     * Two types derive from this: Tree, which holds values, and TreeCallbackHolder, which
-     * encapsulates a callback to return a Tree.
-     */
-    class TreeBase : public Object {
-      friend class CompileContext;
-      friend class RunningTreeCallback;
-      friend class TreeCallback;
-
-      SourceLocation m_location;
-
-    public:
-      typedef TreeBaseVtable VtableType;
-      static const SIVtable vtable;
-      
-      TreeBase(const TreeBaseVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
-
-      const SourceLocation& location() const {return m_location;}
-
-      template<typename Visitor>
-      static void visit(Visitor& PSI_UNUSED(visitor)) {}
-    };
-
-    /// \brief Get the location of this Tree, without evaluating the Tree.
-    inline const SourceLocation& TreePtrBase::location() const {return m_ptr->location();}
-
-#define PSI_COMPILER_TREE_BASE(is_callback,derived,name,super) { \
-    PSI_COMPILER_OBJECT(derived,name,super), \
-    (is_callback) \
-  }
+    template<typename T> std::size_t hash_value(const TreePtr<T>& ptr) {return boost::hash_value(ptr.get());}
+    template<typename T> TreePtr<T> tree_from(const T *ptr) {return TreePtr<T>(ptr);}
 
     /**
      * Data structure for performing recursive object visiting. This stores objects
@@ -162,14 +50,53 @@ namespace Psi {
         }
       }
     };
-  
+    
+    /**
+     * \brief Recursively completes a tree.
+     */
+    class CompleteVisitor : public ObjectVisitorBase<CompleteVisitor> {
+      VisitQueue<TreePtr<> > *m_queue;
+      
+    public:
+      CompleteVisitor(VisitQueue<TreePtr<> > *queue) : m_queue(queue) {
+      }
+      
+      template<typename T>
+      void visit_object_ptr(const ObjectPtr<T>&) {}
+      
+      template<typename T>
+      void visit_tree_ptr(const TreePtr<T>& ptr) {
+        if (ptr)
+          m_queue->push(ptr);
+      }
+      
+      template<typename T, typename U>
+      void visit_delayed(DelayedValue<T,U>& ptr) {
+        boost::array<T*,1> m = {{const_cast<T*>(&ptr.get_checked())}};
+        visit_callback(*this, NULL, m);
+      }
+    };
+
+
     /// \see Tree
     struct TreeVtable {
-      TreeBaseVtable base;
+      ObjectVtable base;
       void (*complete) (const Tree*,VisitQueue<TreePtr<> >*);
     };
 
-    class Tree : public TreeBase {
+    class Tree : public Object {
+      friend class CompileContext;
+      friend class Term;
+
+      SourceLocation m_location;
+
+      /// Disable general new operator
+      static void* operator new (size_t) {PSI_FAIL("Tree::new should never be called");}
+      /// Disable placement new
+      static void* operator new (size_t, void*) {PSI_FAIL("Tree::new should never be called");}
+
+      Tree(const TreeVtable *vptr);
+
     public:
       static const SIVtable vtable;
       
@@ -178,16 +105,22 @@ namespace Psi {
       Tree(const TreeVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
 
       void complete() const;
+      const SourceLocation& location() const {return m_location;}
       
-      template<typename V> static void visit(V& v) {visit_base<TreeBase>(v);}
+      template<typename V> static void visit(V& PSI_UNUSED(v)) {}
+
+#ifdef PSI_DEBUG
+      void debug_print() const;
+#endif
+      
+      template<typename Derived>
+      static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
+        boost::array<Derived*, 1> a = {{&self}};
+        CompleteVisitor p(&queue);
+        visit_members(p, a);
+      }
     };
 
-    template<typename T> const T* TreePtr<T>::get() const {
-      const Tree *t = TreePtrBase::get();
-      PSI_ASSERT(!t || si_is_a(t, reinterpret_cast<const SIVtable*>(&T::vtable)));
-      return static_cast<const T*>(t);
-    };
-    
     template<typename T>
     bool tree_isa(const Tree *ptr) {
       return !ptr || si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable));
@@ -206,67 +139,42 @@ namespace Psi {
 
     template<typename T, typename U>
     bool tree_isa(const TreePtr<U>& ptr) {
-      return ptr.is_a(reinterpret_cast<const TreeVtable*>(&T::vtable));
+      return si_is_a(ptr.get(), reinterpret_cast<const SIVtable*>(&T::vtable));
     }
 
     template<typename T, typename U>
     TreePtr<T> treeptr_cast(const TreePtr<U>& ptr) {
       PSI_ASSERT(tree_isa<T>(ptr));
-      return tree_from_base<T>(ptr.raw_get());
+      return TreePtr<T>(static_cast<const T*>(ptr.get()));
     }
 
     template<typename T, typename U>
     TreePtr<T> dyn_treeptr_cast(const TreePtr<U>& ptr) {
-      return tree_isa<T>(ptr) ? tree_from_base<T>(ptr.raw_get()) : TreePtr<T>();
+      return tree_isa<T>(ptr) ? TreePtr<T>(static_cast<const T*>(ptr.get())) : TreePtr<T>();
     }
-
-    /**
-     * \brief Recursively completes a tree.
-     */
-    class CompleteVisitor : public ObjectVisitorBase<CompleteVisitor> {
-      VisitQueue<TreePtr<> > *m_queue;
-    public:
-      CompleteVisitor(VisitQueue<TreePtr<> > *queue) : m_queue(queue) {
-      }
-      
-      template<typename T>
-      void visit_tree_ptr(const TreePtr<T>& ptr) {
-        if (ptr)
-          m_queue->push(ptr);
-      }
-    };
 
     template<typename Derived>
     struct TreeWrapper : NonConstructible {
       static void complete(const Tree *self, VisitQueue<TreePtr<> > *queue) {
-        boost::array<Derived*, 1> a = {{static_cast<Derived*>(const_cast<Tree*>(self))}};
-        CompleteVisitor p(queue);
-        visit_members(p, a);
+        Derived::complete_impl(*static_cast<Derived*>(const_cast<Tree*>(self)), *queue);
       }
     };
 
 #define PSI_COMPILER_TREE(derived,name,super) { \
-    PSI_COMPILER_TREE_BASE(false,derived,name,super), \
+    PSI_COMPILER_OBJECT(derived,name,super), \
     &::Psi::Compiler::TreeWrapper<derived>::complete \
   }
 
-#define PSI_COMPILER_VPTR_UP(super,vptr) (PSI_ASSERT(si_derived(reinterpret_cast<const SIVtable*>(&super::vtable), reinterpret_cast<const SIVtable*>(vptr))), reinterpret_cast<const super::VtableType*>(vptr))
 #define PSI_COMPILER_TREE_ABSTRACT(name,super) PSI_COMPILER_SI_ABSTRACT(name,&super::vtable)
 
-    inline const Tree* TreePtrBase::get() const {
-      return (!m_ptr || !derived_vptr(m_ptr.get())->is_callback) ? static_cast<const Tree*>(m_ptr.get()) : get_helper();
-    }
+    class DelayedEvaluation;
     
-    /// \see TreeCallback
-    struct TreeCallbackVtable {
-      TreeBaseVtable base;
-      const TreeBase* (*evaluate) (const TreeCallback*);
+    struct DelayedEvaluationVtable {
+      ObjectVtable base;
+      void (*evaluate) (void *result, DelayedEvaluation *self, void *arg);
     };
 
-    class TreeCallback : public TreeBase {
-      friend class TreePtrBase;
-      friend class RunningTreeCallback;
-
+    class DelayedEvaluation : public Object {
     public:
       enum CallbackState {
         state_ready,
@@ -276,19 +184,20 @@ namespace Psi {
       };
 
     private:
+      SourceLocation m_location;
       CallbackState m_state;
-      const TreeVtable *m_result_vptr;
-      TreePtr<> m_value;
-
+      
+    protected:
+      void evaluate(void *ptr, void *arg);
+      
     public:
-      typedef TreeCallbackVtable VtableType;
-      static const SIVtable vtable;
+      typedef DelayedEvaluationVtable VtableType;
+      DelayedEvaluation(const DelayedEvaluationVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
+      const SourceLocation& location() const {return m_location;}
 
-      TreeCallback(const TreeCallbackVtable *vptr, CompileContext&, const TreeVtable *result_vptr, const SourceLocation&);
-
-      template<typename Visitor> static void visit(Visitor& v) {
-        visit_base<TreeBase>(v);
-        v("value", &TreeCallback::m_value);
+      template<typename V>
+      static void visit(V& v) {
+        v("location", &DelayedEvaluation::m_location);
       }
     };
 
@@ -296,203 +205,154 @@ namespace Psi {
      * \brief Data for a running TreeCallback.
      */
     class RunningTreeCallback : public boost::noncopyable {
-      TreeCallback *m_callback;
+      DelayedEvaluation *m_callback;
       RunningTreeCallback *m_parent;
 
     public:
-      RunningTreeCallback(TreeCallback *callback);
+      RunningTreeCallback(DelayedEvaluation *callback);
       ~RunningTreeCallback();
 
-      PSI_ATTRIBUTE((PSI_NORETURN)) static void throw_circular_dependency(TreeCallback *callback);
+      PSI_ATTRIBUTE((PSI_NORETURN)) void throw_circular_dependency();
     };
+    
+    template<typename DataType_, typename ArgumentType_>
+    struct DelayedEvaluationArgs {
+      typedef DataType_ DataType;
+      typedef ArgumentType_ ArgumentType;
+    };
+    
+    template<typename Args>
+    class DelayedEvaluationCallback : public DelayedEvaluation {
+    public:
+      typedef typename Args::DataType DataType;
+      typedef typename Args::ArgumentType ArgumentType;
 
-    template<typename Derived>
-    struct TreeCallbackWrapper : NonConstructible {
-      static const TreeBase* evaluate(const TreeCallback *self) {
-        return Derived::evaluate_impl(*static_cast<const Derived*>(self)).release();
+      static const SIVtable vtable;
+
+      DelayedEvaluationCallback(const DelayedEvaluationVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
+      : DelayedEvaluation(vptr, compile_context, location) {}
+      
+      DataType evaluate(const ArgumentType& arg) {
+        ResultStorage<DataType> rs;
+        DelayedEvaluation::evaluate(rs.ptr(), const_cast<ArgumentType*>(&arg));
+        return rs.done();
+      }
+
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<DelayedEvaluation>(v);
       }
     };
-
-#define PSI_COMPILER_TREE_CALLBACK(derived,name,super) { \
-    PSI_COMPILER_TREE_BASE(true,derived,name,super), \
-    &::Psi::Compiler::TreeCallbackWrapper<derived>::evaluate \
-  }
-
-    /// To get past preprocessor's inability to understand template parameters
-    template<typename T, typename Functor>
-    struct TreeCallbackImplArgs {
-      typedef T TreeResultType;
-      typedef Functor FunctionType;
+    
+    template<typename T>
+    const SIVtable DelayedEvaluationCallback<T>::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.DelayedEvaluationCallback", &DelayedEvaluation::vtable);
+    
+    template<typename BaseArgs_, typename FunctionType_>
+    struct DelayedEvaluationImplArgs {
+      typedef BaseArgs_ BaseArgs;
+      typedef FunctionType_ FunctionType;
     };
 
     template<typename Args>
-    class TreeCallbackImpl : public TreeCallback {
+    class DelayedEvaluationImpl : public DelayedEvaluationCallback<typename Args::BaseArgs> {
     public:
-      typedef typename Args::TreeResultType TreeResultType;
+      typedef typename Args::BaseArgs BaseArgs;
+      typedef typename BaseArgs::DataType DataType;
+      typedef typename BaseArgs::ArgumentType ArgumentType;
       typedef typename Args::FunctionType FunctionType;
-
+      
     private:
-      mutable FunctionType *m_function;
-
+      FunctionType *m_function;
+      
     public:
-      static const TreeCallbackVtable vtable;
+      static const DelayedEvaluationVtable vtable;
 
-      TreeCallbackImpl(CompileContext& compile_context, const SourceLocation& location, const FunctionType& function)
-      : TreeCallback(&vtable, compile_context, PSI_COMPILER_VPTR_UP(Tree, &TreeResultType::vtable), location), m_function(new FunctionType(function)) {
+      DelayedEvaluationImpl(CompileContext& compile_context, const SourceLocation& location, const FunctionType& function)
+      : DelayedEvaluationCallback<BaseArgs>(&vtable, compile_context, location),
+      m_function(new FunctionType(function)) {
       }
 
-      ~TreeCallbackImpl() {
+      ~DelayedEvaluationImpl() {
         if (m_function)
           delete m_function;
       }
 
-      static TreePtr<TreeResultType> evaluate_impl(const TreeCallbackImpl& self) {
-        PSI_ASSERT(self.m_function);
+      static void evaluate_impl(void *result, DelayedEvaluation *self_ptr, void *arg) {
+        DelayedEvaluationImpl<Args>& self = *static_cast<DelayedEvaluationImpl<Args>*>(self_ptr);
         boost::scoped_ptr<FunctionType> function_copy(self.m_function);
         self.m_function = NULL;
-        return function_copy->evaluate(tree_from_base<TreeResultType>(&self));
+        new (result) DataType (function_copy->evaluate(*static_cast<ArgumentType*>(arg)));
       }
 
-      template<typename Visitor>
-      static void visit(Visitor& v) {
-        visit_base<TreeCallback>(v);
-        v("function", &TreeCallbackImpl::m_function);
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<DelayedEvaluationCallback<BaseArgs> >(v);
+        v("function", &DelayedEvaluationImpl::m_function);
       }
     };
+    
+#define PSI_COMPILER_DELAYED_EVALUATION(derived,name,super) { \
+    PSI_COMPILER_OBJECT(derived,name,super), \
+    &derived::evaluate_impl \
+  }
 
 #ifndef PSI_DEBUG
     template<typename T>
-    const TreeCallbackVtable TreeCallbackImpl<T>::vtable = PSI_COMPILER_TREE_CALLBACK(TreeCallbackImpl<T>, "(callback)", TreeCallback);
+    const DelayedEvaluationVtable DelayedEvaluationImpl<T>::vtable = PSI_COMPILER_DELAYED_EVALUATION(DelayedEvaluationImpl<T>, "(callback)", DelayedEvaluationCallback<typename T::BaseArgs>);
 #else
     template<typename T>
-    const TreeCallbackVtable TreeCallbackImpl<T>::vtable = PSI_COMPILER_TREE_CALLBACK(TreeCallbackImpl<T>, typeid(typename T::FunctionType).name(), TreeCallback);
-#endif
-
-    /**
-     * \brief Make a lazily evaluated Tree from a C++ functor object.
-     */
-    template<typename T, typename Callback>
-    TreePtr<T> tree_callback(CompileContext& compile_context, const SourceLocation& location, const Callback& callback) {
-      return tree_from_base<T>(new TreeCallbackImpl<TreeCallbackImplArgs<T, Callback> >(compile_context, location, callback));
-    }
-
-    /**
-     * \brief Make a lazily evaluated Tree from a C++ functor object.
-     */
-    template<typename Callback>
-    TreePtr<typename Callback::TreeResultType> tree_callback(CompileContext& compile_context, const SourceLocation& location, const Callback& callback) {
-      return tree_from_base<typename Callback::TreeResultType>(new TreeCallbackImpl<TreeCallbackImplArgs<typename Callback::TreeResultType, Callback> >(compile_context, location, callback));
-    }
-    
-    template<typename T, typename F>
-    class TreePropertyWrapper {
-      TreePtr<T> m_tree;
-      F m_func;
-      
-    public:
-      typedef typename F::TreeResultType TreeResultType;
-      
-      TreePropertyWrapper(const TreePtr<T>& tree, const F& func)
-      : m_tree(tree), m_func(func) {
-      }
-
-      TreePtr<TreeResultType> evaluate(const TreePtr<TreeResultType>&) {
-        return m_func(m_tree);
-      }
-
-      template<typename Visitor>
-      static void visit(Visitor& v) {
-        v("tree", &TreePropertyWrapper::m_tree);
-      }
-    };
-
-    /**
-     * Wrapper for simple functors on trees. Note that the functor \c f should not contain any references
-     * to other trees since there is no way for the GC to see them.
-     */
-    template<typename T, typename Callback>
-    TreePtr<typename Callback::TreeResultType> tree_property(const TreePtr<T>& tree, const Callback& callback, const SourceLocation& location) {
-      return tree_callback(tree.compile_context(), location, TreePropertyWrapper<T, Callback>(tree, callback));
-    }
-    
-    template<typename A, typename B>
-    class TreeAttributeFunction {
-      TreePtr<B> A::*m_ptr;
-      
-    public:
-      typedef B TreeResultType;
-      
-      TreeAttributeFunction(TreePtr<B> A::*ptr) : m_ptr(ptr) {
-      }
-      
-      TreePtr<B> operator () (const TreePtr<A>& ptr) {
-        return ptr.get()->*m_ptr;
-      }
-    };
-    
-    /**
-     * \brief Delayed member attribute getter.
-     * 
-     * 
-     * This should be used to access attributes of trees when it is possible 
-     */
-    template<typename A, typename B>
-    TreePtr<B> tree_attribute(const TreePtr<A>& tree, TreePtr<B> A::*ptr) {
-      return tree_property(tree, TreeAttributeFunction<A,B>(ptr), tree.location());
-    }
-    
-    /**
-     * \brief Tree which simply carries a value
-     */
-    template<typename T>
-    class ValueTree : public Tree {
-    public:
-      static const TreeVtable vtable;
-      
-      ValueTree(CompileContext& compile_context, const T& value_, const SourceLocation& location)
-      : Tree(&vtable, compile_context, location), value(value_) {}
-      template<typename V> static void visit(V& v) {visit_base<Tree>(v); v("value", &ValueTree<T>::value);}
-      
-      T value;
-    };
-
-#ifndef PSI_DEBUG
-    template<typename T>
-    const TreeVtable ValueTree<T>::vtable = PSI_COMPILER_TREE(ValueTree<T>, "(value)", Tree);
-#else
-    template<typename T>
-    const TreeVtable ValueTree<T>::vtable = PSI_COMPILER_TREE(ValueTree<T>, typeid(T).name(), Tree);
+    const DelayedEvaluationVtable DelayedEvaluationImpl<T>::vtable = PSI_COMPILER_DELAYED_EVALUATION(DelayedEvaluationImpl<T>, typeid(typename T::FunctionType).name(), DelayedEvaluationCallback<typename T::BaseArgs>);
 #endif
     
-    template<typename T, typename F>
-    class ValueCallbackWrapper {
-      F m_f;
+    /**
+     * \brief A value filled in on demand by a callback.
+     * 
+     * This should be movable since the callback may only be used once,
+     * but I'm not using C++11 so copyable it is.
+     */
+    template<typename T, typename Arg>
+    class DelayedValue {
+      mutable T m_value;
+      typedef DelayedEvaluationArgs<T, Arg> BaseArgs;
+      mutable ObjectPtr<DelayedEvaluationCallback<BaseArgs> > m_callback;
+      
+      template<typename U>
+      void init(boost::true_type, CompileContext&, const SourceLocation&, const U& value) {
+        m_value = value;
+      }
+
+      template<typename U>
+      void init(boost::false_type, CompileContext& compile_context, const SourceLocation& location, const U& callback) {
+        m_callback.reset(new DelayedEvaluationImpl<DelayedEvaluationImplArgs<BaseArgs, U> >(compile_context, location, callback));
+      }
       
     public:
-      typedef ValueTree<T> TreeResultType;
+      template<typename U>
+      DelayedValue(CompileContext& compile_context, const SourceLocation& location, const U& callback_or_value) {
+        init(boost::is_convertible<U,T>(), compile_context, location, callback_or_value);
+      }
       
-      ValueCallbackWrapper(const F& f) : m_f(f) {}
-      template<typename V> static void visit(V& v) {v("f", &ValueCallbackWrapper<T,F>::m_f);}
-      TreePtr<ValueTree<T> > evaluate(const TreePtr<ValueTree<T> >& self) {
-        return TreePtr<ValueTree<T> >(new ValueTree<T>(self.compile_context(), m_f.evaluate(self), self.location()));
+      template<typename X, typename Y>
+      const T& get(const X *self, Y (X::*getter) () const) const {
+        if (m_callback) {
+          m_value = m_callback->evaluate((self->*getter)());
+          m_callback.reset();
+        }
+        return m_value;
+      }
+      
+      /// \brief Get a value which must have already been computed
+      const T& get_checked() const {
+        PSI_ASSERT(!m_callback);
+        return m_value;
+      }
+      
+      template<typename V>
+      static void visit(V& v) {
+        v("value", &DelayedValue::m_value)
+        ("callback", &DelayedValue::m_callback);
       }
     };
-    
-    /**
-     * \brief Create a tree callback which generates a ValueTree.
-     */
-    template<typename T, typename F>
-    TreePtr<ValueTree<T> > value_callback(CompileContext& compile_context, const SourceLocation& location, const F& f) {
-      return tree_callback(compile_context, location, ValueCallbackWrapper<T,F>(f));
-    }
-
-    /**
-     * \brief Create a tree callback which generates a ValueTree.
-     */
-    template<typename F>
-    TreePtr<ValueTree<typename F::result_type> > value_callback(CompileContext& compile_context, const SourceLocation& location, const F& f) {
-      return tree_callback(compile_context, location, ValueCallbackWrapper<typename F::result_type,F>(f));
-    }
   }
 }
 

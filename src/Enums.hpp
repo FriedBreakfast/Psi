@@ -1,6 +1,7 @@
 #ifndef HPP_PSI_COMPILER_ENUMS
 #define HPP_PSI_COMPILER_ENUMS
 
+#include "CppCompiler.hpp"
 #include "Visitor.hpp"
 
 /**
@@ -14,7 +15,7 @@ namespace Psi {
      * 
      * \see \ref storage_specifiers
      */
-    enum ParameterMode {
+    PSI_SMALL_ENUM(ParameterMode) {
       parameter_mode_input, ///< Input parameter
       parameter_mode_output, ///< Output parameter
       parameter_mode_io, ///< Input/Output parameter
@@ -30,7 +31,7 @@ namespace Psi {
      *
      * \see \ref storage_specifiers
      */
-    enum ResultMode {
+    PSI_SMALL_ENUM(ResultMode) {
       result_mode_by_value, ///< By value
       result_mode_functional, ///< By value, functional
       result_mode_rvalue, ///< R-value reference
@@ -38,11 +39,29 @@ namespace Psi {
     };
     
     PSI_VISIT_SIMPLE(ResultMode);
+    
+    ResultMode parameter_to_result_mode(ParameterMode mode);
+    
+    /**
+     * \brief What sort of type an expression represents.
+     */
+    PSI_SMALL_ENUM(TypeMode) {
+      /// \brief Not a type
+      type_mode_none,
+      /// \brief Metatype; type of types
+      type_mode_metatype,
+      /// \brief A primitive type; values may be used functionally
+      type_mode_primitive,
+      /// \brief A complex type; values may not be used functionally
+      type_mode_complex
+    };
+    
+    PSI_VISIT_SIMPLE(TypeMode);
 
     /**
      * \brief Storage modes for statements.
      */
-    enum StatementMode {
+    PSI_SMALL_ENUM(StatementMode) {
       statement_mode_value, ///< Store (possibly a copy of) the result value
       statement_mode_functional, ///< Freeze result value
       statement_mode_ref, ///< Store the reference which is the result of this expression.
@@ -54,7 +73,7 @@ namespace Psi {
     /**
      * \brief Indices of members in the Movable interface
      */
-    enum InterfaceMovableMembers {
+    PSI_SMALL_ENUM(InterfaceMovableMembers) {
       interface_movable_init=0,
       interface_movable_fini=1,
       interface_movable_clear=2,
@@ -65,7 +84,7 @@ namespace Psi {
     /**
      * \brief Indices of members in the Copyable interface
      */
-    enum InterfaceCopyableMembers {
+    PSI_SMALL_ENUM(InterfaceCopyableMembers) {
       interface_copyable_movable=0, // Reference to Movable interface for the same type
       interface_copyable_copy_init=1,
       interface_copyable_copy=2
@@ -73,13 +92,13 @@ namespace Psi {
   }
   
   namespace Parser {
-    enum ExpressionType {
+    PSI_SMALL_ENUM(ExpressionType) {
       expression_token,
       expression_evaluate,
       expression_dot
     };
 
-    enum TokenExpressionType {
+    PSI_SMALL_ENUM(TokenExpressionType) {
       token_identifier,
       token_number,
       token_brace,

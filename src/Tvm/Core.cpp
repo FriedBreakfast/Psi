@@ -214,7 +214,8 @@ namespace Psi {
 
     GlobalVariable::GlobalVariable(Context& context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
     : Global(context, term_global_variable, type, name, module, location),
-      m_constant(false) {
+      m_constant(false),
+      m_merge(false) {
     }
 
     void GlobalVariable::set_value(const ValuePtr<>& value) {
