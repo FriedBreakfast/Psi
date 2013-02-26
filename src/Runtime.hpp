@@ -244,6 +244,12 @@ namespace Psi {
     bool empty() const {return !m_c.length;}
     void swap(String&);
     char operator [] (std::size_t idx) const {return m_c.data[idx];}
+    
+    friend std::size_t hash_value(const String& s) {
+      if (s.empty())
+        return 0;
+      return boost::hash_range(s.c_str(), s.c_str() + s.length());
+    }
   };
   
   bool operator == (const String& lhs, const char *rhs);

@@ -12,6 +12,21 @@ TreePtr<Term> TermBuilder::string_element_type(CompileContext& compile_context) 
   return compile_context.builtins().string_element_type;
 }
 
+/// \brief Get the type of expressions which cannot exit normally
+TreePtr<Term> TermBuilder::bottom_type(CompileContext& compile_context) {
+  return compile_context.builtins().bottom_type;
+}
+
+/// \brief Get the empty type
+TreePtr<Term> TermBuilder::empty_type(CompileContext& compile_context) {
+  return compile_context.builtins().empty_type;
+}
+
+/// \brief Get the empty type
+TreePtr<Term> TermBuilder::boolean_type(CompileContext& compile_context) {
+  return compile_context.builtins().boolean_type;
+}
+
 TreePtr<Term> TermBuilder::size_type(CompileContext& compile_context) {
   return compile_context.builtins().size_type;
 }

@@ -10,7 +10,7 @@ namespace Psi {
     const SIVtable TermVisitor::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TermVisitor", NULL);
     const SIVtable TermRewriter::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TermRewriter", NULL);
     const SIVtable TermComparator::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TermComparator", NULL);
-    
+
     Term::Term(const TermVtable *vptr)
     : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr)) {
     }
@@ -259,9 +259,10 @@ namespace Psi {
     : Functional(&vtable) {
     }
 
-    TermResultType Metatype::check_type_impl(const Metatype& self) {
+    TermResultType Metatype::check_type_impl(const Metatype&) {
       TermResultType result;
       result.mode = result_mode_functional;
+      result.type_mode = type_mode_metatype;
       result.pure = true;
       return result;
     }

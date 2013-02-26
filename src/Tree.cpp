@@ -4,6 +4,77 @@
 
 namespace Psi {
   namespace Compiler {
+    /**
+     * Return the mode that should be used to return a result which
+     * could be of mode \c lhs or \c rhs.
+     */
+    ResultMode result_mode_combine(ResultMode lhs, ResultMode rhs) {
+      if (lhs == result_mode_bottom)
+        return rhs;
+      else if (rhs == result_mode_bottom)
+        return lhs;
+      
+      if ((lhs == result_mode_by_value) || (rhs == result_mode_by_value))
+        return result_mode_by_value;
+      
+      switch (lhs) {
+      case result_mode_lvalue:
+        switch (rhs) {
+        case result_mode_lvalue:
+        case result_mode_rvalue: return result_mode_lvalue;
+        case result_mode_functional: return result_mode_by_value;
+        default: PSI_FAIL("Unexpected enum value");
+        }
+        
+      case result_mode_rvalue:
+        switch (rhs) {
+        case result_mode_lvalue: return result_mode_lvalue;
+        case result_mode_rvalue: return result_mode_rvalue;
+        case result_mode_functional: return result_mode_by_value;
+        default: PSI_FAIL("Unexpected enum value");
+        }
+        
+      case result_mode_functional:
+        switch (rhs) {
+        case result_mode_lvalue:
+        case result_mode_rvalue: return result_mode_by_value;
+        case result_mode_functional: return result_mode_functional;
+        default: PSI_FAIL("Unexpected enum value");
+        }
+        
+      default: PSI_FAIL("Unexpected enum value");
+      }
+    }
+    
+    TermResultType result_type_combine(const TermResultType& lhs, const TermResultType& rhs, CompileContext& compile_context, const SourceLocation& location) {
+      if (lhs.mode == result_mode_bottom)
+        return rhs;
+      else if (rhs.mode == result_mode_bottom)
+        return lhs;
+      
+      TermResultType rs;
+      if (lhs.type != rhs.type)
+        compile_context.error_throw(location, "Cannot merge distinct result types");
+      PSI_ASSERT(lhs.type_mode == rhs.type_mode);
+      rs.type = lhs.type;
+      rs.type_mode = lhs.type_mode;
+      rs.mode = result_mode_combine(lhs.mode, rhs.mode);
+      rs.pure = lhs.pure && rhs.pure;
+      return rs;
+    }
+    
+    /**
+     * \brief Get the appropriate result type for terms which have no value.
+     */
+    TermResultType result_type_void(CompileContext& compile_context) {
+      TermResultType rs;
+      rs.type = TermBuilder::empty_type(compile_context);
+      rs.type_mode = type_mode_none;
+      rs.mode = result_mode_functional;
+      rs.pure = false;
+      return rs;
+    }
+    
     const SIVtable EvaluateContext::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.EvaluateContext", Tree);
 
     Functional::Functional(const VtableType *vptr)
@@ -29,22 +100,41 @@ namespace Psi {
     
     const SIVtable Constant::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Constant", Constructor);
 
+    TermResultType GlobalStatement::make_result_type(const TreePtr<Term>& value, StatementMode mode) {
+      TermResultType rt;
+      rt.type = value->result_type.type;
+      PSI_NOT_IMPLEMENTED();
+      return rt;
+    }
+    
     GlobalStatement::GlobalStatement(const TreePtr<Module>& module, const TreePtr<Term>& value_, StatementMode mode_, const SourceLocation& location)
-    : ModuleGlobal(&vtable, value_->result_type.type, location),
+    : ModuleGlobal(&vtable, module, make_result_type(value_, mode_), false, location),
     value(value_),
     mode(mode_) {
     }
 
     template<typename V>
     void GlobalStatement::visit(V& v) {
-      visit_base<Functional>(v);
+      visit_base<ModuleGlobal>(v);
       v("value", &GlobalStatement::value)
       ("mode", &GlobalStatement::mode);
     }
 
-    const TermVtable GlobalStatement::vtable = PSI_COMPILER_FUNCTIONAL(GlobalStatement, "psi.compiler.GlobalStatement", Functional);
+    const TermVtable GlobalStatement::vtable = PSI_COMPILER_TERM(GlobalStatement, "psi.compiler.GlobalStatement", ModuleGlobal);
+    
+    /**
+     * \brief Utility function to construct result type in a way common to most global types.
+     */
+    TermResultType Global::global_result_type(const TreePtr<Term>& type) {
+      TermResultType rt;
+      rt.type = type;
+      rt.pure = true;
+      rt.mode = result_mode_lvalue;
+      rt.type_mode = type_mode_none;
+      return rt;
+    }
 
-    Global::Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location)
+    Global::Global(const VtableType *vptr, const TermResultType& type, const SourceLocation& location)
     : Term(vptr, type, location) {
     }
 
@@ -59,7 +149,7 @@ namespace Psi {
 
     const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
 
-    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const TreePtr<Term>& type, PsiBool local_, const SourceLocation& location)
+    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const TermResultType& type, PsiBool local_, const SourceLocation& location)
     : Global(vptr, type, location),
     module(module_),
     local(local_) {
@@ -75,7 +165,7 @@ namespace Psi {
     const SIVtable ModuleGlobal::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ModuleGlobal", Global);
 
     ExternalGlobal::ExternalGlobal(const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location)
-    : ModuleGlobal(&vtable, module, type, false, location) {
+    : ModuleGlobal(&vtable, module, global_result_type(type), false, location) {
     }
     
     template<typename V>
@@ -84,7 +174,7 @@ namespace Psi {
     }
     
     const TermVtable ExternalGlobal::vtable = PSI_COMPILER_TERM(ExternalGlobal, "psi.compiler.ExternalGlobal", ModuleGlobal);
-
+    
     template<typename V>
     void GlobalVariable::visit(V& v) {
       visit_base<ModuleGlobal>(v);
@@ -95,14 +185,14 @@ namespace Psi {
     
     const TermVtable GlobalVariable::vtable = PSI_COMPILER_TERM(GlobalVariable, "psi.compiler.GlobalVariable", ModuleGlobal);
     
-    ParameterizedType::ParameterizedType(const VtableType  *vptr, CompileContext& compile_context, const SourceLocation& location)
-    : Type(vptr, compile_context, location) {
+    ParameterizedType::ParameterizedType(const VtableType  *vptr)
+    : Type(vptr) {
     }
     
     const SIVtable ParameterizedType::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ParameterizedType", Type);
 
-    Exists::Exists(const TreePtr<Term>& result_, const PSI_STD::vector<TreePtr<Term> >& parameter_types_, const SourceLocation& location)
-    : ParameterizedType(&vtable, result_.compile_context(), location),
+    Exists::Exists(const TreePtr<Term>& result_, const PSI_STD::vector<TreePtr<Term> >& parameter_types_)
+    : ParameterizedType(&vtable),
     result(result_),
     parameter_types(parameter_types_) {
     }
@@ -135,8 +225,8 @@ namespace Psi {
     const FunctionalVtable Exists::vtable = PSI_COMPILER_FUNCTIONAL(Exists, "psi.compiler.Exists", ParameterizedType);
 
     FunctionType::FunctionType(ResultMode result_mode_, const TreePtr<Term>& result_type_, const PSI_STD::vector<FunctionParameterType>& parameter_types_,
-                               const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces_, const SourceLocation& location)
-    : ParameterizedType(&vtable, result_type_.compile_context(), location),
+                               const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces_)
+    : ParameterizedType(&vtable),
     result_mode(result_mode_),
     result_type(result_type_),
     parameter_types(parameter_types_),
@@ -192,7 +282,7 @@ namespace Psi {
     const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", ModuleGlobal);
 
     TryFinally::TryFinally(const TreePtr<Term>& try_expr_, const TreePtr<Term>& finally_expr_, bool except_only_, const SourceLocation& location)
-    : Term(&vtable, try_expr_->type, location),
+    : Term(&vtable, try_expr_->result_type, location),
     try_expr(try_expr_),
     finally_expr(finally_expr_),
     except_only(except_only_) {
@@ -237,8 +327,8 @@ namespace Psi {
 
     const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", Term);
 
-    BottomType::BottomType(CompileContext& compile_context, const SourceLocation& location)
-    : Type(&vtable, compile_context, location) {
+    BottomType::BottomType()
+    : Type(&vtable) {
     }
     
     template<typename V>
@@ -248,8 +338,8 @@ namespace Psi {
     
     const FunctionalVtable BottomType::vtable = PSI_COMPILER_FUNCTIONAL(BottomType, "psi.compiler.BottomType", Type);
 
-    ConstantType::ConstantType(const TreePtr<Term>& value_, const SourceLocation& location)
-    : Type(&vtable, value_.compile_context(), location),
+    ConstantType::ConstantType(const TreePtr<Term>& value_)
+    : Type(&vtable),
     value(value_) {
     }
     
@@ -261,8 +351,8 @@ namespace Psi {
     
     const FunctionalVtable ConstantType::vtable = PSI_COMPILER_FUNCTIONAL(ConstantType, "psi.compiler.ConstantType", Type);
 
-    EmptyType::EmptyType(CompileContext& compile_context, const SourceLocation& location)
-    : Type(&vtable, compile_context, location) {
+    EmptyType::EmptyType()
+    : Type(&vtable) {
     }
 
     template<typename V>
@@ -272,19 +362,37 @@ namespace Psi {
 
     const FunctionalVtable EmptyType::vtable = PSI_COMPILER_FUNCTIONAL(EmptyType, "psi.compiler.EmptyType", Type);
 
-    DefaultValue::DefaultValue(const TreePtr<Term>& type, const SourceLocation& location)
-    : Constructor(&vtable, type, location) {
+    DefaultValue::DefaultValue(const TreePtr<Term>& type)
+    : Constructor(&vtable),
+    value_type(type) {
+    }
+    
+    TermResultType DefaultValue::check_type_impl(const DefaultValue& self) {
+      if (self.value_type->result_type.type_mode == type_mode_none)
+        self.compile_context().error_throw(self.location(), "Type for default value is not a type");
+      TermResultType rt;
+      if (self.value_type->result_type.type_mode == type_mode_complex) {
+        rt.mode = result_mode_by_value;
+        rt.pure = false;
+      } else {
+        rt.mode = result_mode_functional;
+        rt.pure = true;
+      }
+      rt.type_mode = (self.value_type->result_type.type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
+      rt.type = self.value_type;
+      return rt;
     }
     
     template<typename V>
     void DefaultValue::visit(V& v) {
       visit_base<Constructor>(v);
+      v("value_type", &DefaultValue::value_type);
     }
 
     const FunctionalVtable DefaultValue::vtable = PSI_COMPILER_FUNCTIONAL(DefaultValue, "psi.compiler.DefaultValue", Constructor);
 
-    PointerType::PointerType(const TreePtr<Term>& target_type_, const SourceLocation& location)
-    : Type(&vtable, target_type_.compile_context(), location),
+    PointerType::PointerType(const TreePtr<Term>& target_type_)
+    : Type(&vtable),
     target_type(target_type_) {
     }
     
@@ -296,8 +404,8 @@ namespace Psi {
     
     const FunctionalVtable PointerType::vtable = PSI_COMPILER_FUNCTIONAL(PointerType, "psi.compiler.PointerType", Type);
     
-    PointerTo::PointerTo(const TreePtr<Term>& value_, const SourceLocation& location)
-    : Functional(&vtable, TermBuilder::pointer(value_->type, location), location),
+    PointerTo::PointerTo(const TreePtr<Term>& value_)
+    : Functional(&vtable),
     value(value_) {
     }
 
@@ -309,8 +417,8 @@ namespace Psi {
 
     const FunctionalVtable PointerTo::vtable = PSI_COMPILER_FUNCTIONAL(PointerTo, "psi.compiler.PointerTo", Functional);
     
-    PointerTarget::PointerTarget(const TreePtr<Term>& value_, const SourceLocation& location)
-    : Functional(&vtable, treeptr_cast<PointerType>(value_->type)->target_type, location),
+    PointerTarget::PointerTarget(const TreePtr<Term>& value_)
+    : Functional(&vtable),
     value(value_) {
     }
 
@@ -322,8 +430,8 @@ namespace Psi {
 
     const FunctionalVtable PointerTarget::vtable = PSI_COMPILER_FUNCTIONAL(PointerTarget, "psi.compiler.PointerTarget", Functional);
     
-    PointerCast::PointerCast(const TreePtr<Term>& value_, const TreePtr<Term>& target_type_, const SourceLocation& location)
-    : Functional(&vtable, TermBuilder::pointer(target_type_, location), location),
+    PointerCast::PointerCast(const TreePtr<Term>& value_, const TreePtr<Term>& target_type_)
+    : Functional(&vtable),
     value(value_),
     target_type(target_type_) {
     }
@@ -378,8 +486,8 @@ namespace Psi {
       }
     }
     
-    ElementValue::ElementValue(const TreePtr<Term>& value_, const TreePtr<Term>& index_, const SourceLocation& location)
-    : Functional(&vtable, element_type(value_->type, index_, location), location),
+    ElementValue::ElementValue(const TreePtr<Term>& value_, const TreePtr<Term>& index_)
+    : Functional(&vtable),
     value(value_),
     index(index_) {
     }
@@ -409,8 +517,8 @@ namespace Psi {
       }
     }
     
-    OuterValue::OuterValue(const TreePtr<Term>& value_, const SourceLocation& location)
-    : Functional(&vtable, outer_type(value_, location), location),
+    OuterValue::OuterValue(const TreePtr<Term>& value_)
+    : Functional(&vtable),
     value(value_) {
     }
     
@@ -422,8 +530,8 @@ namespace Psi {
     
     const FunctionalVtable OuterValue::vtable = PSI_COMPILER_FUNCTIONAL(OuterValue, "psi.compiler.OuterValue", Functional);
     
-    StructType::StructType(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& members_, const SourceLocation& location)
-    : Type(&vtable, compile_context, location),
+    StructType::StructType(const PSI_STD::vector<TreePtr<Term> >& members_)
+    : Type(&vtable),
     members(members_) {
     }
     
@@ -435,21 +543,23 @@ namespace Psi {
 
     const FunctionalVtable StructType::vtable = PSI_COMPILER_FUNCTIONAL(StructType, "psi.compiler.StructType", Type);
     
-    StructValue::StructValue(const TreePtr<StructType>& type, const PSI_STD::vector<TreePtr<Term> >& members_, const SourceLocation& location)
-    : Constructor(&vtable, type, location),
+    StructValue::StructValue(const TreePtr<StructType>& type, const PSI_STD::vector<TreePtr<Term> >& members_)
+    : Constructor(&vtable),
+    struct_type(type),
     members(members_) {
     }
 
     template<typename V>
     void StructValue::visit(V& v) {
       visit_base<Constructor>(v);
-      v("members", &StructValue::members);
+      v("struct_type", &StructValue::struct_type)
+      ("members", &StructValue::members);
     }
     
     const FunctionalVtable StructValue::vtable = PSI_COMPILER_FUNCTIONAL(StructValue, "psi.compiler.StructValue", Constructor);
 
-    ArrayType::ArrayType(const TreePtr<Term>& element_type_, const TreePtr<Term>& length_, const SourceLocation& location)
-    : Type(&vtable, element_type_.compile_context(), location),
+    ArrayType::ArrayType(const TreePtr<Term>& element_type_, const TreePtr<Term>& length_)
+    : Type(&vtable),
     element_type(element_type_),
     length(length_) {
     }
@@ -463,21 +573,23 @@ namespace Psi {
 
     const FunctionalVtable ArrayType::vtable = PSI_COMPILER_FUNCTIONAL(ArrayType, "psi.compiler.ArrayType", Type);
     
-    ArrayValue::ArrayValue(const TreePtr<ArrayType>& type, const PSI_STD::vector<TreePtr<Term> >& element_values_, const SourceLocation& location)
-    : Constructor(&vtable, type, location),
+    ArrayValue::ArrayValue(const TreePtr<ArrayType>& type, const PSI_STD::vector<TreePtr<Term> >& element_values_)
+    : Constructor(&vtable),
+    array_type(type),
     element_values(element_values_) {
     }
     
     template<typename V>
     void ArrayValue::visit(V& v) {
       visit_base<Constructor>(v);
-      v("element_values", &ArrayValue::element_values);
+      v("array_type", &ArrayValue::array_type)
+      ("element_values", &ArrayValue::element_values);
     }
 
     const FunctionalVtable ArrayValue::vtable = PSI_COMPILER_FUNCTIONAL(ArrayValue, "psi.compiler.ArrayValue", Constructor);
 
-    UnionType::UnionType(CompileContext& compile_context, const SourceLocation& location, const std::vector<TreePtr<Term> >& members_)
-    : Type(&vtable, compile_context, location),
+    UnionType::UnionType(const std::vector<TreePtr<Term> >& members_)
+    : Type(&vtable),
     members(members_) {
     }
 
@@ -489,21 +601,23 @@ namespace Psi {
 
     const FunctionalVtable UnionType::vtable = PSI_COMPILER_FUNCTIONAL(UnionType, "psi.compiler.UnionType", Type);
     
-    UnionValue::UnionValue(const TreePtr<UnionType>& type, const TreePtr<Term>& member_value_, const SourceLocation& location)
-    : Constructor(&vtable, type, location),
+    UnionValue::UnionValue(const TreePtr<UnionType>& type, const TreePtr<Term>& member_value_)
+    : Constructor(&vtable),
+    union_type(type),
     member_value(member_value_) {
     }
     
     template<typename V>
     void UnionValue::visit(V& v) {
       visit_base<Constructor>(v);
-      v("member_value", &UnionValue::member_value);
+      v("union_type", &UnionValue::union_type)
+      ("member_value", &UnionValue::member_value);
     }
     
     const FunctionalVtable UnionValue::vtable = PSI_COMPILER_FUNCTIONAL(UnionValue, "psi.compiler.UnionValue", Constructor);
     
-    UpwardReferenceType::UpwardReferenceType(CompileContext& compile_context, const SourceLocation& location)
-    : Type(&vtable, compile_context, location) {
+    UpwardReferenceType::UpwardReferenceType()
+    : Type(&vtable) {
     }
     
     template<typename V>
@@ -513,8 +627,8 @@ namespace Psi {
     
     const FunctionalVtable UpwardReferenceType::vtable = PSI_COMPILER_FUNCTIONAL(UpwardReferenceType, "psi.compiler.UpwardReferenceType", Type);
     
-    UpwardReference::UpwardReference(const TreePtr<Term>& outer_type_, const TreePtr<Term>& outer_index_, const TreePtr<Term>& next_, const SourceLocation& location)
-    : Constructor(&vtable, outer_type_.compile_context().builtins().upref_type, location),
+    UpwardReference::UpwardReference(const TreePtr<Term>& outer_type_, const TreePtr<Term>& outer_index_, const TreePtr<Term>& next_)
+    : Constructor(&vtable),
     outer_type(outer_type_),
     outer_index(outer_index_),
     next(next_) {
@@ -530,8 +644,8 @@ namespace Psi {
     
     const FunctionalVtable UpwardReference::vtable = PSI_COMPILER_FUNCTIONAL(UpwardReference, "psi.compiler.UpwardReference", Constructor);
     
-    DerivedType::DerivedType(const TreePtr<Term>& value_type_, const TreePtr<Term>& upref_, const SourceLocation& location)
-    : Type(&vtable, value_type_->compile_context(), location),
+    DerivedType::DerivedType(const TreePtr<Term>& value_type_, const TreePtr<Term>& upref_)
+    : Type(&vtable),
     value_type(value_type_),
     upref(upref_) {
     }
@@ -557,9 +671,8 @@ namespace Psi {
     const TreeVtable GenericType::vtable = PSI_COMPILER_TREE(GenericType, "psi.compiler.GenericType", Tree);
     
     TypeInstance::TypeInstance(const TreePtr<GenericType>& generic_,
-                               const PSI_STD::vector<TreePtr<Term> >& parameters_,
-                               const SourceLocation& location)
-    : Type(&vtable, generic_.compile_context(), location),
+                               const PSI_STD::vector<TreePtr<Term> >& parameters_)
+    : Type(&vtable),
     generic(generic_),
     parameters(parameters_) {
     }
@@ -581,24 +694,33 @@ namespace Psi {
 
     const FunctionalVtable TypeInstance::vtable = PSI_COMPILER_FUNCTIONAL(TypeInstance, "psi.compiler.TypeInstance", Type);
 
-    TypeInstanceValue::TypeInstanceValue(const TreePtr<TypeInstance>& type, const TreePtr<Term>& member_value_, const SourceLocation& location)
-    : Constructor(&vtable, type, location),
+    TypeInstanceValue::TypeInstanceValue(const TreePtr<TypeInstance>& type, const TreePtr<Term>& member_value_)
+    : Constructor(&vtable),
+    type_instance(type),
     member_value(member_value_) {
     }
 
     template<typename Visitor>
     void TypeInstanceValue::visit(Visitor& v) {
       visit_base<Constructor>(v);
-      v("member_value", &TypeInstanceValue::member_value);
+      v("type_instance", &TypeInstanceValue::type_instance)
+      ("member_value", &TypeInstanceValue::member_value);
     }
 
     const FunctionalVtable TypeInstanceValue::vtable = PSI_COMPILER_FUNCTIONAL(TypeInstanceValue, "psi.compiler.TypeInstanceValue", Constructor);
 
-    IfThenElse::IfThenElse(const TreePtr<Term>& condition_, const TreePtr<Term>& true_value_, const TreePtr<Term>& false_value_, const SourceLocation& location)
-    : Functional(&vtable, true_value_->type, location),
+    IfThenElse::IfThenElse(const TreePtr<Term>& condition_, const TreePtr<Term>& true_value_, const TreePtr<Term>& false_value_)
+    : Functional(&vtable),
     condition(condition_),
     true_value(true_value_),
     false_value(false_value_) {
+    }
+    
+    TermResultType IfThenElse::check_type_impl(const IfThenElse& self) {
+      if (self.condition->result_type.type != TermBuilder::boolean_type(self.compile_context()))
+        self.compile_context().error_throw(self.location(), "Conditional value is not boolean");
+      
+      return result_type_combine(self.true_value->result_type, self.false_value->result_type, self.compile_context(), self.location());
     }
     
     template<typename V>
@@ -654,9 +776,16 @@ namespace Psi {
         }
       };
     }
+    
+    TermResultType JumpGroup::make_result_type(const TreePtr<Term>& initial, const PSI_STD::vector<TreePtr<JumpTarget> >& values, const SourceLocation& location) {
+      TermResultType rt = initial->result_type;
+      for (PSI_STD::vector<TreePtr<JumpTarget> >::const_iterator ii = values.begin(), ie = values.end(); ii != ie; ++ii)
+        rt = result_type_combine(rt, (*ii)->value->result_type, initial.compile_context(), location);
+      return rt;
+    }
 
     JumpGroup::JumpGroup(const TreePtr<Term>& initial_, const PSI_STD::vector<TreePtr<JumpTarget> >& entries_, const SourceLocation& location)
-    : Term(&vtable, initial_->type, location),
+    : Term(&vtable, make_result_type(initial_, entries_, location), location),
     initial(initial_),
     entries(entries_) {
     }
@@ -670,8 +799,17 @@ namespace Psi {
 
     const TermVtable JumpGroup::vtable = PSI_COMPILER_TERM(JumpGroup, "psi.compiler.JumpGroup", Term);
     
+    TermResultType JumpTo::make_result_type(CompileContext& compile_context) {
+      TermResultType rs;
+      rs.mode = result_mode_bottom;
+      rs.pure = true;
+      rs.type = TermBuilder::bottom_type(compile_context);
+      rs.type_mode = type_mode_none;
+      return rs;
+    }
+    
     JumpTo::JumpTo(const TreePtr<JumpTarget>& target_, const TreePtr<Term>& argument_, const SourceLocation& location)
-    : Term(&vtable, target_.compile_context().builtins().bottom_type, location),
+    : Term(&vtable, make_result_type(target_.compile_context()), location),
     target(target_),
     argument(argument_) {
     }
@@ -686,22 +824,27 @@ namespace Psi {
     const TermVtable JumpTo::vtable = PSI_COMPILER_TERM(JumpTo, "psi.compiler.JumpTo", Term);
 
     FunctionCall::FunctionCall(const TreePtr<Term>& target_, const PSI_STD::vector<TreePtr<Term> >& arguments_, const SourceLocation& location)
-    : Term(&vtable, get_type(target_, arguments_, location), location),
+    : Term(&vtable, get_result_type(target_, arguments_, location), location),
     target(target_),
     arguments(arguments_) {
     }
 
-    TreePtr<Term> FunctionCall::get_type(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
-      TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(target->type);
+    TermResultType FunctionCall::get_result_type(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
+      TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(target->result_type.type);
       if (!ft)
         target.compile_context().error_throw(location, "Target of function call does not have function type");
+      
+      if (target->result_type.mode != result_mode_lvalue)
+        target.compile_context().error_throw(location, "Function call target is a function but not a reference", CompileError::error_internal);
 
+      TermResultType rt;
       PSI_STD::vector<TreePtr<Term> >& nc_arguments = const_cast<PSI_STD::vector<TreePtr<Term> >&>(arguments);
-      return ft->result_type_after(location, nc_arguments)->anonymize(location);
-    }
-    
-    TreePtr<FunctionType> FunctionCall::target_type() {
-      return treeptr_cast<FunctionType>(treeptr_cast<PointerType>(target->type)->target_type);
+      rt.type = ft->result_type_after(location, nc_arguments)->anonymize(location);
+      rt.mode = ft->result_mode;
+      PSI_NOT_IMPLEMENTED(); // How to set rt.type_mode
+      rt.type_mode = rt.type->is_type() ? type_mode_primitive : type_mode_none;
+      rt.pure = false;
+      return rt;
     }
     
     template<typename Visitor>
@@ -714,7 +857,7 @@ namespace Psi {
     const TermVtable FunctionCall::vtable = PSI_COMPILER_TERM(FunctionCall, "psi.compiler.FunctionCall", Term);
     
     SolidifyDuring::SolidifyDuring(const PSI_STD::vector<TreePtr<Term> >& value_, const TreePtr<Term>& body_, const SourceLocation& location)
-    : Term(&vtable, body_->type, location),
+    : Term(&vtable, body_->result_type, location),
     value(value_),
     body(body_) {
     }
@@ -728,8 +871,8 @@ namespace Psi {
     
     const TermVtable SolidifyDuring::vtable = PSI_COMPILER_TERM(SolidifyDuring, "psi.compiler.SolidifyDuring", Term);
     
-    PrimitiveType::PrimitiveType(CompileContext& compile_context, const String& name_, const SourceLocation& location)
-    : Type(&vtable, compile_context, location),
+    PrimitiveType::PrimitiveType(const String& name_)
+    : Type(&vtable),
     name(name_) {
     }
     
@@ -740,8 +883,9 @@ namespace Psi {
 
     const FunctionalVtable PrimitiveType::vtable = PSI_COMPILER_FUNCTIONAL(PrimitiveType, "psi.compiler.PrimitiveType", Type);
     
-    BuiltinValue::BuiltinValue(const String& constructor_, const String& data_, const TreePtr<Term>& type, const SourceLocation& location)
-    : Constant(&vtable, type, location),
+    BuiltinValue::BuiltinValue(const String& constructor_, const String& data_, const TreePtr<Term>& type)
+    : Constant(&vtable),
+    builtin_type(type),
     constructor(constructor_),
     data(data_) {
     }
@@ -749,28 +893,32 @@ namespace Psi {
     template<typename Visitor>
     void BuiltinValue::visit(Visitor& v) {
       visit_base<Constant>(v);
-      v("constructor", &BuiltinValue::constructor)
+      v("builtin_type", &BuiltinValue::builtin_type)
+      ("constructor", &BuiltinValue::constructor)
       ("data", &BuiltinValue::data);
     }
 
     const FunctionalVtable BuiltinValue::vtable = PSI_COMPILER_FUNCTIONAL(BuiltinValue, "psi.compiler.BuiltinValue", Constant);
 
-    IntegerValue::IntegerValue(const TreePtr<Term>& type, int value_, const SourceLocation& location)
-    : Constant(&vtable, type, location),
+    IntegerValue::IntegerValue(const TreePtr<Term>& type, int value_)
+    : Constant(&vtable),
+    integer_type(type),
     value(value_) {
     }
     
     template<typename V>
     void IntegerValue::visit(V& v) {
       visit_base<Constant>(v);
-      v("value", &IntegerValue::value);
+      v("integer_type", &IntegerValue::integer_type)
+      ("value", &IntegerValue::value);
     }
     
     const FunctionalVtable IntegerValue::vtable = PSI_COMPILER_FUNCTIONAL(IntegerValue, "psi.compiler.IntegerValue", Constant);
 
-    StringValue::StringValue(CompileContext& compile_context, const String& value_, const SourceLocation& location)
-    : Constant(&vtable, TermBuilder::string_type(value_.length()+1, compile_context, location), location),
+    StringValue::StringValue(const String& value_)
+    : Constant(&vtable),
     value(value_) {
+      //TermBuilder::string_type(value_.length()+1, compile_context, location)
     }
     
     template<typename V>
@@ -782,7 +930,7 @@ namespace Psi {
     const FunctionalVtable StringValue::vtable = PSI_COMPILER_FUNCTIONAL(StringValue, "psi.compiler.StringValue", Constant);
     
     BuiltinFunction::BuiltinFunction(const String& name_, bool pure_, const TreePtr<FunctionType>& type, const SourceLocation& location)
-    : Global(&vtable, type, location),
+    : Global(&vtable, global_result_type(type), location),
     name(name_),
     pure(pure_) {
     }
@@ -827,7 +975,7 @@ namespace Psi {
     const TreeVtable Library::vtable = PSI_COMPILER_TREE(Library, "psi.compiler.Library", Tree);
     
     LibrarySymbol::LibrarySymbol(const TreePtr<Library>& library_, const TreePtr<TargetCallback>& callback_, const TreePtr<Term>& type, const SourceLocation& location)
-    : Global(&vtable, type, location),
+    : Global(&vtable, global_result_type(type), location),
     library(library_),
     callback(callback_) {
     }
@@ -865,8 +1013,8 @@ namespace Psi {
     const TreeVtable Namespace::vtable = PSI_COMPILER_TREE(Namespace, "psi.compiler.Namespace", Tree);
     
     InterfaceValue::InterfaceValue(const TreePtr<Interface>& interface_, const PSI_STD::vector<TreePtr<Term> >& parameters_,
-                                   const TreePtr<Implementation>& implementation_, const SourceLocation& location)
-    : Term(&vtable, interface_->type_after(parameters_, location), location),
+                                   const TreePtr<Implementation>& implementation_)
+    : Functional(&vtable),
     interface(interface_),
     parameters(parameters_),
     implementation(implementation_) {
@@ -880,11 +1028,27 @@ namespace Psi {
       ("implementation", &InterfaceValue::implementation);
     }
     
-    const TermVtable InterfaceValue::vtable = PSI_COMPILER_TERM(InterfaceValue, "psi.compiler.InterfaceValue", Term);
+    const FunctionalVtable InterfaceValue::vtable = PSI_COMPILER_FUNCTIONAL(InterfaceValue, "psi.compiler.InterfaceValue", Functional);
     
-    MovableValue::MovableValue(const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, value_->type, location),
+    MovableValue::MovableValue(const TreePtr<Term>& value_)
+    : Functional(&vtable),
     value(value_) {
+    }
+    
+    TermResultType MovableValue::check_type_impl(const MovableValue& self) {
+      TermResultType rs;
+      switch (self.value->result_type.mode) {
+      case result_mode_rvalue:
+      case result_mode_lvalue: rs.mode = result_mode_rvalue; break;
+      case result_mode_by_value: rs.mode = result_mode_by_value; break;
+      case result_mode_functional: rs.mode = result_mode_by_value; break;
+      case result_mode_bottom: rs.mode = result_mode_bottom; break;
+      default: PSI_FAIL("Unknown result mode");
+      }
+      rs.type = self.value->result_type.type;
+      rs.type_mode = self.value->result_type.type_mode;
+      rs.pure = false;
+      return rs;
     }
     
     template<typename V>
@@ -893,10 +1057,10 @@ namespace Psi {
       v("value", &MovableValue::value);
     }
     
-    const TermVtable MovableValue::vtable = PSI_COMPILER_TERM(MovableValue, "psi.compiler.MovableValue", Term);
+    const FunctionalVtable MovableValue::vtable = PSI_COMPILER_FUNCTIONAL(MovableValue, "psi.compiler.MovableValue", Functional);
     
     InitializePointer::InitializePointer(const TreePtr<Term>& target_ptr_, const TreePtr<Term>& assign_value_, const TreePtr<Term>& inner_, const SourceLocation& location)
-    : Term(&vtable, inner_->type, location),
+    : Term(&vtable, inner_->result_type, location),
     target_ptr(target_ptr_),
     assign_value(assign_value_),
     inner(inner_) {
@@ -913,7 +1077,7 @@ namespace Psi {
     const TermVtable InitializePointer::vtable = PSI_COMPILER_TERM(InitializePointer, "psi.compiler.InitializePointer", Term);
     
     AssignPointer::AssignPointer(const TreePtr<Term>& target_ptr_, const TreePtr<Term>& assign_value_, const SourceLocation& location)
-    : Term(&vtable, target_ptr_.compile_context().builtins().empty_type, location),
+    : Term(&vtable, result_type_void(target_ptr_.compile_context()), location),
     target_ptr(target_ptr_),
     assign_value(assign_value_) {
     }
@@ -928,7 +1092,7 @@ namespace Psi {
     const TermVtable AssignPointer::vtable = PSI_COMPILER_TERM(AssignPointer, "psi.compiler.AssignPointer", Term);
     
     FinalizePointer::FinalizePointer(const TreePtr<Term>& target_ptr_, const SourceLocation& location)
-    : Term(&vtable, target_ptr_.compile_context().builtins().empty_type, location) {
+    : Term(&vtable, result_type_void(target_ptr_.compile_context()), location) {
     }
     
     template<typename V>
@@ -940,7 +1104,7 @@ namespace Psi {
     const TermVtable FinalizePointer::vtable = PSI_COMPILER_TERM(FinalizePointer, "psi.compiler.FinalizePointer", Term);
     
     IntroduceImplementation::IntroduceImplementation(const PSI_STD::vector<TreePtr<Implementation> >& implementations_, const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, value_->type, location),
+    : Term(&vtable, value_->result_type, location),
     implementations(implementations_),
     value(value_) {
     }

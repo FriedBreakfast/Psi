@@ -284,6 +284,8 @@ namespace Psi {
       TreePtr<Type> size_type;
       /// \brief Type of string elements, i.e. unsigned char
       TreePtr<Type> string_element_type;
+      /// \brief Type of booleans
+      TreePtr<Type> boolean_type;
       
       /// \brief The Macro interface.
       TreePtr<MetadataType> macro_tag;

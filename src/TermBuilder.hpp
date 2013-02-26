@@ -12,7 +12,10 @@ struct TermBuilder : NonConstructible {
   static TreePtr<Term> metatype(CompileContext& compile_context);
   static TreePtr<Term> size_type(CompileContext& compile_context);
   static TreePtr<Term> string_element_type(CompileContext& compile_context);
-
+  static TreePtr<Term> bottom_type(CompileContext& compile_context);
+  static TreePtr<Term> empty_type(CompileContext& compile_context);
+  static TreePtr<Term> boolean_type(CompileContext& compile_context);
+  
   static TreePtr<Term> primitive_type(CompileContext& compile_context, const String& name, const SourceLocation& location);
   static TreePtr<Term> derived(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location);
   static TreePtr<Term> pointer(const TreePtr<Term>& type, const SourceLocation& location);
