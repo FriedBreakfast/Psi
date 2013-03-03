@@ -57,6 +57,8 @@ namespace Psi {
       ValuePtr<Instruction> alloca_(const ValuePtr<>& type, const ValuePtr<>& count, const SourceLocation& location);
       ValuePtr<Instruction> alloca_(const ValuePtr<>& type, unsigned count, const SourceLocation& location);
       ValuePtr<Instruction> alloca_(const ValuePtr<>& type, const SourceLocation& location);
+      ValuePtr<Instruction> stack_save(const SourceLocation& location);
+      ValuePtr<Instruction> stack_restore(const ValuePtr<>& save, const SourceLocation& location);
       ValuePtr<Instruction> load(const ValuePtr<>& src, const SourceLocation& location);
       ValuePtr<Instruction> store(const ValuePtr<>& value, const ValuePtr<>& dest, const SourceLocation& location);
       ValuePtr<Instruction> memcpy(const ValuePtr<>& dest, const ValuePtr<>& src, const ValuePtr<>& count, const ValuePtr<>& alignment, const SourceLocation& location);
@@ -66,6 +68,7 @@ namespace Psi {
       ValuePtr<Instruction> memzero(const ValuePtr<>& dest, const ValuePtr<>& count, const SourceLocation& location);
       ///@}
       
+      ValuePtr<Instruction> eval(const ValuePtr<>& value, const SourceLocation& location);
       ValuePtr<Instruction> unreachable(const SourceLocation& location);
       ValuePtr<Instruction> solidify(const ValuePtr<>& value, const SourceLocation& location);
       

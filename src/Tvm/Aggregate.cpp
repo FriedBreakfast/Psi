@@ -149,6 +149,21 @@ namespace Psi {
 
     PSI_TVM_FUNCTIONAL_IMPL(ByteType, Type, byte)
     
+    StackPointerType::StackPointerType(Context& context, const SourceLocation& location)
+    : Type(context, location) {
+    }
+    
+    template<typename V>
+    void StackPointerType::visit(V& v) {
+      visit_base<Type>(v);
+    }
+    
+    ValuePtr<> StackPointerType::check_type() const {
+      return FunctionalBuilder::type_type(context(), location());
+    }
+    
+    PSI_TVM_FUNCTIONAL_IMPL(StackPointerType, Type, stack_ptr);
+    
     ValuePtr<> UndefinedValue::check_type() const {
       if (!parameter()->is_type())
         throw TvmUserError("Argument to undef must be a type");

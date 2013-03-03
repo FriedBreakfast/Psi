@@ -121,7 +121,7 @@ namespace Psi {
       }
       
       TypeSizeAlignment TargetCommon::type_size_alignment(const ValuePtr<>& type) {
-        if (ValuePtr<PointerType> pointer_ty = dyn_cast<PointerType>(type)) {
+        if (isa<PointerType>(type) || isa<StackPointerType>(type)) {
           TypeSizeAlignment result;
           result.size = m_target_data->getPointerSize();
           result.alignment = m_target_data->getPointerABIAlignment();

@@ -86,58 +86,6 @@ namespace Psi {
         }
       }
 
-      /**
-       * Remove unnecessary stack save and restore instructions.
-       */
-      void FunctionBuilder::setup_stack_save_restore(const std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >& blocks) {
-        boost::unordered_map<ValuePtr<Block>, ValuePtr<Block> > stack_dominator;
-        boost::unordered_map<ValuePtr<Block>, llvm::Value*> stack_save_values;
-        boost::unordered_set<ValuePtr<Block> > stack_restore_required;
-
-        stack_dominator[blocks.front().first] = blocks.front().first;
-        for (std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii)
-          stack_dominator[ii->first] = stack_dominator[ii->first->dominator()];
-
-        // Work out which saves and restores are required
-        for (std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
-          ValuePtr<> stack_restore = stack_dominator[ii->first];
-          bool has_alloca = false;
-          for (Block::InstructionList::const_iterator ji = ii->first->instructions().begin(), je = ii->first->instructions().end(); ji != je; ++ji) {
-            if (isa<Alloca>(*ji)) {
-              has_alloca = true;
-              break;
-            }
-          }
-          
-          std::vector<ValuePtr<Block> > successors = ii->first->successors();
-          for (std::vector<ValuePtr<Block> >::const_iterator ji = successors.begin(), je = successors.end(); ji != je; ++ji) {
-            ValuePtr<Block> target_stack_restore = stack_dominator[*ji];
-            if (has_alloca ? (target_stack_restore != ii->first) : (target_stack_restore != stack_restore)) {
-              stack_save_values[target_stack_restore] = NULL;
-              stack_restore_required.insert(*ji);
-            }
-          }
-        }
-        
-        // Insert required saves
-        for (std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
-          boost::unordered_map<ValuePtr<Block>, llvm::Value*>::iterator ji = stack_save_values.find(ii->first);
-          if (ji != stack_save_values.end()) {
-            irbuilder().SetInsertPoint(ii->second, boost::prior(ii->second->end()));
-            ji->second = irbuilder().CreateCall(module_builder()->llvm_stacksave());
-          }
-        }
-        
-        // Insert required restores
-        for (std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> >::const_iterator ii = boost::next(blocks.begin()), ie = blocks.end(); ii != ie; ++ii) {
-          if (stack_restore_required.find(ii->first) != stack_restore_required.end()) {
-            irbuilder().SetInsertPoint(ii->second, ii->second->getFirstNonPHI());
-            ValuePtr<Block> restore = stack_dominator[ii->first];
-            irbuilder().CreateCall(module_builder()->llvm_stackrestore(), stack_save_values[restore]);
-          }
-        }
-      }
-
       void FunctionBuilder::switch_to_block(const ValuePtr<Block>& block) {
         m_block_value_terms[m_current_block] = m_value_terms;
         BlockMapType::const_iterator new_block = m_block_value_terms.find(block);
@@ -224,7 +172,8 @@ namespace Psi {
           for (Block::InstructionList::const_iterator jt = it->first->instructions().begin(), je = it->first->instructions().end(); jt != je; ++jt) {
             const ValuePtr<Instruction>& insn = *jt;
             llvm::Value *r = build_value_instruction(insn);
-            m_value_terms.insert(std::make_pair(insn, r));
+            if (r)
+              m_value_terms.insert(std::make_pair(insn, r));
           }
 
           if (!it->second->getTerminator())
@@ -243,8 +192,6 @@ namespace Psi {
             it->second->addIncoming(incoming_value, incoming_block);
           }
         }
-        
-        setup_stack_save_restore(blocks);
       }
 
       /// Returns the maximum alignment for any type supported. This

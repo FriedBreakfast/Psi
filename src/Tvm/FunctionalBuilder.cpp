@@ -68,6 +68,11 @@ namespace Psi {
       return pointer_type(byte_type(context, location), location);
     }
     
+    /// \brief Get the result type of the stack_save instruction
+    ValuePtr<> FunctionalBuilder::stack_pointer_type(Context& context, const SourceLocation& location) {
+      return context.get_functional(StackPointerType(context, location));
+    }
+    
     /// \brief Get an undefined value of the specified type.
     ValuePtr<> FunctionalBuilder::undef(const ValuePtr<>& type, const SourceLocation& location) {
       return type->context().get_functional(UndefinedValue(type, location));

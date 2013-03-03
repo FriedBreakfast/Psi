@@ -180,6 +180,7 @@ namespace Psi {
           .add<EmptyType>(primitive_type_rewrite)
           .add<FloatType>(primitive_type_rewrite)
           .add<IntegerType>(primitive_type_rewrite)
+          .add<StackPointerType>(primitive_type_rewrite)
           .add<ConstantType>(constant_type_rewrite);
       }
     };
@@ -732,6 +733,31 @@ namespace Psi {
         runner.builder().cond_br(cond, value_cast<Block>(true_target), value_cast<Block>(false_target), term->location());
         return LoweredValue();
       }
+      
+      static void eval_rewrite_value(FunctionRunner& runner, const LoweredValue& value, const SourceLocation& location) {
+        switch (value.mode()) {
+        case LoweredValue::mode_empty:
+          break;
+
+        case LoweredValue::mode_register:
+          runner.builder().eval(value.register_value(), location);
+          break;
+          
+        case LoweredValue::mode_split: {
+          const LoweredValue::EntryVector& entries = value.split_entries();
+          for (LoweredValue::EntryVector::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii)
+            eval_rewrite_value(runner, *ii, location);
+          break;
+        }
+          
+        default: PSI_FAIL("Unknown LoweredValue mode");
+        }
+      }
+      
+      static LoweredValue eval_rewrite(FunctionRunner& runner, const ValuePtr<Evaluate>& term) {
+        eval_rewrite_value(runner, runner.rewrite_value(term->value), term->location());
+        return LoweredValue();
+      }
 
       static LoweredValue call_rewrite(FunctionRunner& runner, const ValuePtr<Call>& term) {
         runner.pass().target_callback->lower_function_call(runner, term);
@@ -756,6 +782,17 @@ namespace Psi {
         }
         ValuePtr<> cast_stack_ptr = FunctionalBuilder::pointer_cast(stack_ptr, FunctionalBuilder::byte_type(runner.context(), term->location()), term->location());
         return LoweredValue::register_(runner.pass().pointer_type(), false, cast_stack_ptr);
+      }
+      
+      static LoweredValue stack_save_rewrite(FunctionRunner& runner, const ValuePtr<StackSave>& term) {
+        Tvm::ValuePtr<> ptr = runner.builder().stack_save(term->location());
+        return LoweredValue::register_(runner.pass().stack_pointer_type(), false, ptr);
+      }
+      
+      static LoweredValue stack_restore_rewrite(FunctionRunner& runner, const ValuePtr<StackRestore>& term) {
+        LoweredValueSimple ptr = runner.rewrite_value_register(term->save);
+        runner.builder().stack_restore(ptr.value, term->location());
+        return LoweredValue();
       }
       
       static LoweredValue load_rewrite(FunctionRunner& runner, const ValuePtr<Load>& term) {
@@ -834,6 +871,9 @@ namespace Psi {
           .add<ConditionalBranch>(cond_br_rewrite)
           .add<Call>(call_rewrite)
           .add<Alloca>(alloca_rewrite)
+          .add<StackSave>(stack_save_rewrite)
+          .add<StackRestore>(stack_restore_rewrite)
+          .add<Evaluate>(eval_rewrite)
           .add<Store>(store_rewrite)
           .add<Load>(load_rewrite)
           .add<MemCpy>(memcpy_rewrite)

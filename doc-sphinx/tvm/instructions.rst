@@ -78,21 +78,6 @@ Signed integer types of various bit widths.
 Since type-checking is performed in a platform independent way, this type is
 not equivalent to any of the other types.
 
-.. _psi.tvm.instructions.member:
-
-member
-""""""
-
-``member {type1} {type2}``
-
-Pointer-to-member type.
-This allows a pointer to a ``{type2}`` to be obtained from a pointer to a ``{type1}`` using an offset in a type safe way.
-
-``{type1}``
-  A type which at some depth should contain ``{type2}``.
-``{type2}``
-  A type which is a member of ``{type1}``.
-
 .. _psi.tvm.instructions.pointer:
 
 pointer
@@ -107,6 +92,17 @@ A reference to a value in memory of type ``{type}``.
 ``{upwards}``
   A trail of how this pointer was obtained, which allows reverse member lookup to be performed.
   This should have type :ref:`psi.tvm.instructions.upref`.
+  
+.. _psi.tvm.instructions.stack_ptr:
+
+stack_ptr
+"""""""""
+
+``stack_ptr``
+
+The type of stack pointers.
+This is used by the :ref:`psi.tvm.instructions.stack_save` and :ref:`psi.tvm.instructions.stack_restore`
+instructions to allow memory allocated using :ref:`psi.tvm.instructions.alloca` to be freed be the end of a function.
 
 .. _psi.tvm.instructions.struct:
 
@@ -508,6 +504,19 @@ Continue execution at a location dependent on a boolean value.
   Block to jump to if ``{cond}`` is true.
 ``{iffalse}``
   Block to jump to if ``{cond}`` is false.
+  
+eval
+""""
+
+``eval {value}``
+
+Evaluate an expression.
+The expression should be functional but can still fail through CPU traps (such as divide-by-zero).
+This instruction ensures that any such failure occurs at a well defined point in the code.
+Later use of the same expression (or any sub-expression) is safe, since the value generated here will be re-used.
+
+``{value}``
+  A calculation which may trap.
 
 load
 """"
@@ -584,6 +593,32 @@ This instruction should be used with great care since it will circumvent the typ
 been obtained from uninitialized memory.
 If the memory has been initialized with the correct type the type system then we know that ``value``
 has the correct value since only a single value will be valid for that type.
+
+.. _psi.tvm.instructions.stack_restore:
+
+stack_restore
+"""""""""""""
+
+``stack_restore {ptr}``
+
+Restore the stack pointer.
+This will free any memory allocated by :ref:`psi.tvm.instructions.alloca` instructions since
+the :ref:`psi.tvm.instructions.stack_save` instruction which generated ``{ptr}``.
+
+``{ptr}``
+  Stack pointer produced by a :ref:`psi.tvm.instructions.stack_save` instruction.
+
+.. _psi.tvm.instructions.stack_save:
+
+stack_save
+""""""""""
+
+``stack_save``
+
+Save the stack pointer.
+The result of this instruction may be passed to :ref:`psi.tvm.instructions.stack_restore` to reset
+the stack pointer to its value when the ``stack_save`` instruction was run.
+This frees memory allocated by any :ref:`psi.tvm.instructions.alloca` instructions between the two points.
 
 store
 """""

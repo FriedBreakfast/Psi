@@ -377,7 +377,7 @@ namespace Psi {
       block_ptr()->erase_instruction(*this);
     }
 
-    void Instruction::check_source_hook_base(CheckSourceParameter& parameter) {
+    void Instruction::check_source_hook(CheckSourceParameter& parameter) {
       switch (parameter.mode) {
       case CheckSourceParameter::mode_before_instruction: {
         Instruction *insn = value_cast<Instruction>(parameter.point);

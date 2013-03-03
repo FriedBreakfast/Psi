@@ -137,6 +137,27 @@ namespace Psi {
     }
     
     PSI_TVM_INSTRUCTION_IMPL(Unreachable, TerminatorInstruction, unreachable);
+    
+    Evaluate::Evaluate(const ValuePtr<>& value_, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::empty_type(value_->context(), location), operation, location),
+    value(value_) {
+    }
+    
+    void Evaluate::type_check() {
+      require_available(value);
+    }
+    
+    template<typename V>
+    void Evaluate::visit(V& v) {
+      visit_base<Instruction>(v);
+      v("value", &Evaluate::value);
+    }
+    
+    void Evaluate::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Result of eval instruction should not be used");
+    }
+    
+    PSI_TVM_INSTRUCTION_IMPL(Evaluate, Instruction, eval);
 
     namespace {
       ValuePtr<> call_type(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters) {
@@ -173,10 +194,6 @@ namespace Psi {
       visit_base<Instruction>(v);
       v("target", &Call::target)
       ("parameters", &Call::parameters);
-    }
-
-    void Call::check_source_hook(CheckSourceParameter& parameter) {
-      Instruction::check_source_hook_base(parameter);
     }
     
     PSI_TVM_INSTRUCTION_IMPL(Call, Instruction, call);
@@ -237,10 +254,6 @@ namespace Psi {
       visit_base<Instruction>(v);
       v("target", &Load::target);
     }
-    
-    void Load::check_source_hook(CheckSourceParameter& parameter) {
-      Instruction::check_source_hook_base(parameter);
-    }
 
     PSI_TVM_INSTRUCTION_IMPL(Load, Instruction, load);
 
@@ -280,11 +293,43 @@ namespace Psi {
       ("alignment", &Alloca::alignment);
     }
     
-    void Alloca::check_source_hook(CheckSourceParameter& parameter) {
-      Instruction::check_source_hook_base(parameter);
-    }
-
     PSI_TVM_INSTRUCTION_IMPL(Alloca, Instruction, alloca);
+    
+    StackSave::StackSave(Context& context, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::stack_pointer_type(context, location), operation, location) {
+    }
+    
+    void StackSave::type_check() {
+    }
+    
+    template<typename V>
+    void StackSave::visit(V& v) {
+      visit_base<Instruction>(v);
+    }
+    
+    PSI_TVM_INSTRUCTION_IMPL(StackSave, Instruction, stack_save);
+    
+    StackRestore::StackRestore(const ValuePtr<>& save_, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::empty_type(save_->context(), location), operation, location),
+    save(save_) {
+    }
+    
+    void StackRestore::type_check() {
+      if (!isa<StackPointerType>(save->type()))
+        throw TvmUserError("stack_restore argument is not a stack_ptr");
+    }
+    
+    void StackRestore::check_source_hook(CheckSourceParameter&) {
+      throw TvmUserError("Result of stack_save instruction should not be used");
+    }
+    
+    template<typename V>
+    void StackRestore::visit(V& v) {
+      visit_base<Instruction>(v);
+      v("save", &StackRestore::save);
+    }
+    
+    PSI_TVM_INSTRUCTION_IMPL(StackRestore, Instruction, stack_restore);
     
     MemCpy::MemCpy(const ValuePtr<>& dest_, const ValuePtr<>& src_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
     : Instruction(FunctionalBuilder::empty_type(dest_->context(), location), operation, location),

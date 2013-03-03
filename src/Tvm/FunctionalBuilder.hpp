@@ -39,6 +39,7 @@ namespace Psi {
       static ValuePtr<> empty_value(Context& context, const SourceLocation& location);
       static ValuePtr<> byte_type(Context& context, const SourceLocation& location);
       static ValuePtr<> byte_pointer_type(Context& context, const SourceLocation& location);
+      static ValuePtr<> stack_pointer_type(Context& context, const SourceLocation& location);
       static ValuePtr<> undef(const ValuePtr<>& type, const SourceLocation& location);
       static ValuePtr<> zero(const ValuePtr<>& type, const SourceLocation& location);
       //@}

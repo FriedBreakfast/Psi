@@ -81,6 +81,20 @@ namespace Psi {
           return inst;
         }
         
+        static llvm::Instruction* stack_save_callback(FunctionBuilder& builder, const ValuePtr<StackSave>&) {
+          return builder.irbuilder().CreateCall(builder.module_builder()->llvm_stacksave());
+        }
+        
+        static llvm::Instruction* stack_restore_callback(FunctionBuilder& builder, const ValuePtr<StackRestore>& term) {
+          llvm::Value *arg = builder.build_value(term->save);
+          return builder.irbuilder().CreateCall(builder.module_builder()->llvm_stackrestore(), arg);
+        }
+        
+        static llvm::Instruction* evaluate_callback(FunctionBuilder& builder, const ValuePtr<Evaluate>& term) {
+          builder.build_value(term->value);
+          return NULL;
+        }
+        
         static llvm::Instruction* memcpy_callback(FunctionBuilder& builder, const ValuePtr<MemCpy>& term) {
           llvm::Value *dest = builder.build_value(term->dest);
           llvm::Value *src = builder.build_value(term->src);
@@ -141,6 +155,9 @@ namespace Psi {
             .add<Load>(load_callback)
             .add<Store>(store_callback)
             .add<Alloca>(alloca_callback)
+            .add<StackSave>(stack_save_callback)
+            .add<StackRestore>(stack_restore_callback)
+            .add<Evaluate>(evaluate_callback)
             .add<MemCpy>(memcpy_callback)
             .add<MemZero>(memzero_callback);
         }

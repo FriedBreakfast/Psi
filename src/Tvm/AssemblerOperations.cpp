@@ -196,6 +196,7 @@ namespace Psi {
         ("empty", NullaryOpCallback(&FunctionalBuilder::empty_type))
         ("empty_v", NullaryOpCallback(&FunctionalBuilder::empty_value))
         ("byte", NullaryOpCallback(&FunctionalBuilder::byte_type))
+        ("stack_ptr", NullaryOpCallback(&FunctionalBuilder::stack_pointer_type))
         ("pointer", UnaryOrBinaryCallback(&FunctionalBuilder::pointer_type, &FunctionalBuilder::pointer_type))
         ("upref_type", NullaryOpCallback(&FunctionalBuilder::upref_type))
         ("upref", UprefCallback())
@@ -313,6 +314,9 @@ namespace Psi {
         ("cond_br", ConditionalBranchCallback())
         ("return", UnaryInstructionCallback(&InstructionBuilder::return_))
         ("alloca", AllocaCallback())
+        ("stack_save", NullaryInstructionCallback(&InstructionBuilder::stack_save))
+        ("stack_restore", UnaryInstructionCallback(&InstructionBuilder::stack_restore))
+        ("eval", UnaryInstructionCallback(&InstructionBuilder::eval))
         ("load", UnaryInstructionCallback(&InstructionBuilder::load))
         ("store", BinaryInstructionCallback(&InstructionBuilder::store))
         ("solidify", UnaryInstructionCallback(&InstructionBuilder::solidify));

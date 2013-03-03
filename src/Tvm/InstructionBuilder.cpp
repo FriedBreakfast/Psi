@@ -210,6 +210,28 @@ namespace Psi {
     }
     
     /**
+     * \brief Save the stack pointer.
+     * 
+     * Any \c alloca instructions after this instruction may be undone by stack_restore
+     */
+    ValuePtr<Instruction> InstructionBuilder::stack_save(const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new StackSave(m_insert_point.block()->context(), location));
+      m_insert_point.insert(insn);
+      return insn;
+    }
+    
+    /**
+     * \brief Restore the stack pointer.
+     * 
+     * \param save Previous stack pointer. This must originate from a \c stack_save instruction.
+     */
+    ValuePtr<Instruction> InstructionBuilder::stack_restore(const ValuePtr<>& save, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new StackRestore(save, location));
+      m_insert_point.insert(insn);
+      return insn;
+    }
+    
+    /**
      * \brief Load a value from memory.
      * 
      * \param ptr Pointer to value.
@@ -278,6 +300,15 @@ namespace Psi {
     
     ValuePtr<Instruction> InstructionBuilder::memzero(const ValuePtr<>& dest, const ValuePtr<>& count, const SourceLocation& location) {
       return memzero(dest, count, ValuePtr<>(), location);
+    }
+    
+    /**
+     * \brief Generate an eval instruction.
+     */
+    ValuePtr<Instruction> InstructionBuilder::eval(const ValuePtr< Value >& value, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new Evaluate(value, location));
+      m_insert_point.insert(insn);
+      return insn;
     }
     
     /**

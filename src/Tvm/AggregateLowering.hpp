@@ -454,9 +454,7 @@ namespace Psi {
 
       virtual void update_implementation(bool);
       
-      LoweredType m_size_type;
-      LoweredType m_pointer_type;
-      LoweredType m_block_type;
+      LoweredType m_size_type, m_pointer_type, m_block_type, m_stack_pointer_type;
 
     public:
       AggregateLoweringPass(Module*, TargetCallback*, Context* =0);
@@ -466,12 +464,10 @@ namespace Psi {
       
       ModuleLevelRewriter& global_rewriter() {return m_global_rewriter;}
       
-      /// \brief Type to use for sizes
       const LoweredType& size_type();
-      /// \brief Type to use for pointers
       const LoweredType& pointer_type();
-      /// \brief Type to use for blocks
       const LoweredType& block_type();
+      const LoweredType& stack_pointer_type();
       
       std::size_t lowered_type_alignment(const ValuePtr<>& alignment);
 

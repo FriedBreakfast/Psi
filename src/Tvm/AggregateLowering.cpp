@@ -611,6 +611,12 @@ namespace Psi {
       return m_block_type;
     }
     
+    const LoweredType& AggregateLoweringPass::stack_pointer_type() {
+      if (m_stack_pointer_type.empty())
+        m_stack_pointer_type = m_global_rewriter.rewrite_type(FunctionalBuilder::stack_pointer_type(source_module()->context(), source_module()->location()));
+      return m_stack_pointer_type;
+    }
+    
     /**
      * \brief Generate the type used to store a global variable.
      * 

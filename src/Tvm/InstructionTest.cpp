@@ -3,6 +3,12 @@
 #include "Instructions.hpp"
 #include "Jit.hpp"
 
+#if defined(__linux__ ) || defined(__APPLE__)
+#define UNIX_LIKE
+#include <signal.h>
+#include <ucontext.h>
+#endif
+
 namespace Psi {
   namespace Tvm {
     BOOST_FIXTURE_TEST_SUITE(InstructionTest, Test::ContextFixture)
@@ -282,6 +288,94 @@ namespace Psi {
       a = f(v, &b);
       BOOST_CHECK_EQUAL(a, v);
       BOOST_CHECK_EQUAL(b, v);
+    }
+    
+    BOOST_AUTO_TEST_CASE(StackSaveRestoreTest) {
+      const char *src =
+        "%f = function() > (struct (pointer i8) (pointer i8)) {\n"
+        "  %sp = stack_save;\n"
+        "  %a = alloca i8 #up8;\n"
+        "  stack_restore %sp;\n"
+        "  %b = alloca i8 #up8;\n"
+        "  return (struct_v %a %b);\n"
+        "};\n";
+        
+      struct PointerPair {void *p1; void *p2;};
+      typedef PointerPair (*func_type) ();
+      func_type f = reinterpret_cast<func_type>(jit_single("f", src));
+      
+      PointerPair pp = f();
+      BOOST_CHECK_EQUAL(pp.p1, pp.p2);
+    }
+    
+    BOOST_AUTO_TEST_CASE(EvaluateTest1) {
+      const char *src =
+        "%f = function(%cond : bool, %denom : ui32) > ui32 {\n"
+        "  %ex = (div #ui1 %denom);\n"
+        "  cond_br %cond %b1 %b2;\n"
+        "block %b1:\n"
+        "  return #ui0;\n"
+        "block %b2:\n"
+        "  return %ex;\n"
+        "};\n";
+
+      typedef void (*func_type) (Jit::Boolean, Jit::UInt32);
+      func_type f = reinterpret_cast<func_type>(jit_single("f", src));
+      f(true, 0);
+    }
+    
+    namespace EvaluateTest2Help {
+#ifdef UNIX_LIKE
+      bool tripped;
+      ucontext_t context;
+
+      void action(int, siginfo_t*, void*) {
+        tripped = true;
+        setcontext(&context);
+        std::abort();
+      }
+      
+      bool wrapper(void (*f) (Jit::Boolean, Jit::UInt32)) {
+        struct sigaction new_act, old_act;
+        new_act.sa_sigaction = action;
+        sigemptyset(&new_act.sa_mask);
+        new_act.sa_flags = SA_SIGINFO;
+        sigaction(SIGFPE, &new_act, &old_act);
+
+        tripped = false;
+        getcontext(&context);
+        if (tripped) {
+          sigaction(SIGFPE, &old_act, NULL);
+          return true;
+        }
+
+        f(true, 0);
+        sigaction(SIGFPE, &old_act, NULL);
+        
+        return false;
+        
+      }
+#endif
+    }
+    
+    BOOST_AUTO_TEST_CASE(EvaluateTest2) {
+      const char *src =
+        "%f = function(%cond : bool, %denom : ui32) > ui32 {\n"
+        "  %ex = (div #ui1 %denom);\n"
+        "  eval %ex;\n"
+        "  cond_br %cond %b1 %b2;\n"
+        "block %b1:\n"
+        "  return #ui0;\n"
+        "block %b2:\n"
+        "  return %ex;\n"
+        "};\n";
+
+      typedef void (*func_type) (Jit::Boolean, Jit::UInt32);
+      func_type f = reinterpret_cast<func_type>(jit_single("f", src));
+      
+#ifdef UNIX_LIKE
+      BOOST_CHECK(EvaluateTest2Help::wrapper(f));
+#endif
     }
 
     BOOST_AUTO_TEST_SUITE_END()    

@@ -114,6 +114,17 @@ namespace Psi {
     public:
       ByteType(Context& context, const SourceLocation& location);
     };
+    
+    /**
+     * \brief Type of stack pointers.
+     * 
+     * These are only used by the stack_save and stack_restore instructions.
+     */
+    class StackPointerType : public Type {
+      PSI_TVM_FUNCTIONAL_DECL(StackPointerType)
+    public:
+      StackPointerType(Context& context, const SourceLocation& location);
+    };
 
     /**
      * \brief The type of every term which can be used as a type except itself.
