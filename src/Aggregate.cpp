@@ -156,7 +156,7 @@ void AggregateMacroCommon::parse_arguments(const TreePtr<EvaluateContext>& evalu
     TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_names, evaluate_context);
     TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
     argument_pattern.push_back(argument_type->parameterize(argument_location, argument_list));
-    TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, result_mode_functional, argument_location);
+    TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, term_mode_value, argument_location);
     argument_list.push_back(argument);
 
     if (argument_expr.name)

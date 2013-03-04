@@ -169,6 +169,10 @@ I think this whole system needs a rethink.
 TVM improvements
 ----------------
 
+* Change stack save/restore to a ``freea`` instruction which frees memory associated
+  with a certain ``alloca`` or ``constalloca``. This will allow LLVM lifetime markers to be
+  created easily.
+
 * Constant folding should not be performed by the FunctionalBuilder class.
   Instead it should be performed by each class itself, which will mean:
   
@@ -189,22 +193,7 @@ TVM improvements
   use ``llvm.invariant.*`` intrinsics as well.
   This could also allow an optimization if the allocated value is in fact a global
   constant, because then it can be stored in a global variable.
-  
-* Add an ``eval`` instruction.
-  This should take a functional term as an argument and guarantees that the term
-  is evaluated before the following instruction.
-  This will eventually allow errors from functional evaluation to occur, and be handled
-  reliably because when they occur can be known.
-  AFAIK the only such error is division by zero but it would be nice to be able to
-  handle this with an exception.
-  LLVM does not support catching synchronous hardware exceptions currently so an
-  explicit check will be required.
-  
-  The result type of this instruction should be ``empty``: later uses of the argument
-  value will automatically pick up the previous evaluation, and attempting to get
-  the ``eval`` instruction result to appear equivalent to its argument
-  will just mess up term equivalence checking.
-  
+
 * Function parameter attributes, particularly ``nonnull``, which should be set for
   reference-type arguments.
   

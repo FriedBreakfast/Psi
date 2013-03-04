@@ -19,54 +19,44 @@ TvmCompiler::TvmCompiler(CompileContext *compile_context)
 TvmCompiler::~TvmCompiler() {
 }
 
-class TvmCompiler::FunctionalBuilderCallback : public TvmFunctionalBuilderCallback {
+class TvmCompiler::FunctionalBuilderCallback : public TvmFunctionalBuilder {
   TvmCompiler *m_self;
   TreePtr<Module> m_module;
   
 public:
   FunctionalBuilderCallback(TvmCompiler *self, const TreePtr<Module>& module)
-  : m_self(self), m_module(module) {}
+  : TvmFunctionalBuilder(self->compile_context(), self->tvm_context()), m_self(self), m_module(module) {}
   
-  virtual TvmResult build_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<Term>& value) {
-    if (TreePtr<Global> global = dyn_treeptr_cast<Global>(value))
-      return TvmResult::in_register(value->type, tvm_storage_lvalue_ref, m_self->build_global(global, m_module));
-    
-    m_self->compile_context().error_throw(value->location(), "Value is required in a global context but is not a global value.");
+  virtual TvmResult build(const TreePtr<Term>& term) {
+    return m_self->build(term, m_module);
   }
-
-  virtual TvmResult build_define_hook(TvmFunctionalBuilder& builder, const TreePtr<GlobalDefine>& define) {
-    return builder.build(define->value);
-  }
-
-  virtual TvmGenericResult build_generic_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<GenericType>& generic) {
+  
+  virtual TvmResult build_generic(const TreePtr<GenericType>& generic) {
     return m_self->build_generic(generic);
-  }
-
-  virtual Tvm::ValuePtr<> load_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const Tvm::ValuePtr<>& PSI_UNUSED(ptr), const SourceLocation& PSI_UNUSED(location)) {
-    PSI_FAIL("Cannot create global load instruction");
   }
 };
 
 /**
  * \brief Build a global or constant value.
  */
-TvmResult TvmCompiler::build(const TreePtr<Term>& value, const TreePtr<Module>& module) {
-  FunctionalBuilderCallback callback(this, module);
-  TvmFunctionalBuilder builder(&compile_context(), &m_tvm_context, &callback);
-  return builder.build(value);
-}
+TvmResult TvmCompiler::build(const TreePtr<Term>& term, const TreePtr<Module>& module) {
+  if (boost::optional<TvmResult> r = m_scope->get(term))
+    return *r;
 
-/**
- * \brief Build a type or constant value.
- */
-TvmResult TvmCompiler::build_type(const TreePtr<Term>& type) {
-  return build(type, TreePtr<Module>());
-}
-
-bool TvmCompiler::is_primitive(const TreePtr<Term>& type) {
-  FunctionalBuilderCallback callback(this, TreePtr<Module>());
-  TvmFunctionalBuilder builder(&compile_context(), &m_tvm_context, &callback);
-  return builder.is_primitive(type);
+  TvmResult value;
+  if (term->is_functional() && tree_isa<Functional>(term)) {
+    FunctionalBuilderCallback callback(this, module);
+    value = tvm_lower_functional(callback, term);
+  } else if (TreePtr<Global> global = dyn_treeptr_cast<Global>(term)) {
+    value = TvmResult(NULL, build_global(global, module));
+  } else {
+    compile_context().error_throw(term->location(), "Cannot build global term in nonglobal context");
+  }
+  
+  if (term->result_type.pure)
+    m_scope->put(term, value);
+  
+  return value;
 }
 
 std::string TvmCompiler::mangle_name(const LogicalSourceLocationPtr& location) {
@@ -183,11 +173,11 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_library_symbol(const TreePtr<Libra
     return existing;
   }
   
-  TvmResult type = build_type(lib_global->type);
-  if (Tvm::ValuePtr<Tvm::FunctionType> ftype = Tvm::dyn_cast<Tvm::FunctionType>(type.value())) {
+  TvmResult type = build(lib_global->result_type.type, default_);
+  if (Tvm::ValuePtr<Tvm::FunctionType> ftype = Tvm::dyn_cast<Tvm::FunctionType>(type.value)) {
     sym.value = m_library_module->new_function(sym.name, ftype, lib_global->location());
   } else {
-    sym.value = m_library_module->new_global_variable(sym.name, type.value(), lib_global->location());
+    sym.value = m_library_module->new_global_variable(sym.name, type.value, lib_global->location());
   }
   return sym.value;
 }
@@ -385,17 +375,17 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
       
     std::string symbol_name = mangle_name(global->location().logical);
     
-    TvmResult type = build_type(global->type);
+    TvmResult type = build(global->result_type.type, default_);
 
     if (TreePtr<Function> function = dyn_treeptr_cast<Function>(global)) {
-      Tvm::ValuePtr<Tvm::FunctionType> tvm_ftype = Tvm::dyn_cast<Tvm::FunctionType>(type.value());
+      Tvm::ValuePtr<Tvm::FunctionType> tvm_ftype = Tvm::dyn_cast<Tvm::FunctionType>(type.value);
       if (!tvm_ftype)
         compile_context().error_throw(function->location(), "Type of function is not a function type");
       Tvm::ValuePtr<Tvm::Function> tvm_func = tvm_module.module->new_function(symbol_name, tvm_ftype, function->location());
       tvm_module.symbols.insert(std::make_pair(function, tvm_func));
       functions.push_back(std::make_pair(function, tvm_func));
     } else if (TreePtr<GlobalVariable> global_var = dyn_treeptr_cast<GlobalVariable>(global)) {
-      Tvm::ValuePtr<Tvm::GlobalVariable> tvm_gvar = tvm_module.module->new_global_variable(symbol_name, type.value(), global_var->location());
+      Tvm::ValuePtr<Tvm::GlobalVariable> tvm_gvar = tvm_module.module->new_global_variable(symbol_name, type.value, global_var->location());
       tvm_module.symbols.insert(std::make_pair(global_var, tvm_gvar));
       // This is the only global property which is independent of whether the global is constant-initialized or not
       tvm_gvar->set_private(global_var->local);
@@ -417,8 +407,7 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
   // Generate constant globals
   for (GlobalVariableList::const_iterator ii = functional_globals.begin(), ie = functional_globals.end(); ii != ie; ++ii) {
     TvmResult value = build(ii->first->value(), module);
-    PSI_ASSERT(value.storage() == tvm_storage_functional);
-    ii->second->set_value(value.value());
+    ii->second->set_value(value.value);
     ii->second->set_constant(ii->first->constant);
     ii->second->set_merge(ii->first->merge);
   }
@@ -465,80 +454,49 @@ void* TvmCompiler::jit_compile(const TreePtr<Global>& global) {
   return m_jit->get_symbol(built);
 }
 
-namespace {
-  class GenericTypeCallback : public TvmFunctionalBuilderCallback {
-  public:
-    typedef boost::unordered_map<TreePtr<Anonymous>, Tvm::ValuePtr<> > AnonymousMapType;
-    
-  private:
-    TvmCompiler *m_self;
-    const AnonymousMapType *m_parameters;
-    
-  public:
-    GenericTypeCallback(TvmCompiler *self, const AnonymousMapType *parameters)
-    : m_self(self), m_parameters(parameters) {}
-    
-    virtual TvmResult build_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<Term>& term) {
-      if (TreePtr<Anonymous> anon = dyn_treeptr_cast<Anonymous>(term)) {
-        AnonymousMapType::const_iterator ii = m_parameters->find(anon);
-        if (ii == m_parameters->end())
-          m_self->compile_context().error_throw(term->location(), "Unrecognised anonymous parameter");
-        return TvmResult::type(anon->type, ii->second, false, false);
-      } else {
-        m_self->compile_context().error_throw(term->location(), boost::format("Unsupported term type in generic parameter: %s") % si_vptr(term.get())->classname);
-      }
-    }
-    
-    virtual TvmResult build_define_hook(TvmFunctionalBuilder& builder, const TreePtr<GlobalDefine>& define) {
-      return builder.build(define->value);
-    }
-    
-    virtual TvmGenericResult build_generic_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const TreePtr<GenericType>& generic) {
-      return m_self->build_generic(generic);
-    }
-    
-    virtual Tvm::ValuePtr<> load_hook(TvmFunctionalBuilder& PSI_UNUSED(builder), const Tvm::ValuePtr<>& PSI_UNUSED(ptr), const SourceLocation& PSI_UNUSED(location)) {
-      PSI_FAIL("Cannot create global load instruction");
-    }
-  };
+TvmResult TvmCompiler::build_generic(const TreePtr<GenericType>& generic) {
+  FunctionalBuilderCallback callback(this, default_);
+  return tvm_lower_generic(m_scope, callback, generic);
 }
 
 /**
  * \brief Lower a generic type.
  */
-TvmGenericResult TvmCompiler::build_generic(const TreePtr<GenericType>& generic) {
-  GenericTypeMap::iterator gen_it = m_generics.find(generic);
-  if (gen_it != m_generics.end())
-    return gen_it->second;
+TvmResult tvm_lower_generic(TvmScopePtr& scope, TvmFunctionalBuilder& builder, const TreePtr<GenericType>& generic) {
+  if (boost::optional<TvmResult> r = scope->get_generic(generic))
+    return *r;
+  
+  TvmScopePtr old_scope = scope;
+  scope = TvmScope::new_(old_scope);
   
   PSI_STD::vector<TreePtr<Term> > anonymous_list;
   Tvm::RecursiveType::ParameterList parameters;
-  GenericTypeCallback::AnonymousMapType parameter_map;
-  GenericTypeCallback type_callback(this, &parameter_map);
   for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = generic->pattern.begin(), ie = generic->pattern.end(); ii != ie; ++ii) {
     // Need to rewrite parameter to anonymous to build lowered type with RecursiveParameter
     // Would've made more seense if I'd built the two systems with a more similar parameter convention.
-    TreePtr<Term> rewrite_type = (*ii)->type->specialize(generic->location(), anonymous_list);
-    TreePtr<Anonymous> rewrite_anon = TermBuilder::anonymous(rewrite_type, rewrite_type->location());
+    TreePtr<Term> rewrite_type = (*ii)->specialize(generic->location(), anonymous_list);
+    TreePtr<Anonymous> rewrite_anon = TermBuilder::anonymous(rewrite_type, term_mode_value, rewrite_type->location());
     anonymous_list.push_back(rewrite_anon);
-    Tvm::ValuePtr<> type = TvmFunctionalBuilder(m_compile_context, &m_tvm_context, &type_callback).build_type((*ii)->type).value();
-    Tvm::ValuePtr<Tvm::RecursiveParameter> param = Tvm::RecursiveParameter::create(type, false, ii->location());
-    parameter_map.insert(std::make_pair(rewrite_anon, param));
+    
+    Tvm::ValuePtr<> tvm_type = builder.build(rewrite_type).value;
+    Tvm::ValuePtr<Tvm::RecursiveParameter> param = Tvm::RecursiveParameter::create(tvm_type, false, ii->location());
     parameters.push_back(*param);
+    scope->put(rewrite_anon, TvmResult(NULL, param), true);
   }
   
   Tvm::ValuePtr<Tvm::RecursiveType> recursive =
-    Tvm::RecursiveType::create(Tvm::FunctionalBuilder::type_type(m_tvm_context, generic->location()), parameters, generic.location());
-  TvmGenericResult result;
-  result.generic = recursive;
-  result.primitive_mode = generic->primitive_mode;
-  
+    Tvm::RecursiveType::create(Tvm::FunctionalBuilder::type_type(builder.tvm_context(), generic->location()), parameters, generic.location());
+
   // Insert generic into map before building it because it may recursively reference itself.
-  m_generics.insert(std::make_pair(generic, result));
+  scope->put_generic(generic, TvmResult(NULL, recursive), true);
+
+  TreePtr<Term> inner_type = generic->member_type()->specialize(generic->location(), anonymous_list);
+  TvmResult inner = builder.build(inner_type);
+  recursive->resolve(inner.value);
   
-  GenericTypeCallback builder_callback(this, &parameter_map);
-  TvmFunctionalBuilder builder(m_compile_context, &m_tvm_context, &builder_callback);
-  recursive->resolve(builder.build_value(generic->member_type()).value());
+  scope = old_scope;
+  TvmResult result(inner.scope, recursive);
+  old_scope->put_generic(generic, result);
   
   return result;
 }

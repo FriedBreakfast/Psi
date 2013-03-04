@@ -143,7 +143,7 @@ namespace Psi {
      * value.
      */
     class Statement : public Term {
-      static TermResultType make_result_type(const TreePtr<Term>& value);
+      static TermResultType make_result_type(StatementMode mode, const TreePtr<Term>& value, const SourceLocation& location);
     public:
       static const VtableType vtable;
 
@@ -327,7 +327,7 @@ namespace Psi {
     class DefaultValue : public Constructor {
     public:
       static const VtableType vtable;
-      DefaultValue(const TreePtr<Term>& type);
+      DefaultValue(const TreePtr<Term>& type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultType check_type_impl(const DefaultValue& self);
       TreePtr<Term> value_type;
@@ -637,6 +637,7 @@ namespace Psi {
 
     class Function : public ModuleGlobal {
       DelayedValue<TreePtr<Term>, TreePtr<Function> > m_body;
+      void check_type();
       TreePtr<Function> get_ptr() const {return tree_from(this);}
       
     public:
@@ -654,6 +655,7 @@ namespace Psi {
       m_body(module.compile_context(), location, body_callback),
       arguments(arguments_),
       return_target(return_target_) {
+        check_type();
       }
 
       /// \brief Argument values.
@@ -809,7 +811,7 @@ namespace Psi {
      * Unwinds to the specified jump group and then takes the specified branch.
      */
     class JumpTo : public Term {
-      static TermResultType make_result_type(CompileContext& compile_context);
+      static TermResultType make_result_type(const TreePtr<JumpTarget>& target, const TreePtr<Term>& argument, const SourceLocation& location);
     public:
       static const VtableType vtable;
       
@@ -824,12 +826,12 @@ namespace Psi {
      * \brief Function invocation expression.
      */
     class FunctionCall : public Term {
-      TermResultType get_result_type(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      static TermResultType get_result_type(const TreePtr<Term>& target, PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
 
     public:
       static const VtableType vtable;
 
-      FunctionCall(const TreePtr<Term>& target, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
+      FunctionCall(const TreePtr<Term>& target, PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
 
       TreePtr<Term> target;
@@ -1154,6 +1156,22 @@ namespace Psi {
        * InterfaceValue trees occuring in this value can use implementations introduced
        * by this tree.
        */
+      TreePtr<Term> value;
+    };
+    
+    /**
+     * \brief This class allows non-pure trees to be stored as functional values without using Statement.
+     *
+     * This works because the lifetime of functional values may be extended until the control flow merges
+     * with a path in which they are not in scope; unlike for objects generally which are constructed
+     * and destroyed at fixed times.
+     */
+    class FunctionalEvaluate : public Term {
+      static TermResultType make_result_type(const TreePtr<Term>& value, const SourceLocation& location);
+    public:
+      static const VtableType vtable;
+      FunctionalEvaluate(const TreePtr<Term>& value, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
       TreePtr<Term> value;
     };
   }

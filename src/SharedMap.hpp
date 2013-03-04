@@ -2,6 +2,8 @@
 #define HPP_PSI_SHARED_MAP
 
 #include "Runtime.hpp"
+#include <boost/make_shared.hpp>
+#include <boost/iterator/iterator_facade.hpp>
 
 namespace Psi {
   template<typename T, typename Comparator=std::less<T> >
@@ -359,6 +361,67 @@ namespace Psi {
     bool contains(const value_type& v) {return m_tree.lookup(v);}
     void merge(const SharedSet& src) {m_tree.merge(src.m_tree);}
   };
+  
+  /**
+   * A shared list in which the elements can be modified.
+   */
+  template<typename T>
+  class MutableSharedList {
+    struct Node;
+    typedef boost::shared_ptr<Node> Ptr;
+    
+    struct Node {
+      T data;
+      Ptr next;
+      Node(const T& data_, const Ptr& next_) : data(data_), next(next_) {}
+    };
+    
+    Ptr m_list;
+    
+  public:
+    typedef T value_type;
+    
+    T& front() const {
+      PSI_ASSERT(m_list);
+      return m_list->data;
+    }
+    
+    void push_front(const T& data) {
+      m_list = boost::make_shared<Node>(data, m_list);
+    }
+    
+    void pop_front() {
+      PSI_ASSERT(m_list);
+      m_list = m_list->next;
+    }
+    
+    class iterator : public boost::iterator_facade<iterator, T, boost::forward_traversal_tag> {
+      friend class boost::iterator_core_access;
+      Node *m_node;
+      
+      void increment() {m_node = m_node->next.get();}
+      bool equal(const iterator& other) const {return m_node == other.m_node;}
+      T& dereference() const {return m_node->data;}
+      
+    public:
+      iterator() : m_node(NULL) {}
+      explicit iterator(Node *node) : m_node(node) {}
+    };
+    
+    typedef iterator const_iterator;
+    
+    iterator begin() const {return iterator(m_list.get());}
+    iterator end() const {return iterator();}
+    
+    /**
+     * Length of this list.
+     * 
+     * \internal Currently this is O(N), but it could be changed O(1) if necessary since no splicing is possible.
+     */
+    std::size_t size() const {return std::distance(begin(), end());}
+  };
+  
+  template<typename T> class SharedList : public MutableSharedList<const T> {};
 }
 
 #endif

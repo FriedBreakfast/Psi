@@ -35,13 +35,21 @@ namespace Psi {
       result_mode_by_value, ///< By value
       result_mode_functional, ///< By value, functional
       result_mode_rvalue, ///< R-value reference
-      result_mode_lvalue, ///< L-value reference
-      result_mode_bottom ///< Cannot produce a result
+      result_mode_lvalue ///< L-value reference
     };
     
     PSI_VISIT_SIMPLE(ResultMode);
     
-    ResultMode parameter_to_result_mode(ParameterMode mode);
+    PSI_SMALL_ENUM(TermMode) {
+      term_mode_value, /// By value (on the stack or functional)
+      term_mode_rref, /// R-value reference
+      term_mode_lref, /// L-value reference
+      term_mode_bottom /// Cannot produce a result
+    };
+
+    PSI_VISIT_SIMPLE(TermMode);
+    
+    TermMode parameter_to_term_mode(ParameterMode mode);
     
     /**
      * \brief What sort of type an expression represents.
@@ -54,7 +62,9 @@ namespace Psi {
       /// \brief A primitive type; values may be used functionally
       type_mode_primitive,
       /// \brief A complex type; values may not be used functionally
-      type_mode_complex
+      type_mode_complex,
+      /// \brief Unique value for the bottom type
+      type_mode_bottom
     };
     
     PSI_VISIT_SIMPLE(TypeMode);

@@ -126,7 +126,7 @@ namespace Psi {
       
       case statement_mode_value:
         // Make type declarations functional without the user writing '::'
-        if ((value->result_type.mode == result_mode_functional) && value->result_type.type->is_type())
+        if (value->is_functional() && value->result_type.type->is_type())
           return statement_mode_functional;
         else
           return statement_mode_value;

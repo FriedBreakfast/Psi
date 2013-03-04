@@ -92,7 +92,7 @@ namespace Psi {
      */
     Object::Object(const ObjectVtable *vtable)
     : m_reference_count(0),
-    m_compile_context(&compile_context) {
+    m_compile_context(NULL) {
       PSI_COMPILER_SI_INIT(vtable);
       PSI_ASSERT(!m_vptr->abstract);
     }
@@ -113,9 +113,8 @@ namespace Psi {
     const SIVtable Object::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.Object", NULL);
 
     /// \copydoc Object::Object(const ObjectVtable*)
-    Tree::Tree(const TreeVtable *vptr, const SourceLocation& location)
-    : Object(PSI_COMPILER_VPTR_UP(Object, vptr)),
-    m_location(location) {
+    Tree::Tree(const TreeVtable *vptr)
+    : Object(PSI_COMPILER_VPTR_UP(Object, vptr)) {
     }
 
     Tree::Tree(const TreeVtable *vptr, CompileContext& compile_context, const SourceLocation& location)

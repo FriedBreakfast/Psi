@@ -96,7 +96,7 @@ namespace Psi {
 
       metatype = compile_context.get_functional(Metatype(), psi_location.named_child("Type"));
       empty_type = compile_context.get_functional(EmptyType(), psi_location.named_child("EmptyType"));
-      empty_value = compile_context.get_functional(DefaultValue(empty_type), psi_location.named_child("Empty"));
+      empty_value = TermBuilder::default_value(empty_type, psi_location.named_child("Empty"));
       bottom_type = compile_context.get_functional(BottomType(), psi_location.named_child("Bottom"));
       upref_type = compile_context.get_functional(UpwardReferenceType(), psi_location.named_child("UpwardReference"));
       size_type = compile_context.get_functional(PrimitiveType("core.uint.ptr"), psi_location.named_child("Size"));

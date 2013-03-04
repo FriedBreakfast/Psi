@@ -12,14 +12,14 @@ namespace Psi {
     /**
      * \brief Convert a ParameterMode to a ResultMode
      */
-    ResultMode parameter_to_result_mode(ParameterMode mode) {
+    TermMode parameter_to_term_mode(ParameterMode mode) {
       switch (mode) {
       case parameter_mode_input:
       case parameter_mode_output:
       case parameter_mode_io:
-      case parameter_mode_rvalue: return result_mode_lvalue;
+      case parameter_mode_rvalue: return term_mode_lref;
       case parameter_mode_functional:
-      case parameter_mode_phantom: return result_mode_functional;
+      case parameter_mode_phantom: return term_mode_value;
       default: PSI_FAIL("unknown enum value");
       }
     }
@@ -115,7 +115,7 @@ namespace Psi {
 
         TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
         TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
-        TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, result_mode_functional, argument_location);
+        TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, term_mode_value, argument_location);
         argument_list.push_back(argument);
         argument_modes.push_back(parameter_mode_functional);
 
@@ -142,7 +142,7 @@ namespace Psi {
 
         TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
         TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
-        TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, parameter_to_result_mode(argument_expr.mode), argument_location);
+        TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, parameter_to_term_mode(argument_expr.mode), argument_location);
         argument_list.push_back(argument);
         argument_modes.push_back(argument_expr.mode);
 

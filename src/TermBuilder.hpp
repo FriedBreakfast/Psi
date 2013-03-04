@@ -100,8 +100,11 @@ struct TermBuilder : NonConstructible {
   static TreePtr<Term> solidify_during(const PSI_STD::vector<TreePtr<Term> >& value, const TreePtr<Term>& body, const SourceLocation& location);
   static TreePtr<Term> introduce_implementation(const PSI_STD::vector<TreePtr<Implementation> >& implementations, const TreePtr<Term>& value, const SourceLocation& location);
   static TreePtr<JumpTo> jump_to(const TreePtr<JumpTarget>& target, const TreePtr<Term>& argument, const SourceLocation& location);
-  static TreePtr<JumpTarget> jump_target(const TreePtr<Term>& value, ResultMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location);
-  static TreePtr<JumpTarget> exit_target(ResultMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location);
+  static TreePtr<JumpTarget> jump_target(const TreePtr<Term>& value, const SourceLocation& location);
+  static TreePtr<JumpTarget> jump_target(const TreePtr<Term>& value, StatementMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location);
+  static TreePtr<JumpTarget> exit_target(const TreePtr<Term>& type, ResultMode result_mode, const SourceLocation& location);
+  static TreePtr<FunctionalEvaluate> functional_eval(const TreePtr<Term>& value, const SourceLocation& location);
+  static TreePtr<Term> to_functional(const TreePtr<Term>& value, const SourceLocation& location);
 //@}
   
 /// \name Globals
@@ -136,7 +139,7 @@ struct TermBuilder : NonConstructible {
 //@}
   
   static TreePtr<Term> parameter(const TreePtr<Term>& type, unsigned depth, unsigned index, const SourceLocation& location);
-  static TreePtr<Anonymous> anonymous(const TreePtr<Term>& type, ResultMode mode, const SourceLocation& location);
+  static TreePtr<Anonymous> anonymous(const TreePtr<Term>& type, TermMode mode, const SourceLocation& location);
 };
 }
 }

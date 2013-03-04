@@ -119,7 +119,7 @@ TreePtr<Term> TermBuilder::movable(const TreePtr<Term>& value, const SourceLocat
 
 /// \brief Get the default value of a given type.
 TreePtr<Term> TermBuilder::default_value(const TreePtr<Term>& type, const SourceLocation& location) {
-  return type.compile_context().get_functional(DefaultValue(type), location);
+  return type.compile_context().get_functional(DefaultValue(type, location), location);
 }
 
 /// \brief Create a value using a builtin constructor
@@ -280,7 +280,9 @@ TreePtr<Term> TermBuilder::block(const SourceLocation& location, const PSI_STD::
  * \brief Call a function.
  */
 TreePtr<Term> TermBuilder::function_call(const TreePtr<Term>& function, const PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
-  return tree_from(::new FunctionCall(function, arguments, location));
+  // Need to copy arguments array because the FunctionCall constructor will steal the memory
+  PSI_STD::vector<TreePtr<Term> > arguments_copy(arguments);
+  return tree_from(::new FunctionCall(function, arguments_copy, location));
 }
 
 /**
@@ -300,13 +302,47 @@ TreePtr<JumpTo> TermBuilder::jump_to(const TreePtr<JumpTarget>& target, const Tr
 }
 
 /// \brief Create a jump label
-TreePtr<JumpTarget> TermBuilder::jump_target(const TreePtr<Term>& value, ResultMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location) {
-  return tree_from(::new JumpTarget(value, argument_mode, argument, location));
+TreePtr<JumpTarget> TermBuilder::jump_target(const TreePtr<Term>& value, StatementMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location) {
+  ResultMode result_mode;
+  switch (argument_mode) {
+  case statement_mode_value: result_mode = result_mode_by_value; break;
+  case statement_mode_functional: result_mode = result_mode_functional; break;
+  case statement_mode_ref: result_mode = result_mode_lvalue; break;
+  case statement_mode_destroy: value.compile_context().error_throw(location, "Jump target argument mode may not be 'destroy'");
+  default: PSI_FAIL("Unrecognised statement mode");
+  }
+  return tree_from(::new JumpTarget(value, result_mode, argument, location));
+}
+
+/// \brief Create a jump label
+TreePtr<JumpTarget> TermBuilder::jump_target(const TreePtr<Term>& value, const SourceLocation& location) {
+  return tree_from(::new JumpTarget(value, result_mode_by_value, TreePtr<Anonymous>(), location));
 }
 
 /// \brief Create a function exit label
-TreePtr<JumpTarget> TermBuilder::exit_target(ResultMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location) {
-  return jump_target(default_, argument_mode, argument, location);
+TreePtr<JumpTarget> TermBuilder::exit_target(const TreePtr<Term>& type, ResultMode result_mode, const SourceLocation& location) {
+  TreePtr<Anonymous> argument = anonymous(type, term_mode_value, location);
+  return tree_from(::new JumpTarget(TreePtr<Term>(), result_mode, argument, location));
+}
+
+/**
+ * \brief Create a tree which runs a mutating evaluation and returns a functional result.
+ * 
+ * This tree marks where the tree should be evaluated and allows the result to be referred back to later.
+ */
+TreePtr<FunctionalEvaluate> TermBuilder::functional_eval(const TreePtr<Term>& value, const SourceLocation& location) {
+  return tree_from(::new FunctionalEvaluate(value, location));
+}
+
+/**
+ * \brief Wrap value in a FunctionalEvaluate tree if it is not functional already.
+ */
+TreePtr<Term> TermBuilder::to_functional(const TreePtr<Term>& value, const SourceLocation& location) {
+  PSI_ASSERT(!value->result_type.type || (value->result_type.type->result_type.type_mode != type_mode_complex));
+  if (!value->result_type.pure)
+    return functional_eval(value, location);
+  else
+    return value;
 }
 
 /**
@@ -367,7 +403,7 @@ TreePtr<Term> TermBuilder::parameter(const TreePtr<Term>& type, unsigned depth, 
  * This is used to represent function parameters, and is also used as a placeholder during generic
  * type construction before being replaced by Parameter.
  */
-TreePtr<Anonymous> TermBuilder::anonymous(const TreePtr<Term>& type, ResultMode mode, const SourceLocation& location) {
+TreePtr<Anonymous> TermBuilder::anonymous(const TreePtr<Term>& type, TermMode mode, const SourceLocation& location) {
   return TreePtr<Anonymous>(::new Anonymous(type, mode, location));
 }
 }

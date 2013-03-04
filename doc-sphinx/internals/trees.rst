@@ -15,31 +15,28 @@ However, generically some remarks can still be made.
 First when a term is evaluated it is completely evaluated before another term is evaluated; evaluation of two terms will not be interleaved.
 This means that some subtleties of C++ argument evaluation are avoided: an expression which allocates memory and creates a smart pointer is safe
 because the smart pointer creation will immediately follow memory allocation, rather than some other operation in the function argument list.
-Second, there is only a single way to reuse computed values: using the :psi:`block <Psi::Compiler::Block>`, :psi:`statement <Psi::Compiler::Statement>`
-and :psi:`statement reference<Psi::Compiler::StatementRef>` trees.
+There are two ways to reuse computed values: using the :psi:`block <Psi::Compiler::Block>` and :psi:`statement <Psi::Compiler::Statement>` trees,
+or the :psi:`functional evaluation <Psi::Compiler::FunctionalEvaluate>` and :psi:`functional reference<Psi::Compiler::FunctionalReference>`.
 Otherwise, if a term appears in two different places it will be evaluated twice (if two copies of a block are in scope this is an error).
 
-.. _psi.internals.trees.result_types:
+Variable scoping
+----------------
 
-Result types
-------------
+There are two distinct types of variables which can be represented by trees: functional variables and stateful variables.
+References (both l-value and r-value) count as functional variables, because they are internally equivalent to functional pointers.
+The scoping behaviour of these two types of variable is different.
 
-The rules for tree evaluation make the result types of terms slightly non-trivial.
-Essentially, if the type of an expression depends on tree which requires stateful evaluation then this value
-must be replaced by a wildcard (wrappped by an exists tree) in the resulting type.
-To give an example in pseudocode::
+Stateful variables are those which are stored in memory and can be modified after their initial assignment.
+They may have a user-specified constructor and destructor.
+These variables are explicitly scoped: their constructor is called when a value is assigned, and they remain in scope until one of the following:
 
-  x : 3;
-  y : make_array(int,x);
-  
-Although ``y`` does indeed have length 3, it will have a type like ``exists (a:int -> array(int,a))``,
-because as ``x`` is a variable re-evaluating it may give a different result.
-This also means that the array elements in this case would have to be stored on the heap because the length of a stack allocation cannot depend on a wildcard.
-This can be fixed by using::
+  1. Until the tree it is part of is converted to a functional value.
+  2. Until the tree it is part of is stored to a named variable in a block
+  3. If it is a named variable in a block, until the end of that block.
+  4. If it is part of the result value of a block, until the end of that block.
 
-  x :: 3;
-  y : make_array(int,3);
-  
-``::`` indicates a definition rather than an assignment, so ``x`` cannot be modified and now ``y`` will have a type like ``array(int,x)``,
-and the array elements can therefore be stored on the heap until ``x`` goes out of scope.
-The trick is that the number 3 in this example may be replaced by a variable, in which case the value is frozen at the point of definition.
+When a stateful variable goes out of scope, its destructor is run and its stack space is reclaimed.
+
+Functional variables are stored in virtual registers and may not have user specified constructors and destructors.
+They remain in scope as long as the point as long as they dominate the current block,
+that is at which they are defined is guaranteed to have run before the current evaluation point.

@@ -261,7 +261,7 @@ namespace Psi {
 
     TermResultType Metatype::check_type_impl(const Metatype&) {
       TermResultType result;
-      result.mode = result_mode_functional;
+      result.mode = term_mode_value;
       result.type_mode = type_mode_metatype;
       result.pure = true;
       return result;
@@ -280,7 +280,7 @@ namespace Psi {
 
     const SIVtable Type::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Type", Functional);
 
-    TermResultType Anonymous::make_result_type(const TreePtr<Term>& type, ResultMode mode, const SourceLocation& location) {
+    TermResultType Anonymous::make_result_type(const TreePtr<Term>& type, TermMode mode, const SourceLocation& location) {
       TermResultType rt;
       rt.type = type;
       rt.mode = mode;
@@ -289,13 +289,11 @@ namespace Psi {
       
       if (type->result_type.type_mode == type_mode_none)
         type.compile_context().error_throw(location, "Type of anonymous term is not a type");
-      else if ((type->result_type.type_mode == type_mode_complex) && (mode == result_mode_functional))
-        type.compile_context().error_throw(location, "Type of anonymous term is not a type");
 
       return rt;
     }
 
-    Anonymous::Anonymous(const TreePtr<Term>& type, ResultMode mode, const SourceLocation& location)
+    Anonymous::Anonymous(const TreePtr<Term>& type, TermMode mode, const SourceLocation& location)
     : Term(&vtable, make_result_type(type, mode, location), location) {
     }
     
@@ -325,7 +323,7 @@ namespace Psi {
 
       TermResultType result;
       result.type = self.parameter_type;
-      result.mode = result_mode_functional;
+      result.mode = term_mode_value;
       result.pure = true;
       result.type_mode = (self.parameter_type->result_type.type_mode == type_mode_primitive) ? type_mode_none : type_mode_primitive;
       return result;

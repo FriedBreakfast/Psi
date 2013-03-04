@@ -127,7 +127,7 @@ namespace Psi {
       /// Result type
       TreePtr<Term> type;
       /// Result storage mode
-      ResultMode mode;
+      TermMode mode;
       /// Whether this term requires any evaluation
       PsiBool pure;
       /// What sort of type this is; if it is a type.
@@ -156,6 +156,14 @@ namespace Psi {
 
       /// \brief The result type and mode of this term.
       TermResultType result_type;
+      
+      /**
+       * \brief Is this a functional value?
+       * 
+       * This is true when the result of this term is not a reference and
+       * its type is primitive.
+       */
+      bool is_functional() const {return (result_type.mode == term_mode_value) && (!result_type.type || result_type.type->is_primitive_type());}
 
       /**
        * \brief Is this a type?
@@ -164,6 +172,11 @@ namespace Psi {
        * counts as a type here.
        */
       bool is_type() const {return result_type.type_mode != type_mode_none;}
+      
+      /**
+       * \brief Is this a primitive type?
+       */
+      bool is_primitive_type() const {return (result_type.type_mode == type_mode_metatype) || (result_type.type_mode == type_mode_primitive);}
       
       bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
       TreePtr<Term> parameterize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements) const;
@@ -553,11 +566,11 @@ namespace Psi {
      * The value must be defined elsewhere, for example by being part of a function.
      */
     class Anonymous : public Term {
-      static TermResultType make_result_type(const TreePtr<Term>& type, ResultMode mode, const SourceLocation& location);
+      static TermResultType make_result_type(const TreePtr<Term>& type, TermMode mode, const SourceLocation& location);
     public:
       static const VtableType vtable;
 
-      Anonymous(const TreePtr<Term>& type, ResultMode mode, const SourceLocation& location);
+      Anonymous(const TreePtr<Term>& type, TermMode mode, const SourceLocation& location);
       template<typename V> static void visit(V& v);
     };
 
