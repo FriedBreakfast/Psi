@@ -133,10 +133,6 @@ namespace Psi {
       print_term(std::cerr, ValuePtr<>(this));
     }
 #endif
-    
-    std::size_t Context::HashableValueHasher::operator() (const HashableValue& h) const {
-      return h.m_hash;
-    }
 
     HashableValue::HashableValue(Context& context, TermType term_type, const SourceLocation& location)
     : Value(context, term_type, ValuePtr<>(), location),
@@ -278,7 +274,7 @@ namespace Psi {
 
     Context::Context()
       : m_hash_term_buckets(initial_hash_term_buckets),
-        m_hash_value_set(HashTermSetType::bucket_traits(m_hash_term_buckets.get(), initial_hash_term_buckets)) {
+        m_hash_value_set(HashTermSetType::bucket_traits(m_hash_term_buckets.get(), m_hash_term_buckets.size())) {
     }
 
     struct Context::ValueDisposer {
@@ -346,6 +342,13 @@ namespace Psi {
       result->m_operation = hash.first;
       result->m_hash = hash.second;
       m_hash_value_set.insert_commit(*result, commit_data);
+      
+      if (m_hash_value_set.size() >= m_hash_value_set.bucket_count()) {
+        UniqueArray<HashTermSetType::bucket_type> new_buckets(m_hash_value_set.bucket_count() * 2);
+        m_hash_value_set.rehash(HashTermSetType::bucket_traits(new_buckets.get(), new_buckets.size()));
+        new_buckets.swap(m_hash_term_buckets);
+      }
+      
       return result;
     }
 

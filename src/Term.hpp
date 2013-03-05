@@ -4,6 +4,8 @@
 #include "TreeBase.hpp"
 #include "Enums.hpp"
 
+#include <boost/intrusive/unordered_set.hpp>
+
 namespace Psi {
   namespace Compiler {
     class Anonymous;
@@ -130,6 +132,8 @@ namespace Psi {
       TermMode mode;
       /// Whether this term requires any evaluation
       PsiBool pure;
+      /// Whether terms of this type have fixed size
+      PsiBool type_fixed_size;
       /// What sort of type this is; if it is a type.
       TypeMode type_mode;
       
@@ -177,6 +181,9 @@ namespace Psi {
        * \brief Is this a primitive type?
        */
       bool is_primitive_type() const {return (result_type.type_mode == type_mode_metatype) || (result_type.type_mode == type_mode_primitive);}
+      
+      /// \brief Can this type be stored in a register?
+      bool is_register_type() const {return is_primitive_type() && result_type.type_fixed_size;}
       
       bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
       TreePtr<Term> parameterize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements) const;
@@ -403,6 +410,7 @@ namespace Psi {
       std::size_t (*hash) (const Functional*);
       PsiBool (*equivalent) (const Functional*, const Functional*);
       void (*check_type) (TermResultType*, const Functional*);
+      Functional* (*clone) (const Functional*);
       void (*rewrite) (TreePtr<Term>*, const Functional*,TermRewriter*,const SourceLocation*);
       PsiBool (*compare) (const Functional*,const Functional*,TermComparator*);
     };
@@ -413,13 +421,17 @@ namespace Psi {
      * Apart from built-in function calls, all terms which only take pure
      * functional arguments derive from this.
      */
-    class Functional : public Term  {
+    class Functional : public Term {
+      friend class CompileContext;
       std::size_t m_hash;
+      typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
+      TermSetHook m_set_hook;
 
     public:
       typedef FunctionalVtable VtableType;
       static const SIVtable vtable;
       Functional(const VtableType *vptr);
+      ~Functional();
       template<typename V> static void visit(V& v);
       
       /**
@@ -452,6 +464,16 @@ namespace Psi {
       bool compare(const Functional& other, TermComparator& cmp) const {
         PSI_ASSERT(si_vptr(this) == si_vptr(&other));
         return derived_vptr(this)->compare(this, &other, &cmp);
+      }
+      
+      TermResultType check_type() const {
+        ResultStorage<TermResultType> result;
+        derived_vptr(this)->check_type(result.ptr(), this);
+        return result.done();
+      }
+      
+      Functional* clone() const {
+        return derived_vptr(this)->clone(this);
       }
       
       static TreePtr<Term> simplify_impl(const Functional&) {
@@ -513,6 +535,10 @@ namespace Psi {
         new (out) TermResultType (Derived::check_type_impl(*static_cast<const Derived*>(self)));
       }
       
+      static Functional* clone(const Functional *self) {
+        return ::new Derived(*static_cast<const Derived*>(self));
+      }
+      
       static void rewrite(TreePtr<Term> *out, const Functional *self, TermRewriter *cmp, const SourceLocation *location) {
         new (out) TreePtr<Term> (Derived::rewrite_impl(*static_cast<const Derived*>(self), *cmp, *location));
       }
@@ -528,6 +554,7 @@ namespace Psi {
     &::Psi::Compiler::FunctionalWrapper<derived>::hash, \
     &::Psi::Compiler::FunctionalWrapper<derived>::equivalent, \
     &::Psi::Compiler::FunctionalWrapper<derived>::check_type, \
+    &::Psi::Compiler::FunctionalWrapper<derived>::clone, \
     &::Psi::Compiler::FunctionalWrapper<derived>::rewrite, \
     &::Psi::Compiler::FunctionalWrapper<derived>::compare \
   }

@@ -16,6 +16,7 @@
 #include "Term.hpp"
 #include "Platform.hpp"
 #include "Enums.hpp"
+#include "Array.hpp"
 
 namespace Psi {
   namespace Parser {
@@ -311,6 +312,7 @@ namespace Psi {
      */
     class CompileContext {
       friend class Object;
+      friend class Functional;
       friend class RunningTreeCallback;
       struct ObjectDisposer;
 
@@ -321,11 +323,21 @@ namespace Psi {
       typedef boost::intrusive::list<Object, boost::intrusive::constant_time_size<false> > GCListType;
       GCListType m_gc_list;
 
+      struct FunctionalTermHasher {std::size_t operator () (const Functional& f) const {return f.m_hash;}};
+      struct FunctionalSetupEquals;
+      typedef boost::intrusive::unordered_set<Functional,
+                                              boost::intrusive::member_hook<Functional, boost::intrusive::unordered_set_member_hook<>, &Functional::m_set_hook>,
+                                              boost::intrusive::hash<FunctionalTermHasher>,
+                                              boost::intrusive::power_2_buckets<true> > FunctionalTermSetType;
+      static const std::size_t initial_functional_term_buckets = 64;
+      UniqueArray<FunctionalTermSetType::bucket_type> m_functional_term_buckets;
+      FunctionalTermSetType m_functional_term_set;
+
       SourceLocation m_root_location;
       BuiltinTypes m_builtins;
       boost::shared_ptr<TvmCompiler> m_tvm_compiler;
 
-      const Functional* get_functional_ptr(const Functional& f, const SourceLocation& location);
+      TreePtr<Functional> get_functional_ptr(const Functional& f, const SourceLocation& location);
 
     public:
       CompileContext(std::ostream *error_stream);
@@ -345,9 +357,6 @@ namespace Psi {
       template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, CompileError::to_str(message), flags);}
       template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, CompileError::to_str(message), flags);}
 
-      void completion_state_push(RunningTreeCallback *state);
-      void completion_state_pop();
-
       /// \brief Get the root location of this context.
       const SourceLocation& root_location() {return m_root_location;}
       /// \brief Get the builtin trees.
@@ -357,7 +366,7 @@ namespace Psi {
 
       template<typename T>
       TreePtr<T> get_functional(const T& t, const SourceLocation& location) {
-        return TreePtr<T>(static_cast<const T*>(get_functional_ptr(t, location)));
+        return treeptr_cast<T>(get_functional_ptr(t, location));
       }
     };
     

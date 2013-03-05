@@ -300,7 +300,7 @@ namespace Psi {
     public:
       static const VtableType vtable;
       
-      ConstantType(const TreePtr<Term>& value);
+      ConstantType(const TreePtr<Term>& value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultType check_type_impl(const ConstantType& self);
       
@@ -339,7 +339,7 @@ namespace Psi {
     class PointerType : public Type {
     public:
       static const VtableType vtable;
-      PointerType(const TreePtr<Term>& target_type);
+      PointerType(const TreePtr<Term>& target_type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultType check_type_impl(const PointerType& self);
       
@@ -409,6 +409,8 @@ namespace Psi {
       TreePtr<Term> value;
       /// \brief Index of member to get.
       TreePtr<Term> index;
+
+      static TreePtr<Term> element_type(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location);
     };
     
     /**
@@ -433,7 +435,7 @@ namespace Psi {
     class StructType : public Type {
     public:
       static const VtableType vtable;
-      StructType(const PSI_STD::vector<TreePtr<Term> >& members);
+      StructType(const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultType check_type_impl(const StructType& self);
 
@@ -460,7 +462,7 @@ namespace Psi {
     class ArrayType : public Type {
     public:
       static const VtableType vtable;
-      ArrayType(const TreePtr<Term>& element_type, const TreePtr<Term>& length);
+      ArrayType(const TreePtr<Term>& element_type, const TreePtr<Term>& length, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultType check_type_impl(const ArrayType& self);
       
@@ -491,7 +493,7 @@ namespace Psi {
     class UnionType : public Type {
     public:
       static const VtableType vtable;
-      UnionType(const PSI_STD::vector<TreePtr<Term> >& members);
+      UnionType(const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultType check_type_impl(const UnionType& self);
 
@@ -529,7 +531,7 @@ namespace Psi {
     class UpwardReference : public Constructor {
     public:
       static const VtableType vtable;
-      UpwardReference(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next);
+      UpwardReference(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultType check_type_impl(const UpwardReference& self);
       
@@ -539,6 +541,8 @@ namespace Psi {
       TreePtr<Term> outer_index;
       /// \brief Next upward reference in the chain
       TreePtr<Term> next;
+      
+      TreePtr<Term> inner_type() const;
     };
     
     /**
@@ -552,7 +556,7 @@ namespace Psi {
     class DerivedType : public Type {
     public:
       static const VtableType vtable;
-      DerivedType(const TreePtr<Term>& value_type, const TreePtr<Term>& upref);
+      DerivedType(const TreePtr<Term>& value_type, const TreePtr<Term>& upref, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultType check_type_impl(const DerivedType& self);
       
@@ -602,7 +606,7 @@ namespace Psi {
     public:
       static const VtableType vtable;
 
-      Exists(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& parameter_types);
+      Exists(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& parameter_types, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultType check_type_impl(const Exists& self);
 
@@ -897,7 +901,7 @@ namespace Psi {
     class IntegerValue : public Constant {
     public:
       static const VtableType vtable;
-      IntegerValue(const TreePtr<Term>& type, int value);
+      IntegerValue(const TreePtr<Term>& type, int value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultType check_type_impl(const IntegerValue& self);
       

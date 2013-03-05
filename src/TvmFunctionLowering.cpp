@@ -229,7 +229,7 @@ TvmResult TvmFunctionBuilder::merge_exit(const TermResultType& type, MergeExitLi
     Tvm::ValuePtr<Tvm::Block> exit_block = m_output->new_block(location, dominator.block);
     
     Tvm::ValuePtr<Tvm::Phi> phi;
-    if ((type.mode != term_mode_value) || type.type->is_primitive_type()) {
+    if ((type.mode != term_mode_value) || type.type->is_register_type()) {
       Tvm::ValuePtr<> phi_type = build(type.type).value;
       if (type.mode != term_mode_value)
         phi_type = Tvm::FunctionalBuilder::pointer_type(phi_type, location);
@@ -260,7 +260,7 @@ TvmResult TvmFunctionBuilder::merge_exit(const TermResultType& type, MergeExitLi
     return TvmResult(m_state.scope.get(), phi ? Tvm::ValuePtr<>(phi) : m_current_result_storage);
   } else if (values.size() == 1) {
     builder().set_insert_point(values.front().state.block);
-    if ((type.mode == term_mode_value) && !type.type->is_primitive_type()) {
+    if ((type.mode == term_mode_value) && !type.type->is_register_type()) {
       switch (values.front().mode) {
       case term_mode_value: PSI_ASSERT(values.front().value == m_current_result_storage); break;
       case term_mode_lref: copy_construct(type.type, m_current_result_storage, values.front().value, location); break;

@@ -27,6 +27,11 @@ TreePtr<Term> TermBuilder::boolean_type(CompileContext& compile_context) {
   return compile_context.builtins().boolean_type;
 }
 
+/// \brief Get the type of upward references
+TreePtr<Term> TermBuilder::upref_type(CompileContext& compile_context) {
+  return compile_context.builtins().upref_type;
+}
+
 TreePtr<Term> TermBuilder::size_type(CompileContext& compile_context) {
   return compile_context.builtins().size_type;
 }
@@ -44,22 +49,22 @@ TreePtr<Term> TermBuilder::primitive_type(CompileContext& compile_context, const
  * which can be recovered using the upward reference information.
  */
 TreePtr<Term> TermBuilder::derived(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location) {
-  return type.compile_context().get_functional(DerivedType(type, upref), location);
+  return type.compile_context().get_functional(DerivedType(type, upref, location), location);
 }
 
 /// \brief Get a pointer type
 TreePtr<Term> TermBuilder::pointer(const TreePtr<Term>& type, const SourceLocation& location) {
-  return type.compile_context().get_functional(PointerType(type), location);
+  return type.compile_context().get_functional(PointerType(type, location), location);
 }
 
 /// \brief Get a type for <tt>exists x.f(x)</tt>
 TreePtr<Term> TermBuilder::exists(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& parameter_types, const SourceLocation& location) {
-  return result_type.compile_context().get_functional(Exists(result_type, parameter_types), location);
+  return result_type.compile_context().get_functional(Exists(result_type, parameter_types, location), location);
 }
 
 /// \brief Get a constant type for a value
 TreePtr<Term> TermBuilder::constant(const TreePtr<Term>& value, const SourceLocation& location) {
-  return value.compile_context().get_functional(ConstantType(value), location);
+  return value.compile_context().get_functional(ConstantType(value, location), location);
 }
 
 /// \brief Get a function type.
@@ -71,7 +76,7 @@ TreePtr<FunctionType> TermBuilder::function_type(ResultMode result_mode, const T
 
 /// \brief Get an array type.
 TreePtr<ArrayType> TermBuilder::array_type(const TreePtr<Term>& element_type, const TreePtr<Term>& length, const SourceLocation& location) {
-  return element_type.compile_context().get_functional(ArrayType(element_type, length), location);
+  return element_type.compile_context().get_functional(ArrayType(element_type, length, location), location);
 }
 
 /// \copydoc TermBuilder::array_type
@@ -81,7 +86,7 @@ TreePtr<ArrayType> TermBuilder::array_type(const TreePtr<Term>& element_type, un
 
 /// \brief Get a struct type.
 TreePtr<StructType> TermBuilder::struct_type(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& member_types, const SourceLocation& location) {
-  return compile_context.get_functional(StructType(member_types), location);
+  return compile_context.get_functional(StructType(member_types, location), location);
 }
 
 /// \brief Get a string type of fixed length.
@@ -129,7 +134,7 @@ TreePtr<Term> TermBuilder::builtin_value(const String& constructor, const String
 
 /// \brief Get an upward reference
 TreePtr<Term> TermBuilder::upref(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next, const SourceLocation& location) {
-  return outer_type.compile_context().get_functional(UpwardReference(outer_type, outer_index, next), location);
+  return outer_type.compile_context().get_functional(UpwardReference(outer_type, outer_index, next, location), location);
 }
 
 /// \copydoc TermBuilder::upref
@@ -141,7 +146,7 @@ TreePtr<Term> TermBuilder::upref(const TreePtr<Term>& outer_type, unsigned outer
  * \brief Create an index term from an integer.
  */
 TreePtr<Term> TermBuilder::size_value(unsigned index, CompileContext& compile_context, const SourceLocation& location) {
-  return compile_context.get_functional(IntegerValue(size_type(compile_context), index), location);
+  return compile_context.get_functional(IntegerValue(size_type(compile_context), index, location), location);
 }
 
 /**
@@ -154,6 +159,14 @@ unsigned TermBuilder::size_from(const TreePtr<Term>& value, const SourceLocation
   if (!inner)
     value.compile_context().error_throw(location, "Expected a constant integer value");
   return inner->value;
+}
+
+/**
+ * \brief Compare a constant index to an integer.
+ */
+bool TermBuilder::size_equals(const TreePtr<Term>& value, std::size_t n) {
+  TreePtr<IntegerValue> inner = dyn_treeptr_cast<IntegerValue>(functional_unwrap(value));
+  return inner && (int(n) == inner->value);
 }
 
 /// \brief Value for StructType types.
@@ -335,7 +348,7 @@ TreePtr<FunctionalEvaluate> TermBuilder::functional_eval(const TreePtr<Term>& va
 }
 
 /**
- * \brief Wrap value in a FunctionalEvaluate tree if it is not functional already.
+ * \brief Wrap value in a FunctionalEvaluate tree if it is not pure already.
  */
 TreePtr<Term> TermBuilder::to_functional(const TreePtr<Term>& value, const SourceLocation& location) {
   PSI_ASSERT(!value->result_type.type || (value->result_type.type->result_type.type_mode != type_mode_complex));
@@ -343,6 +356,14 @@ TreePtr<Term> TermBuilder::to_functional(const TreePtr<Term>& value, const Sourc
     return functional_eval(value, location);
   else
     return value;
+}
+
+/**
+ * \brief Wrap every value in a vector in a FunctionalEvaluate tree if it is not pure
+ */
+void TermBuilder::to_functional(PSI_STD::vector<TreePtr<Term> >& values, const SourceLocation& location) {
+  for (PSI_STD::vector<TreePtr<Term> >::iterator ii = values.begin(), ie = values.end(); ii != ie; ++ii)
+    *ii = to_functional(*ii, location);
 }
 
 /**

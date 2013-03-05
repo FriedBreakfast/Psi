@@ -15,6 +15,7 @@ struct TermBuilder : NonConstructible {
   static TreePtr<Term> bottom_type(CompileContext& compile_context);
   static TreePtr<Term> empty_type(CompileContext& compile_context);
   static TreePtr<Term> boolean_type(CompileContext& compile_context);
+  static TreePtr<Term> upref_type(CompileContext& compile_context);
   
   static TreePtr<Term> primitive_type(CompileContext& compile_context, const String& name, const SourceLocation& location);
   static TreePtr<Term> derived(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location);
@@ -65,6 +66,7 @@ struct TermBuilder : NonConstructible {
   
   static TreePtr<Term> size_value(unsigned index, CompileContext& compile_context, const SourceLocation& location);
   static unsigned size_from(const TreePtr<Term>& value, const SourceLocation& location);
+  static bool size_equals(const TreePtr<Term>& value, std::size_t n);
   
   static TreePtr<Term> struct_value(const TreePtr<StructType>& type, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
   static TreePtr<Term> struct_value(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
@@ -105,6 +107,7 @@ struct TermBuilder : NonConstructible {
   static TreePtr<JumpTarget> exit_target(const TreePtr<Term>& type, ResultMode result_mode, const SourceLocation& location);
   static TreePtr<FunctionalEvaluate> functional_eval(const TreePtr<Term>& value, const SourceLocation& location);
   static TreePtr<Term> to_functional(const TreePtr<Term>& value, const SourceLocation& location);
+  static void to_functional(PSI_STD::vector<TreePtr<Term> >& values, const SourceLocation& location);
 //@}
   
 /// \name Globals

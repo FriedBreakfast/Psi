@@ -35,6 +35,8 @@ namespace Psi {
       TvmScope* scope;
       
       TvmResult() : TvmResultBase(), scope(NULL) {}
+      TvmResult(TvmScope *scope_, const TvmResultBase& base)
+      : TvmResultBase(base), scope(scope_) {}
       TvmResult(TvmScope *scope_, const Tvm::ValuePtr<>& value_, const Tvm::ValuePtr<>& upref_=Tvm::ValuePtr<>())
       : TvmResultBase(value_, upref_), scope(scope_) {}
       
@@ -45,20 +47,24 @@ namespace Psi {
     typedef boost::shared_ptr<TvmScope> TvmScopePtr;
     
     class TvmScope : boost::noncopyable {
-      TvmScopePtr parent;
-      unsigned depth;
-      boost::unordered_map<TreePtr<Term>, TvmResultBase> variables;
-      boost::unordered_map<TreePtr<GenericType>, TvmResultBase> generics;
+      TvmScopePtr m_parent;
+      unsigned m_depth;
+      typedef boost::unordered_map<TreePtr<Term>, TvmResultBase> VariableMapType;
+      typedef boost::unordered_map<TreePtr<GenericType>, TvmResultBase> GenericMapType;
+      VariableMapType m_variables;
+      GenericMapType m_generics;
       
-      TvmScope();
+      TvmScope* put_scope(TvmScope *given, bool temporary);
       
     public:
+      TvmScope();
+      TvmScope(const TvmScopePtr& parent);
       static TvmScopePtr root();
       static TvmScopePtr new_(const TvmScopePtr& parent);
       
-      boost::optional<TvmResult> get(const TreePtr<Term>& key) const;
+      boost::optional<TvmResult> get(const TreePtr<Term>& key);
       void put(const TreePtr<Term>& key, const TvmResult& result, bool temporary=false);
-      boost::optional<TvmResult> get_generic(const TreePtr<GenericType>& key) const;
+      boost::optional<TvmResult> get_generic(const TreePtr<GenericType>& key);
       void put_generic(const TreePtr<GenericType>& key, const TvmResult& result, bool temporary=false);
       
       static TvmScope* join(TvmScope* lhs, TvmScope* rhs);

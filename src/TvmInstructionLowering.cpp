@@ -2,6 +2,7 @@
 #include "TreeMap.hpp"
 #include "TermBuilder.hpp"
 #include "Tvm/FunctionalBuilder.hpp"
+#include "Tvm/Aggregate.hpp"
 
 namespace Psi {
 namespace Compiler {
@@ -214,11 +215,25 @@ struct TvmFunctionBuilder::InstructionLowering {
       Tvm::ValuePtr<Tvm::Block> block = builder.builder().new_block((*ii)->location());
       builder.builder().set_insert_point(block);
 
-      if ((*ii)->argument)
-        builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope.get(), jd.storage));
+      if ((*ii)->argument) {
+        if ((*ii)->argument_mode == result_mode_by_value) {
+          Tvm::ValuePtr<> stack_ptr = builder.builder().stack_save((*ii)->location());
+          Tvm::ValuePtr<> dest_ptr = builder.builder().alloca_(Tvm::value_cast<Tvm::PointerType>(jd.storage->type())->target_type(), (*ii)->location());
+          builder.move_construct_destroy((*ii)->argument->result_type.type, dest_ptr, jd.storage, (*ii)->location());
+
+          if ((*ii)->argument->result_type.type->result_type.type_mode == type_mode_complex)
+            builder.push_cleanup(boost::make_shared<DestroyCleanup>(dest_ptr, (*ii)->argument->result_type.type, stack_ptr, (*ii)->location()));
+          else
+            builder.push_cleanup(boost::make_shared<StackRestoreCleanup>(stack_ptr, (*ii)->location()));
+          builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope.get(), dest_ptr));
+        } else {
+          builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope.get(), jd.storage));
+        }
+      }
       
       TvmResult entry_result = builder.build((*ii)->value);
       results.push_back(MergeExitEntry(entry_result.value, (*ii)->value->result_type.mode, builder.dominator_state()));
+      builder.cleanup_to(dominator.state.cleanup);
     }
     
     builder.m_state.jump_map = original_jump_map;
@@ -298,7 +313,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       const TreePtr<Term>& argument = call->arguments[ii];
       
       TvmResult arg_result;
-      if ((argument->result_type.mode == term_mode_value) && (argument->result_type.type->result_type.type_mode == type_mode_complex)) {
+      if ((argument->result_type.mode == term_mode_value) && !argument->result_type.type->is_register_type()) {
         TvmResult type = builder.build(argument->result_type.type);
         if (!object_stack_saved) {
           Tvm::ValuePtr<> ptr = builder.builder().stack_save(call->location());
@@ -339,7 +354,7 @@ struct TvmFunctionBuilder::InstructionLowering {
         case parameter_mode_io:
         case parameter_mode_input: {
           const TreePtr<Term>& argument = call->arguments[ii];
-          if ((argument->result_type.mode == term_mode_value) && (argument->result_type.type->result_type.type_mode == type_mode_primitive)) {
+          if ((argument->result_type.mode == term_mode_value) && argument->result_type.type->is_register_type()) {
             Tvm::ValuePtr<>& register_value = tvm_arguments[ii];
             if (!stack_ptr)
               stack_ptr = builder.builder().stack_save(call->location());
@@ -358,7 +373,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       Tvm::ValuePtr<> result_temporary, result_stack_ptr;
       if (ftype->result_mode == result_mode_by_value) {
         // Note that at a system level this parameter will be first in the list, and should be marked sret
-        if (call->result_type.type->result_type.type_mode == type_mode_complex) {
+        if (!call->result_type.type->is_register_type()) {
           tvm_arguments.push_back(builder.m_current_result_storage);
         } else {
           if (!stack_ptr)
@@ -421,5 +436,9 @@ struct TvmFunctionBuilder::InstructionLowering {
 
 TvmFunctionBuilder::InstructionLowering::CallbackMap
   TvmFunctionBuilder::InstructionLowering::callback_map(TvmFunctionBuilder::InstructionLowering::callback_map_initializer());
+  
+TvmResult TvmFunctionBuilder::build_instruction(const TreePtr<Term>& term) {
+  return InstructionLowering::callback_map.call(*this, term);
+}
 }
 }

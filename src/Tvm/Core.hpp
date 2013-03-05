@@ -699,7 +699,7 @@ namespace Psi {
 
       struct ValueDisposer;
       struct HashableSetupEquals;
-      struct HashableValueHasher {std::size_t operator () (const HashableValue&) const;};
+      struct HashableValueHasher {std::size_t operator () (const HashableValue& h) const {return h.m_hash;}};
 
       typedef boost::intrusive::unordered_set<HashableValue,
                                               boost::intrusive::member_hook<HashableValue, boost::intrusive::unordered_set_member_hook<>, &HashableValue::m_hashable_set_hook>,

@@ -285,6 +285,7 @@ namespace Psi {
       rt.type = type;
       rt.mode = mode;
       rt.pure = true;
+      rt.type_fixed_size = false;
       rt.type_mode = (type->result_type.type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
       
       if (type->result_type.type_mode == type_mode_none)
@@ -325,6 +326,7 @@ namespace Psi {
       result.type = self.parameter_type;
       result.mode = term_mode_value;
       result.pure = true;
+      result.type_fixed_size = false;
       result.type_mode = (self.parameter_type->result_type.type_mode == type_mode_primitive) ? type_mode_none : type_mode_primitive;
       return result;
     }

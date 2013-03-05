@@ -76,7 +76,11 @@ namespace Psi {
     }
 
     CompileContext::CompileContext(std::ostream *error_stream)
-    : m_error_stream(error_stream), m_error_occurred(false), m_running_completion_stack(NULL),
+    : m_error_stream(error_stream),
+    m_error_occurred(false),
+    m_running_completion_stack(NULL),
+    m_functional_term_buckets(initial_functional_term_buckets),
+    m_functional_term_set(FunctionalTermSetType::bucket_traits(m_functional_term_buckets.get(), m_functional_term_buckets.size())),
     m_root_location(PhysicalSourceLocation(), LogicalSourceLocation::new_root_location()) {
       PhysicalSourceLocation core_physical_location;
       m_root_location.physical.file.reset(new SourceFile());
@@ -255,6 +259,8 @@ namespace Psi {
 #endif
 
       m_gc_list.clear_and_dispose(ObjectDisposer());
+
+      PSI_WARNING(m_functional_term_set.empty());
     }
 
     void CompileContext::error(const SourceLocation& loc, const std::string& message, unsigned flags) {
@@ -273,6 +279,63 @@ namespace Psi {
      */
     void* CompileContext::jit_compile(const TreePtr<Global>& global) {
       return m_tvm_compiler->jit_compile(global);
+    }
+    
+    namespace {
+      struct FunctionalEqualsData {
+        std::size_t hash;
+        const SIVtable *vptr;
+        const Functional *value;
+      };
+
+      struct FunctionalSetupHasher {
+        std::size_t operator () (const FunctionalEqualsData& arg) const {
+          return arg.hash;
+        }
+      };
+    }
+    
+    struct CompileContext::FunctionalSetupEquals {
+      bool operator () (const FunctionalEqualsData& lhs, const Functional& rhs) const {
+        if (lhs.hash != rhs.m_hash)
+          return false;
+        if (lhs.vptr != si_vptr(&rhs))
+          return false;
+        return lhs.value->equivalent(rhs);
+      }
+    };
+
+    TreePtr<Functional> CompileContext::get_functional_ptr(const Functional& value, const SourceLocation& location) {
+      FunctionalEqualsData data;
+      data.hash = value.compute_hash();
+      data.vptr = si_vptr(&value);
+      data.value = &value;
+
+      FunctionalTermSetType::insert_commit_data commit_data;
+      std::pair<FunctionalTermSetType::iterator, bool> r = m_functional_term_set.insert_check(data, FunctionalSetupHasher(), FunctionalSetupEquals(), commit_data);
+      if (!r.second)
+        return TreePtr<Functional>(&*r.first);
+
+      Functional *result_ptr = value.clone();
+      TreePtr<Functional> result(result_ptr);
+
+      result_ptr->m_hash = data.hash;
+      result_ptr->m_compile_context = this;
+      result_ptr->m_location = location;
+
+      TermResultType rt = result_ptr->check_type();
+      PSI_ASSERT(!rt.type || rt.type->result_type.pure);
+      result_ptr->result_type = rt;
+      
+      m_functional_term_set.insert_commit(*result_ptr, commit_data);
+      
+      if (m_functional_term_set.size() >= m_functional_term_set.bucket_count()) {
+        UniqueArray<FunctionalTermSetType::bucket_type> new_buckets(m_functional_term_set.bucket_count() * 2);
+        m_functional_term_set.rehash(FunctionalTermSetType::bucket_traits(new_buckets.get(), new_buckets.size()));
+        new_buckets.swap(m_functional_term_buckets);
+      }
+      
+      return result;
     }
 
     class EvaluateContextDictionary : public EvaluateContext {

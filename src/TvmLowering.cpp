@@ -9,8 +9,118 @@
 
 namespace Psi {
 namespace Compiler {
+TvmScope::TvmScope()
+: m_depth(0) {
+}
+
+TvmScope::TvmScope(const TvmScopePtr& parent)
+: m_parent(parent),
+m_depth(parent->m_depth+1) {
+}
+
+TvmScopePtr TvmScope::root() {
+  return boost::make_shared<TvmScope>();
+}
+
+TvmScopePtr TvmScope::new_(const TvmScopePtr& parent) {
+  return boost::make_shared<TvmScope>(parent);
+}
+
+TvmScope* TvmScope::put_scope(TvmScope *given, bool temporary) {
+  if (temporary) {
+    return this;
+  } else if (!given) {
+    TvmScope *root = given;
+    while (root->m_parent)
+      root = root->m_parent.get();
+    return root;
+  } else {
+#ifdef PSI_DEBUG
+    PSI_ASSERT(given->m_depth <= m_depth);
+    TvmScope *parent = this;
+    while (parent->m_depth < given->m_depth)
+      parent = parent->m_parent.get();
+    PSI_ASSERT(parent == given);
+#endif
+    return given;
+  }
+}
+
+boost::optional<TvmResult> TvmScope::get(const TreePtr<Term>& key) {
+  for (TvmScope *scope = this; scope; scope = scope->m_parent.get()) {
+    VariableMapType::const_iterator it = scope->m_variables.find(key);
+    if (it != scope->m_variables.end())
+      return TvmResult(scope, it->second);
+  }
+  
+  return boost::none;
+}
+
+void TvmScope::put(const TreePtr<Term>& key, const TvmResult& result, bool temporary) {
+  TvmScope *target = put_scope(result.scope, temporary);
+  PSI_CHECK(target->m_variables.insert(std::make_pair<TreePtr<Term>, TvmResultBase>(key, result)).second);
+}
+
+boost::optional<TvmResult> TvmScope::get_generic(const TreePtr<GenericType>& key) {
+  for (TvmScope *scope = this; scope; scope = scope->m_parent.get()) {
+    GenericMapType::const_iterator it = scope->m_generics.find(key);
+    if (it != scope->m_generics.end())
+      return TvmResult(scope, it->second);
+  }
+  
+  return boost::none;
+}
+
+void TvmScope::put_generic(const TreePtr<GenericType>& key, const TvmResult& result, bool temporary) {
+  TvmScope *target = put_scope(result.scope, temporary);
+  PSI_CHECK(target->m_generics.insert(std::make_pair<TreePtr<GenericType>, TvmResultBase>(key, result)).second);
+}
+
+/**
+ * \brief Return the lower of two scopes.
+ * 
+ * One must be the ancestor of the other.
+ */
+TvmScope* TvmScope::join(TvmScope* lhs, TvmScope* rhs) {
+  if (!lhs)
+    return rhs;
+  else if (!rhs)
+    return lhs;
+  
+#ifdef PSI_DEBUG
+  TvmScope *outer;
+#endif
+  TvmScope *inner;
+  if (lhs->m_depth > rhs->m_depth) {
+#ifdef PSI_DEBUG
+    outer = rhs;
+#endif
+    inner = lhs;
+  } else {
+#ifdef PSI_DEBUG
+    outer = lhs;
+#endif
+    inner = rhs;
+  }
+  
+#ifdef PSI_DEBUG
+  TvmScope *sc = inner;
+  while (sc->m_depth < outer->m_depth)
+    outer = outer->m_parent.get();
+  PSI_ASSERT(sc == outer);
+#endif
+  
+  return inner;
+}
+
+TvmFunctionalBuilder::TvmFunctionalBuilder(CompileContext& compile_context, Tvm::Context& tvm_context)
+: m_compile_context(&compile_context),
+m_tvm_context(&tvm_context) {
+}
+
 TvmCompiler::TvmCompiler(CompileContext *compile_context)
-: m_compile_context(compile_context) {
+: m_compile_context(compile_context),
+m_scope(TvmScope::root()) {
   boost::shared_ptr<Tvm::JitFactory> factory = Tvm::JitFactory::get("llvm");
   m_jit = factory->create_jit();
   m_library_module.reset(new Tvm::Module(&m_tvm_context, "(library)", SourceLocation::root_location("(library)")));
