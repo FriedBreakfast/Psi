@@ -188,7 +188,7 @@ namespace Psi {
       BlockContext(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements,
                    const TreePtr<EvaluateContext>& next,
                    const SourceLocation& location)
-      : EvaluateContext(&vtable, m_next->module(), location),
+      : EvaluateContext(&vtable, next->module(), location),
       m_next(next) {
         std::size_t index = 0;
         m_has_last = false;
@@ -246,6 +246,14 @@ namespace Psi {
                                      PSI_STD::vector<TreePtr<OverloadValue> >& overload_list) {
         if (self.m_next)
           self.m_next->overload_list(overload_type, overload_list);
+      }
+
+      template<typename Derived>
+      static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
+        for (PSI_STD::vector<StatementValueType>::iterator ii = self.m_statements.begin(), ie = self.m_statements.end(); ii != ie; ++ii)
+          ii->get(&self, &BlockContext::get_ptr);
+        
+        Tree::complete_impl(self, queue);
       }
     };
 
@@ -344,8 +352,6 @@ namespace Psi {
         return result;
       }
 
-      TreePtr<EvaluateContext> next;
-
       template<typename Visitor>
       static void visit(Visitor& v) {
         visit_base<EvaluateContext>(v);
@@ -357,8 +363,8 @@ namespace Psi {
         NameMapType::const_iterator it = self.m_entries.find(name);
         if (it != self.m_entries.end()) {
           return lookup_result_match(it->second.get(&self, &NamespaceContext::get_ptr));
-        } else if (self.next) {
-          return self.next->lookup(name, location, evaluate_context);
+        } else if (self.m_next) {
+          return self.m_next->lookup(name, location, evaluate_context);
         } else {
           return lookup_result_none;
         }
@@ -366,8 +372,16 @@ namespace Psi {
       
       static void overload_list_impl(const NamespaceContext& self, const TreePtr<OverloadType>& overload_type,
                                      PSI_STD::vector<TreePtr<OverloadValue> >& overload_list) {
-        if (self.next)
-          self.next->overload_list(overload_type, overload_list);
+        if (self.m_next)
+          self.m_next->overload_list(overload_type, overload_list);
+      }
+
+      template<typename Derived>
+      static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
+        for (NameMapType::iterator ii = self.m_entries.begin(), ie = self.m_entries.end(); ii != ie; ++ii)
+          ii->second.get(&self, &NamespaceContext::get_ptr);
+        
+        Tree::complete_impl(self, queue);
       }
     };
 

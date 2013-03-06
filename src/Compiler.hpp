@@ -171,7 +171,7 @@ namespace Psi {
      */
     struct EvaluateContextVtable {
       TreeVtable base;
-      void (*lookup) (LookupResult<TreePtr<Term> >*, const EvaluateContext*, const String*, const SourceLocation*, const EvaluateContext*);
+      void (*lookup) (LookupResult<TreePtr<Term> >*, const EvaluateContext*, const String*, const SourceLocation*, const TreePtr<EvaluateContext>*);
       void (*overload_list) (const EvaluateContext*, const OverloadType*, PSI_STD::vector<TreePtr<OverloadValue> >*);
     };
 
@@ -189,7 +189,7 @@ namespace Psi {
 
       LookupResult<TreePtr<Term> > lookup(const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) const {
         ResultStorage<LookupResult<TreePtr<Term> > > result;
-        derived_vptr(this)->lookup(result.ptr(), this, &name, &location, evaluate_context.get());
+        derived_vptr(this)->lookup(result.ptr(), this, &name, &location, &evaluate_context);
         return result.done();
       }
 
@@ -212,8 +212,8 @@ namespace Psi {
      */
     template<typename Derived, typename Impl=Derived>
     struct EvaluateContextWrapper : NonConstructible {
-      static void lookup(LookupResult<TreePtr<Term> > *result, const EvaluateContext *self, const String *name, const SourceLocation *location, const EvaluateContext* evaluate_context) {
-        new (result) LookupResult<TreePtr<Term> >(Impl::lookup_impl(*static_cast<const Derived*>(self), *name, *location, tree_from(evaluate_context)));
+      static void lookup(LookupResult<TreePtr<Term> > *result, const EvaluateContext *self, const String *name, const SourceLocation *location, const TreePtr<EvaluateContext>* evaluate_context) {
+        new (result) LookupResult<TreePtr<Term> >(Impl::lookup_impl(*static_cast<const Derived*>(self), *name, *location, *evaluate_context));
       }
       
       static void overload_list(const EvaluateContext *self, const OverloadType *overload_type, PSI_STD::vector<TreePtr<OverloadValue> > *overload_list) {

@@ -131,6 +131,7 @@ namespace Psi {
       }
       
       template<typename V> static void visit(V& v);
+      template<typename Derived> static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue);
     };
     
     /**
@@ -216,6 +217,7 @@ namespace Psi {
       }
 
       template<typename Visitor> static void visit(Visitor& v);
+      template<typename Derived> static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue);
 
       /// \brief Parameters pattern.
       PSI_STD::vector<TreePtr<Term> > pattern;
@@ -720,6 +722,7 @@ namespace Psi {
       const TreePtr<Term>& body() const {return m_body.get(this, &Function::get_ptr);}
 
       template<typename Visitor> static void visit(Visitor& v);
+      template<typename Derived> static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue);
     };
 
     /**

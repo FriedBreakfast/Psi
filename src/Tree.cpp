@@ -176,6 +176,12 @@ namespace Psi {
       ("merge", &GlobalVariable::merge);
     }
     
+    template<typename Derived>
+    void GlobalVariable::complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
+      self.value();
+      ModuleGlobal::complete_impl(self, queue);
+    }
+    
     const TermVtable GlobalVariable::vtable = PSI_COMPILER_TERM(GlobalVariable, "psi.compiler.GlobalVariable", ModuleGlobal);
     
     ParameterizedType::ParameterizedType(const VtableType  *vptr)
@@ -354,6 +360,12 @@ namespace Psi {
       v("arguments", &Function::arguments)
       ("body", &Function::m_body)
       ("return_target", &Function::return_target);
+    }
+
+    template<typename Derived>
+    void Function::complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
+      self.body();
+      ModuleGlobal::complete_impl(self, queue);
     }
     
     const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", ModuleGlobal);
@@ -1215,6 +1227,13 @@ namespace Psi {
       ("member", &GenericType::m_member)
       ("overloads", &GenericType::m_overloads)
       ("primitive_mode", &GenericType::primitive_mode);
+    }
+
+    template<typename Derived>
+    void GenericType::complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
+      self.member_type();
+      self.overloads();
+      Tree::complete_impl(self, queue);
     }
 
     const TreeVtable GenericType::vtable = PSI_COMPILER_TREE(GenericType, "psi.compiler.GenericType", Tree);
