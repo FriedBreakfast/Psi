@@ -322,10 +322,7 @@ namespace Psi {
       result_ptr->m_hash = data.hash;
       result_ptr->m_compile_context = this;
       result_ptr->m_location = location;
-
-      TermResultType rt = result_ptr->check_type();
-      PSI_ASSERT(!rt.type || rt.type->result_type.pure);
-      result_ptr->result_type = rt;
+      result_ptr->type = result_ptr->check_type();
       
       m_functional_term_set.insert_commit(*result_ptr, commit_data);
       

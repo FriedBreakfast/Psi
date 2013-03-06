@@ -29,9 +29,11 @@ namespace Psi {
       CompileError error(m_callback->compile_context(), m_callback->location());
       error.info("Circular dependency found");
       boost::format fmt("via: '%s'");
-      for (RunningTreeCallback *ancestor = m_callback->compile_context().m_running_completion_stack;
-           ancestor && (ancestor->m_callback != m_callback); ancestor = ancestor->m_parent)
+      for (RunningTreeCallback *ancestor = m_callback->compile_context().m_running_completion_stack; ancestor; ancestor = ancestor->m_parent) {
         error.info(ancestor->m_callback->location(), fmt % ancestor->m_callback->location().logical->error_name(m_callback->location().logical));
+        if (ancestor == this)
+          break;
+      }
       error.end();
       throw CompileException();
     }

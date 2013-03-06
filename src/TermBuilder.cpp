@@ -71,7 +71,7 @@ TreePtr<Term> TermBuilder::constant(const TreePtr<Term>& value, const SourceLoca
 TreePtr<FunctionType> TermBuilder::function_type(ResultMode result_mode, const TreePtr<Term>& result_type,
                                                  const PSI_STD::vector<FunctionParameterType>& parameter_types,
                                                  const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces, const SourceLocation& location) {
-  return result_type.compile_context().get_functional(FunctionType(result_mode, result_type, parameter_types, interfaces), location);
+  return result_type.compile_context().get_functional(FunctionType(result_mode, result_type, parameter_types, interfaces, location), location);
 }
 
 /// \brief Get an array type.
@@ -351,8 +351,8 @@ TreePtr<FunctionalEvaluate> TermBuilder::functional_eval(const TreePtr<Term>& va
  * \brief Wrap value in a FunctionalEvaluate tree if it is not pure already.
  */
 TreePtr<Term> TermBuilder::to_functional(const TreePtr<Term>& value, const SourceLocation& location) {
-  PSI_ASSERT(!value->result_type.type || (value->result_type.type->result_type.type_mode != type_mode_complex));
-  if (!value->result_type.pure)
+  PSI_ASSERT(!value->type || (value->type->result_info().type_mode != type_mode_complex));
+  if (!value->pure())
     return functional_eval(value, location);
   else
     return value;
@@ -373,7 +373,7 @@ void TermBuilder::to_functional(PSI_STD::vector<TreePtr<Term> >& values, const S
  * allows a simple value to be passed in.
  */
 TreePtr<Global> TermBuilder::global_variable(const TreePtr<Module>& module, bool local, bool constant, bool merge, const SourceLocation& location, const TreePtr<Term>& value) {
-  return global_variable(module, value->result_type.type, local, constant, merge, location, value);
+  return global_variable(module, value->type, local, constant, merge, location, value);
 }
 
 /**

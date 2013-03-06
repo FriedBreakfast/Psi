@@ -185,7 +185,7 @@ namespace Psi {
       // Generate function type - parameterize parameters!
       PSI_STD::vector<FunctionParameterType> argument_types;
       for (unsigned ii = 0, ie = argument_list.size(); ii != ie; ++ii)
-        argument_types.push_back(FunctionParameterType(argument_modes[ii], argument_list[ii]->result_type.type->parameterize(argument_list[ii].location(), argument_list)));
+        argument_types.push_back(FunctionParameterType(argument_modes[ii], argument_list[ii]->type->parameterize(argument_list[ii].location(), argument_list)));
       TreePtr<Term> result_type_param = result_type->parameterize(result_type.location(), argument_list);
       for (PSI_STD::vector<TreePtr<InterfaceValue> >::iterator ii = interfaces.begin(), ie = interfaces.end(); ii != ie; ++ii)
         *ii = treeptr_cast<InterfaceValue>((*ii)->parameterize(ii->location(), argument_list));
@@ -207,7 +207,7 @@ namespace Psi {
     TreePtr<Term> function_call(const TreePtr<Term>& function, const PSI_STD::vector<TreePtr<Term> >& explicit_arguments, const SourceLocation& location) {
       CompileContext& compile_context = function.compile_context();
 
-      TreePtr<FunctionType> ftype = dyn_treeptr_cast<FunctionType>(function->result_type.type);
+      TreePtr<FunctionType> ftype = dyn_treeptr_cast<FunctionType>(function->type);
       if (!ftype)
         compile_context.error_throw(location, "Call target does not have function type");
 
@@ -225,7 +225,7 @@ namespace Psi {
       all_arguments.insert(all_arguments.end(), explicit_arguments.begin(), explicit_arguments.end());
       
       for (unsigned ii = 0, ie = explicit_arguments.size(); ii != ie; ++ii) {
-        if (!explicit_arguments[ii]->result_type.type->match(ftype->parameter_types[ii].type, all_arguments, 0))
+        if (!explicit_arguments[ii]->type->match(ftype->parameter_types[ii].type, all_arguments, 0))
           function.compile_context().error_throw(explicit_arguments[ii].location(), "Incorrect argument type");
       }
 

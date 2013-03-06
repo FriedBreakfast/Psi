@@ -12,17 +12,31 @@ namespace Psi {
     const SIVtable TermComparator::vtable = PSI_COMPILER_SI_ABSTRACT("psi.compiler.TermComparator", NULL);
 
     Term::Term(const TermVtable *vptr)
-    : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr)) {
+    : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr)),
+    m_result_info_computed(false),
+    m_pure(-1) {
     }
 
-    Term::Term(const TermVtable *vptr, CompileContext& compile_context, const TermResultType& result_type_, const SourceLocation& location)
+    Term::Term(const TermVtable *vptr, CompileContext& compile_context, const TreePtr<Term>& type_, const SourceLocation& location)
     : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location),
-    result_type(result_type_) {
+    m_result_info_computed(false),
+    m_pure(-1),
+    type(type_) {
     }
 
-    Term::Term(const TermVtable *vptr, const TermResultType& result_type_, const SourceLocation& location)
-    : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), result_type_.type.compile_context(), location),
-    result_type(result_type_) {
+    Term::Term(const TermVtable *vptr, const TreePtr<Term>& type_, const SourceLocation& location)
+    : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), type_.compile_context(), location),
+    m_result_info_computed(false),
+    m_pure(-1),
+    type(type_) {
+    }
+
+    void Term::result_info_compute() const {
+      PSI_ASSERT(!m_result_info_computed);
+      ResultStorage<TermResultInfo> tri;
+      derived_vptr(this)->result_info(tri.ptr(), this);
+      m_result_info = tri.done();
+      m_result_info_computed = true;
     }
     
     class ParameterizeRewriter : public TermRewriter {
@@ -40,7 +54,7 @@ namespace Psi {
         if (tree_isa<Anonymous>(term)) {
           PSI_STD::vector<TreePtr<Anonymous> >::const_iterator it = std::find(self.m_elements->begin(), self.m_elements->end(), term);
           if (it != self.m_elements->end())
-            return TermBuilder::parameter(self.rewrite(term->result_type.type), self.m_depth, it - self.m_elements->begin(), *self.m_location);
+            return TermBuilder::parameter(self.rewrite(term->type), self.m_depth, it - self.m_elements->begin(), *self.m_location);
           else
             return term;
         } else if (TreePtr<Functional> func = dyn_treeptr_cast<Functional>(term)) {
@@ -125,7 +139,7 @@ namespace Psi {
         if (tree_isa<Statement>(term)) {
           PSI_STD::vector<TreePtr<Statement> >::const_iterator it = std::find(self.m_statements->begin(), self.m_statements->end(), term);
           if (it != self.m_statements->end()) {
-            TreePtr<Term> type = self.rewrite((*it)->result_type.type);
+            TreePtr<Term> type = self.rewrite((*it)->type);
 
             unsigned index;
             PSI_STD::map<TreePtr<Statement>, unsigned>::iterator jt = self.m_parameter_map->find(*it);
@@ -150,7 +164,7 @@ namespace Psi {
           }
         } else {
           // Anything not functional is replaced by an anonymous value
-          TreePtr<Term> type = self.rewrite(term->result_type.type);
+          TreePtr<Term> type = self.rewrite(term->type);
           unsigned index = self.m_parameter_types->size();
           self.m_parameter_types->push_back(type);
           return TermBuilder::parameter(type, self.m_depth, index, *self.m_location);
@@ -204,7 +218,7 @@ namespace Psi {
         if (const TreePtr<Parameter> parameter = dyn_treeptr_cast<Parameter>(lhs)) {
           if (parameter->depth == self.m_depth) {
             // Check type also matches
-            if (!self.compare(parameter->result_type.type, rhs->result_type.type))
+            if (!self.compare(parameter->type, rhs->type))
               return false;
 
             if (parameter->index >= self.m_wildcards->size())
@@ -259,17 +273,25 @@ namespace Psi {
     : Functional(&vtable) {
     }
 
-    TermResultType Metatype::check_type_impl(const Metatype&) {
-      TermResultType result;
+    TreePtr<Term> Metatype::check_type_impl(const Metatype&) {
+      return TreePtr<Term>();
+    }
+    
+    TermResultInfo Metatype::result_info_impl(const Metatype&) {
+      TermResultInfo result;
       result.mode = term_mode_value;
       result.type_mode = type_mode_metatype;
-      result.pure = true;
+      result.type_fixed_size = true;
       return result;
+    }
+
+    bool Metatype::pure_impl(const Metatype&) {
+      return true;
     }
 
     template<typename V>
     void Metatype::visit(V& v) {
-      visit_base<Term>(v);
+      visit_base<Functional>(v);
     }
 
     const FunctionalVtable Metatype::vtable = PSI_COMPILER_FUNCTIONAL(Metatype, "psi.compiler.Metatype", Functional);
@@ -278,29 +300,35 @@ namespace Psi {
     : Functional(vptr) {
     }
 
+    bool Type::pure_impl(const Type&) {
+      return true;
+    }
+
     const SIVtable Type::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Type", Functional);
 
-    TermResultType Anonymous::make_result_type(const TreePtr<Term>& type, TermMode mode, const SourceLocation& location) {
-      TermResultType rt;
-      rt.type = type;
-      rt.mode = mode;
-      rt.pure = true;
+    Anonymous::Anonymous(const TreePtr<Term>& type, TermMode mode_, const SourceLocation& location)
+    : Term(&vtable, type, location),
+    mode(mode_) {
+      if (type->result_info().type_mode == type_mode_none)
+        compile_context().error_throw(location, "Type of anonymous term is not a type");
+    }
+    
+    TermResultInfo Anonymous::result_info_impl(const Anonymous& self) {
+      TermResultInfo rt;
+      rt.mode = self.mode;
       rt.type_fixed_size = false;
-      rt.type_mode = (type->result_type.type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
-      
-      if (type->result_type.type_mode == type_mode_none)
-        type.compile_context().error_throw(location, "Type of anonymous term is not a type");
-
+      rt.type_mode = (self.type->result_info().type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
       return rt;
     }
 
-    Anonymous::Anonymous(const TreePtr<Term>& type, TermMode mode, const SourceLocation& location)
-    : Term(&vtable, make_result_type(type, mode, location), location) {
+    bool Anonymous::pure_impl(const Anonymous&) {
+      return true;
     }
     
     template<typename V>
     void Anonymous::visit(V& v) {
       visit_base<Term>(v);
+      v("mode", &Anonymous::mode);
     }
 
     const TermVtable Anonymous::vtable = PSI_COMPILER_TERM(Anonymous, "psi.compiler.Anonymous", Term);
@@ -312,28 +340,27 @@ namespace Psi {
     index(index_) {
     }
 
-    TermResultType Parameter::check_type_impl(const Parameter& self) {
-      if (!self.parameter_type)
-        self.compile_context().error_throw(self.location(), "Type of parameter term is NULL");
-      
-      if (!self.parameter_type->result_type.pure ||
-        ((self.parameter_type->result_type.type_mode != type_mode_primitive) &&
-        (self.parameter_type->result_type.type_mode != type_mode_metatype))) {
-        self.compile_context().error_throw(self.location(), "Types of parameters must be pure functional", CompileError::error_internal);
-      }
-
-      TermResultType result;
-      result.type = self.parameter_type;
+    TreePtr<Term> Parameter::check_type_impl(const Parameter& self) {
+      if (!self.parameter_type || !self.parameter_type->is_type())
+        self.compile_context().error_throw(self.location(), "Type of parameter is not a type");
+      return self.parameter_type;
+    }
+    
+    TermResultInfo Parameter::result_info_impl(const Parameter& self) {
+      TermResultInfo result;
       result.mode = term_mode_value;
-      result.pure = true;
       result.type_fixed_size = false;
-      result.type_mode = (self.parameter_type->result_type.type_mode == type_mode_primitive) ? type_mode_none : type_mode_primitive;
+      result.type_mode = (self.parameter_type->result_info().type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
       return result;
+    }
+    
+    bool Parameter::pure_impl(const Parameter&) {
+      return true;
     }
 
     template<typename Visitor>
     void Parameter::visit(Visitor& v) {
-      visit_base<Term>(v);
+      visit_base<Functional>(v);
       v("parameter_type", &Parameter::parameter_type)
       ("depth", &Parameter::depth)
       ("index", &Parameter::index);

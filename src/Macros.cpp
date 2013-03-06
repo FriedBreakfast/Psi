@@ -28,10 +28,10 @@ namespace Psi {
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
-        if (tree_isa<FunctionType>(value->result_type.type)) {
+        if (tree_isa<FunctionType>(value->type)) {
           return compile_function_invocation(value, parameters, evaluate_context, location);
         } else {
-          self.compile_context().error_throw(location, boost::format("Cannot evaluate object of type %s") % value->result_type.type.location().logical->error_name(location.logical));
+          self.compile_context().error_throw(location, boost::format("Cannot evaluate object of type %s") % value->type.location().logical->error_name(location.logical));
         }
       }
 
@@ -177,8 +177,8 @@ namespace Psi {
      * \brief Create a Term which carries multiple metadata annotations.
      */
     TreePtr<Term> make_annotated_value(const TreePtr<Term>& value, const MetadataListType& metadata, const SourceLocation& location) {
-      TreePtr<GenericType> generic = TermBuilder::generic(value.compile_context(), default_, GenericType::primitive_never,
-                                                          location, value->result_type.type, MakeMetadataCallback(metadata));
+      TreePtr<GenericType> generic = TermBuilder::generic(value.compile_context(), default_, GenericType::primitive_recurse,
+                                                          location, value->type, MakeMetadataCallback(metadata));
       return TermBuilder::instance_value(TermBuilder::instance(generic, default_, location), value, location);
     }
     
@@ -186,7 +186,9 @@ namespace Psi {
      * \brief Create a Term which carries multiple metadata annotations and has an empty value.
      */
     TreePtr<Term> make_annotated_value(CompileContext& compile_context, const MetadataListType& metadata, const SourceLocation& location) {
-      return make_annotated_value(compile_context.builtins().empty_value, metadata, location);
+      TreePtr<GenericType> generic = TermBuilder::generic(compile_context, default_, GenericType::primitive_never,
+                                                          location, TermBuilder::empty_type(compile_context), MakeMetadataCallback(metadata));
+      return TermBuilder::default_value(TermBuilder::instance(generic, default_, location), location);
     }
     
     /**

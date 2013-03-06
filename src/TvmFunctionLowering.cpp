@@ -26,7 +26,7 @@ void TvmFunctionBuilder::run_body(TvmCompiler *tvm_compiler, const TreePtr<Funct
   m_module = function->module;
   m_tvm_compiler = tvm_compiler;
   
-  TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(function->result_type.type);
+  TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(function->type);
   
   if (ftype->result_mode == result_mode_by_value)
     m_return_storage = output->parameters().back();
@@ -182,7 +182,7 @@ TvmResult TvmFunctionBuilder::build(const TreePtr<Term>& term) {
     value = build_instruction(term);
   }
   
-  if (term->result_type.pure)
+  if (term->pure())
     m_state.scope->put(term, value);
   
   return value;
@@ -220,7 +220,7 @@ bool TvmFunctionBuilder::merge_exit_list_entry_bottom(const MergeExitList::value
  * \param values List of exit blocks and values from each block to merge into a single execution path.
  * This is modified by this function. Should really be an r-value ref in C++11.
  */
-TvmResult TvmFunctionBuilder::merge_exit(const TermResultType& type, MergeExitList& values, const DominatorState& dominator, const SourceLocation& location) {
+TvmResult TvmFunctionBuilder::merge_exit(const TreePtr<Term>& type, TermMode mode, MergeExitList& values, const DominatorState& dominator, const SourceLocation& location) {
   // Erase all bottom values
   values.erase(std::remove_if(values.begin(), values.end(), &TvmFunctionBuilder::merge_exit_list_entry_bottom), values.end());
   
@@ -229,9 +229,9 @@ TvmResult TvmFunctionBuilder::merge_exit(const TermResultType& type, MergeExitLi
     Tvm::ValuePtr<Tvm::Block> exit_block = m_output->new_block(location, dominator.block);
     
     Tvm::ValuePtr<Tvm::Phi> phi;
-    if ((type.mode != term_mode_value) || type.type->is_register_type()) {
-      Tvm::ValuePtr<> phi_type = build(type.type).value;
-      if (type.mode != term_mode_value)
+    if ((mode != term_mode_value) || type->is_register_type()) {
+      Tvm::ValuePtr<> phi_type = build(type).value;
+      if (mode != term_mode_value)
         phi_type = Tvm::FunctionalBuilder::pointer_type(phi_type, location);
 
       builder().set_insert_point(exit_block);
@@ -247,8 +247,8 @@ TvmResult TvmFunctionBuilder::merge_exit(const TermResultType& type, MergeExitLi
       } else {
         switch (ii->mode) {
         case term_mode_value: break;
-        case term_mode_lref: copy_construct(type.type, m_current_result_storage, ii->value, location); break;
-        case term_mode_rref: move_construct(type.type, m_current_result_storage, ii->value, location); break;
+        case term_mode_lref: copy_construct(type, m_current_result_storage, ii->value, location); break;
+        case term_mode_rref: move_construct(type, m_current_result_storage, ii->value, location); break;
         default: PSI_FAIL("unknown enum value");
         }
       }
@@ -260,11 +260,11 @@ TvmResult TvmFunctionBuilder::merge_exit(const TermResultType& type, MergeExitLi
     return TvmResult(m_state.scope.get(), phi ? Tvm::ValuePtr<>(phi) : m_current_result_storage);
   } else if (values.size() == 1) {
     builder().set_insert_point(values.front().state.block);
-    if ((type.mode == term_mode_value) && !type.type->is_register_type()) {
+    if ((mode == term_mode_value) && !type->is_register_type()) {
       switch (values.front().mode) {
       case term_mode_value: PSI_ASSERT(values.front().value == m_current_result_storage); break;
-      case term_mode_lref: copy_construct(type.type, m_current_result_storage, values.front().value, location); break;
-      case term_mode_rref: move_construct(type.type, m_current_result_storage, values.front().value, location); break;
+      case term_mode_lref: copy_construct(type, m_current_result_storage, values.front().value, location); break;
+      case term_mode_rref: move_construct(type, m_current_result_storage, values.front().value, location); break;
       default: PSI_FAIL("unknown enum value");
       }
       m_state = dominator.state;

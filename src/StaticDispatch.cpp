@@ -268,8 +268,8 @@ namespace Psi {
       for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
         if (parameters[ii]) {
           overload_lookup_search(type, parameters, parameters[ii], results, match_scratch);
-          if (parameters[ii]->result_type.type)
-            overload_lookup_search(type, parameters, parameters[ii]->result_type.type, results, match_scratch);
+          if (parameters[ii]->type)
+            overload_lookup_search(type, parameters, parameters[ii]->type, results, match_scratch);
         }
       }
       

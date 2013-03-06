@@ -121,7 +121,7 @@ class TvmFunctionBuilder : public TvmFunctionalBuilder {
   
   typedef std::vector<MergeExitEntry> MergeExitList;
   static bool merge_exit_list_entry_bottom(const MergeExitEntry& el);
-  TvmResult merge_exit(const TermResultType& type, MergeExitList& values, const DominatorState& dominator, const SourceLocation& location);
+  TvmResult merge_exit(const TreePtr<Term>& type, TermMode mode, MergeExitList& values, const DominatorState& dominator, const SourceLocation& location);
 
   /**
    * \brief Get the instruction builder for this function.

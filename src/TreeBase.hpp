@@ -123,7 +123,7 @@ namespace Psi {
 
     template<typename T>
     bool tree_isa(const Tree *ptr) {
-      return !ptr || si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable));
+      return ptr && si_is_a(ptr, reinterpret_cast<const SIVtable*>(&T::vtable));
     }
     
     template<typename T>
@@ -139,7 +139,7 @@ namespace Psi {
 
     template<typename T, typename U>
     bool tree_isa(const TreePtr<U>& ptr) {
-      return si_is_a(ptr.get(), reinterpret_cast<const SIVtable*>(&T::vtable));
+      return tree_isa<T>(ptr.get());
     }
 
     template<typename T, typename U>
@@ -194,6 +194,8 @@ namespace Psi {
       typedef DelayedEvaluationVtable VtableType;
       DelayedEvaluation(const DelayedEvaluationVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
       const SourceLocation& location() const {return m_location;}
+      
+      bool running() const {return m_state == state_running;}
 
       template<typename V>
       static void visit(V& v) {
@@ -345,6 +347,11 @@ namespace Psi {
       const T& get_checked() const {
         PSI_ASSERT(!m_callback);
         return m_value;
+      }
+      
+      /// \brief True if the callback is currently executing
+      bool running() const {
+        return m_callback && m_callback->running();
       }
       
       template<typename V>

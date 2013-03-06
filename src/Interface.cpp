@@ -167,7 +167,7 @@ namespace Psi {
       
       for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = pattern_interfaces.begin(), ie = pattern_interfaces.end(); ii != ie; ++ii) {
         TreePtr<Term> value = (*ii)->parameterize(location, pattern_parameters);
-        member_types.push_back(value->result_type.type);
+        member_types.push_back(value->type);
         m_wrapper_member_values.push_back(value);
       }
       

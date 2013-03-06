@@ -163,7 +163,7 @@ TvmResult TvmCompiler::build(const TreePtr<Term>& term, const TreePtr<Module>& m
     compile_context().error_throw(term->location(), "Cannot build global term in nonglobal context");
   }
   
-  if (term->result_type.pure)
+  if (term->pure())
     m_scope->put(term, value);
   
   return value;
@@ -283,7 +283,7 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_library_symbol(const TreePtr<Libra
     return existing;
   }
   
-  TvmResult type = build(lib_global->result_type.type, default_);
+  TvmResult type = build(lib_global->type, default_);
   if (Tvm::ValuePtr<Tvm::FunctionType> ftype = Tvm::dyn_cast<Tvm::FunctionType>(type.value)) {
     sym.value = m_library_module->new_function(sym.name, ftype, lib_global->location());
   } else {
@@ -485,7 +485,7 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
       
     std::string symbol_name = mangle_name(global->location().logical);
     
-    TvmResult type = build(global->result_type.type, default_);
+    TvmResult type = build(global->type, default_);
 
     if (TreePtr<Function> function = dyn_treeptr_cast<Function>(global)) {
       Tvm::ValuePtr<Tvm::FunctionType> tvm_ftype = Tvm::dyn_cast<Tvm::FunctionType>(type.value);

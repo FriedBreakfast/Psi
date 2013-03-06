@@ -183,9 +183,7 @@ namespace Psi {
       }
 
       template<typename T>
-      void visit_base_helper(const boost::array<T*,1>& c, boost::false_type) {
-        visit_members(derived(), c);
-      }
+      void visit_base_helper(const boost::array<T*,1>&, boost::false_type) {}
 
     public:
       template<typename T>

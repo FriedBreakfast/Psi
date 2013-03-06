@@ -66,7 +66,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       
       Tvm::ValuePtr<> stack_slot, stack_ptr;
       if ((statement->mode == statement_mode_value) || ((statement->mode == statement_mode_destroy) && !statement->value->is_functional())) {
-        TvmResult type = builder.build(statement->value->result_type.type);
+        TvmResult type = builder.build(statement->value->type);
         stack_ptr = builder.builder().stack_save(statement->location());
         stack_slot = builder.builder().alloca_(type.value, statement->location());
         if (builder.object_initialize_term(stack_slot, statement->value, true, statement->location()))
@@ -82,7 +82,7 @@ struct TvmFunctionBuilder::InstructionLowering {
         }
         
         case statement_mode_ref: {
-          PSI_ASSERT((statement->value->result_type.mode == term_mode_lref) || (statement->value->result_type.mode == term_mode_rref));
+          PSI_ASSERT((statement->value->result_info().mode == term_mode_lref) || (statement->value->result_info().mode == term_mode_rref));
           value = builder.build(statement->value);
           break;
         }
@@ -108,7 +108,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       
       if (!statement->value->is_functional()) {
         PSI_ASSERT(stack_slot && stack_ptr);
-        builder.push_cleanup(boost::make_shared<DestroyCleanup>(stack_slot, statement->result_type.type, stack_ptr, statement->location()));
+        builder.push_cleanup(boost::make_shared<DestroyCleanup>(stack_slot, statement->type, stack_ptr, statement->location()));
       }
       
       if (statement->mode != statement_mode_destroy) {
@@ -129,7 +129,7 @@ struct TvmFunctionBuilder::InstructionLowering {
   * \brief Create TVM structure for If-Then-Else.
   */
   static TvmResult run_if_then_else(TvmFunctionBuilder& builder, const TreePtr<IfThenElse>& if_then_else) {
-    PSI_ASSERT(if_then_else->condition->result_type.mode == term_mode_value);
+    PSI_ASSERT(if_then_else->condition->result_info().mode == term_mode_value);
     TvmResult condition = builder.build(if_then_else->condition);
     if (condition.is_bottom())
       return TvmResult::bottom();
@@ -144,15 +144,15 @@ struct TvmFunctionBuilder::InstructionLowering {
     
     builder.builder().set_insert_point(true_block);
     TvmResult true_value = builder.build(if_then_else->true_value);
-    results.push_back(MergeExitEntry(true_value.value, if_then_else->true_value->result_type.mode, builder.dominator_state()));
+    results.push_back(MergeExitEntry(true_value.value, if_then_else->true_value->result_info().mode, builder.dominator_state()));
     builder.m_state = dominator_state.state;
 
     builder.builder().set_insert_point(false_block);
     TvmResult false_value = builder.build(if_then_else->false_value);
-    results.push_back(MergeExitEntry(false_value.value, if_then_else->false_value->result_type.mode, builder.dominator_state()));
+    results.push_back(MergeExitEntry(false_value.value, if_then_else->false_value->result_info().mode, builder.dominator_state()));
     builder.m_state = dominator_state.state;
     
-    return builder.merge_exit(if_then_else->result_type, results, dominator_state, if_then_else->location());
+    return builder.merge_exit(if_then_else->type, if_then_else->result_info().mode, results, dominator_state, if_then_else->location());
   }
 
   /**
@@ -165,7 +165,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       TvmJumpData jd;
       jd.block = builder.builder().new_block(ii->location());
       if ((*ii)->argument) {
-        TvmResult type = builder.build((*ii)->argument->result_type.type);
+        TvmResult type = builder.build((*ii)->argument->type);
         if ((*ii)->argument_mode == result_mode_by_value) {
           // Use storage to hold the member index, which will be used to get the member later
           jd.storage = Tvm::FunctionalBuilder::size_value(builder.tvm_context(), parameter_types.size(), (*ii)->location());
@@ -205,7 +205,7 @@ struct TvmFunctionBuilder::InstructionLowering {
 
     TvmResult initial_value = builder.build(jump_group->initial);
     MergeExitList results;
-    results.push_back(MergeExitEntry(initial_value.value, jump_group->initial->result_type.mode, builder.dominator_state()));
+    results.push_back(MergeExitEntry(initial_value.value, jump_group->initial->result_info().mode, builder.dominator_state()));
 
     for (std::vector<TreePtr<JumpTarget> >::const_iterator ii = jump_group->entries.begin(), ie = jump_group->entries.end(); ii != ie; ++ii) {
       const TvmJumpData& jd = jump_map.find(*ii)->second;
@@ -219,10 +219,10 @@ struct TvmFunctionBuilder::InstructionLowering {
         if ((*ii)->argument_mode == result_mode_by_value) {
           Tvm::ValuePtr<> stack_ptr = builder.builder().stack_save((*ii)->location());
           Tvm::ValuePtr<> dest_ptr = builder.builder().alloca_(Tvm::value_cast<Tvm::PointerType>(jd.storage->type())->target_type(), (*ii)->location());
-          builder.move_construct_destroy((*ii)->argument->result_type.type, dest_ptr, jd.storage, (*ii)->location());
+          builder.move_construct_destroy((*ii)->argument->type, dest_ptr, jd.storage, (*ii)->location());
 
-          if ((*ii)->argument->result_type.type->result_type.type_mode == type_mode_complex)
-            builder.push_cleanup(boost::make_shared<DestroyCleanup>(dest_ptr, (*ii)->argument->result_type.type, stack_ptr, (*ii)->location()));
+          if ((*ii)->argument->type->result_info().type_mode == type_mode_complex)
+            builder.push_cleanup(boost::make_shared<DestroyCleanup>(dest_ptr, (*ii)->argument->type, stack_ptr, (*ii)->location()));
           else
             builder.push_cleanup(boost::make_shared<StackRestoreCleanup>(stack_ptr, (*ii)->location()));
           builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope.get(), dest_ptr));
@@ -232,12 +232,12 @@ struct TvmFunctionBuilder::InstructionLowering {
       }
       
       TvmResult entry_result = builder.build((*ii)->value);
-      results.push_back(MergeExitEntry(entry_result.value, (*ii)->value->result_type.mode, builder.dominator_state()));
+      results.push_back(MergeExitEntry(entry_result.value, (*ii)->value->result_info().mode, builder.dominator_state()));
       builder.cleanup_to(dominator.state.cleanup);
     }
     
     builder.m_state.jump_map = original_jump_map;
-    return builder.merge_exit(jump_group->result_type, results, dominator, jump_group->location());
+    return builder.merge_exit(jump_group->type, jump_group->result_info().mode, results, dominator, jump_group->location());
   }
 
   /**
@@ -261,13 +261,13 @@ struct TvmFunctionBuilder::InstructionLowering {
       }
       
       case result_mode_lvalue: {
-        PSI_ASSERT((jump_to->argument->result_type.mode == term_mode_lref) || (jump_to->argument->result_type.mode == term_mode_rref));
+        PSI_ASSERT((jump_to->argument->result_info().mode == term_mode_lref) || (jump_to->argument->result_info().mode == term_mode_rref));
         result_value = builder.build(jump_to->argument).value;
         break;
       }
       
       case result_mode_rvalue: {
-        PSI_ASSERT(jump_to->argument->result_type.mode == term_mode_rref);
+        PSI_ASSERT(jump_to->argument->result_info().mode == term_mode_rref);
         result_value = builder.build(jump_to->argument).value;
         break;
       }
@@ -306,15 +306,15 @@ struct TvmFunctionBuilder::InstructionLowering {
    */
   static TvmResult run_call(TvmFunctionBuilder& builder, const TreePtr<FunctionCall>& call) {
     // Build argument scope
-    TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(call->target->result_type.type);
+    TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(call->target->type);
     std::vector<Tvm::ValuePtr<> > tvm_arguments;
     bool object_stack_saved = false;
     for (unsigned ii = 0, ie = call->arguments.size(); ii != ie; ++ii) {
       const TreePtr<Term>& argument = call->arguments[ii];
       
       TvmResult arg_result;
-      if ((argument->result_type.mode == term_mode_value) && !argument->result_type.type->is_register_type()) {
-        TvmResult type = builder.build(argument->result_type.type);
+      if ((argument->result_info().mode == term_mode_value) && !argument->type->is_register_type()) {
+        TvmResult type = builder.build(argument->type);
         if (!object_stack_saved) {
           Tvm::ValuePtr<> ptr = builder.builder().stack_save(call->location());
           builder.push_cleanup(boost::make_shared<StackRestoreCleanup>(ptr, call->location()));
@@ -342,10 +342,10 @@ struct TvmFunctionBuilder::InstructionLowering {
       PSI_NOT_IMPLEMENTED();
     } else {
       TvmResult target_result = builder.build(call->target);
-      PSI_ASSERT(call->target->result_type.mode == term_mode_lref);
+      PSI_ASSERT(call->target->result_info().mode == term_mode_lref);
       
       // This is here so that it is evaluated before the stack pointer is saved
-      TvmResult result_type = builder.build(call->result_type.type);
+      TvmResult result_type = builder.build(call->type);
       
       Tvm::ValuePtr<> stack_ptr;
       for (std::size_t ii = 0, ie = call->arguments.size(); ii != ie; ++ii) {
@@ -354,7 +354,7 @@ struct TvmFunctionBuilder::InstructionLowering {
         case parameter_mode_io:
         case parameter_mode_input: {
           const TreePtr<Term>& argument = call->arguments[ii];
-          if ((argument->result_type.mode == term_mode_value) && argument->result_type.type->is_register_type()) {
+          if ((argument->result_info().mode == term_mode_value) && argument->type->is_register_type()) {
             Tvm::ValuePtr<>& register_value = tvm_arguments[ii];
             if (!stack_ptr)
               stack_ptr = builder.builder().stack_save(call->location());
@@ -373,7 +373,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       Tvm::ValuePtr<> result_temporary, result_stack_ptr;
       if (ftype->result_mode == result_mode_by_value) {
         // Note that at a system level this parameter will be first in the list, and should be marked sret
-        if (!call->result_type.type->is_register_type()) {
+        if (!call->type->is_register_type()) {
           tvm_arguments.push_back(builder.m_current_result_storage);
         } else {
           if (!stack_ptr)

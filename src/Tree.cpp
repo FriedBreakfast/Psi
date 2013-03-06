@@ -26,41 +26,43 @@ namespace Psi {
       }
     }
     
-    TermResultType result_type_combine(const TermResultType& lhs, const TermResultType& rhs, CompileContext& compile_context, const SourceLocation& location) {
-      if (lhs.mode == term_mode_bottom)
+    TreePtr<Term> result_type_combine(const TreePtr<Term>& lhs, const TreePtr<Term>& rhs, CompileContext& compile_context, const SourceLocation& location) {
+      if (tree_isa<BottomType>(lhs))
         return rhs;
-      else if (rhs.mode == term_mode_bottom)
+      else if (tree_isa<BottomType>(rhs))
         return lhs;
-      
-      TermResultType rs;
-      if (lhs.type != rhs.type)
+
+      if (lhs != rhs)
         compile_context.error_throw(location, "Cannot merge distinct result types");
-      PSI_ASSERT(lhs.type_mode == rhs.type_mode);
-      rs.type = lhs.type;
-      rs.type_mode = lhs.type_mode;
-      rs.mode = term_mode_combine(lhs.mode, rhs.mode);
-      rs.pure = lhs.pure && rhs.pure;
-      return rs;
+      
+      return lhs;
     }
     
+    TermResultInfo term_info_combine(const TermResultInfo& lhs, const TermResultInfo& rhs) {
+      TermResultInfo rt;
+      rt.mode = term_mode_combine(lhs.mode, rhs.mode);
+      rt.type_fixed_size = false;
+      if ((lhs.type_mode == rhs.type_mode) || (rhs.type_mode == type_mode_metatype))
+        rt.type_mode = lhs.type_mode;
+      else if (lhs.type_mode == type_mode_metatype)
+        rt.type_mode = rhs.type_mode;
+      return rt;
+    }
+
     /**
      * \brief Get the appropriate result type for terms which have no value.
      */
-    TermResultType result_type_void(CompileContext& compile_context) {
-      TermResultType rs;
-      rs.type = TermBuilder::empty_type(compile_context);
+    TermResultInfo term_info_void() {
+      TermResultInfo rs;
       rs.type_mode = type_mode_none;
       rs.mode = term_mode_value;
-      rs.pure = false;
       return rs;
     }
     
-    TermResultType result_type_bottom(CompileContext& compile_context, bool pure) {
-      TermResultType rs;
-      rs.type = TermBuilder::bottom_type(compile_context);
+    TermResultInfo term_info_bottom() {
+      TermResultInfo rs;
       rs.type_mode = type_mode_bottom;
       rs.mode = term_mode_bottom;
-      rs.pure = pure;
       return rs;
     }
     
@@ -96,15 +98,8 @@ namespace Psi {
     
     const SIVtable Constant::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Constant", Constructor);
 
-    TermResultType GlobalStatement::make_result_type(const TreePtr<Term>& value, StatementMode mode) {
-      TermResultType rt;
-      rt.type = value->result_type.type;
-      PSI_NOT_IMPLEMENTED();
-      return rt;
-    }
-    
     GlobalStatement::GlobalStatement(const TreePtr<Module>& module, const TreePtr<Term>& value_, StatementMode mode_, const SourceLocation& location)
-    : ModuleGlobal(&vtable, module, make_result_type(value_, mode_), false, location),
+    : ModuleGlobal(&vtable, module, value_->type, false, location),
     value(value_),
     mode(mode_) {
     }
@@ -119,18 +114,20 @@ namespace Psi {
     const TermVtable GlobalStatement::vtable = PSI_COMPILER_TERM(GlobalStatement, "psi.compiler.GlobalStatement", ModuleGlobal);
     
     /**
-     * \brief Utility function to construct result type in a way common to most global types.
+     * \brief General implementation for classes derived from Global.
      */
-    TermResultType Global::global_result_type(const TreePtr<Term>& type) {
-      TermResultType rt;
-      rt.type = type;
-      rt.pure = true;
+    TermResultInfo Global::result_info_impl(const Global& self) {
+      TermResultInfo rt;
       rt.mode = term_mode_lref;
-      rt.type_mode = type->result_type.type_mode;
+      rt.type_mode = self.type->result_info().type_mode;
       return rt;
     }
 
-    Global::Global(const VtableType *vptr, const TermResultType& type, const SourceLocation& location)
+    bool Global::pure_impl(const Global&) {
+      return true;
+    }
+
+    Global::Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location)
     : Term(vptr, type, location) {
     }
 
@@ -145,7 +142,7 @@ namespace Psi {
 
     const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
 
-    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const TermResultType& type, PsiBool local_, const SourceLocation& location)
+    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const TreePtr<Term>& type, PsiBool local_, const SourceLocation& location)
     : Global(vptr, type, location),
     module(module_),
     local(local_) {
@@ -161,7 +158,7 @@ namespace Psi {
     const SIVtable ModuleGlobal::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ModuleGlobal", Global);
 
     ExternalGlobal::ExternalGlobal(const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location)
-    : ModuleGlobal(&vtable, module, global_result_type(type), false, location) {
+    : ModuleGlobal(&vtable, module, type, false, location) {
     }
     
     template<typename V>
@@ -201,7 +198,7 @@ namespace Psi {
       ("parameter_types", &Exists::parameter_types);
     }
     
-    TermResultType Exists::check_type_impl(const Exists& self) {
+    TreePtr<Term> Exists::check_type_impl(const Exists& self) {
       if (!self.result->is_type())
         self.compile_context().error_throw(self.location(), "Result of exists is not a type");
       
@@ -210,13 +207,20 @@ namespace Psi {
           self.compile_context().error_throw(self.location(), "Parameter type of exists term is not a primitive type");
       }
       
-      TermResultType rt;
-      rt.pure = true;
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo Exists::result_info_impl(const Exists& self) {
+      TermResultInfo rt;
       rt.mode = term_mode_value;
-      rt.type = TermBuilder::metatype(self.compile_context());
-      rt.type_fixed_size = self.result->result_type.type_fixed_size;
-      rt.type_mode = self.result->result_type.type_mode;
+      const TermResultInfo& inner = self.result->result_info();
+      rt.type_fixed_size = inner.type_fixed_size;
+      rt.type_mode = inner.type_mode;
       return rt;
+    }
+    
+    bool Exists::pure_impl(const Exists&) {
+      return true;
     }
 
     TreePtr<Term> Exists::parameter_type_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& previous) const {
@@ -240,10 +244,10 @@ namespace Psi {
     const FunctionalVtable Exists::vtable = PSI_COMPILER_FUNCTIONAL(Exists, "psi.compiler.Exists", ParameterizedType);
 
     FunctionType::FunctionType(ResultMode result_mode_, const TreePtr<Term>& result_type_, const PSI_STD::vector<FunctionParameterType>& parameter_types_,
-                               const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces_)
+                               const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces_, const SourceLocation& location)
     : ParameterizedType(&vtable),
     result_mode(result_mode_),
-    result_type(result_type_),
+    result_type(TermBuilder::to_functional(result_type_, location)),
     parameter_types(parameter_types_),
     interfaces(interfaces_) {
     }
@@ -285,11 +289,11 @@ namespace Psi {
       return type;
     }
     
-    TermResultType FunctionType::check_type_impl(const FunctionType& self) {
+    TreePtr<Term> FunctionType::check_type_impl(const FunctionType& self) {
       // Doesn't currently check that parameters are correctly ordered
       for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = self.parameter_types.begin(), ie = self.parameter_types.end(); ii != ie; ++ii) {
-        const TermResultType& rt = ii->type->result_type;
-        if ((rt.type_mode == type_mode_none) || !rt.pure) {
+        const TermResultInfo& rt = ii->type->result_info();
+        if ((rt.type_mode == type_mode_none) || (rt.type_mode == type_mode_bottom) || !ii->type->pure()) {
           self.compile_context().error_throw(self.location(), "Function parameter types must be pure types");
         } else if (rt.type_mode == type_mode_complex) {
           if (ii->mode == parameter_mode_functional)
@@ -299,25 +303,31 @@ namespace Psi {
         }
       }
       
-      const TermResultType& rrt = self.result_type->result_type;
-      if ((rrt.type_mode == type_mode_none) || !rrt.pure)
+      const TermResultInfo& rrt = self.result_type->result_info();
+      if ((rrt.type_mode == type_mode_none) || (rrt.type_mode == type_mode_bottom) || !self.result_type->pure())
         self.compile_context().error_throw(self.location(), "Function result types must be pure types");
       else if ((rrt.type_mode == type_mode_complex) && (self.result_mode == result_mode_functional))
         self.compile_context().error_throw(self.location(), "Cannot return complex types functionally");
-
-      TermResultType result;
-      result.type = TermBuilder::metatype(self.compile_context());
-      result.pure = true;
+      
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo FunctionType::result_info_impl(const FunctionType&) {
+      TermResultInfo result;
       result.mode = term_mode_value;
       // Function types are effectively complex because function values cannot be dynamically constructed at all!
       result.type_mode = type_mode_complex;
       return result;
     }
+    
+    bool FunctionType::pure_impl(const FunctionType&) {
+      return true;
+    }
 
     const FunctionalVtable FunctionType::vtable = PSI_COMPILER_FUNCTIONAL(FunctionType, "psi.compiler.FunctionType", ParameterizedType);
     
     void Function::check_type() {
-      TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(result_type.type);
+      TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(type);
       
       if (arguments.size() != ftype->parameter_types.size())
         compile_context().error_throw(location(), "Number of arguments to function does not match the function signature");
@@ -326,7 +336,7 @@ namespace Psi {
       my_arguments.reserve(arguments.size());
       for (std::size_t ii = 0, ie = arguments.size(); ii != ie; ++ii) {
         TreePtr<Term> type = ftype->parameter_type_after(arguments[ii]->location(), my_arguments);
-        if (arguments[ii]->result_type.type != type)
+        if (arguments[ii]->type != type)
           compile_context().error_throw(arguments[ii]->location(), "Parameter type to function does not match the function signature");
         my_arguments.push_back(arguments[ii]);
       }
@@ -334,7 +344,7 @@ namespace Psi {
       if (return_target) {
         if (return_target->argument_mode != ftype->result_mode)
           compile_context().error_throw(location(), "Return target mode does not match result mode of function");
-        if (return_target->argument->result_type.type != ftype->result_type_after(location(), my_arguments))
+        if (return_target->argument->type != ftype->result_type_after(location(), my_arguments))
           compile_context().error_throw(location(), "Return target mode does not match result mode of function");
       }
     }
@@ -349,11 +359,16 @@ namespace Psi {
     const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", ModuleGlobal);
 
     TryFinally::TryFinally(const TreePtr<Term>& try_expr_, const TreePtr<Term>& finally_expr_, bool except_only_, const SourceLocation& location)
-    : Term(&vtable, try_expr_->result_type, location),
+    : Term(&vtable, try_expr_->type, location),
     try_expr(try_expr_),
     finally_expr(finally_expr_),
     except_only(except_only_) {
     }
+
+    TermResultInfo TryFinally::result_info_impl(const TryFinally& self) {
+      return self.try_expr->result_info();
+    }
+    
 
     template<typename Visitor> void TryFinally::visit(Visitor& v) {
       visit_base<Term>(v);
@@ -364,58 +379,68 @@ namespace Psi {
 
     const TermVtable TryFinally::vtable = PSI_COMPILER_TERM(TryFinally, "psi.compiler.TryFinally", Term);
     
-    TermResultType Statement::make_result_type(StatementMode mode, const TreePtr<Term>& value, const SourceLocation& location) {
-      const TermResultType& value_rt = value->result_type;
+    TermResultInfo Statement::result_info_impl(const Statement& self) {
+      const TermResultInfo& value_rt = self.value->result_info();
       
-      TermResultType rt;
-      rt.pure = true;
+      TermResultInfo rt;
       rt.mode = term_mode_lref;
       rt.type_mode = value_rt.type_mode;
       rt.type_fixed_size = value_rt.type_fixed_size;
-      rt.type = value_rt.type;
       
-      switch (mode) {
-      case statement_mode_value:
-        break;
-        
+      switch (self.mode) {
       case statement_mode_functional:
-        if (value_rt.type) {
-          const TermResultType& type_rt = value_rt.type->result_type;
-          PSI_ASSERT(type_rt.type_mode != type_mode_none);
-          if (type_rt.type_mode == type_mode_complex) {
-            CompileError err(value.compile_context(), location);
-            err.info(location, "Only primitive types can be used as functional values");
-            err.info(value_rt.type.location(), "Type is not primitive");
-            err.end();
-            throw CompileException();
-          }
-        }
-        
+        PSI_ASSERT(!self.type || (self.type->result_info().type_mode == type_mode_primitive));
         rt.mode = term_mode_value;
         rt.type_mode = value_rt.type_mode;
-        break;
-        
-      case statement_mode_ref:
-        if ((value_rt.mode != term_mode_lref) && (value_rt.mode != term_mode_rref))
-          value.compile_context().error_throw(location, "Cannot bind temporary to reference");
         break;
         
       case statement_mode_destroy:
         // Result cannot be re-used
         rt.mode = term_mode_bottom;
-        rt.type = TermBuilder::bottom_type(value.compile_context());
         break;
         
-      default: PSI_FAIL("Unknown statement mode");
+      default: break;
       }
       
       return rt;
     }
+    
+    bool Statement::pure_impl(const Statement&) {
+      return true;
+    }
 
     Statement::Statement(const TreePtr<Term>& value_, StatementMode mode_, const SourceLocation& location)
-    : Term(&vtable, value_.compile_context(), make_result_type(mode_, value_, location), location),
+    : Term(&vtable, value_.compile_context(), value_->type, location),
     value(value_),
     mode(mode_) {
+      switch (mode) {
+      case statement_mode_value:
+      case statement_mode_destroy:
+        break;
+        
+      case statement_mode_functional:
+        if (type) {
+          const TermResultInfo& type_rt = type->result_info();
+          PSI_ASSERT(type_rt.type_mode != type_mode_none);
+          if (type_rt.type_mode == type_mode_complex) {
+            CompileError err(value.compile_context(), location);
+            err.info(location, "Only primitive types can be used as functional values");
+            err.info(type->location(), "Type is not primitive");
+            err.end();
+            throw CompileException();
+          }
+        }
+        break;
+        
+      case statement_mode_ref: {
+        const TermResultInfo& value_rt = value->result_info();
+        if ((value_rt.mode != term_mode_lref) && (value_rt.mode != term_mode_rref))
+          value.compile_context().error_throw(location, "Cannot bind temporary to reference");
+        break;
+      }
+        
+      default: PSI_FAIL("Unknown statement mode");
+      }
     }
 
     template<typename Visitor>
@@ -428,7 +453,7 @@ namespace Psi {
     const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
     
     Block::Block(const PSI_STD::vector<TreePtr<Statement> >& statements_, const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, value_->result_type, location),
+    : Term(&vtable, value_->type, location),
     statements(statements_),
     value(value_) {
     }
@@ -438,6 +463,10 @@ namespace Psi {
       visit_base<Term>(v);
       v("statements", &Block::statements)
       ("value", &Block::value);
+    }
+    
+    TermResultInfo Block::result_info_impl(const Block& self) {
+      return self.value->result_info();
     }
 
     const TermVtable Block::vtable = PSI_COMPILER_TERM(Block, "psi.compiler.Block", Term);
@@ -451,12 +480,14 @@ namespace Psi {
       visit_base<Type>(v);
     }
     
-    TermResultType BottomType::check_type_impl(const BottomType& self) {
-      TermResultType rt;
+    TreePtr<Term> BottomType::check_type_impl(const BottomType& self) {
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo BottomType::result_info_impl(const BottomType&) {
+      TermResultInfo rt;
       rt.mode = term_mode_value;
       rt.type_mode = type_mode_bottom;
-      rt.type = TermBuilder::metatype(self.compile_context());
-      rt.pure = true;
       return rt;
     }
     
@@ -473,12 +504,16 @@ namespace Psi {
       v("value", &ConstantType::value);
     }
     
-    TermResultType ConstantType::check_type_impl(const ConstantType& self) {
-      TermResultType rt;
-      rt.pure = true;
+    TreePtr<Term> ConstantType::check_type_impl(const ConstantType& self) {
+      if (self.value->type && !self.value->type->is_register_type())
+        self.compile_context().error_throw(self.location(), "Type of value of constant type is not a register type");
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo ConstantType::result_info_impl(const ConstantType&) {
+      TermResultInfo rt;
       rt.type_mode = type_mode_primitive;
       rt.mode = term_mode_value;
-      rt.type = TermBuilder::metatype(self.compile_context());
       rt.type_fixed_size = true;
       return rt;
     }
@@ -494,12 +529,14 @@ namespace Psi {
       visit_base<Type>(v);
     }
     
-    TermResultType EmptyType::check_type_impl(const EmptyType& self) {
-      TermResultType rt;
-      rt.type = TermBuilder::metatype(self.compile_context());
+    TreePtr<Term> EmptyType::check_type_impl(const EmptyType& self) {
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo EmptyType::result_info_impl(const EmptyType&) {
+      TermResultInfo rt;
       rt.mode = term_mode_value;
       rt.type_mode = type_mode_primitive;
-      rt.pure = true;
       rt.type_fixed_size = true;
       return rt;
     }
@@ -508,23 +545,31 @@ namespace Psi {
 
     DefaultValue::DefaultValue(const TreePtr<Term>& type, const SourceLocation& location)
     : Constructor(&vtable),
-    value_type(type) {
-      if (!value_type->result_type.pure)
-        value_type = TermBuilder::functional_eval(value_type, location);
+    value_type(TermBuilder::to_functional(type, location)) {
     }
     
-    TermResultType DefaultValue::check_type_impl(const DefaultValue& self) {
-      PSI_ASSERT(self.value_type->result_type.pure || tree_isa<FunctionalEvaluate>(self.value_type));
-      if (self.value_type->result_type.type_mode == type_mode_none)
+    TreePtr<Term> DefaultValue::check_type_impl(const DefaultValue& self) {
+      const TermResultInfo& value_info = self.value_type->result_info();
+      PSI_ASSERT(self.value_type->pure() || tree_isa<FunctionalEvaluate>(self.value_type));
+      if (value_info.type_mode == type_mode_none)
         self.compile_context().error_throw(self.location(), "Type for default value is not a type");
-      if (self.value_type->result_type.type_mode == type_mode_bottom)
+      if (value_info.type_mode == type_mode_bottom)
         self.compile_context().error_throw(self.location(), "Cannot create default value of bottom type");
-      TermResultType rt;
+      return self.value_type;
+    }
+    
+    TermResultInfo DefaultValue::result_info_impl(const DefaultValue& self) {
+      const TermResultInfo& value_info = self.value_type->result_info();
+      TermResultInfo rt;
       rt.mode = term_mode_value;
-      rt.pure = (self.value_type->result_type.type_mode != type_mode_complex) && self.value_type->result_type.pure;
-      rt.type_mode = (self.value_type->result_type.type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
-      rt.type = self.value_type;
+      
+      rt.type_mode = (value_info.type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
+      rt.type_fixed_size = false;
       return rt;
+    }
+    
+    bool DefaultValue::pure_impl(const DefaultValue& self) {
+      return self.value_type->result_info().type_mode != type_mode_complex;
     }
     
     template<typename V>
@@ -546,13 +591,17 @@ namespace Psi {
       v("target_type", &PointerType::target_type);
     }
     
-    TermResultType PointerType::check_type_impl(const PointerType& self) {
-      TermResultType rt;
+    TreePtr<Term> PointerType::check_type_impl(const PointerType& self) {
+      if (!self.target_type->is_type())
+        self.compile_context().error_throw(self.location(), "Pointer target type is not a type");
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo PointerType::result_info_impl(const PointerType&) {
+      TermResultInfo rt;
       rt.type_fixed_size = true;
-      rt.pure = true;
       rt.mode = term_mode_value;
       rt.type_mode = type_mode_primitive;
-      rt.type = TermBuilder::metatype(self.compile_context());
       return rt;
     }
     
@@ -569,18 +618,25 @@ namespace Psi {
       v("value", &PointerTo::value);
     }
     
-    TermResultType PointerTo::check_type_impl(const PointerTo& self) {
-      PSI_ASSERT(!self.value->result_type.type || self.value->result_type.type->result_type.pure);
-      
-      if ((self.value->result_type.mode != term_mode_lref) && (self.value->result_type.mode != term_mode_rref))
+    TreePtr<Term> PointerTo::check_type_impl(const PointerTo& self) {
+      PSI_ASSERT(!self.value->type || self.value->type->pure());
+
+      const TermResultInfo& value_info = self.value->result_info();
+      if ((value_info.mode != term_mode_lref) && (value_info.mode != term_mode_rref))
         self.compile_context().error_throw(self.location(), "Cannot take address of temporary variable");
       
-      TermResultType rt;
-      rt.type = TermBuilder::ptr_to(self.value->result_type.type, self.location());
-      rt.pure = self.value->result_type.pure;
+      return self.value->type;
+    }
+    
+    TermResultInfo PointerTo::result_info_impl(const PointerTo&) {
+      TermResultInfo rt;
       rt.type_mode = type_mode_none;
       rt.mode = term_mode_value;
       return rt;
+    }
+    
+    bool PointerTo::pure_impl(const PointerTo& self) {
+      return self.value->pure();
     }
 
     const FunctionalVtable PointerTo::vtable = PSI_COMPILER_FUNCTIONAL(PointerTo, "psi.compiler.PointerTo", Functional);
@@ -596,17 +652,22 @@ namespace Psi {
       v("value", &PointerTarget::value);
     }
     
-    TermResultType PointerTarget::check_type_impl(const PointerTarget& self) {
-      TreePtr<PointerType> ptr_ty = dyn_treeptr_cast<PointerType>(self.value->result_type.type);
+    TreePtr<Term> PointerTarget::check_type_impl(const PointerTarget& self) {
+      TreePtr<PointerType> ptr_ty = dyn_treeptr_cast<PointerType>(self.value->type);
       if (!ptr_ty)
         self.compile_context().error_throw(self.location(), "Argument to PointerTarget is not a pointer");
-      
-      TermResultType rt;
-      rt.pure = self.value->result_type.pure;
+      return ptr_ty->target_type;
+    }
+    
+    TermResultInfo PointerTarget::result_info_impl(const PointerTarget& self) {
+      TermResultInfo rt;
       rt.mode = term_mode_lref;
-      rt.type = ptr_ty->target_type;
-      rt.type_mode = (ptr_ty->target_type->result_type.type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
+      rt.type_mode = (self.type->result_info().type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
       return rt;
+    }
+    
+    bool PointerTarget::pure_impl(const PointerTarget& self) {
+      return self.value->pure();
     }
 
     const FunctionalVtable PointerTarget::vtable = PSI_COMPILER_FUNCTIONAL(PointerTarget, "psi.compiler.PointerTarget", Functional);
@@ -624,16 +685,21 @@ namespace Psi {
       ("target_type", &PointerCast::target_type);
     }
     
-    TermResultType PointerCast::check_type_impl(const PointerCast& self) {
-      if (!tree_isa<PointerType>(self.value->result_type.type))
+    TreePtr<Term> PointerCast::check_type_impl(const PointerCast& self) {
+      if (!tree_isa<PointerType>(self.value->type))
         self.compile_context().error_throw(self.location(), "Argument to PointerCast is not a pointer");
-      
-      TermResultType rt;
-      rt.pure = self.value->result_type.pure;
+      return TermBuilder::ptr_to(self.target_type, self.location());
+    }
+    
+    TermResultInfo PointerCast::result_info_impl(const PointerCast&) {
+      TermResultInfo rt;
       rt.mode = term_mode_value;
-      rt.type = TermBuilder::ptr_to(self.target_type, self.location());
       rt.type_mode = type_mode_none;
       return rt;
+    }
+    
+    bool PointerCast::pure_impl(const PointerCast& self) {
+      return self.value->pure();
     }
 
     const FunctionalVtable PointerCast::vtable = PSI_COMPILER_FUNCTIONAL(PointerCast, "psi.compiler.PointerCast", Functional);
@@ -683,28 +749,32 @@ namespace Psi {
       }
     }
     
-    TermResultType ElementValue::check_type_impl(const ElementValue& self) {
-      TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(self.value->result_type.type);
+    TreePtr<Term> ElementValue::check_type_impl(const ElementValue& self) {
+      TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(self.value->type);
       TreePtr<Term> my_aggregate_type, next_upref;
       if (derived) {
         my_aggregate_type = derived->value_type;
         next_upref = derived->upref;
       } else {
-        my_aggregate_type = self.value->result_type.type;
+        my_aggregate_type = self.value->type;
       }
       
       TreePtr<Term> upref = TermBuilder::upref(my_aggregate_type, self.index, next_upref, self.location());
-
-      TermResultType rt;
-      rt.type = TermBuilder::derived(element_type(my_aggregate_type, self.index, self.location()), upref, self.location());
-      rt.mode = term_mode_lref;
-      rt.pure = self.value->result_type.pure && self.index->result_type.pure;
-      rt.type_mode = type_mode_none;
-      rt.type_fixed_size = rt.type->result_type.type_fixed_size;
-      
-      return rt;
+      return TermBuilder::derived(element_type(my_aggregate_type, self.index, self.location()), upref, self.location());
     }
 
+    TermResultInfo ElementValue::result_info_impl(const ElementValue& self) {
+      TermResultInfo rt;
+      rt.mode = term_mode_lref;
+      rt.type_mode = type_mode_none;
+      rt.type_fixed_size = self.type->result_info().type_fixed_size;
+      return rt;
+    }
+    
+    bool ElementValue::pure_impl(const ElementValue& self) {
+      return self.value->pure() && self.index->pure();
+    }
+    
     const FunctionalVtable ElementValue::vtable = PSI_COMPILER_FUNCTIONAL(ElementValue, "psi.compiler.ElementValue", Functional);
     
     OuterValue::OuterValue(const TreePtr<Term>& value_)
@@ -718,8 +788,8 @@ namespace Psi {
       v("value", &OuterValue::value);
     }
     
-    TermResultType OuterValue::check_type_impl(const OuterValue& self) {
-      TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(self.value->result_type.type);
+    TreePtr<Term> OuterValue::check_type_impl(const OuterValue& self) {
+      TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(self.value->type);
       if (!derived)
         self.compile_context().error_throw(self.location(), "Outer value operation called on value with no upward reference");
       
@@ -727,14 +797,22 @@ namespace Psi {
       if (!upref)
         self.compile_context().error_throw(self.location(), "Outer value operation called on value with unknown upward reference");
       
-      PSI_ASSERT((self.value->result_type.mode == term_mode_lref) && (self.value->result_type.mode == term_mode_rref));
+      const TermResultInfo& value_info = self.value->result_info();
+      if ((value_info.mode != term_mode_lref) && (value_info.mode != term_mode_rref))
+        self.compile_context().error_throw(self.location(), "Outer value argument is not a reference");
       
-      TermResultType rt;
-      rt.type = TermBuilder::derived(upref->outer_type, upref->next, self.location());
+      return TermBuilder::derived(upref->outer_type(), upref->next, self.location());
+    }
+    
+    TermResultInfo OuterValue::result_info_impl(const OuterValue&) {
+      TermResultInfo rt;
       rt.type_mode = type_mode_none;
       rt.mode = term_mode_lref;
-      rt.pure = self.value->result_type.pure;
       return rt;
+    }
+    
+    bool OuterValue::pure_impl(const OuterValue& self) {
+      return self.value->pure();
     }
     
     const FunctionalVtable OuterValue::vtable = PSI_COMPILER_FUNCTIONAL(OuterValue, "psi.compiler.OuterValue", Functional);
@@ -751,21 +829,26 @@ namespace Psi {
       v("members", &StructType::members);
     }
     
-    TermResultType StructType::check_type_impl(const StructType& self) {
-      TermResultType rt;
-      rt.type = TermBuilder::metatype(self.compile_context());
+    TreePtr<Term> StructType::check_type_impl(const StructType& self) {
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.members.begin(), ie = self.members.end(); ii != ie; ++ii)
+        if (!(*ii)->is_type())
+          self.compile_context().error_throw(self.location(), "Struct member is not a type");
+      
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo StructType::result_info_impl(const StructType& self) {
+      TermResultInfo rt;
       rt.mode = term_mode_value;
       rt.type_mode = type_mode_primitive;
       rt.type_fixed_size = true;
-      rt.pure = true;
       
       for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.members.begin(), ie = self.members.end(); ii != ie; ++ii) {
-        PSI_ASSERT((*ii)->result_type.pure);
-        if (!(*ii)->result_type.type_fixed_size)
+        const TermResultInfo& tri = (*ii)->result_info();
+        PSI_ASSERT((*ii)->pure());
+        if (!tri.type_fixed_size)
           rt.type_fixed_size = false;
-        if (!(*ii)->is_type())
-          self.compile_context().error_throw(self.location(), "Struct member is not a type");
-        if (!(*ii)->is_primitive_type())
+        if (tri.type_mode == type_mode_complex)
           rt.type_mode = type_mode_complex;
       }
       
@@ -787,21 +870,31 @@ namespace Psi {
       ("members", &StructValue::members);
     }
     
-    TermResultType StructValue::check_type_impl(const StructValue& self) {
+    TreePtr<Term> StructValue::check_type_impl(const StructValue& self) {
       if (self.members.size() != self.struct_type->members.size())
         self.compile_context().error_throw(self.location(), "Struct value has the wrong number of members according to its type");
       
       for (std::size_t ii = 0, ie = self.members.size(); ii != ie; ++ii) {
-        if (self.members[ii]->result_type.type != self.struct_type->members[ii])
+        if (self.members[ii]->type != self.struct_type->members[ii])
           self.compile_context().error_throw(self.location(), boost::format("Struct member %d has the wrong type") % ii);
       }
       
-      TermResultType rt;
-      rt.type = self.struct_type;
-      rt.pure = true;
+      return self.struct_type;
+    }
+    
+    TermResultInfo StructValue::result_info_impl(const StructValue&) {
+      TermResultInfo rt;
       rt.type_mode = type_mode_none;
       rt.mode = term_mode_value;
       return rt;
+    }
+    
+    bool StructValue::pure_impl(const StructValue& self) {
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.members.begin(), ie = self.members.end(); ii != ie; ++ii) {
+        if (!(*ii)->pure())
+          return false;
+      }
+      return true;
     }
     
     const FunctionalVtable StructValue::vtable = PSI_COMPILER_FUNCTIONAL(StructValue, "psi.compiler.StructValue", Constructor);
@@ -816,20 +909,23 @@ namespace Psi {
      * \internal Arrays with a size not known at compile time are complex types
      * because they cannot be loaded onto the stack.
      */
-    TermResultType ArrayType::check_type_impl(const ArrayType& self) {
-      PSI_ASSERT(self.element_type->result_type.pure && self.length->result_type.pure);
+    TreePtr<Term> ArrayType::check_type_impl(const ArrayType& self) {
+      PSI_ASSERT(self.element_type->pure() && self.length->pure());
       
       if (!self.element_type->is_type())
         self.compile_context().error_throw(self.location(), "Array element type is not a type");
-      if (self.length->result_type.type != TermBuilder::size_type(self.compile_context()))
+      if (self.length->type != TermBuilder::size_type(self.compile_context()))
         self.compile_context().error_throw(self.location(), "Array length is not a size");
       
-      TermResultType rt;
-      rt.type = TermBuilder::metatype(self.compile_context());
-      rt.pure = true;
-      rt.type_fixed_size = self.element_type->result_type.type_fixed_size && !tree_isa<IntegerValue>(self.length);
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo ArrayType::result_info_impl(const ArrayType& self) {
+      const TermResultInfo& elem_info = self.element_type->result_info();
+      TermResultInfo rt;
+      rt.type_fixed_size = elem_info.type_fixed_size && !tree_isa<IntegerValue>(self.length);
       rt.mode = term_mode_value;
-      rt.type_mode = self.element_type->result_type.type_mode;
+      rt.type_mode = elem_info.type_mode;
       return rt;
     }
 
@@ -855,24 +951,32 @@ namespace Psi {
       ("element_values", &ArrayValue::element_values);
     }
     
-    TermResultType ArrayValue::check_type_impl(const ArrayValue& self) {
+    TreePtr<Term> ArrayValue::check_type_impl(const ArrayValue& self) {
       TreePtr<Term> element_type = self.array_type->element_type;
       if (TermBuilder::size_equals(self.array_type->length, self.element_values.size()))
         self.compile_context().error_throw(self.location(), "Array literal length does not match its type");
       
-      TermResultType rt;
-      rt.type = self.array_type;
-      rt.type_mode = type_mode_none;
-      rt.pure = true;
-      rt.mode = term_mode_value;
-
       for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.element_values.begin(), ie = self.element_values.end(); ii != ie; ++ii) {
-        rt.pure = rt.pure && (*ii)->result_type.pure;
-        if ((*ii)->result_type.type != element_type)
+        if ((*ii)->type != element_type)
           self.compile_context().error_throw(self.location(), "Array literal element has incorrect type");
       }
       
+      return self.array_type;
+    }
+    
+    TermResultInfo ArrayValue::result_info_impl(const ArrayValue&) {
+      TermResultInfo rt;
+      rt.type_mode = type_mode_none;
+      rt.mode = term_mode_value;
       return rt;
+    }
+    
+    bool ArrayValue::pure_impl(const ArrayValue& self) {
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.element_values.begin(), ie = self.element_values.end(); ii != ie; ++ii) {
+        if (!(*ii)->pure())
+          return false;
+      }
+      return true;
     }
 
     const FunctionalVtable ArrayValue::vtable = PSI_COMPILER_FUNCTIONAL(ArrayValue, "psi.compiler.ArrayValue", Constructor);
@@ -889,22 +993,28 @@ namespace Psi {
       v("members", &UnionType::members);
     }
     
-    TermResultType UnionType::check_type_impl(const UnionType& self) {
-      TermResultType rt;
-      rt.pure = true;
-      rt.type_fixed_size = true;
-      
+    TreePtr<Term> UnionType::check_type_impl(const UnionType& self) {
       for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.members.begin(), ie = self.members.end(); ii != ie; ++ii) {
-        PSI_ASSERT((*ii)->result_type.pure);
-        rt.type_fixed_size = rt.type_fixed_size && (*ii)->result_type.type_fixed_size;
         if (!(*ii)->is_type())
           self.compile_context().error_throw(self.location(), "Union element type is not a type");
       }
       
-      rt.type = TermBuilder::metatype(self.compile_context());
-      rt.mode = term_mode_value;
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo UnionType::result_info_impl(const UnionType& self) {
+      TermResultInfo rt;
+      rt.type_fixed_size = true;
       // Unions are always primitive because there's no sensible default way to handle members
       rt.type_mode = type_mode_primitive;
+      
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.members.begin(), ie = self.members.end(); ii != ie; ++ii) {
+        const TermResultInfo& elem_info = (*ii)->result_info();
+        PSI_ASSERT((*ii)->pure());
+        rt.type_fixed_size = rt.type_fixed_size && elem_info.type_fixed_size;
+      }
+      
+      rt.mode = term_mode_value;
       return rt;
     }
 
@@ -923,10 +1033,10 @@ namespace Psi {
       ("member_value", &UnionValue::member_value);
     }
     
-    TermResultType UnionValue::check_type_impl(const UnionValue& self) {
+    TreePtr<Term> UnionValue::check_type_impl(const UnionValue& self) {
       bool found = false;
       for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = self.union_type->members.begin(), ie = self.union_type->members.end(); ii != ie; ++ii) {
-        if (self.member_value->result_type.type == *ii) {
+        if (self.member_value->type == *ii) {
           found = true;
           break;
         }
@@ -935,12 +1045,18 @@ namespace Psi {
       if (!found)
         self.compile_context().error_throw(self.location(), "Union constructor member value is not a member of the union");
       
-      TermResultType rt;
-      rt.type = self.union_type;
+      return self.union_type;
+    }
+    
+    TermResultInfo UnionValue::result_info_impl(const UnionValue&) {
+      TermResultInfo rt;
       rt.mode = term_mode_value;
-      rt.pure = self.member_value->result_type.pure;
       rt.type_mode = type_mode_none;
       return rt;
+    }
+    
+    bool UnionValue::pure_impl(const UnionValue& self) {
+      return self.member_value->pure();
     }
     
     const FunctionalVtable UnionValue::vtable = PSI_COMPILER_FUNCTIONAL(UnionValue, "psi.compiler.UnionValue", Constructor);
@@ -954,13 +1070,15 @@ namespace Psi {
       visit_base<Type>(v);
     }
     
-    TermResultType UpwardReferenceType::check_type_impl(const UpwardReferenceType& self) {
-      TermResultType rt;
-      rt.type_mode = type_mode_complex;
-      rt.type_fixed_size = false;
+    TreePtr<Term> UpwardReferenceType::check_type_impl(const UpwardReferenceType& self) {
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo UpwardReferenceType::result_info_impl(const UpwardReferenceType&) {
+      TermResultInfo rt;
+      rt.type_mode = type_mode_primitive;
+      rt.type_fixed_size = true;
       rt.mode = term_mode_value;
-      rt.pure = true;
-      rt.type = TermBuilder::metatype(self.compile_context());
       return rt;
     }
     
@@ -968,7 +1086,7 @@ namespace Psi {
     
     UpwardReference::UpwardReference(const TreePtr<Term>& outer_type_, const TreePtr<Term>& outer_index_, const TreePtr<Term>& next_, const SourceLocation& location)
     : Constructor(&vtable),
-    outer_type(TermBuilder::to_functional(outer_type_, location)),
+    maybe_outer_type(TermBuilder::to_functional(outer_type_, location)),
     outer_index(TermBuilder::to_functional(outer_index_, location)),
     next(TermBuilder::to_functional(next_, location)) {
     }
@@ -977,37 +1095,81 @@ namespace Psi {
      * \brief Get the inner type implied by UpwardReference
      */
     TreePtr<Term> UpwardReference::inner_type() const {
-      return ElementValue::element_type(outer_type, outer_index, location());
+      return ElementValue::element_type(outer_type(), outer_index, location());
+    }
+    
+    TreePtr<Term> UpwardReference::outer_type() const {
+      PSI_STD::vector<const UpwardReference*> upref_list;
+      const UpwardReference *upref = this;
+      while (true) {
+        if (!upref)
+          compile_context().error_throw(location(), "Outer type of upward reference not available");
+
+        if (upref->maybe_outer_type)
+          break;
+        
+        upref = dyn_tree_cast<UpwardReference>(upref->next.get());
+        upref_list.push_back(upref);
+      }
+      
+      TreePtr<Term> ty = upref->maybe_outer_type;
+      while (!upref_list.empty()) {
+        ty = ElementValue::element_type(ty, upref_list.back()->outer_index, location());
+        upref_list.pop_back();
+      }
+      
+      return ty;
     }
     
     template<typename V>
     void UpwardReference::visit(V& v) {
       visit_base<Constructor>(v);
-      v("outer_type", &UpwardReference::outer_type)
+      v("maybe_outer_type", &UpwardReference::maybe_outer_type)
       ("outer_index", &UpwardReference::outer_index)
       ("next", &UpwardReference::next);
     }
     
-    TermResultType UpwardReference::check_type_impl(const UpwardReference& self) {
-      if (self.outer_index->result_type.type != TermBuilder::size_type(self.compile_context()))
+    TreePtr<Term> UpwardReference::check_type_impl(const UpwardReference& self) {
+      if (self.outer_index->type != TermBuilder::size_type(self.compile_context()))
         self.compile_context().error_throw(self.location(), "Upward reference index is not a size");
+      
       if (self.next) {
         if (TreePtr<UpwardReference> next_upref = dyn_treeptr_cast<UpwardReference>(self.next)) {
-          if (next_upref->inner_type() != self.outer_type)
+          if (self.maybe_outer_type && (next_upref->maybe_outer_type) && (next_upref->inner_type() != self.outer_type()))
             self.compile_context().error_throw(self.location(), "Inner type of next upward reference does not match outer type of this one");
-        } else if (self.next->result_type.type != TermBuilder::upref_type(self.compile_context()))
+        } else if (self.next->type != TermBuilder::upref_type(self.compile_context())) {
           self.compile_context().error_throw(self.location(), "Next reference of upward reference is not itself an upward reference");
+        }
+      } else if (!self.maybe_outer_type) {
+        self.compile_context().error_throw(self.location(), "One of outer_type and next of an upref must be non-NULL");
       }
 
       // This checks that the arguments are correct
-      self.inner_type();
+      if (self.maybe_outer_type)
+        self.inner_type();
       
-      TermResultType rt;
+      return TermBuilder::upref_type(self.compile_context());
+    }
+    
+    TermResultInfo UpwardReference::result_info_impl(const UpwardReference&) {
+      TermResultInfo rt;
       rt.type_mode = type_mode_none;
       rt.mode = term_mode_value;
-      rt.pure = true;
-      rt.type = TermBuilder::upref_type(self.compile_context());
       return rt;
+    }
+    
+    bool UpwardReference::pure_impl(const UpwardReference&) {
+      return true;
+    }
+
+    TreePtr<Term> UpwardReference::rewrite_impl(const UpwardReference& self, TermRewriter& rewriter, const SourceLocation& location) {
+      TreePtr<Term> next, outer_type, outer_index;
+      outer_index = rewriter.rewrite(self.outer_index);
+      if (self.next)
+        next = rewriter.rewrite(self.next);
+      if (!next)
+        outer_type = rewriter.rewrite(self.outer_type());
+      return TermBuilder::upref(outer_type, outer_index, next, location);
     }
     
     const FunctionalVtable UpwardReference::vtable = PSI_COMPILER_FUNCTIONAL(UpwardReference, "psi.compiler.UpwardReference", Constructor);
@@ -1025,16 +1187,20 @@ namespace Psi {
       ("upref", &DerivedType::upref);
     }
     
-    TermResultType DerivedType::check_type_impl(const DerivedType& self) {
+    TreePtr<Term> DerivedType::check_type_impl(const DerivedType& self) {
       if (self.upref) {
         if (TreePtr<UpwardReference> upref = dyn_treeptr_cast<UpwardReference>(self.upref)) {
           if (upref->inner_type() != self.value_type)
             self.compile_context().error_throw(self.location(), "Value type of DerivedType does not match type implied by upward reference");
-        } else if (self.upref->result_type.type != TermBuilder::upref_type(self.compile_context()))
+        } else if (self.upref->type != TermBuilder::upref_type(self.compile_context()))
           self.compile_context().error_throw(self.location(), "Upward reference parameter to DerivedType is not an upward reference");
       }
-
-      TermResultType rt = self.value_type->result_type;
+      
+      return self.value_type->type;
+    }
+    
+    TermResultInfo DerivedType::result_info_impl(const DerivedType& self) {
+      TermResultInfo rt = self.value_type->result_info();
       rt.type_mode = type_mode_complex;
       rt.type_fixed_size = false;
       return rt;
@@ -1075,16 +1241,20 @@ namespace Psi {
       ("parameters", &TypeInstance::parameters);
     }
     
-    TermResultType TypeInstance::check_type_impl(const TypeInstance& self) {
+    TreePtr<Term> TypeInstance::check_type_impl(const TypeInstance& self) {
       if (self.parameters.size() != self.generic->pattern.size())
         self.compile_context().error_throw(self.location(), "Wrong number of parameters to generic");
       
       for (std::size_t ii = 0, ie = self.parameters.size(); ii != ie; ++ii) {
-        if (self.parameters[ii]->result_type.type != self.generic->pattern[ii]->specialize(self.location(), self.parameters))
+        if (self.parameters[ii]->type != self.generic->pattern[ii]->specialize(self.location(), self.parameters))
           self.compile_context().error_throw(self.location(), "Incorrect parameter type to generic instance");
       }
       
-      return self.unwrap()->result_type;
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo TypeInstance::result_info_impl(const TypeInstance& self) {
+      return self.unwrap()->result_info();
     }
 
     const FunctionalVtable TypeInstance::vtable = PSI_COMPILER_FUNCTIONAL(TypeInstance, "psi.compiler.TypeInstance", Type);
@@ -1102,16 +1272,18 @@ namespace Psi {
       ("member_value", &TypeInstanceValue::member_value);
     }
     
-    TermResultType TypeInstanceValue::check_type_impl(const TypeInstanceValue& self) {
+    TreePtr<Term> TypeInstanceValue::check_type_impl(const TypeInstanceValue& self) {
       if (self.type_instance->generic->primitive_mode == GenericType::primitive_never)
         self.compile_context().error_throw(self.location(), "Cannot construct complex generic type with non-default value");
       
-      if (self.member_value->result_type.type != self.type_instance->unwrap())
+      if (self.member_value->type != self.type_instance->unwrap())
         self.compile_context().error_throw(self.location(), "Generic instance value has the wrong type");
       
-      TermResultType rt = self.member_value->result_type;
-      rt.type = self.type_instance;
-      return rt;
+      return self.type_instance;
+    }
+    
+    TermResultInfo TypeInstanceValue::result_info_impl(const TypeInstanceValue& self) {
+      return self.member_value->result_info();
     }
 
     const FunctionalVtable TypeInstanceValue::vtable = PSI_COMPILER_FUNCTIONAL(TypeInstanceValue, "psi.compiler.TypeInstanceValue", Constructor);
@@ -1123,11 +1295,21 @@ namespace Psi {
     false_value(false_value_) {
     }
     
-    TermResultType IfThenElse::check_type_impl(const IfThenElse& self) {
-      if (self.condition->result_type.type != TermBuilder::boolean_type(self.compile_context()))
+    TreePtr<Term> IfThenElse::check_type_impl(const IfThenElse& self) {
+      if (self.condition->type != TermBuilder::boolean_type(self.compile_context()))
         self.compile_context().error_throw(self.location(), "Conditional value is not boolean");
+      if (self.true_value->type != self.false_value->type)
+        self.compile_context().error_throw(self.location(), "True and false values of conditional expression have different types");
       
-      return result_type_combine(self.true_value->result_type, self.false_value->result_type, self.compile_context(), self.location());
+      return result_type_combine(self.true_value->type, self.false_value->type, self.compile_context(), self.location());
+    }
+    
+    TermResultInfo IfThenElse::result_info_impl(const IfThenElse& self) {
+      return term_info_combine(self.true_value->result_info(), self.false_value->result_info());
+    }
+    
+    bool IfThenElse::pure_impl(const IfThenElse& self) {
+      return self.condition->pure() && self.true_value->pure() && self.false_value->pure();
     }
     
     template<typename V>
@@ -1146,7 +1328,7 @@ namespace Psi {
     argument_mode(argument_mode_),
     argument(argument_) {
       if (argument) {
-        if ((argument_mode == result_mode_functional) && (argument->result_type.type->result_type.type_mode == type_mode_complex))
+        if ((argument_mode == result_mode_functional) && (argument->result_info().type_mode == type_mode_complex))
           compile_context().error_throw(location, "Cannot pass complex type in functional argument");
       }
     }
@@ -1161,10 +1343,17 @@ namespace Psi {
     
     const TreeVtable JumpTarget::vtable = PSI_COMPILER_TREE(JumpTarget, "psi.compiler.JumpTarget", Tree);
     
-    TermResultType JumpGroup::make_result_type(const TreePtr<Term>& initial, const PSI_STD::vector<TreePtr<JumpTarget> >& values, const SourceLocation& location) {
-      TermResultType rt = initial->result_type;
+    TreePtr<Term> JumpGroup::make_result_type(const TreePtr<Term>& initial, const PSI_STD::vector<TreePtr<JumpTarget> >& values, const SourceLocation& location) {
+      TreePtr<Term> rt = initial->type;
       for (PSI_STD::vector<TreePtr<JumpTarget> >::const_iterator ii = values.begin(), ie = values.end(); ii != ie; ++ii)
-        rt = result_type_combine(rt, (*ii)->value->result_type, initial.compile_context(), location);
+        rt = result_type_combine(rt, (*ii)->value->type, initial.compile_context(), location);
+      return rt;
+    }
+    
+    TermResultInfo JumpGroup::result_info_impl(const JumpGroup& self) {
+      TermResultInfo rt = self.initial->result_info();
+      for (PSI_STD::vector<TreePtr<JumpTarget> >::const_iterator ii = self.entries.begin(), ie = self.entries.end(); ii != ie; ++ii)
+        rt = term_info_combine(rt, (*ii)->value->result_info());
       return rt;
     }
 
@@ -1183,25 +1372,22 @@ namespace Psi {
 
     const TermVtable JumpGroup::vtable = PSI_COMPILER_TERM(JumpGroup, "psi.compiler.JumpGroup", Term);
     
-    TermResultType JumpTo::make_result_type(const TreePtr<JumpTarget>& target, const TreePtr<Term>& argument, const SourceLocation& location) {
-      if (target->argument->result_type.type != argument->result_type.type)
+    JumpTo::JumpTo(const TreePtr<JumpTarget>& target_, const TreePtr<Term>& argument_, const SourceLocation& location)
+    : Term(&vtable, TermBuilder::bottom_type(target_.compile_context()), location),
+    target(target_),
+    argument(argument_) {
+      if (target->argument->type != argument->type)
         target.compile_context().error_throw(location, "Jump argument has the wrong type");
       
       if (target->argument_mode == result_mode_lvalue) {
-        if ((argument->result_type.mode != term_mode_lref) && (argument->result_type.mode != term_mode_rref))
+        const TermResultInfo& tri = argument->result_info();
+        if ((tri.mode != term_mode_lref) && (tri.mode != term_mode_rref))
           target.compile_context().error_throw(location, "Cannot make reference to temporary in a jump");
       } else if (target->argument_mode == result_mode_rvalue) {
-        if (argument->result_type.mode != term_mode_rref)
+        const TermResultInfo& tri = argument->result_info();
+        if (tri.mode != term_mode_rref)
           target.compile_context().error_throw(location, "Cannot make rvalue reference to temporary or lvalue in a jump");
       }
-      
-      return result_type_bottom(target.compile_context(), false);
-    }
-    
-    JumpTo::JumpTo(const TreePtr<JumpTarget>& target_, const TreePtr<Term>& argument_, const SourceLocation& location)
-    : Term(&vtable, make_result_type(target_, argument_, location), location),
-    target(target_),
-    argument(argument_) {
     }
     
     template<typename V>
@@ -1209,6 +1395,10 @@ namespace Psi {
       visit_base<Term>(v);
       v("target", &JumpTo::target)
       ("argument", &JumpTo::argument);
+    }
+    
+    TermResultInfo JumpTo::result_info_impl(const JumpTo&) {
+      return term_info_bottom();
     }
 
     const TermVtable JumpTo::vtable = PSI_COMPILER_TERM(JumpTo, "psi.compiler.JumpTo", Term);
@@ -1222,12 +1412,12 @@ namespace Psi {
       arguments.swap(arguments_);
     }
 
-    TermResultType FunctionCall::get_result_type(const TreePtr<Term>& target, PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
-      TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(target->result_type.type);
+    TreePtr<Term> FunctionCall::get_result_type(const TreePtr<Term>& target, PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
+      TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(target->type);
       if (!ft)
         target.compile_context().error_throw(location, "Target of function call does not have function type");
       
-      if (target->result_type.mode != term_mode_lref)
+      if (target->result_info().mode != term_mode_lref)
         target.compile_context().error_throw(location, "Function call target is a function but not a reference", CompileError::error_internal);
       
       if (ft->parameter_types.size() != arguments.size())
@@ -1238,10 +1428,20 @@ namespace Psi {
           arguments[ii] = TermBuilder::to_functional(arguments[ii], location);
       }
 
-      TermResultType rt;
-      rt.type = ft->result_type_after(location, arguments)->anonymize(location);
-      
-      if (rt.type->result_type.type_mode != type_mode_bottom) {
+      return ft->result_type_after(location, arguments)->anonymize(location);
+    }
+    
+    template<typename Visitor>
+    void FunctionCall::visit(Visitor& v) {
+      visit_base<Term>(v);
+      v("target", &FunctionCall::target)
+      ("arguments", &FunctionCall::arguments);
+    }
+    
+    TermResultInfo FunctionCall::result_info_impl(const FunctionCall& self) {
+      TermResultInfo rt;
+      if (self.type->result_info().type_mode != type_mode_bottom) {
+        TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(self.target->type);
         switch (ft->result_mode) {
         case result_mode_by_value:
         case result_mode_functional: rt.mode = term_mode_value; break;
@@ -1253,22 +1453,14 @@ namespace Psi {
         rt.mode = term_mode_bottom;
       }
       
-      rt.type_mode = rt.type->is_type() ? type_mode_complex : type_mode_none;
-      rt.pure = false;
+      rt.type_mode = self.type->is_type() ? type_mode_complex : type_mode_none;
       return rt;
-    }
-    
-    template<typename Visitor>
-    void FunctionCall::visit(Visitor& v) {
-      visit_base<Term>(v);
-      v("target", &FunctionCall::target)
-      ("arguments", &FunctionCall::arguments);
     }
     
     const TermVtable FunctionCall::vtable = PSI_COMPILER_TERM(FunctionCall, "psi.compiler.FunctionCall", Term);
     
     SolidifyDuring::SolidifyDuring(const PSI_STD::vector<TreePtr<Term> >& value_, const TreePtr<Term>& body_, const SourceLocation& location)
-    : Term(&vtable, body_->result_type, location),
+    : Term(&vtable, body_->type, location),
     value(value_),
     body(body_) {
     }
@@ -1278,6 +1470,10 @@ namespace Psi {
       visit_base<Term>(v);
       v("value", &SolidifyDuring::value)
       ("body", &SolidifyDuring::body);
+    }
+    
+    TermResultInfo SolidifyDuring::result_info_impl(const SolidifyDuring& self) {
+      return self.body->result_info();
     }
     
     const TermVtable SolidifyDuring::vtable = PSI_COMPILER_TERM(SolidifyDuring, "psi.compiler.SolidifyDuring", Term);
@@ -1292,11 +1488,13 @@ namespace Psi {
       v("name", &PrimitiveType::name);
     }
     
-    TermResultType PrimitiveType::check_type_impl(const PrimitiveType& self) {
-      TermResultType rt;
-      rt.pure = true;
+    TreePtr<Term> PrimitiveType::check_type_impl(const PrimitiveType& self) {
+      return TermBuilder::metatype(self.compile_context());
+    }
+    
+    TermResultInfo PrimitiveType::result_info_impl(const PrimitiveType&) {
+      TermResultInfo rt;
       rt.type_fixed_size = true;
-      rt.type = TermBuilder::metatype(self.compile_context());
       rt.mode = term_mode_value;
       rt.type_mode = type_mode_primitive;
       return rt;
@@ -1319,16 +1517,21 @@ namespace Psi {
       ("data", &BuiltinValue::data);
     }
     
-    TermResultType BuiltinValue::check_type_impl(const BuiltinValue& self) {
+    TreePtr<Term> BuiltinValue::check_type_impl(const BuiltinValue& self) {
       if (!tree_isa<PrimitiveType>(self.builtin_type))
         self.compile_context().error_throw(self.location(), "Type of builtin value is not a primitive type");
-      
-      TermResultType rt;
-      rt.type = self.builtin_type;
-      rt.pure = true;
+      return self.builtin_type;
+    }
+    
+    TermResultInfo BuiltinValue::result_info_impl(const BuiltinValue&) {
+      TermResultInfo rt;
       rt.mode = term_mode_value;
       rt.type_mode = type_mode_none;
       return rt;
+    }
+    
+    bool BuiltinValue::pure_impl(const BuiltinValue&) {
+      return true;
     }
 
     const FunctionalVtable BuiltinValue::vtable = PSI_COMPILER_FUNCTIONAL(BuiltinValue, "psi.compiler.BuiltinValue", Constant);
@@ -1346,13 +1549,19 @@ namespace Psi {
       ("value", &IntegerValue::value);
     }
     
-    TermResultType IntegerValue::check_type_impl(const IntegerValue& self) {
-      TermResultType rt;
-      rt.pure = true;
-      rt.type = self.integer_type;
+    TreePtr<Term> IntegerValue::check_type_impl(const IntegerValue& self) {
+      return self.integer_type;
+    }
+    
+    TermResultInfo IntegerValue::result_info_impl(const IntegerValue&) {
+      TermResultInfo rt;
       rt.type_mode = type_mode_none;
       rt.mode = term_mode_value;
       return rt;
+    }
+    
+    bool IntegerValue::pure_impl(const IntegerValue&) {
+      return true;
     }
     
     const FunctionalVtable IntegerValue::vtable = PSI_COMPILER_FUNCTIONAL(IntegerValue, "psi.compiler.IntegerValue", Constant);
@@ -1368,19 +1577,25 @@ namespace Psi {
       v("value", &StringValue::value);
     }
     
-    TermResultType StringValue::check_type_impl(const StringValue& self) {
-      TermResultType rt;
-      rt.pure = true;
+    TreePtr<Term> StringValue::check_type_impl(const StringValue& self) {
+      return TermBuilder::string_type(self.value.length()+1, self.compile_context(), self.location());
+    }
+    
+    TermResultInfo StringValue::result_info_impl(const StringValue&) {
+      TermResultInfo rt;
       rt.mode = term_mode_value;
-      rt.type = TermBuilder::string_type(self.value.length()+1, self.compile_context(), self.location());
       rt.type_mode = type_mode_none;
       return rt;
+    }
+    
+    bool StringValue::pure_impl(const StringValue&) {
+      return true;
     }
     
     const FunctionalVtable StringValue::vtable = PSI_COMPILER_FUNCTIONAL(StringValue, "psi.compiler.StringValue", Constant);
     
     BuiltinFunction::BuiltinFunction(const String& name_, bool pure_, const TreePtr<FunctionType>& type, const SourceLocation& location)
-    : Global(&vtable, global_result_type(type), location),
+    : Global(&vtable, type, location),
     name(name_),
     pure(pure_) {
     }
@@ -1425,7 +1640,7 @@ namespace Psi {
     const TreeVtable Library::vtable = PSI_COMPILER_TREE(Library, "psi.compiler.Library", Tree);
     
     LibrarySymbol::LibrarySymbol(const TreePtr<Library>& library_, const TreePtr<TargetCallback>& callback_, const TreePtr<Term>& type, const SourceLocation& location)
-    : Global(&vtable, global_result_type(type), location),
+    : Global(&vtable, type, location),
     library(library_),
     callback(callback_) {
     }
@@ -1478,13 +1693,19 @@ namespace Psi {
       ("implementation", &InterfaceValue::implementation);
     }
     
-    TermResultType InterfaceValue::check_type_impl(const InterfaceValue& self) {
-      TermResultType rt;
+    TreePtr<Term> InterfaceValue::check_type_impl(const InterfaceValue& self) {
+      return self.interface->type_after(self.parameters, self.location());
+    }
+    
+    TermResultInfo InterfaceValue::result_info_impl(const InterfaceValue&) {
+      TermResultInfo rt;
       rt.mode = term_mode_lref;
       rt.type_mode = type_mode_none;
-      rt.pure = true;
-      rt.type = self.interface->type_after(self.parameters, self.location());
       return rt;
+    }
+    
+    bool InterfaceValue::pure(const InterfaceValue&) {
+      return true;
     }
     
     const FunctionalVtable InterfaceValue::vtable = PSI_COMPILER_FUNCTIONAL(InterfaceValue, "psi.compiler.InterfaceValue", Functional);
@@ -1494,8 +1715,12 @@ namespace Psi {
     value(value_) {
     }
     
-    TermResultType MovableValue::check_type_impl(const MovableValue& self) {
-      TermResultType rs = self.value->result_type;
+    TreePtr<Term> MovableValue::check_type_impl(const MovableValue& self) {
+      return self.value->type;
+    }
+    
+    TermResultInfo MovableValue::result_info_impl(const MovableValue& self) {
+      TermResultInfo rs = self.value->result_info();
       if (rs.mode == term_mode_lref)
         rs.mode = term_mode_rref;
       return rs;
@@ -1510,7 +1735,7 @@ namespace Psi {
     const FunctionalVtable MovableValue::vtable = PSI_COMPILER_FUNCTIONAL(MovableValue, "psi.compiler.MovableValue", Functional);
     
     InitializePointer::InitializePointer(const TreePtr<Term>& target_ptr_, const TreePtr<Term>& assign_value_, const TreePtr<Term>& inner_, const SourceLocation& location)
-    : Term(&vtable, inner_->result_type, location),
+    : Term(&vtable, inner_->type, location),
     target_ptr(target_ptr_),
     assign_value(assign_value_),
     inner(inner_) {
@@ -1524,10 +1749,14 @@ namespace Psi {
       ("inner", &InitializePointer::inner);
     }
     
+    TermResultInfo InitializePointer::result_info_impl(const InitializePointer& self) {
+      return self.inner->result_info();
+    }
+    
     const TermVtable InitializePointer::vtable = PSI_COMPILER_TERM(InitializePointer, "psi.compiler.InitializePointer", Term);
     
     AssignPointer::AssignPointer(const TreePtr<Term>& target_ptr_, const TreePtr<Term>& assign_value_, const SourceLocation& location)
-    : Term(&vtable, result_type_void(target_ptr_.compile_context()), location),
+    : Term(&vtable, TermBuilder::empty_type(target_ptr_.compile_context()), location),
     target_ptr(target_ptr_),
     assign_value(assign_value_) {
     }
@@ -1538,11 +1767,15 @@ namespace Psi {
       v("target_ptr", &AssignPointer::target_ptr)
       ("assign_value", &AssignPointer::assign_value);
     }
+    
+    TermResultInfo AssignPointer::result_info_impl(const AssignPointer&) {
+      return term_info_void();
+    }
 
     const TermVtable AssignPointer::vtable = PSI_COMPILER_TERM(AssignPointer, "psi.compiler.AssignPointer", Term);
     
     FinalizePointer::FinalizePointer(const TreePtr<Term>& target_ptr_, const SourceLocation& location)
-    : Term(&vtable, result_type_void(target_ptr_.compile_context()), location) {
+    : Term(&vtable, TermBuilder::empty_type(target_ptr_.compile_context()), location) {
     }
     
     template<typename V>
@@ -1551,10 +1784,14 @@ namespace Psi {
       v("target_ptr", &FinalizePointer::target_ptr);
     }
     
+    TermResultInfo FinalizePointer::result_info_impl(const FinalizePointer&) {
+      return term_info_void();
+    }
+    
     const TermVtable FinalizePointer::vtable = PSI_COMPILER_TERM(FinalizePointer, "psi.compiler.FinalizePointer", Term);
     
     IntroduceImplementation::IntroduceImplementation(const PSI_STD::vector<TreePtr<Implementation> >& implementations_, const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, value_->result_type, location),
+    : Term(&vtable, value_->type, location),
     implementations(implementations_),
     value(value_) {
     }
@@ -1566,27 +1803,34 @@ namespace Psi {
       ("value", &IntroduceImplementation::value);
     }
     
+    TermResultInfo IntroduceImplementation::result_info_impl(const IntroduceImplementation& self) {
+      return self.value->result_info();
+    }
+    
     const TermVtable IntroduceImplementation::vtable = PSI_COMPILER_TERM(IntroduceImplementation, "psi.compiler.IntroduceImplementation", Term);
     
-    TermResultType FunctionalEvaluate::make_result_type(const TreePtr<Term>& value, const SourceLocation& location) {
-      if (value->result_type.pure)
-        value.compile_context().error_throw(location, "Already pure terms should not be wrapped in FunctionalEvaluate", CompileError::error_internal);
-      TermResultType rt;
-      rt.type = value->result_type.type;
-      rt.pure = true;
-      rt.mode = term_mode_value;
-      rt.type_mode = value->result_type.type_mode;
-      return rt;
-    }
-
     FunctionalEvaluate::FunctionalEvaluate(const TreePtr<Term>& value, const SourceLocation& location)
-    : Term(&vtable, make_result_type(value, location), location) {
+    : Term(&vtable, value->type, location) {
+      if (value->pure())
+        value.compile_context().error_throw(location, "Already pure terms should not be wrapped in FunctionalEvaluate", CompileError::error_internal);
     }
     
     template<typename V>
     void FunctionalEvaluate::visit(V& v) {
       visit_base<Term>(v);
       v("value", &FunctionalEvaluate::value);
+    }
+    
+    TermResultInfo FunctionalEvaluate::result_info_impl(const FunctionalEvaluate& self) {
+      TermResultInfo rt;
+      rt.mode = term_mode_value;
+      rt.type_mode = self.value->result_info().type_mode;
+      rt.type_fixed_size = false;
+      return rt;
+    }
+    
+    bool FunctionalEvaluate::pure_impl(const FunctionalEvaluate&) {
+      return true;
     }
     
     const TermVtable FunctionalEvaluate::vtable = PSI_COMPILER_TERM(FunctionalEvaluate, "psi.compiler.FunctionalEvaluate", Term);
