@@ -213,12 +213,12 @@ namespace Psi {
         else if (TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(my_term))
           my_term = derived->value_type;
         else if (TreePtr<GlobalStatement> def = dyn_treeptr_cast<GlobalStatement>(my_term)) {
-          if (def->mode == statement_mode_functional)
+          if ((def->mode == statement_mode_functional) && def->value->pure())
             my_term = def->value;
           else
             break;
         } else if (TreePtr<Statement> stmt = dyn_treeptr_cast<Statement>(my_term)) {
-          if (stmt->mode == statement_mode_functional)
+          if ((stmt->mode == statement_mode_functional) && stmt->value->pure())
             my_term = stmt->value;
           else
             break;
@@ -254,7 +254,8 @@ namespace Psi {
       // Find all possible matching overloads
       for (unsigned ii = 0, ie = type->values.size(); ii != ie; ++ii) {
         const TreePtr<OverloadValue>& v = type->values[ii];
-        if(v && (type == v->overload_type) && overload_pattern_match(v->pattern, parameters, v->n_wildcards, match_scratch))
+        PSI_ASSERT(v && (!v->overload_type || (v->overload_type == type)));
+        if(overload_pattern_match(v->pattern, parameters, v->n_wildcards, match_scratch))
           results.push_back(std::make_pair(match_scratch, v));
       }
       

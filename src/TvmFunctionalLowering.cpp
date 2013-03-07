@@ -244,7 +244,7 @@ struct TvmFunctionalLowererMap {
   }
   
   static TvmResult build_array_value(TvmFunctionalBuilder& builder, const TreePtr<ArrayValue>& array_value) {
-    TvmResult type = builder.build(treeptr_cast<ArrayType>(array_value->type)->element_type);
+    TvmResult type = builder.build(array_value->array_type->element_type);
     std::vector<Tvm::ValuePtr<> > entries;
     TvmScope *scope = NULL;
     for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = array_value->element_values.begin(), ie = array_value->element_values.end(); ii != ie; ++ii) {

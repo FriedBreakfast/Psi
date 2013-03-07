@@ -155,7 +155,7 @@ TreePtr<Term> TermBuilder::size_value(unsigned index, CompileContext& compile_co
  * \param location Location for error reporting.
  */
 unsigned TermBuilder::size_from(const TreePtr<Term>& value, const SourceLocation& location) {
-  TreePtr<IntegerValue> inner = dyn_treeptr_cast<IntegerValue>(functional_unwrap(value));
+  TreePtr<IntegerValue> inner = term_unwrap_dyn_cast<IntegerValue>(value);
   if (!inner)
     value.compile_context().error_throw(location, "Expected a constant integer value");
   return inner->value;
@@ -165,7 +165,7 @@ unsigned TermBuilder::size_from(const TreePtr<Term>& value, const SourceLocation
  * \brief Compare a constant index to an integer.
  */
 bool TermBuilder::size_equals(const TreePtr<Term>& value, std::size_t n) {
-  TreePtr<IntegerValue> inner = dyn_treeptr_cast<IntegerValue>(functional_unwrap(value));
+  TreePtr<IntegerValue> inner = term_unwrap_dyn_cast<IntegerValue>(value);
   return inner && (int(n) == inner->value);
 }
 
@@ -351,6 +351,9 @@ TreePtr<FunctionalEvaluate> TermBuilder::functional_eval(const TreePtr<Term>& va
  * \brief Wrap value in a FunctionalEvaluate tree if it is not pure already.
  */
 TreePtr<Term> TermBuilder::to_functional(const TreePtr<Term>& value, const SourceLocation& location) {
+  if (!value)
+    return TreePtr<Term>();
+  
   PSI_ASSERT(!value->type || (value->type->result_info().type_mode != type_mode_complex));
   if (!value->pure())
     return functional_eval(value, location);

@@ -306,7 +306,7 @@ struct TvmFunctionBuilder::InstructionLowering {
    */
   static TvmResult run_call(TvmFunctionBuilder& builder, const TreePtr<FunctionCall>& call) {
     // Build argument scope
-    TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(call->target->type);
+    TreePtr<FunctionType> ftype = term_unwrap_cast<FunctionType>(call->target->type);
     std::vector<Tvm::ValuePtr<> > tvm_arguments;
     bool object_stack_saved = false;
     for (unsigned ii = 0, ie = call->arguments.size(); ii != ie; ++ii) {
@@ -337,7 +337,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       PSI_NOT_IMPLEMENTED();
 
     Tvm::ValuePtr<> result;
-    if (TreePtr<BuiltinFunction> builtin = dyn_treeptr_cast<BuiltinFunction>(call->target)) {
+    if (TreePtr<BuiltinFunction> builtin = term_unwrap_dyn_cast<BuiltinFunction>(call->target)) {
       PSI_ASSERT(ftype->result_mode == result_mode_functional);
       PSI_NOT_IMPLEMENTED();
     } else {
@@ -410,7 +410,7 @@ struct TvmFunctionBuilder::InstructionLowering {
 
   static TvmResult run_finalize(TvmFunctionBuilder& builder, const TreePtr<FinalizePointer>& finalize) {
     TvmResult dest_ptr = builder.build(finalize->target_ptr);
-    TreePtr<PointerType> ptr_type = treeptr_cast<PointerType>(finalize->target_ptr);
+    TreePtr<PointerType> ptr_type = term_unwrap_cast<PointerType>(finalize->target_ptr->type);
     builder.object_destroy(dest_ptr.value, ptr_type->target_type, finalize.location());
     return TvmResult(builder.m_state.scope.get(), Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), finalize.location()));
   }

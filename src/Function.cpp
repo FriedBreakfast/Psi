@@ -174,7 +174,7 @@ namespace Psi {
       PSI_STD::vector<TreePtr<InterfaceValue> > interfaces;
       for (PSI_STD::vector<SharedPtr<Parser::Expression> >::const_iterator ii = parsed_implicit_arguments.interfaces.begin(), ie = parsed_implicit_arguments.interfaces.end(); ii != ie; ++ii) {
         TreePtr<Term> interface = compile_expression(*ii, final_argument_context, location.logical);
-        TreePtr<InterfaceValue> interface_cast = dyn_treeptr_cast<InterfaceValue>(interface);
+        TreePtr<InterfaceValue> interface_cast = term_unwrap_dyn_cast<InterfaceValue>(interface);
         if (!interface_cast) {
           SourceLocation interface_location((*ii)->location.location, location.logical);
           compile_context.error_throw(interface_location, "Interface description did not evaluate to an interface");
@@ -207,7 +207,7 @@ namespace Psi {
     TreePtr<Term> function_call(const TreePtr<Term>& function, const PSI_STD::vector<TreePtr<Term> >& explicit_arguments, const SourceLocation& location) {
       CompileContext& compile_context = function.compile_context();
 
-      TreePtr<FunctionType> ftype = dyn_treeptr_cast<FunctionType>(function->type);
+      TreePtr<FunctionType> ftype = term_unwrap_dyn_cast<FunctionType>(function->type);
       if (!ftype)
         compile_context.error_throw(location, "Call target does not have function type");
 
@@ -225,7 +225,7 @@ namespace Psi {
       all_arguments.insert(all_arguments.end(), explicit_arguments.begin(), explicit_arguments.end());
       
       for (unsigned ii = 0, ie = explicit_arguments.size(); ii != ie; ++ii) {
-        if (!explicit_arguments[ii]->type->match(ftype->parameter_types[ii].type, all_arguments, 0))
+        if (!ftype->parameter_types[ii].type->match(explicit_arguments[ii]->type, all_arguments, 0))
           function.compile_context().error_throw(explicit_arguments[ii].location(), "Incorrect argument type");
       }
 

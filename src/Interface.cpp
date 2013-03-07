@@ -148,9 +148,9 @@ namespace Psi {
     m_pattern_interfaces(pattern_interfaces) {
       PSI_STD::vector<TreePtr<Term> > type_pattern;
       
-      if (TreePtr<Exists> interface_exists = dyn_treeptr_cast<Exists>(m_interface->type))
-        if (TreePtr<DerivedType> interface_derived = dyn_treeptr_cast<DerivedType>(interface_exists->result))
-          if (TreePtr<TypeInstance> interface_inst = dyn_treeptr_cast<TypeInstance>(interface_derived->value_type))
+      if (TreePtr<Exists> interface_exists = term_unwrap_dyn_cast<Exists>(m_interface->type))
+        if (TreePtr<DerivedType> interface_derived = term_unwrap_dyn_cast<DerivedType>(interface_exists->result))
+          if (TreePtr<TypeInstance> interface_inst = term_unwrap_dyn_cast<TypeInstance>(interface_derived->value_type))
             m_generic = interface_inst->generic;
         
       if (!m_generic)
@@ -280,15 +280,15 @@ namespace Psi {
     }
 
     TreePtr<FunctionType> ImplementationHelper::member_function_type(int index, const SourceLocation& location) {
-      TreePtr<StructType> st = dyn_treeptr_cast<StructType>(m_generic->member_type());
+      TreePtr<StructType> st = term_unwrap_dyn_cast<StructType>(m_generic->member_type());
       if (!st)
         m_generic.compile_context().error_throw(location, "ImplementationHelper::member_function_type used on generic which is not a struct", CompileError::error_internal);
       
-      TreePtr<PointerType> pt = dyn_treeptr_cast<PointerType>(st->members[index]);
+      TreePtr<PointerType> pt = term_unwrap_dyn_cast<PointerType>(st->members[index]);
       if (!pt)
         m_generic.compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a pointer", CompileError::error_internal);
       
-      TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(pt->target_type);
+      TreePtr<FunctionType> ft = term_unwrap_dyn_cast<FunctionType>(pt->target_type);
       if (!ft)
         m_generic.compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a function pointer", CompileError::error_internal);
       

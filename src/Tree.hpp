@@ -53,7 +53,6 @@ namespace Psi {
       Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location);
       
       template<typename V> static void visit(V& v);
-      static bool match_impl(const Global& lhs, const Global& rhs, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth);
       static TermResultInfo result_info_impl(const Global& self);
       static bool pure_impl(const Global& self);
     };
@@ -99,6 +98,8 @@ namespace Psi {
       
       GlobalStatement(const TreePtr<Module>& module, const TreePtr<Term>& value, StatementMode mode, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
+      static TermResultInfo result_info_impl(const GlobalStatement& self);
+      static bool pure_impl(const GlobalStatement& self);
     };
 
     /**
@@ -131,7 +132,7 @@ namespace Psi {
       }
       
       template<typename V> static void visit(V& v);
-      template<typename Derived> static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue);
+      static void local_complete_impl(const GlobalVariable& self);
     };
     
     /**
@@ -217,7 +218,7 @@ namespace Psi {
       }
 
       template<typename Visitor> static void visit(Visitor& v);
-      template<typename Derived> static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue);
+      static void local_complete_impl(const GenericType& self);
 
       /// \brief Parameters pattern.
       PSI_STD::vector<TreePtr<Term> > pattern;
@@ -722,7 +723,7 @@ namespace Psi {
       const TreePtr<Term>& body() const {return m_body.get(this, &Function::get_ptr);}
 
       template<typename Visitor> static void visit(Visitor& v);
-      template<typename Derived> static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue);
+      static void local_complete_impl(const Function& self);
     };
 
     /**

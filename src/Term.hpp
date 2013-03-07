@@ -108,14 +108,57 @@ namespace Psi {
     &::Psi::Compiler::TermRewriterWrapper<cls>::rewrite \
   }
     
+    class TermBinaryRewriter;    
+    
+    struct TermBinaryRewriterVtable {
+      SIVtable base;
+      PsiBool (*binary_rewrite) (TermBinaryRewriter*, TreePtr<Term>*, const TreePtr<Term>*, const SourceLocation*);
+    };
+    
+    class TermBinaryRewriter : public SIBase {
+    public:
+      static const SIVtable vtable;
+      typedef TermBinaryRewriterVtable VtableType;
+      
+      TermBinaryRewriter(const VtableType *vptr) {PSI_COMPILER_SI_INIT(vptr);}
+      
+      /**
+       * \brief Rewrite two terms into one.
+       * 
+       * The result is placed into \c lhs. The return value indicates whether
+       * the operation was successful.
+       */
+      bool binary_rewrite(TreePtr<Term>& lhs, const TreePtr<Term>& rhs, const SourceLocation& location) {
+        return derived_vptr(this)->binary_rewrite(this, &lhs, &rhs, &location);
+      }
+    };
+    
+    template<typename Derived>
+    struct TermBinaryRewriterWrapper : NonConstructible {
+      static PsiBool rewrite(TermBinaryRewriter *self, TreePtr<Term> *lhs, const TreePtr<Term> *rhs, const SourceLocation *location) {
+        return Derived::binary_rewrite_impl(*static_cast<Derived*>(self), *lhs, *rhs, *location);
+      }
+    };
+
+#define PSI_COMPILER_TERM_BINARY_REWRITER(cls,name,base) { \
+    PSI_COMPILER_SI(name,&base::vtable), \
+    &::Psi::Compiler::TermBinaryRewriterWrapper<cls>::rewrite \
+  }
+    
     class TermVisitorVisitor : public ObjectVisitorBase<TermVisitorVisitor> {
       TermVisitor *m_v;
+
+      template<typename T> void visit_tree_ptr_helper(const TreePtr<T>&, Tree*) {}
+      template<typename T> void visit_tree_ptr_helper(const TreePtr<T>& ptr, Term*) {m_v->visit(ptr);}
       
     public:
       TermVisitorVisitor(TermVisitor *v) : m_v(v) {}
       template<typename T> void visit_object_ptr(const ObjectPtr<T>&) {}
-      template<typename T> void visit_tree_ptr(const TreePtr<T>& ptr) {m_v->visit(ptr);}
-      template<typename T, typename U> void visit_delayed(DelayedValue<T,U>& ptr) {m_v->visit(ptr.get_checked());}
+      template<typename T> void visit_tree_ptr(const TreePtr<T>& ptr) {visit_tree_ptr_helper(ptr, static_cast<T*>(NULL));}
+      template<typename T, typename U> void visit_delayed(const DelayedValue<T,U>& ptr) {
+        boost::array<T*, 1> star = {{const_cast<T*>(&ptr.get_checked())}};
+        visit_callback(*this, NULL, star);
+      }
       template<typename T> boost::true_type do_visit_base(VisitorTag<T>) {return boost::true_type();}
       boost::false_type do_visit_base(VisitorTag<Object>) {return boost::false_type();}
     };
@@ -215,7 +258,9 @@ namespace Psi {
         return ((tri.type_mode == type_mode_metatype) || (tri.type_mode == type_mode_primitive)) && tri.type_fixed_size;
       }
       
+      bool unify(TreePtr<Term>& other, const SourceLocation& location) const;
       bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
+      bool match(const TreePtr<Term>& value) const;
       TreePtr<Term> parameterize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements) const;
       TreePtr<Term> specialize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values) const;
       TreePtr<Term> anonymize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Statement> >& statements) const;
@@ -237,6 +282,7 @@ namespace Psi {
       
       template<typename Derived>
       static void visit_terms_impl(const Derived& self, TermVisitor& v) {
+        Derived::local_complete_impl(self);
         boost::array<Derived*, 1> ptrs = {{const_cast<Derived*>(&self)}};
         TermVisitorVisitor vv(&v);
         visit_members(vv, ptrs);
@@ -250,7 +296,7 @@ namespace Psi {
     template<typename Derived>
     struct TermWrapper : NonConstructible {
       static void visit(const Term *self, TermVisitor *visitor) {
-        Derived::visit_terms_impl(*self, *visitor);
+        Derived::visit_terms_impl(*static_cast<const Derived*>(self), *visitor);
       }
       
       static void result_info(TermResultInfo *out, const Term *self) {
@@ -325,19 +371,17 @@ namespace Psi {
         }
       }
     };
-    
-    /**
-     * Term visitor to comparison.
-     */
-    class TermComparatorVisitor : boost::noncopyable {
-      TermComparator *m_v;
 
+    template<typename Derived>
+    class TermBinaryVisitBase : boost::noncopyable {
+      Derived& derived() {return *static_cast<Derived*>(this);}
+      
     public:
       bool result;
 
-      TermComparatorVisitor(TermComparator *v) : m_v(v), result(true) {}
+      TermBinaryVisitBase() : result(true) {}
 
-      void visit_base(const boost::array<Object*,2>&) {}
+      void visit_base(const boost::array<Term*,2>&) {}
 
       template<typename T>
       void visit_base(const boost::array<T*,2>& c) {
@@ -373,27 +417,23 @@ namespace Psi {
           visit_callback(*this, NULL, m);
       }
       
+    private:
       template<typename T>
-      bool treeptr_compare(const TreePtr<T>& lhs, const TreePtr<T>& rhs, Tree*) {
+      bool treeptr_compare(TreePtr<T>& lhs, TreePtr<T>& rhs, Tree*) {
         return lhs == rhs;
       }
 
       template<typename T>
-      bool treeptr_compare(const TreePtr<T>& lhs, const TreePtr<T>& rhs, Term*) {
-        return m_v->compare(lhs, rhs);
+      bool treeptr_compare(TreePtr<T>& lhs, TreePtr<T>& rhs, Term*) {
+        return derived().term_visit(lhs, rhs);
       }
 
+    public:
       template<typename T>
       void visit_object(const char*, const boost::array<TreePtr<T>*, 2>& ptr) {
         if (!result)
           return;
-
-        if (!*ptr[0])
-          result = !*ptr[1];
-        else if (!*ptr[1])
-          result = false;
-        else
-          result = treeptr_compare(*ptr[0], *ptr[1], static_cast<T*>(NULL));
+        result = treeptr_compare(*ptr[0], *ptr[1], static_cast<T*>(NULL));
       }
 
     private:
@@ -451,6 +491,47 @@ namespace Psi {
         }
       }
     };
+
+    /**
+     * Term visitor to comparison.
+     */
+    class TermBinaryRewriterVisitor : public TermBinaryVisitBase<TermBinaryRewriterVisitor> {
+      TermBinaryRewriter *m_v;
+      const SourceLocation *m_location;
+
+    public:
+      TermBinaryRewriterVisitor(TermBinaryRewriter *v, const SourceLocation *location) : m_v(v), m_location(location) {}
+      
+      bool term_visit(TreePtr<Term>& lhs, const TreePtr<Term>& rhs) {
+        return m_v->binary_rewrite(lhs, rhs, *m_location);
+      }
+
+      template<typename T>
+      bool term_visit(TreePtr<T>& lhs, const TreePtr<T>& rhs) {
+        TreePtr<Term> tmp = lhs;
+        if (m_v->binary_rewrite(tmp, rhs, *m_location)) {
+          lhs = treeptr_cast<T>(tmp);
+          return true;
+        } else {
+          return false;
+        }
+      }
+    };
+
+    /**
+     * Term visitor to comparison.
+     */
+    class TermComparatorVisitor : public TermBinaryVisitBase<TermComparatorVisitor> {
+      TermComparator *m_v;
+
+    public:
+      TermComparatorVisitor(TermComparator *v) : m_v(v) {}
+      
+      template<typename T>
+      bool term_visit(const TreePtr<T>& lhs, const TreePtr<T>& rhs) {
+        return m_v->compare(lhs, rhs);
+      }
+    };
     
     class Functional;
     
@@ -462,6 +543,7 @@ namespace Psi {
       void (*check_type) (TreePtr<Term>*, const Functional*);
       Functional* (*clone) (const Functional*);
       void (*rewrite) (TreePtr<Term>*, const Functional*,TermRewriter*,const SourceLocation*);
+      PsiBool (*binary_rewrite) (TreePtr<Term>*,const Functional*,const Functional*,TermBinaryRewriter*,const SourceLocation*);
       PsiBool (*compare) (const Functional*,const Functional*,TermComparator*);
     };
     
@@ -511,6 +593,10 @@ namespace Psi {
         return rs.done();
       }
       
+      bool binary_rewrite(TreePtr<Term>& output, const Functional& other, TermBinaryRewriter& rewriter, const SourceLocation& location) const {
+        return derived_vptr(this)->binary_rewrite(&output, this, &other, &rewriter, &location);
+      }
+      
       bool compare(const Functional& other, TermComparator& cmp) const {
         PSI_ASSERT(si_vptr(this) == si_vptr(&other));
         return derived_vptr(this)->compare(this, &other, &cmp);
@@ -555,6 +641,20 @@ namespace Psi {
       }
       
       template<typename Derived>
+      static bool binary_rewrite_impl(TreePtr<Term>& output, const Derived& lhs, const Derived& rhs, TermBinaryRewriter& rewriter, const SourceLocation& location) {
+        TermBinaryRewriterVisitor rw(&rewriter, &location);
+        Derived copy(lhs);
+        boost::array<Derived*, 2> ptr = {{&copy, const_cast<Derived*>(&rhs)}};
+        visit_members(rw, ptr);
+        if (rw.result) {
+          output = lhs.compile_context().get_functional(copy, location);
+          return true;
+        } else {
+          return false;
+        }
+      }
+      
+      template<typename Derived>
       static bool compare_impl(const Derived& self, const Derived& other, TermComparator& cmp) {
         TermComparatorVisitor cv(&cmp);
         boost::array<Derived*, 2> ptrs = {{const_cast<Derived*>(&self), const_cast<Derived*>(&other)}};
@@ -593,6 +693,10 @@ namespace Psi {
         new (out) TreePtr<Term> (Derived::rewrite_impl(*static_cast<const Derived*>(self), *cmp, *location));
       }
       
+      static PsiBool binary_rewrite(TreePtr<Term> *out, const Functional *lhs, const Functional *rhs, TermBinaryRewriter *cmp, const SourceLocation *location) {
+        return Derived::binary_rewrite_impl(*out, *static_cast<const Derived*>(lhs), *static_cast<const Derived*>(rhs), *cmp, *location);
+      }
+      
       static PsiBool compare(const Functional *lhs, const Functional *rhs, TermComparator* cmp) {
         return Derived::compare_impl(*static_cast<const Derived*>(lhs), *static_cast<const Derived*>(rhs), *cmp);
       }
@@ -606,6 +710,7 @@ namespace Psi {
     &::Psi::Compiler::FunctionalWrapper<derived>::check_type, \
     &::Psi::Compiler::FunctionalWrapper<derived>::clone, \
     &::Psi::Compiler::FunctionalWrapper<derived>::rewrite, \
+    &::Psi::Compiler::FunctionalWrapper<derived>::binary_rewrite, \
     &::Psi::Compiler::FunctionalWrapper<derived>::compare \
   }
 
@@ -677,7 +782,24 @@ namespace Psi {
       unsigned index;
     };
 
-    TreePtr<Term> functional_unwrap(const TreePtr<Term>& term);
+    TreePtr<Term> term_unwrap(const TreePtr<Term>& term, bool with_derived=true);
+    
+    /**
+     * \brief Try to unwrap a term and cast it to another term type.
+     * 
+     * This uses \c type_unwrap to unwrap the term.
+     */
+    template<typename T> TreePtr<T> term_unwrap_dyn_cast(const TreePtr<Term>& term, bool with_derived=true) {return dyn_treeptr_cast<T>(term_unwrap(term, with_derived));}
+    
+    /**
+     * \brief Unwrap a term and cast it to another term type.
+     */
+    template<typename T> TreePtr<T> term_unwrap_cast(const TreePtr<Term>& term, bool with_derived=true) {return treeptr_cast<T>(term_unwrap(term, with_derived));}
+
+    /**
+     * \brief Try to unwrap a term to a type.
+     */
+    template<typename T> bool term_unwrap_isa(const TreePtr<Term>& term, bool with_derived=true) {return tree_isa<T>(term_unwrap(term, with_derived));}
   }
 }
 

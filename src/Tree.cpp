@@ -102,13 +102,46 @@ namespace Psi {
     : ModuleGlobal(&vtable, module, value_->type, false, location),
     value(value_),
     mode(mode_) {
+      switch (mode) {
+      case statement_mode_destroy:
+        compile_context().error_throw(location, "Global statements must have a storage type");
+        
+      case statement_mode_ref:
+        if (value->result_info().mode == term_mode_value)
+          compile_context().error_throw(location, "Cannot create reference to a temporary");
+        break;
+      
+      case statement_mode_functional:
+        if (value->type && !value->type->is_register_type())
+          compile_context().error_throw(location, "Global statement value is not functional");
+        break;
+        
+      case statement_mode_value:
+        break;
+        
+      default: PSI_FAIL("Unknown statement mode");
+      }
     }
-
+    
     template<typename V>
     void GlobalStatement::visit(V& v) {
       visit_base<ModuleGlobal>(v);
       v("value", &GlobalStatement::value)
       ("mode", &GlobalStatement::mode);
+    }
+    
+    static TermResultInfo GlobalStatement::result_info_impl(const GlobalStatement& self) {
+      TermResultInfo tr = self.value->result_info();
+      if (self.mode != statement_mode_functional)
+        tr.mode = term_mode_lref;
+      return tr;
+    }
+    
+    static bool GlobalStatement::pure_impl(const GlobalStatement& self) {
+      if (self.mode == statement_mode_functional)
+        return self.value->pure();
+      else
+        return true;
     }
 
     const TermVtable GlobalStatement::vtable = PSI_COMPILER_TERM(GlobalStatement, "psi.compiler.GlobalStatement", ModuleGlobal);
@@ -117,9 +150,8 @@ namespace Psi {
      * \brief General implementation for classes derived from Global.
      */
     TermResultInfo Global::result_info_impl(const Global& self) {
-      TermResultInfo rt;
+      TermResultInfo rt = self.type->result_info();
       rt.mode = term_mode_lref;
-      rt.type_mode = self.type->result_info().type_mode;
       return rt;
     }
 
@@ -129,10 +161,6 @@ namespace Psi {
 
     Global::Global(const VtableType *vptr, const TreePtr<Term>& type, const SourceLocation& location)
     : Term(vptr, type, location) {
-    }
-
-    bool Global::match_impl(const Global& lhs, const Global& rhs, PSI_STD::vector<TreePtr<Term> >&, unsigned) {
-      return &lhs == &rhs;
     }
 
     template<typename V>
@@ -176,10 +204,8 @@ namespace Psi {
       ("merge", &GlobalVariable::merge);
     }
     
-    template<typename Derived>
-    void GlobalVariable::complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
+    void GlobalVariable::local_complete_impl(const GlobalVariable& self) {
       self.value();
-      ModuleGlobal::complete_impl(self, queue);
     }
     
     const TermVtable GlobalVariable::vtable = PSI_COMPILER_TERM(GlobalVariable, "psi.compiler.GlobalVariable", ModuleGlobal);
@@ -362,10 +388,8 @@ namespace Psi {
       ("return_target", &Function::return_target);
     }
 
-    template<typename Derived>
-    void Function::complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
+    void Function::local_complete_impl(const Function& self) {
       self.body();
-      ModuleGlobal::complete_impl(self, queue);
     }
     
     const TermVtable Function::vtable = PSI_COMPILER_TERM(Function, "psi.compiler.Function", ModuleGlobal);
@@ -637,7 +661,7 @@ namespace Psi {
       if ((value_info.mode != term_mode_lref) && (value_info.mode != term_mode_rref))
         self.compile_context().error_throw(self.location(), "Cannot take address of temporary variable");
       
-      return self.value->type;
+      return TermBuilder::pointer(self.value->type, self.location());
     }
     
     TermResultInfo PointerTo::result_info_impl(const PointerTo&) {
@@ -665,7 +689,7 @@ namespace Psi {
     }
     
     TreePtr<Term> PointerTarget::check_type_impl(const PointerTarget& self) {
-      TreePtr<PointerType> ptr_ty = dyn_treeptr_cast<PointerType>(self.value->type);
+      TreePtr<PointerType> ptr_ty = term_unwrap_dyn_cast<PointerType>(self.value->type);
       if (!ptr_ty)
         self.compile_context().error_throw(self.location(), "Argument to PointerTarget is not a pointer");
       return ptr_ty->target_type;
@@ -735,19 +759,20 @@ namespace Psi {
     TreePtr<Term> ElementValue::element_type(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location) {
       CompileContext& compile_context = aggregate.compile_context();
       
-      if (TreePtr<StructType> st = dyn_treeptr_cast<StructType>(aggregate)) {
+      TreePtr<Term> unwrapped = term_unwrap(aggregate);
+      if (TreePtr<StructType> st = dyn_treeptr_cast<StructType>(unwrapped)) {
         unsigned index_int = TermBuilder::size_from(index, location);
         if (index_int >= st->members.size())
           compile_context.error_throw(location, "Structure member index out of range");
         return st->members[index_int];
-      } else if (TreePtr<UnionType> un = dyn_treeptr_cast<UnionType>(aggregate)) {
+      } else if (TreePtr<UnionType> un = dyn_treeptr_cast<UnionType>(unwrapped)) {
         unsigned index_int = TermBuilder::size_from(index, location);
         if (index_int >= un->members.size())
           compile_context.error_throw(location, "Union member index out of range");
         return un->members[index_int];
-      } else if (TreePtr<ArrayType> ar = dyn_treeptr_cast<ArrayType>(aggregate)) {
+      } else if (TreePtr<ArrayType> ar = dyn_treeptr_cast<ArrayType>(unwrapped)) {
         return ar->element_type;
-      } else if (TreePtr<TypeInstance> inst = dyn_treeptr_cast<TypeInstance>(aggregate)) {
+      } else if (TreePtr<TypeInstance> inst = dyn_treeptr_cast<TypeInstance>(unwrapped)) {
         unsigned index_int = TermBuilder::size_from(index, location);
         if (index_int != 0)
           compile_context.error_throw(location, "Generic instance member index must be zero");
@@ -755,14 +780,14 @@ namespace Psi {
       } else {
         CompileError err(compile_context, location);
         err.info("Element lookup argument is not an aggregate type");
-        err.info(aggregate.location(), "Type of aggregate");
+        err.info(unwrapped.location(), "Type of aggregate");
         err.end();
         throw CompileException();
       }
     }
     
     TreePtr<Term> ElementValue::check_type_impl(const ElementValue& self) {
-      TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(self.value->type);
+      TreePtr<DerivedType> derived = term_unwrap_dyn_cast<DerivedType>(self.value->type);
       TreePtr<Term> my_aggregate_type, next_upref;
       if (derived) {
         my_aggregate_type = derived->value_type;
@@ -801,11 +826,11 @@ namespace Psi {
     }
     
     TreePtr<Term> OuterValue::check_type_impl(const OuterValue& self) {
-      TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(self.value->type);
+      TreePtr<DerivedType> derived = term_unwrap_dyn_cast<DerivedType>(self.value->type);
       if (!derived)
         self.compile_context().error_throw(self.location(), "Outer value operation called on value with no upward reference");
       
-      TreePtr<UpwardReference> upref = dyn_treeptr_cast<UpwardReference>(derived->upref);
+      TreePtr<UpwardReference> upref = term_unwrap_dyn_cast<UpwardReference>(derived->upref);
       if (!upref)
         self.compile_context().error_throw(self.location(), "Outer value operation called on value with unknown upward reference");
       
@@ -1146,10 +1171,10 @@ namespace Psi {
         self.compile_context().error_throw(self.location(), "Upward reference index is not a size");
       
       if (self.next) {
-        if (TreePtr<UpwardReference> next_upref = dyn_treeptr_cast<UpwardReference>(self.next)) {
+        if (TreePtr<UpwardReference> next_upref = term_unwrap_dyn_cast<UpwardReference>(self.next)) {
           if (self.maybe_outer_type && (next_upref->maybe_outer_type) && (next_upref->inner_type() != self.outer_type()))
             self.compile_context().error_throw(self.location(), "Inner type of next upward reference does not match outer type of this one");
-        } else if (self.next->type != TermBuilder::upref_type(self.compile_context())) {
+        } else if (!term_unwrap_isa<UpwardReferenceType>(self.next->type)) {
           self.compile_context().error_throw(self.location(), "Next reference of upward reference is not itself an upward reference");
         }
       } else if (!self.maybe_outer_type) {
@@ -1201,7 +1226,7 @@ namespace Psi {
     
     TreePtr<Term> DerivedType::check_type_impl(const DerivedType& self) {
       if (self.upref) {
-        if (TreePtr<UpwardReference> upref = dyn_treeptr_cast<UpwardReference>(self.upref)) {
+        if (TreePtr<UpwardReference> upref = term_unwrap_dyn_cast<UpwardReference>(self.upref)) {
           if (upref->inner_type() != self.value_type)
             self.compile_context().error_throw(self.location(), "Value type of DerivedType does not match type implied by upward reference");
         } else if (self.upref->type != TermBuilder::upref_type(self.compile_context()))
@@ -1229,11 +1254,9 @@ namespace Psi {
       ("primitive_mode", &GenericType::primitive_mode);
     }
 
-    template<typename Derived>
-    void GenericType::complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
+    void GenericType::local_complete_impl(const GenericType& self) {
       self.member_type();
       self.overloads();
-      Tree::complete_impl(self, queue);
     }
 
     const TreeVtable GenericType::vtable = PSI_COMPILER_TREE(GenericType, "psi.compiler.GenericType", Tree);
@@ -1432,7 +1455,7 @@ namespace Psi {
     }
 
     TreePtr<Term> FunctionCall::get_result_type(const TreePtr<Term>& target, PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
-      TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(target->type);
+      TreePtr<FunctionType> ft = term_unwrap_dyn_cast<FunctionType>(target->type);
       if (!ft)
         target.compile_context().error_throw(location, "Target of function call does not have function type");
       
@@ -1460,7 +1483,7 @@ namespace Psi {
     TermResultInfo FunctionCall::result_info_impl(const FunctionCall& self) {
       TermResultInfo rt;
       if (self.type->result_info().type_mode != type_mode_bottom) {
-        TreePtr<FunctionType> ft = dyn_treeptr_cast<FunctionType>(self.target->type);
+        TreePtr<FunctionType> ft = term_unwrap_dyn_cast<FunctionType>(self.target->type);
         switch (ft->result_mode) {
         case result_mode_by_value:
         case result_mode_functional: rt.mode = term_mode_value; break;

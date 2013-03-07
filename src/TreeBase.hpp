@@ -114,11 +114,14 @@ namespace Psi {
 #endif
       
       template<typename Derived>
-      static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
-        boost::array<Derived*, 1> a = {{&self}};
+      static void complete_impl(const Derived& self, VisitQueue<TreePtr<> >& queue) {
+        Derived::local_complete_impl(self);
+        boost::array<Derived*, 1> a = {{const_cast<Derived*>(&self)}};
         CompleteVisitor p(&queue);
         visit_members(p, a);
       }
+      
+      static void local_complete_impl(const Tree&) {};
     };
 
     template<typename T>
@@ -156,7 +159,7 @@ namespace Psi {
     template<typename Derived>
     struct TreeWrapper : NonConstructible {
       static void complete(const Tree *self, VisitQueue<TreePtr<> > *queue) {
-        Derived::complete_impl(*static_cast<Derived*>(const_cast<Tree*>(self)), *queue);
+        Derived::complete_impl(*static_cast<const Derived*>(self), *queue);
       }
     };
 

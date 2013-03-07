@@ -125,9 +125,10 @@ namespace Psi {
         return statement_mode_destroy;
       
       case statement_mode_value:
-        // Make type declarations functional without the user writing '::'
         if (value->is_type() && value->is_functional())
-          return statement_mode_functional;
+          return statement_mode_functional; // Make type declarations functional without the user writing '::'
+        else if (term_unwrap_isa<FunctionType>(value->type))
+          return statement_mode_ref; // If the value cannot be copied, automatically reference it
         else
           return statement_mode_value;
         
@@ -248,12 +249,9 @@ namespace Psi {
           self.m_next->overload_list(overload_type, overload_list);
       }
 
-      template<typename Derived>
-      static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
-        for (PSI_STD::vector<StatementValueType>::iterator ii = self.m_statements.begin(), ie = self.m_statements.end(); ii != ie; ++ii)
+      static void local_complete_impl(const BlockContext& self) {
+        for (PSI_STD::vector<StatementValueType>::const_iterator ii = self.m_statements.begin(), ie = self.m_statements.end(); ii != ie; ++ii)
           ii->get(&self, &BlockContext::get_ptr);
-        
-        Tree::complete_impl(self, queue);
       }
     };
 
@@ -376,12 +374,9 @@ namespace Psi {
           self.m_next->overload_list(overload_type, overload_list);
       }
 
-      template<typename Derived>
-      static void complete_impl(Derived& self, VisitQueue<TreePtr<> >& queue) {
-        for (NameMapType::iterator ii = self.m_entries.begin(), ie = self.m_entries.end(); ii != ie; ++ii)
+      static void local_complete_impl(const NamespaceContext& self) {
+        for (NameMapType::const_iterator ii = self.m_entries.begin(), ie = self.m_entries.end(); ii != ie; ++ii)
           ii->second.get(&self, &NamespaceContext::get_ptr);
-        
-        Tree::complete_impl(self, queue);
       }
     };
 

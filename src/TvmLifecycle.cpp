@@ -21,7 +21,8 @@ public:
 
 /// \brief Generate default constructor call
 bool TvmFunctionBuilder::object_initialize_default(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& type, bool except_only, const SourceLocation& location) {
-  if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(type)) {
+  TreePtr<Term> unwrapped_type = term_unwrap(type);
+  if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
     for (std::size_t ii = 0, ie = member_types.size(); ii != ie; ++ii) {
       Tvm::ValuePtr<> dest_member = Tvm::FunctionalBuilder::element_ptr(dest, ii, location);
@@ -29,23 +30,23 @@ bool TvmFunctionBuilder::object_initialize_default(const Tvm::ValuePtr<>& dest, 
         return false;
     }
     return true;
-  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(type)) {
+  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(unwrapped_type)) {
     // Bloody hell... I'm going to need a for loop here
     PSI_NOT_IMPLEMENTED();
-  } else if (TreePtr<ConstantType> const_type = dyn_treeptr_cast<ConstantType>(type)) {
+  } else if (TreePtr<ConstantType> const_type = dyn_treeptr_cast<ConstantType>(unwrapped_type)) {
     Tvm::ValuePtr<> tvm_type = Tvm::value_cast<Tvm::PointerType>(dest)->target_type();
     PSI_ASSERT(Tvm::isa<Tvm::ConstantType>(tvm_type));
     builder().store(dest, Tvm::FunctionalBuilder::zero(tvm_type, location), location);
     return true;
-  } else if (type->result_info().type_mode != type_mode_complex) {
+  } else if (unwrapped_type->result_info().type_mode != type_mode_complex) {
     // This can't come first because we need to recurse looking for ConstantType instances
     return true;
   } else {
-    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(type))
+    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(unwrapped_type))
       if (inst_type->generic->primitive_mode == GenericType::primitive_recurse)
         return object_initialize_default(dest, inst_type->unwrap(), except_only, location);
 
-    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(type), location);
+    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
     Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable.value, interface_movable_init, location), location);
     builder().call2(init_func, movable.value, dest, location);
     push_cleanup(boost::make_shared<LifecycleConstructorCleanup>(except_only, dest, movable.value, location));
@@ -101,11 +102,12 @@ bool TvmFunctionBuilder::object_initialize_term(const Tvm::ValuePtr<>& dest, con
 }
 
 bool TvmFunctionBuilder::object_initialize_move(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, bool except_only, const SourceLocation& location) {
-  if (type->result_info().type_mode != type_mode_complex) {
+  TreePtr<Term> unwrapped_type = term_unwrap(type);
+  if (unwrapped_type->result_info().type_mode != type_mode_complex) {
     Tvm::ValuePtr<> val = builder().load(src, location);
     builder().store(dest, val, location);
     return true;
-  } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(type)) {
+  } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
     for (std::size_t ii = 0, ie = member_types.size(); ii != ie; ++ii) {
       Tvm::ValuePtr<> dest_member = Tvm::FunctionalBuilder::element_ptr(dest, ii, location);
@@ -114,17 +116,17 @@ bool TvmFunctionBuilder::object_initialize_move(const Tvm::ValuePtr<>& dest, con
         return false;
     }
     return true;
-  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(type)) {
+  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(unwrapped_type)) {
     PSI_NOT_IMPLEMENTED(); // Need a for loop
-  } else if (TreePtr<UnionType> union_type = dyn_treeptr_cast<UnionType>(type)) {
+  } else if (TreePtr<UnionType> union_type = dyn_treeptr_cast<UnionType>(unwrapped_type)) {
     builder().memcpy(dest, src, 1, location);
     return true;
   } else {
-    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(type))
+    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(unwrapped_type))
       if (inst_type->generic->primitive_mode == GenericType::primitive_recurse)
         return object_initialize_move(dest, src, inst_type->unwrap(), except_only, location);
     
-    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(type), location);
+    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
     Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable.value, interface_movable_move_init, location), location);
     builder().call3(init_func, movable.value, dest, src, location);
     push_cleanup(boost::make_shared<LifecycleConstructorCleanup>(except_only, dest, movable.value, location));
@@ -133,11 +135,12 @@ bool TvmFunctionBuilder::object_initialize_move(const Tvm::ValuePtr<>& dest, con
 }
 
 bool TvmFunctionBuilder::object_initialize_copy(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, bool except_only, const SourceLocation& location) {
-  if (type->result_info().type_mode != type_mode_complex) {
+  TreePtr<Term> unwrapped_type = term_unwrap(type);
+  if (unwrapped_type->result_info().type_mode != type_mode_complex) {
     Tvm::ValuePtr<> val = builder().load(src, location);
     builder().store(dest, val, location);
     return true;
-  } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(type)) {
+  } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
     for (std::size_t ii = 0, ie = member_types.size(); ii != ie; ++ii) {
       Tvm::ValuePtr<> dest_member = Tvm::FunctionalBuilder::element_ptr(dest, ii, location);
@@ -146,17 +149,17 @@ bool TvmFunctionBuilder::object_initialize_copy(const Tvm::ValuePtr<>& dest, con
         return false;
     }
     return true;
-  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(type)) {
+  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(unwrapped_type)) {
     PSI_NOT_IMPLEMENTED();
-  } else if (TreePtr<UnionType> union_type = dyn_treeptr_cast<UnionType>(type)) {
+  } else if (TreePtr<UnionType> union_type = dyn_treeptr_cast<UnionType>(unwrapped_type)) {
     builder().memcpy(dest, src, 1, location);
     return true;
   } else {
-    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(type))
+    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(unwrapped_type))
       if (inst_type->generic->primitive_mode == GenericType::primitive_recurse)
         return object_initialize_copy(dest, src, inst_type->unwrap(), except_only, location);
     
-    TvmResult copyable = get_implementation(compile_context().builtins().copyable_interface, vector_of(type), location);
+    TvmResult copyable = get_implementation(compile_context().builtins().copyable_interface, vector_of(unwrapped_type), location);
     Tvm::ValuePtr<> movable = builder().load(Tvm::FunctionalBuilder::element_ptr(copyable.value, interface_copyable_movable, location), location);
     Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(copyable.value, interface_copyable_copy_init, location), location);
     builder().call3(init_func, copyable.value, dest, src, location);
@@ -166,9 +169,10 @@ bool TvmFunctionBuilder::object_initialize_copy(const Tvm::ValuePtr<>& dest, con
 }
 
 bool TvmFunctionBuilder::object_assign_default(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& type, const SourceLocation& location) {
-  if (type->result_info().type_mode != type_mode_complex) {
+  TreePtr<Term> unwrapped_type = term_unwrap(type);
+  if (unwrapped_type->result_info().type_mode != type_mode_complex) {
     return true;
-  } if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(type)) {
+  } if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
     for (std::size_t ii = 0, ie = member_types.size(); ii != ie; ++ii) {
       Tvm::ValuePtr<> dest_member = Tvm::FunctionalBuilder::element_ptr(dest, ii, location);
@@ -176,15 +180,15 @@ bool TvmFunctionBuilder::object_assign_default(const Tvm::ValuePtr<>& dest, cons
         return false;
     }
     return true;
-  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(type)) {
+  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(unwrapped_type)) {
     // Bloody hell... I'm going to need a for loop here
     PSI_NOT_IMPLEMENTED();
   } else {
-    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(type))
+    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(unwrapped_type))
       if (inst_type->generic->primitive_mode == GenericType::primitive_recurse)
         return object_assign_default(dest, inst_type->unwrap(), location);
 
-    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(type), location);
+    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
     Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable.value, interface_movable_clear, location), location);
     builder().call2(init_func, movable.value, dest, location);
     return true;
@@ -239,11 +243,12 @@ bool TvmFunctionBuilder::object_assign_term(const Tvm::ValuePtr<>& dest, const T
 }
 
 bool TvmFunctionBuilder::object_assign_move(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, const SourceLocation& location) {
-  if (type->result_info().type_mode != type_mode_complex) {
+  TreePtr<Term> unwrapped_type = term_unwrap(type);
+  if (unwrapped_type->result_info().type_mode != type_mode_complex) {
     Tvm::ValuePtr<> val = builder().load(src, location);
     builder().store(dest, val, location);
     return true;
-  } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(type)) {
+  } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
     for (std::size_t ii = 0, ie = member_types.size(); ii != ie; ++ii) {
       Tvm::ValuePtr<> dest_member = Tvm::FunctionalBuilder::element_ptr(dest, ii, location);
@@ -252,17 +257,17 @@ bool TvmFunctionBuilder::object_assign_move(const Tvm::ValuePtr<>& dest, const T
         return false;
     }
     return true;
-  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(type)) {
+  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(unwrapped_type)) {
     PSI_NOT_IMPLEMENTED(); // Need a for loop
-  } else if (TreePtr<UnionType> union_type = dyn_treeptr_cast<UnionType>(type)) {
+  } else if (TreePtr<UnionType> union_type = dyn_treeptr_cast<UnionType>(unwrapped_type)) {
     builder().memcpy(dest, src, 1, location);
     return true;
   } else {
-    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(type))
+    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(unwrapped_type))
       if (inst_type->generic->primitive_mode == GenericType::primitive_recurse)
         return object_assign_move(dest, src, inst_type->unwrap(), location);
     
-    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(type), location);
+    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
     Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable.value, interface_movable_move, location), location);
     builder().call3(init_func, movable.value, dest, src, location);
     return true;
@@ -270,11 +275,12 @@ bool TvmFunctionBuilder::object_assign_move(const Tvm::ValuePtr<>& dest, const T
 }
 
 bool TvmFunctionBuilder::object_assign_copy(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, const SourceLocation& location) {
-  if (type->result_info().type_mode != type_mode_complex) {
+  TreePtr<Term> unwrapped_type = term_unwrap(type);
+  if (unwrapped_type->result_info().type_mode != type_mode_complex) {
     Tvm::ValuePtr<> val = builder().load(src, location);
     builder().store(dest, val, location);
     return true;
-  } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(type)) {
+  } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
     for (std::size_t ii = 0, ie = member_types.size(); ii != ie; ++ii) {
       Tvm::ValuePtr<> dest_member = Tvm::FunctionalBuilder::element_ptr(dest, ii, location);
@@ -283,17 +289,17 @@ bool TvmFunctionBuilder::object_assign_copy(const Tvm::ValuePtr<>& dest, const T
         return false;
     }
     return true;
-  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(type)) {
+  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(unwrapped_type)) {
     PSI_NOT_IMPLEMENTED();
-  } else if (TreePtr<UnionType> union_type = dyn_treeptr_cast<UnionType>(type)) {
+  } else if (TreePtr<UnionType> union_type = dyn_treeptr_cast<UnionType>(unwrapped_type)) {
     builder().memcpy(dest, src, 1, location);
     return true;
   } else {
-    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(type))
+    if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(unwrapped_type))
       if (inst_type->generic->primitive_mode == GenericType::primitive_recurse)
         return object_assign_copy(dest, src, inst_type->unwrap(), location);
     
-    TvmResult copyable = get_implementation(compile_context().builtins().copyable_interface, vector_of(type), location);
+    TvmResult copyable = get_implementation(compile_context().builtins().copyable_interface, vector_of(unwrapped_type), location);
     Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(copyable.value, interface_copyable_copy, location), location);
     builder().call3(init_func, copyable.value, dest, src, location);
     return true;
@@ -301,19 +307,20 @@ bool TvmFunctionBuilder::object_assign_copy(const Tvm::ValuePtr<>& dest, const T
 }
 
 void TvmFunctionBuilder::object_destroy(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& type, const SourceLocation& location) {
-  if (type->result_info().type_mode != type_mode_complex) {
+  TreePtr<Term> unwrapped_type = term_unwrap(type);
+  if (unwrapped_type->result_info().type_mode != type_mode_complex) {
     return;
-  } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(type)) {
+  } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     PSI_STD::vector<TreePtr<Statement> > statements;
     for (std::size_t ii = 0, ie = struct_type->members.size(); ii != ie; ++ii) {
       std::size_t idx = ie - ii - 1;
       object_destroy(Tvm::FunctionalBuilder::element_ptr(dest, idx, location), struct_type->members[idx], location);
     }
-  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(type)) {
+  } else if (TreePtr<ArrayType> array_type = dyn_treeptr_cast<ArrayType>(unwrapped_type)) {
     PSI_NOT_IMPLEMENTED();
   } else {
     // Use Movable interface
-    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(type), location);
+    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
     Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable.value, interface_movable_fini, location), location);
     builder().call2(init_func, movable.value, dest, location);
   }

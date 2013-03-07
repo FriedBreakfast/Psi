@@ -30,7 +30,7 @@ TvmScope* TvmScope::put_scope(TvmScope *given, bool temporary) {
   if (temporary) {
     return this;
   } else if (!given) {
-    TvmScope *root = given;
+    TvmScope *root = this;
     while (root->m_parent)
       root = root->m_parent.get();
     return root;
@@ -302,10 +302,12 @@ namespace {
     GlobalDependenciesVisitor(PSI_STD::set<TreePtr<ModuleGlobal> >& globals) : TermVisitor(&vtable), m_globals(&globals) {}
     
     static void visit_impl(GlobalDependenciesVisitor& self, const TreePtr<Term>& term) {
-      if (TreePtr<ModuleGlobal> global = dyn_treeptr_cast<ModuleGlobal>(term))
-        self.m_globals->insert(global);
-      else if (self.m_visited.insert(term).second)
-        term->visit_terms(self);
+      if (term) {
+        if (TreePtr<ModuleGlobal> global = dyn_treeptr_cast<ModuleGlobal>(term))
+          self.m_globals->insert(global);
+        else if (self.m_visited.insert(term).second)
+          term->visit_terms(self);
+      }
     }
   };
   
@@ -470,8 +472,10 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
   // Create storage for all of these globals
   typedef std::vector<std::pair<TreePtr<Function>, Tvm::ValuePtr<Tvm::Function> > > FunctionList;
   typedef std::vector<std::pair<TreePtr<GlobalVariable>, Tvm::ValuePtr<Tvm::GlobalVariable> > > GlobalVariableList;
+  typedef std::vector<std::pair<TreePtr<GlobalStatement>, Tvm::ValuePtr<Tvm::GlobalVariable> > > GlobalStatementList;
   FunctionList functions;
   GlobalVariableList functional_globals, constructor_globals;
+  GlobalStatementList functional_global_statements, constructor_global_statements;
   for (std::vector<TreePtr<ModuleGlobal> >::const_iterator ii = group.begin(), ie = group.end(); ii != ie; ++ii) {
     const TreePtr<ModuleGlobal>& global = *ii;
     if (global->module != group.front()->module) {
@@ -503,6 +507,11 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
         constructor_globals.push_back(std::make_pair(global_var, tvm_gvar));
       else
         functional_globals.push_back(std::make_pair(global_var, tvm_gvar));
+    } else if (TreePtr<GlobalStatement> global_stmt = dyn_treeptr_cast<GlobalStatement>(global)) {
+      switch (global_stmt->mode) {
+      case statement_mode_ref:
+      default: PSI_FAIL("Unexpected statement mode");
+      }
     } else {
       PSI_FAIL("Unknown module global type");
     }
@@ -522,6 +531,9 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
     ii->second->set_merge(ii->first->merge);
   }
   
+  for (GlobalStatementList::const_iterator ii = functional_global_statements.begin(), ie = functional_global_statements.end(); ii != ie; ++ii)
+    ii->second->set_value(build(ii->first->value, module).value);
+  
   // Generate global constructor
   if (!constructor_globals.empty()) {
     bool require_dtor = false;
@@ -529,8 +541,9 @@ void TvmCompiler::build_global_group(const std::vector<TreePtr<ModuleGlobal> >& 
     Tvm::ValuePtr<Tvm::Function> constructor = tvm_module.module->new_constructor(ctor_name, module.location());
     TreePtr<Term> ctor_tree = TermBuilder::empty_value(compile_context());
     for (GlobalVariableList::const_iterator ii = constructor_globals.begin(), ie = constructor_globals.end(); ii != ie; ++ii)
-      ctor_tree = TermBuilder::initialize_ptr(TermBuilder::ptr_to(ii->first, ii->first.location()),
-                                              ii->first->value(), ctor_tree, module.location());
+      ctor_tree = TermBuilder::initialize_ptr(TermBuilder::ptr_to(ii->first, ii->first.location()), ii->first->value(), ctor_tree, module.location());
+    for (GlobalStatementList::const_iterator ii = constructor_global_statements.begin(), ie = constructor_global_statements.end(); ii != ie; ++ii)
+      ctor_tree = TermBuilder::initialize_ptr(TermBuilder::ptr_to(ii->first, ii->first.location()), ii->first->value, ctor_tree, module.location());
     PSI_NOT_IMPLEMENTED();
     
     if (require_dtor) {
