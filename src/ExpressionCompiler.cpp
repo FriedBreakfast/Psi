@@ -136,7 +136,7 @@ namespace Psi {
         return statement_mode_functional;
         
       case statement_mode_ref:
-        switch (value->result_info().mode) {
+        switch (value->mode) {
         case result_mode_lvalue:
         case result_mode_rvalue:
           return statement_mode_ref;

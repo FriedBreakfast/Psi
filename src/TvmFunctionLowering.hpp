@@ -133,7 +133,8 @@ class TvmFunctionBuilder : public TvmFunctionalBuilder {
   
 public:
   TvmFunctionBuilder(CompileContext& compile_context, Tvm::Context& tvm_context);
-  void run_body(TvmCompiler *tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
+  void run_function(TvmCompiler *tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
+  void run_init(TvmCompiler *tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output);
   virtual TvmResult build(const TreePtr<Term>& term);
   virtual void build_void(const TreePtr<Term>& term);
   virtual TvmResult build_generic(const TreePtr<GenericType>& generic);

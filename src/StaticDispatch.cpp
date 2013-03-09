@@ -213,12 +213,12 @@ namespace Psi {
         else if (TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(my_term))
           my_term = derived->value_type;
         else if (TreePtr<GlobalStatement> def = dyn_treeptr_cast<GlobalStatement>(my_term)) {
-          if ((def->mode == statement_mode_functional) && def->value->pure())
+          if ((def->mode == statement_mode_functional) && def->value->pure)
             my_term = def->value;
           else
             break;
         } else if (TreePtr<Statement> stmt = dyn_treeptr_cast<Statement>(my_term)) {
-          if ((stmt->mode == statement_mode_functional) && stmt->value->pure())
+          if ((stmt->mode == statement_mode_functional) && stmt->value->pure)
             my_term = stmt->value;
           else
             break;

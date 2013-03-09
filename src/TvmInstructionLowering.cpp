@@ -82,7 +82,7 @@ struct TvmFunctionBuilder::InstructionLowering {
         }
         
         case statement_mode_ref: {
-          PSI_ASSERT((statement->value->result_info().mode == term_mode_lref) || (statement->value->result_info().mode == term_mode_rref));
+          PSI_ASSERT((statement->value->mode == term_mode_lref) || (statement->value->mode == term_mode_rref));
           value = builder.build(statement->value);
           break;
         }
@@ -129,7 +129,7 @@ struct TvmFunctionBuilder::InstructionLowering {
   * \brief Create TVM structure for If-Then-Else.
   */
   static TvmResult run_if_then_else(TvmFunctionBuilder& builder, const TreePtr<IfThenElse>& if_then_else) {
-    PSI_ASSERT(if_then_else->condition->result_info().mode == term_mode_value);
+    PSI_ASSERT(if_then_else->condition->mode == term_mode_value);
     TvmResult condition = builder.build(if_then_else->condition);
     if (condition.is_bottom())
       return TvmResult::bottom();
@@ -144,15 +144,15 @@ struct TvmFunctionBuilder::InstructionLowering {
     
     builder.builder().set_insert_point(true_block);
     TvmResult true_value = builder.build(if_then_else->true_value);
-    results.push_back(MergeExitEntry(true_value.value, if_then_else->true_value->result_info().mode, builder.dominator_state()));
+    results.push_back(MergeExitEntry(true_value.value, if_then_else->true_value->mode, builder.dominator_state()));
     builder.m_state = dominator_state.state;
 
     builder.builder().set_insert_point(false_block);
     TvmResult false_value = builder.build(if_then_else->false_value);
-    results.push_back(MergeExitEntry(false_value.value, if_then_else->false_value->result_info().mode, builder.dominator_state()));
+    results.push_back(MergeExitEntry(false_value.value, if_then_else->false_value->mode, builder.dominator_state()));
     builder.m_state = dominator_state.state;
     
-    return builder.merge_exit(if_then_else->type, if_then_else->result_info().mode, results, dominator_state, if_then_else->location());
+    return builder.merge_exit(if_then_else->type, if_then_else->mode, results, dominator_state, if_then_else->location());
   }
 
   /**
@@ -205,7 +205,7 @@ struct TvmFunctionBuilder::InstructionLowering {
 
     TvmResult initial_value = builder.build(jump_group->initial);
     MergeExitList results;
-    results.push_back(MergeExitEntry(initial_value.value, jump_group->initial->result_info().mode, builder.dominator_state()));
+    results.push_back(MergeExitEntry(initial_value.value, jump_group->initial->mode, builder.dominator_state()));
 
     for (std::vector<TreePtr<JumpTarget> >::const_iterator ii = jump_group->entries.begin(), ie = jump_group->entries.end(); ii != ie; ++ii) {
       const TvmJumpData& jd = jump_map.find(*ii)->second;
@@ -221,7 +221,7 @@ struct TvmFunctionBuilder::InstructionLowering {
           Tvm::ValuePtr<> dest_ptr = builder.builder().alloca_(Tvm::value_cast<Tvm::PointerType>(jd.storage->type())->target_type(), (*ii)->location());
           builder.move_construct_destroy((*ii)->argument->type, dest_ptr, jd.storage, (*ii)->location());
 
-          if ((*ii)->argument->type->result_info().type_mode == type_mode_complex)
+          if ((*ii)->argument->type->type_info().type_mode == type_mode_complex)
             builder.push_cleanup(boost::make_shared<DestroyCleanup>(dest_ptr, (*ii)->argument->type, stack_ptr, (*ii)->location()));
           else
             builder.push_cleanup(boost::make_shared<StackRestoreCleanup>(stack_ptr, (*ii)->location()));
@@ -237,7 +237,7 @@ struct TvmFunctionBuilder::InstructionLowering {
     }
     
     builder.m_state.jump_map = original_jump_map;
-    return builder.merge_exit(jump_group->type, jump_group->result_info().mode, results, dominator, jump_group->location());
+    return builder.merge_exit(jump_group->type, jump_group->mode, results, dominator, jump_group->location());
   }
 
   /**
@@ -261,13 +261,13 @@ struct TvmFunctionBuilder::InstructionLowering {
       }
       
       case result_mode_lvalue: {
-        PSI_ASSERT((jump_to->argument->result_info().mode == term_mode_lref) || (jump_to->argument->result_info().mode == term_mode_rref));
+        PSI_ASSERT((jump_to->argument->mode == term_mode_lref) || (jump_to->argument->mode == term_mode_rref));
         result_value = builder.build(jump_to->argument).value;
         break;
       }
       
       case result_mode_rvalue: {
-        PSI_ASSERT(jump_to->argument->result_info().mode == term_mode_rref);
+        PSI_ASSERT(jump_to->argument->mode == term_mode_rref);
         result_value = builder.build(jump_to->argument).value;
         break;
       }
@@ -313,7 +313,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       const TreePtr<Term>& argument = call->arguments[ii];
       
       TvmResult arg_result;
-      if ((argument->result_info().mode == term_mode_value) && !argument->type->is_register_type()) {
+      if ((argument->mode == term_mode_value) && !argument->type->is_register_type()) {
         TvmResult type = builder.build(argument->type);
         if (!object_stack_saved) {
           Tvm::ValuePtr<> ptr = builder.builder().stack_save(call->location());
@@ -342,7 +342,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       PSI_NOT_IMPLEMENTED();
     } else {
       TvmResult target_result = builder.build(call->target);
-      PSI_ASSERT(call->target->result_info().mode == term_mode_lref);
+      PSI_ASSERT(call->target->mode == term_mode_lref);
       
       // This is here so that it is evaluated before the stack pointer is saved
       TvmResult result_type = builder.build(call->type);
@@ -354,7 +354,7 @@ struct TvmFunctionBuilder::InstructionLowering {
         case parameter_mode_io:
         case parameter_mode_input: {
           const TreePtr<Term>& argument = call->arguments[ii];
-          if ((argument->result_info().mode == term_mode_value) && argument->type->is_register_type()) {
+          if ((argument->mode == term_mode_value) && argument->type->is_register_type()) {
             Tvm::ValuePtr<>& register_value = tvm_arguments[ii];
             if (!stack_ptr)
               stack_ptr = builder.builder().stack_save(call->location());
@@ -414,6 +414,14 @@ struct TvmFunctionBuilder::InstructionLowering {
     builder.object_destroy(dest_ptr.value, ptr_type->target_type, finalize.location());
     return TvmResult(builder.m_state.scope.get(), Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), finalize.location()));
   }
+  
+  static TvmResult run_functional_evaluate(TvmFunctionBuilder& builder, const TreePtr<FunctionalEvaluate>& term) {
+    return builder.build(term->value);
+  }
+  
+  static TvmResult run_global_evaluate(TvmFunctionBuilder& builder, const TreePtr<GlobalEvaluate>& term) {
+    return TvmResult(NULL, builder.m_tvm_compiler->build_global_evaluate(term, builder.m_module));
+  }
 
   typedef TreeOperationMap<Term, TvmResult, TvmFunctionBuilder&> CallbackMap;
   static CallbackMap callback_map;
@@ -430,7 +438,9 @@ struct TvmFunctionBuilder::InstructionLowering {
       .add<FunctionCall>(run_call)
       .add<InitializePointer>(run_initialize)
       .add<AssignPointer>(run_assign)
-      .add<FinalizePointer>(run_finalize);
+      .add<FinalizePointer>(run_finalize)
+      .add<FunctionalEvaluate>(run_functional_evaluate)
+      .add<GlobalEvaluate>(run_global_evaluate);
   }
 };
 

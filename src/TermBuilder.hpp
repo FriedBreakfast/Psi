@@ -132,6 +132,8 @@ struct TermBuilder : NonConstructible {
   }
 
   static TreePtr<Global> global_variable(const TreePtr<Module>& module, bool local, bool constant, bool merge, const SourceLocation& location, const TreePtr<Term>& value);
+  static TreePtr<Term> to_global_functional(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location);
+  static TreePtr<Term> global_evaluate(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location);
   static TreePtr<GlobalStatement> global_statement(const TreePtr<Module>& module, const TreePtr<Term>& value, StatementMode mode, const SourceLocation& location);
 //@}
 

@@ -348,14 +348,16 @@ TreePtr<FunctionalEvaluate> TermBuilder::functional_eval(const TreePtr<Term>& va
 }
 
 /**
- * \brief Wrap value in a FunctionalEvaluate tree if it is not pure already.
+ * \brief Wrap value in a FunctionalEvaluate tree if it is not a functional value already.
+ * 
+ * This wraps non-pure values and references.
  */
 TreePtr<Term> TermBuilder::to_functional(const TreePtr<Term>& value, const SourceLocation& location) {
   if (!value)
     return TreePtr<Term>();
   
-  PSI_ASSERT(!value->type || (value->type->result_info().type_mode != type_mode_complex));
-  if (!value->pure())
+  PSI_ASSERT(!value->type || value->type->is_functional());
+  if (!value->pure || (value->mode != term_mode_value))
     return functional_eval(value, location);
   else
     return value;
@@ -377,6 +379,45 @@ void TermBuilder::to_functional(PSI_STD::vector<TreePtr<Term> >& values, const S
  */
 TreePtr<Global> TermBuilder::global_variable(const TreePtr<Module>& module, bool local, bool constant, bool merge, const SourceLocation& location, const TreePtr<Term>& value) {
   return global_variable(module, value->type, local, constant, merge, location, value);
+}
+
+class GlobalEvaluateRewriter : public TermRewriter {
+  const TreePtr<Module> *m_module;
+  
+public:
+  static const VtableType vtable;
+  
+  GlobalEvaluateRewriter(const TreePtr<Module> *module)
+  : TermRewriter(&vtable), m_module(module) {}
+  
+  static TreePtr<Term> rewrite_impl(GlobalEvaluateRewriter& self, const TreePtr<Term>& value) {
+    if (!value)
+      return TreePtr<Term>();
+
+    PSI_ASSERT(value->pure);
+    if (TreePtr<FunctionalEvaluate> eval = dyn_treeptr_cast<FunctionalEvaluate>(value)) {
+      return TermBuilder::global_evaluate(*self.m_module, eval->value, eval->location());
+    } else if (tree_isa<Global>(value)) {
+      return value;
+    } else {
+      return treeptr_cast<Functional>(value)->rewrite(self, value->location());
+    }
+  }
+};
+
+const TermRewriterVtable GlobalEvaluateRewriter::vtable = PSI_COMPILER_TERM_REWRITER(GlobalEvaluateRewriter, "psi.compiler.GlobalEvaluateRewriter", TermRewriter);
+
+/**
+ * \brief Convert a functional term to a global functional term.
+ * 
+ * This replaces any instances of FunctionalEvaluate with GlobalEvaluate.
+ */
+TreePtr<Term> TermBuilder::to_global_functional(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location) {
+  return GlobalEvaluateRewriter(&module).rewrite(value);
+}
+
+TreePtr<Term> TermBuilder::global_evaluate(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location) {
+  return TreePtr<Term>(::new GlobalEvaluate(module, value, location));
 }
 
 /**

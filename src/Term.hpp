@@ -164,8 +164,25 @@ namespace Psi {
     };
     
     struct TermResultInfo {
+      /// Term type
+      TreePtr<Term> type;
       /// Result storage mode
       TermMode mode;
+      /// Whether different occurrences of the term are equivalent
+      PsiBool pure;
+      
+      TermResultInfo() {}
+      TermResultInfo(const TreePtr<Term>& type_, TermMode mode_, bool pure_) : type(type_), mode(mode_), pure(pure_) {}
+
+      template<typename V>
+      static void visit(V& v) {
+        v("type", &TermResultInfo::type)
+        ("mode", &TermResultInfo::mode)
+        ("pure", &TermResultInfo::pure);
+      }
+    };
+    
+    struct TermTypeInfo {
       /// Whether terms of this type have fixed size
       PsiBool type_fixed_size;
       /// What sort of type this is; if it is a type.
@@ -173,67 +190,69 @@ namespace Psi {
       
       template<typename V>
       static void visit(V& v) {
-        v("mode", &TermResultInfo::mode)
-        ("type_fixed_size", &TermResultInfo::type_fixed_size)
-        ("type_mode", &TermResultInfo::type_mode);
+        v("type_fixed_size", &TermTypeInfo::type_fixed_size)
+        ("type_mode", &TermTypeInfo::type_mode);
       }
     };
     
     struct TermVtable {
       TreeVtable base;
       void (*visit) (const Term*, TermVisitor*);
-      void (*result_info) (TermResultInfo*, const Term*);
-      PsiBool (*pure) (const Term*);
+      void (*type_info) (TermTypeInfo*, const Term*);
     };
-        
+
     class Term : public Tree {
       friend class Functional;
       Term(const TermVtable *vptr);
       friend class Statement;
-      Term(const TermVtable *vptr, CompileContext& compile_context, const TreePtr<Term>& type, const SourceLocation& location);
+      Term(const TermVtable *vptr, CompileContext& compile_context, const TermResultInfo& type, const SourceLocation& location);
       
-      mutable PsiBool m_result_info_computed;
-      mutable TermResultInfo m_result_info;
-      void result_info_compute() const;
-      mutable signed char m_pure;
+      void type_info_compute() const;
 
     public:
       typedef TermVtable VtableType;
       typedef TreePtr<Term> IteratorValueType;
 
       static const SIVtable vtable;
-      Term(const TermVtable *vtable, const TreePtr<Term>& type, const SourceLocation& location);
-      
+      Term(const TermVtable *vtable, const TermResultInfo& type, const SourceLocation& location);
+
       /// \brief The type of this term.
       TreePtr<Term> type;
+      /// \brief Result mode of this term
+      TermMode mode;
+      /// \brief Whether this term is pure, i.e. different occurences of the same tree are type equivalent
+      PsiBool pure;
+    private:
+      mutable PsiBool m_type_info_computed;
+      mutable TermTypeInfo m_type_info;
+    public:
+      
+      /**
+       * \brief Get the result information of this term as a TermResultInfo structure
+       * 
+       * This just collects the fields \c type, \c mode and \c pure
+       */
+      TermResultInfo result_info() const {
+        return TermResultInfo(type, mode, pure);
+      }
       
       /**
        * \brief Get (lazily computed) information about this terms result.
        */
-      const TermResultInfo& result_info() const {
-        if (!m_result_info_computed)
-          result_info_compute();
-        return m_result_info;
-      }
-      
-      /**
-       * \brief Is this term pure, i.e. are two occurrences of it equivalent.
-       */
-      bool pure() const {
-        if (m_pure < 0)
-          m_pure = derived_vptr(this)->pure(this);
-        return m_pure;
+      const TermTypeInfo& type_info() const {
+        if (!m_type_info_computed)
+          type_info_compute();
+        return m_type_info;
       }
       
       /**
        * \brief Is this a functional value?
        * 
        * This is true when the result of this term is not a reference and
-       * its type is primitive.
+       * its type is can be stored in a register.
        */
       bool is_functional() const {
-        const TermResultInfo& tri = result_info();
-        return (tri.mode == term_mode_value) && (!type || type->is_primitive_type());
+        return (mode == term_mode_value) && (!type || type->is_register_type());
       }
 
       /**
@@ -248,13 +267,13 @@ namespace Psi {
        * \brief Is this a primitive type?
        */
       bool is_primitive_type() const {
-        const TermResultInfo& tri = result_info();
+        const TermTypeInfo& tri = type_info();
         return (tri.type_mode == type_mode_metatype) || (tri.type_mode == type_mode_primitive);
       }
       
       /// \brief Can this type be stored in a register?
       bool is_register_type() const {
-        const TermResultInfo& tri = result_info();
+        const TermTypeInfo& tri = type_info();
         return ((tri.type_mode == type_mode_metatype) || (tri.type_mode == type_mode_primitive)) && tri.type_fixed_size;
       }
       
@@ -276,8 +295,10 @@ namespace Psi {
       template<typename Visitor> static void visit(Visitor& v) {
         visit_base<Tree>(v);
         v("type", &Term::type)
-        ("result_info_computed", &Term::m_result_info_computed)
-        ("result_info", &Term::m_result_info);
+        ("pure", &Term::pure)
+        ("mode", &Term::mode)
+        ("type_info_computed", &Term::m_type_info_computed)
+        ("type_info", &Term::m_type_info);
       }
       
       template<typename Derived>
@@ -288,9 +309,7 @@ namespace Psi {
         visit_members(vv, ptrs);
       }
       
-      static bool pure_impl(const Term&) {
-        return false;
-      }
+      static TermTypeInfo type_info_impl(const Term& self);
     };
 
     template<typename Derived>
@@ -299,20 +318,15 @@ namespace Psi {
         Derived::visit_terms_impl(*static_cast<const Derived*>(self), *visitor);
       }
       
-      static void result_info(TermResultInfo *out, const Term *self) {
-        new (out) TermResultInfo (Derived::result_info_impl(*static_cast<const Derived*>(self)));
-      }
-      
-      static PsiBool pure(const Term *self) {
-        return Derived::pure_impl(*static_cast<const Derived*>(self));
+      static void type_info(TermTypeInfo *out, const Term *self) {
+        new (out) TermTypeInfo (Derived::type_info_impl(*static_cast<const Derived*>(self)));
       }
     };
 
 #define PSI_COMPILER_TERM(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
     &::Psi::Compiler::TermWrapper<derived>::visit, \
-    &::Psi::Compiler::TermWrapper<derived>::result_info, \
-    &::Psi::Compiler::TermWrapper<derived>::pure, \
+    &::Psi::Compiler::TermWrapper<derived>::type_info, \
   }
 
     class TermRewriterVisitor : public ObjectVisitorBase<TermRewriterVisitor> {
@@ -540,7 +554,7 @@ namespace Psi {
       void (*simplify) (TreePtr<Term>*, const Functional*);
       std::size_t (*hash) (const Functional*);
       PsiBool (*equivalent) (const Functional*, const Functional*);
-      void (*check_type) (TreePtr<Term>*, const Functional*);
+      void (*check_type) (TermResultInfo*, const Functional*);
       Functional* (*clone) (const Functional*);
       void (*rewrite) (TreePtr<Term>*, const Functional*,TermRewriter*,const SourceLocation*);
       PsiBool (*binary_rewrite) (TreePtr<Term>*,const Functional*,const Functional*,TermBinaryRewriter*,const SourceLocation*);
@@ -602,8 +616,8 @@ namespace Psi {
         return derived_vptr(this)->compare(this, &other, &cmp);
       }
       
-      TreePtr<Term> check_type() const {
-        ResultStorage<TreePtr<Term> > result;
+      TermResultInfo check_type() const {
+        ResultStorage<TermResultInfo> result;
         derived_vptr(this)->check_type(result.ptr(), this);
         return result.done();
       }
@@ -681,8 +695,8 @@ namespace Psi {
         return Derived::equivalent_impl(*static_cast<const Derived*>(lhs), *static_cast<const Derived*>(rhs));
       }
       
-      static void check_type(TreePtr<Term> *out, const Functional *self) {
-        new (out) TreePtr<Term> (Derived::check_type_impl(*static_cast<const Derived*>(self)));
+      static void check_type(TermResultInfo *out, const Functional *self) {
+        new (out) TermResultInfo (Derived::check_type_impl(*static_cast<const Derived*>(self)));
       }
       
       static Functional* clone(const Functional *self) {
@@ -727,7 +741,6 @@ namespace Psi {
       static const SIVtable vtable;
       Type(const VtableType *vptr);
       template<typename Visitor> static void visit(Visitor& v) {visit_base<Functional>(v);}
-      static bool pure_impl(const Type& self);
     };
 
 #define PSI_COMPILER_TYPE(derived,name,super) PSI_COMPILER_FUNCTIONAL(derived,name,super)
@@ -740,9 +753,8 @@ namespace Psi {
       static const VtableType vtable;
       Metatype();
       template<typename V> static void visit(V& v);
-      static TreePtr<Term> check_type_impl(const Metatype& self);
-      static TermResultInfo result_info_impl(const Metatype& self);
-      static bool pure_impl(const Metatype&);
+      static TermResultInfo check_type_impl(const Metatype& self);
+      static TermTypeInfo type_info_impl(const Metatype& self);
     };
 
     /**
@@ -756,8 +768,7 @@ namespace Psi {
 
       Anonymous(const TreePtr<Term>& type, TermMode mode, const SourceLocation& location);
       template<typename V> static void visit(V& v);
-      static TermResultInfo result_info_impl(const Anonymous& self);
-      static bool pure_impl(const Anonymous& self);
+      static TermTypeInfo type_info_impl(const Anonymous& self);
       TermMode mode;
     };
 
@@ -770,9 +781,8 @@ namespace Psi {
 
       Parameter(const TreePtr<Term>& type, unsigned depth, unsigned index);
       template<typename V> static void visit(V& v);
-      static TreePtr<Term> check_type_impl(const Parameter& self);
-      static TermResultInfo result_info_impl(const Parameter& self);
-      static bool pure_impl(const Parameter&);
+      static TermResultInfo check_type_impl(const Parameter& self);
+      static TermTypeInfo type_info_impl(const Parameter& self);
 
       /// Type of this parameter
       TreePtr<Term> parameter_type;

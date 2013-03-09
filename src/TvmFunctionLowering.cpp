@@ -20,7 +20,7 @@ TvmFunctionBuilder::TvmFunctionBuilder(CompileContext& compile_context, Tvm::Con
 : TvmFunctionalBuilder(compile_context, tvm_context) {
 }
 
-void TvmFunctionBuilder::run_body(TvmCompiler *tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output) {
+void TvmFunctionBuilder::run_function(TvmCompiler *tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output) {
   m_state.scope = tvm_compiler->scope();
   m_output = output;
   m_module = function->module;
@@ -31,16 +31,28 @@ void TvmFunctionBuilder::run_body(TvmCompiler *tvm_compiler, const TreePtr<Funct
   if (ftype->result_mode == result_mode_by_value)
     m_return_storage = output->parameters().back();
 
+  const SourceLocation& location = function->location();
+
   // We need this to be non-NULL
   m_return_target = function->return_target;
   if (!m_return_target)
-    m_return_target = TermBuilder::exit_target(ftype->result_type, ftype->result_mode, function.location());
+    m_return_target = TermBuilder::exit_target(ftype->result_type, ftype->result_mode, location);
   
-  Tvm::ValuePtr<Tvm::Block> entry_block = output->new_block(function.location());
-  m_builder.set_insert_point(entry_block);
+  m_builder.set_insert_point(output->new_block(location));
+  build(TermBuilder::jump_to(m_return_target, function->body(), location));
+}
 
-  TreePtr<JumpTo> exit_jump = TermBuilder::jump_to(m_return_target, function->body(), function.location());
-  build(exit_jump);
+void TvmFunctionBuilder::run_init(TvmCompiler *tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output) {
+  m_state.scope = tvm_compiler->scope();
+  m_output = output;
+  m_module = module;
+  m_tvm_compiler = tvm_compiler;
+  
+  const SourceLocation& location = body->location();
+  // We need this to be non-NULL
+  m_return_target = TermBuilder::exit_target(TermBuilder::empty_type(m_module.compile_context()), result_mode_functional, location);
+  m_builder.set_insert_point(output->new_block(location));
+  build(TermBuilder::jump_to(m_return_target, body, location));
 }
 
 /**
@@ -49,7 +61,18 @@ void TvmFunctionBuilder::run_body(TvmCompiler *tvm_compiler, const TreePtr<Funct
  * Constructs a TvmFunctionLowering object and runs it.
  */
 void tvm_lower_function(TvmCompiler& tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output) {
-  TvmFunctionBuilder(tvm_compiler.compile_context(), tvm_compiler.tvm_context()).run_body(&tvm_compiler, function, output);
+  TvmFunctionBuilder(tvm_compiler.compile_context(), tvm_compiler.tvm_context()).run_function(&tvm_compiler, function, output);
+}
+
+/**
+ * \brief Lower an initialization of finalization function.
+ * 
+ * This takes a tree for the function body rather than a function tree
+ * because the function always has the same type, and this avoids creating
+ * spurious entries in the Module.
+ */
+void tvm_lower_init(TvmCompiler& tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output) {
+  TvmFunctionBuilder(tvm_compiler.compile_context(), tvm_compiler.tvm_context()).run_init(&tvm_compiler, module, body, output);
 }
 
 Tvm::ValuePtr<> TvmFunctionBuilder::exit_storage(const TreePtr<JumpTarget>& target, const SourceLocation& location) {
@@ -172,8 +195,16 @@ TvmResult TvmFunctionBuilder::build(const TreePtr<Term>& term) {
   if (boost::optional<TvmResult> r = m_state.scope->get(term))
     return *r;
 
+  bool is_functional;
+  if (tree_isa<Functional>(term))
+    is_functional = true;
+  else if (TreePtr<GlobalStatement> stmt = dyn_treeptr_cast<GlobalStatement>(term))
+    is_functional = (stmt->mode != statement_mode_value);
+  else
+    is_functional = false;
+  
   TvmResult value;
-  if (term->is_functional() && tree_isa<Functional>(term)) {
+  if (is_functional) {
     value = tvm_lower_functional(*this, term);
     builder().eval(value.value, term->location());
     if (value.upref)
@@ -182,7 +213,7 @@ TvmResult TvmFunctionBuilder::build(const TreePtr<Term>& term) {
     value = build_instruction(term);
   }
   
-  if (term->pure())
+  if (term->pure)
     m_state.scope->put(term, value);
   
   return value;

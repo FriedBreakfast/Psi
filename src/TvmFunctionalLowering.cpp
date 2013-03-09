@@ -188,7 +188,7 @@ struct TvmFunctionalLowererMap {
     TvmResult child = builder.build(elem_val->value);
     TvmResult idx = builder.build(elem_val->index);
     TvmScope *scope = TvmScope::join(child.scope, idx.scope);
-    switch (elem_val->result_info().mode) {
+    switch (elem_val->mode) {
     case result_mode_lvalue:
     case result_mode_rvalue:
       return TvmResult(scope, Tvm::FunctionalBuilder::element_ptr(child.value, idx.value, elem_val->location()));
@@ -270,6 +270,14 @@ struct TvmFunctionalLowererMap {
                      Tvm::FunctionalBuilder::upref(outer_type.value, outer_index.value, next.value, upref_value->location()));
   }
   
+  static TvmResult build_global_statement(TvmFunctionalBuilder& builder, const TreePtr<GlobalStatement>& stmt) {
+    PSI_ASSERT((stmt->mode == statement_mode_functional) || (stmt->mode == statement_mode_ref));
+    PSI_ASSERT(stmt->value->pure);
+    TvmResult r = builder.build(stmt->value);
+    PSI_ASSERT(!r.scope || r.scope->is_root());
+    return r;
+  }
+  
   typedef TreeOperationMap<Term, TvmResult, TvmFunctionalBuilder&> CallbackMap;
   static CallbackMap callback_map;
 
@@ -297,7 +305,8 @@ struct TvmFunctionalLowererMap {
       .add<StructValue>(build_struct_value)
       .add<ArrayValue>(build_array_value)
       .add<UnionValue>(build_union_value)
-      .add<UpwardReference>(build_upward_reference);
+      .add<UpwardReference>(build_upward_reference)
+      .add<GlobalStatement>(build_global_statement);
   }
 };
 

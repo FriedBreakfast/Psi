@@ -14,30 +14,34 @@ namespace Psi {
 
     Term::Term(const TermVtable *vptr)
     : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr)),
-    m_result_info_computed(false),
-    m_pure(-1) {
+    m_type_info_computed(false) {
     }
 
-    Term::Term(const TermVtable *vptr, CompileContext& compile_context, const TreePtr<Term>& type_, const SourceLocation& location)
+    Term::Term(const TermVtable *vptr, CompileContext& compile_context, const TermResultInfo& ri, const SourceLocation& location)
     : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location),
-    m_result_info_computed(false),
-    m_pure(-1),
-    type(type_) {
+    type(ri.type), mode(ri.mode), pure(ri.pure),
+    m_type_info_computed(false) {
     }
 
-    Term::Term(const TermVtable *vptr, const TreePtr<Term>& type_, const SourceLocation& location)
-    : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), type_.compile_context(), location),
-    m_result_info_computed(false),
-    m_pure(-1),
-    type(type_) {
+    Term::Term(const TermVtable *vptr, const TermResultInfo& ri, const SourceLocation& location)
+    : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), ri.type.compile_context(), location),
+    type(ri.type), mode(ri.mode), pure(ri.pure),
+    m_type_info_computed(false) {
     }
 
-    void Term::result_info_compute() const {
-      PSI_ASSERT(!m_result_info_computed);
-      ResultStorage<TermResultInfo> tri;
-      derived_vptr(this)->result_info(tri.ptr(), this);
-      m_result_info = tri.done();
-      m_result_info_computed = true;
+    void Term::type_info_compute() const {
+      PSI_ASSERT(!m_type_info_computed);
+      ResultStorage<TermTypeInfo> tri;
+      derived_vptr(this)->type_info(tri.ptr(), this);
+      m_type_info = tri.done();
+      m_type_info_computed = true;
+    }
+
+    TermTypeInfo Term::type_info_impl(const Term&) {
+      TermTypeInfo tti;
+      tti.type_fixed_size = false;
+      tti.type_mode = type_mode_none;
+      return tti;
     }
     
     class ParameterizeRewriter : public TermRewriter {
@@ -287,7 +291,7 @@ namespace Psi {
           }
         }
 
-        if (lhs_unwrapped->pure() && rhs_unwrapped->pure())
+        if (lhs_unwrapped->pure && rhs_unwrapped->pure)
           return lhs_unwrapped == rhs_unwrapped;
         
         return false;
@@ -331,20 +335,18 @@ namespace Psi {
     : Functional(&vtable) {
     }
 
-    TreePtr<Term> Metatype::check_type_impl(const Metatype&) {
-      return TreePtr<Term>();
+    TermResultInfo Metatype::check_type_impl(const Metatype&) {
+      TermResultInfo tri;
+      tri.mode = term_mode_value;
+      tri.pure = true;
+      return tri;
     }
     
-    TermResultInfo Metatype::result_info_impl(const Metatype&) {
-      TermResultInfo result;
-      result.mode = term_mode_value;
+    TermTypeInfo Metatype::type_info_impl(const Metatype&) {
+      TermTypeInfo result;
       result.type_mode = type_mode_metatype;
       result.type_fixed_size = true;
       return result;
-    }
-
-    bool Metatype::pure_impl(const Metatype&) {
-      return true;
     }
 
     template<typename V>
@@ -358,29 +360,20 @@ namespace Psi {
     : Functional(vptr) {
     }
 
-    bool Type::pure_impl(const Type&) {
-      return true;
-    }
-
     const SIVtable Type::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Type", Functional);
 
     Anonymous::Anonymous(const TreePtr<Term>& type, TermMode mode_, const SourceLocation& location)
-    : Term(&vtable, type, location),
+    : Term(&vtable, TermResultInfo(type, mode_, true), location),
     mode(mode_) {
-      if (type->result_info().type_mode == type_mode_none)
+      if (type->type_info().type_mode == type_mode_none)
         compile_context().error_throw(location, "Type of anonymous term is not a type");
     }
     
-    TermResultInfo Anonymous::result_info_impl(const Anonymous& self) {
-      TermResultInfo rt;
-      rt.mode = self.mode;
+    TermTypeInfo Anonymous::type_info_impl(const Anonymous& self) {
+      TermTypeInfo rt;
       rt.type_fixed_size = false;
-      rt.type_mode = (self.type->result_info().type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
+      rt.type_mode = (self.type->type_info().type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
       return rt;
-    }
-
-    bool Anonymous::pure_impl(const Anonymous&) {
-      return true;
     }
     
     template<typename V>
@@ -398,22 +391,17 @@ namespace Psi {
     index(index_) {
     }
 
-    TreePtr<Term> Parameter::check_type_impl(const Parameter& self) {
+    TermResultInfo Parameter::check_type_impl(const Parameter& self) {
       if (!self.parameter_type || !self.parameter_type->is_type())
         self.compile_context().error_throw(self.location(), "Type of parameter is not a type");
-      return self.parameter_type;
+      return TermResultInfo(self.parameter_type, term_mode_value, true);
     }
     
-    TermResultInfo Parameter::result_info_impl(const Parameter& self) {
-      TermResultInfo result;
-      result.mode = term_mode_value;
+    TermTypeInfo Parameter::type_info_impl(const Parameter& self) {
+      TermTypeInfo result;
       result.type_fixed_size = false;
-      result.type_mode = (self.parameter_type->result_info().type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
+      result.type_mode = (self.parameter_type->type_info().type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
       return result;
-    }
-    
-    bool Parameter::pure_impl(const Parameter&) {
-      return true;
     }
 
     template<typename Visitor>
@@ -445,12 +433,12 @@ namespace Psi {
         }
         
         if (TreePtr<GlobalStatement> def = dyn_treeptr_cast<GlobalStatement>(my_term)) {
-          if ((def->mode == statement_mode_functional) && def->value->pure())
+          if ((def->mode == statement_mode_functional) && def->value->pure)
             my_term = def->value;
           else
             break;
         } else if (TreePtr<Statement> stmt = dyn_treeptr_cast<Statement>(my_term)) {
-          if ((stmt->mode == statement_mode_functional) && stmt->value->pure())
+          if ((stmt->mode == statement_mode_functional) && stmt->value->pure)
             my_term = stmt->value;
           else
             break;
