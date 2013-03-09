@@ -100,6 +100,7 @@ namespace Psi {
         ModuleGlobalMap symbols;
         ModuleLibrarySymbolMap library_symbols;
         ModuleFunctionalConstantMap functional_constants;
+        TvmScopePtr scope;
       };
       
       struct TvmLibrarySymbol {
@@ -114,6 +115,7 @@ namespace Psi {
       
       CompileContext *m_compile_context;
       Tvm::Context m_tvm_context;
+      TvmScopePtr m_root_scope;
       boost::shared_ptr<Tvm::Jit> m_jit;
       boost::shared_ptr<Tvm::Module> m_library_module;
 
@@ -126,8 +128,6 @@ namespace Psi {
       typedef boost::unordered_map<TreePtr<Library>, TvmPlatformLibrary> LibraryMap;
       LibraryMap m_libraries;
       TvmPlatformLibrary& get_platform_library(const TreePtr<Library>& lib);
-      
-      TvmScopePtr m_scope;
 
       /**
        * \brief Globals which are currently being built.
@@ -150,12 +150,14 @@ namespace Psi {
       
       CompileContext& compile_context() {return *m_compile_context;}
       Tvm::Context& tvm_context() {return m_tvm_context;}
-      const TvmScopePtr& scope() const {return m_scope;}
+      
+      const TvmScopePtr& root_scope() {return m_root_scope;}
+      const TvmScopePtr& module_scope(const TreePtr<Module>& module) {return get_module(module).scope;}
       
       void add_compiled_module(const TreePtr<Module>& module, const boost::shared_ptr<Platform::PlatformLibrary>& lib);
 
-      Tvm::ValuePtr<Tvm::Global> build_global_evaluate(const TreePtr<GlobalEvaluate>& evaluate, const TreePtr<Module>& module);
-      Tvm::ValuePtr<Tvm::Global> build_global(const TreePtr<Global>& global, const TreePtr<Module>& module);
+      TvmResult build_global_evaluate(const TreePtr<GlobalEvaluate>& evaluate, const TreePtr<Module>& module);
+      TvmResult build_global(const TreePtr<Global>& global, const TreePtr<Module>& module);
       Tvm::ValuePtr<Tvm::Global> build_global_jit(const TreePtr<Global>& global);
       void* jit_compile(const TreePtr<Global>& global);
       

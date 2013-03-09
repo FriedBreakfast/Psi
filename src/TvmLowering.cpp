@@ -50,7 +50,7 @@ TvmScope* TvmScope::put_scope(TvmScope *given, bool temporary) {
 #ifdef PSI_DEBUG
     PSI_ASSERT(given->m_depth <= m_depth);
     TvmScope *parent = this;
-    while (parent->m_depth < given->m_depth)
+    while (parent->m_depth > given->m_depth)
       parent = parent->m_parent.get();
     PSI_ASSERT(parent == given);
 #endif
@@ -132,7 +132,7 @@ m_tvm_context(&tvm_context) {
 
 TvmCompiler::TvmCompiler(CompileContext *compile_context)
 : m_compile_context(compile_context),
-m_scope(TvmScope::root()) {
+m_root_scope(TvmScope::root()) {
   boost::shared_ptr<Tvm::JitFactory> factory = Tvm::JitFactory::get("llvm");
   m_jit = factory->create_jit();
   m_library_module.reset(new Tvm::Module(&m_tvm_context, "(library)", SourceLocation::root_location("(library)")));
@@ -155,7 +155,8 @@ public:
   
   virtual TvmResult build_generic(const TreePtr<GenericType>& generic) {
     FunctionalBuilderCallback callback(m_self, default_);
-    return tvm_lower_generic(m_self->m_scope, callback, generic);
+    TvmModule& tvm_module = m_self->get_module(m_module);
+    return tvm_lower_generic(tvm_module.scope, callback, generic);
   }
 };
 
@@ -163,7 +164,8 @@ public:
  * \brief Build a global or constant value.
  */
 TvmResult TvmCompiler::build(const TreePtr<Term>& term, const TreePtr<Module>& module) {
-  if (boost::optional<TvmResult> r = m_scope->get(term))
+  const TvmScopePtr& scope = module ? module_scope(module) : m_root_scope;
+  if (boost::optional<TvmResult> r = scope->get(term))
     return *r;
 
   bool is_functional;
@@ -185,7 +187,7 @@ TvmResult TvmCompiler::build(const TreePtr<Term>& term, const TreePtr<Module>& m
   }
   
   if (term->pure)
-    m_scope->put(term, value);
+    scope->put(term, value);
   
   return value;
 }
@@ -207,6 +209,7 @@ TvmCompiler::TvmModule& TvmCompiler::get_module(const TreePtr<Module>& module) {
   TvmModule& tvm_module = m_modules[module];
   if (!tvm_module.module) {
     tvm_module.jit_current = false;
+    tvm_module.scope = TvmScope::new_(m_root_scope);
     tvm_module.module.reset(new Tvm::Module(&m_tvm_context, module->name, module->location()));
   }
   return tvm_module;
@@ -227,7 +230,7 @@ TvmCompiler::TvmPlatformLibrary& TvmCompiler::get_platform_library(const TreePtr
  */
 Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global_jit(const TreePtr<Global>& global) {
   if (TreePtr<ModuleGlobal> mod_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
-    return build_global(mod_global, mod_global->module);
+    return Tvm::value_cast<Tvm::Global>(build_global(mod_global, mod_global->module).value);
   } else if (TreePtr<LibrarySymbol> lib_sym = dyn_treeptr_cast<LibrarySymbol>(global)) {
     return build_library_symbol(lib_sym);
   } else {
@@ -238,18 +241,20 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global_jit(const TreePtr<Global>& 
 /**
  * \brief Create a global variable for a FunctionalEvaluate 
  */
-Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global_evaluate(const TreePtr<GlobalEvaluate>& evaluate, const TreePtr<Module>& module) {
+TvmResult TvmCompiler::build_global_evaluate(const TreePtr<GlobalEvaluate>& evaluate, const TreePtr<Module>& module) {
   PSI_NOT_IMPLEMENTED();
+  TvmScope *scope = module_scope(module).get();
+  
   TvmModule& tvm_module = get_module(module);
   ModuleFunctionalConstantMap::iterator global_it = tvm_module.functional_constants.find(evaluate);
   if (global_it != tvm_module.functional_constants.end())
-    return global_it->second;
+    return TvmResult(scope, global_it->second);
   
   if (module != evaluate->module) {
     TvmModule& tvm_origin_module = get_module(evaluate->module);
     ModuleFunctionalConstantMap::iterator global_it = tvm_origin_module.functional_constants.find(evaluate);
     if (global_it != tvm_origin_module.functional_constants.end())
-      return global_it->second;
+      PSI_NOT_IMPLEMENTED();
   } else {
   }
 }
@@ -259,7 +264,9 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global_evaluate(const TreePtr<Glob
  * 
  * This create an external reference to symbols in another module when required.
  */
-Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global(const TreePtr<Global>& global, const TreePtr<Module>& module) {  
+TvmResult TvmCompiler::build_global(const TreePtr<Global>& global, const TreePtr<Module>& module) {
+  TvmScope *scope = module_scope(module).get();
+  
   if (TreePtr<ModuleGlobal> mod_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
     if (TreePtr<GlobalStatement> stmt = dyn_treeptr_cast<GlobalStatement>(mod_global))
       if (stmt->mode != statement_mode_value)
@@ -268,33 +275,33 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global(const TreePtr<Global>& glob
     TvmModule& tvm_module = get_module(module);
     ModuleGlobalMap::iterator global_it = tvm_module.symbols.find(mod_global);
     if (global_it != tvm_module.symbols.end())
-      return global_it->second;
+      return TvmResult(scope, global_it->second);
 
     if (mod_global->module != module) {
       TvmModule& tvm_origin_module = get_module(mod_global->module);
       global_it = tvm_origin_module.symbols.find(mod_global);
       if (global_it != tvm_origin_module.symbols.end())
-        return global_it->second;
+        return TvmResult(scope, global_it->second);
       
       Tvm::ValuePtr<Tvm::Global> native = build_module_global(mod_global);
       Tvm::ValuePtr<Tvm::Global> result = tvm_module.module->new_member(native->name(), native->value_type(), native->location());
       tvm_module.symbols.insert(std::make_pair(mod_global, result));
-      return result;
+      return TvmResult(scope, result);
     } else {
-      return build_module_global(mod_global);
+      return TvmResult(scope, build_module_global(mod_global));
     }
   } else if (TreePtr<LibrarySymbol> lib_sym = dyn_treeptr_cast<LibrarySymbol>(global)) {
     TvmModule& tvm_module = get_module(module);
 
     ModuleLibrarySymbolMap::iterator global_it = tvm_module.library_symbols.find(lib_sym);
     if (global_it != tvm_module.library_symbols.end())
-      return global_it->second;
+      return TvmResult(scope, global_it->second);
     
     Tvm::ValuePtr<Tvm::Global> native = build_library_symbol(lib_sym);
     Tvm::ValuePtr<Tvm::Global> result = tvm_module.module->new_member(native->name(), native->value_type(), native->location());
     
     tvm_module.library_symbols.insert(std::make_pair(lib_sym, result));
-    return result;
+    return TvmResult(scope, result);
   } else {
     PSI_FAIL("Unrecognised global subclass");
   }

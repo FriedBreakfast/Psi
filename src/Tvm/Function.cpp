@@ -193,6 +193,15 @@ namespace Psi {
       for (std::vector<ValuePtr<> >::const_iterator ii = m_parameter_types.begin(), ie = m_parameter_types.end(); ii != ie; ++ii)
         if (!(*ii)->is_type())
           throw TvmUserError("Function argument type is not a type");
+        
+      if (m_sret) {
+        if (!isa<EmptyType>(m_result_type))
+          throw TvmUserError("Function types with sret set must return void");
+      } else {
+        if (!m_result_type->is_type())
+          throw TvmUserError("Function result type is not a type");
+      }
+        
       return FunctionalBuilder::type_type(context(), location());
     }
 

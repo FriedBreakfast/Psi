@@ -279,7 +279,7 @@ namespace Psi {
 
     struct Context::ValueDisposer {
       void operator () (Value *t) const {
-        PSI_WARNING(t->m_reference_count == 1);
+        PSI_WARNING_MSG(t->m_reference_count == 1, typeid(t).name());
         intrusive_ptr_release(t);
       }
     };

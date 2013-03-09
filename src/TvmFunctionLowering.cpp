@@ -21,7 +21,7 @@ TvmFunctionBuilder::TvmFunctionBuilder(CompileContext& compile_context, Tvm::Con
 }
 
 void TvmFunctionBuilder::run_function(TvmCompiler *tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output) {
-  m_state.scope = tvm_compiler->scope();
+  m_state.scope = TvmScope::new_(tvm_compiler->module_scope(function->module));
   m_output = output;
   m_module = function->module;
   m_tvm_compiler = tvm_compiler;
@@ -43,7 +43,7 @@ void TvmFunctionBuilder::run_function(TvmCompiler *tvm_compiler, const TreePtr<F
 }
 
 void TvmFunctionBuilder::run_init(TvmCompiler *tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output) {
-  m_state.scope = tvm_compiler->scope();
+  m_state.scope = TvmScope::new_(tvm_compiler->module_scope(module));
   m_output = output;
   m_module = module;
   m_tvm_compiler = tvm_compiler;
@@ -120,8 +120,7 @@ void TvmFunctionBuilder::exit_to(const TreePtr<JumpTarget>& target, const Source
   while (true) {
     TvmFunctionState::JumpMapType::const_iterator jump_map_it;
     
-    const TvmFunctionState::JumpMapType& state_jump_map = target ? m_state.cleanup->m_jump_map_normal : m_state.cleanup->m_jump_map_exceptional;
-    if ((jump_map_it = state_jump_map.find(target)) != state_jump_map.end()) {
+    if ((jump_map_it = m_state.jump_map.find(target)) != m_state.jump_map.end()) {
       builder().br(jump_map_it->second.block, variable_location);
       if (phi_value)
         Tvm::value_cast<Tvm::Phi>(jump_map_it->second.storage)->add_edge(builder().block(), phi_value);

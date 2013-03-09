@@ -36,7 +36,7 @@ bool TvmFunctionBuilder::object_initialize_default(const Tvm::ValuePtr<>& dest, 
   } else if (TreePtr<ConstantType> const_type = dyn_treeptr_cast<ConstantType>(unwrapped_type)) {
     Tvm::ValuePtr<> tvm_type = Tvm::value_cast<Tvm::PointerType>(dest)->target_type();
     PSI_ASSERT(Tvm::isa<Tvm::ConstantType>(tvm_type));
-    builder().store(dest, Tvm::FunctionalBuilder::zero(tvm_type, location), location);
+    builder().store(Tvm::FunctionalBuilder::zero(tvm_type, location), dest, location);
     return true;
   } else if (unwrapped_type->type_info().type_mode != type_mode_complex) {
     // This can't come first because we need to recurse looking for ConstantType instances
@@ -70,16 +70,16 @@ bool TvmFunctionBuilder::object_initialize_term(const Tvm::ValuePtr<>& dest, con
   } else if (TreePtr<UnionValue> union_val = dyn_treeptr_cast<UnionValue>(value)) {
     PSI_NOT_IMPLEMENTED(); // Sort out element_ptr index
     return object_initialize_term(Tvm::FunctionalBuilder::element_ptr(dest, 0, location), union_val->member_value, except_only, location);
-  } else if (value->type->type_info().type_mode != type_mode_complex) {
+  } else if (value->type->is_register_type()) {
     TvmResult r = build(value);
     if (r.is_bottom())
       return false;
     
     if (value->mode == term_mode_value) {
-      builder().store(dest, r.value, location);
+      builder().store(r.value, dest, location);
     } else {
       Tvm::ValuePtr<> val = builder().load(r.value, location);
-      builder().store(dest, val, location);
+      builder().store(val, dest, location);
     }
 
     return true;
@@ -105,7 +105,7 @@ bool TvmFunctionBuilder::object_initialize_move(const Tvm::ValuePtr<>& dest, con
   TreePtr<Term> unwrapped_type = term_unwrap(type);
   if (unwrapped_type->type_info().type_mode != type_mode_complex) {
     Tvm::ValuePtr<> val = builder().load(src, location);
-    builder().store(dest, val, location);
+    builder().store(val, dest, location);
     return true;
   } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
@@ -136,9 +136,9 @@ bool TvmFunctionBuilder::object_initialize_move(const Tvm::ValuePtr<>& dest, con
 
 bool TvmFunctionBuilder::object_initialize_copy(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, bool except_only, const SourceLocation& location) {
   TreePtr<Term> unwrapped_type = term_unwrap(type);
-  if (unwrapped_type->type_info().type_mode != type_mode_complex) {
+  if (unwrapped_type->is_register_type()) {
     Tvm::ValuePtr<> val = builder().load(src, location);
-    builder().store(dest, val, location);
+    builder().store(val, dest, location);
     return true;
   } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
@@ -170,7 +170,7 @@ bool TvmFunctionBuilder::object_initialize_copy(const Tvm::ValuePtr<>& dest, con
 
 bool TvmFunctionBuilder::object_assign_default(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& type, const SourceLocation& location) {
   TreePtr<Term> unwrapped_type = term_unwrap(type);
-  if (unwrapped_type->type_info().type_mode != type_mode_complex) {
+  if (unwrapped_type->is_primitive_type()) {
     return true;
   } if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
@@ -211,16 +211,16 @@ bool TvmFunctionBuilder::object_assign_term(const Tvm::ValuePtr<>& dest, const T
   } else if (TreePtr<UnionValue> union_val = dyn_treeptr_cast<UnionValue>(value)) {
     PSI_NOT_IMPLEMENTED(); // Sort out element_ptr index
     return object_assign_term(Tvm::FunctionalBuilder::element_ptr(dest, 0, location), union_val->member_value, location);
-  } else if (value->type->type_info().type_mode != type_mode_complex) {
+  } else if (value->type->is_register_type()) {
     TvmResult r = build(value);
     if (r.is_bottom())
       return false;
     
     if (value->mode == term_mode_value) {
-      builder().store(dest, r.value, location);
+      builder().store(r.value, dest, location);
     } else {
       Tvm::ValuePtr<> val = builder().load(r.value, location);
-      builder().store(dest, val, location);
+      builder().store(val, dest, location);
     }
 
     return true;
@@ -244,9 +244,9 @@ bool TvmFunctionBuilder::object_assign_term(const Tvm::ValuePtr<>& dest, const T
 
 bool TvmFunctionBuilder::object_assign_move(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, const SourceLocation& location) {
   TreePtr<Term> unwrapped_type = term_unwrap(type);
-  if (unwrapped_type->type_info().type_mode != type_mode_complex) {
+  if (unwrapped_type->is_register_type()) {
     Tvm::ValuePtr<> val = builder().load(src, location);
-    builder().store(dest, val, location);
+    builder().store(val, dest, location);
     return true;
   } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
@@ -276,9 +276,9 @@ bool TvmFunctionBuilder::object_assign_move(const Tvm::ValuePtr<>& dest, const T
 
 bool TvmFunctionBuilder::object_assign_copy(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, const SourceLocation& location) {
   TreePtr<Term> unwrapped_type = term_unwrap(type);
-  if (unwrapped_type->type_info().type_mode != type_mode_complex) {
+  if (unwrapped_type->is_register_type()) {
     Tvm::ValuePtr<> val = builder().load(src, location);
-    builder().store(dest, val, location);
+    builder().store(val, dest, location);
     return true;
   } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     const PSI_STD::vector<TreePtr<Term> >& member_types = struct_type->members;
@@ -308,7 +308,7 @@ bool TvmFunctionBuilder::object_assign_copy(const Tvm::ValuePtr<>& dest, const T
 
 void TvmFunctionBuilder::object_destroy(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& type, const SourceLocation& location) {
   TreePtr<Term> unwrapped_type = term_unwrap(type);
-  if (unwrapped_type->type_info().type_mode != type_mode_complex) {
+  if (unwrapped_type->is_primitive_type()) {
     return;
   } else if (TreePtr<StructType> struct_type = dyn_treeptr_cast<StructType>(unwrapped_type)) {
     PSI_STD::vector<TreePtr<Statement> > statements;

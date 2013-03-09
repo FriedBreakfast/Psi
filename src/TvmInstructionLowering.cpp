@@ -420,7 +420,11 @@ struct TvmFunctionBuilder::InstructionLowering {
   }
   
   static TvmResult run_global_evaluate(TvmFunctionBuilder& builder, const TreePtr<GlobalEvaluate>& term) {
-    return TvmResult(NULL, builder.m_tvm_compiler->build_global_evaluate(term, builder.m_module));
+    return builder.m_tvm_compiler->build_global_evaluate(term, builder.m_module);
+  }
+  
+  static TvmResult run_global_symbol(TvmFunctionBuilder& builder, const TreePtr<Global>& term) {
+    return builder.m_tvm_compiler->build_global(term, builder.m_module);
   }
 
   typedef TreeOperationMap<Term, TvmResult, TvmFunctionBuilder&> CallbackMap;
@@ -440,7 +444,10 @@ struct TvmFunctionBuilder::InstructionLowering {
       .add<AssignPointer>(run_assign)
       .add<FinalizePointer>(run_finalize)
       .add<FunctionalEvaluate>(run_functional_evaluate)
-      .add<GlobalEvaluate>(run_global_evaluate);
+      .add<GlobalEvaluate>(run_global_evaluate)
+      .add<GlobalVariable>(run_global_symbol)
+      .add<Function>(run_global_symbol)
+      .add<LibrarySymbol>(run_global_symbol);
   }
 };
 

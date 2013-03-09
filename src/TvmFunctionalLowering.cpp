@@ -121,19 +121,18 @@ struct TvmFunctionalLowererMap {
     for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = function_ty->parameter_types.begin(), ie = function_ty->parameter_types.end(); ii != ie; ++ii) {
       TvmResult parameter = builder.build(ii->type);
       scope = TvmScope::join(scope, parameter.scope);
-      Tvm::ValuePtr<> parameter_type;
       switch (ii->mode) {
       case parameter_mode_phantom:
         ++n_phantom;
-        parameter_type = parameter.value;
+        parameter_types.push_back(parameter.value);
         break;
 
       case parameter_mode_functional:
-        parameter_type = parameter.value;
+        parameter_types.push_back(parameter.value);
         break;
         
       default:
-        parameter_type = Tvm::FunctionalBuilder::pointer_type(parameter.value, function_ty->location());
+        parameter_types.push_back(Tvm::FunctionalBuilder::pointer_type(parameter.value, function_ty->location()));
         break;
       }
     }
@@ -141,13 +140,25 @@ struct TvmFunctionalLowererMap {
     TvmResult result = builder.build(function_ty->result_type);
     scope = TvmScope::join(scope, result.scope);
     Tvm::ValuePtr<> result_type;
-    bool sret;
-    if (function_ty->result_mode == result_mode_functional) {
-      sret = false;
-      result_type = result.value;
-    } else {
+    bool sret = false;
+    switch (function_ty->result_mode) {
+    case result_mode_by_value: {
       sret = true;
+      result_type = Tvm::FunctionalBuilder::empty_type(builder.tvm_context(), function_ty->location());
+      parameter_types.push_back(Tvm::FunctionalBuilder::pointer_type(result.value, function_ty->location()));
+      break;
+    }
+    
+    case result_mode_functional:
+      result_type = result.value;
+      break;
+      
+    case result_mode_lvalue:
+    case result_mode_rvalue:
       result_type = Tvm::FunctionalBuilder::pointer_type(result.value, function_ty->location());
+      break;
+      
+    default: PSI_FAIL("Unknown function result mode");
     }
     
     return TvmResult(scope, Tvm::FunctionalBuilder::function_type(Tvm::cconv_c, result_type, parameter_types, n_phantom, sret, function_ty->location()));
@@ -273,9 +284,7 @@ struct TvmFunctionalLowererMap {
   static TvmResult build_global_statement(TvmFunctionalBuilder& builder, const TreePtr<GlobalStatement>& stmt) {
     PSI_ASSERT((stmt->mode == statement_mode_functional) || (stmt->mode == statement_mode_ref));
     PSI_ASSERT(stmt->value->pure);
-    TvmResult r = builder.build(stmt->value);
-    PSI_ASSERT(!r.scope || r.scope->is_root());
-    return r;
+    return builder.build(stmt->value);
   }
   
   typedef TreeOperationMap<Term, TvmResult, TvmFunctionalBuilder&> CallbackMap;
