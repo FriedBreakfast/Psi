@@ -328,21 +328,18 @@ namespace Psi {
     TermResultInfo FunctionType::check_type_impl(const FunctionType& self) {
       // Doesn't currently check that parameters are correctly ordered
       for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = self.parameter_types.begin(), ie = self.parameter_types.end(); ii != ie; ++ii) {
-        const TermTypeInfo& rt = ii->type->type_info();
-        if ((rt.type_mode == type_mode_none) || (rt.type_mode == type_mode_bottom) || !ii->type->pure) {
+        if (!ii->type->is_type() || !ii->type->pure)
           self.compile_context().error_throw(self.location(), "Function parameter types must be pure types");
-        } else if (rt.type_mode == type_mode_complex) {
-          if (ii->mode == parameter_mode_functional)
-            self.compile_context().error_throw(self.location(), "Cannot pass complex types in functional argument");
-          else if (ii->mode == parameter_mode_phantom)
-            self.compile_context().error_throw(self.location(), "It does not make sense to pass complex types in phantom arguments");
+        
+        if ((ii->mode == parameter_mode_functional) || (ii->mode == parameter_mode_phantom)) {
+          if (!ii->type->is_register_type())
+            self.compile_context().error_throw(self.location(), "Cannot pass complex types in functional (or phantom) arguments");
         }
       }
       
-      const TermTypeInfo& rrt = self.result_type->type_info();
-      if ((rrt.type_mode == type_mode_none) || (rrt.type_mode == type_mode_bottom) || !self.result_type->pure)
+      if (!self.result_type->is_type() || !self.result_type->pure)
         self.compile_context().error_throw(self.location(), "Function result types must be pure types");
-      else if ((rrt.type_mode == type_mode_complex) && (self.result_mode == result_mode_functional))
+      if ((self.result_mode == result_mode_functional) && !self.result_type->is_register_type())
         self.compile_context().error_throw(self.location(), "Cannot return complex types functionally");
       
       return term_result_type(self.compile_context());
@@ -454,7 +451,7 @@ namespace Psi {
 
     template<typename Visitor>
     void Statement::visit(Visitor& v) {
-      visit_base<Tree>(v);
+      visit_base<Term>(v);
       v("value", &Statement::value)
       ("mode", &Statement::mode);
     }
@@ -735,7 +732,7 @@ namespace Psi {
     }
     
     TermResultInfo ElementValue::check_type_impl(const ElementValue& self) {
-      TreePtr<DerivedType> derived = term_unwrap_dyn_cast<DerivedType>(self.value->type);
+      TreePtr<DerivedType> derived = term_unwrap_dyn_cast<DerivedType>(self.value->type, false);
       TreePtr<Term> my_aggregate_type, next_upref;
       if (derived) {
         my_aggregate_type = derived->value_type;
@@ -770,7 +767,7 @@ namespace Psi {
     }
     
     TermResultInfo OuterValue::check_type_impl(const OuterValue& self) {
-      TreePtr<DerivedType> derived = term_unwrap_dyn_cast<DerivedType>(self.value->type);
+      TreePtr<DerivedType> derived = term_unwrap_dyn_cast<DerivedType>(self.value->type, false);
       if (!derived)
         self.compile_context().error_throw(self.location(), "Outer value operation called on value with no upward reference");
       
@@ -1086,19 +1083,11 @@ namespace Psi {
         self.compile_context().error_throw(self.location(), "Upward reference index is not a size");
       
       if (self.next) {
-        if (TreePtr<UpwardReference> next_upref = term_unwrap_dyn_cast<UpwardReference>(self.next)) {
-          if (self.maybe_outer_type && (next_upref->maybe_outer_type) && (next_upref->inner_type() != self.outer_type()))
-            self.compile_context().error_throw(self.location(), "Inner type of next upward reference does not match outer type of this one");
-        } else if (!term_unwrap_isa<UpwardReferenceType>(self.next->type)) {
+        if (!term_unwrap_isa<UpwardReference>(self.next))
           self.compile_context().error_throw(self.location(), "Next reference of upward reference is not itself an upward reference");
-        }
       } else if (!self.maybe_outer_type) {
         self.compile_context().error_throw(self.location(), "One of outer_type and next of an upref must be non-NULL");
       }
-
-      // This checks that the arguments are correct
-      if (self.maybe_outer_type)
-        self.inner_type();
       
       return TermResultInfo(TermBuilder::upref_type(self.compile_context()), term_mode_value, true);
     }
@@ -1136,10 +1125,7 @@ namespace Psi {
     
     TermResultInfo DerivedType::check_type_impl(const DerivedType& self) {
       if (self.upref) {
-        if (TreePtr<UpwardReference> upref = term_unwrap_dyn_cast<UpwardReference>(self.upref)) {
-          if (upref->inner_type() != self.value_type)
-            self.compile_context().error_throw(self.location(), "Value type of DerivedType does not match type implied by upward reference");
-        } else if (self.upref->type != TermBuilder::upref_type(self.compile_context()))
+        if (!term_unwrap_isa<UpwardReferenceType>(self.upref->type))
           self.compile_context().error_throw(self.location(), "Upward reference parameter to DerivedType is not an upward reference");
       }
       
@@ -1228,7 +1214,7 @@ namespace Psi {
       if (self.type_instance->generic->primitive_mode == GenericType::primitive_never)
         self.compile_context().error_throw(self.location(), "Cannot construct complex generic type with non-default value");
       
-      if (self.member_value->type != self.type_instance->unwrap())
+      if (!self.type_instance->unwrap()->convert_match(self.member_value->type))
         self.compile_context().error_throw(self.location(), "Generic instance value has the wrong type");
       
       return TermResultInfo(self.type_instance, term_mode_value, self.member_value->pure);
@@ -1731,7 +1717,7 @@ namespace Psi {
     value(value_) {
       if (value->type && !value->type->is_functional())
         compile_context().error_throw(location, "Argument to FunctionalEvaluate does not have functional type", CompileError::error_internal);
-      if (value->pure && (value->mode != term_mode_value))
+      if (value->pure && (value->mode == term_mode_value))
         compile_context().error_throw(location, "Already functional terms should not be wrapped in FunctionalEvaluate", CompileError::error_internal);
     }
     
@@ -1742,9 +1728,8 @@ namespace Psi {
     }
     
     TermTypeInfo FunctionalEvaluate::type_info_impl(const FunctionalEvaluate& self) {
-      TermTypeInfo rt;
-      rt.type_mode = self.value->type_info().type_mode;
-      rt.type_fixed_size = false;
+      TermTypeInfo rt = self.value->type_info();
+      PSI_ASSERT(!rt.type_fixed_size);
       return rt;
     }
     
@@ -1765,13 +1750,12 @@ namespace Psi {
       ("value", &GlobalEvaluate::value);
     }
     
-    TermTypeInfo GlobalEvaluate::type_info_impl(const FunctionalEvaluate& self) {
-      TermTypeInfo rt;
-      rt.type_mode = self.value->type_info().type_mode;
-      rt.type_fixed_size = false;
+    TermTypeInfo GlobalEvaluate::type_info_impl(const GlobalEvaluate& self) {
+      TermTypeInfo rt = self.value->type_info();
+      PSI_ASSERT(!rt.type_fixed_size);
       return rt;
     }
     
-    const TermVtable GlobalEvaluate::vtable = PSI_COMPILER_TERM(FunctionalEvaluate, "psi.compiler.GlobalEvaluate", Term);
+    const TermVtable GlobalEvaluate::vtable = PSI_COMPILER_TERM(GlobalEvaluate, "psi.compiler.GlobalEvaluate", Term);
   }
 }

@@ -5,6 +5,7 @@ puts : libc.symbol (function_type (::pointer(char) -: int)) {{"type":"c","name":
 
 test_type : struct () [
   x : int;
+  y : int;
 ] (
   init (self) [puts({Construct})];
   fini (self) [puts({Destroy})];

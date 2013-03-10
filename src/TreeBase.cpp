@@ -107,6 +107,12 @@ namespace Psi {
       m_compile_context->m_gc_list.push_back(*this);
     }
 
+    Object::Object(const Object& src)
+    : m_reference_count(0),
+    m_compile_context(NULL) {
+      PSI_COMPILER_SI_INIT(src.m_vptr);
+    }
+
     Object::~Object() {
       if (is_linked())
         m_compile_context->m_gc_list.erase(m_compile_context->m_gc_list.iterator_to(*this));

@@ -279,7 +279,7 @@ namespace Psi {
       
       bool unify(TreePtr<Term>& other, const SourceLocation& location) const;
       bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
-      bool match(const TreePtr<Term>& value) const;
+      bool convert_match(const TreePtr<Term>& value) const;
       TreePtr<Term> parameterize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements) const;
       TreePtr<Term> specialize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values) const;
       TreePtr<Term> anonymize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Statement> >& statements) const;

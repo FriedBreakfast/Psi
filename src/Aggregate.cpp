@@ -83,7 +83,12 @@ public:
   
   template<typename V>
   static void visit(V& v) {
-    v("argument_names", &AggregateMacroCommon::argument_names)
+    v("evaluate_context", &AggregateMacroCommon::evaluate_context)
+    ("generic_parameters_expr", &AggregateMacroCommon::generic_parameters_expr)
+    ("members_expr", &AggregateMacroCommon::members_expr)
+    ("constructor_expr", &AggregateMacroCommon::constructor_expr)
+    ("interfaces_expr", &AggregateMacroCommon::interfaces_expr)
+    ("argument_names", &AggregateMacroCommon::argument_names)
     ("argument_list", &AggregateMacroCommon::argument_list)
     ("argument_pattern", &AggregateMacroCommon::argument_pattern)
     ("member_context", &AggregateMacroCommon::member_context)
@@ -428,7 +433,7 @@ public:
   TreePtr<Implementation> build_movable(const TreePtr<GenericType>& generic) {
     TreePtr<Term> instance = generic_instance(generic);
     SourceLocation location = generic.location().named_child("Movable");
-    ImplementationHelper helper(generic.location(), generic.compile_context().builtins().movable_interface,
+    ImplementationHelper helper(location, generic.compile_context().builtins().movable_interface,
                                 m_common->argument_list, vector_of(instance), default_);
     
     PSI_STD::vector<TreePtr<Term> > members(5);
@@ -437,8 +442,7 @@ public:
     members[interface_movable_clear] = build_clear(instance, helper, location);
     members[interface_movable_move_init] = build_move_init(instance, helper, location);
     members[interface_movable_move] = build_move(instance, helper, location);
-    TreePtr<Term> value = TermBuilder::struct_value(generic.compile_context(), members, generic.location());
-    return helper.finish(value);
+    return helper.finish(TermBuilder::struct_value(generic.compile_context(), members, location));
   }
 
   TreePtr<Term> build_copy_init(const TreePtr<Term>& instance, ImplementationHelper& helper, const SourceLocation& base_location) {
@@ -473,14 +477,14 @@ public:
   TreePtr<Implementation> build_copyable(const TreePtr<GenericType>& generic) {
     TreePtr<Term> instance = generic_instance(generic);
     SourceLocation location = generic.location().named_child("Movable");
-    ImplementationHelper helper(generic.location(), generic.compile_context().builtins().copyable_interface,
+    ImplementationHelper helper(location, generic.compile_context().builtins().copyable_interface,
                                 m_common->argument_list, vector_of(instance), default_);
 
     PSI_STD::vector<TreePtr<Term> > members(3);
-    members[interface_copyable_movable] = TermBuilder::interface_value(generic.compile_context().builtins().movable_interface, vector_of(instance), default_, generic.location());
+    members[interface_copyable_movable] = TermBuilder::ptr_to(TermBuilder::interface_value(generic.compile_context().builtins().movable_interface, vector_of(instance), default_, location), location);
     members[interface_copyable_copy] = build_copy(instance, helper, location);
     members[interface_copyable_copy_init] = build_copy_init(instance, helper, location);
-    return helper.finish(TermBuilder::struct_value(generic.compile_context(), members, generic.location()));
+    return helper.finish(TermBuilder::struct_value(generic.compile_context(), members, location));
   }
   
   PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const TreePtr<GenericType>& self) {
@@ -510,7 +514,7 @@ public:
     if (common->lc_init.mode || common->lc_fini.mode || common->lc_move.mode || common->lc_copy.mode)
       primitive_mode = GenericType::primitive_never;
     
-    TreePtr<GenericType> generic = TermBuilder::generic(self.compile_context(), common->argument_pattern, primitive_mode, self.location(),
+    TreePtr<GenericType> generic = TermBuilder::generic(self.compile_context(), common->argument_pattern, primitive_mode, location,
                                                         StructTypeCallback(common), StructOverloadsCallback(common));
 
     if (generic->pattern.empty()) {

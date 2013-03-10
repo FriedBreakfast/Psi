@@ -167,7 +167,7 @@ namespace Psi {
         result_mode = (ResultMode)argument_expr.mode;
       } else {
         result_type = compile_context.builtins().empty_type;
-        result_mode = result_mode_functional;
+        result_mode = result_mode_by_value;
       }
       
       // Handle interfaces

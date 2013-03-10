@@ -179,7 +179,7 @@ TreePtr<Term> TermBuilder::struct_value(CompileContext& compile_context, const P
   PSI_STD::vector<TreePtr<Term> > member_types;
   member_types.reserve(members.size());
   for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = members.begin(), ie = members.end(); ii != ie; ++ii)
-    member_types.push_back(*ii);
+    member_types.push_back((*ii)->type);
   return struct_value(struct_type(compile_context, member_types, location), members, location);
 }
 

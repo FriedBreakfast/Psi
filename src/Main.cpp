@@ -109,11 +109,11 @@ int main(int argc, char *argv[]) {
   std::string init = "main()";
   Parser::ParserLocation init_text = url_location("(init)", init.c_str(), init.c_str() + init.length());
 
-  LogicalSourceLocationPtr root_location = LogicalSourceLocation::new_root_location();
+  LogicalSourceLocationPtr root_location = compile_context.root_location().logical;
   try {
     TreePtr<Namespace> ns = compile_namespace(statements, module_evaluate_context, SourceLocation(file_text.location, root_location));
     ns->complete();
-    
+
     SourceLocation init_location(init_text.location, root_location);
 
     // Create only statement in main function
@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
     init_tree->complete();
     
     // Create main function
-    TreePtr<FunctionType> main_type = TermBuilder::function_type(result_mode_by_value, compile_context.builtins().empty_type, default_, default_, init_location);
+    TreePtr<FunctionType> main_type = TermBuilder::function_type(result_mode_functional, compile_context.builtins().empty_type, default_, default_, init_location);
     TreePtr<Global> main_function = TermBuilder::function(my_module, main_type, false, default_, default_, init_location, init_tree);
     
     void (*main_ptr) ();

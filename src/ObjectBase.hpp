@@ -8,6 +8,12 @@
 #include "Visitor.hpp"
 #include "Runtime.hpp"
 
+#ifdef PSI_DEBUG
+#define PSI_REFERENCE_COUNT_GRANULARITY 20
+#else
+#define PSI_REFERENCE_COUNT_GRANULARITY 1
+#endif
+
 namespace Psi {
   namespace Compiler {
     class Object;
@@ -85,8 +91,12 @@ namespace Psi {
 
       void initialize(T *ptr) {
         m_ptr = ptr;
-        if (m_ptr)
-          ++m_ptr->m_reference_count;
+        if (m_ptr) {
+          m_ptr->m_reference_count += PSI_REFERENCE_COUNT_GRANULARITY;
+#ifdef PSI_OBJECT_PTR_DEBUG
+          m_ptr->compile_context().object_ptr_add(m_ptr, this);
+#endif
+        }
       }
 
     public:
@@ -99,8 +109,26 @@ namespace Psi {
       template<typename U> ObjectPtr& operator = (const ObjectPtr<U>& src) {ObjectPtr<T>(src).swap(*this); return *this;}
 
       T* get() const {return m_ptr;}
-      T* release() {T *tmp = m_ptr; m_ptr = NULL; return tmp;}
-      void swap(ObjectPtr& other) {std::swap(m_ptr, other.m_ptr);}
+      
+      void swap(ObjectPtr& other) {
+#ifdef PSI_OBJECT_PTR_DEBUG
+        if (m_ptr && other.m_ptr) {
+          ObjectPtr tmp;
+          swap(tmp);
+          swap(other);
+          tmp.swap(other);
+        } else if (m_ptr) {
+          m_ptr->compile_context().object_ptr_move(m_ptr, this, &other);
+          std::swap(m_ptr, other.m_ptr);
+        } else if (other.m_ptr) {
+          other.m_ptr->compile_context().object_ptr_move(other.m_ptr, &other, this);
+          std::swap(m_ptr, other.m_ptr);
+        }
+#else
+        std::swap(m_ptr, other.m_ptr);
+#endif
+      }
+      
       void reset() {ObjectPtr<T>().swap(*this);}
       void reset(T *ptr) {ObjectPtr<T>(ptr).swap(*this);}
 
@@ -143,12 +171,14 @@ namespace Psi {
       CompileContext *m_compile_context;
 
       Object(const ObjectVtable *vtable);
+      Object& operator = (const Object&);
 
     public:
       typedef ObjectVtable VtableType;
       static const SIVtable vtable;
 
       Object(const ObjectVtable *vtable, CompileContext& compile_context);
+      Object(const Object& src);
       ~Object();
 
       CompileContext& compile_context() const {return *m_compile_context;}
@@ -159,11 +189,18 @@ namespace Psi {
     template<typename T>
     ObjectPtr<T>::~ObjectPtr() {
       if (m_ptr) {
-        if (!--m_ptr->m_reference_count) {
+#ifdef PSI_OBJECT_PTR_DEBUG
+        m_ptr->compile_context().object_ptr_remove(m_ptr, this);
+#endif
+        m_ptr->m_reference_count -= PSI_REFERENCE_COUNT_GRANULARITY;
+        if (!m_ptr->m_reference_count) {
           const Object *cptr = m_ptr;
           Object *optr = const_cast<Object*>(cptr);
           derived_vptr(optr)->destroy(optr);
         }
+#ifdef PSI_DEBUG
+        m_ptr = 0;
+#endif
       }
     }
 
@@ -273,7 +310,7 @@ namespace Psi {
     };
 
     /**
-     * \brief Implements the increment phase of the garbage collector.
+     * \brief Implements the decrement phase of the garbage collector.
      */
     class GCVisitorDecrement : public ObjectVisitorBase<GCVisitorDecrement> {
     public:
@@ -291,12 +328,20 @@ namespace Psi {
     public:
       template<typename T>
       void visit_sequence(const char*, const boost::array<T*,1>& seq) {
+#ifdef PSI_DEBUG
+        T().swap(*seq[0]);
+#else
         seq[0]->clear();
+#endif
       }
 
       template<typename T>
       void visit_map(const char*, const boost::array<T*,1>& maps) {
+#ifdef PSI_DEBUG
+        T().swap(*maps[0]);
+#else
         maps[0]->clear();
+#endif
       }
 
       template<typename T>

@@ -16,17 +16,21 @@
 #include <dlfcn.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <execinfo.h>
 
 #include "GCChecker.h"
 
 typedef struct block_header_s {
   struct block_header_s *prev, *next;
-  void *base;
-  size_t size;
+  psi_gcchecker_block info;
 } block_header;
 
 static block_header block_root = {&block_root, &block_root, NULL, 0};
 static pthread_mutex_t lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+static int backtrace_block_size = -1;
+static int hook_disable = 0;
+static psi_gcchecker_hook_type free_hook = NULL;
+static void *free_hook_ptr = NULL;
 
 static void block_tree_insert(block_header *node) {
   node->next = &block_root;
@@ -48,12 +52,25 @@ static void* setup_block(void *base_ptr, size_t size) {
   void *user_ptr = ((char*)base_ptr) + BLOCK_HEADER_OFFSET;
 
   block_header *hdr = (block_header*)base_ptr;
-  hdr->size = size;
-  hdr->base = user_ptr;
+  hdr->info.size = size;
+  hdr->info.base = user_ptr;
 
   pthread_mutex_lock(&lock);
+  
   block_tree_insert(hdr);
+  
+  if (backtrace_block_size == -1) {
+    const char *sz = getenv("PSI_GC_SIZE");
+    if (sz)
+      backtrace_block_size = atoi(sz);
+    else
+      backtrace_block_size = 0;
+  }
+    
   pthread_mutex_unlock(&lock);
+
+  if (size == backtrace_block_size)
+    backtrace(hdr->info.backtrace, PSI_GCCHECKER_BACKTRACE_COUNT);
   
   return user_ptr;
 }
@@ -87,8 +104,15 @@ void free(void *ptr) {
   if (!libc_free)
     *(void**)&libc_free = dlsym(RTLD_NEXT, "free");
 
-  if (ptr)
-    libc_free(teardown_block(ptr));
+  if (ptr) {
+    block_header *head = teardown_block(ptr);
+    if (!hook_disable && free_hook) {
+      hook_disable = 1;
+      free_hook(head->info.base, head->info.size, free_hook_ptr);
+      hook_disable = 0;
+    }
+    libc_free(head);
+  }
 }
 
 void* realloc(void *ptr, size_t size) {
@@ -107,7 +131,7 @@ void* realloc(void *ptr, size_t size) {
   
   void *new_base_ptr = libc_realloc(hdr, size + BLOCK_HEADER_OFFSET);
   if (!new_base_ptr) {
-    setup_block(hdr, hdr->size);
+    setup_block(hdr, size);
     return NULL;
   }
   
@@ -130,14 +154,17 @@ size_t psi_gcchecker_blocks(psi_gcchecker_block **ptr) {
   
   size_t c = 0;
   for (p = block_root.next; p != &block_root; p = p->next, ++list_p) {
-    if (p->base != list) {
-      list_p->base = p->base;
-      list_p->size = p->size;
-    }
+    if (p->info.base != list)
+      *list_p = p->info;
   }
   
   pthread_mutex_unlock(&lock);
   
   
   return n;
+}
+
+void psi_gcchecker_set_free_hook(psi_gcchecker_hook_type hook, void *ptr) {
+  free_hook = hook;
+  free_hook_ptr = ptr;
 }

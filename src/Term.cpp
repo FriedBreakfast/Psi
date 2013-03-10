@@ -322,11 +322,16 @@ namespace Psi {
      * <ul>
      * <li>NULL values in upward reference chains can match non-NULL values</li>
      * <li>Types can be matched by DerivedType wrapping that type</li>
+     * <li>If the top level pattern is Exists, non-exists terms can match</li>
      * </ul>
      */
-    bool Term::match(const TreePtr<Term>& value) const {
-      PSI_STD::vector<TreePtr<Term> > wildcards;
-      return match(value, wildcards, 0);
+    bool Term::convert_match(const TreePtr<Term>& value) const {
+      if (tree_isa<Exists>(this)) {
+        PSI_NOT_IMPLEMENTED();
+      } else {
+        PSI_STD::vector<TreePtr<Term> > wildcards;
+        return match(value, wildcards, 0);
+      }
     }
 
     const SIVtable Term::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Term", Tree);

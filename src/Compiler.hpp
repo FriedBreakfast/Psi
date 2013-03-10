@@ -338,10 +338,32 @@ namespace Psi {
       boost::shared_ptr<TvmCompiler> m_tvm_compiler;
 
       TreePtr<Functional> get_functional_ptr(const Functional& f, const SourceLocation& location);
+      
+#ifdef PSI_OBJECT_PTR_DEBUG
+      template<typename> friend class ObjectPtr;
+      static const unsigned object_ptr_backtrace_depth = 10;
+      struct ObjectPtrSetValue {
+        const Object *obj;
+        void *backtrace[object_ptr_backtrace_depth];
+      };
+      typedef boost::unordered_map<void*, ObjectPtrSetValue> ObjectPtrSetType;
+      ObjectPtrSetType m_object_ptr_set;
+      typedef boost::unordered_map<const Object*, std::size_t> ObjectAuxiliaryCountMapType;
+      ObjectAuxiliaryCountMapType m_object_aux_count_map;
+      std::size_t m_object_ptr_offset;
+      void object_ptr_backtrace(const ObjectPtrSetValue& value);
+      void object_ptr_add(const Object *obj, void *ptr);
+      void object_ptr_remove(const Object *obj, void *ptr);
+      void object_ptr_move(const Object *obj, void *from, void *to);
+#endif
 
     public:
       CompileContext(std::ostream *error_stream);
       ~CompileContext();
+      
+#ifdef PSI_DEBUG
+      std::set<void*> object_pointers();
+#endif
 
       /// \brief Return the stream used for error reporting.
       std::ostream& error_stream() {return *m_error_stream;}

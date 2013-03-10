@@ -3,5 +3,6 @@
 
 #cmakedefine PSI_ENABLE_VALGRIND
 #cmakedefine PSI_DEBUG
+#cmakedefine PSI_OBJECT_PTR_DEBUG
 
 #endif

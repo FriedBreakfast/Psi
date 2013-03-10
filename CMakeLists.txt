@@ -6,6 +6,8 @@ include(CTest)
 
 set(PSI_DEBUG 0 CACHE BOOL "Enable debug checks")
 set(PSI_ENABLE_VALGRIND 0 CACHE BOOL "Enable Valgrind support")
+set(PSI_OBJECT_PTR_DEBUG 0 CACHE BOOL "Enable object pointer debug checks (very expensive)")
+mark_as_advanced(PSI_OBJECT_PTR_DEBUG)
 
 find_library(JSONC_LIB json)
 find_path(JSONC_INCLUDE json_object.h)
