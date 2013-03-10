@@ -295,41 +295,41 @@ namespace Psi {
     
     PSI_TVM_INSTRUCTION_IMPL(Alloca, Instruction, alloca);
     
-    StackSave::StackSave(Context& context, const SourceLocation& location)
-    : Instruction(FunctionalBuilder::stack_pointer_type(context, location), operation, location) {
+    AllocaConst::AllocaConst(const ValuePtr<>& value_, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::pointer_type(value_->type(), location), operation, location),
+    value(value_) {
     }
-    
-    void StackSave::type_check() {
-    }
-    
-    template<typename V>
-    void StackSave::visit(V& v) {
-      visit_base<Instruction>(v);
-    }
-    
-    PSI_TVM_INSTRUCTION_IMPL(StackSave, Instruction, stack_save);
-    
-    StackRestore::StackRestore(const ValuePtr<>& save_, const SourceLocation& location)
-    : Instruction(FunctionalBuilder::empty_type(save_->context(), location), operation, location),
-    save(save_) {
-    }
-    
-    void StackRestore::type_check() {
-      if (!isa<StackPointerType>(save->type()))
-        throw TvmUserError("stack_restore argument is not a stack_ptr");
-    }
-    
-    void StackRestore::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Result of stack_save instruction should not be used");
+
+    void AllocaConst::type_check() {
+      require_available(value);
     }
     
     template<typename V>
-    void StackRestore::visit(V& v) {
+    void AllocaConst::visit(V& v) {
       visit_base<Instruction>(v);
-      v("save", &StackRestore::save);
+      v("value", &AllocaConst::value);
     }
     
-    PSI_TVM_INSTRUCTION_IMPL(StackRestore, Instruction, stack_restore);
+    PSI_TVM_INSTRUCTION_IMPL(AllocaConst, Instruction, alloca_const);
+    
+    FreeAlloca::FreeAlloca(const ValuePtr<>& value_, const SourceLocation& location)
+    : Instruction(FunctionalBuilder::empty_type(value_->context(), location), operation, location),
+    value(value_) {
+    }
+
+    void FreeAlloca::type_check() {
+      require_available(value);
+      if (!isa<Alloca>(value)  && !isa<AllocaConst>(value))
+        throw TvmUserError("Argument to freea is not the result of alloca or alloca_const");
+    }
+    
+    template<typename V>
+    void FreeAlloca::visit(V& v) {
+      visit_base<Instruction>(v);
+      v("value", &FreeAlloca::value);
+    }
+    
+    PSI_TVM_INSTRUCTION_IMPL(FreeAlloca, Instruction, alloca_const);
     
     MemCpy::MemCpy(const ValuePtr<>& dest_, const ValuePtr<>& src_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
     : Instruction(FunctionalBuilder::empty_type(dest_->context(), location), operation, location),

@@ -784,14 +784,19 @@ namespace Psi {
         return LoweredValue::register_(runner.pass().pointer_type(), false, cast_stack_ptr);
       }
       
-      static LoweredValue stack_save_rewrite(FunctionRunner& runner, const ValuePtr<StackSave>& term) {
-        Tvm::ValuePtr<> ptr = runner.builder().stack_save(term->location());
-        return LoweredValue::register_(runner.pass().stack_pointer_type(), false, ptr);
+      static LoweredValue alloca_const_rewrite(FunctionRunner& runner, const ValuePtr<AllocaConst>& term) {
+        ValuePtr<> value = runner.rewrite_value_register(term->value).value;
+        ValuePtr<> stack_ptr = runner.builder().alloca_const(value, term->location());
+        ValuePtr<> cast_stack_ptr = FunctionalBuilder::pointer_cast(stack_ptr, FunctionalBuilder::byte_type(runner.context(), term->location()), term->location());
+        return LoweredValue::register_(runner.pass().pointer_type(), false, cast_stack_ptr);
       }
       
-      static LoweredValue stack_restore_rewrite(FunctionRunner& runner, const ValuePtr<StackRestore>& term) {
-        LoweredValueSimple ptr = runner.rewrite_value_register(term->save);
-        runner.builder().stack_restore(ptr.value, term->location());
+      static LoweredValue freea_rewrite(FunctionRunner& runner, const ValuePtr<FreeAlloca>& term) {
+        ValuePtr<> ptr = runner.rewrite_value_register(term->value).value;
+        if (ValuePtr<PointerCast> cast = dyn_cast<PointerCast>(ptr))
+          ptr = cast->pointer();
+        PSI_ASSERT(isa<Alloca>(ptr) || isa<AllocaConst>(ptr));
+        runner.builder().freea(ptr, term->location());
         return LoweredValue();
       }
       
@@ -871,8 +876,8 @@ namespace Psi {
           .add<ConditionalBranch>(cond_br_rewrite)
           .add<Call>(call_rewrite)
           .add<Alloca>(alloca_rewrite)
-          .add<StackSave>(stack_save_rewrite)
-          .add<StackRestore>(stack_restore_rewrite)
+          .add<AllocaConst>(alloca_const_rewrite)
+          .add<FreeAlloca>(freea_rewrite)
           .add<Evaluate>(eval_rewrite)
           .add<Store>(store_rewrite)
           .add<Load>(load_rewrite)

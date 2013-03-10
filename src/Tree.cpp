@@ -1192,7 +1192,10 @@ namespace Psi {
     }
     
     TermTypeInfo TypeInstance::type_info_impl(const TypeInstance& self) {
-      return self.unwrap()->type_info();
+      TermTypeInfo ti = self.unwrap()->type_info();
+      if (self.generic->primitive_mode == GenericType::primitive_never)
+        ti.type_mode = type_mode_complex;
+      return ti;
     }
 
     const FunctionalVtable TypeInstance::vtable = PSI_COMPILER_FUNCTIONAL(TypeInstance, "psi.compiler.TypeInstance", Type);

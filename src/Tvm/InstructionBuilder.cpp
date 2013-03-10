@@ -210,23 +210,21 @@ namespace Psi {
     }
     
     /**
-     * \brief Save the stack pointer.
-     * 
-     * Any \c alloca instructions after this instruction may be undone by stack_restore
+     * \brief Allocate a constant value on the stack.
      */
-    ValuePtr<Instruction> InstructionBuilder::stack_save(const SourceLocation& location) {
-      ValuePtr<Instruction> insn(::new StackSave(m_insert_point.block()->context(), location));
+    ValuePtr<Instruction> InstructionBuilder::alloca_const(const ValuePtr<>& value, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new AllocaConst(value, location));
       m_insert_point.insert(insn);
       return insn;
     }
-    
+
     /**
-     * \brief Restore the stack pointer.
+     * \brief Free memory allocated by alloca or alloca_const.
      * 
-     * \param save Previous stack pointer. This must originate from a \c stack_save instruction.
+     * Any \c alloca instructions between the one specified and the current point are also freed.
      */
-    ValuePtr<Instruction> InstructionBuilder::stack_restore(const ValuePtr<>& save, const SourceLocation& location) {
-      ValuePtr<Instruction> insn(::new StackRestore(save, location));
+    ValuePtr<Instruction> InstructionBuilder::freea(const ValuePtr<>& value, const SourceLocation& location) {
+      ValuePtr<Instruction> insn(::new FreeAlloca(value, location));
       m_insert_point.insert(insn);
       return insn;
     }

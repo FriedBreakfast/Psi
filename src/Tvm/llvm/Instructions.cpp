@@ -81,13 +81,43 @@ namespace Psi {
           return inst;
         }
         
-        static llvm::Instruction* stack_save_callback(FunctionBuilder& builder, const ValuePtr<StackSave>&) {
-          return builder.irbuilder().CreateCall(builder.module_builder()->llvm_stacksave());
+        static llvm::Instruction* alloca_const_callback(FunctionBuilder& builder, const ValuePtr<AllocaConst>& term) {
+          llvm::Value *stored_value = builder.build_value(term->value);
+          llvm::AllocaInst *inst = builder.irbuilder().CreateAlloca(stored_value->getType());
+          builder.irbuilder().CreateStore(stored_value, inst);
+          uint64_t size = builder.module_builder()->llvm_target_machine()->getDataLayout()->getTypeAllocSize(stored_value->getType());
+          llvm::Value *size_val = llvm::ConstantInt::get(llvm::Type::getInt64Ty(builder.module_builder()->llvm_context()), size);
+          builder.irbuilder().CreateCall2(builder.module_builder()->llvm_invariant_start(), size_val, inst);
+          return inst;
         }
         
-        static llvm::Instruction* stack_restore_callback(FunctionBuilder& builder, const ValuePtr<StackRestore>& term) {
-          llvm::Value *arg = builder.build_value(term->save);
-          return builder.irbuilder().CreateCall(builder.module_builder()->llvm_stackrestore(), arg);
+        static llvm::Instruction* freea_callback(FunctionBuilder& builder, const ValuePtr<FreeAlloca>& term) {
+          llvm::Instruction *incoming_ptr = llvm::cast<llvm::Instruction>(builder.build_value(term->value));
+          llvm::Value *stack_save = NULL;
+
+          llvm::BasicBlock *incoming_block = incoming_ptr->getParent();
+          llvm::BasicBlock::iterator incoming_it = incoming_ptr;
+          if (incoming_it != incoming_block->begin()) {
+            if (llvm::CallInst *prev_call = llvm::dyn_cast_or_null<llvm::CallInst>(&*boost::prior(incoming_it)))
+              if (prev_call->getCalledValue() == builder.module_builder()->llvm_stacksave())
+                stack_save = prev_call;
+          }
+          
+          if (!stack_save) {
+            IRBuilder my_builder = builder.irbuilder();
+            my_builder.SetInsertPoint(incoming_ptr);
+            stack_save = my_builder.CreateCall(builder.module_builder()->llvm_stacksave());
+          }
+          
+          llvm::BasicBlock::iterator next_it = boost::next(incoming_it);
+          if (next_it != incoming_block->end()) {
+            if (llvm::CallInst *next_call = llvm::dyn_cast_or_null<llvm::CallInst>(&*next_it)) {
+              if (next_call->getCalledValue() == builder.module_builder()->llvm_invariant_start())
+                builder.irbuilder().CreateCall3(builder.module_builder()->llvm_invariant_end(), next_call, next_call->getArgOperand(0), incoming_ptr);
+            }
+          }
+          
+          return builder.irbuilder().CreateCall(builder.module_builder()->llvm_stackrestore(), stack_save);
         }
         
         static llvm::Instruction* evaluate_callback(FunctionBuilder& builder, const ValuePtr<Evaluate>& term) {
@@ -155,8 +185,8 @@ namespace Psi {
             .add<Load>(load_callback)
             .add<Store>(store_callback)
             .add<Alloca>(alloca_callback)
-            .add<StackSave>(stack_save_callback)
-            .add<StackRestore>(stack_restore_callback)
+            .add<AllocaConst>(alloca_const_callback)
+            .add<FreeAlloca>(freea_callback)
             .add<Evaluate>(evaluate_callback)
             .add<MemCpy>(memcpy_callback)
             .add<MemZero>(memzero_callback);

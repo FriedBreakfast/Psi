@@ -158,27 +158,31 @@ namespace Psi {
     };
     
     /**
-     * \brief Save the stack pointer.
+     * \brief Place a constant value on the stack.
      */
-    class StackSave : public Instruction {
-      PSI_TVM_INSTRUCTION_DECL(StackSave)
+    class AllocaConst : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(AllocaConst)
       
     public:
-      StackSave(Context& context, const SourceLocation& location);
+      AllocaConst(const ValuePtr<>& value, const SourceLocation& location);
+      
+      /// \brief Place a constant value on the stack
+      ValuePtr<> value;
     };
     
     /**
-     * \brief Restore the stack pointer.
+     * \brief Free memory allocated by Alloca or AllocaConst.
+     * 
+     * Note that the memory must be freed in the reverse order to how it was allocated.
      */
-    class StackRestore : public Instruction {
-      PSI_TVM_INSTRUCTION_DECL(StackRestore)
-    private:
-      virtual void check_source_hook(CheckSourceParameter& parameter);
-    public:
-      StackRestore(const ValuePtr<>& save, const SourceLocation& location);
+    class FreeAlloca : public Instruction {
+      PSI_TVM_INSTRUCTION_DECL(FreeAlloca)
       
-      /// \brief Saved stack pointer
-      ValuePtr<> save;
+    public:
+      FreeAlloca(const ValuePtr<>& value, const SourceLocation& location);
+      
+      /// \brief Pointer returned by Alloca or AllocaConst.
+      ValuePtr<> value;
     };
     
     /**

@@ -150,6 +150,34 @@ namespace Psi {
           return f;
         }
         
+        llvm::Function* intrinsic_invariant_start(llvm::Module& m) {
+          const char *name = "llvm.invariant.start";
+          llvm::Function *f = m.getFunction(name);
+          if (f)
+            return f;
+          
+          llvm::LLVMContext& c = m.getContext();
+          llvm::Type *args[] = {llvm::Type::getInt64Ty(c), llvm::Type::getInt8PtrTy(c)};
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(c), args, false);
+          f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+
+          return f;
+        }
+        
+        llvm::Function* intrinsic_invariant_end(llvm::Module& m) {
+          const char *name = "llvm.invariant.end";
+          llvm::Function *f = m.getFunction(name);
+          if (f)
+            return f;
+          
+          llvm::LLVMContext& c = m.getContext();
+          llvm::Type *args[] = {llvm::StructType::get(c)->getPointerTo(), llvm::Type::getInt64Ty(c), llvm::Type::getInt8PtrTy(c)};
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(c), args, false);
+          f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
+
+          return f;
+        }
+        
         llvm::Function* intrinsic_eh_exception(llvm::Module& m) {
           const char *name = "llvm.eh.exception";
           if (llvm::Function *f = m.getFunction(name))
@@ -190,6 +218,8 @@ namespace Psi {
         m_llvm_memset = intrinsic_memset(*llvm_module, target_machine);
         m_llvm_stacksave = intrinsic_stacksave(*llvm_module);
         m_llvm_stackrestore = intrinsic_stackrestore(*llvm_module);
+        m_llvm_invariant_start = intrinsic_invariant_start(*llvm_module);
+        m_llvm_invariant_end = intrinsic_invariant_end(*llvm_module);
         m_llvm_eh_exception = intrinsic_eh_exception(*llvm_module);
         m_llvm_eh_selector = intrinsic_eh_selector(*llvm_module);
         m_llvm_eh_typeid_for = intrinsic_eh_typeid_for(*llvm_module);

@@ -293,9 +293,8 @@ namespace Psi {
     BOOST_AUTO_TEST_CASE(StackSaveRestoreTest) {
       const char *src =
         "%f = function() > (struct (pointer i8) (pointer i8)) {\n"
-        "  %sp = stack_save;\n"
         "  %a = alloca i8 #up8;\n"
-        "  stack_restore %sp;\n"
+        "  freea %a;\n"
         "  %b = alloca i8 #up8;\n"
         "  return (struct_v %a %b);\n"
         "};\n";

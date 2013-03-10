@@ -100,6 +100,8 @@ namespace Psi {
         llvm::Function* llvm_memset() {return m_llvm_memset;}
         llvm::Function* llvm_stacksave() {return m_llvm_stacksave;}
         llvm::Function* llvm_stackrestore() {return m_llvm_stackrestore;}
+        llvm::Function* llvm_invariant_start() {return m_llvm_invariant_start;}
+        llvm::Function* llvm_invariant_end() {return m_llvm_invariant_end;}
         llvm::Function* llvm_eh_exception() {return m_llvm_eh_exception;}
         llvm::Function* llvm_eh_selector() {return m_llvm_eh_selector;}
         llvm::Function* llvm_eh_typeid_for() {return m_llvm_eh_typeid_for;}
@@ -125,6 +127,7 @@ namespace Psi {
         llvm::Constant* build_constant_internal(const ValuePtr<FunctionalValue>& term);
         
         llvm::Function *m_llvm_memcpy, *m_llvm_memset, *m_llvm_stacksave, *m_llvm_stackrestore,
+        *m_llvm_invariant_start, *m_llvm_invariant_end,
         *m_llvm_eh_exception, *m_llvm_eh_selector, *m_llvm_eh_typeid_for;
       };
 

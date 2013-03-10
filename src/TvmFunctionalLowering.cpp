@@ -191,6 +191,10 @@ struct TvmFunctionalLowererMap {
     return TvmResult(scope, Tvm::FunctionalBuilder::apply(recursive.value, parameters, type_instance->location()));
   }
   
+  static TvmResult build_type_instane_value(TvmFunctionalBuilder& builder, const TreePtr<TypeInstanceValue>& type_instance_value) {
+    return builder.build(type_instance_value->member_value);
+  }
+  
   static TvmResult build_metatype(TvmFunctionalBuilder& builder, const TreePtr<Metatype>& meta) {
     return TvmResult(NULL, Tvm::FunctionalBuilder::type_type(builder.tvm_context(), meta->location()));
   }
@@ -272,6 +276,10 @@ struct TvmFunctionalLowererMap {
     return TvmResult(TvmScope::join(type.scope, inner.scope), Tvm::FunctionalBuilder::union_value(type.value, inner.value, union_value->location()));
   }
   
+  static TvmResult build_upward_reference_type(TvmFunctionalBuilder& builder, const TreePtr<UpwardReferenceType>& upref_type) {
+    return TvmResult(NULL, Tvm::FunctionalBuilder::upref_type(builder.tvm_context(), upref_type->location()));
+  }
+  
   static TvmResult build_upward_reference(TvmFunctionalBuilder& builder, const TreePtr<UpwardReference>& upref_value) {
     PSI_ASSERT(upref_value->maybe_outer_type || upref_value->next);
     TvmResult outer_type = upref_value->maybe_outer_type ? builder.build(upref_value->maybe_outer_type) : TvmResult(NULL, Tvm::ValuePtr<>());
@@ -303,6 +311,7 @@ struct TvmFunctionalLowererMap {
       .add<ConstantType>(build_constant_type)
       .add<BottomType>(build_bottom_type)
       .add<TypeInstance>(build_type_instance)
+      .add<TypeInstanceValue>(build_type_instane_value)
       .add<Metatype>(build_metatype)
       .add<ElementValue>(build_element_value)
       .add<PointerTarget>(build_pointer_target)
@@ -314,6 +323,7 @@ struct TvmFunctionalLowererMap {
       .add<StructValue>(build_struct_value)
       .add<ArrayValue>(build_array_value)
       .add<UnionValue>(build_union_value)
+      .add<UpwardReferenceType>(build_upward_reference_type)
       .add<UpwardReference>(build_upward_reference)
       .add<GlobalStatement>(build_global_statement);
   }

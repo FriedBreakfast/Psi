@@ -117,8 +117,8 @@ TvmScope* TvmScope::join(TvmScope* lhs, TvmScope* rhs) {
   
 #ifdef PSI_DEBUG
   TvmScope *sc = inner;
-  while (sc->m_depth < outer->m_depth)
-    outer = outer->m_parent.get();
+  while (sc->m_depth > outer->m_depth)
+    sc = sc->m_parent.get();
   PSI_ASSERT(sc == outer);
 #endif
   
@@ -155,8 +155,8 @@ public:
   
   virtual TvmResult build_generic(const TreePtr<GenericType>& generic) {
     FunctionalBuilderCallback callback(m_self, default_);
-    TvmModule& tvm_module = m_self->get_module(m_module);
-    return tvm_lower_generic(tvm_module.scope, callback, generic);
+    TvmScopePtr& scope_ptr = m_module ? m_self->get_module(m_module).scope : m_self->m_root_scope;
+    return tvm_lower_generic(scope_ptr, callback, generic);
   }
 };
 

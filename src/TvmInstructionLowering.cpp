@@ -7,29 +7,29 @@
 namespace Psi {
 namespace Compiler {
 struct TvmFunctionBuilder::InstructionLowering {
-  class StackRestoreCleanup : public TvmCleanup {
-    Tvm::ValuePtr<> m_stack_ptr;
+  class StackFreeCleanup : public TvmCleanup {
+    Tvm::ValuePtr<> m_stack_alloc;
     
   public:
-    StackRestoreCleanup(const Tvm::ValuePtr<>& stack_ptr, const SourceLocation& location)
-    : TvmCleanup(false, location), m_stack_ptr(stack_ptr) {}
+    StackFreeCleanup(const Tvm::ValuePtr<>& stack_alloc, const SourceLocation& location)
+    : TvmCleanup(false, location), m_stack_alloc(stack_alloc) {}
     
     virtual void run(TvmFunctionBuilder& builder) const {
-      builder.builder().stack_restore(m_stack_ptr, location());
+      builder.builder().freea(m_stack_alloc, location());
     }
   };
   
   class DestroyCleanup : public TvmCleanup {
-    Tvm::ValuePtr<> m_slot, m_stack_ptr;
+    Tvm::ValuePtr<> m_slot;
     TreePtr<Term> m_type;
     
   public:
-    DestroyCleanup(const Tvm::ValuePtr<>& slot, const TreePtr<Term>& type, const Tvm::ValuePtr<>& stack_ptr, const SourceLocation& location)
-    : TvmCleanup(false, location), m_slot(slot), m_stack_ptr(stack_ptr), m_type(type) {}
+    DestroyCleanup(const Tvm::ValuePtr<>& slot, const TreePtr<Term>& type, const SourceLocation& location)
+    : TvmCleanup(false, location), m_slot(slot), m_type(type) {}
     
     virtual void run(TvmFunctionBuilder& builder) const {
       builder.object_destroy(m_slot, m_type, location());
-      builder.builder().stack_restore(m_stack_ptr, location());
+      builder.builder().freea(m_slot, location());
     }
   };
   
@@ -64,10 +64,9 @@ struct TvmFunctionBuilder::InstructionLowering {
       TvmCleanupPtr before_statement_cleanup = builder.m_state.cleanup;
       TvmResult value;
       
-      Tvm::ValuePtr<> stack_slot, stack_ptr;
+      Tvm::ValuePtr<> stack_slot;
       if ((statement->mode == statement_mode_value) || ((statement->mode == statement_mode_destroy) && !statement->value->is_functional())) {
         TvmResult type = builder.build(statement->value->type);
-        stack_ptr = builder.builder().stack_save(statement->location());
         stack_slot = builder.builder().alloca_(type.value, statement->location());
         if (builder.object_initialize_term(stack_slot, statement->value, true, statement->location()))
           value = TvmResult(builder.m_state.scope.get(), stack_slot);
@@ -106,9 +105,9 @@ struct TvmFunctionBuilder::InstructionLowering {
 
       builder.cleanup_to(before_statement_cleanup);
       
-      if (!statement->value->is_functional()) {
-        PSI_ASSERT(stack_slot && stack_ptr);
-        builder.push_cleanup(boost::make_shared<DestroyCleanup>(stack_slot, statement->type, stack_ptr, statement->location()));
+      if ((statement->mode == statement_mode_value) && !statement->value->is_functional()) {
+        PSI_ASSERT(stack_slot);
+        builder.push_cleanup(boost::make_shared<DestroyCleanup>(stack_slot, statement->type, statement->location()));
       }
       
       if (statement->mode != statement_mode_destroy) {
@@ -188,8 +187,7 @@ struct TvmFunctionBuilder::InstructionLowering {
     if (!parameter_types.empty()) {
       Tvm::ValuePtr<> storage_type = Tvm::FunctionalBuilder::union_type(builder.tvm_context(), parameter_types, jump_group->location());
       Tvm::ValuePtr<> storage = builder.builder().alloca_(storage_type, jump_group->location());
-      Tvm::ValuePtr<> stack_ptr = builder.builder().stack_save(jump_group->location());
-      builder.push_cleanup(boost::make_shared<StackRestoreCleanup>(stack_ptr, jump_group->location()));
+      builder.push_cleanup(boost::make_shared<StackFreeCleanup>(storage, jump_group->location()));
     }
 
     TvmFunctionState::JumpMapType original_jump_map = builder.m_state.jump_map;
@@ -217,14 +215,13 @@ struct TvmFunctionBuilder::InstructionLowering {
 
       if ((*ii)->argument) {
         if ((*ii)->argument_mode == result_mode_by_value) {
-          Tvm::ValuePtr<> stack_ptr = builder.builder().stack_save((*ii)->location());
           Tvm::ValuePtr<> dest_ptr = builder.builder().alloca_(Tvm::value_cast<Tvm::PointerType>(jd.storage->type())->target_type(), (*ii)->location());
           builder.move_construct_destroy((*ii)->argument->type, dest_ptr, jd.storage, (*ii)->location());
 
           if ((*ii)->argument->type->type_info().type_mode == type_mode_complex)
-            builder.push_cleanup(boost::make_shared<DestroyCleanup>(dest_ptr, (*ii)->argument->type, stack_ptr, (*ii)->location()));
+            builder.push_cleanup(boost::make_shared<DestroyCleanup>(dest_ptr, (*ii)->argument->type, (*ii)->location()));
           else
-            builder.push_cleanup(boost::make_shared<StackRestoreCleanup>(stack_ptr, (*ii)->location()));
+            builder.push_cleanup(boost::make_shared<StackFreeCleanup>(dest_ptr, (*ii)->location()));
           builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope.get(), dest_ptr));
         } else {
           builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope.get(), jd.storage));
@@ -308,21 +305,16 @@ struct TvmFunctionBuilder::InstructionLowering {
     // Build argument scope
     TreePtr<FunctionType> ftype = term_unwrap_cast<FunctionType>(call->target->type);
     std::vector<Tvm::ValuePtr<> > tvm_arguments;
-    bool object_stack_saved = false;
     for (unsigned ii = 0, ie = call->arguments.size(); ii != ie; ++ii) {
       const TreePtr<Term>& argument = call->arguments[ii];
       
       TvmResult arg_result;
       if ((argument->mode == term_mode_value) && !argument->type->is_register_type()) {
         TvmResult type = builder.build(argument->type);
-        if (!object_stack_saved) {
-          Tvm::ValuePtr<> ptr = builder.builder().stack_save(call->location());
-          builder.push_cleanup(boost::make_shared<StackRestoreCleanup>(ptr, call->location()));
-          object_stack_saved = true;
-        }
         Tvm::ValuePtr<> stack_slot = builder.builder().alloca_(type.value, call->location());
-        if (!builder.object_initialize_term(stack_slot, argument, false, call->location()))
+        if (!builder.object_initialize_term(stack_slot, argument, false, argument->location()))
           return TvmResult::bottom();
+        builder.push_cleanup(boost::make_shared<DestroyCleanup>(stack_slot, argument->type, argument->location()));
         arg_result = TvmResult(builder.m_state.scope.get(), stack_slot);
       } else {
         arg_result = builder.build(argument);
@@ -347,7 +339,6 @@ struct TvmFunctionBuilder::InstructionLowering {
       // This is here so that it is evaluated before the stack pointer is saved
       TvmResult result_type = builder.build(call->type);
       
-      Tvm::ValuePtr<> stack_ptr;
       for (std::size_t ii = 0, ie = call->arguments.size(); ii != ie; ++ii) {
         switch (ftype->parameter_types[ii].mode) {
         case parameter_mode_output:
@@ -356,9 +347,8 @@ struct TvmFunctionBuilder::InstructionLowering {
           const TreePtr<Term>& argument = call->arguments[ii];
           if ((argument->mode == term_mode_value) && argument->type->is_register_type()) {
             Tvm::ValuePtr<>& register_value = tvm_arguments[ii];
-            if (!stack_ptr)
-              stack_ptr = builder.builder().stack_save(call->location());
             Tvm::ValuePtr<> slot = builder.builder().alloca_(register_value->type(), call->location());
+            builder.push_cleanup(boost::make_shared<StackFreeCleanup>(slot, call->location()));
             builder.builder().store(register_value, slot, call->location());
             register_value = slot;
           }
@@ -370,14 +360,12 @@ struct TvmFunctionBuilder::InstructionLowering {
         }
       }
       
-      Tvm::ValuePtr<> result_temporary, result_stack_ptr;
+      Tvm::ValuePtr<> result_temporary;
       if (ftype->result_mode == result_mode_by_value) {
         // Note that at a system level this parameter will be first in the list, and should be marked sret
         if (!call->type->is_register_type()) {
           tvm_arguments.push_back(builder.m_current_result_storage);
         } else {
-          if (!stack_ptr)
-            stack_ptr = builder.builder().stack_save(call->location());
           result_temporary = builder.builder().alloca_(result_type.value, call->location());
           tvm_arguments.push_back(result_temporary);
         }
@@ -389,8 +377,8 @@ struct TvmFunctionBuilder::InstructionLowering {
       else if (ftype->result_mode == result_mode_by_value)
         result = builder.m_current_result_storage;
       
-      if (stack_ptr)
-        builder.builder().stack_restore(stack_ptr, call->location());
+      if (result_temporary)
+        builder.builder().freea(result_temporary, call->location());
       
       return TvmResult(builder.m_state.scope.get(), result);
     }

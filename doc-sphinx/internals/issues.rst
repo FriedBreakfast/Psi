@@ -169,10 +169,6 @@ I think this whole system needs a rethink.
 TVM improvements
 ----------------
 
-* Change stack save/restore to a ``freea`` instruction which frees memory associated
-  with a certain ``alloca`` or ``constalloca``. This will allow LLVM lifetime markers to be
-  created easily.
-
 * Constant folding should not be performed by the FunctionalBuilder class.
   Instead it should be performed by each class itself, which will mean:
   
@@ -185,14 +181,6 @@ TVM improvements
     so this should not be happening.
   
 * Several cases of constant folding are missing, particularly bit-wise operations.
-  
-* Add a ``constalloca`` operation which allocates memory an assings a value.
-  The user further promises that this memory is not modified after the call,
-  but the type system does not check this.
-  This should be used for locally generated interface values, and LLVM should
-  use ``llvm.invariant.*`` intrinsics as well.
-  This could also allow an optimization if the allocated value is in fact a global
-  constant, because then it can be stored in a global variable.
 
 * Function parameter attributes, particularly ``nonnull``, which should be set for
   reference-type arguments.
@@ -202,11 +190,3 @@ TVM improvements
   It would be better to provide some options to the user to let this be handled gracefully
   most of the time, or to remove error checking when performance is needed (locally, not
   globally though).
-
-LLVM generation improvements
-----------------------------
-
-* Lifetime markers: add ``llvm.lifetime.start`` and ``llvm.lifetime.end`` markers to alloca use.
-* Provide support for ``llvm.invariant.start`` and ``llvm.invariant.end``.
-  I think this is useful for locally generated interface data because that should not be modified
-  after initialization.

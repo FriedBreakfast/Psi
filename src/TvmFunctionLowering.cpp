@@ -340,7 +340,12 @@ TvmResult TvmFunctionBuilder::get_implementation(const TreePtr<Interface>& inter
   if (implementation->dynamic)
     return build(implementation->value);
   
-  PSI_NOT_IMPLEMENTED();
+  TreePtr<Term> value = implementation->value->specialize(location, parameters);
+  PSI_ASSERT(value->is_functional());
+  TvmResult tvm_value = build(value);
+  Tvm::ValuePtr<> ptr = builder().alloca_const(tvm_value.value, location);
+  // Need to add a cleanup
+  return TvmResult(m_state.scope.get(), ptr);
 }
 }
 }

@@ -445,6 +445,8 @@ Instructions
 
 These operations must occur in a definite sequence since they may read or modify memory.
 
+.. _psi.tvm.instructions.alloca:
+
 alloca
 """"""
 
@@ -460,6 +462,19 @@ Allocate storage for a type on the stack.
 ``{alignment}``
   Optional alignment specification. This will be ignored if it is smaller
   then the minimum alignment for ``{type}``. Defaults to 0.
+  
+.. _psi.tvm.instructions.alloca_const:
+
+alloca_const
+""""""""""""
+
+``alloca_const {value}``
+
+Allocate storage on the stack and assign it a constant value.
+The contents of this pointer may not be subsequently modified.
+
+``{value}``
+  Value to be placed on the stack.
 
 br
 ""
@@ -517,6 +532,16 @@ Later use of the same expression (or any sub-expression) is safe, since the valu
 
 ``{value}``
   A calculation which may trap.
+  
+freea
+"""""
+
+``freea {ptr}``
+
+Restore the stack pointer to its position before ``{ptr}`` was allocated.
+
+``{ptr}``
+  Point returned by :ref:`psi.tvm.instructions.alloca` or :ref:`psi.tvm.instructions.alloca_const`.
 
 load
 """"
@@ -593,32 +618,6 @@ This instruction should be used with great care since it will circumvent the typ
 been obtained from uninitialized memory.
 If the memory has been initialized with the correct type the type system then we know that ``value``
 has the correct value since only a single value will be valid for that type.
-
-.. _psi.tvm.instructions.stack_restore:
-
-stack_restore
-"""""""""""""
-
-``stack_restore {ptr}``
-
-Restore the stack pointer.
-This will free any memory allocated by :ref:`psi.tvm.instructions.alloca` instructions since
-the :ref:`psi.tvm.instructions.stack_save` instruction which generated ``{ptr}``.
-
-``{ptr}``
-  Stack pointer produced by a :ref:`psi.tvm.instructions.stack_save` instruction.
-
-.. _psi.tvm.instructions.stack_save:
-
-stack_save
-""""""""""
-
-``stack_save``
-
-Save the stack pointer.
-The result of this instruction may be passed to :ref:`psi.tvm.instructions.stack_restore` to reset
-the stack pointer to its value when the ``stack_save`` instruction was run.
-This frees memory allocated by any :ref:`psi.tvm.instructions.alloca` instructions between the two points.
 
 store
 """""
