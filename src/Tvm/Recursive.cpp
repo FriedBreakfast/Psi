@@ -33,9 +33,8 @@ namespace Psi {
     
     PSI_TVM_VALUE_IMPL(RecursiveParameter, Value);
 
-    RecursiveType::RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, const SourceLocation& location)
-    : Value(result_type->context(), term_recursive, ValuePtr<>(), location),
-    m_result_type(result_type) {
+    RecursiveType::RecursiveType(Context& context, ParameterList& parameters, const SourceLocation& location)
+    : Value(context, term_recursive, ValuePtr<>(), location) {
       m_parameters.swap(parameters);
     }
 
@@ -46,10 +45,10 @@ namespace Psi {
      * considered phantom; in this case the value assigned to this
      * term may itself be a phantom.
      */
-    ValuePtr<RecursiveType> RecursiveType::create(const ValuePtr<>& result_type,
+    ValuePtr<RecursiveType> RecursiveType::create(Context& context,
                                                   RecursiveType::ParameterList& parameters,
                                                   const SourceLocation& location) {
-      ValuePtr<RecursiveType> result(::new RecursiveType(result_type, parameters, location));
+      ValuePtr<RecursiveType> result(::new RecursiveType(context, parameters, location));
       for (ParameterList::iterator ii = result->parameters().begin(), ie = result->parameters().end(); ii != ie; ++ii)
         (*ii)->m_recursive = result.get();
       return result;
@@ -59,8 +58,8 @@ namespace Psi {
      * \brief Resolve this term to its actual value.
      */
     void RecursiveType::resolve(const ValuePtr<>& to) {
-      if (m_result_type != to->type())
-        throw TvmUserError("mismatch between recursive term type and resolving term type");
+      if (!isa<Metatype>(to->type()))
+        throw TvmUserError("Term used to resolve recursive type is not a type");
 
       if (m_result)
         throw TvmUserError("resolving a recursive term which has already been resolved");
@@ -72,7 +71,6 @@ namespace Psi {
     void RecursiveType::visit(V& v) {
       visit_base<Value>(v);
       v("result", &RecursiveType::m_result)
-      ("result_type", &RecursiveType::m_result_type)
       ("parameters", &RecursiveType::m_parameters);
     }
     
@@ -81,7 +79,6 @@ namespace Psi {
     }
     
     void RecursiveType::check_source_hook(CheckSourceParameter& parameter) {
-      m_result_type->check_source(parameter);
       CheckSourceParameter parameter_copy(parameter);
       for (ParameterList::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
         (*ii)->check_source(parameter_copy);
@@ -121,7 +118,7 @@ namespace Psi {
       }
     };
 
-    ApplyValue::ApplyValue(const ValuePtr<RecursiveType>& recursive,
+    ApplyType::ApplyType(const ValuePtr<RecursiveType>& recursive,
                            const std::vector<ValuePtr<> >& parameters,
                            const SourceLocation& location)
     : HashableValue(recursive->context(), term_apply, location),
@@ -129,7 +126,7 @@ namespace Psi {
     m_parameters(parameters) {
     }
 
-    ValuePtr<> ApplyValue::unpack() {
+    ValuePtr<> ApplyType::unpack() {
       if (!recursive()->result())
         throw TvmUserError("Cannot unpack recursive term which has not been assigned");
 
@@ -137,13 +134,13 @@ namespace Psi {
     }
 
     template<typename V>
-    void ApplyValue::visit(V& v) {
+    void ApplyType::visit(V& v) {
       visit_base<HashableValue>(v);
-      v("recursive", &ApplyValue::m_recursive)
-      ("parameters", &ApplyValue::m_parameters);
+      v("recursive", &ApplyType::m_recursive)
+      ("parameters", &ApplyType::m_parameters);
     }
     
-    ValuePtr<> ApplyValue::check_type() const {
+    ValuePtr<> ApplyType::check_type() const {
       ValuePtr<RecursiveType> recursive = dyn_cast<RecursiveType>(m_recursive);
       if (!recursive)
         throw TvmUserError("Parameter to apply is not a recursive type");
@@ -161,19 +158,9 @@ namespace Psi {
       }
       PSI_ASSERT(ji == je);
       
-      return rewriter.rewrite(recursive->result_type());
+      return FunctionalBuilder::type_type(context(), location());
     }
 
-    PSI_TVM_HASHABLE_IMPL(ApplyValue, HashableValue, apply)
-
-    /**
-     * \brief Unwrap any instances of apply/recursive.
-     */
-    ValuePtr<> unrecurse(const ValuePtr<>& value) {
-      ValuePtr<> ptr = value;
-      while (ValuePtr<ApplyValue> ap = dyn_cast<ApplyValue>(ptr))
-        ptr = ap->unpack();
-      return ptr;
-    }
+    PSI_TVM_HASHABLE_IMPL(ApplyType, HashableValue, apply)
   }
 }

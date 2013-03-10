@@ -70,7 +70,7 @@ namespace Psi {
       void print_phi_term(const ValuePtr<Phi>&);
       void print_function(const ValuePtr<Function>&);
       void print_function_type_term(const ValuePtr<FunctionType>&, bool bracket, const ValuePtr<Function>& =ValuePtr<Function>());
-      void print_apply_term(const ValuePtr<ApplyValue>& apply, bool bracket);
+      void print_apply_term(const ValuePtr<ApplyType>& apply, bool bracket);
       void print_exists(const ValuePtr<Exists>& term, bool bracket);
       void print_recursive(const ValuePtr<RecursiveType>& recursive);
       void print_definitions(const TermDefinitionList&, const char* ="", bool=false);
@@ -352,7 +352,6 @@ namespace Psi {
           setup_term_name(*ii);
           setup_term((*ii)->type());
         }
-        setup_term(recursive->result_type());
         if (recursive->result())
           setup_term(recursive->result());
         break;
@@ -417,7 +416,7 @@ namespace Psi {
       
       switch (term->term_type()) {
       case term_apply: {
-        ValuePtr<ApplyValue> apply = value_cast<ApplyValue>(term);
+        ValuePtr<ApplyType> apply = value_cast<ApplyType>(term);
         setup_term(apply->recursive());
         for (std::vector<ValuePtr<> >::const_iterator ii = apply->parameters().begin(), ie = apply->parameters().end(); ii != ie; ++ii)
           setup_term(*ii);
@@ -494,7 +493,7 @@ namespace Psi {
       }
       
       case term_apply: {
-        print_apply_term(value_cast<ApplyValue>(term), bracket);
+        print_apply_term(value_cast<ApplyType>(term), bracket);
         break;
       }
 
@@ -589,7 +588,7 @@ namespace Psi {
       case term_apply: {
         if (global)
           *m_output << "define ";
-        print_apply_term(value_cast<ApplyValue>(term), false);
+        print_apply_term(value_cast<ApplyType>(term), false);
         *m_output << ";\n";
         return;
       }
@@ -802,7 +801,7 @@ namespace Psi {
       }
     }
 
-    void DisassemblerContext::print_apply_term(const ValuePtr<ApplyValue>& apply, bool bracket) {
+    void DisassemblerContext::print_apply_term(const ValuePtr<ApplyType>& apply, bool bracket) {
       if (bracket)
         *m_output << '(';
       
@@ -869,8 +868,6 @@ namespace Psi {
       
       *m_output << ") > ";
       
-      print_term(term->result_type(), true);
-      *m_output << " > ";
       if (term->result())
         print_term(term->result(), true);
       else

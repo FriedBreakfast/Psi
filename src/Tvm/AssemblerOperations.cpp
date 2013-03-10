@@ -121,17 +121,33 @@ namespace Psi {
       
       struct UprefCallback {
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
-          if ((expression.terms.size() != 2) && (expression.terms.size() != 3))
-            throw AssemblerError("wrong number of arguments to " + name);
+          if (expression.terms.empty())
+            throw AssemblerError(name + " requires at least one argument");
           
-          ValuePtr<> type = build_expression(context, expression.terms.front(), location);
-          ValuePtr<> index = build_expression(context, *boost::next(expression.terms.begin(), 1), location);
+          UniqueList<Parser::Expression>::const_iterator ii = expression.terms.begin(), ie = expression.terms.end();
           
-          ValuePtr<> next;
-          if (expression.terms.size() == 3)
-            next = build_expression(context, *boost::next(expression.terms.begin(), 2), location);
+          ValuePtr<> upref = build_expression(context, *ii, location);
+          ValuePtr<> type;
+          if (!isa<UpwardReferenceType>(upref->type())) {
+            type = upref;
+            upref.reset();
+          }
 
-          return FunctionalBuilder::upref(type, index, next, SourceLocation(expression.location, location));
+          SourceLocation source_location(expression.location, location);
+          ++ii;
+          for (; ii != ie; ++ii) {
+            ValuePtr<> cur = build_expression(context, *ii, location);
+            if (cur->is_type()) {
+              if (type)
+                throw AssemblerError("types cannot appear next to each other in " + name + " operation");
+              type = cur;
+            } else {
+              upref = FunctionalBuilder::upref(type, cur, upref, source_location);
+              type.reset();
+            }
+          }
+          
+          return upref;
         }
       };
 
@@ -168,6 +184,25 @@ namespace Psi {
           return FunctionalBuilder::bool_value(context.context(), value, SourceLocation(expression.location, location));
         }
       };
+      
+      struct FoldRightCallback {
+        typedef ValuePtr<> (*GetterType) (const ValuePtr<>&,const ValuePtr<>&,const SourceLocation&);
+        GetterType getter;
+        FoldRightCallback(GetterType getter_) : getter(getter_) {}
+        
+        ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
+          UniqueList<Parser::Expression>::const_iterator ii = expression.terms.begin(), ie = expression.terms.end();
+          if (ii == ie)
+            throw TvmUserError(name + " operation requires at least one argument");
+          
+          SourceLocation source_location(expression.location, location);
+          ValuePtr<> value = build_expression(context, *ii, location);
+          ++ii;
+          for (; ii != ie; ++ii)
+            value = getter(value, build_expression(context, *ii, location), source_location);
+          return value;
+        }
+      };
 
       const boost::unordered_map<std::string, FunctionalTermCallback> functional_ops =
         boost::assign::map_list_of<std::string, FunctionalTermCallback>
@@ -196,7 +231,6 @@ namespace Psi {
         ("empty", NullaryOpCallback(&FunctionalBuilder::empty_type))
         ("empty_v", NullaryOpCallback(&FunctionalBuilder::empty_value))
         ("byte", NullaryOpCallback(&FunctionalBuilder::byte_type))
-        ("stack_ptr", NullaryOpCallback(&FunctionalBuilder::stack_pointer_type))
         ("pointer", UnaryOrBinaryCallback(&FunctionalBuilder::pointer_type, &FunctionalBuilder::pointer_type))
         ("upref_type", NullaryOpCallback(&FunctionalBuilder::upref_type))
         ("upref", UprefCallback())
@@ -217,12 +251,13 @@ namespace Psi {
         ("struct_v", ContextArrayCallback(&FunctionalBuilder::struct_value))
         ("union", ContextArrayCallback(&FunctionalBuilder::union_type))
         ("union_v", BinaryOpCallback(&FunctionalBuilder::union_value))
-        ("element", BinaryOpCallback(&FunctionalBuilder::element_value))
-        ("gep", BinaryOpCallback(&FunctionalBuilder::element_ptr))
+        ("apply", TermPlusArrayCallback(&FunctionalBuilder::apply_type))
+        ("apply_v", BinaryOpCallback(&FunctionalBuilder::apply_value))
+        ("element", FoldRightCallback(&FunctionalBuilder::element_value))
+        ("gep", FoldRightCallback(&FunctionalBuilder::element_ptr))
         ("specialize", TermPlusArrayCallback(&FunctionalBuilder::specialize))
         ("pointer_cast", BinaryOpCallback(&FunctionalBuilder::pointer_cast))
         ("pointer_offset", BinaryOpCallback(&FunctionalBuilder::pointer_offset))
-        ("apply", TermPlusArrayCallback(&FunctionalBuilder::apply))
         ("unwrap", UnaryOpCallback(&FunctionalBuilder::unwrap))
         ("unwrap_param", TermPlusIndexCallback(&FunctionalBuilder::unwrap_param));
 

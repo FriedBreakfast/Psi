@@ -106,6 +106,18 @@ namespace Psi {
         }
       }
       
+      static LoweredType apply_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ApplyType>& term) {
+        LoweredType inner_type = rewriter.rewrite_type(term->unpack());
+        
+        if (!rewriter.pass().split_structs && (inner_type.mode() == LoweredType::mode_register)) {
+          return LoweredType::register_(term, inner_type.size(), inner_type.alignment(), inner_type.register_type());
+        } else if (inner_type.global()) {
+          return LoweredType::split(term, inner_type.size(), inner_type.alignment(), LoweredType::EntryVector(1, inner_type));
+        } else {
+          return LoweredType::blob(term, inner_type.size(), inner_type.alignment());
+        }
+      }
+      
       static LoweredType simple_type_helper(AggregateLoweringRewriter& rewriter, const ValuePtr<>& origin, const ValuePtr<>& rewritten_type, const SourceLocation& location) {
         ValuePtr<> size, alignment;
         TypeSizeAlignment size_align = rewriter.pass().target_callback->type_size_alignment(rewritten_type);
@@ -163,7 +175,7 @@ namespace Psi {
         return LoweredType::blob(type, size, alignment);
       }
       
-      typedef TermOperationMap<FunctionalValue, LoweredType, AggregateLoweringRewriter&> CallbackMap;
+      typedef TermOperationMap<HashableValue, LoweredType, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
       
       static CallbackMap::Initializer callback_map_initializer() {
@@ -171,6 +183,7 @@ namespace Psi {
           .add<ArrayType>(array_type_rewrite)
           .add<StructType>(struct_type_rewrite)
           .add<UnionType>(union_type_rewrite)
+          .add<ApplyType>(apply_type_rewrite)
           .add<Metatype>(metatype_rewrite)
           .add<MetatypeValue>(unknown_type_rewrite)
           .add<PointerType>(pointer_type_rewrite)
@@ -180,7 +193,6 @@ namespace Psi {
           .add<EmptyType>(primitive_type_rewrite)
           .add<FloatType>(primitive_type_rewrite)
           .add<IntegerType>(primitive_type_rewrite)
-          .add<StackPointerType>(primitive_type_rewrite)
           .add<ConstantType>(constant_type_rewrite);
       }
     };
@@ -192,7 +204,7 @@ namespace Psi {
      * \internal
      * Wrapper around TypeTermRewriter to eliminate dependency between AggregateLowering.cpp and AggregateLoweringOperations.cpp.
      */
-    LoweredType AggregateLoweringPass::type_term_rewrite(AggregateLoweringRewriter& runner, const ValuePtr<FunctionalValue>& type) {
+    LoweredType AggregateLoweringPass::type_term_rewrite(AggregateLoweringRewriter& runner, const ValuePtr<HashableValue>& type) {
       return TypeTermRewriter::callback_map.call(runner, type);
     }
     
@@ -220,7 +232,7 @@ namespace Psi {
         }
       }
 
-      static LoweredValue default_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionalValue>& term) {
+      static LoweredValue default_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<HashableValue>& term) {
 
         class Callback : public RewriteCallback {
           AggregateLoweringRewriter *m_rewriter;
@@ -302,6 +314,18 @@ namespace Psi {
         }
       }
       
+      static LoweredValue apply_value_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ApplyValue>& term) {
+        LoweredType type = rewriter.rewrite_type(term->type());
+        LoweredValue inner = rewriter.rewrite_value(term->value());
+        if (inner.mode() == LoweredValue::mode_register) {
+          PSI_ASSERT(type.mode() == LoweredType::mode_register);
+          return LoweredValue::register_(type, inner.global(), inner.register_value());
+        } else {
+          PSI_ASSERT(type.mode() == LoweredType::mode_split);
+          return LoweredValue::split(type, LoweredValue::EntryVector(1, inner));
+        }
+      }
+      
       static LoweredValue outer_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<OuterPtr>& term) {
         ValuePtr<PointerType> inner_ptr_ty = value_cast<PointerType>(term->pointer()->type());
         LoweredValueSimple inner_ptr = rewriter.rewrite_value_register(term->pointer());
@@ -310,19 +334,20 @@ namespace Psi {
                                                           FunctionalBuilder::byte_type(rewriter.context(), term->location()),
                                                           term->location());
         
-        ValuePtr<UpwardReference> up = dyn_unrecurse<UpwardReference>(inner_ptr_ty->upref());
+        ValuePtr<UpwardReference> up = dyn_cast<UpwardReference>(inner_ptr_ty->upref());
+        ValuePtr<> outer_type = up->outer_type();
         ValuePtr<> offset;
         bool global = inner_ptr.global && outer_ptr_ty.global();
-        if (ValuePtr<StructType> struct_ty = dyn_unrecurse<StructType>(up->outer_type())) {
+        if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(outer_type)) {
           LoweredValueSimple st_offset = rewriter.rewrite_value_register(FunctionalBuilder::struct_element_offset(struct_ty, size_to_unsigned(up->index()), term->location()));
           offset = st_offset.value;
           global = global && st_offset.global;
-        } else if (ValuePtr<ArrayType> array_ty = dyn_unrecurse<ArrayType>(up)) {
+        } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(outer_type)) {
           LoweredValueSimple idx = rewriter.rewrite_value_register(up->index());
           LoweredType el_type = rewriter.rewrite_type(array_ty->element_type());
           offset = FunctionalBuilder::mul(idx.value, el_type.size(), term->location());
           global = global && idx.global && el_type.global();
-        } else if (ValuePtr<UnionType> union_ty = dyn_unrecurse<UnionType>(up)) {
+        } else if (isa<UnionType>(outer_type) || isa<ApplyType>(outer_type)) {
           return LoweredValue::register_(outer_ptr_ty, global, base);
         } else {
           throw TvmInternalError("Upward reference cannot be unfolded");
@@ -341,7 +366,7 @@ namespace Psi {
        * \param base Pointer to array. This must have already been lowered.
        */
       static LoweredValueSimple array_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<>& unchecked_array_ty, const LoweredValueSimple& base, const LoweredValueSimple& index, const SourceLocation& location) {
-        ValuePtr<ArrayType> array_ty = dyn_unrecurse<ArrayType>(unchecked_array_ty);
+        ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(unchecked_array_ty);
         if (!array_ty)
           throw TvmUserError("array type argument did not evaluate to an array type");
 
@@ -448,7 +473,7 @@ namespace Psi {
         LoweredValueSimple array_ptr = rewriter.rewrite_value_register(term->aggregate_ptr());
         LoweredValueSimple index = rewriter.rewrite_value_register(term->index());
         
-        ValuePtr<PointerType> pointer_type = dyn_unrecurse<PointerType>(term->aggregate_ptr()->type());
+        ValuePtr<PointerType> pointer_type = dyn_cast<PointerType>(term->aggregate_ptr()->type());
         if (!pointer_type)
           throw TvmUserError("array_ep argument did not evaluate to a pointer");
         
@@ -465,7 +490,7 @@ namespace Psi {
        * \param base Pointer to struct. This must have already been lowered.
        */
       static LoweredValueSimple struct_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<>& unchecked_struct_ty, const LoweredValueSimple& base, unsigned index, const SourceLocation& location) {
-        ValuePtr<StructType> struct_ty = dyn_unrecurse<StructType>(unchecked_struct_ty);
+        ValuePtr<StructType> struct_ty = dyn_cast<StructType>(unchecked_struct_ty);
         if (!struct_ty)
           throw TvmInternalError("struct type value did not evaluate to a struct type");
 
@@ -499,7 +524,7 @@ namespace Psi {
       static LoweredValue struct_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
         LoweredValueSimple struct_ptr = rewriter.rewrite_value_register(term->aggregate_ptr());
         
-        ValuePtr<PointerType> pointer_type = dyn_unrecurse<PointerType>(term->aggregate_ptr()->type());
+        ValuePtr<PointerType> pointer_type = dyn_cast<PointerType>(term->aggregate_ptr()->type());
         if (!pointer_type)
           throw TvmUserError("struct_ep argument did not evaluate to a pointer");
         
@@ -508,7 +533,7 @@ namespace Psi {
       }
       
       static LoweredValue struct_element_offset_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<StructElementOffset>& term) {
-        ValuePtr<StructType> struct_ty = dyn_unrecurse<StructType>(term->struct_type());
+        ValuePtr<StructType> struct_ty = dyn_cast<StructType>(term->struct_type());
         if (!struct_ty)
           throw TvmUserError("struct_eo argument did not evaluate to a struct type");
 
@@ -535,6 +560,26 @@ namespace Psi {
       }
 
       static LoweredValue union_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
+        LoweredValueSimple result = rewriter.rewrite_value_register(term->aggregate_ptr());
+        return LoweredValue::register_(rewriter.rewrite_type(term->type()), result.global, result.value);
+      }
+      
+      static LoweredValue apply_element_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementValue>& term) {
+        LoweredValue apply_val = rewriter.rewrite_value(term->aggregate());
+        PSI_ASSERT(size_equals_constant(term->index(), 0));
+        switch (apply_val.mode()) {
+        case LoweredValue::mode_register:
+          return LoweredValue::register_(rewriter.rewrite_type(term->type()), apply_val.global(), apply_val.register_value());
+          
+        case LoweredValue::mode_split:
+          return apply_val.split_entries()[0];
+          
+        default:
+          PSI_FAIL("unexpected enum value");
+        }
+      }
+      
+      static LoweredValue apply_element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
         LoweredValueSimple result = rewriter.rewrite_value_register(term->aggregate_ptr());
         return LoweredValue::register_(rewriter.rewrite_type(term->type()), result.global, result.value);
       }
@@ -575,34 +620,34 @@ namespace Psi {
         return rewriter.rewrite_value(term->value());
       }
       
-      static LoweredValue apply_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ApplyValue>& term) {
-        return rewriter.rewrite_value(term->unpack());
-      }
-      
       static LoweredValue element_value_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementValue>& term) {
         ValuePtr<> ty = term->aggregate()->type();
-        if (dyn_unrecurse<StructType>(ty))
+        if (isa<StructType>(ty))
           return struct_element_rewrite(rewriter, term);
-        else if (dyn_unrecurse<ArrayType>(ty))
+        else if (isa<ArrayType>(ty))
           return array_element_rewrite(rewriter, term);
-        else if (dyn_unrecurse<UnionType>(ty))
+        else if (isa<UnionType>(ty))
           return union_element_rewrite(rewriter, term);
+        else if (isa<ApplyType>(ty))
+          return apply_element_rewrite(rewriter, term);
         else
           throw TvmUserError("element_value aggregate argument is not an aggregate type");
       }
       
       static LoweredValue element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
-        ValuePtr<PointerType> ptr_ty = dyn_unrecurse<PointerType>(term->aggregate_ptr()->type());
+        ValuePtr<PointerType> ptr_ty = dyn_cast<PointerType>(term->aggregate_ptr()->type());
         if (!ptr_ty)
           throw TvmUserError("element_ptr aggregate argument is not a pointer");
 
         ValuePtr<> ty = ptr_ty->target_type();
-        if (dyn_unrecurse<StructType>(ty))
+        if (isa<StructType>(ty))
           return struct_element_ptr_rewrite(rewriter, term);
-        else if (dyn_unrecurse<ArrayType>(ty))
+        else if (isa<ArrayType>(ty))
           return array_element_ptr_rewrite(rewriter, term);
-        else if (dyn_unrecurse<UnionType>(ty))
+        else if (isa<UnionType>(ty))
           return union_element_ptr_rewrite(rewriter, term);
+        else if (isa<ApplyType>(ty))
+          return apply_element_ptr_rewrite(rewriter, term);
         else
           throw TvmUserError("element_value aggregate argument is not an aggregate type");
       }
@@ -638,7 +683,7 @@ namespace Psi {
       
       static LoweredValue build_zero_undef(AggregateLoweringRewriter& rewriter, const LoweredType& ty, bool is_zero, const SourceLocation& location) {
         if (is_zero) {
-          if (ValuePtr<ConstantType> constant = dyn_unrecurse<ConstantType>(ty.origin()))
+          if (ValuePtr<ConstantType> constant = dyn_cast<ConstantType>(ty.origin()))
             return rewriter.rewrite_value(constant->value());
         }
         
@@ -670,7 +715,7 @@ namespace Psi {
         return build_zero_undef(rewriter, ty, false, term->location());
       }
 
-      typedef TermOperationMap<FunctionalValue, LoweredValue, AggregateLoweringRewriter&> CallbackMap;
+      typedef TermOperationMap<HashableValue, LoweredValue, AggregateLoweringRewriter&> CallbackMap;
       static CallbackMap callback_map;
       
       static CallbackMap::Initializer callback_map_initializer() {
@@ -678,6 +723,7 @@ namespace Psi {
           .add<ArrayType>(type_rewrite)
           .add<StructType>(type_rewrite)
           .add<UnionType>(type_rewrite)
+          .add<ApplyType>(type_rewrite)
           .add<PointerType>(type_rewrite)
           .add<IntegerType>(type_rewrite)
           .add<FloatType>(type_rewrite)
@@ -688,13 +734,13 @@ namespace Psi {
           .add<ArrayValue>(array_value_rewrite)
           .add<StructValue>(struct_value_rewrite)
           .add<UnionValue>(union_value_rewrite)
+          .add<ApplyValue>(apply_value_rewrite)
           .add<StructElementOffset>(struct_element_offset_rewrite)
           .add<MetatypeSize>(metatype_size_rewrite)
           .add<MetatypeAlignment>(metatype_alignment_rewrite)
           .add<PointerOffset>(pointer_offset_rewrite)
           .add<PointerCast>(pointer_cast_rewrite)
           .add<Unwrap>(unwrap_rewrite)
-          .add<ApplyValue>(apply_rewrite)
           .add<ElementValue>(element_value_rewrite)
           .add<ElementPtr>(element_ptr_rewrite)
           .add<Select>(select_rewrite)
@@ -710,7 +756,7 @@ namespace Psi {
      * \internal
      * Wrapper around FunctionalTermRewriter to eliminate dependency between AggregateLowering.cpp and AggregateLoweringOperations.cpp.
      */
-    LoweredValue AggregateLoweringPass::functional_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionalValue>& term) {
+    LoweredValue AggregateLoweringPass::hashable_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<HashableValue>& term) {
       return FunctionalTermRewriter::callback_map.call(rewriter, term);
     }
 
@@ -860,7 +906,7 @@ namespace Psi {
       }
       
       static LoweredValue solidify_rewrite(FunctionRunner& runner, const ValuePtr<Solidify>& term) {
-        ValuePtr<ConstantType> cn = unrecurse_cast<ConstantType>(term->value->type());
+        ValuePtr<ConstantType> cn = value_cast<ConstantType>(term->value->type());
         LoweredValue cval = runner.rewrite_value(term->value);
         runner.add_mapping(cn->value(), cval);
         return LoweredValue();

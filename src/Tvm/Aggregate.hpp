@@ -68,7 +68,9 @@ namespace Psi {
       UpwardReference(const ValuePtr<>& outer_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location);
       
       /// \brief The outer type of this reference.
-      const ValuePtr<>& outer_type() const {return m_outer_type;}
+      ValuePtr<> outer_type() const;
+      /// \brief The outer type of this reference, if non-NULL, which it may be if next() is non-NULL.
+      const ValuePtr<>& maybe_outer_type() const {return m_outer_type;}
       /// \brief The index into the outer type to which we have a pointer.
       const ValuePtr<>& index() const {return m_index;}
       /// \brief Next upward reference in the chain.
@@ -113,17 +115,6 @@ namespace Psi {
       PSI_TVM_FUNCTIONAL_DECL(ByteType)
     public:
       ByteType(Context& context, const SourceLocation& location);
-    };
-    
-    /**
-     * \brief Type of stack pointers.
-     * 
-     * These are only used by the stack_save and stack_restore instructions.
-     */
-    class StackPointerType : public Type {
-      PSI_TVM_FUNCTIONAL_DECL(StackPointerType)
-    public:
-      StackPointerType(Context& context, const SourceLocation& location);
     };
 
     /**
@@ -384,10 +375,24 @@ namespace Psi {
       /// \brief Get the value of whichever element this represents.
       const ValuePtr<>& value() const {return m_value;}
       /// \brief Get the type of this value (overloaded to return a UnionType).
-      ValuePtr<UnionType> type() const {return value_cast<UnionType>(Value::type());}
+      ValuePtr<UnionType> union_type() const {return value_cast<UnionType>(Value::type());}
       
     private:
       ValuePtr<> m_union_type;
+      ValuePtr<> m_value;
+    };
+    
+    class ApplyValue : public Constructor {
+      PSI_TVM_FUNCTIONAL_DECL(ApplyValue)
+    public:
+      ApplyValue(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location);
+      
+      ValuePtr<ApplyType> apply_type() const;
+      /// \brief Get the value used to construct the generic
+      const ValuePtr<>& value() const {return m_value;}
+      
+    private:
+      ValuePtr<> m_apply_type;
       ValuePtr<> m_value;
     };
 

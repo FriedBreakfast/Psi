@@ -7,8 +7,6 @@
 
 namespace Psi {
   namespace Tvm {
-    class ApplyValue;
-    
     class RecursiveParameter : public Value {
       PSI_TVM_VALUE_DECL(RecursiveParameter);
       friend class Context;
@@ -53,12 +51,11 @@ namespace Psi {
     public:
       typedef ValueList<RecursiveParameter, &RecursiveParameter::m_parameter_list_hook> ParameterList;
       
-      static ValuePtr<RecursiveType> create(const ValuePtr<>& result_type,
+      static ValuePtr<RecursiveType> create(Context& context,
                                             RecursiveType::ParameterList& parameters,
                                             const SourceLocation& location);
 
       void resolve(const ValuePtr<>& term);
-      const ValuePtr<>& result_type() {return m_result_type;}
       const ParameterList& parameters() const {return m_parameters;}
       const ValuePtr<>& result() {return m_result;}
       
@@ -67,23 +64,22 @@ namespace Psi {
       virtual Value* disassembler_source();
 
     private:
-      RecursiveType(const ValuePtr<>& result_type, ParameterList& parameters, const SourceLocation& location);
+      RecursiveType(Context& context, ParameterList& parameters, const SourceLocation& location);
       
       virtual void check_source_hook(CheckSourceParameter& parameter);
 
-      ValuePtr<> m_result_type;
       ValuePtr<> m_result;
       ParameterList m_parameters;
     };
 
-    class ApplyValue : public HashableValue {
-      PSI_TVM_HASHABLE_DECL(ApplyValue)
+    class ApplyType : public HashableValue {
+      PSI_TVM_HASHABLE_DECL(ApplyType)
       friend class Context;
       ValuePtr<RecursiveType> m_recursive;
       std::vector<ValuePtr<> > m_parameters;
 
     public:
-      ApplyValue(const ValuePtr<RecursiveType>& recursive,
+      ApplyType(const ValuePtr<RecursiveType>& recursive,
                  const std::vector<ValuePtr<> >& parameters,
                  const SourceLocation& location);
 
@@ -95,26 +91,6 @@ namespace Psi {
       
       static bool isa_impl(const Value& v) {return v.term_type() == term_apply;}
     };
-    
-    ValuePtr<> unrecurse(const ValuePtr<>& value);
-    
-    /**
-     * \brief Combines unrecurse and dyn_cast.
-     * 
-     * Just because it's used to often.
-     */
-    template<typename T> ValuePtr<T> dyn_unrecurse(const ValuePtr<>& value) {
-      return dyn_cast<T>(unrecurse(value));
-    }
-    
-    /**
-     * \brief Combines unrecurse and value_cast.
-     * 
-     * Just because it's used to often.
-     */
-    template<typename T> ValuePtr<T> unrecurse_cast(const ValuePtr<>& value) {
-      return value_cast<T>(unrecurse(value));
-    }
   }
 }
 

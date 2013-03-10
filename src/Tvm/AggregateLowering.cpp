@@ -87,7 +87,7 @@ namespace Psi {
      * return NULL.
      */
     LoweredType AggregateLoweringPass::AggregateLoweringRewriter::lookup_type(const ValuePtr<>& type) {
-      const LoweredType *x = m_type_map.lookup(unrecurse(type));
+      const LoweredType *x = m_type_map.lookup(type);
       if (x)
         return *x;
       return LoweredType();
@@ -105,7 +105,7 @@ namespace Psi {
      * \brief Get a value which must already have been rewritten.
      */
     LoweredValue AggregateLoweringPass::AggregateLoweringRewriter::lookup_value(const ValuePtr<>& value) {
-      const LoweredValue *x = m_value_map.lookup(unrecurse(value));
+      const LoweredValue *x = m_value_map.lookup(value);
       if (x)
         return *x;
       return LoweredValue();
@@ -137,6 +137,8 @@ namespace Psi {
         return FunctionalBuilder::struct_type(type->context(), default_, type->location());
       } else if (ValuePtr<ConstantType> constant = dyn_cast<ConstantType>(type)) {
         return constant->value()->type();
+      } else if (ValuePtr<ApplyType> apply = dyn_cast<ApplyType>(type)) {
+        return apply->unpack();
       } else if (isa<Metatype>(type)) {
         std::vector<ValuePtr<> > members(2, FunctionalBuilder::size_type(type->context(), type->location()));
         return FunctionalBuilder::struct_type(type->context(), members, type->location());
@@ -365,9 +367,7 @@ namespace Psi {
       return load_value(type, ptr, location);
     }
     
-    LoweredType AggregateLoweringPass::FunctionRunner::rewrite_type(const ValuePtr<>& type_orig) {
-      ValuePtr<> type = unrecurse(type_orig);
-      
+    LoweredType AggregateLoweringPass::FunctionRunner::rewrite_type(const ValuePtr<>& type) {
       LoweredType global_lookup = pass().global_rewriter().lookup_type(type);
       if (!global_lookup.empty())
         return global_lookup;
@@ -377,10 +377,10 @@ namespace Psi {
         return *lookup;
       
       LoweredType result;
-      if (ValuePtr<FunctionalValue> func_type = dyn_cast<FunctionalValue>(type)) {
-        result = type_term_rewrite(*this, func_type);
-      } else if (ValuePtr<Exists> exists = dyn_cast<Exists>(type)) {
+      if (ValuePtr<Exists> exists = dyn_cast<Exists>(type)) {
         result = rewrite_type(unwrap_exists(exists));
+      } else if (ValuePtr<HashableValue> func_type = dyn_cast<HashableValue>(type)) {
+        result = type_term_rewrite(*this, func_type);
       } else if (isa<ParameterPlaceholder>(type)) {
         throw TvmUserError("Encountered parameter placeholder in aggregate lowering");
       } else {
@@ -397,9 +397,7 @@ namespace Psi {
       return result;
     }
     
-    LoweredValue AggregateLoweringPass::FunctionRunner::rewrite_value(const ValuePtr<>& value_orig) {
-      ValuePtr<> value = unrecurse(value_orig);
-      
+    LoweredValue AggregateLoweringPass::FunctionRunner::rewrite_value(const ValuePtr<>& value) {
       LoweredValue global_lookup = pass().global_rewriter().lookup_value(value);
       if (!global_lookup.empty())
         return global_lookup;
@@ -415,8 +413,8 @@ namespace Psi {
       LoweredValue result;
       if (ValuePtr<Exists> exists = dyn_cast<Exists>(value)) {
         result = rewrite_value(unwrap_exists(exists));
-      } else if (ValuePtr<FunctionalValue> functional = dyn_cast<FunctionalValue>(value)) {
-        result = functional_term_rewrite(*this, functional);
+      } else if (ValuePtr<HashableValue> functional = dyn_cast<HashableValue>(value)) {
+        result = hashable_term_rewrite(*this, functional);
       } else {
         throw TvmUserError("Unexpected term type encountered in value lowering");
       }
@@ -499,9 +497,7 @@ namespace Psi {
       return pass().implode_lowered_value(type, exploded, offset, location);
     }
     
-    LoweredType AggregateLoweringPass::ModuleLevelRewriter::rewrite_type(const ValuePtr<>& type_orig) {
-      ValuePtr<> type = unrecurse(type_orig);
-      
+    LoweredType AggregateLoweringPass::ModuleLevelRewriter::rewrite_type(const ValuePtr<>& type) {
       const LoweredType *lookup = m_type_map.lookup(type);
       if (lookup)
         return *lookup;
@@ -509,7 +505,7 @@ namespace Psi {
       LoweredType result;
       if (ValuePtr<Exists> exists = dyn_cast<Exists>(type)) {
         result = rewrite_type(unwrap_exists(exists));
-      } else if (ValuePtr<FunctionalValue> functional = dyn_cast<FunctionalValue>(type)) {
+      } else if (ValuePtr<HashableValue> functional = dyn_cast<HashableValue>(type)) {
         result = type_term_rewrite(*this, functional);
       } else {
         throw TvmUserError("Unexpected term type in type lowering");
@@ -520,9 +516,7 @@ namespace Psi {
       return result;
     }
     
-    LoweredValue AggregateLoweringPass::ModuleLevelRewriter::rewrite_value(const ValuePtr<>& value_orig) {
-      ValuePtr<> value = unrecurse(value_orig);
-      
+    LoweredValue AggregateLoweringPass::ModuleLevelRewriter::rewrite_value(const ValuePtr<>& value) {
       const LoweredValue *lookup = m_value_map.lookup(value);
       if (lookup)
         return *lookup;
@@ -538,7 +532,7 @@ namespace Psi {
       if (ValuePtr<Exists> exists = dyn_cast<Exists>(value)) {
         result = rewrite_value(unwrap_exists(exists));
       } else if (ValuePtr<FunctionalValue> functional = dyn_cast<FunctionalValue>(value)) {
-        result = functional_term_rewrite(*this, functional);
+        result = hashable_term_rewrite(*this, functional);
       } else {
         throw TvmUserError("Non-functional value encountered in global expression: probably instruction or block which has not been inserted into a function");
       }
@@ -609,12 +603,6 @@ namespace Psi {
       if (m_block_type.empty())
         m_block_type = m_global_rewriter.rewrite_type(FunctionalBuilder::block_type(source_module()->context(), source_module()->location()));
       return m_block_type;
-    }
-    
-    const LoweredType& AggregateLoweringPass::stack_pointer_type() {
-      if (m_stack_pointer_type.empty())
-        m_stack_pointer_type = m_global_rewriter.rewrite_type(FunctionalBuilder::stack_pointer_type(source_module()->context(), source_module()->location()));
-      return m_stack_pointer_type;
     }
     
     /**

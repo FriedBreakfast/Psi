@@ -162,12 +162,10 @@ namespace Psi {
         RecursiveType(const PhysicalSourceLocation& location_,
                       UniqueList<NamedExpression>& phantom_parameters_,
                       UniqueList<NamedExpression>& parameters_,
-                      UniquePtr<Expression>& result_type_,
                       UniquePtr<Expression>& result_);
 
         UniqueList<NamedExpression> phantom_parameters;
         UniqueList<NamedExpression> parameters;
-        UniquePtr<Expression> result_type;
         UniquePtr<Expression> result;
       };
 

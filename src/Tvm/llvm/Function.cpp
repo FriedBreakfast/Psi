@@ -62,7 +62,7 @@ namespace Psi {
           }
 
           case term_apply: {
-            ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
+            ValuePtr<> actual = value_cast<ApplyType>(term)->unpack();
             PSI_ASSERT(actual->term_type() != term_apply);
             result = build_value(actual);
             break;

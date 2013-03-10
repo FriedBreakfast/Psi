@@ -340,7 +340,7 @@ namespace Psi {
           break;
           
         case term_apply: {
-          ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
+          ValuePtr<> actual = value_cast<ApplyType>(term)->unpack();
           PSI_ASSERT(actual->term_type() != term_apply);
           r = build_constant(actual);
           break;
@@ -382,7 +382,7 @@ namespace Psi {
           break;
 
         case term_apply: {
-          ValuePtr<> actual = value_cast<ApplyValue>(term)->unpack();
+          ValuePtr<> actual = value_cast<ApplyType>(term)->unpack();
           PSI_ASSERT(actual->term_type() != term_apply);
           t = build_type(actual);
           break;
@@ -433,7 +433,7 @@ namespace Psi {
         std::vector<llvm::Constant*> elements;
         llvm::Type *priority_type = llvm::Type::getInt32Ty(llvm_context());
         llvm::Type *constructor_ptr_type = llvm::FunctionType::get(llvm::Type::getVoidTy(llvm_context()), false)->getPointerTo();
-        llvm::StructType *element_type = llvm::StructType::get(priority_type, constructor_ptr_type);
+        llvm::StructType *element_type = llvm::StructType::get(priority_type, constructor_ptr_type, NULL);
         for (Module::ConstructorList::const_iterator ii = constructors.begin(), ie = constructors.end(); ii != ie; ++ii, ++priority) {
           llvm::Constant *values[2] = {llvm::ConstantInt::get(priority_type, priority), build_global(*ii)};
           elements.push_back(llvm::ConstantStruct::getAnon(values));

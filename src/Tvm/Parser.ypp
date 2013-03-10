@@ -196,21 +196,12 @@ constant: DEFINE root_expression {
 recursive:
 RECURSIVE '(' parameter_list ')' '>' expression {
   UniqueList<NamedExpression> phantom_parameters;
-  UniquePtr<Expression> result_type, result(list_to_ptr($6));
-  $$ = list_one<GlobalElement>(new RecursiveType(@$, phantom_parameters, *$3, result_type, result));
-}
-| RECURSIVE '(' parameter_list ')' '>' expression '>' expression {
-  UniqueList<NamedExpression> phantom_parameters;
-  UniquePtr<Expression> result_type(list_to_ptr($6)), result(list_to_ptr($8));
-  $$ = list_one<GlobalElement>(new RecursiveType(@$, phantom_parameters, *$3, result_type, result));
+  UniquePtr<Expression> result(list_to_ptr($6));
+  $$ = list_one<GlobalElement>(new RecursiveType(@$, phantom_parameters, *$3, result));
 }
 | RECURSIVE '(' parameter_list '|' parameter_list ')' '>' expression {
-  UniquePtr<Expression> result_type, result(list_to_ptr($8));
-  $$ = list_one<GlobalElement>(new RecursiveType(@$, *$3, *$5, result_type, result));
-}
-| RECURSIVE '(' parameter_list '|' parameter_list ')' '>' expression '>' expression {
-  UniquePtr<Expression> result_type(list_to_ptr($8)), result(list_to_ptr($10));
-  $$ = list_one<GlobalElement>(new RecursiveType(@$, *$3, *$5, result_type, result));
+  UniquePtr<Expression> result(list_to_ptr($8));
+  $$ = list_one<GlobalElement>(new RecursiveType(@$, *$3, *$5, result));
 }
 ;
 
@@ -667,12 +658,10 @@ namespace Psi {
       RecursiveType::RecursiveType(const PhysicalSourceLocation& location_,
                                    UniqueList<NamedExpression>& phantom_parameters_,
                                    UniqueList<NamedExpression>& parameters_,
-                                   UniquePtr<Expression>& result_type_,
                                    UniquePtr<Expression>& result_)
       : GlobalElement(location_, global_recursive) {
         phantom_parameters.swap(phantom_parameters_);
         parameters.swap(parameters_);
-        result_type.swap(result_type_);
         result.swap(result_);
       }
 

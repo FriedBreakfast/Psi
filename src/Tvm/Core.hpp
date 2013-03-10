@@ -626,7 +626,7 @@ namespace Psi {
     class Exists;
     class ParameterPlaceholder;
     class Function;
-    class ApplyValue;
+    class ApplyType;
     class RecursiveType;
     class RecursiveParameter;
     
@@ -752,7 +752,7 @@ namespace Psi {
 
       ValuePtr<ParameterPlaceholder> new_placeholder_parameter(const ValuePtr<>& type, const SourceLocation& location);
 
-      ValuePtr<ApplyValue> apply_recursive(const ValuePtr<RecursiveType>& recursive,
+      ValuePtr<ApplyType> apply_recursive(const ValuePtr<RecursiveType>& recursive,
                                            const std::vector<ValuePtr<> >& parameters,
                                            const SourceLocation& location);
 

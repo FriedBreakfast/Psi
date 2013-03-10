@@ -427,9 +427,9 @@ namespace Psi {
       struct FunctionalTermRewriter;
       struct InstructionTermRewriter;
       
-      static LoweredType type_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionalValue>& term);
+      static LoweredType type_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<HashableValue>& term);
       static LoweredType type_term_rewrite_parameter(AggregateLoweringRewriter& rewriter, const ValuePtr<>& term);
-      static LoweredValue functional_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionalValue>& term);
+      static LoweredValue hashable_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<HashableValue>& term);
       static LoweredValue instruction_term_rewrite(FunctionRunner& runner, const ValuePtr<Instruction>& insn);
       
       ModuleLevelRewriter m_global_rewriter;
@@ -454,7 +454,7 @@ namespace Psi {
 
       virtual void update_implementation(bool);
       
-      LoweredType m_size_type, m_pointer_type, m_block_type, m_stack_pointer_type;
+      LoweredType m_size_type, m_pointer_type, m_block_type;
 
     public:
       AggregateLoweringPass(Module*, TargetCallback*, Context* =0);
@@ -467,7 +467,6 @@ namespace Psi {
       const LoweredType& size_type();
       const LoweredType& pointer_type();
       const LoweredType& block_type();
-      const LoweredType& stack_pointer_type();
       
       std::size_t lowered_type_alignment(const ValuePtr<>& alignment);
 

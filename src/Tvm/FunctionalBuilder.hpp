@@ -39,7 +39,6 @@ namespace Psi {
       static ValuePtr<> empty_value(Context& context, const SourceLocation& location);
       static ValuePtr<> byte_type(Context& context, const SourceLocation& location);
       static ValuePtr<> byte_pointer_type(Context& context, const SourceLocation& location);
-      static ValuePtr<> stack_pointer_type(Context& context, const SourceLocation& location);
       static ValuePtr<> undef(const ValuePtr<>& type, const SourceLocation& location);
       static ValuePtr<> zero(const ValuePtr<>& type, const SourceLocation& location);
       //@}
@@ -63,6 +62,7 @@ namespace Psi {
       static ValuePtr<> array_type(const ValuePtr<>& element_type, unsigned length, const SourceLocation& location);
       static ValuePtr<> struct_type(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
       static ValuePtr<> union_type(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
+      static ValuePtr<> apply_type(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
       //@}
       
       /// \name Aggregate values
@@ -70,6 +70,7 @@ namespace Psi {
       static ValuePtr<> array_value(const ValuePtr<>&,const std::vector<ValuePtr<> >&, const SourceLocation& location);
       static ValuePtr<> struct_value(Context&,const std::vector<ValuePtr<> >&, const SourceLocation& location);
       static ValuePtr<> union_value(const ValuePtr<>&,const ValuePtr<>&, const SourceLocation& location);
+      static ValuePtr<> apply_value(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       //@}
       
       /// \name Aggregate element access
@@ -158,7 +159,6 @@ namespace Psi {
       static ValuePtr<> select(const ValuePtr<>&, const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> specialize(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
       
-      static ValuePtr<> apply(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
       static ValuePtr<> unwrap(const ValuePtr<>& value, const SourceLocation& location);
       static ValuePtr<> unwrap_param(const ValuePtr<>& value, unsigned index, const SourceLocation& location);
     };

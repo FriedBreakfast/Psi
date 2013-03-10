@@ -29,6 +29,24 @@ namespace Psi {
       BOOST_CHECK_EQUAL(f(x), x);
     }
     
+    BOOST_AUTO_TEST_CASE(ApplyValueTest) {
+      const char *src =
+        "%tt = recursive () > (struct i32 i32);\n"
+        "%ty = define apply %tt;\n"
+        "%f = function (%a:i32, %b:i32) > %ty {\n"
+        "  return (apply_v %ty (struct_v %a %b));\n"
+        "};\n";
+
+      struct ResultType {Jit::Int32 a, b;};
+      typedef ResultType (*FunctionType) (Jit::Int32, Jit::Int32);
+      FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
+
+      ResultType in = {56, -90159};
+      ResultType out = f(in.a, in.b);
+      BOOST_CHECK_EQUAL(in.a, out.a);
+      BOOST_CHECK_EQUAL(in.b, out.b);
+    }
+    
     namespace {
       struct DispatchTestVtable {
         int32_t (*callback) (void *self);
@@ -56,8 +74,8 @@ namespace Psi {
         "\n"
         "%func = function (%obj_wrapped : exists (%tag : upref_type) > (pointer (apply %base %tag) %tag)) > i32 {\n"
         "  %obj = unwrap %obj_wrapped;\n"
-        "  %vptr = load (gep %obj #up0);\n"
-        "  %callback = load (gep %vptr #up0);\n"
+        "  %vptr = load (gep (gep %obj #up0) #up0);\n"
+        "  %callback = load (gep (gep %vptr #up0) #up0);\n"
         "  %val = call %callback %obj;\n"
         "  return %val;\n"
         "};\n";
@@ -95,7 +113,7 @@ namespace Psi {
         ");\n"
         "\n"
         "%vtable_derived = recursive (%vtag : upref_type, %tag : upref_type) > (struct\n"
-        "  (apply %vtable (upref (apply %vtable_derived %vtag %tag) #up0 %vtag) %tag)\n"
+        "  (apply %vtable (upref %vtag (apply %vtable_derived %vtag %tag) #up0 #up0) (upref %tag (apply %derived %vtag %tag) #up0 #up0))\n"
         "  (pointer (function (pointer (apply %derived %vtag %tag) %tag) > i32))\n"
         ");\n"
         "\n"
@@ -105,16 +123,16 @@ namespace Psi {
         ");\n"
         "\n"
         "%derived = recursive (%vtag : upref_type, %tag : upref_type) > (struct\n"
-        "  (apply %base (upref (apply %vtable_derived %vtag %tag) #up0 %vtag) (upref (apply %derived %vtag %tag) #up0 %tag))\n"
+        "  (apply %base (upref %vtag (apply %vtable_derived %vtag %tag) #up0 #up0) (upref %tag (apply %derived %vtag %tag) #up0 #up0))\n"
         "  i32\n"
         ");\n"
         "\n"
         "%func = function (%obj_wrapped : exists (%vtag : upref_type, %tag : upref_type) > (pointer (apply %derived %vtag %tag) %tag)) > i32 {\n"
         "  %obj = unwrap %obj_wrapped;\n"
-        "  %vptr_base = load (gep (gep %obj #up0) #up0);\n"
-        "  %vptr = outer_ptr %vptr_base;\n"
-        "  %callback1 = load (gep %vptr #up1);\n"
-        "  %callback2 = load (gep (gep %vptr #up0) #up0);\n"
+        "  %vptr_base = load (gep %obj #up0 #up0 #up0 #up0);\n"
+        "  %vptr = outer_ptr (outer_ptr %vptr_base);\n"
+        "  %callback1 = load (gep %vptr #up0 #up1);\n"
+        "  %callback2 = load (gep %vptr #up0 #up0 #up0 #up0);\n"
         "  %val1 = call %callback1 %obj;\n"
         "  %val2 = call %callback2 %obj;\n"
         "  return (add %val1 %val2);\n"

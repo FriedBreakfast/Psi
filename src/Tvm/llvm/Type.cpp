@@ -31,10 +31,6 @@ namespace Psi {
           return llvm::Type::getInt8Ty(builder.llvm_context());
         }
         
-        static llvm::Type* stack_pointer_type_callback(ModuleBuilder& builder, const ValuePtr<StackPointerType>&) {
-          return llvm::Type::getInt8PtrTy(builder.llvm_context());
-        }
-
         static llvm::Type* boolean_type_callback(ModuleBuilder& builder, const ValuePtr<BooleanType>&) {
           return llvm::Type::getInt1Ty(builder.llvm_context());
         }
@@ -72,7 +68,6 @@ namespace Psi {
             .add<PointerType>(pointer_type_callback)
             .add<BlockType>(block_type_callback)
             .add<ByteType>(byte_type_callback)
-            .add<StackPointerType>(stack_pointer_type_callback)
             .add<BooleanType>(boolean_type_callback)
             .add<IntegerType>(integer_type_callback)
             .add<FloatType>(float_type_callback)

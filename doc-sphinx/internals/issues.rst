@@ -49,15 +49,6 @@ Term rewriting
 
 Specialize, parameterize and anonymize all need to be re-checked.
 
-Faster term lowering
---------------------
-
-I really need to remove all of these constructions::
-
-  if (TreePtr<X> = dyn_treeptr_cast<X>(y)) ...
-  
-It should be replaced with a clone of :psi:`Tvm::TermOperationMap`.
-
 Simplifying dynamic tree evaluation
 -----------------------------------
 
@@ -122,13 +113,6 @@ Functional/stateful term split
 
 The whole term hierarchy should probably be subdivided according to functional vs. non-functional terms.
 
-Consider making Tvm::Generic a type in its own right
-----------------------------------------------------
-
-This would obviate the need to ``dyn_unrecurse`` and has no disadvantages if I'm not providing true functional programming.
-It will also match up with the behaviour of the high level tree language.
-I will need to provide ``unrecurse`` and ``apply_v`` operations and extend ``element_ptr`` and ``element_value`` accordingly.
-
 Closures
 --------
 
@@ -147,17 +131,6 @@ allow the user to just write the necessary values without having to give the typ
 information again.
 
 Could be useful for struct, union or function pointer types.
-
-Smarter block compilation
-"""""""""""""""""""""""""
-
-Make block compilation semi-smart, so obviously functional statements (typedefs) are automatically detected.
-I'm not entirely sure statement_mode_functional should really exist (or rather, be used as much as it is), and what the hell is GlobalDefine for?
-
-C++ like object lifetimes
--------------------------
-
-Do not destroy temporaries until explicit lifetime qualifier is encountered; i.e. the end of the current statement.
 
 Specialization and parameterization
 -----------------------------------

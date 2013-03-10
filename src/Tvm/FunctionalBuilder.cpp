@@ -68,11 +68,6 @@ namespace Psi {
       return pointer_type(byte_type(context, location), location);
     }
     
-    /// \brief Get the result type of the stack_save instruction
-    ValuePtr<> FunctionalBuilder::stack_pointer_type(Context& context, const SourceLocation& location) {
-      return context.get_functional(StackPointerType(context, location));
-    }
-    
     /// \brief Get an undefined value of the specified type.
     ValuePtr<> FunctionalBuilder::undef(const ValuePtr<>& type, const SourceLocation& location) {
       return type->context().get_functional(UndefinedValue(type, location));
@@ -182,7 +177,7 @@ namespace Psi {
      * \brief Get an upward reference.
      */
     ValuePtr<> FunctionalBuilder::upref(const ValuePtr<>& outer_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location) {
-      ValuePtr<> result = outer_type->context().get_functional(UpwardReference(outer_type, index, next, location));
+      ValuePtr<> result = index->context().get_functional(UpwardReference(outer_type, index, next, location));
       if (isa<UndefinedValue>(index))
         return undef(result->type(), location);
       return result;
@@ -234,6 +229,13 @@ namespace Psi {
     }
 
     /**
+     * \brief Specialize a recursive type.
+     */
+    ValuePtr<> FunctionalBuilder::apply_type(const ValuePtr<>& recursive, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
+      return recursive->context().get_functional(ApplyType(value_cast<RecursiveType>(recursive), parameters, location));
+    }
+
+    /**
      * \brief Get a struct_eo operation.
      */
     ValuePtr<> FunctionalBuilder::struct_element_offset(const ValuePtr<>& struct_ty, unsigned index, const SourceLocation& location) {
@@ -241,7 +243,7 @@ namespace Psi {
     }
     
     /**
-     * \brief Get an array_ep operation.
+     * \brief Get a gep operation.
      * 
      * \param aggregate_ptr Pointer to an aggregate value.
      * \param member Which member of the aggregate to get a pointer to.
@@ -316,6 +318,16 @@ namespace Psi {
       
       return type->context().get_functional(UnionValue(type, value, location));
     }
+
+    /**
+     * Construct a value for a recursive type.
+     */
+    ValuePtr<> FunctionalBuilder::apply_value(const ValuePtr<>& type, const ValuePtr<>& inner_value, const SourceLocation& location) {
+      if (isa<UndefinedValue>(inner_value))
+        return undef(type, location);
+      
+      return type->context().get_functional(ApplyValue(type, inner_value, location));
+    }
     
     /**
      * \brief Get the value of an array element.
@@ -367,15 +379,6 @@ namespace Psi {
      */
     ValuePtr<> FunctionalBuilder::element_value(const ValuePtr<>& aggregate, unsigned index, const SourceLocation& location) {
       return element_value(aggregate, size_value(aggregate->context(), index, location), location);
-    }
-    
-    namespace {
-      ValuePtr<> pointer_target_type(const ValuePtr<>& ptr) {
-        ValuePtr<PointerType> ptr_ty = dyn_unrecurse<PointerType>(ptr->type());
-        if (!ptr_ty)
-          throw TvmUserError("Parameter is not a pointer");
-        return ptr_ty->target_type();
-      }
     }
     
     /**
@@ -1014,13 +1017,6 @@ namespace Psi {
      */
     ValuePtr<> FunctionalBuilder::float_type(Context& context, FloatType::Width width, const SourceLocation& location) {
       return context.get_functional(FloatType(context, width, location));
-    }
-
-    /**
-     * \brief Specialize a recursive type.
-     */
-    ValuePtr<> FunctionalBuilder::apply(const ValuePtr<>& recursive, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
-      return recursive->context().get_functional(ApplyValue(value_cast<RecursiveType>(recursive), parameters, location));
     }
     
     ValuePtr<> FunctionalBuilder::unwrap(const ValuePtr<>& value, const SourceLocation& location) {

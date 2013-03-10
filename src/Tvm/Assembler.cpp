@@ -182,13 +182,7 @@ namespace Psi {
         build_recursive_parameters(my_context, parameters, true, recursive_type.phantom_parameters, logical_location);
         build_recursive_parameters(my_context, parameters, false, recursive_type.parameters, logical_location);
         
-        ValuePtr<> result_type;
-        if (recursive_type.result_type)
-          result_type = build_expression(my_context, *recursive_type.result_type, logical_location);
-        else
-          result_type = FunctionalBuilder::type_type(my_context.context(), SourceLocation(recursive_type.location, logical_location));
-
-        return RecursiveType::create(result_type, parameters, SourceLocation(recursive_type.location, logical_location));
+        return RecursiveType::create(context.context(), parameters, SourceLocation(recursive_type.location, logical_location));
       }
 
       ValuePtr<> build_instruction_expression(AssemblerContext& context, InstructionBuilder& builder, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& logical_location) {

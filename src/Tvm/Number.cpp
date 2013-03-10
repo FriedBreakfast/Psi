@@ -12,7 +12,7 @@ namespace Psi {
      * \brief Convert a constant size value to an unsigned integer.
      */
     unsigned size_to_unsigned(const ValuePtr<>& value) {
-      ValuePtr<IntegerValue> val = dyn_unrecurse<IntegerValue>(value);
+      ValuePtr<IntegerValue> val = dyn_cast<IntegerValue>(value);
       if (!val)
         throw TvmUserError("value is not a constant integer");
       
@@ -28,11 +28,11 @@ namespace Psi {
      * \throw TvmUserError The type of value was not \c size_type.
      */
     bool size_equals_constant(const ValuePtr<>& value, unsigned c) {
-      ValuePtr<IntegerType> ty = dyn_unrecurse<IntegerType>(value->type());
+      ValuePtr<IntegerType> ty = dyn_cast<IntegerType>(value->type());
       if (!ty || (ty->width() != IntegerType::iptr))
         throw TvmUserError("value is not a size_type integer");
       
-      ValuePtr<IntegerValue> val = dyn_unrecurse<IntegerValue>(value);
+      ValuePtr<IntegerValue> val = dyn_cast<IntegerValue>(value);
       if (!val)
         return false;
       

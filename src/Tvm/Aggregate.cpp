@@ -7,6 +7,33 @@
 
 namespace Psi {
   namespace Tvm {
+    ValuePtr<> element_value_type(const Value& self, const ValuePtr<>& aggregate_type, const ValuePtr<>& index) {
+      if (index->type() != FunctionalBuilder::size_type(self.context(), self.location()))
+        throw TvmUserError("element member index is not an intptr");
+      
+      if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(aggregate_type)) {
+        unsigned idx = size_to_unsigned(index);
+        if (idx < struct_ty->n_members())
+          return struct_ty->member_type(idx);
+        else
+          throw TvmUserError("struct gep index out of range");
+      } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(aggregate_type)) {
+        return array_ty->element_type();
+      } else if (ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(aggregate_type)) {
+        unsigned idx = size_to_unsigned(index);
+        if (idx < union_ty->n_members())
+          return union_ty->member_type(idx);
+        else
+          throw TvmUserError("union gep index out of range");
+      } else if (ValuePtr<ApplyType> apply_ty = dyn_cast<ApplyType>(aggregate_type)) {
+        if (!size_equals_constant(index, 0))
+          throw TvmUserError("Index into generic type is not zero");
+        return apply_ty->unpack();
+      } else {
+        throw TvmUserError("parameter to gep or element is not a recognised aggregate type");
+      }
+    }
+
     Metatype::Metatype(Context& context, const SourceLocation& location)
     : FunctionalValue(context, location) {
     }
@@ -106,12 +133,12 @@ namespace Psi {
     
     ValuePtr<> OuterPtr::check_type() const {
       ValuePtr<PointerType> ptr_type;
-      if (!m_pointer || !(ptr_type = dyn_unrecurse<PointerType>(m_pointer->type())))
+      if (!m_pointer || !(ptr_type = dyn_cast<PointerType>(m_pointer->type())))
         throw TvmUserError("Parameter to outer_ptr is not a pointer");
       if (!ptr_type->upref())
         throw TvmUserError("Parameter to outer_ptr does not have a visible upward reference");
       
-      if (ValuePtr<UpwardReference> up = dyn_unrecurse<UpwardReference>(ptr_type->upref()))
+      if (ValuePtr<UpwardReference> up = dyn_cast<UpwardReference>(ptr_type->upref()))
         return FunctionalBuilder::pointer_type(up->outer_type(), up->next(), location());
       else
         throw TvmInternalError("Unrecognised upward reference type");
@@ -148,21 +175,6 @@ namespace Psi {
     }
 
     PSI_TVM_FUNCTIONAL_IMPL(ByteType, Type, byte)
-    
-    StackPointerType::StackPointerType(Context& context, const SourceLocation& location)
-    : Type(context, location) {
-    }
-    
-    template<typename V>
-    void StackPointerType::visit(V& v) {
-      visit_base<Type>(v);
-    }
-    
-    ValuePtr<> StackPointerType::check_type() const {
-      return FunctionalBuilder::type_type(context(), location());
-    }
-    
-    PSI_TVM_FUNCTIONAL_IMPL(StackPointerType, Type, stack_ptr);
     
     ValuePtr<> UndefinedValue::check_type() const {
       if (!parameter()->is_type())
@@ -217,22 +229,55 @@ namespace Psi {
     PSI_TVM_FUNCTIONAL_IMPL(UpwardReferenceType, FunctionalValue, upref_type)
     
     UpwardReference::UpwardReference(const ValuePtr<>& outer_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location)
-    : FunctionalValue(outer_type->context(), location),
+    : FunctionalValue(index->context(), location),
     m_outer_type(outer_type),
     m_index(index),
     m_next(next) {
     }
     
+    /**
+     * \brief The outer type of this reference.
+     * 
+     * This may throw an exception if the outer type cannot be computed because maybe_outer_type()
+     * is NULL and next() is not an explicit upref.
+     */
+    ValuePtr<> UpwardReference::outer_type() const {
+      PSI_STD::vector<const UpwardReference*> upref_list;
+      const UpwardReference *upref = this;
+      while (true) {
+        if (!upref)
+          throw TvmUserError("Outer type of upward reference not available");
+
+        if (upref->m_outer_type)
+          break;
+        
+        upref = dyn_cast<UpwardReference>(upref->next().get());
+        upref_list.push_back(upref);
+      }
+      
+      ValuePtr<> ty = upref->m_outer_type;
+      while (!upref_list.empty()) {
+        ty = element_value_type(*this, ty, upref_list.back()->index());
+        upref_list.pop_back();
+      }
+      
+      return ty;
+    }
+    
     ValuePtr<> UpwardReference::check_type() const {
+      if (!m_outer_type && !m_next)
+        throw TvmUserError("Neither next not outer_type argument of upref is non-NULL");
+      if (m_index->type() != FunctionalBuilder::size_type(context(), location()))
+        throw TvmUserError("Index argument to upref is not a size");
       return FunctionalBuilder::upref_type(context(), location());
     }
     
     template<typename V>
     void UpwardReference::visit(V& v) {
       visit_base<FunctionalValue>(v);
-      v("outer_type", &UpwardReference::m_outer_type)
-      ("index", &UpwardReference::m_index)
-      ("next", &UpwardReference::m_next);
+      v("next", &UpwardReference::m_next)
+      ("outer_type", &UpwardReference::m_outer_type)
+      ("index", &UpwardReference::m_index);
     }
 
     PSI_TVM_FUNCTIONAL_IMPL(UpwardReference, FunctionalValue, upref)
@@ -406,7 +451,7 @@ namespace Psi {
     }
     
     ValuePtr<> StructElementOffset::check_type() const {
-      ValuePtr<StructType> struct_ty = dyn_unrecurse<StructType>(m_struct_type);
+      ValuePtr<StructType> struct_ty = dyn_cast<StructType>(m_struct_type);
       if (!struct_ty)
         throw TvmUserError("first argument to struct_eo is not a struct type");
       
@@ -463,7 +508,8 @@ namespace Psi {
     template<typename V>
     void UnionValue::visit(V& v) {
       visit_base<Constructor>(v);
-      v("value", &UnionValue::m_value);
+      v("union_type", &UnionValue::m_union_type)
+      ("value", &UnionValue::m_value);
     }
     
     ValuePtr<> UnionValue::check_type() const {
@@ -476,6 +522,35 @@ namespace Psi {
     }
         
     PSI_TVM_FUNCTIONAL_IMPL(UnionValue, Constructor, union_v)    
+    
+    ApplyValue::ApplyValue(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location)
+    : Constructor(type->context(), location),
+    m_apply_type(type),
+    m_value(value) {
+    }
+    
+    template<typename V>
+    void ApplyValue::visit(V& v) {
+      visit_base<Constructor>(v);
+      v("apply_type", &ApplyValue::m_apply_type)
+      ("value", &ApplyValue::m_value);
+    }
+    
+    ValuePtr<> ApplyValue::check_type() const {
+      ValuePtr<ApplyType> ty = dyn_cast<ApplyType>(m_apply_type);
+      if (!ty)
+        throw TvmUserError("first argument to apply_v is not an apply type");
+      if (ty->unpack() != m_value->type())
+        throw TvmUserError("second argument to apply_v has the wrong type");
+      return m_apply_type;
+    }
+    
+    /// \brief Get the applied generic type this is a value for
+    ValuePtr<ApplyType> ApplyValue::apply_type() const {
+      return value_cast<ApplyType>(m_apply_type);
+    }
+
+    PSI_TVM_FUNCTIONAL_IMPL(ApplyValue, Constructor, apply_v)    
 
     ElementValue::ElementValue(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location)
     : AggregateOp(aggregate->context(), location),
@@ -488,32 +563,6 @@ namespace Psi {
       visit_base<AggregateOp>(v);
       v("aggregate", &ElementValue::m_aggregate)
       ("index", &ElementValue::m_index);
-    }
-    
-    namespace {
-      ValuePtr<> element_value_type(const Value& self, const ValuePtr<>& aggregate_type, const ValuePtr<>& index) {
-        if (unrecurse(index->type()) != FunctionalBuilder::size_type(self.context(), self.location()))
-          throw TvmUserError("element member index is not an intptr");
-        
-        ValuePtr<> unrec_aggregate = unrecurse(aggregate_type);
-        if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(unrec_aggregate)) {
-          unsigned idx = size_to_unsigned(index);
-          if (idx < struct_ty->n_members())
-            return struct_ty->member_type(idx);
-          else
-            throw TvmUserError("struct gep index out of range");
-        } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(unrec_aggregate)) {
-          return array_ty->element_type();
-        } else if (ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(unrec_aggregate)) {
-          unsigned idx = size_to_unsigned(index);
-          if (idx < union_ty->n_members())
-            return union_ty->member_type(idx);
-          else
-            throw TvmUserError("union gep index out of range");
-        } else {
-          throw TvmUserError("parameter to gep or element is not a recognised aggregate type");
-        }
-      }
     }
     
     ValuePtr<> ElementValue::check_type() const {
@@ -536,11 +585,11 @@ namespace Psi {
     }
     
     ValuePtr<> ElementPtr::check_type() const {
-      ValuePtr<PointerType> ptr_ty = dyn_unrecurse<PointerType>(m_aggregate_ptr->type());
+      ValuePtr<PointerType> ptr_ty = dyn_cast<PointerType>(m_aggregate_ptr->type());
       if (!ptr_ty)
         throw TvmUserError("First argument to gep is not a pointer");
       
-      if (unrecurse(m_index->type()) != FunctionalBuilder::size_type(context(), location()))
+      if (m_index->type() != FunctionalBuilder::size_type(context(), location()))
         throw TvmUserError("second parameter to gep is not an intptr");
 
       return FunctionalBuilder::pointer_type(element_value_type(*this, ptr_ty->target_type(), m_index),
