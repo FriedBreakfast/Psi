@@ -376,6 +376,16 @@ namespace Psi {
         if (return_target->argument->type != ftype->result_type_after(location(), my_arguments))
           compile_context().error_throw(location(), "Return target mode does not match result mode of function");
       }
+      
+      if (TreePtr<Term> *body_ptr = m_body.get_maybe())
+        body_check_type(*body_ptr);
+    }
+    
+    void Function::body_check_type(TreePtr<Term>& body) const {
+      TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(type);
+      TreePtr<Term> result_type = ftype->result_type_after(location(), vector_from<TreePtr<Term> >(arguments));
+      if (!result_type->convert_match(body->type))
+        compile_context().error_throw(location(), "Function result has the wrong type");
     }
 
     template<typename Visitor> void Function::visit(Visitor& v) {
@@ -1631,8 +1641,9 @@ namespace Psi {
     
     TermResultInfo MovableValue::check_type_impl(const MovableValue& self) {
       TermResultInfo tri = self.value->result_info();
-      if (tri.mode == term_mode_lref)
-        tri.mode = term_mode_rref;
+      if (tri.mode != term_mode_lref)
+        self.compile_context().error_throw(self.location(), "MovableValue should only be used on lvalue references");
+      tri.mode = term_mode_rref;
       return tri;
     }
     
@@ -1653,6 +1664,11 @@ namespace Psi {
     target_ptr(target_ptr_),
     assign_value(assign_value_),
     inner(inner_) {
+      TreePtr<PointerType> ptr_type = term_unwrap_dyn_cast<PointerType>(target_ptr_->type);
+      if (!ptr_type)
+        compile_context().error_throw(location, "Initialization target is not a pointer");
+      if (!ptr_type->target_type->convert_match(assign_value_->type))
+        compile_context().error_throw(location, "Initialization value type does not match target storage");
     }
     
     template<typename V>
@@ -1673,6 +1689,11 @@ namespace Psi {
     : Term(&vtable, term_result_void(target_ptr_.compile_context()), location),
     target_ptr(target_ptr_),
     assign_value(assign_value_) {
+      TreePtr<PointerType> ptr_type = term_unwrap_dyn_cast<PointerType>(target_ptr_->type);
+      if (!ptr_type)
+        compile_context().error_throw(location, "Assignment target is not a pointer");
+      if (!ptr_type->target_type->convert_match(assign_value_->type))
+        compile_context().error_throw(location, "Assignment value type does not match target storage");
     }
     
     template<typename V>
@@ -1685,7 +1706,10 @@ namespace Psi {
     const TermVtable AssignPointer::vtable = PSI_COMPILER_TERM(AssignPointer, "psi.compiler.AssignPointer", Term);
     
     FinalizePointer::FinalizePointer(const TreePtr<Term>& target_ptr_, const SourceLocation& location)
-    : Term(&vtable, term_result_void(target_ptr_.compile_context()), location) {
+    : Term(&vtable, term_result_void(target_ptr_.compile_context()), location),
+    target_ptr(target_ptr_) {
+      if (!term_unwrap_isa<PointerType>(target_ptr->type))
+        compile_context().error_throw(location, "Finalize target is not a pointer");
     }
     
     template<typename V>

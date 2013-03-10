@@ -10,6 +10,7 @@
 namespace Psi {
   namespace Compiler {
     class TvmScope;
+    typedef boost::shared_ptr<TvmScope> TvmScopePtr;
     
     struct TvmResultBase {
       /**
@@ -31,30 +32,45 @@ namespace Psi {
       bool is_bottom() const {return !value;}
     };
     
-    struct TvmResult : TvmResultBase {
-      TvmScope* scope;
+    struct TvmResultScope {
+      TvmScope *scope;
+      bool in_progress_generic;
       
-      TvmResult() : TvmResultBase(), scope(NULL) {}
-      TvmResult(TvmScope *scope_, const TvmResultBase& base)
+      TvmResultScope() : scope(NULL), in_progress_generic(false) {}
+      explicit TvmResultScope(TvmScope *scope_) : scope(scope_), in_progress_generic(false) {}
+      TvmResultScope(TvmScope *scope_, bool in_progress_generic_) : scope(scope_), in_progress_generic(in_progress_generic_) {}
+      TvmResultScope(const TvmScopePtr& scope_) : scope(scope_.get()), in_progress_generic(false) {}
+      TvmResultScope(const TvmScopePtr& scope_, bool in_progress_generic_) : scope(scope_.get()), in_progress_generic(in_progress_generic_) {}
+    };
+    
+    struct TvmResult : TvmResultBase {
+      TvmResultScope scope;
+      
+      TvmResult() {}
+      TvmResult(const TvmResultScope& scope_, const TvmResultBase& base)
       : TvmResultBase(base), scope(scope_) {}
-      TvmResult(TvmScope *scope_, const Tvm::ValuePtr<>& value_, const Tvm::ValuePtr<>& upref_=Tvm::ValuePtr<>())
+      TvmResult(const TvmResultScope& scope_, const Tvm::ValuePtr<>& value_, const Tvm::ValuePtr<>& upref_=Tvm::ValuePtr<>())
       : TvmResultBase(value_, upref_), scope(scope_) {}
       
       static TvmResult bottom() {return TvmResult();}
     };
     
-    class TvmScope;
-    typedef boost::shared_ptr<TvmScope> TvmScopePtr;
+    struct TvmGenericScope;
+    class TvmFunctionalBuilder;
     
     class TvmScope : boost::noncopyable {
-      TvmScopePtr m_parent;
-      unsigned m_depth;
+      friend TvmResult tvm_lower_generic(const TvmScopePtr& scope, TvmFunctionalBuilder& builder, const TreePtr<GenericType>& generic);
+
       typedef boost::unordered_map<TreePtr<Term>, TvmResultBase> VariableMapType;
       typedef boost::unordered_map<TreePtr<GenericType>, TvmResultBase> GenericMapType;
+      TvmScopePtr m_parent;
+      unsigned m_depth;
       VariableMapType m_variables;
       GenericMapType m_generics;
+      TvmGenericScope *m_in_progress_generic_scope;
       
-      TvmScope* put_scope(TvmScope *given, bool temporary);
+      TvmGenericScope *generic_put_scope(TvmScope *given);
+      TvmScope* put_scope(TvmScope *given);
       
     public:
       TvmScope();
@@ -63,12 +79,19 @@ namespace Psi {
       static TvmScopePtr new_(const TvmScopePtr& parent);
       
       boost::optional<TvmResult> get(const TreePtr<Term>& key);
-      void put(const TreePtr<Term>& key, const TvmResult& result, bool temporary=false);
+      void put(const TreePtr<Term>& key, const TvmResult& result);
       boost::optional<TvmResult> get_generic(const TreePtr<GenericType>& key);
-      void put_generic(const TreePtr<GenericType>& key, const TvmResult& result, bool temporary=false);
+      void put_generic(const TreePtr<GenericType>& key, const TvmResult& result);
       
       bool is_root() const {return !m_parent;}
-      static TvmScope* join(TvmScope* lhs, TvmScope* rhs);
+      static TvmResultScope join(const TvmResultScope& lhs, const TvmResultScope& rhs);
+    };
+
+    struct TvmGenericScope {
+      typedef boost::unordered_map<TreePtr<Term>, TvmResult> VariableMapType;
+      typedef boost::unordered_map<TreePtr<GenericType>, TvmResult> GenericMapType;
+      VariableMapType variables;
+      GenericMapType generics;
     };
     
     class TvmFunctionalBuilder {
@@ -167,7 +190,7 @@ namespace Psi {
     void tvm_lower_function(TvmCompiler& tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
     void tvm_lower_init(TvmCompiler& tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output);
     TvmResult tvm_lower_functional(TvmFunctionalBuilder& builder, const TreePtr<Term>& term);
-    TvmResult tvm_lower_generic(TvmScopePtr& scope, TvmFunctionalBuilder& builder, const TreePtr<GenericType>& generic);
+    TvmResult tvm_lower_generic(const TvmScopePtr& scope, TvmFunctionalBuilder& builder, const TreePtr<GenericType>& generic);
   }
 }
 

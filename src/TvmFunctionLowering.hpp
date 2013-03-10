@@ -55,6 +55,23 @@ public:
   virtual void run(TvmFunctionBuilder& builder) const = 0;
 };
 
+class StackFreeCleanup : public TvmCleanup {
+  Tvm::ValuePtr<> m_stack_alloc;
+  
+public:
+  StackFreeCleanup(const Tvm::ValuePtr<>& stack_alloc, const SourceLocation& location);
+  virtual void run(TvmFunctionBuilder& builder) const;
+};
+
+class DestroyCleanup : public TvmCleanup {
+  Tvm::ValuePtr<> m_slot;
+  TreePtr<Term> m_type;
+  
+public:
+  DestroyCleanup(const Tvm::ValuePtr<>& slot, const TreePtr<Term>& type, const SourceLocation& location);
+  virtual void run(TvmFunctionBuilder& builder) const;
+};
+
 /**
  * \class TvmFunctionLowering
  * 
@@ -83,6 +100,45 @@ class TvmFunctionBuilder : public TvmFunctionalBuilder {
   TvmFunctionState m_state;
   Tvm::ValuePtr<> m_current_result_storage;
 
+  void push_cleanup(const TvmCleanupPtr& cleanup);
+  TvmResult get_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                               const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation=TreePtr<Implementation>());
+  
+  struct DominatorState {
+    Tvm::ValuePtr<Tvm::Block> block;
+    TvmFunctionState state;
+  };
+  
+  DominatorState dominator_state();
+  
+  struct MergeExitEntry {
+    TvmResult value;
+    TermMode mode;
+    DominatorState state;
+    MergeExitEntry(const TvmResult& value_, TermMode mode_, const DominatorState& state_)
+    : value(value_), mode(mode_), state(state_) {}
+  };
+  
+  typedef std::vector<MergeExitEntry> MergeExitList;
+  static bool merge_exit_list_entry_bottom(const MergeExitEntry& el);
+  TvmResult merge_exit(const TreePtr<Term>& type, TermMode mode, MergeExitList& values, const DominatorState& dominator, const SourceLocation& location);
+  
+public:
+  TvmFunctionBuilder(CompileContext& compile_context, Tvm::Context& tvm_context);
+  void run_function(TvmCompiler *tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
+  void run_init(TvmCompiler *tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output);
+  virtual TvmResult build(const TreePtr<Term>& term);
+  virtual void build_void(const TreePtr<Term>& term);
+  virtual TvmResult build_generic(const TreePtr<GenericType>& generic);
+
+  /**
+   * \brief Get the instruction builder for this function.
+   * 
+   * Note that the insertion pointer of this builder is modified throughout
+   * the lowering process, and its state must be maintained carefully.
+   */
+  Tvm::InstructionBuilder& builder() {return m_builder;}
+
   TvmCompiler& tvm_compiler() {return *m_tvm_compiler;}
   TvmResult build_instruction(const TreePtr<Term>& term);
 
@@ -99,45 +155,6 @@ class TvmFunctionBuilder : public TvmFunctionalBuilder {
   void copy_construct(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
   void move_construct(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
   void move_construct_destroy(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);
-  
-  void push_cleanup(const TvmCleanupPtr& cleanup);
-  TvmResult get_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
-                               const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation=TreePtr<Implementation>());
-  
-  struct DominatorState {
-    Tvm::ValuePtr<Tvm::Block> block;
-    TvmFunctionState state;
-  };
-  
-  DominatorState dominator_state();
-  
-  struct MergeExitEntry {
-    Tvm::ValuePtr<> value;
-    TermMode mode;
-    DominatorState state;
-    MergeExitEntry(const Tvm::ValuePtr<>& value_, TermMode mode_, const DominatorState& state_)
-    : value(value_), mode(mode_), state(state_) {}
-  };
-  
-  typedef std::vector<MergeExitEntry> MergeExitList;
-  static bool merge_exit_list_entry_bottom(const MergeExitEntry& el);
-  TvmResult merge_exit(const TreePtr<Term>& type, TermMode mode, MergeExitList& values, const DominatorState& dominator, const SourceLocation& location);
-
-  /**
-   * \brief Get the instruction builder for this function.
-   * 
-   * Note that the insertion pointer of this builder is modified throughout
-   * the lowering process, and its state must be maintained carefully.
-   */
-  Tvm::InstructionBuilder& builder() {return m_builder;}
-  
-public:
-  TvmFunctionBuilder(CompileContext& compile_context, Tvm::Context& tvm_context);
-  void run_function(TvmCompiler *tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
-  void run_init(TvmCompiler *tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output);
-  virtual TvmResult build(const TreePtr<Term>& term);
-  virtual void build_void(const TreePtr<Term>& term);
-  virtual TvmResult build_generic(const TreePtr<GenericType>& generic);
 };
 }
 }

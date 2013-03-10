@@ -338,12 +338,19 @@ namespace Psi {
       }
       
       template<typename X, typename Y>
-      const T& get(const X *self, Y (X::*getter) () const) const {
+      const T& get(const X *self, Y (X::*getter) () const, void (X::*checker) (T&) const = NULL) const {
         if (m_callback) {
           m_value = m_callback->evaluate((self->*getter)());
           m_callback.reset();
+          if (checker)
+            (self->*checker)(m_value);
         }
         return m_value;
+      }
+      
+      /// \brief Get the value if it has already been built
+      T* get_maybe() {
+        return m_callback ? NULL : &m_value;
       }
       
       /// \brief Get a value which must have already been computed

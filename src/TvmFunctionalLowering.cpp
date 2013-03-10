@@ -38,7 +38,7 @@ struct TvmFunctionalLowererMap {
   
   static TvmResult build_struct_type(TvmFunctionalBuilder& builder, const TreePtr<StructType>& struct_ty) {
     std::vector<Tvm::ValuePtr<> > members;
-    TvmScope *scope = NULL;
+    TvmResultScope scope;
     for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = struct_ty->members.begin(), ie = struct_ty->members.end(); ii != ie; ++ii) {
       TvmResult f = builder.build(*ii);
       members.push_back(f.value);
@@ -49,7 +49,7 @@ struct TvmFunctionalLowererMap {
 
   static TvmResult build_union_type(TvmFunctionalBuilder& builder, const TreePtr<UnionType>& union_ty) {
     std::vector<Tvm::ValuePtr<> > members;
-    TvmScope *scope = NULL;
+    TvmResultScope scope;
     for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = union_ty->members.begin(), ie = union_ty->members.end(); ii != ie; ++ii) {
       TvmResult f = builder.build(*ii);
       members.push_back(f.value);
@@ -59,7 +59,7 @@ struct TvmFunctionalLowererMap {
   }
   
   static TvmResult build_empty_type(TvmFunctionalBuilder& builder, const TreePtr<EmptyType>& empty_ty) {
-    return TvmResult(NULL, Tvm::FunctionalBuilder::empty_type(builder.tvm_context(), empty_ty->location()));
+    return TvmResult(TvmResultScope(), Tvm::FunctionalBuilder::empty_type(builder.tvm_context(), empty_ty->location()));
   }
   
   static TvmResult build_pointer_type(TvmFunctionalBuilder& builder, const TreePtr<PointerType>& pointer_ty) {
@@ -111,11 +111,11 @@ struct TvmFunctionalLowererMap {
     if (!tvm_type)
       primitive_ty->compile_context().error_throw(primitive_ty->location(), boost::format("Unknown primitive type '%s'") % primitive_ty->name);
     
-    return TvmResult(NULL, tvm_type);
+    return TvmResult(TvmResultScope(), tvm_type);
   }
 
   static TvmResult build_function_type(TvmFunctionalBuilder& builder, const TreePtr<FunctionType>& function_ty) {
-    TvmScope *scope = NULL;
+    TvmResultScope scope;
     unsigned n_phantom = 0;
     std::vector<Tvm::ValuePtr<> > parameter_types;
     for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = function_ty->parameter_types.begin(), ie = function_ty->parameter_types.end(); ii != ie; ++ii) {
@@ -180,7 +180,7 @@ struct TvmFunctionalLowererMap {
   
   static TvmResult build_type_instance(TvmFunctionalBuilder& builder, const TreePtr<TypeInstance>& type_instance) {
     TvmResult recursive = builder.build_generic(type_instance->generic);  
-    TvmScope *scope = recursive.scope;
+    TvmResultScope scope = recursive.scope;
     std::vector<Tvm::ValuePtr<> > parameters;
     for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = type_instance->parameters.begin(), ie = type_instance->parameters.end(); ii != ie; ++ii) {
       TvmResult param = builder.build(*ii);
@@ -188,21 +188,24 @@ struct TvmFunctionalLowererMap {
       parameters.push_back(param.value);
     }
     
-    return TvmResult(scope, Tvm::FunctionalBuilder::apply(recursive.value, parameters, type_instance->location()));
+    return TvmResult(scope, Tvm::FunctionalBuilder::apply_type(recursive.value, parameters, type_instance->location()));
   }
   
-  static TvmResult build_type_instane_value(TvmFunctionalBuilder& builder, const TreePtr<TypeInstanceValue>& type_instance_value) {
-    return builder.build(type_instance_value->member_value);
+  static TvmResult build_type_instance_value(TvmFunctionalBuilder& builder, const TreePtr<TypeInstanceValue>& type_instance_value) {
+    TvmResult type = builder.build(type_instance_value->type_instance);
+    TvmResult inner = builder.build(type_instance_value->member_value);
+    return TvmResult(TvmScope::join(type.scope, inner.scope),
+                     Tvm::FunctionalBuilder::apply_value(type.value, inner.value, type_instance_value->location()));
   }
   
   static TvmResult build_metatype(TvmFunctionalBuilder& builder, const TreePtr<Metatype>& meta) {
-    return TvmResult(NULL, Tvm::FunctionalBuilder::type_type(builder.tvm_context(), meta->location()));
+    return TvmResult(TvmResultScope(), Tvm::FunctionalBuilder::type_type(builder.tvm_context(), meta->location()));
   }
   
   static TvmResult build_element_value(TvmFunctionalBuilder& builder, const TreePtr<ElementValue>& elem_val) {
     TvmResult child = builder.build(elem_val->value);
     TvmResult idx = builder.build(elem_val->index);
-    TvmScope *scope = TvmScope::join(child.scope, idx.scope);
+    TvmResultScope scope = TvmScope::join(child.scope, idx.scope);
     switch (elem_val->mode) {
     case result_mode_lvalue:
     case result_mode_rvalue:
@@ -224,9 +227,13 @@ struct TvmFunctionalLowererMap {
     return builder.build(ptr_to->value);
   }
   
+  static TvmResult build_movable_value(TvmFunctionalBuilder& builder, const TreePtr<MovableValue>& value) {
+    return builder.build(value->value);
+  }
+  
   static TvmResult build_integer_value(TvmFunctionalBuilder& builder, const TreePtr<IntegerValue>& int_value) {
     TvmResult type = builder.build(int_value->type);
-    return TvmResult(NULL, Tvm::FunctionalBuilder::int_value(Tvm::value_cast<Tvm::IntegerType>(type.value), int_value->value, int_value->location()));
+    return TvmResult(TvmResultScope(), Tvm::FunctionalBuilder::int_value(Tvm::value_cast<Tvm::IntegerType>(type.value), int_value->value, int_value->location()));
   }
   
   static TvmResult build_string_value(TvmFunctionalBuilder& builder, const TreePtr<StringValue>& str_value) {
@@ -235,7 +242,7 @@ struct TvmFunctionalLowererMap {
     const String& str = str_value->value;
     for (std::size_t ii = 0, ie = str.length() + 1; ii != ie; ++ii)
       elements.push_back(Tvm::FunctionalBuilder::int_value(char_type, str[ii], str_value->location()));
-    return TvmResult(NULL, Tvm::FunctionalBuilder::array_value(char_type, elements, str_value->location()));
+    return TvmResult(TvmResultScope(), Tvm::FunctionalBuilder::array_value(char_type, elements, str_value->location()));
   }
   
   static TvmResult build_builtin_value(TvmFunctionalBuilder& builder, const TreePtr<BuiltinValue>& builtin_value) {
@@ -249,7 +256,7 @@ struct TvmFunctionalLowererMap {
   
   static TvmResult build_struct_value(TvmFunctionalBuilder& builder, const TreePtr<StructValue>& struct_value) {
     std::vector<Tvm::ValuePtr<> > entries;
-    TvmScope *scope = NULL;
+    TvmResultScope scope;
     for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = struct_value->members.begin(), ie = struct_value->members.end(); ii != ie; ++ii) {
       TvmResult r = builder.build(*ii);
       scope = TvmScope::join(scope, r.scope);
@@ -261,7 +268,7 @@ struct TvmFunctionalLowererMap {
   static TvmResult build_array_value(TvmFunctionalBuilder& builder, const TreePtr<ArrayValue>& array_value) {
     TvmResult type = builder.build(array_value->array_type->element_type);
     std::vector<Tvm::ValuePtr<> > entries;
-    TvmScope *scope = NULL;
+    TvmResultScope scope;
     for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = array_value->element_values.begin(), ie = array_value->element_values.end(); ii != ie; ++ii) {
       TvmResult r = builder.build(*ii);
       scope = TvmScope::join(scope, r.scope);
@@ -277,14 +284,14 @@ struct TvmFunctionalLowererMap {
   }
   
   static TvmResult build_upward_reference_type(TvmFunctionalBuilder& builder, const TreePtr<UpwardReferenceType>& upref_type) {
-    return TvmResult(NULL, Tvm::FunctionalBuilder::upref_type(builder.tvm_context(), upref_type->location()));
+    return TvmResult(TvmResultScope(), Tvm::FunctionalBuilder::upref_type(builder.tvm_context(), upref_type->location()));
   }
   
   static TvmResult build_upward_reference(TvmFunctionalBuilder& builder, const TreePtr<UpwardReference>& upref_value) {
     PSI_ASSERT(upref_value->maybe_outer_type || upref_value->next);
-    TvmResult outer_type = upref_value->maybe_outer_type ? builder.build(upref_value->maybe_outer_type) : TvmResult(NULL, Tvm::ValuePtr<>());
+    TvmResult outer_type = upref_value->maybe_outer_type ? builder.build(upref_value->maybe_outer_type) : TvmResult();
     TvmResult outer_index = builder.build(upref_value->outer_index);
-    TvmResult next = upref_value->next ? builder.build(upref_value->next) : TvmResult(NULL, Tvm::ValuePtr<>());
+    TvmResult next = upref_value->next ? builder.build(upref_value->next) : TvmResult();
     return TvmResult(TvmScope::join(TvmScope::join(outer_type.scope, outer_index.scope), next.scope),
                      Tvm::FunctionalBuilder::upref(outer_type.value, outer_index.value, next.value, upref_value->location()));
   }
@@ -311,11 +318,12 @@ struct TvmFunctionalLowererMap {
       .add<ConstantType>(build_constant_type)
       .add<BottomType>(build_bottom_type)
       .add<TypeInstance>(build_type_instance)
-      .add<TypeInstanceValue>(build_type_instane_value)
+      .add<TypeInstanceValue>(build_type_instance_value)
       .add<Metatype>(build_metatype)
       .add<ElementValue>(build_element_value)
       .add<PointerTarget>(build_pointer_target)
       .add<PointerTo>(build_pointer_to)
+      .add<MovableValue>(build_movable_value)
       .add<IntegerValue>(build_integer_value)
       .add<StringValue>(build_string_value)
       .add<BuiltinValue>(build_builtin_value)

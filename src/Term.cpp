@@ -240,7 +240,7 @@ namespace Psi {
       
       static bool compare_impl(MatchComparator& self, const TreePtr<Term>& lhs, const TreePtr<Term>& rhs) {
         TreePtr<Term> lhs_unwrapped = term_unwrap(lhs, false), rhs_unwrapped = term_unwrap(rhs, false);
-
+        
         if (TreePtr<Parameter> parameter = dyn_treeptr_cast<Parameter>(lhs_unwrapped)) {
           if (parameter->depth == self.m_depth) {
             // Check type also matches
@@ -260,6 +260,12 @@ namespace Psi {
             }
           }
         }
+        
+        if (!lhs_unwrapped->pure || !rhs_unwrapped->pure)
+          return false;
+
+        if (lhs_unwrapped == rhs_unwrapped)
+          return true;
         
         TreePtr<DerivedType> lhs_derived = dyn_treeptr_cast<DerivedType>(lhs_unwrapped), rhs_derived = dyn_treeptr_cast<DerivedType>(rhs_unwrapped);
         if (lhs_derived && rhs_derived) {
@@ -290,9 +296,6 @@ namespace Psi {
             }
           }
         }
-
-        if (lhs_unwrapped->pure && rhs_unwrapped->pure)
-          return lhs_unwrapped == rhs_unwrapped;
         
         return false;
       }

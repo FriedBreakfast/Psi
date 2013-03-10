@@ -22,12 +22,14 @@ public:
 };
 
 TvmScope::TvmScope()
-: m_depth(0) {
+: m_depth(0),
+m_in_progress_generic_scope(NULL) {
 }
 
 TvmScope::TvmScope(const TvmScopePtr& parent)
 : m_parent(parent),
-m_depth(parent->m_depth+1) {
+m_depth(parent->m_depth+1),
+m_in_progress_generic_scope(NULL) {
 }
 
 TvmScopePtr TvmScope::root() {
@@ -38,10 +40,8 @@ TvmScopePtr TvmScope::new_(const TvmScopePtr& parent) {
   return boost::make_shared<TvmScope>(parent);
 }
 
-TvmScope* TvmScope::put_scope(TvmScope *given, bool temporary) {
-  if (temporary) {
-    return this;
-  } else if (!given) {
+TvmScope* TvmScope::put_scope(TvmScope *given) {
+  if (!given) {
     TvmScope *root = this;
     while (root->m_parent)
       root = root->m_parent.get();
@@ -58,34 +58,81 @@ TvmScope* TvmScope::put_scope(TvmScope *given, bool temporary) {
   }
 }
 
+TvmGenericScope *TvmScope::generic_put_scope(TvmScope *given) {
+  TvmScope *scope = this;
+  while (!scope->m_in_progress_generic_scope) {
+    scope = scope->m_parent.get();
+    PSI_ASSERT(scope);
+  }
+  
+#ifdef PSI_DEBUG
+  if (given) {
+    TvmScope *parent = scope;
+    while (parent->m_depth > given->m_depth)
+      parent = parent->m_parent.get();
+    PSI_ASSERT(parent == given);
+  }
+#endif
+  
+  return scope->m_in_progress_generic_scope;
+}
+
 boost::optional<TvmResult> TvmScope::get(const TreePtr<Term>& key) {
   for (TvmScope *scope = this; scope; scope = scope->m_parent.get()) {
+    if (scope->m_in_progress_generic_scope) {
+      TvmGenericScope::VariableMapType::const_iterator it = scope->m_in_progress_generic_scope->variables.find(key);
+      if (it != scope->m_in_progress_generic_scope->variables.end())
+        return it->second;
+    }
+    
     VariableMapType::const_iterator it = scope->m_variables.find(key);
-    if (it != scope->m_variables.end())
-      return TvmResult(scope, it->second);
+    if (it != scope->m_variables.end()) {
+      TvmResultScope rs;
+      rs.scope = scope;
+      return TvmResult(rs, it->second);
+    }
   }
   
   return boost::none;
 }
 
-void TvmScope::put(const TreePtr<Term>& key, const TvmResult& result, bool temporary) {
-  TvmScope *target = put_scope(result.scope, temporary);
-  PSI_CHECK(target->m_variables.insert(std::make_pair<TreePtr<Term>, TvmResultBase>(key, result)).second);
+void TvmScope::put(const TreePtr<Term>& key, const TvmResult& result) {
+  if (result.scope.in_progress_generic) {
+    TvmGenericScope *scope = generic_put_scope(result.scope.scope);
+    PSI_CHECK(scope->variables.insert(std::make_pair<TreePtr<Term>, TvmResult>(key, result)).second);
+  } else {
+    TvmScope *target = put_scope(result.scope.scope);
+    PSI_CHECK(target->m_variables.insert(std::make_pair<TreePtr<Term>, TvmResultBase>(key, result)).second);
+  }
 }
 
 boost::optional<TvmResult> TvmScope::get_generic(const TreePtr<GenericType>& key) {
   for (TvmScope *scope = this; scope; scope = scope->m_parent.get()) {
+    if (scope->m_in_progress_generic_scope) {
+      TvmGenericScope::GenericMapType::const_iterator it = scope->m_in_progress_generic_scope->generics.find(key);
+      if (it != scope->m_in_progress_generic_scope->generics.end())
+        return it->second;
+    }
+    
     GenericMapType::const_iterator it = scope->m_generics.find(key);
-    if (it != scope->m_generics.end())
-      return TvmResult(scope, it->second);
+    if (it != scope->m_generics.end()) {
+      TvmResultScope rs;
+      rs.scope = scope;
+      return TvmResult(rs, it->second);
+    }
   }
   
   return boost::none;
 }
 
-void TvmScope::put_generic(const TreePtr<GenericType>& key, const TvmResult& result, bool temporary) {
-  TvmScope *target = put_scope(result.scope, temporary);
-  PSI_CHECK(target->m_generics.insert(std::make_pair<TreePtr<GenericType>, TvmResultBase>(key, result)).second);
+void TvmScope::put_generic(const TreePtr<GenericType>& key, const TvmResult& result) {
+  if (result.scope.in_progress_generic) {
+    TvmGenericScope *scope = generic_put_scope(result.scope.scope);
+    PSI_CHECK(scope->generics.insert(std::make_pair<TreePtr<GenericType>, TvmResult>(key, result)).second);
+  } else {
+    TvmScope *target = put_scope(result.scope.scope);
+    PSI_CHECK(target->m_generics.insert(std::make_pair<TreePtr<GenericType>, TvmResultBase>(key, result)).second);
+  }
 }
 
 /**
@@ -93,36 +140,38 @@ void TvmScope::put_generic(const TreePtr<GenericType>& key, const TvmResult& res
  * 
  * One must be the ancestor of the other.
  */
-TvmScope* TvmScope::join(TvmScope* lhs, TvmScope* rhs) {
-  if (!lhs)
-    return rhs;
-  else if (!rhs)
-    return lhs;
-  
-#ifdef PSI_DEBUG
-  TvmScope *outer;
-#endif
-  TvmScope *inner;
-  if (lhs->m_depth > rhs->m_depth) {
-#ifdef PSI_DEBUG
-    outer = rhs;
-#endif
-    inner = lhs;
+TvmResultScope TvmScope::join(const TvmResultScope& lhs, const TvmResultScope& rhs) {
+  TvmResultScope rs;
+  if (!lhs.scope) {
+    rs.scope = rhs.scope;
+  } else if (!rhs.scope) {
+    rs.scope = lhs.scope;
   } else {
 #ifdef PSI_DEBUG
-    outer = lhs;
+    TvmScope *outer;
 #endif
-    inner = rhs;
+    if (lhs.scope->m_depth > rhs.scope->m_depth) {
+#ifdef PSI_DEBUG
+      outer = rhs.scope;
+#endif
+      rs.scope = lhs.scope;
+    } else {
+#ifdef PSI_DEBUG
+      outer = lhs.scope;
+#endif
+      rs.scope = rhs.scope;
+    }
+    
+#ifdef PSI_DEBUG
+    TvmScope *sc = rs.scope;
+    while (sc->m_depth > outer->m_depth)
+      sc = sc->m_parent.get();
+    PSI_ASSERT(sc == outer);
+#endif
   }
   
-#ifdef PSI_DEBUG
-  TvmScope *sc = inner;
-  while (sc->m_depth > outer->m_depth)
-    sc = sc->m_parent.get();
-  PSI_ASSERT(sc == outer);
-#endif
-  
-  return inner;
+  rs.in_progress_generic = lhs.in_progress_generic || rhs.in_progress_generic;
+  return rs;
 }
 
 TvmFunctionalBuilder::TvmFunctionalBuilder(CompileContext& compile_context, Tvm::Context& tvm_context)
@@ -154,9 +203,8 @@ public:
   }
   
   virtual TvmResult build_generic(const TreePtr<GenericType>& generic) {
-    FunctionalBuilderCallback callback(m_self, default_);
-    TvmScopePtr& scope_ptr = m_module ? m_self->get_module(m_module).scope : m_self->m_root_scope;
-    return tvm_lower_generic(scope_ptr, callback, generic);
+    const TvmScopePtr& scope_ptr = m_module ? m_self->get_module(m_module).scope : m_self->m_root_scope;
+    return tvm_lower_generic(scope_ptr, *this, generic);
   }
 };
 
@@ -181,7 +229,7 @@ TvmResult TvmCompiler::build(const TreePtr<Term>& term, const TreePtr<Module>& m
     FunctionalBuilderCallback callback(this, module);
     value = tvm_lower_functional(callback, term);
   } else if (TreePtr<Global> global = dyn_treeptr_cast<Global>(term)) {
-    value = TvmResult(NULL, build_global(global, module));
+    value = TvmResult(TvmResultScope(), build_global(global, module));
   } else {
     throw TvmNotGlobalException();
   }
@@ -200,7 +248,7 @@ std::string TvmCompiler::mangle_name(const LogicalSourceLocationPtr& location) {
     ancestors.push_back(ptr);
   for (std::vector<LogicalSourceLocationPtr>::reverse_iterator ii = ancestors.rbegin(), ie = ancestors.rend(); ii != ie; ++ii) {
     const String& name = (*ii)->name();
-    ss << name.length() << name;
+    ss << name.length() << '_' << name;
   }
   return ss.str();
 }
@@ -243,7 +291,7 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_global_jit(const TreePtr<Global>& 
  */
 TvmResult TvmCompiler::build_global_evaluate(const TreePtr<GlobalEvaluate>& evaluate, const TreePtr<Module>& module) {
   PSI_NOT_IMPLEMENTED();
-  TvmScope *scope = module_scope(module).get();
+  const TvmScopePtr& scope = module_scope(module);
   
   TvmModule& tvm_module = get_module(module);
   ModuleFunctionalConstantMap::iterator global_it = tvm_module.functional_constants.find(evaluate);
@@ -265,7 +313,7 @@ TvmResult TvmCompiler::build_global_evaluate(const TreePtr<GlobalEvaluate>& eval
  * This create an external reference to symbols in another module when required.
  */
 TvmResult TvmCompiler::build_global(const TreePtr<Global>& global, const TreePtr<Module>& module) {
-  TvmScope *scope = module_scope(module).get();
+  const TvmScopePtr& scope = module_scope(module);
   
   if (TreePtr<ModuleGlobal> mod_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
     if (TreePtr<GlobalStatement> stmt = dyn_treeptr_cast<GlobalStatement>(mod_global))
@@ -686,12 +734,16 @@ TvmResult TvmCompiler::build_global_value(const TreePtr<Term>& value, const Tree
 /**
  * \brief Lower a generic type.
  */
-TvmResult tvm_lower_generic(TvmScopePtr& scope, TvmFunctionalBuilder& builder, const TreePtr<GenericType>& generic) {
+TvmResult tvm_lower_generic(const TvmScopePtr& scope, TvmFunctionalBuilder& builder, const TreePtr<GenericType>& generic) {
   if (boost::optional<TvmResult> r = scope->get_generic(generic))
     return *r;
-  
-  TvmScopePtr old_scope = scope;
-  scope = TvmScope::new_(old_scope);
+
+  bool is_outer_generic = false;
+  TvmGenericScope generic_scope;
+  if (!scope->m_in_progress_generic_scope) {
+    scope->m_in_progress_generic_scope = &generic_scope;
+    is_outer_generic = true;
+  }
   
   PSI_STD::vector<TreePtr<Term> > anonymous_list;
   Tvm::RecursiveType::ParameterList parameters;
@@ -705,24 +757,40 @@ TvmResult tvm_lower_generic(TvmScopePtr& scope, TvmFunctionalBuilder& builder, c
     Tvm::ValuePtr<> tvm_type = builder.build(rewrite_type).value;
     Tvm::ValuePtr<Tvm::RecursiveParameter> param = Tvm::RecursiveParameter::create(tvm_type, false, ii->location());
     parameters.push_back(*param);
-    scope->put(rewrite_anon, TvmResult(NULL, param), true);
+    scope->put(rewrite_anon, TvmResult(TvmResultScope(NULL, true), param));
   }
   
-  Tvm::ValuePtr<Tvm::RecursiveType> recursive =
-    Tvm::RecursiveType::create(Tvm::FunctionalBuilder::type_type(builder.tvm_context(), generic->location()), parameters, generic.location());
+  Tvm::ValuePtr<Tvm::RecursiveType> recursive = Tvm::RecursiveType::create(builder.tvm_context(), parameters, generic.location());
 
   // Insert generic into map before building it because it may recursively reference itself.
-  scope->put_generic(generic, TvmResult(NULL, recursive), true);
+  TvmResult& generic_slot = scope->m_in_progress_generic_scope->generics[generic];
+  generic_slot = TvmResult(TvmResultScope(NULL, true), recursive);
 
   TreePtr<Term> inner_type = generic->member_type()->specialize(generic->location(), anonymous_list);
   TvmResult inner = builder.build(inner_type);
   recursive->resolve(inner.value);
   
-  scope = old_scope;
-  TvmResult result(inner.scope, recursive);
-  old_scope->put_generic(generic, result);
+  generic_slot = TvmResult(TvmResultScope(inner.scope.scope, true), recursive);
   
-  return result;
+  if (is_outer_generic) {
+    PSI_ASSERT(scope->m_in_progress_generic_scope == &generic_scope);
+    scope->m_in_progress_generic_scope = NULL;
+#ifdef PSI_DEBUG
+    TvmScope *result_scope = generic_scope.generics.empty() ? static_cast<TvmScope*>(NULL) : generic_scope.generics.begin()->second.scope.scope;
+#endif
+    for (TvmGenericScope::GenericMapType::const_iterator ii = generic_scope.generics.begin(), ie = generic_scope.generics.end(); ii != ie; ++ii) {
+      TvmResult r = ii->second;
+      PSI_ASSERT(r.scope.scope == result_scope);
+      r.scope.in_progress_generic = false;
+      scope->put_generic(ii->first, r);
+    }
+    
+    boost::optional<TvmResult> r = scope->get_generic(generic);
+    PSI_ASSERT(r);
+    return *r;
+  } else {
+    return TvmResult(inner.scope, recursive);
+  }
 }
 }
 }

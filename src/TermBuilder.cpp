@@ -119,7 +119,10 @@ TreePtr<Term> TermBuilder::empty_value(CompileContext& compile_context) {
  * of \c value will expect to be able to modify it.
  */
 TreePtr<Term> TermBuilder::movable(const TreePtr<Term>& value, const SourceLocation& location) {
-  return value.compile_context().get_functional(MovableValue(value), location);
+  if (value->mode == term_mode_lref)
+    return value.compile_context().get_functional(MovableValue(value), location);
+  else
+    return value;
 }
 
 /// \brief Get the default value of a given type.

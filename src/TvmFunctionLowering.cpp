@@ -16,6 +16,21 @@
 
 namespace Psi {
 namespace Compiler {
+StackFreeCleanup::StackFreeCleanup(const Tvm::ValuePtr<>& stack_alloc, const SourceLocation& location)
+: TvmCleanup(false, location), m_stack_alloc(stack_alloc) {}
+
+void StackFreeCleanup::run(TvmFunctionBuilder& builder) const {
+  builder.builder().freea(m_stack_alloc, location());
+}
+
+DestroyCleanup::DestroyCleanup(const Tvm::ValuePtr<>& slot, const TreePtr<Term>& type, const SourceLocation& location)
+: TvmCleanup(false, location), m_slot(slot), m_type(type) {}
+  
+void DestroyCleanup::run(TvmFunctionBuilder& builder) const {
+  builder.object_destroy(m_slot, m_type, location());
+  builder.builder().freea(m_slot, location());
+}
+
 TvmFunctionBuilder::TvmFunctionBuilder(CompileContext& compile_context, Tvm::Context& tvm_context)
 : TvmFunctionalBuilder(compile_context, tvm_context) {
 }
@@ -37,6 +52,12 @@ void TvmFunctionBuilder::run_function(TvmCompiler *tvm_compiler, const TreePtr<F
   m_return_target = function->return_target;
   if (!m_return_target)
     m_return_target = TermBuilder::exit_target(ftype->result_type, ftype->result_mode, location);
+  
+  // Can be less due to sret parameters
+  PSI_ASSERT(function->arguments.size() <= output->parameters().size());
+  Tvm::Function::ParameterList::iterator arg_tvm_ii = output->parameters().begin();
+  for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator arg_ii = function->arguments.begin(), arg_ie = function->arguments.end(); arg_ii != arg_ie; ++arg_ii, ++arg_tvm_ii)
+    m_state.scope->put(*arg_ii, TvmResult(m_state.scope, *arg_tvm_ii));
   
   m_builder.set_insert_point(output->new_block(location));
   build(TermBuilder::jump_to(m_return_target, function->body(), location));
@@ -205,9 +226,11 @@ TvmResult TvmFunctionBuilder::build(const TreePtr<Term>& term) {
   TvmResult value;
   if (is_functional) {
     value = tvm_lower_functional(*this, term);
-    builder().eval(value.value, term->location());
-    if (value.upref)
-      builder().eval(value.upref, term->location());
+    if (!value.scope.in_progress_generic) {
+      builder().eval(value.value, term->location());
+      if (value.upref)
+        builder().eval(value.upref, term->location());
+    }
   } else {
     value = build_instruction(term);
   }
@@ -269,16 +292,17 @@ TvmResult TvmFunctionBuilder::merge_exit(const TreePtr<Term>& type, TermMode mod
     }
 
     for (MergeExitList::const_iterator ii = values.begin(), ie = values.end(); ii != ie; ++ii) {
+      PSI_ASSERT(!ii->value.scope.in_progress_generic);
       builder().set_insert_point(ii->state.block);
       m_state = ii->state.state;
       
       if (phi) {
-        phi->add_edge(ii->state.block, ii->value);
+        phi->add_edge(ii->state.block, ii->value.value);
       } else {
         switch (ii->mode) {
         case term_mode_value: break;
-        case term_mode_lref: copy_construct(type, m_current_result_storage, ii->value, location); break;
-        case term_mode_rref: move_construct(type, m_current_result_storage, ii->value, location); break;
+        case term_mode_lref: copy_construct(type, m_current_result_storage, ii->value.value, location); break;
+        case term_mode_rref: move_construct(type, m_current_result_storage, ii->value.value, location); break;
         default: PSI_FAIL("unknown enum value");
         }
       }
@@ -287,21 +311,22 @@ TvmResult TvmFunctionBuilder::merge_exit(const TreePtr<Term>& type, TermMode mod
     }
     builder().set_insert_point(exit_block);
     m_state = dominator.state;
-    return TvmResult(m_state.scope.get(), phi ? Tvm::ValuePtr<>(phi) : m_current_result_storage);
+    return TvmResult(m_state.scope, phi ? Tvm::ValuePtr<>(phi) : m_current_result_storage);
   } else if (values.size() == 1) {
     builder().set_insert_point(values.front().state.block);
     if ((mode == term_mode_value) && !type->is_register_type()) {
       switch (values.front().mode) {
-      case term_mode_value: PSI_ASSERT(values.front().value == m_current_result_storage); break;
-      case term_mode_lref: copy_construct(type, m_current_result_storage, values.front().value, location); break;
-      case term_mode_rref: move_construct(type, m_current_result_storage, values.front().value, location); break;
+      case term_mode_value: PSI_ASSERT(values.front().value.value == m_current_result_storage); break;
+      case term_mode_lref: copy_construct(type, m_current_result_storage, values.front().value.value, location); break;
+      case term_mode_rref: move_construct(type, m_current_result_storage, values.front().value.value, location); break;
       default: PSI_FAIL("unknown enum value");
       }
+      PSI_ASSERT(!values.front().value.scope.in_progress_generic);
       m_state = dominator.state;
-      return TvmResult(m_state.scope.get(), m_current_result_storage);
+      return TvmResult(m_state.scope, m_current_result_storage);
     } else {
       m_state = dominator.state;
-      return TvmResult(m_state.scope.get(), values.front().value);
+      return values.front().value;
     }
   } else {
     return TvmResult::bottom();
@@ -341,11 +366,18 @@ TvmResult TvmFunctionBuilder::get_implementation(const TreePtr<Interface>& inter
     return build(implementation->value);
   
   TreePtr<Term> value = implementation->value->specialize(location, parameters);
-  PSI_ASSERT(value->is_functional());
-  TvmResult tvm_value = build(value);
-  Tvm::ValuePtr<> ptr = builder().alloca_const(tvm_value.value, location);
-  // Need to add a cleanup
-  return TvmResult(m_state.scope.get(), ptr);
+  if (false) {
+    // This could have global scope, and thus be moved directly into a global
+    PSI_NOT_IMPLEMENTED();
+  } else {
+    PSI_ASSERT(value->is_functional());
+    TvmResult tvm_value = build(value);
+    Tvm::ValuePtr<> ptr = builder().alloca_const(tvm_value.value, location);
+    for (PSI_STD::vector<int>::const_iterator ii = implementation->path.begin(), ie = implementation->path.end(); ii != ie; ++ii)
+      ptr = Tvm::FunctionalBuilder::element_ptr(ptr, *ii, location);
+    // Need to add a cleanup
+    return TvmResult(m_state.scope, ptr);
+  }
 }
 }
 }

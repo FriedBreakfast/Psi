@@ -7,32 +7,6 @@
 namespace Psi {
 namespace Compiler {
 struct TvmFunctionBuilder::InstructionLowering {
-  class StackFreeCleanup : public TvmCleanup {
-    Tvm::ValuePtr<> m_stack_alloc;
-    
-  public:
-    StackFreeCleanup(const Tvm::ValuePtr<>& stack_alloc, const SourceLocation& location)
-    : TvmCleanup(false, location), m_stack_alloc(stack_alloc) {}
-    
-    virtual void run(TvmFunctionBuilder& builder) const {
-      builder.builder().freea(m_stack_alloc, location());
-    }
-  };
-  
-  class DestroyCleanup : public TvmCleanup {
-    Tvm::ValuePtr<> m_slot;
-    TreePtr<Term> m_type;
-    
-  public:
-    DestroyCleanup(const Tvm::ValuePtr<>& slot, const TreePtr<Term>& type, const SourceLocation& location)
-    : TvmCleanup(false, location), m_slot(slot), m_type(type) {}
-    
-    virtual void run(TvmFunctionBuilder& builder) const {
-      builder.object_destroy(m_slot, m_type, location());
-      builder.builder().freea(m_slot, location());
-    }
-  };
-  
   static TvmResult run_interface_value(TvmFunctionBuilder& builder, const TreePtr<InterfaceValue>& interface_value) {
     return builder.get_implementation(interface_value->interface, interface_value->parameters,
                                       interface_value.location(), interface_value->implementation);
@@ -69,7 +43,7 @@ struct TvmFunctionBuilder::InstructionLowering {
         TvmResult type = builder.build(statement->value->type);
         stack_slot = builder.builder().alloca_(type.value, statement->location());
         if (builder.object_initialize_term(stack_slot, statement->value, true, statement->location()))
-          value = TvmResult(builder.m_state.scope.get(), stack_slot);
+          value = TvmResult(builder.m_state.scope, stack_slot);
         else
           value = TvmResult::bottom();
       } else {
@@ -143,12 +117,12 @@ struct TvmFunctionBuilder::InstructionLowering {
     
     builder.builder().set_insert_point(true_block);
     TvmResult true_value = builder.build(if_then_else->true_value);
-    results.push_back(MergeExitEntry(true_value.value, if_then_else->true_value->mode, builder.dominator_state()));
+    results.push_back(MergeExitEntry(true_value, if_then_else->true_value->mode, builder.dominator_state()));
     builder.m_state = dominator_state.state;
 
     builder.builder().set_insert_point(false_block);
     TvmResult false_value = builder.build(if_then_else->false_value);
-    results.push_back(MergeExitEntry(false_value.value, if_then_else->false_value->mode, builder.dominator_state()));
+    results.push_back(MergeExitEntry(false_value, if_then_else->false_value->mode, builder.dominator_state()));
     builder.m_state = dominator_state.state;
     
     return builder.merge_exit(if_then_else->type, if_then_else->mode, results, dominator_state, if_then_else->location());
@@ -203,7 +177,7 @@ struct TvmFunctionBuilder::InstructionLowering {
 
     TvmResult initial_value = builder.build(jump_group->initial);
     MergeExitList results;
-    results.push_back(MergeExitEntry(initial_value.value, jump_group->initial->mode, builder.dominator_state()));
+    results.push_back(MergeExitEntry(initial_value, jump_group->initial->mode, builder.dominator_state()));
 
     for (std::vector<TreePtr<JumpTarget> >::const_iterator ii = jump_group->entries.begin(), ie = jump_group->entries.end(); ii != ie; ++ii) {
       const TvmJumpData& jd = jump_map.find(*ii)->second;
@@ -222,14 +196,14 @@ struct TvmFunctionBuilder::InstructionLowering {
             builder.push_cleanup(boost::make_shared<DestroyCleanup>(dest_ptr, (*ii)->argument->type, (*ii)->location()));
           else
             builder.push_cleanup(boost::make_shared<StackFreeCleanup>(dest_ptr, (*ii)->location()));
-          builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope.get(), dest_ptr));
+          builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope, dest_ptr));
         } else {
-          builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope.get(), jd.storage));
+          builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope, jd.storage));
         }
       }
       
       TvmResult entry_result = builder.build((*ii)->value);
-      results.push_back(MergeExitEntry(entry_result.value, (*ii)->value->result_info().mode, builder.dominator_state()));
+      results.push_back(MergeExitEntry(entry_result, (*ii)->value->result_info().mode, builder.dominator_state()));
       builder.cleanup_to(dominator.state.cleanup);
     }
     
@@ -315,7 +289,7 @@ struct TvmFunctionBuilder::InstructionLowering {
         if (!builder.object_initialize_term(stack_slot, argument, false, argument->location()))
           return TvmResult::bottom();
         builder.push_cleanup(boost::make_shared<DestroyCleanup>(stack_slot, argument->type, argument->location()));
-        arg_result = TvmResult(builder.m_state.scope.get(), stack_slot);
+        arg_result = TvmResult(builder.m_state.scope, stack_slot);
       } else {
         arg_result = builder.build(argument);
         if (arg_result.is_bottom())
@@ -380,7 +354,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       if (result_temporary)
         builder.builder().freea(result_temporary, call->location());
       
-      return TvmResult(builder.m_state.scope.get(), result);
+      return TvmResult(builder.m_state.scope, result);
     }
   }
   
@@ -393,14 +367,14 @@ struct TvmFunctionBuilder::InstructionLowering {
   static TvmResult run_assign(TvmFunctionBuilder& builder, const TreePtr<AssignPointer>& assign) {
     TvmResult dest_ptr = builder.build(assign->target_ptr);
     builder.object_assign_term(dest_ptr.value, assign->assign_value, assign.location());
-    return TvmResult(builder.m_state.scope.get(), Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), assign.location()));
+    return TvmResult(builder.m_state.scope, Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), assign.location()));
   }
 
   static TvmResult run_finalize(TvmFunctionBuilder& builder, const TreePtr<FinalizePointer>& finalize) {
     TvmResult dest_ptr = builder.build(finalize->target_ptr);
     TreePtr<PointerType> ptr_type = term_unwrap_cast<PointerType>(finalize->target_ptr->type);
     builder.object_destroy(dest_ptr.value, ptr_type->target_type, finalize.location());
-    return TvmResult(builder.m_state.scope.get(), Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), finalize.location()));
+    return TvmResult(builder.m_state.scope, Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), finalize.location()));
   }
   
   static TvmResult run_functional_evaluate(TvmFunctionBuilder& builder, const TreePtr<FunctionalEvaluate>& term) {

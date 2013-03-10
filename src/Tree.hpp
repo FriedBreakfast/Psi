@@ -661,6 +661,7 @@ namespace Psi {
       DelayedValue<TreePtr<Term>, TreePtr<Function> > m_body;
       void check_type();
       TreePtr<Function> get_ptr() const {return tree_from(this);}
+      void body_check_type(TreePtr<Term>& body) const;
       
     public:
       static const VtableType vtable;
@@ -690,7 +691,7 @@ namespace Psi {
       TreePtr<JumpTarget> return_target;
       
       /// \brief Function body.
-      const TreePtr<Term>& body() const {return m_body.get(this, &Function::get_ptr);}
+      const TreePtr<Term>& body() const {return m_body.get(this, &Function::get_ptr, &Function::body_check_type);}
 
       template<typename Visitor> static void visit(Visitor& v);
       static void local_complete_impl(const Function& self);

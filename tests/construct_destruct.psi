@@ -7,8 +7,8 @@ test_type : struct () [
   x : int;
   y : int;
 ] (
-  init (self) [puts({Construct})];
-  fini (self) [puts({Destroy})];
+  init (self) [puts({Construct});];
+  fini (self) [puts({Destroy});];
 );
 
 main : function () [
