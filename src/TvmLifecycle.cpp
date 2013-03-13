@@ -85,11 +85,11 @@ bool TvmFunctionBuilder::object_initialize_term(const Tvm::ValuePtr<>& dest, con
     return true;
   } else if (value->mode == term_mode_lref) {
     TvmResult r = build(value);
-    if (!r.is_bottom()) return false;
+    if (r.is_bottom()) return false;
     return object_initialize_copy(dest, r.value, value->type, except_only, location);
   } else if (value->mode == term_mode_rref) {
     TvmResult r = build(value);
-    if (!r.is_bottom()) return false;
+    if (r.is_bottom()) return false;
     return object_initialize_move(dest, r.value, value->type, except_only, location);
   } else {
     PSI_ASSERT(tree_isa<FunctionCall>(value));
@@ -226,11 +226,11 @@ bool TvmFunctionBuilder::object_assign_term(const Tvm::ValuePtr<>& dest, const T
     return true;
   } else if (value->mode == term_mode_lref) {
     TvmResult r = build(value);
-    if (!r.is_bottom()) return false;
+    if (r.is_bottom()) return false;
     return object_assign_copy(dest, r.value, value->type, location);
   } else if (value->mode == term_mode_rref) {
     TvmResult r = build(value);
-    if (!r.is_bottom()) return false;
+    if (r.is_bottom()) return false;
     return object_assign_move(dest, r.value, value->type, location);
   } else {
     PSI_ASSERT(tree_isa<FunctionCall>(value));

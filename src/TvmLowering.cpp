@@ -582,7 +582,7 @@ void TvmCompiler::run_module_global(const TreePtr<ModuleGlobal>& global) {
     tvm_gvar->set_private(global_stmt->local);
     TvmResult value;
     try {
-      value = TvmGlobalBuilder(this, global_stmt->module, status.dependencies).build(global_var->value());
+      value = TvmGlobalBuilder(this, global_stmt->module, status.dependencies).build(global_stmt->value);
       tvm_gvar->set_value(value.value);
     } catch (TvmNotGlobalException&) {
       unsigned ctor_idx = tvm_module.n_constructors++;
@@ -593,10 +593,10 @@ void TvmCompiler::run_module_global(const TreePtr<ModuleGlobal>& global) {
       tvm_lower_init(*this, global_stmt->module, ctor_tree, constructor, status.dependencies);
       status.init = constructor;
       
-      if (global_var->type && (global_var->type->type_info().type_mode == type_mode_complex)) {
+      if (global_stmt->type && (global_stmt->type->type_info().type_mode == type_mode_complex)) {
         std::string dtor_name = str(boost::format("_Y_dtor%d") % ctor_idx);
         Tvm::ValuePtr<Tvm::Function> destructor = tvm_module.module->new_constructor(dtor_name, global_stmt->location());
-        TreePtr<Term> dtor_body = TermBuilder::finalize_value(gv_ptr, global_var->location());
+        TreePtr<Term> dtor_body = TermBuilder::finalize_value(gv_ptr, global_stmt->location());
         tvm_lower_init(*this, global_stmt->module, dtor_body, destructor, status.dependencies);
         status.fini = destructor;
       }

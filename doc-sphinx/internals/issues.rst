@@ -34,63 +34,10 @@ I should replace it with the following approach::
     
 The ``callback_impl`` can be overloaded easily.
 
-Type compatibility comparison
------------------------------
+Constant folding
+----------------
 
-Even with term merging and hashing, the fact remains that what we really want to know
-is whether a value of type ``A`` can also be said to have type ``B``.
-Some cases remain where this is not the same as whether ``A=B``.
-Namely:
-
-* uprefs with a non-NULL next pointer can substitute for one with a NULL next pointer.
-
-Term rewriting
---------------
-
-Specialize, parameterize and anonymize all need to be re-checked.
-
-Simplifying dynamic tree evaluation
------------------------------------
-
-Dynmic evalution of trees seems to only really be necessary in a few cases:
-
-* Generic types
-* Overload values attached to overload types
-* Global variable values
-* Function bodies
-
-It might also be convenient to support dynamic evaluation for overload value bodies generally.
-Note that the mechanism for lazy evaluation should not be restricted to these types -
-lazy evaluation is still required for generating :psi:`EvaluateContext` instances from blocks
-and namespaces because the context must be created before the elements are evaluated.
-
-I should therefore be able to remove :psi:`TreeBase` entirely in favour of adding a little functionality to the relevant classes.
-
-Term hashing and substitutability
----------------------------------
-
-I need to bring term hashing and type substitutability testing to the high level code.
-Preferably this should include merging equivalent terms, so I must remove use of the ``new`` operator,
-which will take some work, but hopefully save some typing in the end.
-
-The high level data structures are rather different to TVM, so some differences will occur:
-
-* A tree which contains stateful evaluation should be identified as such and not partake in
-  term hashing because it is never equivalent to another tree (even itself if evaluated again).
-* The result mode of each tree should be tracked, i.e. lvalue/rvalue ref, by value or functional.
-  This includes ``BottomType``, which has a special mode.
-  
-This entails some further things:
-
-1. Type checking should be performed upon construction of terms.
-   This will vastly improve the compiler's error reporting capability.
-   For types with internal delayed callbacks as described above, any checks
-   shall be performed when the callback is run.
-2. TVM lowering can now store a pre-existing terms hash.
-3. Some constant folding can be performed at this level, so I should put in
-   place a mechanism to enable this.
-   I do not plan to use this currently though, because I'm not sure a program
-   should require constant folding as part of its type check.
+I should put in a mechanism to enable functional terms to be optimized where possible.
 
 The bottom type
 ---------------
@@ -107,11 +54,6 @@ It is forbidden to create the tree ``DefaultValue(BottomType())``.
 The high level tree representation does not currently have an undefined value tree, and I do not
 see a reason this will change, but if it does, then an undefined value of bottom type should also
 be forbidden.
-
-Functional/stateful term split
-------------------------------
-
-The whole term hierarchy should probably be subdivided according to functional vs. non-functional terms.
 
 Closures
 --------
