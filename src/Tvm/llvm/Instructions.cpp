@@ -14,7 +14,11 @@ namespace Psi {
     namespace LLVM {
       struct InstructionBuilder {
         static llvm::Instruction* return_callback(FunctionBuilder& builder, const ValuePtr<Return>& insn) {
-          return builder.irbuilder().CreateRet(builder.build_value(insn->value));
+          if (builder.function()->function_type()->sret()) {
+            return builder.irbuilder().CreateRet(&builder.llvm_function()->getArgumentList().front());
+          } else {
+            return builder.irbuilder().CreateRet(builder.build_value(insn->value));
+          }
         }
 
         static llvm::Instruction* conditional_branch_callback(FunctionBuilder& builder, const ValuePtr<ConditionalBranch>& insn) {

@@ -73,7 +73,6 @@ namespace Psi {
          */
         class ParameterHandler {
           ValuePtr<> m_lowered_type;
-          CallingConvention m_calling_convention;
 
         public:
           ParameterHandler(const ValuePtr<>& lowered_type);
@@ -81,16 +80,30 @@ namespace Psi {
           /// Type used to pass this parameter.
           const ValuePtr<>& lowered_type() const {return m_lowered_type;}
 
-          /// \brief Whether this type should be returned via an extra sret
-          /// parameter, which must be inserted manually since LLVM will not
-          /// handle this case correctly.
-          virtual bool return_by_sret() const = 0;
-
           /// \brief Convert a parameter to the correct type for passing.
           virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation& location) const = 0;
 
           /// \brief Convert a parameter from the passed type.
           virtual void unpack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const = 0;
+        };
+        
+        /**
+         * \brief Base class for a handler for returning a particular type
+         * on a particular target.
+         */
+        class ReturnHandler {
+          ValuePtr<> m_lowered_type;
+
+        public:
+          ReturnHandler(const ValuePtr<>& lowered_type);
+
+          /// Type used to pass this parameter.
+          const ValuePtr<>& lowered_type() const {return m_lowered_type;}
+          
+          /// \brief Whether this type should be returned via an extra sret
+          /// parameter, which must be inserted manually since LLVM will not
+          /// handle this case correctly.
+          virtual bool return_by_sret() const = 0;
 
           /**
            * \brief Prepare for a call which returns by a custom sret.
@@ -118,9 +131,15 @@ namespace Psi {
         };
 
       private:
+        static ValuePtr<> change_by_memory_in(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const ValuePtr<>& target_type, const SourceLocation& location);
+        static LoweredValue change_by_memory_out(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const LoweredType& target_type, const SourceLocation& location);
+          
         class ParameterHandlerSimple;
+        class ReturnHandlerSimple;
         class ParameterHandlerChangeTypeByMemory;
+        class ReturnHandlerChangeTypeByMemory;
         class ParameterHandlerForcePtr;
+        class ReturnHandlerForcePtr;
 
       public:
         /**
@@ -130,6 +149,9 @@ namespace Psi {
         struct Callback {
           /// \brief Return information about how to pass this parameter.
           virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, const ValuePtr<>& type) const = 0;
+
+          /// \brief Return information about how to return this type.
+          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, const ValuePtr<>& type) const = 0;
 
           /// \brief Checks whether a given calling convention actually
           /// makes sense for a given platform.
@@ -144,7 +166,7 @@ namespace Psi {
         struct LowerFunctionHelperResult {
           ValuePtr<FunctionType> lowered_type;
           bool sret;
-          boost::shared_ptr<ParameterHandler> return_handler;
+          boost::shared_ptr<ReturnHandler> return_handler;
           std::vector<boost::shared_ptr<ParameterHandler> > parameter_handlers;
           std::size_t n_phantom;
           std::size_t n_passed_parameters;
@@ -157,8 +179,11 @@ namespace Psi {
         TargetCommon(const Callback*, llvm::LLVMContext*, const llvm::DataLayout*);
 
         static boost::shared_ptr<ParameterHandler> parameter_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type);
+        static boost::shared_ptr<ReturnHandler> return_handler_simple(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type);
         static boost::shared_ptr<ParameterHandler> parameter_handler_change_type_by_memory(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type, const ValuePtr<>& lowered_type);
+        static boost::shared_ptr<ReturnHandler> return_handler_change_type_by_memory(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type, const ValuePtr<>& lowered_type);
         static boost::shared_ptr<ParameterHandler> parameter_handler_force_ptr(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type);
+        static boost::shared_ptr<ReturnHandler> return_handler_force_ptr(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<>& type);
 
         static llvm::CallingConv::ID map_calling_convention(CallingConvention conv);
         

@@ -271,6 +271,25 @@ namespace Psi {
               PSI_FAIL("unknown parameter category");
             }
           }
+          
+          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ValuePtr<>& type) const {
+            ElementTypeInfo info = self->get_parameter_info(rewriter, type);
+            switch (info.category) {
+            case TargetParameterCategory::simple:
+              return TargetCommon::return_handler_simple(rewriter, type);
+
+            case TargetParameterCategory::altered: {
+              ValuePtr<> lowered_type = self->type_from_amd64_class_and_size(rewriter, info.amd64_class, info.size, type->location());
+              return TargetCommon::return_handler_change_type_by_memory(rewriter, type, lowered_type);
+            }
+
+            case TargetParameterCategory::force_ptr:
+              return TargetCommon::return_handler_force_ptr(rewriter, type);
+
+            default:
+              PSI_FAIL("unknown parameter category");
+            }
+          }
 
           /**
            * Whether the convention is supported on X86-64. Currently this
