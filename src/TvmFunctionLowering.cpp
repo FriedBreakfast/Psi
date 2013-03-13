@@ -31,10 +31,11 @@ void DestroyCleanup::run(TvmFunctionBuilder& builder) const {
   builder.builder().freea(m_slot, location());
 }
 
-TvmFunctionBuilder::TvmFunctionBuilder(TvmCompiler& tvm_compiler, const TreePtr<Module>& module)
+TvmFunctionBuilder::TvmFunctionBuilder(TvmCompiler& tvm_compiler, const TreePtr<Module>& module, std::set<TreePtr<ModuleGlobal> >& dependencies)
 : TvmFunctionalBuilder(tvm_compiler.compile_context(), tvm_compiler.tvm_context()),
 m_tvm_compiler(&tvm_compiler),
-m_module(module) {
+m_module(module),
+m_dependencies(&dependencies) {
 }
 
 void TvmFunctionBuilder::run_function(const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output) {
@@ -79,10 +80,8 @@ void TvmFunctionBuilder::run_init(const TreePtr<Term>& body, const Tvm::ValuePtr
  * 
  * Constructs a TvmFunctionLowering object and runs it.
  */
-std::set<TreePtr<Global> > tvm_lower_function(TvmCompiler& tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output) {
-  TvmFunctionBuilder fb(tvm_compiler, function->module);
-  fb.run_function(function, output);
-  return fb.dependencies();
+void tvm_lower_function(TvmCompiler& tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output, std::set<TreePtr<ModuleGlobal> >& dependencies) {
+  TvmFunctionBuilder(tvm_compiler, function->module, dependencies).run_function(function, output);
 }
 
 /**
@@ -92,10 +91,8 @@ std::set<TreePtr<Global> > tvm_lower_function(TvmCompiler& tvm_compiler, const T
  * because the function always has the same type, and this avoids creating
  * spurious entries in the Module.
  */
-std::set<TreePtr<Global> > tvm_lower_init(TvmCompiler& tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output) {
-  TvmFunctionBuilder fb(tvm_compiler, module);
-  fb.run_init(body, output);
-  return fb.dependencies();
+void tvm_lower_init(TvmCompiler& tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output, std::set<TreePtr<ModuleGlobal> >& dependencies) {
+  TvmFunctionBuilder(tvm_compiler, module, dependencies).run_init(body, output);
 }
 
 Tvm::ValuePtr<> TvmFunctionBuilder::exit_storage(const TreePtr<JumpTarget>& target, const SourceLocation& location) {
@@ -216,17 +213,9 @@ void TvmFunctionBuilder::cleanup_to(const TvmCleanupPtr& top) {
 TvmResult TvmFunctionBuilder::build(const TreePtr<Term>& term) {
   if (boost::optional<TvmResult> r = m_state.scope->get(term))
     return *r;
-
-  bool is_functional;
-  if (tree_isa<Functional>(term))
-    is_functional = true;
-  else if (TreePtr<GlobalStatement> stmt = dyn_treeptr_cast<GlobalStatement>(term))
-    is_functional = (stmt->mode != statement_mode_value);
-  else
-    is_functional = false;
   
   TvmResult value;
-  if (is_functional) {
+  if (tree_isa<Functional>(term) || tree_isa<Global>(term)) {
     value = tvm_lower_functional(*this, term);
     if (!value.scope.in_progress_generic) {
       builder().eval(value.value, term->location());
@@ -257,12 +246,13 @@ TvmResult TvmFunctionBuilder::build_generic(const TreePtr<GenericType>& generic)
 }
 
 TvmResult TvmFunctionBuilder::build_global(const TreePtr<Global>& global) {
-  m_dependencies.insert(global);
+  if (TreePtr<ModuleGlobal> mg = dyn_treeptr_cast<ModuleGlobal>(global))
+    m_dependencies->insert(mg);
   return m_tvm_compiler->get_global(global, m_module);
 }
 
 TvmResult TvmFunctionBuilder::build_global_evaluate(const TreePtr<GlobalEvaluate>& global) {
-  m_dependencies.insert(global);
+  m_dependencies->insert(global);
   return m_tvm_compiler->get_global_evaluate(global, m_module);
 }
 

@@ -21,6 +21,9 @@ namespace Psi {
   void topological_sort(T first_it, T last_it, const U& ordering) {
     typedef typename T::value_type value_type;
     
+    if (first_it == last_it)
+      return;
+    
     typedef boost::bimap<boost::bimaps::multiset_of<value_type>, boost::bimaps::multiset_of<value_type> > two_way_ordering_type;
     two_way_ordering_type two_way_ordering;
     for (typename U::const_iterator ii = ordering.begin(), ie = ordering.end(); ii != ie; ++ii)

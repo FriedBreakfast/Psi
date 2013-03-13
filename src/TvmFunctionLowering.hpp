@@ -87,7 +87,7 @@ class TvmFunctionBuilder : public TvmFunctionalBuilder {
   
   TvmCompiler *m_tvm_compiler;
   TreePtr<Module> m_module;
-  std::set<TreePtr<Global> > m_dependencies;
+  std::set<TreePtr<ModuleGlobal> > *m_dependencies;
   Tvm::ValuePtr<Tvm::Function> m_output;
   TreePtr<JumpTarget> m_return_target;
   Tvm::ValuePtr<> m_return_storage;
@@ -124,7 +124,7 @@ class TvmFunctionBuilder : public TvmFunctionalBuilder {
   TvmResult merge_exit(const TreePtr<Term>& type, TermMode mode, MergeExitList& values, const DominatorState& dominator, const SourceLocation& location);
   
 public:
-  TvmFunctionBuilder(TvmCompiler& tvm_compiler, const TreePtr<Module>& module);
+  TvmFunctionBuilder(TvmCompiler& tvm_compiler, const TreePtr<Module>& module, std::set<TreePtr<ModuleGlobal> >& dependencies);
   void run_function(const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
   void run_init(const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output);
   void build_void(const TreePtr<Term>& term);
@@ -133,8 +133,6 @@ public:
   virtual TvmResult build_generic(const TreePtr<GenericType>& generic);
   virtual TvmResult build_global(const TreePtr<Global>& global);
   virtual TvmResult build_global_evaluate(const TreePtr<GlobalEvaluate>& global);
-
-  std::set<TreePtr<Global> > dependencies() {return m_dependencies;}
 
   /**
    * \brief Get the instruction builder for this function.

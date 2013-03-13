@@ -362,6 +362,10 @@ struct TvmFunctionBuilder::InstructionLowering {
     return builder.build(term->value);
   }
   
+  static TvmResult run_functional_evaluate(TvmFunctionalBuilder& builder, const TreePtr<FunctionalEvaluate>& term) {
+    return builder.build(term->value);
+  }
+  
   static TvmResult run_initialize(TvmFunctionBuilder& builder, const TreePtr<InitializePointer>& initialize) {
     TvmResult dest_ptr = builder.build(initialize->target_ptr);
     builder.object_initialize_term(dest_ptr.value, initialize->assign_value, true, initialize.location());
@@ -394,6 +398,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       .add<JumpTo>(run_jump)
       .add<TryFinally>(run_try_finally)
       .add<FunctionCall>(run_call)
+      .add<FunctionalEvaluate>(run_functional_evaluate)
       .add<InitializePointer>(run_initialize)
       .add<AssignPointer>(run_assign)
       .add<FinalizePointer>(run_finalize);

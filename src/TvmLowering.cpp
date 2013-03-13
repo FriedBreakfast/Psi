@@ -331,6 +331,7 @@ Tvm::ValuePtr<Tvm::Global> TvmCompiler::build_module_global(const TreePtr<Module
     if ((status.status != global_built) || !status.init)
       continue;
     
+    sorted.push_back(*ii);
     std::set<TreePtr<ModuleGlobal> > init_deps = initializer_dependencies(*ii, false);
     for (std::set<TreePtr<ModuleGlobal> >::const_iterator ji = init_deps.begin(), je = init_deps.end(); ji != je; ++ji)
       dependencies.insert(std::make_pair(*ji, *ii));
@@ -492,6 +493,7 @@ class TvmGlobalBuilder : public TvmFunctionalBuilder {
 public:
   TvmGlobalBuilder(TvmCompiler *self, const TreePtr<Module>& module, std::set<TreePtr<ModuleGlobal> >& dependencies)
   : TvmFunctionalBuilder(self->compile_context(), self->tvm_context()),
+  m_self(self),
   m_module(module),
   m_dependencies(&dependencies) {
     m_scope = m_self->module_scope(module);
@@ -544,7 +546,7 @@ void TvmCompiler::run_module_global(const TreePtr<ModuleGlobal>& global) {
   if (TreePtr<Function> function = dyn_treeptr_cast<Function>(global)) {
     Tvm::ValuePtr<Tvm::Function> tvm_func = Tvm::value_cast<Tvm::Function>(status.lowered);
     tvm_func->set_private(function->local);
-    tvm_lower_function(*this, function, tvm_func);
+    tvm_lower_function(*this, function, tvm_func, status.dependencies);
   } else if (TreePtr<GlobalVariable> global_var = dyn_treeptr_cast<GlobalVariable>(global)) {
     Tvm::ValuePtr<Tvm::GlobalVariable> tvm_gvar = Tvm::value_cast<Tvm::GlobalVariable>(status.lowered);
     // This is the only global property which is independent of whether the global is constant-initialized or not
@@ -562,14 +564,14 @@ void TvmCompiler::run_module_global(const TreePtr<ModuleGlobal>& global) {
       Tvm::ValuePtr<Tvm::Function> constructor = tvm_module.module->new_constructor(ctor_name, global_var->location());
       TreePtr<Term> gv_ptr = TermBuilder::ptr_to(global_var, global_var->location());
       TreePtr<Term> ctor_tree = TermBuilder::initialize_ptr(gv_ptr, global_var->value(), TermBuilder::empty_value(compile_context()), global_var->location());
-      tvm_lower_init(*this, global_var->module, ctor_tree, constructor);
+      tvm_lower_init(*this, global_var->module, ctor_tree, constructor, status.dependencies);
       status.init = constructor;
       
       if (global_var->type && (global_var->type->type_info().type_mode == type_mode_complex)) {
         std::string dtor_name = str(boost::format("_Y_dtor%d") % ctor_idx);
         Tvm::ValuePtr<Tvm::Function> destructor = tvm_module.module->new_constructor(dtor_name, global_var->location());
         TreePtr<Term> dtor_body = TermBuilder::finalize_ptr(gv_ptr, global_var->location());
-        tvm_lower_init(*this, global_var->module, dtor_body, destructor);
+        tvm_lower_init(*this, global_var->module, dtor_body, destructor, status.dependencies);
         status.fini = destructor;
       }
     }
@@ -588,14 +590,14 @@ void TvmCompiler::run_module_global(const TreePtr<ModuleGlobal>& global) {
       Tvm::ValuePtr<Tvm::Function> constructor = tvm_module.module->new_constructor(ctor_name, global_stmt->location());
       TreePtr<Term> gv_ptr = TermBuilder::ptr_to(global_stmt, global_stmt->location());
       TreePtr<Term> ctor_tree = TermBuilder::initialize_ptr(gv_ptr, global_stmt->value, TermBuilder::empty_value(compile_context()), global_stmt->location());
-      tvm_lower_init(*this, global_stmt->module, ctor_tree, constructor);
+      tvm_lower_init(*this, global_stmt->module, ctor_tree, constructor, status.dependencies);
       status.init = constructor;
       
       if (global_var->type && (global_var->type->type_info().type_mode == type_mode_complex)) {
         std::string dtor_name = str(boost::format("_Y_dtor%d") % ctor_idx);
         Tvm::ValuePtr<Tvm::Function> destructor = tvm_module.module->new_constructor(dtor_name, global_stmt->location());
         TreePtr<Term> dtor_body = TermBuilder::finalize_ptr(gv_ptr, global_var->location());
-        tvm_lower_init(*this, global_stmt->module, dtor_body, destructor);
+        tvm_lower_init(*this, global_stmt->module, dtor_body, destructor, status.dependencies);
         status.fini = destructor;
       }
     }

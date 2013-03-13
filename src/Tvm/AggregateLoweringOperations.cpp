@@ -161,6 +161,10 @@ namespace Psi {
         return rewriter.rewrite_type(term->value()->type()).with_origin(term);
       }
       
+      static LoweredType upref_type_rewrite(AggregateLoweringRewriter&, const ValuePtr<UpwardReferenceType>&) {
+        throw TvmUserError("Upward reference types should not be encountered during lowering");
+      }
+      
       static LoweredType parameter_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<>& type) {
         ValuePtr<> size, alignment;
         LoweredValue rewritten = rewriter.rewrite_value(type);
@@ -193,7 +197,8 @@ namespace Psi {
           .add<EmptyType>(primitive_type_rewrite)
           .add<FloatType>(primitive_type_rewrite)
           .add<IntegerType>(primitive_type_rewrite)
-          .add<ConstantType>(constant_type_rewrite);
+          .add<ConstantType>(constant_type_rewrite)
+          .add<UpwardReferenceType>(upref_type_rewrite);
       }
     };
     
@@ -233,7 +238,6 @@ namespace Psi {
       }
 
       static LoweredValue default_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<HashableValue>& term) {
-
         class Callback : public RewriteCallback {
           AggregateLoweringRewriter *m_rewriter;
           bool m_global;
@@ -729,6 +733,7 @@ namespace Psi {
           .add<FloatType>(type_rewrite)
           .add<EmptyType>(type_rewrite)
           .add<ByteType>(type_rewrite)
+          .add<UpwardReferenceType>(type_rewrite)
           .add<MetatypeValue>(type_rewrite)
           .add<OuterPtr>(outer_ptr_rewrite)
           .add<ArrayValue>(array_value_rewrite)
