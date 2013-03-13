@@ -206,8 +206,10 @@ void TvmFunctionBuilder::exit_to(const TreePtr<JumpTarget>& target, const Source
  * \brief Generate a cleanup sequence for normal (rather than exceptional) exit.
  */
 void TvmFunctionBuilder::cleanup_to(const TvmCleanupPtr& top) {
-  for (; m_state.cleanup != top; m_state = m_state.cleanup->m_state)
-    m_state.cleanup->run(*this);
+  for (; m_state.cleanup != top; m_state = m_state.cleanup->m_state) {
+    if (!m_state.cleanup->m_except_only)
+      m_state.cleanup->run(*this);
+  }
 }
 
 TvmResult TvmFunctionBuilder::build(const TreePtr<Term>& term) {
@@ -217,11 +219,6 @@ TvmResult TvmFunctionBuilder::build(const TreePtr<Term>& term) {
   TvmResult value;
   if (tree_isa<Functional>(term) || tree_isa<Global>(term)) {
     value = tvm_lower_functional(*this, term);
-    if (!value.scope.in_progress_generic) {
-      builder().eval(value.value, term->location());
-      if (Tvm::ValuePtr<Tvm::UpwardReference> upref = Tvm::dyn_cast<Tvm::UpwardReference>(value.upref))
-        builder().eval(upref->index(), term->location());
-    }
   } else {
     value = build_instruction(term);
   }

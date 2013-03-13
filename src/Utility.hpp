@@ -294,6 +294,23 @@ namespace Psi {
   void container_sort_unique(T& container) {
     container_sort_unique(container, std::less<typename T::value_type>(), std::equal_to<typename T::value_type>());
   }
+  
+  /**
+   * \brief Advance an iterator a certain number of steps, but not beyond an endpoint.
+   * 
+   * \return True if \c iter was advanced \c n steps. Note that if end is n steps from
+   * iter, true is returned and iter is end, so this does not guarantee iter has not
+   * reached end.
+   */
+  template<typename T>
+  bool safe_advance(T& iter, std::size_t n, const T& end) {
+    for (std::size_t i = 0; i != n; ++i) {
+      if (iter == end)
+        return false;
+      ++iter;
+    }
+    return true;
+  }
 }
 
 #endif

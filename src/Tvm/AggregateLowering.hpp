@@ -241,6 +241,8 @@ namespace Psi {
         TypeMapType m_type_map;
         ValueMapType m_value_map;
         
+        ValuePtr<> m_byte_type, m_byte_ptr_type;
+        
       public:
         AggregateLoweringRewriter(AggregateLoweringPass*);
         
@@ -249,6 +251,11 @@ namespace Psi {
         
         /// \brief Get the (target) context this pass belongs to
         Context& context() {return pass().context();}
+        
+        /// \brief Get the (lowered) byte type
+        const ValuePtr<>& byte_type() const {return m_byte_type;}
+        /// \brief Get the (lowered) byte pointer type
+        const ValuePtr<>& byte_ptr_type() const {return m_byte_ptr_type;}
 
         /**
          * Work out the expected form of a type after this pass.

@@ -95,7 +95,7 @@ namespace Psi {
             idx = builder.build_constant(term->index());
 
           llvm::Constant *indices[] = {llvm::ConstantInt::get(i32_ty, 0), idx};
-          return llvm::ConstantExpr::getGetElementPtr(aggregate_ptr, indices);
+          return llvm::ConstantExpr::getInBoundsGetElementPtr(aggregate_ptr, indices);
         }
         
         static llvm::Constant* struct_element_offset_callback(ModuleBuilder& builder, const ValuePtr<StructElementOffset>& term) {

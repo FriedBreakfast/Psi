@@ -1119,16 +1119,16 @@ namespace Psi {
      * 
      * Performs the role of a constructor in C++.
      */
-    class InitializePointer : public Term {
+    class InitializeValue : public Term {
     public:
       static const VtableType vtable;
       
-      InitializePointer(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const TreePtr<Term>& inner, const SourceLocation& location);
+      InitializeValue(const TreePtr<Term>& target_ref, const TreePtr<Term>& assign_value, const TreePtr<Term>& inner, const SourceLocation& location);
       template<typename V> static void visit(V& v);
-      static TermTypeInfo type_info_impl(const InitializePointer& self);
+      static TermTypeInfo type_info_impl(const InitializeValue& self);
       
-      /// \brief Pointer to address to be initialized
-      TreePtr<Term> target_ptr;
+      /// \brief Reference to address to be initialized
+      TreePtr<Term> target_ref;
       /// \brief Value to be used to initialize target
       TreePtr<Term> assign_value;
       /**
@@ -1144,15 +1144,15 @@ namespace Psi {
      * 
      * This assumes the memory at the pointer has already been initialized.
      */
-    class AssignPointer : public Term {
+    class AssignValue : public Term {
     public:
       static const VtableType vtable;
       
-      AssignPointer(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const SourceLocation& location);
+      AssignValue(const TreePtr<Term>& target_ref, const TreePtr<Term>& assign_value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief Pointer to address to be assigned.
-      TreePtr<Term> target_ptr;
+      TreePtr<Term> target_ref;
       /// \brief Value to be assign to target.
       TreePtr<Term> assign_value;
     };
@@ -1160,15 +1160,15 @@ namespace Psi {
     /**
      * \brief Finalize (destroy) the object at a pointer.
      */
-    class FinalizePointer : public Term {
+    class FinalizeValue : public Term {
     public:
       static const VtableType vtable;
       
-      FinalizePointer(const TreePtr<Term>& target_ptr, const SourceLocation& location);
+      FinalizeValue(const TreePtr<Term>& target_ref, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       
       /// \brief Pointer to object to be destroyed.
-      TreePtr<Term> target_ptr;
+      TreePtr<Term> target_ref;
     };
     
     /**

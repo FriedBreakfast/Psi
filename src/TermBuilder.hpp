@@ -88,9 +88,9 @@ struct TermBuilder : NonConstructible {
 
 /// \name Lifecycle functions
 //@{
-  static TreePtr<Term> initialize_ptr(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const TreePtr<Term>& inner, const SourceLocation& location);
-  static TreePtr<Term> finalize_ptr(const TreePtr<Term>& target_ptr, const SourceLocation& location);
-  static TreePtr<Term> assign_ptr(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const SourceLocation& location);
+  static TreePtr<Term> initialize_value(const TreePtr<Term>& target_ref, const TreePtr<Term>& assign_value, const TreePtr<Term>& inner, const SourceLocation& location);
+  static TreePtr<Term> finalize_value(const TreePtr<Term>& target_ref, const SourceLocation& location);
+  static TreePtr<Term> assign_value(const TreePtr<Term>& target_ref, const TreePtr<Term>& assign_value, const SourceLocation& location);
 //@}
   
 /// \name Control flow

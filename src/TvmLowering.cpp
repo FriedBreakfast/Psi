@@ -563,14 +563,14 @@ void TvmCompiler::run_module_global(const TreePtr<ModuleGlobal>& global) {
       std::string ctor_name = str(boost::format("_Y_ctor%d") % ctor_idx);
       Tvm::ValuePtr<Tvm::Function> constructor = tvm_module.module->new_constructor(ctor_name, global_var->location());
       TreePtr<Term> gv_ptr = TermBuilder::ptr_to(global_var, global_var->location());
-      TreePtr<Term> ctor_tree = TermBuilder::initialize_ptr(gv_ptr, global_var->value(), TermBuilder::empty_value(compile_context()), global_var->location());
+      TreePtr<Term> ctor_tree = TermBuilder::initialize_value(gv_ptr, global_var->value(), TermBuilder::empty_value(compile_context()), global_var->location());
       tvm_lower_init(*this, global_var->module, ctor_tree, constructor, status.dependencies);
       status.init = constructor;
       
       if (global_var->type && (global_var->type->type_info().type_mode == type_mode_complex)) {
         std::string dtor_name = str(boost::format("_Y_dtor%d") % ctor_idx);
         Tvm::ValuePtr<Tvm::Function> destructor = tvm_module.module->new_constructor(dtor_name, global_var->location());
-        TreePtr<Term> dtor_body = TermBuilder::finalize_ptr(gv_ptr, global_var->location());
+        TreePtr<Term> dtor_body = TermBuilder::finalize_value(gv_ptr, global_var->location());
         tvm_lower_init(*this, global_var->module, dtor_body, destructor, status.dependencies);
         status.fini = destructor;
       }
@@ -589,14 +589,14 @@ void TvmCompiler::run_module_global(const TreePtr<ModuleGlobal>& global) {
       std::string ctor_name = str(boost::format("_Y_ctor%d") % ctor_idx);
       Tvm::ValuePtr<Tvm::Function> constructor = tvm_module.module->new_constructor(ctor_name, global_stmt->location());
       TreePtr<Term> gv_ptr = TermBuilder::ptr_to(global_stmt, global_stmt->location());
-      TreePtr<Term> ctor_tree = TermBuilder::initialize_ptr(gv_ptr, global_stmt->value, TermBuilder::empty_value(compile_context()), global_stmt->location());
+      TreePtr<Term> ctor_tree = TermBuilder::initialize_value(gv_ptr, global_stmt->value, TermBuilder::empty_value(compile_context()), global_stmt->location());
       tvm_lower_init(*this, global_stmt->module, ctor_tree, constructor, status.dependencies);
       status.init = constructor;
       
       if (global_var->type && (global_var->type->type_info().type_mode == type_mode_complex)) {
         std::string dtor_name = str(boost::format("_Y_dtor%d") % ctor_idx);
         Tvm::ValuePtr<Tvm::Function> destructor = tvm_module.module->new_constructor(dtor_name, global_stmt->location());
-        TreePtr<Term> dtor_body = TermBuilder::finalize_ptr(gv_ptr, global_var->location());
+        TreePtr<Term> dtor_body = TermBuilder::finalize_value(gv_ptr, global_var->location());
         tvm_lower_init(*this, global_stmt->module, dtor_body, destructor, status.dependencies);
         status.fini = destructor;
       }

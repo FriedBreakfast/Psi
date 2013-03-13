@@ -1659,66 +1659,64 @@ namespace Psi {
     
     const FunctionalVtable MovableValue::vtable = PSI_COMPILER_FUNCTIONAL(MovableValue, "psi.compiler.MovableValue", Functional);
     
-    InitializePointer::InitializePointer(const TreePtr<Term>& target_ptr_, const TreePtr<Term>& assign_value_, const TreePtr<Term>& inner_, const SourceLocation& location)
+    InitializeValue::InitializeValue(const TreePtr<Term>& target_ref_, const TreePtr<Term>& assign_value_, const TreePtr<Term>& inner_, const SourceLocation& location)
     : Term(&vtable, TermResultInfo(inner_->type, inner_->mode, false), location),
-    target_ptr(target_ptr_),
+    target_ref(target_ref_),
     assign_value(assign_value_),
     inner(inner_) {
-      TreePtr<PointerType> ptr_type = term_unwrap_dyn_cast<PointerType>(target_ptr_->type);
-      if (!ptr_type)
-        compile_context().error_throw(location, "Initialization target is not a pointer");
-      if (!ptr_type->target_type->convert_match(assign_value_->type))
+      if ((target_ref->mode != term_mode_lref) && (target_ref->mode != term_mode_rref))
+        compile_context().error_throw(location, "Initialization target is not a reference");
+      if (!target_ref->type->convert_match(assign_value_->type))
         compile_context().error_throw(location, "Initialization value type does not match target storage");
     }
     
     template<typename V>
-    void InitializePointer::visit(V& v) {
+    void InitializeValue::visit(V& v) {
       visit_base<Term>(v);
-      v("target_ptr", &InitializePointer::target_ptr)
-      ("assign_value", &InitializePointer::assign_value)
-      ("inner", &InitializePointer::inner);
+      v("target_ref", &InitializeValue::target_ref)
+      ("assign_value", &InitializeValue::assign_value)
+      ("inner", &InitializeValue::inner);
     }
     
-    TermTypeInfo InitializePointer::type_info_impl(const InitializePointer& self) {
+    TermTypeInfo InitializeValue::type_info_impl(const InitializeValue& self) {
       return self.inner->type_info();
     }
     
-    const TermVtable InitializePointer::vtable = PSI_COMPILER_TERM(InitializePointer, "psi.compiler.InitializePointer", Term);
+    const TermVtable InitializeValue::vtable = PSI_COMPILER_TERM(InitializeValue, "psi.compiler.InitializeValue", Term);
     
-    AssignPointer::AssignPointer(const TreePtr<Term>& target_ptr_, const TreePtr<Term>& assign_value_, const SourceLocation& location)
-    : Term(&vtable, term_result_void(target_ptr_.compile_context()), location),
-    target_ptr(target_ptr_),
+    AssignValue::AssignValue(const TreePtr<Term>& target_ref_, const TreePtr<Term>& assign_value_, const SourceLocation& location)
+    : Term(&vtable, term_result_void(target_ref_.compile_context()), location),
+    target_ref(target_ref_),
     assign_value(assign_value_) {
-      TreePtr<PointerType> ptr_type = term_unwrap_dyn_cast<PointerType>(target_ptr_->type);
-      if (!ptr_type)
-        compile_context().error_throw(location, "Assignment target is not a pointer");
-      if (!ptr_type->target_type->convert_match(assign_value_->type))
+      if ((target_ref->mode != term_mode_lref) && (target_ref->mode != term_mode_rref))
+        compile_context().error_throw(location, "Finalize target is not a reference");
+      if (!target_ref->type->convert_match(assign_value_->type))
         compile_context().error_throw(location, "Assignment value type does not match target storage");
     }
     
     template<typename V>
-    void AssignPointer::visit(V& v) {
+    void AssignValue::visit(V& v) {
       visit_base<Term>(v);
-      v("target_ptr", &AssignPointer::target_ptr)
-      ("assign_value", &AssignPointer::assign_value);
+      v("target_ref", &AssignValue::target_ref)
+      ("assign_value", &AssignValue::assign_value);
     }
 
-    const TermVtable AssignPointer::vtable = PSI_COMPILER_TERM(AssignPointer, "psi.compiler.AssignPointer", Term);
+    const TermVtable AssignValue::vtable = PSI_COMPILER_TERM(AssignValue, "psi.compiler.AssignValue", Term);
     
-    FinalizePointer::FinalizePointer(const TreePtr<Term>& target_ptr_, const SourceLocation& location)
-    : Term(&vtable, term_result_void(target_ptr_.compile_context()), location),
-    target_ptr(target_ptr_) {
-      if (!term_unwrap_isa<PointerType>(target_ptr->type))
-        compile_context().error_throw(location, "Finalize target is not a pointer");
+    FinalizeValue::FinalizeValue(const TreePtr<Term>& target_ref_, const SourceLocation& location)
+    : Term(&vtable, term_result_void(target_ref_.compile_context()), location),
+    target_ref(target_ref_) {
+      if ((target_ref->mode != term_mode_lref) && (target_ref->mode != term_mode_rref))
+        compile_context().error_throw(location, "Finalize target is not a reference");
     }
     
     template<typename V>
-    void FinalizePointer::visit(V& v) {
+    void FinalizeValue::visit(V& v) {
       visit_base<Term>(v);
-      v("target_ptr", &FinalizePointer::target_ptr);
+      v("target_ref", &FinalizeValue::target_ref);
     }
     
-    const TermVtable FinalizePointer::vtable = PSI_COMPILER_TERM(FinalizePointer, "psi.compiler.FinalizePointer", Term);
+    const TermVtable FinalizeValue::vtable = PSI_COMPILER_TERM(FinalizeValue, "psi.compiler.FinalizeValue", Term);
     
     IntroduceImplementation::IntroduceImplementation(const PSI_STD::vector<TreePtr<Implementation> >& implementations_, const TreePtr<Term>& value_, const SourceLocation& location)
     : Term(&vtable, TermResultInfo(value_->type, value_->mode, false), location),

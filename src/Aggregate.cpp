@@ -375,7 +375,8 @@ public:
     TreePtr<Term> extra = build_body(location, m_common->lc_init, f.parameters[1]);
     if (!extra)
       extra = instance.compile_context().builtins().empty_value;
-    TreePtr<Term> init = TermBuilder::initialize_ptr(f.parameters[1], TermBuilder::default_value(instance, location), extra, location);
+    TreePtr<Term> element = TermBuilder::element_value(f.parameters[1], 0, location);
+    TreePtr<Term> init = TermBuilder::initialize_value(element, TermBuilder::default_value(element->type, location), extra, location);
     return helper.function_finish(f, m_common->evaluate_context->module(), init);
   }
   
@@ -385,7 +386,7 @@ public:
                                                                          !m_common->lc_fini.body ? default_ :
                                                                          vector_of(parameter_location(location, m_common->lc_fini.dest_name)));
     TreePtr<Term> extra = build_body(location, m_common->lc_fini, f.parameters[1]);
-    TreePtr<Term> cleanup = TermBuilder::finalize_ptr(f.parameters[1], location);
+    TreePtr<Term> cleanup = TermBuilder::finalize_value(TermBuilder::element_value(f.parameters[1], 0, location), location);
     return helper.function_finish(f, m_common->evaluate_context->module(), combine_body(extra, cleanup, location));
   }
   
@@ -395,7 +396,8 @@ public:
                                                                          !m_common->lc_fini.body ? default_ :
                                                                          vector_of(parameter_location(location, m_common->lc_fini.dest_name)));
     TreePtr<Term> extra = build_body(location, m_common->lc_fini, f.parameters[1]);
-    TreePtr<Term> cleanup = TermBuilder::assign_ptr(f.parameters[1], TermBuilder::default_value(instance, location), location);
+    TreePtr<Term> element = TermBuilder::element_value(f.parameters[1], 0, location);
+    TreePtr<Term> cleanup = TermBuilder::assign_value(element, TermBuilder::default_value(element->type, location), location);
     return helper.function_finish(f, m_common->evaluate_context->module(), combine_body(extra, cleanup, location));
   }
   
@@ -407,11 +409,12 @@ public:
                                                                                    parameter_location(location, m_common->lc_move.src_name)));
 
     TreePtr<Term> body, custom = build_body(location, m_common->lc_move, f.parameters[1], f.parameters[2]);
+    TreePtr<Term> dest = TermBuilder::element_value(f.parameters[1], 0, location);
     if (custom) {
-      body = TermBuilder::initialize_ptr(f.parameters[1], TermBuilder::default_value(instance, location), custom, location);
+      body = TermBuilder::initialize_value(dest, TermBuilder::default_value(dest->type, location), custom, location);
     } else {
-      TreePtr<Term> move_value = TermBuilder::movable(TermBuilder::ptr_target(f.parameters[2], location), location);
-      body = TermBuilder::initialize_ptr(f.parameters[1], move_value, TermBuilder::empty_value(instance.compile_context()), location);
+      TreePtr<Term> move_value = TermBuilder::movable(TermBuilder::element_value(f.parameters[2], 0, location), location);
+      body = TermBuilder::initialize_value(dest, move_value, TermBuilder::empty_value(instance.compile_context()), location);
     }
     return helper.function_finish(f, m_common->evaluate_context->module(), body);
   }
@@ -424,8 +427,8 @@ public:
                                                                                    parameter_location(location, m_common->lc_move.dest_name)));
     TreePtr<Term> body = build_body(location, m_common->lc_move, f.parameters[1], f.parameters[2]);
     if (!body) {
-      TreePtr<Term> move_value = TermBuilder::movable(TermBuilder::ptr_target(f.parameters[2], location), location);
-      body = TermBuilder::assign_ptr(f.parameters[1], move_value, location);
+      TreePtr<Term> move_value = TermBuilder::movable(TermBuilder::element_value(f.parameters[2], 0, location), location);
+      body = TermBuilder::assign_value(TermBuilder::element_value(f.parameters[1], 0, location), move_value, location);
     }
     return helper.function_finish(f, m_common->evaluate_context->module(), body);
   }
@@ -452,11 +455,12 @@ public:
                                                                          vector_of(parameter_location(location, m_common->lc_copy.dest_name),
                                                                                    parameter_location(location, m_common->lc_copy.src_name)));
     TreePtr<Term> body, custom = build_body(location, m_common->lc_copy, f.parameters[1], f.parameters[2]);
+    TreePtr<Term> dest = TermBuilder::element_value(f.parameters[1], 0, location);
     if (custom) {
-      body = TermBuilder::initialize_ptr(f.parameters[1], TermBuilder::default_value(instance, location), custom, location);
+      body = TermBuilder::initialize_value(dest, TermBuilder::default_value(dest->type, location), custom, location);
     } else {
-      body = TermBuilder::initialize_ptr(f.parameters[1], TermBuilder::ptr_target(f.parameters[2], location),
-                                         TermBuilder::empty_value(instance.compile_context()), location);
+      body = TermBuilder::initialize_value(dest, TermBuilder::element_value(f.parameters[2], 0, location),
+                                           TermBuilder::empty_value(instance.compile_context()), location);
     }
     return helper.function_finish(f, m_common->evaluate_context->module(), body);
   }
@@ -470,7 +474,8 @@ public:
     
     TreePtr<Term> body = build_body(location, m_common->lc_copy, f.parameters[1], f.parameters[2]);
     if (!body)
-      body = TermBuilder::assign_ptr(f.parameters[1], TermBuilder::ptr_target(f.parameters[2], location), location);
+      body = TermBuilder::assign_value(TermBuilder::element_value(f.parameters[1], 0, location),
+                                       TermBuilder::element_value(f.parameters[2], 0, location), location);
     return helper.function_finish(f, m_common->evaluate_context->module(), body);
   }
   

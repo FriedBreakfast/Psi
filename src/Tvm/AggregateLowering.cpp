@@ -80,6 +80,8 @@ namespace Psi {
       
     AggregateLoweringPass::AggregateLoweringRewriter::AggregateLoweringRewriter(AggregateLoweringPass *pass)
     : m_pass(pass) {
+      m_byte_type = FunctionalBuilder::byte_type(pass->source_module()->context(), pass->source_module()->location());
+      m_byte_ptr_type = FunctionalBuilder::byte_pointer_type(pass->source_module()->context(), pass->source_module()->location());
     }
 
     /**

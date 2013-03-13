@@ -366,22 +366,21 @@ struct TvmFunctionBuilder::InstructionLowering {
     return builder.build(term->value);
   }
   
-  static TvmResult run_initialize(TvmFunctionBuilder& builder, const TreePtr<InitializePointer>& initialize) {
-    TvmResult dest_ptr = builder.build(initialize->target_ptr);
+  static TvmResult run_initialize(TvmFunctionBuilder& builder, const TreePtr<InitializeValue>& initialize) {
+    TvmResult dest_ptr = builder.build(initialize->target_ref);
     builder.object_initialize_term(dest_ptr.value, initialize->assign_value, true, initialize.location());
     return builder.build(initialize->inner);
   }
 
-  static TvmResult run_assign(TvmFunctionBuilder& builder, const TreePtr<AssignPointer>& assign) {
-    TvmResult dest_ptr = builder.build(assign->target_ptr);
+  static TvmResult run_assign(TvmFunctionBuilder& builder, const TreePtr<AssignValue>& assign) {
+    TvmResult dest_ptr = builder.build(assign->target_ref);
     builder.object_assign_term(dest_ptr.value, assign->assign_value, assign.location());
     return TvmResult(builder.m_state.scope, Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), assign.location()));
   }
 
-  static TvmResult run_finalize(TvmFunctionBuilder& builder, const TreePtr<FinalizePointer>& finalize) {
-    TvmResult dest_ptr = builder.build(finalize->target_ptr);
-    TreePtr<PointerType> ptr_type = term_unwrap_cast<PointerType>(finalize->target_ptr->type);
-    builder.object_destroy(dest_ptr.value, ptr_type->target_type, finalize.location());
+  static TvmResult run_finalize(TvmFunctionBuilder& builder, const TreePtr<FinalizeValue>& finalize) {
+    TvmResult dest_ptr = builder.build(finalize->target_ref);
+    builder.object_destroy(dest_ptr.value, finalize->target_ref->type, finalize.location());
     return TvmResult(builder.m_state.scope, Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), finalize.location()));
   }
 
@@ -399,9 +398,9 @@ struct TvmFunctionBuilder::InstructionLowering {
       .add<TryFinally>(run_try_finally)
       .add<FunctionCall>(run_call)
       .add<FunctionalEvaluate>(run_functional_evaluate)
-      .add<InitializePointer>(run_initialize)
-      .add<AssignPointer>(run_assign)
-      .add<FinalizePointer>(run_finalize);
+      .add<InitializeValue>(run_initialize)
+      .add<AssignValue>(run_assign)
+      .add<FinalizeValue>(run_finalize);
   }
 };
 

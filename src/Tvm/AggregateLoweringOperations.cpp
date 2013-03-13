@@ -127,7 +127,7 @@ namespace Psi {
       }
       
       static LoweredType pointer_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<PointerType>& term) {
-        return simple_type_helper(rewriter, term, FunctionalBuilder::byte_pointer_type(rewriter.context(), term->location()), term->location());
+        return simple_type_helper(rewriter, term, rewriter.byte_ptr_type(), term->location());
       }
       
       static LoweredType primitive_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionalValue>& type) {
@@ -334,9 +334,7 @@ namespace Psi {
         ValuePtr<PointerType> inner_ptr_ty = value_cast<PointerType>(term->pointer()->type());
         LoweredValueSimple inner_ptr = rewriter.rewrite_value_register(term->pointer());
         LoweredType outer_ptr_ty = rewriter.rewrite_type(term->type());
-        ValuePtr<> base = FunctionalBuilder::pointer_cast(inner_ptr.value,
-                                                          FunctionalBuilder::byte_type(rewriter.context(), term->location()),
-                                                          term->location());
+        PSI_ASSERT(inner_ptr.value->type() == rewriter.byte_ptr_type());
         
         ValuePtr<UpwardReference> up = dyn_cast<UpwardReference>(inner_ptr_ty->upref());
         ValuePtr<> outer_type = up->outer_type();
@@ -352,13 +350,13 @@ namespace Psi {
           offset = FunctionalBuilder::mul(idx.value, el_type.size(), term->location());
           global = global && idx.global && el_type.global();
         } else if (isa<UnionType>(outer_type) || isa<ApplyType>(outer_type)) {
-          return LoweredValue::register_(outer_ptr_ty, global, base);
+          return LoweredValue::register_(outer_ptr_ty, global, inner_ptr.value);
         } else {
           throw TvmInternalError("Upward reference cannot be unfolded");
         }
         
         offset = FunctionalBuilder::neg(offset, term->location());
-        return LoweredValue::register_(outer_ptr_ty, global, FunctionalBuilder::pointer_offset(base, offset, term->location()));
+        return LoweredValue::register_(outer_ptr_ty, global, FunctionalBuilder::pointer_offset(inner_ptr.value, offset, term->location()));
       }
 
       /**
@@ -377,20 +375,22 @@ namespace Psi {
         LoweredType array_ty_l = rewriter.rewrite_type(array_ty);
         if (array_ty_l.mode() == LoweredType::mode_register) {
           ValuePtr<> array_ptr = FunctionalBuilder::pointer_cast(base.value, array_ty_l.register_type(), location);
-          return LoweredValueSimple(base.global && index.global && array_ty_l.global(),
-                                    FunctionalBuilder::element_ptr(array_ptr, index.value, location));
+          ValuePtr<> element_ptr = FunctionalBuilder::element_ptr(array_ptr, index.value, location);
+          ValuePtr<> cast_element_ptr = FunctionalBuilder::pointer_cast(element_ptr, rewriter.byte_type(), location);
+          return LoweredValueSimple(base.global && index.global && array_ty_l.global(), cast_element_ptr);
         }
 
         LoweredType element_ty = rewriter.rewrite_type(array_ty->element_type());
         if (element_ty.mode() == LoweredType::mode_register) {
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(base.value, element_ty.register_type(), location);
-          return LoweredValueSimple(base.global && index.global && element_ty.global(),
-                                    FunctionalBuilder::pointer_offset(cast_ptr, index.value, location));
+          ValuePtr<> element_ptr = FunctionalBuilder::pointer_offset(cast_ptr, index.value, location);
+          ValuePtr<> cast_element_ptr = FunctionalBuilder::pointer_cast(element_ptr, rewriter.byte_type(), location);
+          return LoweredValueSimple(base.global && index.global && element_ty.global(), cast_element_ptr);
         }
 
         LoweredValueSimple element_size = rewriter.rewrite_value_register(FunctionalBuilder::type_size(array_ty->element_type(), location));
         ValuePtr<> offset = FunctionalBuilder::mul(element_size.value, index.value, location);
-        PSI_ASSERT(base.value->type() == FunctionalBuilder::byte_pointer_type(rewriter.context(), location));
+        PSI_ASSERT(base.value->type() == rewriter.byte_ptr_type());
         return LoweredValueSimple(base.global && index.global && element_size.global,
                                   FunctionalBuilder::pointer_offset(base.value, offset, location));
       }
@@ -501,10 +501,12 @@ namespace Psi {
         LoweredType struct_ty_rewritten = rewriter.rewrite_type(struct_ty);
         if (struct_ty_rewritten.mode() == LoweredType::mode_register) {
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(base.value, struct_ty_rewritten.register_type(), location);
-          return LoweredValueSimple(base.global && struct_ty_rewritten.global(), FunctionalBuilder::element_ptr(cast_ptr, index, location));
+          ValuePtr<> element_ptr = FunctionalBuilder::element_ptr(cast_ptr, index, location);
+          ValuePtr<> cast_element_ptr = FunctionalBuilder::pointer_cast(element_ptr, rewriter.byte_type(), location);
+          return LoweredValueSimple(base.global && struct_ty_rewritten.global(), cast_element_ptr);
         }
         
-        PSI_ASSERT(base.value->type() == FunctionalBuilder::byte_pointer_type(rewriter.context(), location));
+        PSI_ASSERT(base.value->type() == rewriter.byte_ptr_type());
         LoweredValueSimple offset = rewriter.rewrite_value_register(FunctionalBuilder::struct_element_offset(struct_ty, index, location));
         return LoweredValueSimple(base.global && offset.global, FunctionalBuilder::pointer_offset(base.value, offset.value, location));
       }
@@ -607,7 +609,7 @@ namespace Psi {
         if ((ty.mode() == LoweredType::mode_register) && !rewriter.pass().pointer_arithmetic_to_bytes) {
           ValuePtr<> cast_base = FunctionalBuilder::pointer_cast(base_value.value, ty.register_type(), term->location());
           ValuePtr<> ptr = FunctionalBuilder::pointer_offset(cast_base, offset.value, term->location());
-          ValuePtr<> result = FunctionalBuilder::pointer_cast(ptr, FunctionalBuilder::byte_type(rewriter.context(), term->location()), term->location());
+          ValuePtr<> result = FunctionalBuilder::pointer_cast(ptr, rewriter.byte_type(), term->location());
           return LoweredValue::register_(term_ty, ty.global() && base_value.global && offset.global, result);
         } else {
           ValuePtr<> new_offset = FunctionalBuilder::mul(ty.size(), offset.value, term->location());
@@ -831,14 +833,14 @@ namespace Psi {
             total_alignment = FunctionalBuilder::max(total_alignment, alignment, term->location());
           stack_ptr = runner.builder().alloca_(FunctionalBuilder::byte_type(runner.context(), term->location()), total_size, total_alignment, term->location());
         }
-        ValuePtr<> cast_stack_ptr = FunctionalBuilder::pointer_cast(stack_ptr, FunctionalBuilder::byte_type(runner.context(), term->location()), term->location());
+        ValuePtr<> cast_stack_ptr = FunctionalBuilder::pointer_cast(stack_ptr, runner.byte_type(), term->location());
         return LoweredValue::register_(runner.pass().pointer_type(), false, cast_stack_ptr);
       }
       
       static LoweredValue alloca_const_rewrite(FunctionRunner& runner, const ValuePtr<AllocaConst>& term) {
         ValuePtr<> value = runner.rewrite_value_register(term->value).value;
         ValuePtr<> stack_ptr = runner.builder().alloca_const(value, term->location());
-        ValuePtr<> cast_stack_ptr = FunctionalBuilder::pointer_cast(stack_ptr, FunctionalBuilder::byte_type(runner.context(), term->location()), term->location());
+        ValuePtr<> cast_stack_ptr = FunctionalBuilder::pointer_cast(stack_ptr, runner.byte_type(), term->location());
         return LoweredValue::register_(runner.pass().pointer_type(), false, cast_stack_ptr);
       }
       
@@ -878,7 +880,7 @@ namespace Psi {
           runner.builder().memcpy(dest_cast, src_cast, count, alignment, term->location());
           return LoweredValue();
         } else {
-          PSI_ASSERT(dest->type() == FunctionalBuilder::byte_pointer_type(runner.context(), term->location()));
+          PSI_ASSERT((dest->type() == runner.byte_ptr_type()) && (src->type() == runner.byte_ptr_type()));
           ValuePtr<> type_size = runner.rewrite_value_register(FunctionalBuilder::type_size(original_element_type, term->location())).value;
           ValuePtr<> type_alignment = runner.rewrite_value_register(FunctionalBuilder::type_alignment(original_element_type, term->location())).value;
           ValuePtr<> bytes = FunctionalBuilder::mul(count, type_size, term->location());
@@ -900,7 +902,7 @@ namespace Psi {
           runner.builder().memzero(ptr_cast, count, alignment, term->location());
           return LoweredValue();
         } else {
-          PSI_ASSERT(ptr->type() == FunctionalBuilder::byte_pointer_type(runner.context(), term->location()));
+          PSI_ASSERT(ptr->type() == runner.byte_ptr_type());
           ValuePtr<> type_size = runner.rewrite_value_register(FunctionalBuilder::type_size(original_element_type, term->location())).value;
           ValuePtr<> type_alignment = runner.rewrite_value_register(FunctionalBuilder::type_alignment(original_element_type, term->location())).value;
           ValuePtr<> bytes = FunctionalBuilder::mul(count, type_size, term->location());

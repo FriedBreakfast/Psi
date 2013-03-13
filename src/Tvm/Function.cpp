@@ -724,7 +724,6 @@ namespace Psi {
     ValuePtr<Function> Module::new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location) {
       PSI_ASSERT(type);
       ValuePtr<Function> result(::new Function(context(), type, name, this, location));
-      result->set_private(true);
       add_member(result);
       return result;
     }

@@ -248,18 +248,18 @@ TreePtr<Term> TermBuilder::outer_value(const TreePtr<Term>& reference, const Sou
  * however should \c inner exit abnormally the object will be automatically
  * finalized.
  */
-TreePtr<Term> TermBuilder::initialize_ptr(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const TreePtr<Term>& inner, const SourceLocation& location) {
-  return tree_from(::new InitializePointer(target_ptr, assign_value, inner, location));
+TreePtr<Term> TermBuilder::initialize_value(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const TreePtr<Term>& inner, const SourceLocation& location) {
+  return tree_from(::new InitializeValue(target_ptr, assign_value, inner, location));
 }
 
 /// \brief Finalize an object at a memory location.
-TreePtr<Term> TermBuilder::finalize_ptr(const TreePtr<Term>& target_ptr, const SourceLocation& location) {
-  return tree_from(::new FinalizePointer(target_ptr, location));
+TreePtr<Term> TermBuilder::finalize_value(const TreePtr<Term>& target_ptr, const SourceLocation& location) {
+  return tree_from(::new FinalizeValue(target_ptr, location));
 }
 
 /// \brief Assign a value to an existing object at a memory location.
-TreePtr<Term> TermBuilder::assign_ptr(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const SourceLocation& location) {
-  return tree_from(::new AssignPointer(target_ptr, assign_value, location));
+TreePtr<Term> TermBuilder::assign_value(const TreePtr<Term>& target_ptr, const TreePtr<Term>& assign_value, const SourceLocation& location) {
+  return tree_from(::new AssignValue(target_ptr, assign_value, location));
 }
 
 /**

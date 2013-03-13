@@ -81,13 +81,19 @@ namespace Psi {
           return inst;
         }
         
+        /**
+         * \internal Note that this function must be synced with freea_callback, because that expects the
+         * call to llvm_invariant_start to be at a fixed offset from the alloca call.
+         */
         static llvm::Instruction* alloca_const_callback(FunctionBuilder& builder, const ValuePtr<AllocaConst>& term) {
           llvm::Value *stored_value = builder.build_value(term->value);
-          llvm::AllocaInst *inst = builder.irbuilder().CreateAlloca(stored_value->getType());
-          builder.irbuilder().CreateStore(stored_value, inst);
           uint64_t size = builder.module_builder()->llvm_target_machine()->getDataLayout()->getTypeAllocSize(stored_value->getType());
           llvm::Value *size_val = llvm::ConstantInt::get(llvm::Type::getInt64Ty(builder.module_builder()->llvm_context()), size);
-          builder.irbuilder().CreateCall2(builder.module_builder()->llvm_invariant_start(), size_val, inst);
+
+          llvm::AllocaInst *inst = builder.irbuilder().CreateAlloca(stored_value->getType());
+          builder.irbuilder().CreateStore(stored_value, inst);
+          llvm::Value *cast_inst = builder.irbuilder().CreatePointerCast(inst, llvm::Type::getInt8PtrTy(builder.module_builder()->llvm_context()));
+          builder.irbuilder().CreateCall2(builder.module_builder()->llvm_invariant_start(), size_val, cast_inst);
           return inst;
         }
         
@@ -109,11 +115,12 @@ namespace Psi {
             stack_save = my_builder.CreateCall(builder.module_builder()->llvm_stacksave());
           }
           
-          llvm::BasicBlock::iterator next_it = boost::next(incoming_it);
+          llvm::BasicBlock::iterator next_it = incoming_it;
+          safe_advance(next_it, 3, incoming_block->end());
           if (next_it != incoming_block->end()) {
             if (llvm::CallInst *next_call = llvm::dyn_cast_or_null<llvm::CallInst>(&*next_it)) {
               if (next_call->getCalledValue() == builder.module_builder()->llvm_invariant_start())
-                builder.irbuilder().CreateCall3(builder.module_builder()->llvm_invariant_end(), next_call, next_call->getArgOperand(0), incoming_ptr);
+                builder.irbuilder().CreateCall3(builder.module_builder()->llvm_invariant_end(), next_call, next_call->getArgOperand(0), next_call->getArgOperand(1));
             }
           }
           
