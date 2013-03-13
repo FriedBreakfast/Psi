@@ -86,8 +86,8 @@ class TvmFunctionBuilder : public TvmFunctionalBuilder {
   class LifecycleConstructorCleanup;
   
   TvmCompiler *m_tvm_compiler;
-
   TreePtr<Module> m_module;
+  std::set<TreePtr<Global> > m_dependencies;
   Tvm::ValuePtr<Tvm::Function> m_output;
   TreePtr<JumpTarget> m_return_target;
   Tvm::ValuePtr<> m_return_storage;
@@ -124,12 +124,17 @@ class TvmFunctionBuilder : public TvmFunctionalBuilder {
   TvmResult merge_exit(const TreePtr<Term>& type, TermMode mode, MergeExitList& values, const DominatorState& dominator, const SourceLocation& location);
   
 public:
-  TvmFunctionBuilder(CompileContext& compile_context, Tvm::Context& tvm_context);
-  void run_function(TvmCompiler *tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
-  void run_init(TvmCompiler *tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output);
+  TvmFunctionBuilder(TvmCompiler& tvm_compiler, const TreePtr<Module>& module);
+  void run_function(const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
+  void run_init(const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output);
+  void build_void(const TreePtr<Term>& term);
+
   virtual TvmResult build(const TreePtr<Term>& term);
-  virtual void build_void(const TreePtr<Term>& term);
   virtual TvmResult build_generic(const TreePtr<GenericType>& generic);
+  virtual TvmResult build_global(const TreePtr<Global>& global);
+  virtual TvmResult build_global_evaluate(const TreePtr<GlobalEvaluate>& global);
+
+  std::set<TreePtr<Global> > dependencies() {return m_dependencies;}
 
   /**
    * \brief Get the instruction builder for this function.
@@ -139,7 +144,6 @@ public:
    */
   Tvm::InstructionBuilder& builder() {return m_builder;}
 
-  TvmCompiler& tvm_compiler() {return *m_tvm_compiler;}
   TvmResult build_instruction(const TreePtr<Term>& term);
 
   bool object_initialize_default(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& type, bool except_only, const SourceLocation& location);

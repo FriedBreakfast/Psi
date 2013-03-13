@@ -84,6 +84,8 @@ namespace Psi {
       static ValuePtr<> outer_ptr(const ValuePtr<>& base, const SourceLocation& location);
       static ValuePtr<> element_ptr(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> element_ptr(const ValuePtr<>&, unsigned, const SourceLocation& location);
+      static ValuePtr<> apply_element_ptr(const ValuePtr<>& apply_ptr, const ValuePtr<>& idx, const SourceLocation& location);
+      static ValuePtr<> apply_element_ptr(const ValuePtr<>& apply_ptr, unsigned idx, const SourceLocation& location);
       static ValuePtr<> struct_element_offset(const ValuePtr<>&, unsigned, const SourceLocation& location);
       //@}
       

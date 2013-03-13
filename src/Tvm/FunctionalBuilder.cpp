@@ -265,6 +265,23 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::element_ptr(const ValuePtr<>& array, unsigned index, const SourceLocation& location) {
       return element_ptr(array, size_value(array->context(), index, location), location);
     }
+    
+    /**
+     * \brief Get a pointer to an element of an ApplyType aggregate.
+     * 
+     * This means generating two \c gep operations, the first to unwrap the ApplyType
+     * and the second to access the member of the inner type.
+     */
+    ValuePtr<> FunctionalBuilder::apply_element_ptr(const ValuePtr<>& apply_ptr, const ValuePtr<>& idx, const SourceLocation& location) {
+      return element_ptr(element_ptr(apply_ptr, 0, location), idx, location);
+    }
+
+    /**
+     * \copydoc FuntionalBuilder::apply_element_ptr(const ValuePtr<>&, const ValuePtr<>&, const SourceLocation&)
+     */
+    ValuePtr<> FunctionalBuilder::apply_element_ptr(const ValuePtr<>& apply_ptr, unsigned idx, const SourceLocation& location) {
+      return element_ptr(element_ptr(apply_ptr, 0, location), idx, location);
+    }
 
     /**
      * \brief Get an outer_ptr operation.

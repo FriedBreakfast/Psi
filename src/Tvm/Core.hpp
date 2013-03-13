@@ -390,7 +390,7 @@ namespace Psi {
     
     template<typename T>
     bool isa(const Value *ptr) {
-      return !ptr || T::isa_impl(*ptr);
+      return ptr && T::isa_impl(*ptr);
     }
     
     template<typename T, typename U>
@@ -468,6 +468,9 @@ namespace Psi {
       virtual ValuePtr<HashableValue> rewrite(RewriteCallback& callback) const = 0;
 
       const char *operation_name() const {return m_operation;}
+
+      template<typename T>
+      static void hashable_check_source(T& obj, CheckSourceParameter& parameter);
       
     private:
       typedef boost::intrusive::unordered_set_member_hook<> TermSetHook;
@@ -533,7 +536,7 @@ namespace Psi {
     } \
     \
     void Type::check_source_hook(CheckSourceParameter& parameter) { \
-      hashable_check_source_hook(*this, parameter); \
+      hashable_check_source(*this, parameter); \
     }
     
     /**
@@ -642,7 +645,7 @@ namespace Psi {
       struct GlobalHasher {std::size_t operator () (const Global&) const;};
       
       typedef std::map<std::string, ValuePtr<Global> > ModuleMemberList;
-      typedef std::vector<ValuePtr<Function> > ConstructorList;
+      typedef std::vector<std::pair<ValuePtr<Function>, unsigned> > ConstructorList;
                                               
     private:
       Context *m_context;
@@ -666,9 +669,9 @@ namespace Psi {
       /// \brief Get the name of this module
       const std::string& name() {return m_name;}
       /// \brief List of constructor functions
-      const ConstructorList& constructors() {return m_constructors;}
+      ConstructorList& constructors() {return m_constructors;}
       /// \brief List of destructor functions
-      const ConstructorList& destructors() {return m_destructors;}
+      ConstructorList& destructors() {return m_destructors;}
       
 #ifdef PSI_DEBUG
       void dump();
@@ -679,9 +682,7 @@ namespace Psi {
       ValuePtr<GlobalVariable> new_global_variable(const std::string& name, const ValuePtr<>& type, const SourceLocation& location);
       ValuePtr<GlobalVariable> new_global_variable_set(const std::string&, const ValuePtr<>& value, const SourceLocation& location);
       ValuePtr<Function> new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location);
-      
       ValuePtr<Function> new_constructor(const std::string& name, const SourceLocation& location);
-      ValuePtr<Function> new_destructor(const std::string& name, const SourceLocation& location);
     };
 
     /**
@@ -876,7 +877,7 @@ namespace Psi {
     };
 
     template<typename T>
-    void hashable_check_source_hook(T& obj, CheckSourceParameter& parameter) {
+    void HashableValue::hashable_check_source(T& obj, CheckSourceParameter& parameter) {
       CheckSourceVisitor v(&parameter);
       boost::array<const T*,1> c = {{&obj}};
       visit_members(v, c);

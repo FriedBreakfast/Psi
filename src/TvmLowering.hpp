@@ -6,6 +6,7 @@
 
 #include "Tvm/Core.hpp"
 #include "Tvm/Jit.hpp"
+#include "Tvm/Function.hpp"
 
 namespace Psi {
   namespace Compiler {
@@ -78,6 +79,18 @@ namespace Psi {
       static TvmScopePtr root();
       static TvmScopePtr new_(const TvmScopePtr& parent);
       
+      /**
+       * \brief Small number depths relate to fixed structures.
+       * 
+       * Any depth higher than 2 is inside a function.
+       */
+      enum {
+        depth_root=0,
+        depth_module=1,
+        depth_global=2
+      };
+      
+      unsigned depth() const {return m_depth;}
       boost::optional<TvmResult> get(const TreePtr<Term>& key);
       void put(const TreePtr<Term>& key, const TvmResult& result);
       boost::optional<TvmResult> get_generic(const TreePtr<GenericType>& key);
@@ -94,36 +107,40 @@ namespace Psi {
       GenericMapType generics;
     };
     
-    class TvmFunctionalBuilder {
-      CompileContext *m_compile_context;
-      Tvm::Context *m_tvm_context;
-
-    public:
-      TvmFunctionalBuilder(CompileContext& compile_context, Tvm::Context& tvm_context);
-      CompileContext& compile_context() {return *m_compile_context;}
-      Tvm::Context& tvm_context() {return *m_tvm_context;}
-
-      virtual TvmResult build(const TreePtr<Term>& term) = 0;
-      virtual TvmResult build_generic(const TreePtr<GenericType>& generic) = 0;
-    };
-    
     /**
      * \brief Compilation context component which handles TVM translation.
      */
     class TvmCompiler {
-      class FunctionalBuilderCallback;
+      enum GlobalStatusId {
+        global_ready, ///< Construction not started
+        global_in_progress, ///< Construction running
+        global_built, ///< Construction finished
+        global_built_all ///< Construction finished, including dependencies
+      };
+      
+      struct GlobalStatus {
+        GlobalStatusId status;
+        Tvm::ValuePtr<Tvm::Global> lowered;
+        std::set<TreePtr<ModuleGlobal> > dependencies;
+        unsigned priority;
+        Tvm::ValuePtr<Tvm::Function> init, fini;
+        
+        GlobalStatus() : status(global_ready), priority(0) {}
+        explicit GlobalStatus(const Tvm::ValuePtr<Tvm::Global>& lowered_) : status(global_ready), lowered(lowered_), priority(0) {}
+      };
 
-      typedef boost::unordered_map<TreePtr<ModuleGlobal>, Tvm::ValuePtr<Tvm::Global> > ModuleGlobalMap;
+      typedef boost::unordered_map<TreePtr<ModuleGlobal>, GlobalStatus> ModuleGlobalMap;
       typedef boost::unordered_map<TreePtr<LibrarySymbol>, Tvm::ValuePtr<Tvm::Global> > ModuleLibrarySymbolMap;
-      typedef boost::unordered_map<TreePtr<GlobalEvaluate>, Tvm::ValuePtr<Tvm::Global> > ModuleFunctionalConstantMap;
+      typedef boost::unordered_map<TreePtr<ModuleGlobal>, Tvm::ValuePtr<Tvm::Global> > ModuleExternalGlobalMap;
       
       struct TvmModule {
         bool jit_current;
         boost::shared_ptr<Tvm::Module> module;
         ModuleGlobalMap symbols;
         ModuleLibrarySymbolMap library_symbols;
-        ModuleFunctionalConstantMap functional_constants;
+        ModuleExternalGlobalMap external_symbols;
         TvmScopePtr scope;
+        unsigned n_constructors;
       };
       
       struct TvmLibrarySymbol {
@@ -151,21 +168,13 @@ namespace Psi {
       typedef boost::unordered_map<TreePtr<Library>, TvmPlatformLibrary> LibraryMap;
       LibraryMap m_libraries;
       TvmPlatformLibrary& get_platform_library(const TreePtr<Library>& lib);
-
-      /**
-       * \brief Globals which are currently being built.
-       * 
-       * This prevents certain cases of dependency recursion.
-       */
-      std::set<TreePtr<ModuleGlobal> > m_in_progress_globals;
       
-      Tvm::ValuePtr<Tvm::Global> build_module_global(const TreePtr<ModuleGlobal>& global);
-      Tvm::ValuePtr<Tvm::Global> build_library_symbol(const TreePtr<LibrarySymbol>& lib_global);
-      void build_global_group(const std::vector<TreePtr<ModuleGlobal> >& group);
+      GlobalStatus& get_global_status(const TreePtr<ModuleGlobal>& global);
+      std::set<TreePtr<ModuleGlobal> > initializer_dependencies(const TreePtr<ModuleGlobal>& global, bool already_built);
+      void run_module_global(const TreePtr<ModuleGlobal>& global);
+      Tvm::ValuePtr<Tvm::Global> run_library_symbol(const TreePtr<LibrarySymbol>& lib_global);
       
-      TvmResult build(const TreePtr<Term>& value, const TreePtr<Module>& module);
-      TvmResult build_type(const TreePtr<Term>& value, const TreePtr<Module>& module, const SourceLocation& location);
-      TvmResult build_global_value(const TreePtr<Term>& value, const TreePtr<Module>& module);
+      TvmResult build_type(const TreePtr<Term>& value, const SourceLocation& location);
       
     public:
       TvmCompiler(CompileContext *compile_context);
@@ -179,16 +188,33 @@ namespace Psi {
       
       void add_compiled_module(const TreePtr<Module>& module, const boost::shared_ptr<Platform::PlatformLibrary>& lib);
 
-      TvmResult build_global_evaluate(const TreePtr<GlobalEvaluate>& evaluate, const TreePtr<Module>& module);
-      TvmResult build_global(const TreePtr<Global>& global, const TreePtr<Module>& module);
-      Tvm::ValuePtr<Tvm::Global> build_global_jit(const TreePtr<Global>& global);
+      TvmResult get_global_evaluate(const TreePtr<GlobalEvaluate>& evaluate, const TreePtr<Module>& module);
+      TvmResult get_global(const TreePtr<Global>& global, const TreePtr<Module>& module);
+      
+      Tvm::ValuePtr<Tvm::Global> build_global(const TreePtr<Global>& global);
+      Tvm::ValuePtr<Tvm::Global> build_module_global(const TreePtr<ModuleGlobal>& global);
       void* jit_compile(const TreePtr<Global>& global);
       
       static std::string mangle_name(const LogicalSourceLocationPtr& location);
     };
 
-    void tvm_lower_function(TvmCompiler& tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
-    void tvm_lower_init(TvmCompiler& tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output);
+    class TvmFunctionalBuilder {
+      CompileContext *m_compile_context;
+      Tvm::Context *m_tvm_context;
+
+    public:
+      TvmFunctionalBuilder(CompileContext& compile_context, Tvm::Context& tvm_context);
+      CompileContext& compile_context() {return *m_compile_context;}
+      Tvm::Context& tvm_context() {return *m_tvm_context;}
+
+      virtual TvmResult build(const TreePtr<Term>& term) = 0;
+      virtual TvmResult build_generic(const TreePtr<GenericType>& generic) = 0;
+      virtual TvmResult build_global(const TreePtr<Global>& global) = 0;
+      virtual TvmResult build_global_evaluate(const TreePtr<GlobalEvaluate>& global) = 0;
+    };
+    
+    std::set<TreePtr<Global> > tvm_lower_function(TvmCompiler& tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
+    std::set<TreePtr<Global> > tvm_lower_init(TvmCompiler& tvm_compiler, const TreePtr<Module>& module, const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output);
     TvmResult tvm_lower_functional(TvmFunctionalBuilder& builder, const TreePtr<Term>& term);
     TvmResult tvm_lower_generic(const TvmScopePtr& scope, TvmFunctionalBuilder& builder, const TreePtr<GenericType>& generic);
   }

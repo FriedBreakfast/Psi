@@ -197,7 +197,7 @@ namespace Psi {
     m_target_type(target_type),
     m_upref(upref) {
     }
-    
+
     template<typename V>
     void PointerType::visit(V& v) {
       visit_base<Type>(v);
@@ -209,6 +209,9 @@ namespace Psi {
       if (!m_target_type->is_type())
         throw TvmUserError("pointer argument must be a type");
       return FunctionalBuilder::type_type(context(), location());
+    }
+    
+    void PointerType::hashable_check_source(PointerType&, CheckSourceParameter&) {
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(PointerType, Type, pointer)
@@ -270,6 +273,9 @@ namespace Psi {
       if (m_index->type() != FunctionalBuilder::size_type(context(), location()))
         throw TvmUserError("Index argument to upref is not a size");
       return FunctionalBuilder::upref_type(context(), location());
+    }
+    
+    void UpwardReference::hashable_check_source(UpwardReference&, CheckSourceParameter&) {
     }
     
     template<typename V>

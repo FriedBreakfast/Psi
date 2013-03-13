@@ -80,6 +80,8 @@ namespace Psi {
       ValuePtr<> m_outer_type;
       ValuePtr<> m_index;
       ValuePtr<> m_next;
+      
+      static void hashable_check_source(UpwardReference&, CheckSourceParameter&);
     };
     
     /**
@@ -187,10 +189,12 @@ namespace Psi {
       /// \brief Get the type being pointed to.
       const ValuePtr<>& target_type() const {return m_target_type;}
       const ValuePtr<>& upref() const {return m_upref;}
-
+      
     private:
       ValuePtr<> m_target_type;
       ValuePtr<> m_upref;
+
+      static void hashable_check_source(PointerType& self, CheckSourceParameter& parameter);
     };
 
     /**
@@ -294,8 +298,6 @@ namespace Psi {
       unsigned n_members() const {return m_members.size();}
       /// \brief Get the type of the given member.
       const ValuePtr<>& member_type(std::size_t i) const {return m_members[i];}
-
-      static ValuePtr<StructType> get(Context& context, const std::vector<ValuePtr<> >& elements);
       
     private:
       std::vector<ValuePtr<> > m_members;
@@ -315,8 +317,6 @@ namespace Psi {
       const ValuePtr<>& member_value(std::size_t n) const {return m_members[n];}
       /// \brief Get the type of this value (overloaded to return a StructType).
       ValuePtr<StructType> type() const {return value_cast<StructType>(Value::type());}
-
-      static ValuePtr<StructValue> get(Context& context, const std::vector<ValuePtr<> >& elements);
       
     private:
       std::vector<ValuePtr<> > m_members;

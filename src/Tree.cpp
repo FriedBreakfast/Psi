@@ -1762,19 +1762,18 @@ namespace Psi {
     
     const TermVtable FunctionalEvaluate::vtable = PSI_COMPILER_TERM(FunctionalEvaluate, "psi.compiler.FunctionalEvaluate", Term);
     
-    GlobalEvaluate::GlobalEvaluate(const TreePtr<Module>& module_, const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, TermResultInfo(value->type, term_mode_value, true), location), module(module_), value(value_) {
+    GlobalEvaluate::GlobalEvaluate(const TreePtr<Module>& module, const TreePtr<Term>& value_, const SourceLocation& location)
+    : ModuleGlobal(&vtable, module, TermResultInfo(value->type, term_mode_value, true), false, location), value(value_) {
       if (value->type && !value->type->is_functional())
         compile_context().error_throw(location, "Argument to GlobalEvaluate does not have functional type", CompileError::error_internal);
-      if (value->pure && (value->mode != term_mode_value))
+      if (value->pure && (value->mode == term_mode_value))
         compile_context().error_throw(location, "Already functional terms should not be wrapped in GlobalEvaluate", CompileError::error_internal);
     }
     
     template<typename V>
     void GlobalEvaluate::visit(V& v) {
       visit_base<Term>(v);
-      v("module", &GlobalEvaluate::module)
-      ("value", &GlobalEvaluate::value);
+      v("value", &GlobalEvaluate::value);
     }
     
     TermTypeInfo GlobalEvaluate::type_info_impl(const GlobalEvaluate& self) {

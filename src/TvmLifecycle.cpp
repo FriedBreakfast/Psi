@@ -14,7 +14,7 @@ public:
   }
   
   virtual void run(TvmFunctionBuilder& builder) const {
-    Tvm::ValuePtr<> fini_func = builder.builder().load(Tvm::FunctionalBuilder::element_ptr(m_movable, interface_movable_fini, location()), location());
+    Tvm::ValuePtr<> fini_func = builder.builder().load(Tvm::FunctionalBuilder::apply_element_ptr(m_movable, interface_movable_fini, location()), location());
     builder.builder().call2(fini_func, m_movable, m_target, location());
   }
 };
@@ -47,7 +47,7 @@ bool TvmFunctionBuilder::object_initialize_default(const Tvm::ValuePtr<>& dest, 
         return object_initialize_default(dest, inst_type->unwrap(), except_only, location);
 
     TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
-    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable.value, interface_movable_init, location), location);
+    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable.value, interface_movable_init, location), location);
     builder().call2(init_func, movable.value, dest, location);
     push_cleanup(boost::make_shared<LifecycleConstructorCleanup>(except_only, dest, movable.value, location));
     return true;
@@ -127,7 +127,7 @@ bool TvmFunctionBuilder::object_initialize_move(const Tvm::ValuePtr<>& dest, con
         return object_initialize_move(dest, src, inst_type->unwrap(), except_only, location);
     
     TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
-    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable.value, interface_movable_move_init, location), location);
+    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable.value, interface_movable_move_init, location), location);
     builder().call3(init_func, movable.value, dest, src, location);
     push_cleanup(boost::make_shared<LifecycleConstructorCleanup>(except_only, dest, movable.value, location));
     return true;
@@ -189,7 +189,7 @@ bool TvmFunctionBuilder::object_assign_default(const Tvm::ValuePtr<>& dest, cons
         return object_assign_default(dest, inst_type->unwrap(), location);
 
     TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
-    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable.value, interface_movable_clear, location), location);
+    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable.value, interface_movable_clear, location), location);
     builder().call2(init_func, movable.value, dest, location);
     return true;
   }
@@ -268,7 +268,7 @@ bool TvmFunctionBuilder::object_assign_move(const Tvm::ValuePtr<>& dest, const T
         return object_assign_move(dest, src, inst_type->unwrap(), location);
     
     TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
-    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable.value, interface_movable_move, location), location);
+    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable.value, interface_movable_move, location), location);
     builder().call3(init_func, movable.value, dest, src, location);
     return true;
   }
@@ -321,7 +321,7 @@ void TvmFunctionBuilder::object_destroy(const Tvm::ValuePtr<>& dest, const TreeP
   } else {
     // Use Movable interface
     TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
-    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(movable.value, interface_movable_fini, location), location);
+    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable.value, interface_movable_fini, location), location);
     builder().call2(init_func, movable.value, dest, location);
   }
 }

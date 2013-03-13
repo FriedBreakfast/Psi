@@ -46,11 +46,11 @@ namespace Psi {
           FunctionParameterType self_derived_p(parameter_mode_input, self_derived);
           FunctionParameterType param_ptr_p(parameter_mode_functional, param_ptr);
           
-          TreePtr<Term> binary_type = TermBuilder::function_type(result_mode_by_value, builtins.empty_type, vector_of(self_derived_p, param_ptr_p, param_ptr_p), default_, self.location().named_child("BinaryType"));
+          TreePtr<Term> binary_type = TermBuilder::function_type(result_mode_functional, builtins.empty_type, vector_of(self_derived_p, param_ptr_p, param_ptr_p), default_, self.location().named_child("BinaryType"));
           TreePtr<Term> binary_ptr_type = TermBuilder::pointer(binary_type, self.location().named_child("BinaryTypePtr"));
 
           if (m_movable) {
-            TreePtr<Term> unary_type = TermBuilder::function_type(result_mode_by_value, builtins.empty_type, vector_of(self_derived_p, param_ptr_p), default_, self.location().named_child("UnaryType"));
+            TreePtr<Term> unary_type = TermBuilder::function_type(result_mode_functional, builtins.empty_type, vector_of(self_derived_p, param_ptr_p), default_, self.location().named_child("UnaryType"));
             TreePtr<Term> unary_ptr_type = TermBuilder::pointer(unary_type, self.location().named_child("UnaryTypePtr"));
             
             members.resize(5);

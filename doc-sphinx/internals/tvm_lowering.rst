@@ -88,3 +88,14 @@ Where ``parts`` is a list of enclosing namespaces and the variable name.
 This is similar to the C++ name mangling convention used on Linux, and means that these symbol names are valid C identifiers (albeit implementation reserved).
 Module-local symbols are the same except that a number may be appended for disambiguation.
 The ``0`` after ``_Y`` is to allow for changes to this convention.
+
+Variable scope
+--------------
+
+Scopes are structured as follows:
+
+ 1. Root
+ 2. Module
+ 3. Global (function or variable)
+ 4. and up: scopes inside functions
+ 

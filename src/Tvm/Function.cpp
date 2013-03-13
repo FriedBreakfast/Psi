@@ -730,25 +730,16 @@ namespace Psi {
     }
     
     /**
-     * \brief Create a new constructor function.
+     * \brief Create a new constructor or destructor function.
+     * 
+     * This merely creates a function with the correct signature and private linkage for a constructor/destructor
+     * function; it does not add it to either the constructor or destructor list. This must be done by the user.
      */
     ValuePtr<Function> Module::new_constructor(const std::string& name, const SourceLocation& location) {
       ValuePtr<FunctionType> type = FunctionalBuilder::constructor_type(context(), location);
       ValuePtr<Function> result(::new Function(context(), type, name, this, location));
       result->set_private(true);
       add_member(result);
-      m_constructors.push_back(result);
-      return result;
-    }
-    
-    /**
-     * \brief Create a new destructor function.
-     */
-    ValuePtr<Function> Module::new_destructor(const std::string& name, const SourceLocation& location) {
-      ValuePtr<FunctionType> type = FunctionalBuilder::constructor_type(context(), location);
-      ValuePtr<Function> result(::new Function(context(), type, name, this, location));
-      add_member(result);
-      m_destructors.push_back(result);
       return result;
     }
     

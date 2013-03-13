@@ -113,6 +113,7 @@ add_library(psi-compiler SHARED
   StaticDispatch.cpp StaticDispatch.hpp
   Term.cpp Term.hpp
   TermBuilder.cpp TermBuilder.hpp
+  TopologicalSort.hpp
   Tree.cpp Tree.hpp
   TreeBase.cpp TreeBase.hpp
   TvmFunctionalLowering.cpp

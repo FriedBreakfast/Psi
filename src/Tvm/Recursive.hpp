@@ -62,6 +62,10 @@ namespace Psi {
       static bool isa_impl(const Value& v) {return v.term_type() == term_recursive;}
       template<typename V> static void visit(V& v);
       virtual Value* disassembler_source();
+      
+#ifdef PSI_DEBUG
+      void dump_parameters();
+#endif
 
     private:
       RecursiveType(Context& context, ParameterList& parameters, const SourceLocation& location);
@@ -90,6 +94,9 @@ namespace Psi {
       const std::vector<ValuePtr<> >& parameters() const {return m_parameters;}
       
       static bool isa_impl(const Value& v) {return v.term_type() == term_apply;}
+      
+    private:
+      static void hashable_check_source(ApplyType& self, CheckSourceParameter& parameter);
     };
   }
 }

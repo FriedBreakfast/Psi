@@ -1088,7 +1088,7 @@ namespace Psi {
        * \brief Which overload is used.
        * 
        * This is only required to be non-NULL if the interface has derived parameters, in which case
-       * the overload must be identified in order to know what they are. If this is NULL the which
+       * the overload must be identified in order to know what they are. If this is NULL which
        * overload is to be used can be discovered at compile time; obviously this requires that the
        * list used for lookup during either stage is consistent.
        */
@@ -1219,13 +1219,12 @@ namespace Psi {
      * This attaches a module to a FunctionalEvaluate declaration so that when it is encountered by
      * the code generator, it is marked as being global and which module to place it in is known.
      */
-    class GlobalEvaluate : public Term {
+    class GlobalEvaluate : public ModuleGlobal {
     public:
       static const VtableType vtable;
       GlobalEvaluate(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermTypeInfo type_info_impl(const GlobalEvaluate& self);
-      TreePtr<Module> module;
       TreePtr<Term> value;
     };
   }

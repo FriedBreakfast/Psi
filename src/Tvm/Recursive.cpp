@@ -77,14 +77,17 @@ namespace Psi {
     Value* RecursiveType::disassembler_source() {
       return this;
     }
-    
-    void RecursiveType::check_source_hook(CheckSourceParameter& parameter) {
-      CheckSourceParameter parameter_copy(parameter);
+
+#ifdef PSI_DEBUG
+    void RecursiveType::dump_parameters() {
       for (ParameterList::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
-        (*ii)->check_source(parameter_copy);
-        parameter_copy.available.insert(ii->get());
+        std::cerr << ii->get() << '\n';
       }
-      m_result->check_source(parameter_copy);
+    }
+#endif
+
+    void RecursiveType::check_source_hook(CheckSourceParameter& parameter) {
+      PSI_FAIL("RecursiveType check_source_hook should never be called");
     }
     
     PSI_TVM_VALUE_IMPL(RecursiveType, Value)
@@ -159,6 +162,13 @@ namespace Psi {
       PSI_ASSERT(ji == je);
       
       return FunctionalBuilder::type_type(context(), location());
+    }
+
+    void ApplyType::hashable_check_source(ApplyType& self, CheckSourceParameter& parameter) {
+      if (!self.recursive()->result())
+        throw TvmUserError("Apply type used before recursive type has been resolved");
+      
+      return self.unpack()->check_source(parameter);
     }
 
     PSI_TVM_HASHABLE_IMPL(ApplyType, HashableValue, apply)

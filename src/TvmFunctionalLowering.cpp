@@ -297,9 +297,25 @@ struct TvmFunctionalLowererMap {
   }
   
   static TvmResult build_global_statement(TvmFunctionalBuilder& builder, const TreePtr<GlobalStatement>& stmt) {
-    PSI_ASSERT((stmt->mode == statement_mode_functional) || (stmt->mode == statement_mode_ref));
-    PSI_ASSERT(stmt->value->pure);
-    return builder.build(stmt->value);
+    switch (stmt->mode) {
+    case statement_mode_functional:
+    case statement_mode_ref:
+      PSI_ASSERT(stmt->value->pure);
+      return builder.build(stmt->value);
+      
+    case statement_mode_value:
+      return builder.build_global(stmt);
+      
+    default: PSI_FAIL("Unrecognised statement mode");
+    }
+  }
+
+  static TvmResult build_global_evaluate(TvmFunctionalBuilder& builder, const TreePtr<GlobalEvaluate>& term) {
+    return builder.build_global_evaluate(term);
+  }
+  
+  static TvmResult build_global_symbol(TvmFunctionalBuilder& builder, const TreePtr<Global>& term) {
+    return builder.build_global(term);
   }
   
   typedef TreeOperationMap<Term, TvmResult, TvmFunctionalBuilder&> CallbackMap;
@@ -333,7 +349,11 @@ struct TvmFunctionalLowererMap {
       .add<UnionValue>(build_union_value)
       .add<UpwardReferenceType>(build_upward_reference_type)
       .add<UpwardReference>(build_upward_reference)
-      .add<GlobalStatement>(build_global_statement);
+      .add<GlobalStatement>(build_global_statement)
+      .add<GlobalEvaluate>(build_global_evaluate)
+      .add<GlobalVariable>(build_global_symbol)
+      .add<Function>(build_global_symbol)
+      .add<LibrarySymbol>(build_global_symbol);
   }
 };
 
