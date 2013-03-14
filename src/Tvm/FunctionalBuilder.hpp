@@ -23,7 +23,7 @@ namespace Psi {
      * 
      * \see InstructionBuilder: the corresponding class for instruction terms.
      */
-    struct FunctionalBuilder : NonConstructible {
+    struct PSI_TVM_EXPORT FunctionalBuilder : NonConstructible {
       /// \name Metatype operations
       //@{
       static ValuePtr<> type_type(Context& context, const SourceLocation& location);

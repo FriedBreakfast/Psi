@@ -5,6 +5,7 @@
 
 #include "Config.h"
 #include "CppCompiler.hpp"
+#include "Export.hpp"
 
 namespace Psi {
 #ifdef PSI_DEBUG
@@ -17,15 +18,15 @@ namespace Psi {
 #define PSI_WARNING_FAIL(msg) (Psi::warning_fail(PSI_DEBUG_LOCATION(), NULL, msg))
 #define PSI_WARNING_FAIL2(msg1,msg2) (Psi::warning_fail(PSI_DEBUG_LOCATION(), msg1, msg2))
 #define PSI_CHECK(cond) PSI_ASSERT(cond)
-  void assert_fail(DebugLocation, const char *test, const char *msg) PSI_ATTRIBUTE((PSI_NORETURN));
-  void warning_fail(DebugLocation, const char *test, const char *msg);
+  PSI_ATTRIBUTE((PSI_NORETURN,PSI_ASSERT_EXPORT_ATTR)) void assert_fail(DebugLocation, const char *test, const char *msg);
+  PSI_ASSERT_EXPORT void warning_fail(DebugLocation, const char *test, const char *msg);
 #elif !defined(PSI_DOXYGEN)
-#define PSI_ASSERT_MSG(cond,msg) PSI_ASSUME(cond)
-#define PSI_ASSERT(cond) PSI_ASSUME(cond)
+#define PSI_ASSERT_MSG(cond,msg) void()
+#define PSI_ASSERT(cond) void()
 #define PSI_FAIL(msg) PSI_UNREACHABLE()
 #define PSI_WARNING(cond) void()
 #define PSI_WARNING_FAIL(msg) void()
-#define PSI_WARNING_FAIL(msg1,msg2) void()
+#define PSI_WARNING_FAIL2(msg1,msg2) void()
 #define PSI_NOT_IMPLEMENTED() (std::abort())
 #define PSI_CHECK(cond) do {if (!(cond)) PSI_UNREACHABLE();} while(false)
 #else

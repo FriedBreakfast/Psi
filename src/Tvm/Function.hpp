@@ -15,7 +15,7 @@ namespace Psi {
     /**
      * \brief Base class for terms which belong to a block.
      */
-    class BlockMember : public Value {
+    class PSI_TVM_EXPORT BlockMember : public Value {
       friend class Block;
 
     public:
@@ -39,14 +39,14 @@ namespace Psi {
       Block *m_block;
     };
     
-    class InstructionVisitor {
+    class PSI_TVM_EXPORT InstructionVisitor {
     public:
       virtual void next(ValuePtr<>& ptr) = 0;
     };
     
     class Instruction;
     
-    class InstructionVisitorWrapper : public ValuePtrVisitorBase<InstructionVisitorWrapper> {
+    class PSI_TVM_EXPORT InstructionVisitorWrapper : public ValuePtrVisitorBase<InstructionVisitorWrapper> {
       InstructionVisitor *m_callback;
     public:
       InstructionVisitorWrapper(InstructionVisitor *callback) : m_callback(callback) {}
@@ -69,7 +69,7 @@ namespace Psi {
      * created by implementing InstructionTermBackend and wrapping
      * that in InstructionTerm.
      */
-    class Instruction : public BlockMember {
+    class PSI_TVM_EXPORT Instruction : public BlockMember {
       friend class Block;
       
     public:
@@ -98,7 +98,7 @@ namespace Psi {
     /**
      * \brief Base class for instructions which terminate blocks.
      */
-    class TerminatorInstruction : public Instruction {
+    class PSI_TVM_EXPORT TerminatorInstruction : public Instruction {
     protected:
       void check_dominated(const ValuePtr<Block>& target);
 
@@ -161,7 +161,7 @@ namespace Psi {
      *
      * \sa http://en.wikipedia.org/wiki/Static_single_assignment_form
      */
-    class Phi : public BlockMember {
+    class PSI_TVM_EXPORT Phi : public BlockMember {
       PSI_TVM_VALUE_DECL(Phi)
       friend class Block;
 
@@ -189,7 +189,7 @@ namespace Psi {
      * \brief Block (list of instructions) inside a function. The
      * value of this term is the label used to jump to this block.
      */
-    class Block : public Value {
+    class PSI_TVM_EXPORT Block : public Value {
       PSI_TVM_VALUE_DECL(Block);
       friend class Function;
       friend class Instruction;
@@ -254,7 +254,7 @@ namespace Psi {
 
     class Function;
 
-    class FunctionParameter : public Value {
+    class PSI_TVM_EXPORT FunctionParameter : public Value {
       PSI_TVM_VALUE_DECL(FunctionParameter);
       friend class Function;
     public:
@@ -285,7 +285,7 @@ namespace Psi {
     /**
      * \brief Function.
      */
-    class Function : public Global {
+    class PSI_TVM_EXPORT Function : public Global {
       PSI_TVM_VALUE_DECL(Function);
       friend class Module;
     public:
@@ -354,7 +354,7 @@ namespace Psi {
     /**
      * \brief Term type appearing in dependent types of completed function types.
      */
-    class ResolvedParameter : public FunctionalValue {
+    class PSI_TVM_EXPORT ResolvedParameter : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(ResolvedParameter)
       
     private:
@@ -385,7 +385,7 @@ namespace Psi {
      * function call (note that there is no <tt>result_of</tt> term,
      * since the result must be the appropriate term itself).
      */
-    class FunctionType : public HashableValue {
+    class PSI_TVM_EXPORT FunctionType : public HashableValue {
       PSI_TVM_HASHABLE_DECL(FunctionType)
       friend class Context;
 
@@ -430,7 +430,7 @@ namespace Psi {
      * \note This is implemented next to FunctionType because they work in a
      * similar way, not because they are particularly conceptually related.
      */
-    class Exists : public HashableValue {
+    class PSI_TVM_EXPORT Exists : public HashableValue {
       PSI_TVM_HASHABLE_DECL(Exists)
       friend class Context;
 
@@ -454,7 +454,7 @@ namespace Psi {
     /**
      * \brief Used to unwrap a value whose type is an exists term.
      */
-    class Unwrap : public FunctionalValue {
+    class PSI_TVM_EXPORT Unwrap : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(Unwrap)
       
     public:
@@ -470,7 +470,7 @@ namespace Psi {
     /**
      * \brief Used to replace exists parameters in unwrapped values.
      */
-    class UnwrapParameter : public FunctionalValue {
+    class PSI_TVM_EXPORT UnwrapParameter : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(UnwrapParameter)
       
     public:
@@ -493,7 +493,7 @@ namespace Psi {
      * 
      * This is used by function type, recursive and exists.
      */
-    class ParameterPlaceholder : public Value {
+    class PSI_TVM_EXPORT ParameterPlaceholder : public Value {
       PSI_TVM_VALUE_DECL(ParameterPlaceholder);
     private:
       friend class Context;
@@ -509,7 +509,7 @@ namespace Psi {
     /**
      * Helper class for inserting instructions into blocks.
      */
-    class InstructionInsertPoint {
+    class PSI_TVM_EXPORT InstructionInsertPoint {
       ValuePtr<Block> m_block;
       ValuePtr<Instruction> m_instruction;
 

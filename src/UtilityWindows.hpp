@@ -8,6 +8,7 @@
 #include <boost/noncopyable.hpp>
 
 #include "CppCompiler.hpp"
+#include "Export.hpp"
 #include "Utility.hpp"
 
 namespace Psi {
@@ -70,7 +71,7 @@ namespace Psi {
       /**
        * RAII wrapper around FreeLibrary.
        */
-      class LibraryHandle : public boost::noncopyable {
+      class PSI_COMPILER_COMMON_EXPORT LibraryHandle : public NonCopyable {
         HMODULE m_handle;
         
       public:
@@ -78,11 +79,11 @@ namespace Psi {
         LibraryHandle(HMODULE handle);
         ~LibraryHandle();
         HMODULE get() {return m_handle;}
-        void swap(LibHandle& other);
+        void swap(LibraryHandle& other);
       };
 
-      std::string error_string(DWORD error);
-      std::string last_error_string();
+      PSI_COMPILER_COMMON_EXPORT std::string error_string(DWORD error);
+      PSI_COMPILER_COMMON_EXPORT std::string last_error_string();
     }
   }
 }

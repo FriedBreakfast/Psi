@@ -1,4 +1,5 @@
 #include "UtilityWindows.hpp"
+#include "Platform.hpp"
 
 namespace Psi {
 namespace Platform {
@@ -14,7 +15,7 @@ LibraryHandle::~LibraryHandle() {
     FreeLibrary(m_handle);
 }
 
-void LibraryHandle::swap(LibHandle& other) {
+void LibraryHandle::swap(LibraryHandle& other) {
   std::swap(m_handle, other.m_handle);
 }
 
@@ -39,14 +40,6 @@ std::string error_string(DWORD error) {
  */
 std::string last_error_string() {
   return error_string(GetLastError());
-}
-
-PSI_ATTRIBUTE((PSI_NORETURN)) void throw_error(DWORD error)  {
-  throw PlatformError(error_string(error));
-}
-
-PSI_ATTRIBUTE((PSI_NORETURN)) void throw_last_error() {
-  throw_error(GetLastError());
 }
 }
 }

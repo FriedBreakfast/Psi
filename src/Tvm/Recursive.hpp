@@ -7,7 +7,7 @@
 
 namespace Psi {
   namespace Tvm {
-    class RecursiveParameter : public Value {
+    class PSI_TVM_EXPORT RecursiveParameter : public Value {
       PSI_TVM_VALUE_DECL(RecursiveParameter);
       friend class Context;
       friend class RecursiveType;
@@ -45,7 +45,7 @@ namespace Psi {
      * RecursiveTerm using Context::new_recursive, create the type as
      * normal and then call #resolve to finalize the type.
      */
-    class RecursiveType : public Value {
+    class PSI_TVM_EXPORT RecursiveType : public Value {
       PSI_TVM_VALUE_DECL(RecursiveType)
 
     public:
@@ -76,7 +76,7 @@ namespace Psi {
       ParameterList m_parameters;
     };
 
-    class ApplyType : public HashableValue {
+    class PSI_TVM_EXPORT ApplyType : public HashableValue {
       PSI_TVM_HASHABLE_DECL(ApplyType)
       friend class Context;
       ValuePtr<RecursiveType> m_recursive;

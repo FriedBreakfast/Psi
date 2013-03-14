@@ -14,7 +14,7 @@ namespace Psi {
       JitFactoryCallback m_callback;
       
     public:
-      WindowsJitFactory(const std::string& name, LibHandle& handle)
+      WindowsJitFactory(const std::string& name, Platform::Windows::LibraryHandle& handle)
       : JitFactory(name) {
         m_handle.swap(handle);
         
@@ -42,7 +42,7 @@ namespace Psi {
         Platform::Windows::LibraryHandle handle(LoadLibrary(soname.c_str()));
         
         if (!handle.get())
-          throw TvmUserError("Cannot load JIT named " + name + " (from " + soname + "): " + win32_error_message());
+          throw TvmUserError("Cannot load JIT named " + name + " (from " + soname + "): " + Platform::Windows::last_error_string());
         
         return boost::make_shared<WindowsJitFactory>(name, boost::ref(handle));
       }

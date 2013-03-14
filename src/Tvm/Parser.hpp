@@ -213,8 +213,8 @@ namespace Psi {
       }
     }
 
-    void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin, const char *end);
-    void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin);
+    PSI_TVM_EXPORT void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin, const char *end);
+    PSI_TVM_EXPORT void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin);
   }
 }
 

@@ -15,7 +15,7 @@ namespace Psi {
      * \see FunctionalBuilder: the corresponding class for
      * creating functional terms.
      */
-    class InstructionBuilder {
+    class PSI_TVM_EXPORT InstructionBuilder {
       InstructionInsertPoint m_insert_point;
       
     public:

@@ -1,6 +1,9 @@
 #include "SourceLocation.hpp"
 
 #include <sstream>
+#ifdef PSI_DEBUG
+#include <iostream>
+#endif
 
 namespace Psi {
   bool LogicalSourceLocation::Key::operator < (const Key& other) const {

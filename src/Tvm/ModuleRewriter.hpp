@@ -2,6 +2,7 @@
 #define HPP_PSI_TVM_MODULEREWRITER
 
 #include "Core.hpp"
+#include "../Utility.hpp"
 
 #include <boost/unordered_map.hpp>
 #include <boost/shared_ptr.hpp>
@@ -11,7 +12,7 @@ namespace Psi {
     /**
      * Base class for types which rewrite entire modules.
      */
-    class ModuleRewriter : public boost::noncopyable {
+    class PSI_TVM_EXPORT ModuleRewriter : public NonCopyable {
       Module *m_source_module;
       std::auto_ptr<Module> m_target_module;
       typedef boost::unordered_map<ValuePtr<Global>, ValuePtr<Global> > GlobalMapType;

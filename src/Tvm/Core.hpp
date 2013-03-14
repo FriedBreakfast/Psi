@@ -13,6 +13,7 @@
 #include <boost/iterator/iterator_adaptor.hpp>
 #include <boost/intrusive_ptr.hpp>
 #include <boost/unordered_set.hpp>
+#include <boost/version.hpp>
 
 #include "../SourceLocation.hpp"
 #include "../Utility.hpp"
@@ -33,7 +34,7 @@ namespace Psi {
     /**
      * Thrown when an error is caused by the users use of the library.
      */
-    class TvmUserError : public std::exception {
+    class PSI_TVM_EXPORT TvmUserError : public std::exception {
     public:
       explicit TvmUserError(const std::string& msg);
       virtual ~TvmUserError() throw ();
@@ -48,7 +49,7 @@ namespace Psi {
      * Thrown when an internal library error occurs, which should not
      * occur.
      */
-    class TvmInternalError : public std::exception {
+    class PSI_TVM_EXPORT TvmInternalError : public std::exception {
     public:
       explicit TvmInternalError(const std::string& msg);
       virtual ~TvmInternalError() throw ();
@@ -216,7 +217,7 @@ namespace Psi {
      * FunctionalTermBackend and InstructionTermBackend and then
      * wrapping that in either FunctionalTerm or InstructionTerm.
      */
-    class Value {
+    class PSI_TVM_EXPORT Value {
       friend class Context;
       friend struct GCIncrementVisitor;
       friend struct GCDecerementVisitor;
@@ -436,7 +437,7 @@ namespace Psi {
       virtual ValuePtr<> rewrite(const ValuePtr<>& value) = 0;
     };    
 
-    class HashableValue : public Value {
+    class PSI_TVM_EXPORT HashableValue : public Value {
       friend class Context;
       friend std::size_t Value::hash_value() const;
 
@@ -542,7 +543,7 @@ namespace Psi {
     /**
      * \brief Base class for globals: these are GlobalVariableTerm and FunctionTerm.
      */
-    class Global : public Value {
+    class PSI_TVM_EXPORT Global : public Value {
       friend class GlobalVariable;
       friend class Function;
       friend class Module;
@@ -591,7 +592,7 @@ namespace Psi {
     /**
      * \brief Global variable.
      */
-    class GlobalVariable : public Global {
+    class PSI_TVM_EXPORT GlobalVariable : public Global {
       PSI_TVM_VALUE_DECL(GlobalVariable);
       friend class Module;
 
@@ -639,7 +640,7 @@ namespace Psi {
      * A collection of functions and global variables which can be compiled
      * and linked to other modules.
      */
-    class Module : public boost::noncopyable {
+    class PSI_TVM_EXPORT Module {
     public:
       struct GlobalEquals {bool operator () (const Global&, const Global&) const;};
       struct GlobalHasher {std::size_t operator () (const Global&) const;};
@@ -655,6 +656,8 @@ namespace Psi {
       ConstructorList m_constructors, m_destructors;
       
       void add_member(const ValuePtr<Global>& global);
+      Module(const Module&);
+      Module& operator = (const Module&);
       
     public:
       Module(Context*, const std::string& name, const SourceLocation& location);
@@ -691,7 +694,7 @@ namespace Psi {
      * Manages memory for terms, and ensures that equivalent terms are
      * not duplicated.
      */
-    class Context {
+    class PSI_TVM_EXPORT Context {
       friend class Value;
       friend class HashableValue;
       friend class Function;

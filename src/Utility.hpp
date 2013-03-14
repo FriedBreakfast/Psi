@@ -19,8 +19,20 @@ namespace Psi {
   /**
    * \brief Base class for types which should never be constructed.
    */
-  class NonConstructible {
+  class PSI_COMPILER_COMMON_EXPORT NonConstructible {
     NonConstructible();
+  };
+
+  /**
+   * \brief Base class for non-copyable types.
+   *
+   * \internal This is used instead of boost::noncopyable so we can control Win32 DLL exports.
+   */
+  class PSI_COMPILER_COMMON_EXPORT NonCopyable {
+    NonCopyable(const NonCopyable&);
+    NonCopyable& operator = (const NonCopyable&);
+  public:
+    NonCopyable() {}
   };
 
   /**
@@ -218,7 +230,7 @@ namespace Psi {
    */
   struct CheckedCastBase {
 #ifdef PSI_DEBUG
-    virtual ~CheckedCastBase();
+    PSI_COMPILER_COMMON_EXPORT virtual ~CheckedCastBase();
 #endif
   };
 

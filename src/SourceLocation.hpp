@@ -3,6 +3,7 @@
 
 #include "Runtime.hpp"
 #include "Visitor.hpp"
+#include "Export.hpp"
 
 #include <boost/intrusive/avl_set.hpp>
 
@@ -22,7 +23,9 @@ namespace Psi {
   class LogicalSourceLocation;
   typedef IntrusivePointer<LogicalSourceLocation> LogicalSourceLocationPtr;
 
-  class LogicalSourceLocation : public boost::intrusive::avl_set_base_hook<> {
+  class LogicalSourceLocationBase : public boost::intrusive::avl_set_base_hook<> {};
+
+  class LogicalSourceLocation : public LogicalSourceLocationBase {
     struct Key {
       unsigned index;
       String name;
@@ -37,12 +40,13 @@ namespace Psi {
     Key m_key;
     LogicalSourceLocationPtr m_parent;
     typedef boost::intrusive::avl_set<LogicalSourceLocation, boost::intrusive::constant_time_size<false>, boost::intrusive::compare<Compare> > ChildMapType;
+    friend class ChildMapType;
     ChildMapType m_children;
 
     LogicalSourceLocation(const Key&, const LogicalSourceLocationPtr&);
 
   public:
-    ~LogicalSourceLocation();
+    PSI_COMPILER_COMMON_EXPORT ~LogicalSourceLocation();
 
     /// \brief Whether this location is anonymous within its parent.
     bool anonymous() {return m_parent && (m_key.index != 0);}
@@ -53,16 +57,16 @@ namespace Psi {
     /// \brief Get the parent node of this location
     const LogicalSourceLocationPtr& parent() {return m_parent;}
 
-    unsigned depth();
-    LogicalSourceLocationPtr ancestor(unsigned depth);
-    String error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous_tail=false);
+    PSI_COMPILER_COMMON_EXPORT unsigned depth();
+    PSI_COMPILER_COMMON_EXPORT LogicalSourceLocationPtr ancestor(unsigned depth);
+    PSI_COMPILER_COMMON_EXPORT String error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous_tail=false);
 #if defined(PSI_DEBUG) || defined(PSI_DOXYGEN)
-    void dump_error_name();
+    PSI_COMPILER_COMMON_EXPORT void dump_error_name();
 #endif
 
-    static LogicalSourceLocationPtr new_root_location();
-    LogicalSourceLocationPtr named_child(const String& name);
-    LogicalSourceLocationPtr new_anonymous_child();
+    PSI_COMPILER_COMMON_EXPORT static LogicalSourceLocationPtr new_root_location();
+    PSI_COMPILER_COMMON_EXPORT LogicalSourceLocationPtr named_child(const String& name);
+    PSI_COMPILER_COMMON_EXPORT LogicalSourceLocationPtr new_anonymous_child();
 
     friend void intrusive_ptr_add_ref(LogicalSourceLocation *self) {
       ++self->m_reference_count;
@@ -91,7 +95,7 @@ namespace Psi {
       return SourceLocation(physical, logical->named_child(name));
     }
     
-    static SourceLocation root_location(const String& name);
+    PSI_COMPILER_COMMON_EXPORT static SourceLocation root_location(const String& name);
   };
   
   PSI_VISIT_SIMPLE(SourceLocation);

@@ -6,7 +6,7 @@
 
 namespace Psi {
   namespace Tvm {
-    class Return : public TerminatorInstruction {
+    class PSI_TVM_EXPORT Return : public TerminatorInstruction {
       PSI_TVM_INSTRUCTION_DECL(Return)
     private:
       virtual void check_source_hook(CheckSourceParameter& parameter);
@@ -18,7 +18,7 @@ namespace Psi {
       ValuePtr<> value;
     };
     
-    class ConditionalBranch : public TerminatorInstruction {
+    class PSI_TVM_EXPORT ConditionalBranch : public TerminatorInstruction {
       PSI_TVM_INSTRUCTION_DECL(ConditionalBranch)
     private:
       virtual void check_source_hook(CheckSourceParameter& parameter);
@@ -34,7 +34,7 @@ namespace Psi {
       ValuePtr<Block> false_target;
     };
     
-    class UnconditionalBranch : public TerminatorInstruction {
+    class PSI_TVM_EXPORT UnconditionalBranch : public TerminatorInstruction {
       PSI_TVM_INSTRUCTION_DECL(UnconditionalBranch)
     private:
       virtual void check_source_hook(CheckSourceParameter& parameter);
@@ -52,7 +52,7 @@ namespace Psi {
      * This is used after an instruction which in general may or may not throw,
      * but is known to in this case.
      */
-    class Unreachable : public TerminatorInstruction {
+    class PSI_TVM_EXPORT Unreachable : public TerminatorInstruction {
       PSI_TVM_INSTRUCTION_DECL(Unreachable)
     private:
       virtual void check_source_hook(CheckSourceParameter& parameter);
@@ -67,7 +67,7 @@ namespace Psi {
      * This means that any failures in performing the evaluation will be caught
      * at this instruction if the argument has not been evaluated previously.
      */
-    class Evaluate : public Instruction {
+    class PSI_TVM_EXPORT Evaluate : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(Evaluate)
     private:
       virtual void check_source_hook(CheckSourceParameter& parameter);
@@ -85,7 +85,7 @@ namespace Psi {
      * is constructed, due to internal constraints of the type system. Parameters
      * may still be modified later.
      */
-    class Call : public Instruction {
+    class PSI_TVM_EXPORT Call : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(Call)
       
     public:
@@ -100,7 +100,7 @@ namespace Psi {
       ValuePtr<FunctionType> target_function_type() const {return value_cast<FunctionType>(value_cast<PointerType>(target->type())->target_type());}
     };
 
-    class Store : public Instruction {
+    class PSI_TVM_EXPORT Store : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(Store)
     private:
       virtual void check_source_hook(CheckSourceParameter& parameter);
@@ -113,7 +113,7 @@ namespace Psi {
       ValuePtr<> target;
     };
     
-    class Load : public Instruction {
+    class PSI_TVM_EXPORT Load : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(Load)
       
     public:
@@ -143,7 +143,7 @@ namespace Psi {
      * of the specified alignment. The value 1 is therefore a safe
      * default when no custom alignment is required.
      */
-    class Alloca : public Instruction {
+    class PSI_TVM_EXPORT Alloca : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(Alloca)
       
     public:
@@ -160,7 +160,7 @@ namespace Psi {
     /**
      * \brief Place a constant value on the stack.
      */
-    class AllocaConst : public Instruction {
+    class PSI_TVM_EXPORT AllocaConst : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(AllocaConst)
       
     public:
@@ -175,7 +175,7 @@ namespace Psi {
      * 
      * Note that the memory must be freed in the reverse order to how it was allocated.
      */
-    class FreeAlloca : public Instruction {
+    class PSI_TVM_EXPORT FreeAlloca : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(FreeAlloca)
       
     public:
@@ -195,7 +195,7 @@ namespace Psi {
      * follows the ordinary memcpy convention and has the destination
      * first and source second.
      */
-    class MemCpy : public Instruction {
+    class PSI_TVM_EXPORT MemCpy : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(MemCpy)
     private:
       virtual void check_source_hook(CheckSourceParameter& parameter);
@@ -221,7 +221,7 @@ namespace Psi {
      * follows the ordinary memcpy convention and has the destination
      * first and source second.
      */
-    class MemZero : public Instruction {
+    class PSI_TVM_EXPORT MemZero : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(MemZero)
     private:
       virtual void check_source_hook(CheckSourceParameter& parameter);
@@ -238,7 +238,7 @@ namespace Psi {
     /**
      * \brief Import the value of a phantom term.
      */
-    class Solidify : public Instruction {
+    class PSI_TVM_EXPORT Solidify : public Instruction {
       PSI_TVM_INSTRUCTION_DECL(Solidify)
     private:
       virtual void check_source_hook(CheckSourceParameter& parameter);

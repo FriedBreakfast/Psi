@@ -13,14 +13,14 @@
 
 namespace Psi {
   namespace Tvm {
-    class BooleanType : public Type {
+    class PSI_TVM_EXPORT BooleanType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(BooleanType)
       
     public:
       BooleanType(Context& context, const SourceLocation& location);
     };
 
-    class BooleanValue : public Constructor {
+    class PSI_TVM_EXPORT BooleanValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(BooleanValue)
       
     private:
@@ -32,7 +32,7 @@ namespace Psi {
       bool value() const {return m_value;}
     };
 
-    class IntegerType : public Type {
+    class PSI_TVM_EXPORT IntegerType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(IntegerType)
       
     public:
@@ -65,7 +65,7 @@ namespace Psi {
 
     PSI_VISIT_SIMPLE(IntegerType::Width);
 
-    class IntegerValue : public Constructor {
+    class PSI_TVM_EXPORT IntegerValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(IntegerValue)
       
     private:
@@ -84,7 +84,7 @@ namespace Psi {
       IntegerValue(Context& context, IntegerType::Width width, bool is_signed, const BigInteger& value, const SourceLocation& location);
     };
 
-    class FloatType : public Type {
+    class PSI_TVM_EXPORT FloatType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(FloatType)
 
     public:
@@ -108,7 +108,7 @@ namespace Psi {
     
     PSI_VISIT_SIMPLE(FloatType::Width);
 
-    class FloatValue : public Constructor {
+    class PSI_TVM_EXPORT FloatValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(FloatValue)
 
     public:
@@ -129,7 +129,7 @@ namespace Psi {
     /**
      * \brief Unary operations on integers.
      */
-    class IntegerUnaryOp : public UnaryOp {
+    class PSI_TVM_EXPORT IntegerUnaryOp : public UnaryOp {
     protected:
       IntegerUnaryOp(const ValuePtr<>& arg, const SourceLocation& location);
       virtual ValuePtr<> check_type() const;
@@ -158,7 +158,7 @@ namespace Psi {
     PSI_TVM_BINARY_OP_DECL(BitOr, IntegerBinaryOp);
     PSI_TVM_BINARY_OP_DECL(BitXor, IntegerBinaryOp);
     
-    class IntegerCompareOp : public BinaryOp {
+    class PSI_TVM_EXPORT IntegerCompareOp : public BinaryOp {
     protected:
       IntegerCompareOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
       virtual ValuePtr<> check_type() const;
@@ -173,7 +173,7 @@ namespace Psi {
     PSI_TVM_BINARY_OP_DECL(IntegerCompareLt, IntegerCompareOp);
     PSI_TVM_BINARY_OP_DECL(IntegerCompareLe, IntegerCompareOp);
     
-    class IntegerShiftOp : public BinaryOp {
+    class PSI_TVM_EXPORT IntegerShiftOp : public BinaryOp {
     protected:
       IntegerShiftOp(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location);
       virtual ValuePtr<> check_type() const;
@@ -184,7 +184,7 @@ namespace Psi {
     PSI_TVM_BINARY_OP_DECL(ShiftLeft, IntegerShiftOp);
     PSI_TVM_BINARY_OP_DECL(ShiftRight, IntegerShiftOp);
     
-    class BitCast : public FunctionalValue {
+    class PSI_TVM_EXPORT BitCast : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(BitCast)
       
     public:
@@ -200,7 +200,7 @@ namespace Psi {
       ValuePtr<> m_target_type;
     };
     
-    class Select : public FunctionalValue {
+    class PSI_TVM_EXPORT Select : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(Select)
 
     public:

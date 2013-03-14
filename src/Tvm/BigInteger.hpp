@@ -14,7 +14,7 @@ namespace Psi {
      * \brief A wide integer class for integers in two's complement representation
      * with a fixed number of bits.
      */
-    class BigInteger {
+    class PSI_TVM_EXPORT BigInteger {
       /**
        * Word type used to store large integers. This cannot be changed freely,
        * the implementation assumes that this type is at least as large as an

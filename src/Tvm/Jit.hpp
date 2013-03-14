@@ -21,7 +21,7 @@ namespace Psi {
      * Includes typedefs, which should conform to what the JIT maps a
      * given type to.
      */
-    class Jit {
+    class PSI_TVM_EXPORT Jit {
       boost::shared_ptr<JitFactory> m_factory;
 
     public:
@@ -94,7 +94,7 @@ namespace Psi {
      * This holds the reference to the JIT dynamic module and is
      * responsible for system-specific load and unload.
      */
-    class JitFactory {
+    class PSI_TVM_EXPORT JitFactory {
       std::string m_name;
 
     public:

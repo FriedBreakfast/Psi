@@ -12,6 +12,7 @@
 
 #include "Assert.hpp"
 #include "CppCompiler.hpp"
+#include "Export.hpp"
 #include "Utility.hpp"
 #include "Visitor.hpp"
 
@@ -24,8 +25,8 @@
  */
 
 namespace Psi {
-  void* checked_alloc(std::size_t n);
-  void checked_free(std::size_t n, void *ptr);
+  PSI_COMPILER_COMMON_EXPORT void* checked_alloc(std::size_t n);
+  PSI_COMPILER_COMMON_EXPORT void checked_free(std::size_t n, void *ptr);
 
   template<std::size_t N>
   class StackBuffer : boost::noncopyable {
@@ -216,7 +217,7 @@ namespace Psi {
     char *data;
   };
   
-  class String {
+  class PSI_COMPILER_COMMON_EXPORT String {
     String_C m_c;
 
     void init(const char*, PsiSize);
@@ -259,7 +260,7 @@ namespace Psi {
   
   PSI_VISIT_SIMPLE(String)
 
-  std::ostream& operator << (std::ostream&, const String&);
+  PSI_COMPILER_COMMON_EXPORT std::ostream& operator << (std::ostream&, const String&);
   
   template<typename T>
   struct Maybe_C {
@@ -344,7 +345,7 @@ namespace Psi {
   /**
    * JSON-esque value.
    */
-  class PropertyValue {
+  class PSI_COMPILER_COMMON_EXPORT PropertyValue {
   public:
     enum Type {
       t_null,
@@ -515,7 +516,7 @@ namespace Psi {
     return LookupResult<T>(value);
   }
   
-  std::vector<char> string_unescape(const std::vector<char>& s);
+  PSI_COMPILER_COMMON_EXPORT std::vector<char> string_unescape(const std::vector<char>& s);
 }
 
 #endif

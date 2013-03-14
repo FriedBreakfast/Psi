@@ -18,7 +18,7 @@ namespace Psi {
        * Thrown when a syntactic error is detected in the
        * assembler. Semantic errors will be raised using TvmUserError.
        */
-      class AssemblerError : public std::exception {
+      class PSI_TVM_EXPORT AssemblerError : public std::exception {
       public:
         explicit AssemblerError(const std::string& msg);
         virtual ~AssemblerError() throw ();
@@ -64,9 +64,9 @@ namespace Psi {
 
     typedef boost::unordered_map<std::string, ValuePtr<> > AssemblerResult;
 
-    AssemblerResult build(Module&, const boost::intrusive::list<Parser::NamedGlobalElement>&);
-    AssemblerResult parse_and_build(Module&, const char*, const char*);
-    AssemblerResult parse_and_build(Module&, const char*);
+    PSI_TVM_EXPORT AssemblerResult build(Module&, const boost::intrusive::list<Parser::NamedGlobalElement>&);
+    PSI_TVM_EXPORT AssemblerResult parse_and_build(Module&, const char*, const char*);
+    PSI_TVM_EXPORT AssemblerResult parse_and_build(Module&, const char*);
   }
 }
 

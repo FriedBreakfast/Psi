@@ -6,6 +6,10 @@
 #include "FunctionalBuilder.hpp"
 #include "Utility.hpp"
 
+#ifdef PSI_DEBUG
+#include <iostream>
+#endif
+
 namespace Psi {
   namespace Tvm {
     RecursiveParameter::RecursiveParameter(Context& context, const ValuePtr<>& type, bool phantom, const SourceLocation& location)

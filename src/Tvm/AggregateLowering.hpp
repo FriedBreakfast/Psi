@@ -25,7 +25,7 @@ namespace Psi {
       std::size_t alignment;
     };
     
-    class LoweredType {
+    class PSI_TVM_EXPORT LoweredType {
     public:
       typedef std::vector<LoweredType> EntryVector;
       
@@ -118,7 +118,7 @@ namespace Psi {
       * represented in one of several ways depending on whether
       * it is an aggregate or not.
       */
-    class LoweredValue {
+    class PSI_TVM_EXPORT LoweredValue {
     public:
       typedef std::vector<LoweredValue> EntryVector;
       
@@ -197,7 +197,7 @@ namespace Psi {
      * before they are required so the pointed-to type should not be depended
      * upon.
      */
-    class AggregateLoweringPass : public ModuleRewriter {
+    class PSI_TVM_EXPORT AggregateLoweringPass : public ModuleRewriter {
     public:
       class FunctionRunner;
       class GlobalVariableRunner;
@@ -228,7 +228,7 @@ namespace Psi {
         void next(const ValuePtr<>& type);
       };    
       
-      class AggregateLoweringRewriter {
+      class PSI_TVM_EXPORT AggregateLoweringRewriter {
         friend class FunctionRunner;
         friend class GlobalVariableRunner;
         friend class AggregateLoweringPass;
@@ -291,7 +291,7 @@ namespace Psi {
       /**
        * Class which actually runs the pass, and holds per-run data.
        */
-      class FunctionRunner : public AggregateLoweringRewriter {
+      class PSI_TVM_EXPORT FunctionRunner : public AggregateLoweringRewriter {
         ValuePtr<Function> m_old_function, m_new_function;
         InstructionBuilder m_builder;
         
@@ -334,7 +334,7 @@ namespace Psi {
         virtual LoweredValue bitcast(const LoweredType& type, const LoweredValue& value, const SourceLocation& location);
       };
       
-      class ModuleLevelRewriter : public AggregateLoweringRewriter {
+      class PSI_TVM_EXPORT ModuleLevelRewriter : public AggregateLoweringRewriter {
       public:
         ModuleLevelRewriter(AggregateLoweringPass*);
         virtual LoweredValue bitcast(const LoweredType& type, const LoweredValue& input, const SourceLocation& location);

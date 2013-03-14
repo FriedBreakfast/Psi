@@ -23,7 +23,7 @@ add_library(psi-compiler-common SHARED
   ${PSI_COMPILER_COMMON_SOURCES}
 )
 
-target_link_libraries(psi-compiler-common ${JSONC_LIB})
+target_link_libraries(psi-compiler-common psi-assert ${JSONC_LIB})
 
 add_library(psi-tvm SHARED
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
@@ -37,7 +37,7 @@ add_library(psi-tvm SHARED
   Tvm/DisassemblerSource.cpp
   Tvm/Function.cpp Tvm/Function.hpp
   Tvm/Functional.cpp Tvm/Functional.hpp
-  Tvm/FunctionalBuilder.cpp
+  Tvm/FunctionalBuilder.cpp Tvm/FunctionalBuilder.hpp
   Tvm/Jit.cpp Tvm/Jit.hpp
   Tvm/Instructions.cpp Tvm/Instructions.hpp
   Tvm/InstructionBuilder.cpp Tvm/InstructionBuilder.hpp
@@ -88,7 +88,7 @@ add_library(psi-tvm-llvm MODULE
 )
 
 set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS ${LLVM_CXX_FLAGS})
-target_link_libraries(psi-tvm-llvm ${LLVM_LIBS} debug psi-assert ${LLVM_LDFLAGS})
+target_link_libraries(psi-tvm-llvm psi-tvm ${LLVM_LIBS} debug psi-assert ${LLVM_LDFLAGS})
 
 if(UNIX)
 add_library(psi-runtime SHARED Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
