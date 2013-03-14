@@ -208,6 +208,9 @@ namespace Psi {
     }
     
     const TermVtable ExternalGlobal::vtable = PSI_COMPILER_TERM(ExternalGlobal, "psi.compiler.ExternalGlobal", ModuleGlobal);
+
+    GlobalVariable::~GlobalVariable() {
+    }
     
     template<typename V>
     void GlobalVariable::visit(V& v) {
@@ -354,6 +357,9 @@ namespace Psi {
     }
     
     const FunctionalVtable FunctionType::vtable = PSI_COMPILER_FUNCTIONAL(FunctionType, "psi.compiler.FunctionType", ParameterizedType);
+
+    Function::~Function() {
+    }
     
     void Function::check_type() {
       TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(type);

@@ -213,7 +213,7 @@ namespace Psi {
       typedef TermVtable VtableType;
       typedef TreePtr<Term> IteratorValueType;
 
-      static const SIVtable vtable;
+      PSI_COMPILER_EXPORT static const SIVtable vtable;
       Term(const TermVtable *vtable, const TermResultInfo& type, const SourceLocation& location);
 
       /// \brief The type of this term.
@@ -277,13 +277,13 @@ namespace Psi {
         return ((tri.type_mode == type_mode_metatype) || (tri.type_mode == type_mode_primitive)) && tri.type_fixed_size;
       }
       
-      bool unify(TreePtr<Term>& other, const SourceLocation& location) const;
-      bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
-      bool convert_match(const TreePtr<Term>& value) const;
-      TreePtr<Term> parameterize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements) const;
-      TreePtr<Term> specialize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values) const;
-      TreePtr<Term> anonymize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Statement> >& statements) const;
-      TreePtr<Term> anonymize(const SourceLocation& location) const;
+      PSI_COMPILER_EXPORT bool unify(TreePtr<Term>& other, const SourceLocation& location) const;
+      PSI_COMPILER_EXPORT bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
+      PSI_COMPILER_EXPORT bool convert_match(const TreePtr<Term>& value) const;
+      PSI_COMPILER_EXPORT TreePtr<Term> parameterize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements) const;
+      PSI_COMPILER_EXPORT TreePtr<Term> specialize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values) const;
+      PSI_COMPILER_EXPORT TreePtr<Term> anonymize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Statement> >& statements) const;
+      PSI_COMPILER_EXPORT TreePtr<Term> anonymize(const SourceLocation& location) const;
 
       /**
        * Visit all terms referenced by this term.
@@ -575,7 +575,7 @@ namespace Psi {
 
     public:
       typedef FunctionalVtable VtableType;
-      static const SIVtable vtable;
+      PSI_COMPILER_EXPORT static const SIVtable vtable;
       Functional(const VtableType *vptr);
       ~Functional();
       template<typename V> static void visit(V& v);
@@ -750,7 +750,7 @@ namespace Psi {
      */
     class Metatype : public Functional {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       Metatype();
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const Metatype& self);
@@ -764,7 +764,7 @@ namespace Psi {
      */
     class Anonymous : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       Anonymous(const TreePtr<Term>& type, TermMode mode, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -777,7 +777,7 @@ namespace Psi {
      */
     class Parameter : public Functional {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       Parameter(const TreePtr<Term>& type, unsigned depth, unsigned index);
       template<typename V> static void visit(V& v);

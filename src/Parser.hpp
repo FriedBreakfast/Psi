@@ -111,13 +111,13 @@ namespace Psi {
       const std::string& reason() const {return m_reason;}
     };
 
-    PSI_STD::vector<SharedPtr<Statement> > parse_statement_list(const ParserLocation&);
-    PSI_STD::vector<SharedPtr<Implementation> > parse_implementation_list(const ParserLocation&);
-    PSI_STD::vector<SharedPtr<Lifecycle> > parse_lifecycle_list(const ParserLocation&);
-    PSI_STD::vector<SharedPtr<Statement> > parse_namespace(const ParserLocation&);
-    PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(const ParserLocation&);
-    SharedPtr<Expression> parse_expression(const ParserLocation& text);
-    PSI_STD::vector<TokenExpression> parse_identifier_list(const ParserLocation&);
+    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Statement> > parse_statement_list(const ParserLocation&);
+    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Implementation> > parse_implementation_list(const ParserLocation&);
+    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Lifecycle> > parse_lifecycle_list(const ParserLocation&);
+    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Statement> > parse_namespace(const ParserLocation&);
+    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(const ParserLocation&);
+    PSI_COMPILER_EXPORT SharedPtr<Expression> parse_expression(const ParserLocation& text);
+    PSI_COMPILER_EXPORT PSI_STD::vector<TokenExpression> parse_identifier_list(const ParserLocation&);
 
     struct ImplicitArgumentDeclarations {
       PSI_STD::vector<SharedPtr<FunctionArgument> > arguments;
@@ -129,9 +129,9 @@ namespace Psi {
       SharedPtr<FunctionArgument> return_type;
     };
 
-    ArgumentDeclarations parse_function_argument_declarations(const ParserLocation&);
-    ImplicitArgumentDeclarations parse_function_argument_implicit_declarations(const ParserLocation& text);
-    SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpressionType type);
+    PSI_COMPILER_EXPORT ArgumentDeclarations parse_function_argument_declarations(const ParserLocation&);
+    PSI_COMPILER_EXPORT ImplicitArgumentDeclarations parse_function_argument_implicit_declarations(const ParserLocation& text);
+    PSI_COMPILER_EXPORT SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpressionType type);
   }
 }
 

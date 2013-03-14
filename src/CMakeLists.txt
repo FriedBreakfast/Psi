@@ -20,6 +20,8 @@ add_library(psi-compiler-common SHARED
   Runtime.cpp Runtime.hpp
   SourceLocation.cpp SourceLocation.hpp
   Utility.cpp Utility.hpp
+  CppCompiler.hpp
+  Export.hpp
   ${PSI_COMPILER_COMMON_SOURCES}
 )
 
@@ -68,7 +70,7 @@ if(BUILD_TESTING)
     Tvm/ParserTest.cpp
   )
 
-  set_target_properties(psi-tvm-test PROPERTIES COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
+  #set_target_properties(psi-tvm-test PROPERTIES COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
   target_link_libraries(psi-tvm-test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} psi-tvm debug psi-assert)
   add_dependencies(psi-tvm-test psi-tvm-llvm)
 
@@ -84,6 +86,7 @@ add_library(psi-tvm-llvm MODULE
   Tvm/llvm/Target.cpp Tvm/llvm/Target.hpp
   Tvm/llvm/Target_Linux_x86.cpp
   Tvm/llvm/Target_AMD64.cpp
+  Tvm/llvm/Target_Win32.cpp
   Tvm/llvm/Type.cpp
 )
 
@@ -101,13 +104,12 @@ add_library(psi-compiler SHARED
   Aggregate.cpp
   Array.hpp
   BuiltinTypes.cpp
-  CppCompiler.hpp
   Compiler.cpp Compiler.hpp
   ExpressionCompiler.cpp
   Function.cpp
   Interface.cpp
   GarbageCollection.hpp
-  Macros.cpp
+  Macros.cpp Macros.hpp
   ${BISON_Parser_OUTPUTS} Parser.hpp
   Platform.cpp Platform.hpp
   StaticDispatch.cpp StaticDispatch.hpp

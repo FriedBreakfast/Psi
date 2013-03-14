@@ -1,24 +1,25 @@
 #define BOOST_TEST_MAIN
-#define BOOST_TEST_NO_MAIN
 #include <boost/test/unit_test.hpp>
 
 #include "Test.hpp"
 #include "Assembler.hpp"
 
 #include <cstdlib>
-#include <iostream>
 
 namespace {
-  boost::shared_ptr<Psi::Tvm::JitFactory> jit_factory;
-}
+  struct JitLoader {
+    boost::shared_ptr<Psi::Tvm::JitFactory> jit_factory;
 
-int main(int argc, char *argv[]) {
-  const char *jit = std::getenv("PSI_TEST_JIT");
-  if (!jit)
-    jit = "llvm";
+    JitLoader() {
+      const char *jit = std::getenv("PSI_TEST_JIT");
+      if (!jit)
+        jit = "llvm";
   
-  jit_factory = Psi::Tvm::JitFactory::get(jit);
-  return boost::unit_test::unit_test_main(&init_unit_test, argc, argv);
+      jit_factory = Psi::Tvm::JitFactory::get(jit);
+    }
+  };
+
+  JitLoader jit_loader;
 }
 
 namespace Psi {
@@ -40,7 +41,7 @@ namespace Psi {
       ContextFixture::ContextFixture()
       : location(module_location()),
       module(&context, "test_module", location),
-      m_jit(jit_factory->create_jit()) {
+      m_jit(jit_loader.jit_factory->create_jit()) {
       }
 
       ContextFixture::~ContextFixture() {

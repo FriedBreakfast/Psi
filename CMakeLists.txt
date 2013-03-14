@@ -52,6 +52,9 @@ if (LLVM_CXX_FLAGS MATCHES "-D_GLIBCXX_DEBUG")
 endif()
 
 # Locate Boost
+if(WIN32)
+  set(Boost_USE_STATIC_LIBS ON)
+endif()
 find_package(Boost 1.36.0 COMPONENTS unit_test_framework REQUIRED)
 find_package(BISON REQUIRED)
 

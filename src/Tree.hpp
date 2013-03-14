@@ -16,7 +16,7 @@ namespace Psi {
      */
     class Constructor : public Functional {
     public:
-      static const SIVtable vtable;
+      PSI_COMPILER_EXPORT static const SIVtable vtable;
       
       Constructor(const VtableType *vtable);
       
@@ -34,7 +34,7 @@ namespace Psi {
      */
     class Constant : public Constructor {
     public:
-      static const SIVtable vtable;
+      PSI_COMPILER_EXPORT static const SIVtable vtable;
       
       Constant(const VtableType *vptr);
 
@@ -62,8 +62,8 @@ namespace Psi {
      */
     class ModuleGlobal : public Global {
     public:
-      static const SIVtable vtable;
-      ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module, const TreePtr<Term>& type, PsiBool local, const SourceLocation& location);
+      PSI_COMPILER_EXPORT static const SIVtable vtable;
+      PSI_COMPILER_EXPORT ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module, const TreePtr<Term>& type, PsiBool local, const SourceLocation& location);
       ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module, const TermResultInfo& type, PsiBool local, const SourceLocation& location);
       
       template<typename V> static void visit(V& v);
@@ -81,7 +81,7 @@ namespace Psi {
      */
     class ExternalGlobal : public ModuleGlobal {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       ExternalGlobal(const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
     };
@@ -91,7 +91,7 @@ namespace Psi {
      */
     class GlobalStatement : public ModuleGlobal {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       TreePtr<Term> value;
       /// \brief How to store the result of this statement.
@@ -120,6 +120,8 @@ namespace Psi {
       constant(constant_),
       merge(merge_) {
       }
+
+      PSI_COMPILER_EXPORT ~GlobalVariable();
       
       /// \brief Whether the contents of this variable are constant
       PsiBool constant;
@@ -144,7 +146,7 @@ namespace Psi {
      */
     class Statement : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       TreePtr<Term> value;
       /// \brief How to store the result of this statement.
@@ -160,7 +162,7 @@ namespace Psi {
      */
     class Block : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       Block(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
@@ -186,7 +188,7 @@ namespace Psi {
       TreePtr<GenericType> get_ptr() const {return tree_from(this);}
 
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       enum GenericTypePrimitive {
         primitive_recurse=0, ///< Primitive if the evaluated member_type is primitive
@@ -234,7 +236,7 @@ namespace Psi {
      */
     class TypeInstance : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       TypeInstance(const TreePtr<GenericType>& generic,
                    const PSI_STD::vector<TreePtr<Term> >& parameters);
@@ -256,7 +258,7 @@ namespace Psi {
      */
     class TypeInstanceValue : public Constructor {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       TypeInstanceValue(const TreePtr<TypeInstance>& type, const TreePtr<Term>& member_value);
       template<typename Visitor> static void visit(Visitor& v);
@@ -275,7 +277,7 @@ namespace Psi {
      */
     class BottomType : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       BottomType();
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const BottomType& self);
@@ -291,7 +293,7 @@ namespace Psi {
      */
     class ConstantType : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       ConstantType(const TreePtr<Term>& value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -309,7 +311,7 @@ namespace Psi {
      */
     class EmptyType : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       EmptyType();
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const EmptyType& self);
@@ -321,7 +323,7 @@ namespace Psi {
      */
     class DefaultValue : public Constructor {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       DefaultValue(const TreePtr<Term>& type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const DefaultValue& self);
@@ -334,7 +336,7 @@ namespace Psi {
      */
     class PointerType : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       PointerType(const TreePtr<Term>& target_type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const PointerType& self);
@@ -349,7 +351,7 @@ namespace Psi {
      */
     class PointerTo : public Functional {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       PointerTo(const TreePtr<Term>& value);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const PointerTo& self);
@@ -364,7 +366,7 @@ namespace Psi {
      */
     class PointerTarget : public Functional {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       PointerTarget(const TreePtr<Term>& value);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const PointerTarget& self);
@@ -381,7 +383,7 @@ namespace Psi {
      */
     class PointerCast : public Functional {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       PointerCast(const TreePtr<Term>& value, const TreePtr<Term>& target_type);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const PointerCast& self);
@@ -398,7 +400,7 @@ namespace Psi {
      */
     class ElementValue : public Functional {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       ElementValue(const TreePtr<Term>& value, const TreePtr<Term>& index);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const ElementValue& self);
@@ -417,7 +419,7 @@ namespace Psi {
      */
     class OuterValue : public Functional {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       OuterValue(const TreePtr<Term>& value);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const OuterValue& self);
@@ -434,7 +436,7 @@ namespace Psi {
      */
     class StructType : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       StructType(const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const StructType& self);
@@ -448,7 +450,7 @@ namespace Psi {
      */
     class StructValue : public Constructor {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       StructValue(const TreePtr<StructType>& type, const PSI_STD::vector<TreePtr<Term> >& members);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const StructValue& self);
@@ -463,7 +465,7 @@ namespace Psi {
      */
     class ArrayType : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       ArrayType(const TreePtr<Term>& element_type, const TreePtr<Term>& length, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const ArrayType& self);
@@ -478,7 +480,7 @@ namespace Psi {
      */
     class ArrayValue : public Constructor {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       ArrayValue(const TreePtr<ArrayType>& type, const PSI_STD::vector<TreePtr<Term> >& element_values);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const ArrayValue& self);
@@ -496,7 +498,7 @@ namespace Psi {
      */
     class UnionType : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       UnionType(const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const UnionType& self);
@@ -510,7 +512,7 @@ namespace Psi {
      */
     class UnionValue : public Constructor {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       UnionValue(const TreePtr<UnionType>& type, const TreePtr<Term>& member_value);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const UnionValue& self);
@@ -525,7 +527,7 @@ namespace Psi {
      */
     class UpwardReferenceType : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       UpwardReferenceType();
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const UpwardReferenceType& self);
@@ -537,7 +539,7 @@ namespace Psi {
      */
     class UpwardReference : public Constructor {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       UpwardReference(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const UpwardReference& self);
@@ -569,7 +571,7 @@ namespace Psi {
      */
     class DerivedType : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       DerivedType(const TreePtr<Term>& value_type, const TreePtr<Term>& upref, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const DerivedType& self);
@@ -619,7 +621,7 @@ namespace Psi {
      */
     class Exists : public ParameterizedType {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       Exists(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& parameter_types, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -635,7 +637,7 @@ namespace Psi {
     
     class FunctionType : public ParameterizedType {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       FunctionType(ResultMode result_mode, const TreePtr<Term>& result_type,
                    const PSI_STD::vector<FunctionParameterType>& parameter_types,
@@ -659,12 +661,12 @@ namespace Psi {
 
     class Function : public ModuleGlobal {
       DelayedValue<TreePtr<Term>, TreePtr<Function> > m_body;
-      void check_type();
-      TreePtr<Function> get_ptr() const {return tree_from(this);}
-      void body_check_type(TreePtr<Term>& body) const;
+      PSI_COMPILER_EXPORT void check_type();
+      PSI_COMPILER_EXPORT TreePtr<Function> get_ptr() const {return tree_from(this);}
+      PSI_COMPILER_EXPORT void body_check_type(TreePtr<Term>& body) const;
       
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       template<typename BodyCallback>
       Function(const TreePtr<Module>& module,
@@ -680,6 +682,8 @@ namespace Psi {
       return_target(return_target_) {
         check_type();
       }
+
+      PSI_COMPILER_EXPORT ~Function();
 
       /// \brief Argument values.
       PSI_STD::vector<TreePtr<Anonymous> > arguments;
@@ -705,7 +709,7 @@ namespace Psi {
      */
     class Closure : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       Closure(const TreePtr<FunctionType>& type,
               const TreePtr<Anonymous>& closure_data_type,
@@ -765,7 +769,7 @@ namespace Psi {
      */
     class TryFinally : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       TryFinally(const TreePtr<Term>& try_expr, const TreePtr<Term>& finally_expr, bool except_only, const SourceLocation& location);
 
@@ -782,7 +786,7 @@ namespace Psi {
      */
     class IfThenElse : public Functional {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       IfThenElse(const TreePtr<Term>& condition, const TreePtr<Term>& true_value, const TreePtr<Term>& false_value);
       template<typename Visitor> static void visit(Visitor& v);
@@ -801,7 +805,7 @@ namespace Psi {
      */
     class JumpTarget : public Tree {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       JumpTarget(const TreePtr<Term>& value, ResultMode argument_mode, const TreePtr<Anonymous>& argument, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
@@ -822,7 +826,7 @@ namespace Psi {
     class JumpGroup : public Term {
       static TermResultInfo make_result_type(const TreePtr<Term>& initial, const PSI_STD::vector<TreePtr<JumpTarget> >& values, const SourceLocation& location);
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       JumpGroup(const TreePtr<Term>& initial, const PSI_STD::vector<TreePtr<JumpTarget> >& values, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
@@ -839,7 +843,7 @@ namespace Psi {
      */
     class JumpTo : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       JumpTo(const TreePtr<JumpTarget>& target, const TreePtr<Term>& argument, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
@@ -855,7 +859,7 @@ namespace Psi {
       static TermResultInfo get_result_type(const TreePtr<Term>& target, PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
 
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       FunctionCall(const TreePtr<Term>& target, PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
@@ -870,7 +874,7 @@ namespace Psi {
      */
     class SolidifyDuring : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       SolidifyDuring(const PSI_STD::vector<TreePtr<Term> >& value, const TreePtr<Term>& body, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -890,7 +894,7 @@ namespace Psi {
      */
     class PrimitiveType : public Type {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       PrimitiveType(const String& name);
       template<typename Visitor> static void visit(Visitor& v);
@@ -905,7 +909,7 @@ namespace Psi {
      */
     class BuiltinValue : public Constant {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       BuiltinValue(const String& constructor, const String& data, const TreePtr<Term>& type);
       template<typename Visitor> static void visit(Visitor& v);
@@ -926,7 +930,7 @@ namespace Psi {
      */
     class IntegerValue : public Constant {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       IntegerValue(const TreePtr<Term>& type, int value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const IntegerValue& self);
@@ -941,7 +945,7 @@ namespace Psi {
      */
     class StringValue : public Constant {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       StringValue(const String& value);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const StringValue& self);
@@ -955,7 +959,7 @@ namespace Psi {
      */
     class BuiltinFunction : public Global {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       BuiltinFunction(const String& name, bool pure, const TreePtr<FunctionType>& type, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
@@ -984,7 +988,7 @@ namespace Psi {
     class TargetCallback : public Tree {
     public:
       typedef TargetCallbackVtable VtableType;
-      static const SIVtable vtable;
+      PSI_COMPILER_EXPORT static const SIVtable vtable;
       
       TargetCallback(const TargetCallbackVtable *vtable, CompileContext& compile_context, const SourceLocation& location);
       
@@ -1021,7 +1025,7 @@ namespace Psi {
      */
     class Library : public Tree {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       Library(const TreePtr<TargetCallback>& callback, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -1035,7 +1039,7 @@ namespace Psi {
      */
     class LibrarySymbol : public Global {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       LibrarySymbol(const TreePtr<Library>& library, const TreePtr<TargetCallback>& callback, const TreePtr<Term>& type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -1057,7 +1061,7 @@ namespace Psi {
       Namespace(CompileContext& compile_context, const NameMapType& members, const SourceLocation& location);
 
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
 
       Namespace(CompileContext& compile_context, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -1072,7 +1076,7 @@ namespace Psi {
      */
     class InterfaceValue : public Functional {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       InterfaceValue(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const TreePtr<Implementation>& implementation);
       template<typename V> static void visit(V& v);
@@ -1103,7 +1107,7 @@ namespace Psi {
      */
     class MovableValue : public Functional {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       MovableValue(const TreePtr<Term>& value);
       template<typename V> static void visit(V& v);
@@ -1121,7 +1125,7 @@ namespace Psi {
      */
     class InitializeValue : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       InitializeValue(const TreePtr<Term>& target_ref, const TreePtr<Term>& assign_value, const TreePtr<Term>& inner, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -1146,7 +1150,7 @@ namespace Psi {
      */
     class AssignValue : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       AssignValue(const TreePtr<Term>& target_ref, const TreePtr<Term>& assign_value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -1162,7 +1166,7 @@ namespace Psi {
      */
     class FinalizeValue : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       FinalizeValue(const TreePtr<Term>& target_ref, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -1179,7 +1183,7 @@ namespace Psi {
      */
     class IntroduceImplementation : public Term {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       
       IntroduceImplementation(const PSI_STD::vector<TreePtr<Implementation> >& implementations, const TreePtr<Term>& value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
@@ -1206,7 +1210,7 @@ namespace Psi {
     class FunctionalEvaluate : public Term {
       static TreePtr<Term> make_result_type(const TreePtr<Term>& value, const SourceLocation& location);
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       FunctionalEvaluate(const TreePtr<Term>& value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermTypeInfo type_info_impl(const FunctionalEvaluate& self);
@@ -1221,7 +1225,7 @@ namespace Psi {
      */
     class GlobalEvaluate : public ModuleGlobal {
     public:
-      static const VtableType vtable;
+      PSI_COMPILER_EXPORT static const VtableType vtable;
       GlobalEvaluate(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermTypeInfo type_info_impl(const GlobalEvaluate& self);

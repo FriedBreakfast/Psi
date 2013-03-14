@@ -253,10 +253,10 @@ namespace Psi {
     }
   };
   
-  bool operator == (const String& lhs, const char *rhs);
-  bool operator == (const char *lhs, const String& rhs);
-  bool operator == (const String& lhs, const std::string& rhs);
-  bool operator == (const std::string& lhs, const String& rhs);
+  PSI_COMPILER_COMMON_EXPORT bool operator == (const String& lhs, const char *rhs);
+  PSI_COMPILER_COMMON_EXPORT bool operator == (const char *lhs, const String& rhs);
+  PSI_COMPILER_COMMON_EXPORT bool operator == (const String& lhs, const std::string& rhs);
+  PSI_COMPILER_COMMON_EXPORT bool operator == (const std::string& lhs, const String& rhs);
   
   PSI_VISIT_SIMPLE(String)
 
@@ -424,11 +424,11 @@ namespace Psi {
     static PropertyValue parse(const char *begin, const char *end);
   };
   
-  bool operator == (const PropertyValue& lhs, const PropertyValue& rhs);
-  bool operator == (const PropertyValue& lhs, const String& rhs);
-  bool operator == (const String& lhs, const PropertyValue& rhs);
-  bool operator == (const PropertyValue& lhs, const char *rhs);
-  bool operator == (const char *lhs, const PropertyValue& rhs);
+  PSI_COMPILER_COMMON_EXPORT bool operator == (const PropertyValue& lhs, const PropertyValue& rhs);
+  PSI_COMPILER_COMMON_EXPORT bool operator == (const PropertyValue& lhs, const String& rhs);
+  PSI_COMPILER_COMMON_EXPORT bool operator == (const String& lhs, const PropertyValue& rhs);
+  PSI_COMPILER_COMMON_EXPORT bool operator == (const PropertyValue& lhs, const char *rhs);
+  PSI_COMPILER_COMMON_EXPORT bool operator == (const char *lhs, const PropertyValue& rhs);
 
   PSI_VISIT_SIMPLE(PropertyValue)
 

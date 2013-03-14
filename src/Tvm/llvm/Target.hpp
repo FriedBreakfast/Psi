@@ -203,6 +203,7 @@ namespace Psi {
 
       boost::shared_ptr<TargetCallback> create_target_fixes_amd64(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&);
       boost::shared_ptr<TargetCallback> create_target_fixes_linux_x86(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&);
+      boost::shared_ptr<TargetCallback> create_target_fixes_win32(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&);
     }
   }
 }

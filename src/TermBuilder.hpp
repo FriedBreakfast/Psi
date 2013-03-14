@@ -6,7 +6,7 @@
 
 namespace Psi {
 namespace Compiler {
-struct TermBuilder : NonConstructible {
+struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
 /// \name Types
 //@{
   static TreePtr<Term> metatype(CompileContext& compile_context);

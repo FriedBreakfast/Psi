@@ -52,6 +52,7 @@ namespace Psi {
       struct ModuleMapping {
         llvm::Module *module;
         boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*> globals;
+        ModuleMapping() : module(NULL) {}
       };
 
       class TargetCallback {

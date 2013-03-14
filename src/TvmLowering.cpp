@@ -100,10 +100,10 @@ boost::optional<TvmResult> TvmScope::get(const TreePtr<Term>& key) {
 void TvmScope::put(const TreePtr<Term>& key, const TvmResult& result) {
   if (result.scope.in_progress_generic) {
     TvmGenericScope *scope = generic_put_scope(result.scope.scope);
-    PSI_CHECK(scope->variables.insert(std::make_pair<TreePtr<Term>, TvmResult>(key, result)).second);
+    PSI_CHECK(scope->variables.insert(TvmGenericScope::VariableMapType::value_type(key, result)).second);
   } else {
     TvmScope *target = put_scope(result.scope.scope);
-    PSI_CHECK(target->m_variables.insert(std::make_pair<TreePtr<Term>, TvmResultBase>(key, result)).second);
+    PSI_CHECK(target->m_variables.insert(VariableMapType::value_type(key, result)).second);
   }
 }
 
@@ -129,10 +129,10 @@ boost::optional<TvmResult> TvmScope::get_generic(const TreePtr<GenericType>& key
 void TvmScope::put_generic(const TreePtr<GenericType>& key, const TvmResult& result) {
   if (result.scope.in_progress_generic) {
     TvmGenericScope *scope = generic_put_scope(result.scope.scope);
-    PSI_CHECK(scope->generics.insert(std::make_pair<TreePtr<GenericType>, TvmResult>(key, result)).second);
+    PSI_CHECK(scope->generics.insert(TvmGenericScope::GenericMapType::value_type(key, result)).second);
   } else {
     TvmScope *target = put_scope(result.scope.scope);
-    PSI_CHECK(target->m_generics.insert(std::make_pair<TreePtr<GenericType>, TvmResultBase>(key, result)).second);
+    PSI_CHECK(target->m_generics.insert(GenericMapType::value_type(key, result)).second);
   }
 }
 

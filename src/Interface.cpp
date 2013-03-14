@@ -2,6 +2,7 @@
 #include "Interface.hpp"
 #include "Tree.hpp"
 #include "TermBuilder.hpp"
+#include "Macros.hpp"
 
 namespace Psi {
   namespace Compiler {

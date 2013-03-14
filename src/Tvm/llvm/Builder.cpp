@@ -617,7 +617,7 @@ namespace Psi {
   }
 }
 
-extern "C" void tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory, boost::shared_ptr<Psi::Tvm::Jit>& result) {
+extern "C" PSI_ATTRIBUTE((dllexport)) void tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory, boost::shared_ptr<Psi::Tvm::Jit>& result) {
   llvm::InitializeNativeTarget();
   std::string host = llvm::sys::getDefaultTargetTriple();
 

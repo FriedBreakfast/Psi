@@ -98,13 +98,13 @@ namespace Psi {
       Tree(const TreeVtable *vptr);
 
     public:
-      static const SIVtable vtable;
+      PSI_COMPILER_EXPORT static const SIVtable vtable;
       
       typedef TreeVtable VtableType;
 
       Tree(const TreeVtable *vptr, CompileContext& compile_context, const SourceLocation& location);
 
-      void complete() const;
+      PSI_COMPILER_EXPORT void complete() const;
       const SourceLocation& location() const {return m_location;}
       
       template<typename V> static void visit(V& PSI_UNUSED(v)) {}

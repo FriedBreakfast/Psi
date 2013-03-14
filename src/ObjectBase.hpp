@@ -179,7 +179,7 @@ namespace Psi {
 
       Object(const ObjectVtable *vtable, CompileContext& compile_context);
       Object(const Object& src);
-      ~Object();
+      PSI_COMPILER_EXPORT ~Object();
 
       CompileContext& compile_context() const {return *m_compile_context;}
       

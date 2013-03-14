@@ -23,13 +23,9 @@ size_t psi_gcchecker_blocks(psi_gcchecker_block **ptr) {
 void psi_gcchecker_set_free_hook(psi_gcchecker_hook_type,void*) __attribute__((weak));
 void psi_gcchecker_set_free_hook(psi_gcchecker_hook_type,void*) {}
 }
-
-#ifdef __linux__
-#include <execinfo.h>
-#endif
 #endif
 
-#if defined(__linux__) && defined(PSI_OBJECT_PTR_DEBUG)
+#if defined(__linux__)
 #include <execinfo.h>
 #endif
 
@@ -303,7 +299,9 @@ namespace Psi {
               unsigned count = 0;
               while ((count < PSI_GCCHECKER_BACKTRACE_COUNT) && blocks[i].backtrace[count])
                 ++count;
+#ifdef __linux__
               backtrace_symbols_fd(blocks[i].backtrace, count, 2);
+#endif
             }
           }
           std::free(blocks);
