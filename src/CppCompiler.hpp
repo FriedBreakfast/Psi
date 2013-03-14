@@ -14,6 +14,14 @@ namespace Psi {
 #define PSI_SMALL_ENUM(name) enum __attribute__((packed)) name
 #define PSI_ASSUME(x) void()
 
+#ifdef _WIN32
+#define PSI_EXPORT dllexport
+#define PSI_IMPORT dllimport
+#else
+#define PSI_EXPORT
+#define PSI_IMPORT
+#endif
+
   struct DebugLocation {
     const char *file;
     int line;
@@ -41,6 +49,8 @@ namespace Psi {
 #define PSI_UNREACHABLE() __assume(false)
 #define PSI_ASSUME(x) __assume(x)
 #define PSI_SMALL_ENUM(name) enum name : unsigned char
+#define PSI_EXPORT dllexport
+#define PSI_IMPORT dllimport
 
   struct DebugLocation {
     const char *file;

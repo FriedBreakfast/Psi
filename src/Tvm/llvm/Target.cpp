@@ -273,11 +273,15 @@ namespace Psi {
 
       ValuePtr<> TargetCommon::change_by_memory_in(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const ValuePtr<>& target_type, const SourceLocation& location) {
         LoweredValue value = builder.rewrite_value(source_value);
-        ValuePtr<> ptr = builder.builder().alloca_(source_value->type(), location);
+        ValuePtr<> ptr = builder.alloca_(value.type(), location);
         builder.store_value(value, ptr, location);
         ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, target_type, location);
         ValuePtr<> result = builder.builder().load(cast_ptr, location);
-        builder.builder().freea(ptr, location);
+        ValuePtr<> free_ptr = ptr;
+        if (ValuePtr<PointerCast> cast = dyn_cast<PointerCast>(free_ptr))
+          free_ptr = cast->pointer();
+        PSI_ASSERT(isa<Alloca>(free_ptr));
+        builder.builder().freea(free_ptr, location);
         return result;
       }
 

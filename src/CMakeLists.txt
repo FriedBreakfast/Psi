@@ -70,7 +70,9 @@ if(BUILD_TESTING)
     Tvm/ParserTest.cpp
   )
 
-  #set_target_properties(psi-tvm-test PROPERTIES COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
+  if(NOT WIN32)
+    set_target_properties(psi-tvm-test PROPERTIES COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
+  endif()
   target_link_libraries(psi-tvm-test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} psi-tvm debug psi-assert)
   add_dependencies(psi-tvm-test psi-tvm-llvm)
 

@@ -40,7 +40,6 @@ namespace Psi {
     Key m_key;
     LogicalSourceLocationPtr m_parent;
     typedef boost::intrusive::avl_set<LogicalSourceLocation, boost::intrusive::constant_time_size<false>, boost::intrusive::compare<Compare> > ChildMapType;
-    friend class ChildMapType;
     ChildMapType m_children;
 
     LogicalSourceLocation(const Key&, const LogicalSourceLocationPtr&);
