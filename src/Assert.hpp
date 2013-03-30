@@ -8,7 +8,7 @@
 #include "Export.hpp"
 
 namespace Psi {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #define PSI_ASSERT_MSG(cond,msg) ((cond) ? void() : Psi::assert_fail(PSI_DEBUG_LOCATION(), #cond, msg))
 #define PSI_ASSERT(cond) ((cond) ? void() : Psi::assert_fail(PSI_DEBUG_LOCATION(), #cond, NULL))
 #define PSI_FAIL(msg) (Psi::assert_fail(PSI_DEBUG_LOCATION(), NULL, msg))
@@ -20,7 +20,7 @@ namespace Psi {
 #define PSI_CHECK(cond) PSI_ASSERT(cond)
   PSI_ATTRIBUTE((PSI_NORETURN,PSI_ASSERT_EXPORT_ATTR)) void assert_fail(DebugLocation, const char *test, const char *msg);
   PSI_ASSERT_EXPORT void warning_fail(DebugLocation, const char *test, const char *msg);
-#elif !defined(PSI_DOXYGEN)
+#elif !PSI_DOXYGEN
 #define PSI_ASSERT_MSG(cond,msg) void()
 #define PSI_ASSERT(cond) void()
 #define PSI_FAIL(msg) PSI_UNREACHABLE()
@@ -33,11 +33,11 @@ namespace Psi {
   /**
    * \brief Require that a condition is true.
    *
-   * If \c PSI_DEBUG is defined, this will print an error message with
+   * If \c PSI_DEBUG is nonzero, this will print an error message with
    * the file and line where the error occurred and details of the
    * error involving \c cond and \c msg, and then call
    * <c>std::abort()</c> if \c cond evaluates to false. If \c
-   * PSI_DEBUG is not defined, this does nothing.
+   * PSI_DEBUG is zero, this does nothing.
    *
    * \param cond Condition required to be true.
    * \param msg Extra message to print if \c cond is false.
@@ -46,10 +46,10 @@ namespace Psi {
   /**
    * \brief Require that a condition is true.
    *
-   * If \c PSI_DEBUG is defined, this will print an error message with
+   * If \c PSI_DEBUG is nonzero, this will print an error message with
    * the file and line where the error occurred and details of the
    * error, and then call <c>std::abort()</c> if \c cond evaluates to
-   * false. If \c PSI_DEBUG is not defined, this does nothing.
+   * false. If \c PSI_DEBUG is zero, this does nothing.
    *
    * \param cond Condition required to be true.
    */
@@ -58,7 +58,7 @@ namespace Psi {
    * \brief Indicate that a failure condition has occurred.
    *
    * This should be called when a condition which should not occur
-   * has. If PSI_DEBUG is defined, it prints the location of the error
+   * has. If PSI_DEBUG is nonzero, it prints the location of the error
    * and \c msg and calls <c>std::abort()</c>. Otherwise, this
    * indicates to the compiler that this section of code is
    * unreachable, if the compiler supports this.
@@ -85,7 +85,7 @@ namespace Psi {
   /**
    * \brief Indicate that unimplemented code has been reached.
    *
-   * If PSI_DEBUG is defined, this prints the location of the error
+   * If PSI_DEBUG is nonzero, this prints the location of the error
    * and aborts. Otherwise, it just aborts.
    */
 #define PSI_NOT_IMPLEMENTED()

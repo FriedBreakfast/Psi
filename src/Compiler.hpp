@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <vector>
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #include <typeinfo>
 #endif
 
@@ -339,7 +339,7 @@ namespace Psi {
 
       TreePtr<Functional> get_functional_ptr(const Functional& f, const SourceLocation& location);
       
-#ifdef PSI_OBJECT_PTR_DEBUG
+#if PSI_OBJECT_PTR_DEBUG
       template<typename> friend class ObjectPtr;
       static const unsigned object_ptr_backtrace_depth = 10;
       struct ObjectPtrSetValue {
@@ -361,7 +361,7 @@ namespace Psi {
       CompileContext(std::ostream *error_stream);
       ~CompileContext();
       
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       std::set<void*> object_pointers();
 #endif
 

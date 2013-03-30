@@ -1,7 +1,7 @@
 #include "Compiler.hpp"
 #include "TvmLowering.hpp"
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #include <cstdlib>
 #include <iostream>
 #include "GCChecker.h"
@@ -11,7 +11,7 @@
 #include <boost/foreach.hpp>
 #include <boost/format.hpp>
 
-#if defined(PSI_DEBUG) && defined(__GNUC__) && defined(__ELF__)
+#if PSI_DEBUG && defined(__GNUC__) && defined(__ELF__)
 extern "C" {
 size_t psi_gcchecker_blocks(psi_gcchecker_block **ptr) __attribute__((weak));
 
@@ -83,7 +83,7 @@ namespace Psi {
     void CompileError::end() {
     }
     
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     namespace {
       bool scan_block(void *base, size_t size, const std::set<void*>& pointers) {
         void **ptrs = reinterpret_cast<void**>(base);
@@ -123,11 +123,11 @@ namespace Psi {
     m_functional_term_buckets(initial_functional_term_buckets),
     m_functional_term_set(FunctionalTermSetType::bucket_traits(m_functional_term_buckets.get(), m_functional_term_buckets.size())),
     m_root_location(PhysicalSourceLocation(), LogicalSourceLocation::new_root_location()) {
-#if defined(PSI_DEBUG) && defined(__GNUC__) && defined(__ELF__)
+#if PSI_DEBUG && defined(__GNUC__) && defined(__ELF__)
       if (std::getenv("PSI_GC_FREECHECK"))
         psi_gcchecker_set_free_hook(gc_free_hook, this);
 #endif
-#ifdef PSI_OBJECT_PTR_DEBUG
+#if PSI_OBJECT_PTR_DEBUG
       m_object_ptr_offset = 0;
 #endif
 
@@ -139,20 +139,20 @@ namespace Psi {
       m_tvm_compiler.reset(new TvmCompiler(this));
     }
     
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #define PSI_COMPILE_CONTEXT_REFERENCE_GUARD 100
 #else
 #define PSI_COMPILE_CONTEXT_REFERENCE_GUARD 1
 #endif
 
     struct CompileContext::ObjectDisposer {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       bool force_destroy;
       ObjectDisposer(bool force_destroy_) : force_destroy(force_destroy_) {}
 #endif
 
       void operator () (Object *t) {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
         if (force_destroy || (t->m_reference_count == PSI_COMPILE_CONTEXT_REFERENCE_GUARD)) {
           t->m_reference_count = 0;
           derived_vptr(t)->destroy(t);
@@ -170,7 +170,7 @@ namespace Psi {
       // Add extra reference to each Tree
       BOOST_FOREACH(Object& t, m_gc_list)
         t.m_reference_count += PSI_COMPILE_CONTEXT_REFERENCE_GUARD;
-#ifdef PSI_OBJECT_PTR_DEBUG
+#if PSI_OBJECT_PTR_DEBUG
       m_object_ptr_offset = PSI_COMPILE_CONTEXT_REFERENCE_GUARD;
 #endif
 
@@ -178,7 +178,7 @@ namespace Psi {
       BOOST_FOREACH(Object& t, m_gc_list)
         derived_vptr(&t)->gc_clear(&t);
         
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       // Check for dangling references
       bool failed = false, force_destroy = false;
       for (GCListType::iterator ii = m_gc_list.begin(), ie = m_gc_list.end(); ii != ie; ++ii) {
@@ -309,7 +309,7 @@ namespace Psi {
       }
 #endif
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       m_gc_list.clear_and_dispose(ObjectDisposer(force_destroy));
 #else
       m_gc_list.clear_and_dispose(ObjectDisposer());
@@ -317,7 +317,7 @@ namespace Psi {
 
       PSI_WARNING(m_functional_term_set.empty());
       
-#ifdef PSI_OBJECT_PTR_DEBUG
+#if PSI_OBJECT_PTR_DEBUG
       std::cerr << m_object_ptr_set.size() << " surviving ObjectPtrs\n";
       for (ObjectPtrSetType::const_iterator ii = m_object_ptr_set.begin(), ie = m_object_ptr_set.end(); ii != ie; ++ii) {
         std::cerr << "ObjectPtr still exists at context destruction at " << ii->first << std::endl;
@@ -325,12 +325,12 @@ namespace Psi {
       }
 #endif
 
-#if defined(PSI_DEBUG) && defined(__GNUC__) && defined(__ELF__)
+#if PSI_DEBUG && defined(__GNUC__) && defined(__ELF__)
       psi_gcchecker_set_free_hook(NULL, NULL);
 #endif
     }
     
-#ifdef PSI_OBJECT_PTR_DEBUG
+#if PSI_OBJECT_PTR_DEBUG
     void CompileContext::object_ptr_backtrace(const ObjectPtrSetValue& value) {
 #ifdef __linux__
       unsigned n = 0;

@@ -1,8 +1,8 @@
 #ifndef H_PSI_CONFIG
 #define H_PSI_CONFIG
 
-#cmakedefine PSI_ENABLE_VALGRIND
-#cmakedefine PSI_DEBUG
-#cmakedefine PSI_OBJECT_PTR_DEBUG
+#cmakedefine01 PSI_ENABLE_VALGRIND
+#cmakedefine01 PSI_DEBUG
+#cmakedefine01 PSI_OBJECT_PTR_DEBUG
 
 #endif

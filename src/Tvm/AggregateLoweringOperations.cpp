@@ -874,7 +874,7 @@ namespace Psi {
         
         ValuePtr<> original_element_type = value_cast<PointerType>(term->dest->type())->target_type();
         LoweredType element_type = runner.rewrite_type(original_element_type);
-        if (element_type.mode() == LoweredType::mode_register) {
+        if (!runner.pass().memcpy_to_bytes && (element_type.mode() == LoweredType::mode_register)) {
           ValuePtr<> dest_cast = FunctionalBuilder::pointer_cast(dest, element_type.register_type(), term->location());
           ValuePtr<> src_cast = FunctionalBuilder::pointer_cast(dest, element_type.register_type(), term->location());
           runner.builder().memcpy(dest_cast, src_cast, count, alignment, term->location());
@@ -897,7 +897,7 @@ namespace Psi {
         
         ValuePtr<> original_element_type = value_cast<PointerType>(term->dest->type())->target_type();
         LoweredType element_type = runner.rewrite_type(original_element_type);
-        if (element_type.mode() == LoweredType::mode_register) {
+        if (!runner.pass().memcpy_to_bytes && (element_type.mode() == LoweredType::mode_register)) {
           ValuePtr<> ptr_cast = FunctionalBuilder::pointer_cast(ptr, element_type.register_type(), term->location());
           runner.builder().memzero(ptr_cast, count, alignment, term->location());
           return LoweredValue();

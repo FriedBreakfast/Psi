@@ -63,7 +63,7 @@ namespace Psi {
       template<typename V> static void visit(V& v);
       virtual Value* disassembler_source();
       
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       void dump_parameters();
 #endif
 

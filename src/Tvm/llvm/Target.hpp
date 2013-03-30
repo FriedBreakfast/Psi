@@ -82,6 +82,9 @@ namespace Psi {
 
           /// \brief Convert a parameter to the correct type for passing.
           virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation& location) const = 0;
+          
+          /// \brief Clean up any memory allocation during \c pack
+          virtual void pack_cleanup(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& param_value, const SourceLocation& location) const = 0;
 
           /// \brief Convert a parameter from the passed type.
           virtual void unpack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const = 0;
@@ -165,11 +168,8 @@ namespace Psi {
         
         struct LowerFunctionHelperResult {
           ValuePtr<FunctionType> lowered_type;
-          bool sret;
           boost::shared_ptr<ReturnHandler> return_handler;
           std::vector<boost::shared_ptr<ParameterHandler> > parameter_handlers;
-          std::size_t n_phantom;
-          std::size_t n_passed_parameters;
         };
         
         LowerFunctionHelperResult lower_function_helper(AggregateLoweringPass::AggregateLoweringRewriter&,  const ValuePtr<FunctionType>&);

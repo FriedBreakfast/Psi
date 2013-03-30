@@ -51,26 +51,31 @@ namespace Psi {
 
         result.return_handler =
           m_callback->return_type_info(rewriter, function_type->calling_convention(), function_type->result_type());
-        ValuePtr<> return_type;
-        result.sret = result.return_handler->return_by_sret();
-        if (result.sret) {
-          parameter_types.push_back(FunctionalBuilder::byte_pointer_type(rewriter.context(), function_type->location()));
-          return_type = FunctionalBuilder::empty_type(rewriter.context(), function_type->location());
-        } else {
-          return_type = result.return_handler->lowered_type();
-        }
 
-        result.n_phantom = function_type->n_phantom();
-        result.n_passed_parameters = function_type->parameter_types().size() - result.n_phantom;
-        for (std::size_t i = 0; i != result.n_passed_parameters; ++i) {
+        for (std::size_t ii = function_type->n_phantom(), ie = function_type->parameter_types().size(); ii != ie; ++ii) {
           boost::shared_ptr<ParameterHandler> handler = m_callback->parameter_type_info
-            (rewriter, function_type->calling_convention(), function_type->parameter_types()[i+result.n_phantom]);
+            (rewriter, function_type->calling_convention(), function_type->parameter_types()[ii]);
           result.parameter_handlers.push_back(handler);
           parameter_types.push_back(handler->lowered_type());
         }
+
+        bool sret = false;
+        ValuePtr<> return_type;
+        if (!function_type->sret()) {
+          sret = result.return_handler->return_by_sret();
+          if (sret)
+            parameter_types.push_back(FunctionalBuilder::byte_pointer_type(rewriter.context(), function_type->location()));
+          else
+            return_type = result.return_handler->lowered_type();
+        } else {
+          sret = true;
+        }
+        
+        if (sret)
+          return_type = FunctionalBuilder::empty_type(rewriter.context(), function_type->location());
         
         result.lowered_type = FunctionalBuilder::function_type
-          (function_type->calling_convention(), return_type, parameter_types, 0, function_type->sret(), function_type->location());
+          (function_type->calling_convention(), return_type, parameter_types, 0, sret, function_type->location());
           
         return result;
       }
@@ -78,23 +83,28 @@ namespace Psi {
       void TargetCommon::lower_function_call(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<Call>& term) {
         LowerFunctionHelperResult helper_result = lower_function_helper(runner, term->target_function_type());
         
-        int sret = helper_result.sret ? 1 : 0;
-        std::vector<ValuePtr<> > parameters(sret + helper_result.n_passed_parameters);
+        int sret = helper_result.lowered_type->sret() ? 1 : 0;
+        std::size_t n_parameters = helper_result.lowered_type->parameter_types().size() - sret;
+        std::vector<ValuePtr<> > parameters;
+
+        unsigned n_phantom = term->target_function_type()->n_phantom();
+        for (std::size_t ii = 0; ii != n_parameters; ++ii)
+          parameters.push_back(helper_result.parameter_handlers[ii]->pack(runner, term->parameters[n_phantom+ii], term->location()));
 
         ValuePtr<> sret_addr;
-        if (helper_result.sret) {
+        if (helper_result.lowered_type->sret()) {
           sret_addr = helper_result.return_handler->return_by_sret_setup(runner, term->location());
-          parameters[0] = sret_addr;
+          parameters.push_back(sret_addr);
         }
-        
-        for (std::size_t i = 0; i != helper_result.n_passed_parameters; ++i)
-          parameters[i+sret] = helper_result.parameter_handlers[i]->pack(runner, term->parameters[i+helper_result.n_phantom], term->location());
         
         ValuePtr<> lowered_target = runner.rewrite_value_register(term->target).value;
         ValuePtr<> cast_target = FunctionalBuilder::pointer_cast(lowered_target, helper_result.lowered_type, term->location());
         ValuePtr<> result = runner.builder().call(cast_target, parameters, term->location());
-        
+
         helper_result.return_handler->return_unpack(runner, sret_addr, term, result, term->location());
+        
+        for (std::size_t ii = n_parameters; ii != 0; --ii)
+          helper_result.parameter_handlers[ii-1]->pack_cleanup(runner, parameters[ii-1], term->location());
       }
 
       ValuePtr<Instruction> TargetCommon::lower_return(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& value, const SourceLocation& location) {
@@ -112,9 +122,9 @@ namespace Psi {
       
       void TargetCommon::lower_function_entry(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<Function>& source_function, const ValuePtr<Function>& target_function) {
         LowerFunctionHelperResult helper_result = lower_function_helper(runner, source_function->function_type());
-        int sret = helper_result.sret ? 1 : 0;
-        for (std::size_t i = 0; i != helper_result.n_passed_parameters; ++i)
-          helper_result.parameter_handlers[i]->unpack(runner, source_function->parameters().at(i+helper_result.n_phantom), target_function->parameters().at(i + sret), target_function->location());
+        std::size_t n_phantom = source_function->function_type()->n_phantom(), n_total = source_function->parameters().size();
+        for (std::size_t ii = 0, ie = n_total - n_phantom; ii != ie; ++ii)
+          helper_result.parameter_handlers[ii]->unpack(runner, source_function->parameters().at(ii+n_phantom), target_function->parameters().at(ii), target_function->location());
       }
       
       TypeSizeAlignment TargetCommon::type_size_alignment_simple(llvm::Type *llvm_type) {
@@ -216,6 +226,9 @@ namespace Psi {
         virtual ValuePtr<> pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& source_value, const SourceLocation&) const {
           return builder.rewrite_value_register(source_value).value;
         }
+        
+        virtual void pack_cleanup(AggregateLoweringPass::FunctionRunner&, const ValuePtr<>&, const SourceLocation&) const {
+        }
 
         virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation&) const {
           runner.add_mapping(source_value, LoweredValue::register_(m_type, false, target_value));
@@ -311,6 +324,9 @@ namespace Psi {
           return change_by_memory_in(builder, source_value, lowered_type(), location);
         }
 
+        virtual void pack_cleanup(AggregateLoweringPass::FunctionRunner&, const ValuePtr<>&, const SourceLocation&) const {
+        }
+        
         virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const {
           runner.add_mapping(source_value, change_by_memory_out(runner, target_value, m_type, location));
         }
@@ -394,6 +410,10 @@ namespace Psi {
           return ptr;
         }
 
+        virtual void pack_cleanup(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& param_value, const SourceLocation& location) const {
+          builder.builder().freea_cast(param_value, location);
+        }
+        
         virtual void unpack(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& source_value, const ValuePtr<>& target_value, const SourceLocation& location) const {
           LoweredValue val = runner.load_value(m_type, target_value, location);
           runner.add_mapping(source_value, val);
@@ -434,7 +454,7 @@ namespace Psi {
         }
 
         virtual ValuePtr<Instruction> return_pack(AggregateLoweringPass::FunctionRunner& builder, const ValuePtr<>& value, const SourceLocation& location) const {
-          ValuePtr<> sret_parameter = builder.new_function()->parameters().at(0);
+          ValuePtr<> sret_parameter = builder.new_function()->parameters().back();
           LoweredValue rewritten = builder.rewrite_value(value);
           builder.store_value(rewritten, sret_parameter, location);
           return builder.builder().return_(FunctionalBuilder::empty_value(builder.context(), location), location);

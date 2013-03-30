@@ -80,15 +80,21 @@ namespace Psi {
     /**
      * Print a large integer.
      * 
-     * \param os Output stream to print to.
-     * \param is_signed Whether this is a signed or unsigned integer. If it is signed,
-     * a minus sign may be printed.
-     * \param base Base to print in.
+     * \param out Buffer to write result to.
+     * \param length Length of \c out. Must be at least two.
+     * \param is_signed Whether this is a signed or unsigned integer. Note that this routine
+     * does not print minus signs or base prefixes.
+     * \param base Base to print in. Must be between 2 and 35.
+     * 
+     * \return Number of characters in buffer, excluding NULL terminator.
      */
-    void BigInteger::print(std::ostream& os, bool is_signed, unsigned base) const {
+    std::size_t BigInteger::print(char *out, std::size_t length, bool is_signed, unsigned base) const {
+      PSI_ASSERT(length >= 2);
+      
       if (zero()) {
-        os << '0';
-        return;
+        out[0] = '0';
+        out[1] = '\0';
+        return 1;
       }
         
       BigInteger current;
@@ -100,9 +106,9 @@ namespace Psi {
       
       BigInteger next(bits()), rounded(bits()), remainder(bits());
       
+      char *out_cur = out, *out_end = out + length;
       BigInteger base_i(bits(), base);
-      std::vector<char> buffer;
-      while (!current.zero()) {
+      while (!current.zero() && (out_cur != out_end)) {
         next.divide_unsigned(current, base_i);
         rounded.multiply(next, base_i);
         remainder.subtract(current, rounded);
@@ -112,12 +118,36 @@ namespace Psi {
           digit_c = 'A' + (digit - 10);
         else
           digit_c = '0' + digit;
-        buffer.push_back(digit_c);
+        *out_cur++ = digit_c;
         current = next;
       }
       
-      std::reverse(buffer.begin(), buffer.end());
-      os.write(&buffer[0], buffer.size());
+      if (out_cur == out_end)
+        throw TvmUserError("Number output buffer too small");
+      
+      std::reverse(out, out_cur);
+      *out_cur = '\0';
+      return out_cur - out;
+    }
+    
+    /**
+     * Print a large integer.
+     * 
+     * \param os Output stream to print to.
+     * \param is_signed Whether this is a signed or unsigned integer. Note that this routine
+     * does not print minus signs or base prefixes.
+     * \param base Base to print in. Must be between 2 and 35.
+     */
+    void BigInteger::print(std::ostream& os, bool is_signed, unsigned base) const {
+      unsigned log2_base = 0;
+      for (unsigned n = base; n > 1; n >>= 1)
+        ++log2_base;
+      
+      unsigned digits = bits() / log2_base;
+      SmallArray<char, 64> buffer;
+      buffer.resize(digits + 2);
+      std::size_t n = print(buffer.get(), buffer.size(), is_signed, base);
+      os.write(buffer.get(), n);
     }
 
     void BigInteger::assign(unsigned value) {

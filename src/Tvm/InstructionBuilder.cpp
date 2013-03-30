@@ -228,6 +228,21 @@ namespace Psi {
       m_insert_point.insert(insn);
       return insn;
     }
+
+    /**
+     * \brief Free memory allocated by alloca or alloca_const.
+     * 
+     * Any \c alloca instructions between the one specified and the current point are also freed.
+     * This tries to unwrap any pointer casts in \c ptr to reach an \c alloca instruction.
+     */
+    ValuePtr<Instruction> InstructionBuilder::freea_cast(const ValuePtr<>& ptr, const SourceLocation& location) {
+      ValuePtr<> my_ptr = ptr;
+      while (ValuePtr<PointerCast> cast_ptr = dyn_cast<PointerCast>(my_ptr))
+        my_ptr = cast_ptr->pointer();
+      ValuePtr<Instruction> insn(::new FreeAlloca(my_ptr, location));
+      m_insert_point.insert(insn);
+      return insn;
+    }
     
     /**
      * \brief Load a value from memory.

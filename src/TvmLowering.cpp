@@ -48,7 +48,7 @@ TvmScope* TvmScope::put_scope(TvmScope *given) {
       root = root->m_parent.get();
     return root;
   } else {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     PSI_ASSERT(given->m_depth <= m_depth);
     TvmScope *parent = this;
     while (parent->m_depth > given->m_depth)
@@ -66,7 +66,7 @@ TvmGenericScope *TvmScope::generic_put_scope(TvmScope *given) {
     PSI_ASSERT(scope);
   }
   
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
   if (given) {
     TvmScope *parent = scope;
     while (parent->m_depth > given->m_depth)
@@ -148,22 +148,22 @@ TvmResultScope TvmScope::join(const TvmResultScope& lhs, const TvmResultScope& r
   } else if (!rhs.scope) {
     rs.scope = lhs.scope;
   } else {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     TvmScope *outer;
 #endif
     if (lhs.scope->m_depth > rhs.scope->m_depth) {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       outer = rhs.scope;
 #endif
       rs.scope = lhs.scope;
     } else {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       outer = lhs.scope;
 #endif
       rs.scope = rhs.scope;
     }
     
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     TvmScope *sc = rs.scope;
     while (sc->m_depth > outer->m_depth)
       sc = sc->m_parent.get();
@@ -721,7 +721,7 @@ TvmResult tvm_lower_generic(const TvmScopePtr& scope, TvmFunctionalBuilder& buil
   if (is_outer_generic) {
     PSI_ASSERT(scope->m_in_progress_generic_scope == &generic_scope);
     scope->m_in_progress_generic_scope = NULL;
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     TvmScope *result_scope = generic_scope.generics.empty() ? static_cast<TvmScope*>(NULL) : generic_scope.generics.begin()->second.scope.scope;
 #endif
     for (TvmGenericScope::GenericMapType::const_iterator ii = generic_scope.generics.begin(), ie = generic_scope.generics.end(); ii != ie; ++ii) {

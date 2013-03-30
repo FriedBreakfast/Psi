@@ -15,7 +15,7 @@
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Value.h>
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #include <llvm/ExecutionEngine/JITEventListener.h>
 #endif
 
@@ -207,7 +207,7 @@ namespace Psi {
         boost::shared_ptr<TargetCallback> m_target_fixes;
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
         boost::unordered_map<Module*, ModuleMapping> m_modules;
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
         boost::shared_ptr<llvm::JITEventListener> m_debug_listener;
 #endif
         boost::shared_ptr<llvm::ExecutionEngine> m_llvm_engine;

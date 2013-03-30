@@ -38,16 +38,17 @@ namespace Psi {
     public:
       /// \brief Available integer bit widths
       enum Width {
+        /// Same width as a pointer. For platform independence, this
+        /// is not considered equal to any of the other bit widths,
+        /// even though in practise it will always be the same as one
+        /// of them.
+        iptr=0,
         i8, ///< 8 bits
         i16, ///< 16 bits
         i32, ///< 32 bits
         i64, ///< 64 bits
         i128, ///< 128 bits
-        /// Same width as a pointer. For platform independence, this
-        /// is not considered equal to any of the other bit widths,
-        /// even though in practise it will always be the same as one
-        /// of them.
-        iptr
+        i_max /// Number of integer types
       };
       
       Width width() const {return m_width;}
@@ -78,6 +79,8 @@ namespace Psi {
       const BigInteger& value() const {return m_value;}
       /// \brief Get the width of this constant.
       IntegerType::Width width() const {return m_width;}
+      /// \brief Whether this integer is signed.
+      bool is_signed() const {return m_is_signed;}
       /// \brief Get the type of this term cast to IntegerType::Ptr
       ValuePtr<IntegerType> type() const {return value_cast<IntegerType>(Value::type());}
 
@@ -89,12 +92,13 @@ namespace Psi {
 
     public:
       enum Width {
-        fp32, ///< 32-bit IEEE float
+        fp32=0, ///< 32-bit IEEE float
         fp64, ///< 64-bit IEEE float
         fp128, ///< 128-bit IEEE float
         fp_x86_80,  ///< 80-bit x86 "long double" type
         fp_ppc_128, ///< 128-bit PPC-specific floating point type. See
                     ///"man float" on MacOS for details.
+        fp_max ///< Number of FP types; must be last in this structure
       };
 
       /// \brief Get the width of this floating point type.

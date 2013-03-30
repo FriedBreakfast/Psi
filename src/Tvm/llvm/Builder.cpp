@@ -18,7 +18,7 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetLibraryInfo.h>
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #include <iostream>
 #include <llvm/CodeGen/MachineFunction.h>
 #endif
@@ -234,6 +234,7 @@ namespace Psi {
         
         AggregateLoweringPass aggregate_lowering_pass(module, target_callback()->aggregate_lowering_callback());
         aggregate_lowering_pass.remove_unions = true;
+        aggregate_lowering_pass.memcpy_to_bytes = true;
         aggregate_lowering_pass.update();
         
         for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {
@@ -391,7 +392,11 @@ namespace Psi {
         case term_function_type: {
           llvm::SmallVector<llvm::Type*, 8> params;
           ValuePtr<FunctionType> function_type = value_cast<FunctionType>(term);
-          for (std::size_t i = function_type->n_phantom(), e = function_type->parameter_types().size(); i != e; ++i)
+          PSI_ASSERT(function_type->n_phantom() == 0);
+          int sret = function_type->sret() ? 1 : 0;
+          if (sret)
+            params.push_back(build_type(function_type->parameter_types().back()));
+          for (std::size_t i = 0, e = function_type->parameter_types().size() - sret; i != e; ++i)
             params.push_back(build_type(function_type->parameter_types()[i]));
           llvm::Type *result = build_type(function_type->result_type());
           t = llvm::FunctionType::get(result, params, false);
@@ -562,7 +567,7 @@ namespace Psi {
         return m_llvm_engine->getPointerToGlobal(jt->second);
       }
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       class DebugListener : public llvm::JITEventListener {
       public:
         DebugListener(bool dump_ir, bool dump_asm)
@@ -592,7 +597,7 @@ namespace Psi {
         m_llvm_engine.reset(llvm::ExecutionEngine::create(module, false, 0, m_llvm_opt, false));
         PSI_ASSERT_MSG(m_llvm_engine, "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
         
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
         const char *debug_mode = std::getenv("PSI_LLVM_DEBUG");
         if (debug_mode) {
           bool dump_ir, dump_asm;

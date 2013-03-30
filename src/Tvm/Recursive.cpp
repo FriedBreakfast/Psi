@@ -6,7 +6,7 @@
 #include "FunctionalBuilder.hpp"
 #include "Utility.hpp"
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #include <iostream>
 #endif
 
@@ -82,7 +82,7 @@ namespace Psi {
       return this;
     }
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     void RecursiveType::dump_parameters() {
       for (ParameterList::iterator ii = m_parameters.begin(), ie = m_parameters.end(); ii != ie; ++ii) {
         std::cerr << ii->get() << '\n';

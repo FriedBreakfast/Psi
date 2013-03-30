@@ -109,7 +109,7 @@ namespace Psi {
       
       template<typename V> static void visit(V& PSI_UNUSED(v)) {}
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       void debug_print() const;
 #endif
       
@@ -301,7 +301,7 @@ namespace Psi {
     &derived::evaluate_impl \
   }
 
-#ifndef PSI_DEBUG
+#if !PSI_DEBUG
     template<typename T>
     const DelayedEvaluationVtable DelayedEvaluationImpl<T>::vtable = PSI_COMPILER_DELAYED_EVALUATION(DelayedEvaluationImpl<T>, "(callback)", DelayedEvaluationCallback<typename T::BaseArgs>);
 #else

@@ -37,7 +37,7 @@ namespace Psi {
       };
       
     private:
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       static bool all_global(const EntryVector& v) {
         for (EntryVector::const_iterator ii = v.begin(), ie = v.end(); ii != ie; ++ii) {
           if (!ii->global())
@@ -515,6 +515,12 @@ namespace Psi {
        * primitive types.
        */
       bool flatten_globals;
+      
+      /**
+       * Convert all calls to memcpy to use byte pointers, so that the
+       * backend does not have to adjust for type size.
+       */
+      bool memcpy_to_bytes;
     };
   }
 }

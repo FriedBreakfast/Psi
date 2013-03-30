@@ -32,7 +32,7 @@ namespace Psi {
   };
 #define PSI_DEBUG_LOCATION() ::Psi::DebugLocation(__FILE__, __LINE__, __PRETTY_FUNCTION__)
 
-#if (__GNUC__ >= 4) && (__GNUC_MINOR__ >= 5)
+#if (__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 5))
 #define PSI_UNREACHABLE() __builtin_unreachable()
 #else
 #define PSI_UNREACHABLE() void()

@@ -15,7 +15,7 @@ namespace Psi {
       struct InstructionBuilder {
         static llvm::Instruction* return_callback(FunctionBuilder& builder, const ValuePtr<Return>& insn) {
           if (builder.function()->function_type()->sret()) {
-            return builder.irbuilder().CreateRet(&builder.llvm_function()->getArgumentList().front());
+            return builder.irbuilder().CreateRet(&builder.llvm_function()->getArgumentList().back());
           } else {
             return builder.irbuilder().CreateRet(builder.build_value(insn->value));
           }
@@ -46,13 +46,18 @@ namespace Psi {
           llvm::Value *cast_target = builder.irbuilder().CreatePointerCast(target, llvm_function_type);
 
           // Prepare parameters
-          std::size_t n_phantom = function_type->n_phantom();
-          std::size_t n_passed_parameters = function_type->parameter_types().size() - n_phantom;
-
+          PSI_ASSERT(!function_type->n_phantom());
+          
           llvm::SmallVector<llvm::Value*, 4> parameters;
-          parameters.resize(n_passed_parameters);
-          for (std::size_t i = 0; i < n_passed_parameters; ++i)
-            parameters[i] = builder.build_value(insn->parameters[i + n_phantom]);
+
+          unsigned sret = 0;
+          if (function_type->sret()) {
+            sret = 1;
+            parameters[0] = builder.build_value(insn->parameters.back());
+          }
+
+          for (std::size_t ii = 0, ie = parameters.size() - sret; ii != ie; ++ii)
+            parameters.push_back(builder.build_value(insn->parameters[ii]));
           
           return builder.irbuilder().CreateCall(cast_target, parameters);
         }
@@ -143,20 +148,6 @@ namespace Psi {
           unsigned alignment = 0;
           if (llvm::ConstantInt *alignment_expr = llvm::dyn_cast<llvm::ConstantInt>(builder.build_value(term->alignment)))
             alignment = alignment_expr->getValue().getZExtValue();
-          
-          PSI_ASSERT(dest->getType() == src->getType());
-
-          llvm::Type *i8ptr = llvm::IntegerType::getInt8PtrTy(builder.module_builder()->llvm_context());
-          if (dest->getType() != i8ptr) {
-            const llvm::DataLayout *target_data = builder.module_builder()->llvm_target_machine()->getDataLayout();
-            llvm::Type *element_type = llvm::cast<llvm::PointerType>(dest->getType())->getElementType();
-            llvm::Constant *target_size = llvm::ConstantInt::get(target_data->getIntPtrType(builder.module_builder()->llvm_context()), target_data->getTypeAllocSize(element_type));
-            count = builder.irbuilder().CreateMul(count, target_size);
-            alignment = std::max(alignment, target_data->getABITypeAlignment(element_type));
-            
-            dest = builder.irbuilder().CreateBitCast(dest, i8ptr);
-            src = builder.irbuilder().CreateBitCast(src, i8ptr);
-          }
           
           llvm::ConstantInt *alignment_expr = llvm::ConstantInt::get(llvm::IntegerType::getInt32Ty(builder.module_builder()->llvm_context()), alignment);
           llvm::Value *isvolatile = llvm::ConstantInt::getFalse(builder.module_builder()->llvm_context());

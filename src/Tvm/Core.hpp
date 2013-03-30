@@ -264,7 +264,7 @@ namespace Psi {
       
       void check_source(CheckSourceParameter& parameter);
       
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       void dump();
 #endif
 
@@ -675,8 +675,9 @@ namespace Psi {
       ConstructorList& constructors() {return m_constructors;}
       /// \brief List of destructor functions
       ConstructorList& destructors() {return m_destructors;}
+      void sort_constructors();
       
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       void dump();
 #endif
       
@@ -720,7 +721,7 @@ namespace Psi {
 
       TermListType m_value_list;
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       void dump_hash_terms();
 #endif
 

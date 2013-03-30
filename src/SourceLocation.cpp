@@ -1,7 +1,7 @@
 #include "SourceLocation.hpp"
 
 #include <sstream>
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #include <iostream>
 #endif
 
@@ -179,11 +179,11 @@ namespace Psi {
     return String(sss.c_str(), sss.length());
   }
 
-#if defined(PSI_DEBUG) || defined(PSI_DOXYGEN)
+#if PSI_DEBUG || PSI_DOXYGEN
   /**
     * \brief Dump the name of this location to stderr.
     *
-    * Only available if \c PSI_DEBUG is defined.
+    * Only available if \c PSI_DEBUG is not zero.
     */
   void LogicalSourceLocation::dump_error_name() {
     std::cerr << error_name(LogicalSourceLocationPtr()) << std::endl;

@@ -98,14 +98,24 @@ namespace Psi {
         PSI_ASSERT(!m_function->blocks().empty());
         
         // Set up parameters
-        llvm::Function::ArgumentListType::iterator ii = m_llvm_function->getArgumentList().begin(), ie = m_llvm_function->getArgumentList().end();
-        for (std::size_t in = function()->function_type()->n_phantom(); ii != ie; ++ii, ++in) {
-          ValuePtr<FunctionParameter> param = m_function->parameters().at(in);
-          llvm::Value *value = &*ii;
-          value->setName(term_name(param));
-          m_value_terms.insert(std::make_pair(param, value));
+        {
+          llvm::Function::ArgumentListType::iterator ii = m_llvm_function->getArgumentList().begin(), ie = m_llvm_function->getArgumentList().end();
+          if (m_function->function_type()->sret()) {
+            ValuePtr<FunctionParameter> param = m_function->parameters().back();
+            llvm::Argument *value = &*ii;
+            value->setName(term_name(param));
+            value->addAttr(llvm::Attributes::get(module_builder()->llvm_context(), llvm::Attributes::StructRet));
+            m_value_terms.insert(std::make_pair(param, value));
+          }
+          
+          for (std::size_t in = 0; ii != ie; ++ii, ++in) {
+            ValuePtr<FunctionParameter> param = m_function->parameters().at(in);
+            llvm::Value *value = &*ii;
+            value->setName(term_name(param));
+            m_value_terms.insert(std::make_pair(param, value));
+          }
         }
-
+        
         // create llvm blocks
         std::vector<std::pair<ValuePtr<Block>, llvm::BasicBlock*> > blocks;
         for (Function::BlockList::const_iterator it = m_function->blocks().begin(), ie = m_function->blocks().end(); it != ie; ++it) {

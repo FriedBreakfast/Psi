@@ -95,7 +95,7 @@ namespace Psi {
 
   template<typename V, typename T, std::size_t N>
   void visit_callback(V& callback, const char *name, const boost::array<T*,N>& values) {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     for (std::size_t i = 0; i != N; ++i)
       PSI_ASSERT(values[i]);
 #endif

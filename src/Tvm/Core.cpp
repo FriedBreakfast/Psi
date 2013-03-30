@@ -6,7 +6,7 @@
 #include "Recursive.hpp"
 #include "Utility.hpp"
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #include <iostream>
 #endif
 
@@ -125,7 +125,7 @@ namespace Psi {
       parameter.available.insert(this);
     }
     
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     /**
      * Dump this term to stderr.
      */
@@ -352,7 +352,7 @@ namespace Psi {
       return result;
     }
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     /**
      * Dump the contents of the hash_terms table to stderr.
      */
@@ -392,7 +392,7 @@ namespace Psi {
         throw TvmUserError("Duplicate module member name");
     }
     
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     /**
      * Dump all symbols in this module to stderr.
      */

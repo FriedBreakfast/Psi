@@ -560,7 +560,8 @@ namespace Psi {
     split_structs(false),
     remove_unions(false),
     pointer_arithmetic_to_bytes(false),
-    flatten_globals(false) {
+    flatten_globals(false),
+    memcpy_to_bytes(false) {
     }
 
     /**

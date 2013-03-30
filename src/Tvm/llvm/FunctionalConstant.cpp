@@ -61,10 +61,6 @@ namespace Psi {
           return llvm::UndefValue::get(ty);
         }
 
-        static llvm::Constant* function_specialize_callback(ModuleBuilder& builder, const ValuePtr<FunctionSpecialize>& term) {
-          return builder.build_constant(term->function());
-        }
-
         static llvm::Constant* pointer_cast_callback(ModuleBuilder& builder, const ValuePtr<PointerCast>& term) {
           llvm::Type *type = builder.build_type(term->target_type());
           llvm::Constant *source = builder.build_constant(term->pointer());
@@ -245,7 +241,6 @@ namespace Psi {
             .add<ArrayValue>(array_value_callback)
             .add<StructValue>(struct_value_callback)
             .add<UndefinedValue>(undefined_value_callback)
-            .add<FunctionSpecialize>(function_specialize_callback)
             .add<PointerCast>(pointer_cast_callback)
             .add<PointerOffset>(pointer_offset_callback)
             .add<ElementValue>(element_value_callback)

@@ -270,7 +270,7 @@ namespace Psi {
     }
     
     DisassemblerContext::TermDefinitionList* DisassemblerContext::term_definition_list(const ValuePtr<>& term) {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
       switch (term->term_type()) {
       case term_global_variable:
       case term_function:

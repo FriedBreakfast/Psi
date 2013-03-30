@@ -8,7 +8,7 @@
 #include "Visitor.hpp"
 #include "Runtime.hpp"
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #define PSI_REFERENCE_COUNT_GRANULARITY 20
 #else
 #define PSI_REFERENCE_COUNT_GRANULARITY 1
@@ -93,7 +93,7 @@ namespace Psi {
         m_ptr = ptr;
         if (m_ptr) {
           m_ptr->m_reference_count += PSI_REFERENCE_COUNT_GRANULARITY;
-#ifdef PSI_OBJECT_PTR_DEBUG
+#if PSI_OBJECT_PTR_DEBUG
           m_ptr->compile_context().object_ptr_add(m_ptr, this);
 #endif
         }
@@ -111,7 +111,7 @@ namespace Psi {
       T* get() const {return m_ptr;}
       
       void swap(ObjectPtr& other) {
-#ifdef PSI_OBJECT_PTR_DEBUG
+#if PSI_OBJECT_PTR_DEBUG
         if (m_ptr && other.m_ptr) {
           ObjectPtr tmp;
           swap(tmp);
@@ -189,7 +189,7 @@ namespace Psi {
     template<typename T>
     ObjectPtr<T>::~ObjectPtr() {
       if (m_ptr) {
-#ifdef PSI_OBJECT_PTR_DEBUG
+#if PSI_OBJECT_PTR_DEBUG
         m_ptr->compile_context().object_ptr_remove(m_ptr, this);
 #endif
         m_ptr->m_reference_count -= PSI_REFERENCE_COUNT_GRANULARITY;
@@ -198,7 +198,7 @@ namespace Psi {
           Object *optr = const_cast<Object*>(cptr);
           derived_vptr(optr)->destroy(optr);
         }
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
         m_ptr = 0;
 #endif
       }
@@ -328,7 +328,7 @@ namespace Psi {
     public:
       template<typename T>
       void visit_sequence(const char*, const boost::array<T*,1>& seq) {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
         T().swap(*seq[0]);
 #else
         seq[0]->clear();
@@ -337,7 +337,7 @@ namespace Psi {
 
       template<typename T>
       void visit_map(const char*, const boost::array<T*,1>& maps) {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
         T().swap(*maps[0]);
 #else
         maps[0]->clear();

@@ -59,7 +59,7 @@ namespace Psi {
     PSI_COMPILER_COMMON_EXPORT unsigned depth();
     PSI_COMPILER_COMMON_EXPORT LogicalSourceLocationPtr ancestor(unsigned depth);
     PSI_COMPILER_COMMON_EXPORT String error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous_tail=false);
-#if defined(PSI_DEBUG) || defined(PSI_DOXYGEN)
+#if PSI_DEBUG || PSI_DOXYGEN
     PSI_COMPILER_COMMON_EXPORT void dump_error_name();
 #endif
 

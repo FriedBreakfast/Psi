@@ -3,7 +3,7 @@
 
 #include <boost/format.hpp>
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
 #include <iostream>
 #endif
 
@@ -74,7 +74,7 @@ namespace Psi {
       }
     }
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     void Tree::debug_print() const {
       if (!this) {
         std::cerr << "(null)" << std::endl;

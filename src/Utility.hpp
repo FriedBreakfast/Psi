@@ -12,6 +12,7 @@
 #include <boost/noncopyable.hpp>
 
 #include "Assert.hpp"
+#include "CppCompiler.hpp"
 
 namespace Psi {
   template<bool v> struct static_bool {static const bool value = v;};
@@ -170,6 +171,45 @@ namespace Psi {
       std::swap(this->m_ptr, src.m_ptr);
     }
   };
+  
+  /**
+   * \brief Memory pool which does not support free().
+   * 
+   * It also does not run destructors, so no object placed in this pool should have one.
+   */
+  class PSI_COMPILER_COMMON_EXPORT WriteMemoryPool {
+    struct Page {
+      Page *next;
+      std::size_t offset, length;
+      char data[] PSI_ATTRIBUTE((PSI_ALIGNED_MAX));
+    };
+
+    std::size_t m_page_size;
+    Page *m_pages;
+    
+  public:
+    WriteMemoryPool();
+    ~WriteMemoryPool();
+    
+    /// \brief Get the size which will be allocated for the next page
+    std::size_t page_size() {return m_page_size;}
+    /// \brief Set the size of the next allocated page
+    void page_size(std::size_t n) {m_page_size = n;}
+    
+    template<typename T>
+    T* alloc() {
+      return new (alloc(sizeof(T), PSI_ALIGNOF(T))) T;
+    }
+    
+    template<typename T>
+    T* alloc(const T& src) {
+      return new (alloc(sizeof(T), PSI_ALIGNOF(T))) T(src);
+    }
+    
+    void* alloc(std::size_t size, std::size_t align);
+    char* str_alloc(std::size_t n);
+    char* strdup(const char *s);
+  };
 
   template<typename T, typename U>
   struct checked_cast_impl;
@@ -229,7 +269,7 @@ namespace Psi {
    * casts.
    */
   struct CheckedCastBase {
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
     PSI_COMPILER_COMMON_EXPORT virtual ~CheckedCastBase();
 #endif
   };
