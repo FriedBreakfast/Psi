@@ -16,6 +16,7 @@
 #include <boost/version.hpp>
 
 #include "../SourceLocation.hpp"
+#include "../ErrorContext.hpp"
 #include "../Utility.hpp"
 #include "../Array.hpp"
 
@@ -30,35 +31,6 @@ namespace Psi {
     class Context;
     class Module;
     class Value;
-
-    /**
-     * Thrown when an error is caused by the users use of the library.
-     */
-    class PSI_TVM_EXPORT TvmUserError : public std::exception {
-    public:
-      explicit TvmUserError(const std::string& msg);
-      virtual ~TvmUserError() throw ();
-      virtual const char* what() const throw();
-
-    private:
-      const char *m_str;
-      std::string m_message;
-    };
-
-    /**
-     * Thrown when an internal library error occurs, which should not
-     * occur.
-     */
-    class PSI_TVM_EXPORT TvmInternalError : public std::exception {
-    public:
-      explicit TvmInternalError(const std::string& msg);
-      virtual ~TvmInternalError() throw ();
-      virtual const char* what() const throw();
-
-    private:
-      const char *m_str;
-      std::string m_message;
-    };
 
     /**
      * \brief Identifies the Term subclass this object actually is.
@@ -701,6 +673,8 @@ namespace Psi {
       friend class Function;
       friend class Block;
       friend class Module;
+      
+      CompileErrorContext *m_error_context;
 
       struct ValueDisposer;
       struct HashableSetupEquals;
@@ -726,7 +700,7 @@ namespace Psi {
 #endif
 
     public:
-      Context();
+      Context(CompileErrorContext *error_context);
       ~Context();
 
       /**

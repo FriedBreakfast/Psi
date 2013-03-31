@@ -210,6 +210,34 @@ namespace Psi {
     char* str_alloc(std::size_t n);
     char* strdup(const char *s);
   };
+  
+  template<typename T>
+  class WriteMemoryPoolAllocator {
+    WriteMemoryPool *m_pool;
+    
+  public:
+    typedef T value_type;
+    typedef T* pointer;
+    typedef T& reference;
+    typedef const T* const_pointer;
+    typedef const T& const_reference;
+    typedef std::size_t size_type;
+    typedef std::ptrdiff_t difference_type;
+    template<typename Other> struct rebind {typedef WriteMemoryPoolAllocator<Other> other;};
+    
+    WriteMemoryPoolAllocator(WriteMemoryPool *pool) : m_pool(pool) {}
+    template<typename Other> WriteMemoryPoolAllocator(const WriteMemoryPoolAllocator<Other>& other) : m_pool(&other.pool()) {}
+    
+    pointer address(reference x) const {return &x;}
+    const_pointer address(const_reference x) const {return &x;}
+    pointer allocate(size_type n, const_pointer hint=0) {return static_cast<T*>(m_pool->alloc(n*sizeof(value_type), PSI_ALIGNOF(value_type)));}
+    void deallocate(pointer p, size_type n) {}
+    size_type max_size() const throw() {return std::numeric_limits<std::size_t>::max() / sizeof(value_type);}
+    void construct(pointer p, const_reference val) {new (p) T (val);}
+    void destroy(pointer p) {p->~T();}
+    
+    WriteMemoryPool& pool() const {return *m_pool;}
+  };
 
   template<typename T, typename U>
   struct checked_cast_impl;
@@ -362,6 +390,28 @@ namespace Psi {
       ++iter;
     }
     return true;
+  }
+  
+  /**
+   * \brief Get a pointer to the first element of a vector.
+   * 
+   * If the vector is empty, then front() and the subscript operator are undefined
+   * behaviour and hence the C++ implementation may consider it an error. This
+   * checks for an empty vector and returns a NULL pointer in this case.
+   */
+  template<typename Container>
+  typename Container::pointer vector_begin_ptr(Container& container) {
+    return container.empty() ? typename Container::pointer(0) : &container.front();
+  }
+  
+  /**
+   * \brief Get a pointer "one past" the last element of a vector.
+   * 
+   * See vector_begin_ptr for rationale.
+   */
+  template<typename Container>
+  typename Container::pointer vector_end_ptr(Container& container) {
+    return container.empty() ? typename Container::pointer(0) : (&container.back() + 1);
   }
 }
 

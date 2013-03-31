@@ -1,3 +1,4 @@
+#include "Builder.hpp"
 #include "CModule.hpp"
 
 #include <algorithm>
@@ -84,7 +85,7 @@ CExpression* CExpressionBuilder::member(const SourceLocation* location, COperato
   sub->index = index;
   sub->eval = c_eval_never;
   if (sub->type->type == c_type_array) {
-    sub->type = pointer_type(location, checked_cast<CTypeArray*>(sub->type)->member);
+    sub->type = pointer_type(checked_cast<CTypeArray*>(sub->type)->member);
     sub->lvalue = false;
   } else {    
     sub->lvalue = true;
@@ -96,7 +97,7 @@ CExpression* CExpressionBuilder::member(const SourceLocation* location, COperato
 CExpression* CExpressionBuilder::declare(const SourceLocation* location, CType *type, COperatorType op, CExpression *arg, unsigned index) {
   CExpressionBinaryIndex *sub = m_module->pool().alloc<CExpressionBinaryIndex>();
   if (op == c_op_vardeclare) {
-    sub->type = pointer_type(location, type);
+    sub->type = pointer_type(type);
     sub->lvalue = false;
     sub->op = c_op_vardeclare;
   } else {
@@ -177,39 +178,65 @@ void CExpressionBuilder::nullary(const SourceLocation* location, COperatorType o
   append(location, expr);
 }
 
-CType* CExpressionBuilder::pointer_type(const SourceLocation* location, CType *target) {
+void CExpressionBuilder::append(CType *type, const SourceLocation* location, const char *prefix) {
+  type->name.prefix = NULL;
+  type->name.index = 0;
+  type->location = location;
+  type->ptr = NULL;
+  m_module->types().append(type);
+}
+
+CType* CExpressionBuilder::void_type() {
+  CType *ty = m_module->pool().alloc<CType>();
+  ty->type = c_type_void;
+  append(ty, NULL, "void");
+  return ty;
+}
+
+CType* CExpressionBuilder::builtin_type(const char *name) {
+  CType *ty = m_module->pool().alloc<CType>();
+  ty->type = c_type_builtin;
+  append(ty, NULL, name);
+  return ty;
+}
+
+CType* CExpressionBuilder::pointer_type(CType *target) {
   if (target->ptr)
     return target->ptr;
   
   CTypePointer *tu = m_module->pool().alloc<CTypePointer>();  
   tu->type = c_type_pointer;
-  tu->name.prefix = NULL;
   tu->target = target;
-  tu->location = location;
+  append(tu, NULL);
   target->ptr = tu;
   return tu;
+}
+
+CType* CExpressionBuilder::array_type(CType *member, unsigned length) {
+  CTypeArray *arr = m_module->pool().alloc<CTypeArray>();
+  arr->type = c_type_array;
+  arr->member = member;
+  arr->length = length;
+  append(arr, NULL);
+  return arr;
 }
 
 CType* CExpressionBuilder::function_type(const SourceLocation* location, CType *result_ty, unsigned n_args, const CTypeFunctionArgument *args) {
   CTypeFunction *f = (CTypeFunction*)m_module->pool().alloc(sizeof(CTypeFunction) + n_args*sizeof(CTypeFunctionArgument), PSI_ALIGNOF(CTypeFunction));
   f->type = c_type_function;
-  f->name.prefix = NULL;
-  f->location = location;
-  f->ptr = NULL;
   f->result_type = result_ty;
   f->n_args = n_args;
   std::copy(args, args+n_args, f->args);
+  append(f, location);
   return f;
 }
 
 CType* CExpressionBuilder::aggregate_type(const SourceLocation* location, CTypeType op, unsigned n_members, const CTypeAggregateMember *members) {
   CTypeAggregate *agg = (CTypeAggregate*)m_module->pool().alloc(sizeof(CTypeAggregate) + n_members*sizeof(CTypeAggregateMember), PSI_ALIGNOF(CTypeAggregate));
   agg->type = op;
-  agg->ptr = NULL;
-  agg->name.prefix = NULL;
-  agg->location = location;
   agg->n_members = n_members;
   std::copy(members, members+n_members, agg->members);
+  append(agg, location);
   return agg;
 }
 
@@ -364,6 +391,7 @@ void CModuleEmitter::emit_types() {
     case c_type_builtin:
     case c_type_pointer:
     case c_type_array:
+    case c_type_void:
       break;
       
     case c_type_function: {
@@ -380,14 +408,16 @@ void CModuleEmitter::emit_types() {
     case c_type_struct: {
       emit_location(*ty.location);
       CTypeAggregate& agg = checked_cast<CTypeAggregate&>(ty);
-      output() << (ty.type == c_type_union ? "union" : "struct") << " {\n";
+      output() << "typedef " << (ty.type == c_type_union ? "union" : "struct") << " {\n";
       for (unsigned ii = 0, ie = agg.n_members; ii != ie; ++ii) {
-        emit_type_prolog(agg.members[ii].type);
-        output() << " m" << ii;
-        emit_type_epilog(agg.members[ii].type);
-        output() << ";\n";
+        if (agg.members[ii].name.prefix) {
+          emit_type_prolog(agg.members[ii].type);
+          output() << ' ' << agg.members[ii].name << ii;
+          emit_type_epilog(agg.members[ii].type);
+          output() << ";\n";
+        }
       }
-      output() << "}";
+      output() << "} " << ty.name << ";\n";
       break;
     }
     
@@ -524,8 +554,10 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
   case c_expr_union_value: {
     CExpressionUnionValue *agg = checked_cast<CExpressionUnionValue*>(expression);
     output() << '{';
-    if (c_compiler().has_designated_initializer)
-      output() << ".0" << " = ";
+    if (c_compiler().has_designated_initializer) {
+      CTypeAggregate *agg_type = checked_cast<CTypeAggregate*>(agg->type);
+      output() << '.' << agg_type->members[agg->index].name << " = ";
+    }
     emit_expression(agg->value);
     output() << '}';
     break;
@@ -606,7 +638,8 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
     CExpressionBinaryIndex *member = checked_cast<CExpressionBinaryIndex*>(expression);
     emit_expression(member->arg, op.precedence, false);
     output() << op.operator_str;
-    output() << '\0';
+    CTypeAggregate *agg_type;
+    output() << agg_type->members[member->index].name;
     break;
   }
   
@@ -648,6 +681,125 @@ void CModuleEmitter::run() {
   
   for (SinglyLinkedList<CGlobal>::iterator ii = m_module->globals().begin(), ie = m_module->globals().end(); ii != ie; ++ii)
     emit_definition(*ii);
+}
+
+bool CNameMap::NameCompare::operator () (const CName& lhs, const CName& rhs) const {
+  int ord = std::strcmp(lhs.prefix, rhs.prefix);
+  if (ord < 0)
+    return true;
+  else if (ord > 0)
+    return false;
+  
+  if (lhs.index < rhs.index)
+    return true;
+  else
+    return false;
+}
+
+CNameMap::CNameMap(WriteMemoryPool *pool) : m_map(NameCompare(), pool) {
+}
+
+CNameMap::CNameMap(const CNameMap& src, WriteMemoryPool *pool)
+: m_map(src.m_map.begin(), src.m_map.end(), NameCompare(), pool) {
+}
+
+CName CNameMap::insert(const char *s, bool ignore_duplicate) {
+  const std::locale& c_locale = std::locale::classic();
+  
+  const char *p = s + std::strlen(s);
+  
+  // Remove digit string at end of number
+  const char *q = p;
+  for (; q != s; --q) {
+    if (!std::isdigit(q[-1], c_locale))
+      break;
+  }
+  
+  // Skip over any zeros
+  while (*q == '0')
+    ++q;
+  
+  unsigned index = 0;
+  if (*q != '\0')
+    std::sscanf(q, "%d", &index);
+  
+  if (!m_map.empty()) {
+    CName tmp = {s, 0};
+    NameMap::iterator it = m_map.upper_bound(tmp);
+    --it;
+    if ((std::strncmp(it->prefix, s, q-s) == 0) && (it->prefix[q-s] == '\0')) {
+      CName result = {it->prefix, index};
+      if (ignore_duplicate) {
+        m_map.insert(result);
+        return result;
+      } else {
+        while (true) {
+          if (m_map.insert(result).second)
+            return result;
+          ++result.index;
+        }
+      }
+    }
+  }
+  
+  WriteMemoryPool& pool = m_map.get_allocator().pool();
+  char *s_copy = pool.str_alloc(q-s+1);
+  std::copy(s, q, s_copy);
+  s_copy[q-s] = '\0';
+  
+  CName result = {s_copy, index};
+  m_map.insert(result);
+  return result;
+}
+
+/**
+ * \brief Reserve a name.
+ * 
+ * If this name is already present, return the existing name.
+ */
+CName CNameMap::reserve(const char *s) {
+  return insert(s, false);
+}
+
+/**
+ * \brief Generate a name.
+ * 
+ * If this name is a duplicate of an existing name, generate a new name by adding a numeric suffix.
+ */
+CName CNameMap::get(const char *base) {
+  return insert(base, true);
+}
+
+CModule::CModule(CCompiler *c_compiler)
+: m_c_compiler(c_compiler),
+m_names(&m_pool) {
+}
+
+void CModule::add_global(CGlobal *global, const SourceLocation *location, CType *type, const char *name) {
+  global->alignment = 0;
+  global->is_private = false;
+  global->eval = c_eval_write;
+  global->lvalue = true;
+  global->requires_name = false;
+  global->type = type;
+  global->location = location;
+  global->name.prefix = NULL;
+  m_globals.append(global);
+}
+
+CGlobalVariable *CModule::new_global(const SourceLocation *location, CType *type, const char *name) {
+  CGlobalVariable *gvar = m_pool.alloc<CGlobalVariable>();
+  gvar->op = c_op_global_variable;
+  gvar->is_const = false;
+  add_global(gvar, location, type, name);
+  return gvar;
+}
+
+CFunction *CModule::new_function(const SourceLocation *location, CType *type, const char *name) {
+  CFunction *f = m_pool.alloc<CFunction>();
+  f->op = c_op_function;
+  add_global(f, location, type, name);
+  return f;
 }
 
 /// Name any types which require names and are not currently named

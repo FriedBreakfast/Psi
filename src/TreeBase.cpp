@@ -26,7 +26,7 @@ namespace Psi {
      * \param callback Callback being recursively evaluated.
      */
     void RunningTreeCallback::throw_circular_dependency() {
-      CompileError error(m_callback->compile_context(), m_callback->location());
+      CompileError error(m_callback->compile_context().error_context(), m_callback->location());
       error.info("Circular dependency found");
       boost::format fmt("via: '%s'");
       for (RunningTreeCallback *ancestor = m_callback->compile_context().m_running_completion_stack; ancestor; ancestor = ancestor->m_parent) {

@@ -13,6 +13,7 @@ namespace Psi {
 #define PSI_UNUSED_ATTR unused
 #define PSI_SMALL_ENUM(name) enum __attribute__((packed)) name
 #define PSI_ASSUME(x) void()
+#define PSI_THREAD_LOCAL __thread
 
 #ifdef _WIN32
 #define PSI_EXPORT dllexport
@@ -48,6 +49,7 @@ namespace Psi {
 #define PSI_ALIGNED_MAX align(16)
 #define PSI_UNREACHABLE() __assume(false)
 #define PSI_ASSUME(x) __assume(x)
+#define PSI_THREAD_LOCAL __declspec(thread)
 #define PSI_SMALL_ENUM(name) enum name : unsigned char
 #define PSI_EXPORT dllexport
 #define PSI_IMPORT dllimport
@@ -91,7 +93,6 @@ namespace Psi {
       : file(file_), line(line_) {}
   };
 #define PSI_DEBUG_LOCATION() DebugLocation(__FILE__, __LINE__)
-
 #endif
 
 #ifdef PSI_DOXYGEN

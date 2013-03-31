@@ -443,7 +443,7 @@ namespace Psi {
         
       case statement_mode_functional:
         if (type && !type->is_register_type()) {
-          CompileError err(value.compile_context(), location);
+          CompileError err(value.compile_context().error_context(), location);
           err.info(location, "Only primitive types can be used as functional values");
           err.info(type->location(), "Type is not primitive");
           err.end();
@@ -739,7 +739,7 @@ namespace Psi {
           compile_context.error_throw(location, "Generic instance member index must be zero");
         return inst->unwrap();
       } else {
-        CompileError err(compile_context, location);
+        CompileError err(compile_context.error_context(), location);
         err.info("Element lookup argument is not an aggregate type");
         err.info(unwrapped.location(), "Type of aggregate");
         err.end();

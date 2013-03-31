@@ -301,7 +301,7 @@ namespace Psi {
       
       if (best_idx == results.size()) {
       ambiguous_match:
-        CompileError err(type->compile_context(), location);
+        CompileError err(type->compile_context().error_context(), location);
         for (unsigned ii = 0, ie = results.size(); ii != ie; ++ii)
           err.info(results[ii].second.location(), "Ambiguous overload candidate");
         err.end();

@@ -1,11 +1,8 @@
 #ifndef HPP_PSI_TVM_CBACKEND_BUILDER
 #define HPP_PSI_TVM_CBACKEND_BUILDER
 
-#include <deque>
-#include <string>
-#include <boost/optional.hpp>
-
 #include "../Core.hpp"
+#include "../Number.hpp"
 
 namespace Psi {
 namespace Tvm {
@@ -21,19 +18,46 @@ namespace Tvm {
  * </ul>
  */
 namespace CBackend {
-class CModuleBuilder {
-  std::string m_type_prefix, m_parameter_prefix, m_variable_prefix;
-  std::deque<std::string> m_type_declarations, m_global_declarations, m_global_definitions;
-  typedef std::map<ValuePtr<Function>, unsigned> ConstructorPriorityMap;
-  ConstructorPriorityMap m_constructor_functions, m_destructor_functions;
-  static boost::optional<unsigned> get_priority(const ConstructorPriorityMap& priority_map, const ValuePtr<Function>& function);
+class CModuleEmitter;
+class CModule;
+struct CFunction;
+struct CGlobalVariable;
+
+class CCompiler {
+public:
+  CCompiler();
   
-  void declare_global(std::ostream& os, const ValuePtr<GlobalVariable>& global);
-  void define_global(std::ostream& os, const ValuePtr<GlobalVariable>& global);
-  void declare_function(std::ostream& os, const ValuePtr<Function>& function);
-  void define_function(std::ostream& os, const ValuePtr<Function>& function);
+  /// \brief Has variable length array support
+  bool has_variable_length_arrays;
+  /// \brief Has designated initializer support
+  bool has_designated_initializer;
+  
+  /// \brief Get a specified integer type name.
+  virtual const char *integer_type(CModule& module, IntegerType::Width width, bool is_signed) = 0;
+  /// \brief Get a specified float type name.
+  virtual const char *float_type(CModule& module, FloatType::Width width) = 0;
+  
+  /**
+   * \brief Emit an alignment attribute.
+   * 
+   * It is assumed this attribute appears before the variable concerned.
+   */
+  virtual void emit_alignment(CModuleEmitter& emitter, unsigned n) = 0;
+  
+  virtual bool emit_unreachable(CModuleEmitter& emitter);
+
+  /// \brief Emit function attributes
+  virtual void emit_function_attributes(CModuleEmitter& emitter, CFunction *function) = 0;
+  
+  /// \brief Emit global variable attributes
+  virtual void emit_global_variable_attributes(CModuleEmitter& emitter, CGlobalVariable *gvar) = 0;
+};
+
+class CModuleBuilder {
+  CCompiler *m_c_compiler;
   
 public:
+  CModuleBuilder(CCompiler *c_compiler);
   void run(Module& module);
   void build_function(const ValuePtr<Function>& function);
   void build_global_variable(const ValuePtr<GlobalVariable>& gvar);

@@ -272,8 +272,9 @@ namespace Psi {
       return t;
     }
 
-    Context::Context()
-      : m_hash_term_buckets(initial_hash_term_buckets),
+    Context::Context(CompileErrorContext *error_context)
+      : m_error_context(error_context),
+        m_hash_term_buckets(initial_hash_term_buckets),
         m_hash_value_set(HashTermSetType::bucket_traits(m_hash_term_buckets.get(), m_hash_term_buckets.size())) {
     }
 

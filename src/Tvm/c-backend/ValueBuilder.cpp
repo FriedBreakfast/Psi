@@ -3,6 +3,7 @@
 #include "../Number.hpp"
 #include "../Instructions.hpp"
 
+#include "Builder.hpp"
 #include "CModule.hpp"
 
 #include <sstream>
@@ -70,12 +71,15 @@ struct ValueBuilderCallbacks {
   }
   
   static CExpression* array_value_callback(ValueBuilder& builder, const ValuePtr<ArrayValue>& term) {
+    // Note that ArrayValue is lowered to struct {X a[N];}
     CType *ty = builder.build_type(term->type());
+    CType *inner_ty = checked_cast<CTypeAggregate*>(ty)->members[0].type;
     unsigned n = term->length();
     SmallArray<CExpression*, small_array_size> members(n);
     for (unsigned i = 0; i != n; ++i)
       members[i] = builder.build(term->value(i));
-    return builder.c_builder().aggregate_value(&term->location(), c_op_array_value, ty, n, members.get());
+    CExpression *array_value = builder.c_builder().aggregate_value(&term->location(), c_op_array_value, inner_ty, n, members.get());
+    return builder.c_builder().aggregate_value(&term->location(), c_op_struct_value, ty, 1, &array_value);
   }
   
   static CExpression* struct_value_callback(ValueBuilder& builder, const ValuePtr<StructValue>& term) {
@@ -121,10 +125,10 @@ struct ValueBuilderCallbacks {
       unsigned idx = size_to_unsigned(term->index());
       return builder.c_builder().member(&term->location(), inner->lvalue ? c_op_member : c_op_ptr_member, inner, idx);
     } else {
-      PSI_ASSERT(!inner->lvalue);
       CType *ty = builder.build_type(term->type());
+      CExpression *array = builder.c_builder().member(&term->location(), inner->lvalue ? c_op_member : c_op_ptr_member, inner, 0);
       CExpression *idx = builder.build(term->index());
-      return builder.c_builder().binary(&term->location(), ty, c_eval_never, c_op_subscript, inner, idx, true);
+      return builder.c_builder().binary(&term->location(), ty, c_eval_never, c_op_subscript, array, idx, true);
     }
   }
   

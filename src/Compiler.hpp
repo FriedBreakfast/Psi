@@ -17,6 +17,7 @@
 #include "Platform.hpp"
 #include "Enums.hpp"
 #include "Array.hpp"
+#include "ErrorContext.hpp"
 
 namespace Psi {
   namespace Parser {
@@ -32,53 +33,10 @@ namespace Psi {
   }
   
   namespace Compiler {
-    class PSI_COMPILER_EXPORT CompileException : public std::exception {
-    public:
-      CompileException();
-      virtual ~CompileException() throw();
-      virtual const char *what() const throw();
-    };
-
     class Anonymous;
     class Global;
     class Interface;
     class Type;
-
-    /**
-     * \brief Class used for error reporting.
-     */
-    class PSI_COMPILER_EXPORT CompileError {
-      CompileContext *m_compile_context;
-      SourceLocation m_location;
-      unsigned m_flags;
-      const char *m_type;
-      
-    public:
-      enum ErrorFlags {
-        error_warning=1,
-        error_internal=2
-      };
-
-      template<typename T>
-      static std::string to_str(const T& t) {
-        std::ostringstream ss;
-        ss << t;
-        return ss.str();
-      }
-      
-      CompileError(CompileContext& compile_context, const SourceLocation& location, unsigned flags=0);
-
-      void info(const std::string& message);
-      void info(const SourceLocation& location, const std::string& message);
-      void end();
-
-      const SourceLocation& location() {return m_location;}
-
-      template<typename T> void info(const T& message) {info(to_str(message));}
-      template<typename T> void info(const SourceLocation& location, const T& message) {info(location, to_str(message));}
-    };
-
-
     class Macro;
     class EvaluateContext;
     
@@ -316,8 +274,7 @@ namespace Psi {
       friend class RunningTreeCallback;
       struct ObjectDisposer;
 
-      std::ostream *m_error_stream;
-      bool m_error_occurred;
+      CompileErrorContext *m_error_context;
       RunningTreeCallback *m_running_completion_stack;
 
       typedef boost::intrusive::list<Object, boost::intrusive::constant_time_size<false> > GCListType;
@@ -358,26 +315,12 @@ namespace Psi {
 #endif
 
     public:
-      CompileContext(std::ostream *error_stream);
+      CompileContext(CompileErrorContext *error_context);
       ~CompileContext();
       
 #if PSI_DEBUG
       std::set<void*> object_pointers();
 #endif
-
-      /// \brief Return the stream used for error reporting.
-      std::ostream& error_stream() {return *m_error_stream;}
-
-      /// \brief Returns true if an error has occurred during compilation.
-      bool error_occurred() const {return m_error_occurred;}
-      /// \brief Call this to indicate an unrecoverable error occurred at some point during compilation.
-      void set_error_occurred() {m_error_occurred = true;}
-
-      void error(const SourceLocation&, const std::string&, unsigned=0);
-      PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation&, const std::string&, unsigned=0);
-
-      template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, CompileError::to_str(message), flags);}
-      template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, CompileError::to_str(message), flags);}
 
       /// \brief Get the root location of this context.
       const SourceLocation& root_location() {return m_root_location;}
@@ -390,6 +333,14 @@ namespace Psi {
       TreePtr<T> get_functional(const T& t, const SourceLocation& location) {
         return treeptr_cast<T>(get_functional_ptr(t, location));
       }
+      
+      /// \brief Get the error reporting context
+      CompileErrorContext& error_context() {return *m_error_context;}
+      
+      /// Forwards to CompileErrorContext::error_throw
+      PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const std::string& message, unsigned flags=0) {error_context().error_throw(loc, message, flags);}
+      /// Forwards to CompileErrorContext::error_throw
+      template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_context().error_throw(loc, message, flags);}
     };
     
     class Block;

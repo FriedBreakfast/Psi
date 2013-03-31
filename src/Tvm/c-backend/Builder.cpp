@@ -1,4 +1,5 @@
 #include "Builder.hpp"
+#include "CModule.hpp"
 
 #include "../AggregateLowering.hpp"
 #include "../FunctionalBuilder.hpp"
@@ -7,79 +8,7 @@
 
 namespace Psi {
 namespace Tvm {
-/**
- * \brief Size and alignment information about primitive types.
- * 
- * All types should have alignment at least 1. A type with alignment
- * zero is not supported on this platform.
- */
-struct TargetPrimitiveInfo {
-  /// \brief Minimum alignent of structures
-  std::size_t struct_alignment;
-  
-  /// \brief Boolean type size and alignment
-  TypeSizeAlignment boolean;
-  /// \brief Size and alignment of integer types.
-  TypeSizeAlignment integers[IntegerType::i_max];
-  /// \brief Size and alignent of floating point types
-  TypeSizeAlignment floats[FloatType::fp_max];
-};
-
 namespace CBackend {
-TargetPrimitiveInfo target_info_x86() {
-  TargetPrimitiveInfo tpi = {
-    1,
-    
-    {1, 1}, // bool
-    
-    {
-      {4, 4}, // Pointer
-      {1, 1}, // i8
-      {2, 2}, // i16
-      {4, 4}, // i32
-      {8, 4}, // i64
-      {0, 0}  // i128 is not supported
-    },
-    
-    {
-      {4, 4}, // fp32
-      {8, 4}, // fp64
-      {0, 0}, // fp128 not supported
-      {12, 4}, // x86 long double
-      {0, 0} // ppc long double not supported
-    }
-  };
-  return tpi;
-}
-
-TargetPrimitiveInfo target_info_x86_64(bool has_int128, bool has_fp128) {
-  std::size_t int128 = has_int128 ? 16 : 0;
-  std::size_t fp128 = has_fp128 ? 16 : 0;
-  TargetPrimitiveInfo tpi = {
-    1,
-    
-    {1, 1}, // bool
-    
-    {
-      {8, 8}, // Pointer
-      {1, 1}, // i8
-      {2, 2}, // i16
-      {4, 4}, // i32
-      {8, 8}, // i64
-      {int128, int128}  // i128 support is optional
-    },
-    
-    {
-      {4, 4}, // fp32
-      {8, 4}, // fp64
-      {fp128, fp128}, // fp128 not supported
-      {16, 16}, // x86 long double
-      {0, 0} // ppc long double not supported
-    }
-  };
-  return tpi;
-}
-
 class CModuleCallback : public AggregateLoweringPass::TargetCallback {
 public:
   ValuePtr<FunctionType> lower_function_type(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& ftype) {
@@ -123,17 +52,25 @@ public:
   }
   
   virtual std::pair<ValuePtr<>, std::size_t> type_from_size(Context& context, std::size_t size, const SourceLocation& location) {
+    PSI_NOT_IMPLEMENTED();
   }
   
   virtual std::pair<ValuePtr<>, std::size_t> type_from_alignment(Context& context, std::size_t alignment, const SourceLocation& location) {
+    PSI_NOT_IMPLEMENTED();
   }
   
   virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>& type) {
+    PSI_NOT_IMPLEMENTED();
   }
   
   virtual ValuePtr<> byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int shift, const SourceLocation& location) {
+    PSI_NOT_IMPLEMENTED();
   }
 };
+
+CModuleBuilder::CModuleBuilder(CCompiler* c_compiler)
+: m_c_compiler(c_compiler) {
+}
 
 void CModuleBuilder::run(Tvm::Module& module) {
   CModuleCallback lowering_callback;
@@ -144,15 +81,12 @@ void CModuleBuilder::run(Tvm::Module& module) {
   aggregate_lowering_pass.memcpy_to_bytes = true;
   aggregate_lowering_pass.update();
   
-  m_constructor_functions.insert(module.constructors().begin(), module.constructors().end());
-  m_destructor_functions.insert(module.destructors().begin(), module.destructors().end());
+  CModule c_module(m_c_compiler);
   
   for (Module::ModuleMemberList::iterator i = module.members().begin(), e = module.members().end(); i != e; ++i) {
-    std::ostringstream decl, def;
-    
-    bool defined = false;
     const ValuePtr<Global>& term = i->second;
     ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
+#if 0
     switch (rewritten_term->term_type()) {
     case term_global_variable: {
       ValuePtr<GlobalVariable> global = value_cast<GlobalVariable>(rewritten_term);
@@ -179,27 +113,14 @@ void CModuleBuilder::run(Tvm::Module& module) {
     default:
       PSI_FAIL("unexpected global term type");
     }
-    
-    m_global_declarations.push_back(decl.str());
-    if (defined)
-      m_global_definitions.push_back(def.str());
+#endif
   }
+  
+  std::ostringstream source;
+  c_module.emit(source);
 }
 
-void CModuleBuilder::declare_global(std::ostream& os, const ValuePtr<GlobalVariable>& global) {
-  if (global->alignment()) os << "__attribute__((aligned(" << "))) ";
-  PSI_ASSERT(!global->private_() || !global->value());
-  if (global->private_()) os << "static ";
-  if (!global->value()) os << "extern ";
-  if (global->constant()) os << "const ";
-  os << build_type(global->type()) << ' ' << global->name();
-}
-
-void CModuleBuilder::define_global(std::ostream& os, const ValuePtr<GlobalVariable>& global) {
-  declare_global(os, global);
-  os << " = ";
-}
-
+#if 0
 boost::optional<unsigned> CModuleBuilder::get_priority(const ConstructorPriorityMap& priority_map, const ValuePtr<Function>& function) {
   ConstructorPriorityMap::const_iterator ci = priority_map.find(function);
   if (ci != priority_map.end())
@@ -230,12 +151,7 @@ void CModuleBuilder::declare_function(std::ostream& os, const ValuePtr<Function>
     os << build_type(*ii) << ' ' << m_parameter_prefix << n;
   os << ')';
 }
-
-void CModuleBuilder::define_function(std::ostream& os, const ValuePtr<Function>& function) {
-  declare_function(os, function);
-  os << "{\n";
-  os << "}\n";
-}
+#endif
 }
 }
 }

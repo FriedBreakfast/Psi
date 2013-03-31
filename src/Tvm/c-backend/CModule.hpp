@@ -4,8 +4,8 @@
 #include "../../CppCompiler.hpp"
 #include "../../Utility.hpp"
 #include "../../SourceLocation.hpp"
-#include "../Number.hpp"
 
+#include <set>
 #include <boost/intrusive/list.hpp>
 #include <boost/iterator/iterator_facade.hpp>
 
@@ -24,7 +24,8 @@ PSI_SMALL_ENUM(CTypeType) {
   c_type_union,
   c_type_function,
   c_type_pointer,
-  c_type_array
+  c_type_array,
+  c_type_void
 };
 
 /**
@@ -112,6 +113,21 @@ struct CName {
   unsigned index;
 };
 
+class CNameMap {
+  struct NameCompare {bool operator () (const CName&, const CName&) const;};
+  typedef std::set<CName, NameCompare, WriteMemoryPoolAllocator<CName> > NameMap; 
+  NameMap m_map;
+
+  CName insert(const char *fullname, bool ignore_duplicate);
+  
+public:
+  CNameMap(WriteMemoryPool *pool);
+  CNameMap(const CNameMap& src, WriteMemoryPool *pool);
+  
+  CName reserve(const char *s);
+  CName get(const char *s);
+};
+
 std::ostream& operator << (std::ostream& os, const CName& name);
 
 /**
@@ -144,7 +160,7 @@ struct CTypeFunction : CType {
 
 struct CTypeAggregateMember {
   CType *type;
-  const char *name;
+  CName name;
 };
 
 struct CTypeAggregate : CType {
@@ -223,6 +239,7 @@ class CExpressionBuilder {
   CBlock *m_block;
   
   void append(const SourceLocation* location, CExpression *expr);
+  void append(CType *type, const SourceLocation* location, const char *prefix=NULL);
   
 public:
   CExpressionBuilder();
@@ -242,7 +259,10 @@ public:
   CExpression* cast(const SourceLocation* location, CType *ty, CExpression *arg);
   void nullary(const SourceLocation* location, COperatorType op);
   
-  CType* pointer_type(const SourceLocation* location, CType *arg);
+  CType* void_type();
+  CType* builtin_type(const char *name);
+  CType* pointer_type(CType *arg);
+  CType* array_type(CType *arg, unsigned length);
   CType* function_type(const SourceLocation* location, CType *result_ty, unsigned n_args, const CTypeFunctionArgument *args);
 private:
   CType* aggregate_type(const SourceLocation* location, CTypeType op, unsigned n_members, const CTypeAggregateMember *members);
@@ -279,10 +299,15 @@ class CModule {
   WriteMemoryPool m_pool;
   SinglyLinkedList<CType> m_types;
   SinglyLinkedList<CGlobal> m_globals;
+  CNameMap m_names;
+  
+  void add_global(CGlobal *global, const SourceLocation *location, CType *type, const char *name);
 
 public:
-  CGlobalVariable *new_global(const char *name);
-  CFunction *new_function(const char *name);
+  CModule(CCompiler *compiler);
+  CGlobalVariable *new_global(const SourceLocation *location, CType *type, const char *name);
+  CFunction *new_function(const SourceLocation *location, CType *type, const char *name);
+
   WriteMemoryPool& pool() {return m_pool;}
   void emit(std::ostream& output);
   CCompiler& c_compiler();
@@ -319,31 +344,6 @@ struct CNumberType {
   const char *type_name;
   /// \brief Suffix for literals of this type
   const char *literal_suffix;
-};
-
-class CCompiler {
-public:
-  CCompiler();
-  
-  /// \brief Has variable length array support
-  bool has_variable_length_arrays;
-  /// \brief Has designated initializer support
-  bool has_designated_initializer;
-  
-  /**
-   * \brief Emit an alignment attribute.
-   * 
-   * It is assumed this attribute appears before the variable concerned.
-   */
-  virtual void emit_alignment(CModuleEmitter& emitter, unsigned n) = 0;
-  
-  virtual bool emit_unreachable(CModuleEmitter& emitter);
-
-  /// \brief Emit function attributes
-  virtual void emit_function_attributes(CModuleEmitter& emitter, CFunction *function) = 0;
-  
-  /// \brief Emit global variable attributes
-  virtual void emit_global_variable_attributes(CModuleEmitter& emitter, CGlobalVariable *gvar) = 0;
 };
 }
 }

@@ -12,15 +12,18 @@ set(PSI_COMPILER_COMMON_SOURCES UtilityWindows.cpp UtilityWindows.hpp)
 set(PSI_COMPILER_SOURCES PlatformWindows.cpp)
 set(PSI_TVM_SOURCES Tvm/JitWindows.cpp)
 elseif(UNIX)
+set(PSI_COMPILER_COMMON_SOURCES UtilityLinux.cpp UtilityLinux.hpp)
 set(PSI_COMPILER_SOURCES PlatformLinux.cpp)
 set(PSI_TVM_SOURCES Tvm/JitLinux.cpp)
 set(PSI_RUNTIME_SOURCES Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
+set(PSI_TVM_C_SOURCES Tvm/c-backend/SystemLinux.cpp)
 endif()
 
 add_library(psi-compiler-common SHARED
   Runtime.cpp Runtime.hpp
   SourceLocation.cpp SourceLocation.hpp
   Utility.cpp Utility.hpp
+  ErrorContext.cpp ErrorContext.hpp
   CppCompiler.hpp
   Export.hpp
   ${PSI_COMPILER_COMMON_SOURCES}
@@ -101,7 +104,8 @@ add_library(psi-tvm-c MODULE
   Tvm/c-backend/CCompiler.cpp
   Tvm/c-backend/CModule.cpp Tvm/c-backend/CModule.hpp Tvm/c-backend/COperators.def
   Tvm/c-backend/ValueBuilder.cpp
-  Tvm/c-backend/TypeWriter.cpp
+  Tvm/c-backend/TypeBuilder.cpp
+  ${PSI_TVM_C_SOURCES}
 )
 
 add_library(psi-runtime SHARED

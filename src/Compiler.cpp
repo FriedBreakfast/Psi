@@ -45,44 +45,6 @@ namespace Psi {
       return si_derived(cls, object->m_vptr);
     }
 
-    CompileException::CompileException() {
-    }
-
-    CompileException::~CompileException() throw() {
-    }
-
-    const char *CompileException::what() const throw() {
-      return "Psi compile exception";
-    }
-
-    CompileError::CompileError(CompileContext& compile_context, const SourceLocation& location, unsigned flags)
-      : m_compile_context(&compile_context), m_location(location), m_flags(flags) {
-      bool error_occurred = false;
-      switch (flags) {
-      case error_warning: m_type = "warning"; break;
-      case error_internal: m_type = "internal error"; error_occurred = true; break;
-      default: m_type = "error"; error_occurred = true; break;
-      }
-
-      if (error_occurred)
-        m_compile_context->set_error_occurred();
-
-      m_compile_context->error_stream() << boost::format("%s:%s: in '%s'\n") % location.physical.file->url
-        % location.physical.first_line % location.logical->error_name(LogicalSourceLocationPtr(), true);
-    }
-
-    void CompileError::info(const std::string& message) {
-      info(m_location, message);
-    }
-
-    void CompileError::info(const SourceLocation& location, const std::string& message) {
-      m_compile_context->error_stream() << boost::format("%s:%s:%s: %s\n")
-        % location.physical.file->url % location.physical.first_line % m_type % message;
-    }
-
-    void CompileError::end() {
-    }
-    
 #if PSI_DEBUG
     namespace {
       bool scan_block(void *base, size_t size, const std::set<void*>& pointers) {
@@ -116,13 +78,14 @@ namespace Psi {
     }
 #endif
 
-    CompileContext::CompileContext(std::ostream *error_stream)
-    : m_error_stream(error_stream),
-    m_error_occurred(false),
+    CompileContext::CompileContext(CompileErrorContext *error_context)
+    : m_error_context(error_context),
     m_running_completion_stack(NULL),
     m_functional_term_buckets(initial_functional_term_buckets),
     m_functional_term_set(FunctionalTermSetType::bucket_traits(m_functional_term_buckets.get(), m_functional_term_buckets.size())),
     m_root_location(PhysicalSourceLocation(), LogicalSourceLocation::new_root_location()) {
+      PSI_ASSERT(error_context);
+      
 #if PSI_DEBUG && defined(__GNUC__) && defined(__ELF__)
       if (std::getenv("PSI_GC_FREECHECK"))
         psi_gcchecker_set_free_hook(gc_free_hook, this);
@@ -385,17 +348,6 @@ namespace Psi {
       object_ptr_add(obj, to);
     }
 #endif
-
-    void CompileContext::error(const SourceLocation& loc, const std::string& message, unsigned flags) {
-      CompileError error(*this, loc, flags);
-      error.info(message);
-      error.end();
-    }
-
-    void CompileContext::error_throw(const SourceLocation& loc, const std::string& message, unsigned flags) {
-      error(loc, message, flags);
-      throw CompileException();
-    }
 
     /**
      * \brief JIT compile a global variable or function.

@@ -96,7 +96,8 @@ int main(int argc, char *argv[]) {
   using namespace Psi;
   using namespace Psi::Compiler;
 
-  CompileContext compile_context(&std::cerr);
+  CompileErrorContext error_context(&std::cerr);
+  CompileContext compile_context(&error_context);
   TreePtr<Module> global_module = Module::new_(compile_context, "psi", compile_context.root_location().named_child("psi"));
   TreePtr<Module> my_module = Module::new_(compile_context, "main", compile_context.root_location());
   TreePtr<EvaluateContext> root_evaluate_context = create_globals(global_module);
