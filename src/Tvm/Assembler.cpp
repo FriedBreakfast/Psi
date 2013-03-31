@@ -40,6 +40,15 @@ namespace Psi {
       Context& AssemblerContext::context() const {
         return module().context();
       }
+      
+      /**
+       * Get error handling context.
+       * 
+       * This calls \code context().error_context() \endcode
+       */
+      CompileErrorContext& AssemblerContext::error_context() const {
+        return context().error_context();
+      }
 
       ValuePtr<> AssemblerContext::get(const std::string& name) const {
         for (const AssemblerContext *self = this; self; self = self->m_parent) {

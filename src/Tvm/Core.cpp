@@ -12,32 +12,6 @@
 
 namespace Psi {
   namespace Tvm {
-    TvmUserError::TvmUserError(const std::string& msg) {
-      m_message = "Psi TVM user error: ";
-      m_message += msg;
-      m_str = m_message.c_str();
-    }
-
-    TvmUserError::~TvmUserError() throw () {
-    }
-
-    const char* TvmUserError::what() const throw() {
-      return m_str;
-    }
-
-    TvmInternalError::TvmInternalError(const std::string& msg) {
-      m_message = "Psi TVM internal error: ";
-      m_message += msg;
-      m_str = m_message.c_str();
-    }
-
-    TvmInternalError::~TvmInternalError() throw () {
-    }
-
-    const char* TvmInternalError::what() const throw() {
-      return m_str;
-    }
-
     Value::Value(Context& context, TermType term_type, const ValuePtr<>& type, const SourceLocation& location)
     : m_reference_count(0),
     m_context(&context),
@@ -55,7 +29,7 @@ namespace Psi {
         }
       } else {
         if (m_context != type->m_context)
-          throw TvmUserError("context mismatch between term and its type");
+          context.error_context().error_throw(location, "context mismatch between term and its type");
 
         PSI_ASSERT(type->m_category != category_undetermined);
         switch (type->m_category) {
@@ -63,7 +37,7 @@ namespace Psi {
         case category_type: m_category = category_value; break;
 
         default:
-          throw TvmInternalError("type of a term cannot be a value or recursive, it must be metatype or a type");
+          context.error_context().error_throw(location, "type of a term cannot be a value or recursive, it must be metatype or a type", CompileError::error_internal);
         }
       }
       
@@ -205,7 +179,7 @@ namespace Psi {
       }
       
       if (module() != source_module)
-        throw TvmUserError("Cannot mix global variables between modules");
+        error_context().error_throw(location(), "Cannot mix global variables between modules");
     }
 
     GlobalVariable::GlobalVariable(Context& context, const ValuePtr<>& type, const std::string& name, Module *module, const SourceLocation& location)
@@ -216,7 +190,7 @@ namespace Psi {
 
     void GlobalVariable::set_value(const ValuePtr<>& value) {
       if (value->type() != value_type())
-        throw TvmUserError("Global variable assigned value of incorrect type");
+        error_context().error_throw(location(), "Global variable assigned value of incorrect type");
       CheckSourceParameter cp(CheckSourceParameter::mode_global, this);
       value->check_source(cp);
       m_value = value;
@@ -390,7 +364,7 @@ namespace Psi {
 
     void Module::add_member(const ValuePtr<Global>& term) {
       if (!m_members.insert(std::make_pair(term->name(), term)).second)
-        throw TvmUserError("Duplicate module member name");
+        context().error_context().error_throw(location(), "Duplicate module member name");
     }
     
 #if PSI_DEBUG

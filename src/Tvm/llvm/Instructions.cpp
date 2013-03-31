@@ -56,7 +56,7 @@ namespace Psi {
             parameters[0] = builder.build_value(insn->parameters.back());
           }
 
-          for (std::size_t ii = 0, ie = parameters.size() - sret; ii != ie; ++ii)
+          for (std::size_t ii = 0, ie = insn->parameters.size() - sret; ii != ie; ++ii)
             parameters.push_back(builder.build_value(insn->parameters[ii]));
           
           return builder.irbuilder().CreateCall(cast_target, parameters);

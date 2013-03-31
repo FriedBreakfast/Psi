@@ -27,7 +27,7 @@ namespace Psi {
     
     ValuePtr<> ResolvedParameter::check_type() const {
       if (!m_parameter_type->is_type())
-        throw TvmUserError("First argument to function_type_resolved_parameter is not a type");
+        error_context().error_throw(location(), "First argument to function_type_resolved_parameter is not a type");
       return m_parameter_type;
     }
     
@@ -61,7 +61,7 @@ namespace Psi {
               return FunctionalBuilder::parameter(type, m_depth, i, m_parameters[i]->location());
           }
           if (type != term->type())
-            throw TvmUserError("type of unresolved function parameter cannot depend on type of resolved function parameter");
+            error_context().error_throw(term->location(), "type of unresolved function parameter cannot depend on type of resolved function parameter");
           return term;
         } else if (ValuePtr<FunctionType> function_type = dyn_cast<FunctionType>(term)) {
           ++m_depth;
@@ -166,7 +166,9 @@ namespace Psi {
      * \param previous Earlier parameters. Length of this array gives
      * the index of the parameter type to get.
      */
-    ValuePtr<> FunctionType::parameter_type_after(const std::vector<ValuePtr<> >& previous) {
+    ValuePtr<> FunctionType::parameter_type_after(const SourceLocation& location, const std::vector<ValuePtr<> >& previous) {
+      if (previous.size() >= parameter_types().size())
+        error_context().error_throw(location, "too many parameters specified");
       return ParameterTypeRewriter(context(), previous).rewrite(parameter_types()[previous.size()]);
     }
 
@@ -174,9 +176,9 @@ namespace Psi {
      * Get the return type of a function of this type, given previous
      * parameters.
      */
-    ValuePtr<> FunctionType::result_type_after(const std::vector<ValuePtr<> >& parameters) {
+    ValuePtr<> FunctionType::result_type_after(const SourceLocation& location, const std::vector<ValuePtr<> >& parameters) {
       if (parameters.size() != parameter_types().size())
-        throw TvmUserError("incorrect number of parameters");
+        error_context().error_throw(location, "incorrect number of parameters");
       return ParameterTypeRewriter(context(), parameters).rewrite(result_type());
     }
 
@@ -192,14 +194,14 @@ namespace Psi {
     ValuePtr<> FunctionType::check_type() const {
       for (std::vector<ValuePtr<> >::const_iterator ii = m_parameter_types.begin(), ie = m_parameter_types.end(); ii != ie; ++ii)
         if (!(*ii)->is_type())
-          throw TvmUserError("Function argument type is not a type");
+          error_context().error_throw(location(), "Function argument type is not a type");
         
       if (m_sret) {
         if (!isa<EmptyType>(m_result_type))
-          throw TvmUserError("Function types with sret set must return void");
+          error_context().error_throw(location(), "Function types with sret set must return void");
       } else {
         if (!m_result_type->is_type())
-          throw TvmUserError("Function result type is not a type");
+          error_context().error_throw(location(), "Function result type is not a type");
       }
         
       return FunctionalBuilder::type_type(context(), location());
@@ -247,7 +249,7 @@ namespace Psi {
      */
     ValuePtr<> Exists::result_after(const std::vector<ValuePtr<> >& parameters) {
       if (parameters.size() != parameter_types().size())
-        throw TvmUserError("incorrect number of parameters");
+        error_context().error_throw(location(), "incorrect number of parameters");
       return ParameterTypeRewriter(context(), parameters).rewrite(m_result);
     }
 
@@ -261,7 +263,7 @@ namespace Psi {
     ValuePtr<> Exists::check_type() const {
       for (std::vector<ValuePtr<> >::const_iterator ii = m_parameter_types.begin(), ie = m_parameter_types.end(); ii != ie; ++ii)
         if (!(*ii)->is_type())
-          throw TvmUserError("Exists argument type is not a type");
+          error_context().error_throw(location(), "Exists argument type is not a type");
       return FunctionalBuilder::type_type(context(), location());
     }
 
@@ -281,7 +283,7 @@ namespace Psi {
     ValuePtr<> Unwrap::check_type() const {
       ValuePtr<Exists> exists;
       if (!m_value || !(exists = dyn_cast<Exists>(m_value->type())))
-        throw TvmUserError("unwrap parameter does not have exists type");
+        error_context().error_throw(location(), "unwrap parameter does not have exists type");
 
       std::vector<ValuePtr<> > parameters;
       for (unsigned ii = 0, ie = exists->parameter_types().size(); ii != ie; ++ii)
@@ -308,10 +310,10 @@ namespace Psi {
     ValuePtr<> UnwrapParameter::check_type() const {
       ValuePtr<Exists> exists;
       if (!m_value || !(exists = dyn_cast<Exists>(m_value->type())))
-        throw TvmUserError("unwrap parameter does not have exists type");
+        error_context().error_throw(location(), "unwrap parameter does not have exists type");
       
       if (m_index >= exists->parameter_types().size())
-        throw TvmUserError("unwrap_param index out of range");
+        error_context().error_throw(location(), "unwrap_param index out of range");
 
       std::vector<ValuePtr<> > parameters;
       for (unsigned ii = 0, ie = m_index; ii != ie; ++ii)
@@ -320,8 +322,8 @@ namespace Psi {
       return exists->parameter_type_after(parameters);
     }
     
-    void hashable_check_source_hook(UnwrapParameter&, CheckSourceParameter&) {
-      throw TvmUserError("unwrap_param used outside its context");
+    void hashable_check_source_hook(UnwrapParameter& self, CheckSourceParameter&) {
+      self.error_context().error_throw(self.location(), "unwrap_param used outside its context");
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(UnwrapParameter, FunctionalValue, unwrap_param)
@@ -340,7 +342,7 @@ namespace Psi {
      * this method always throws.
      */
     void ParameterPlaceholder::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Parameter placeholder used in wrong context");
+      error_context().error_throw(location(), "Parameter placeholder used in wrong context");
     }
     
     template<typename V>
@@ -417,7 +419,7 @@ namespace Psi {
         break;
       }
       
-      throw TvmUserError("Result of PHI term used in wrong context");
+      error_context().error_throw(location(), "Result of PHI term used in wrong context");
     }
 
     TerminatorInstruction::TerminatorInstruction(Context& context, const char* operation, const SourceLocation& location)
@@ -429,7 +431,7 @@ namespace Psi {
      */
     void TerminatorInstruction::check_dominated(const ValuePtr<Block>& target) {
       if (!block_ptr()->dominated_by(target->dominator()))
-        throw TvmUserError("instruction jump target dominator block may not have run");
+        error_context().error_throw(location(), "instruction jump target dominator block may not have run");
     }
     
     bool TerminatorInstruction::isa_impl(const Value& ptr) {
@@ -489,17 +491,17 @@ namespace Psi {
 
     void Block::insert_instruction(const ValuePtr<Instruction>& insn, const ValuePtr<Instruction>& insert_before) {
       if (insn->m_block)
-        throw TvmUserError("Instruction has already been inserted into a block");
+        error_context().error_throw(insn->location(), "Instruction has already been inserted into a block");
 
       if (terminated() && !insert_before)
-        throw TvmUserError("cannot add instruction at end of already terminated block");
+        error_context().error_throw(insn->location(), "cannot add instruction at end of already terminated block");
       
       if (insert_before) {
         if (insert_before->block() != this)
-          throw TvmUserError("instruction specified as insertion point is not part of this block");
+          error_context().error_throw(insn->location(), "instruction specified as insertion point is not part of this block");
 
         if (isa<TerminatorInstruction>(insn))
-          throw TvmUserError("terminating instruction cannot be inserted other than at the end of a block");
+          error_context().error_throw(insn->location(), "terminating instruction cannot be inserted other than at the end of a block");
       }
       
       m_instructions.insert(insert_before, *insn);
@@ -556,11 +558,11 @@ namespace Psi {
       value->check_source(cs);
       
       if (!block->dominated_by(block_ptr()->dominator().get()))
-        throw TvmUserError("incoming edge added to PHI term for block which does not dominate the current one");
+        error_context().error_throw(value->location(), "incoming edge added to PHI term for block which does not dominate the current one");
       
       for (std::vector<PhiEdge>::const_iterator ii = m_edges.begin(), ie = m_edges.end(); ii != ie; ++ii) {
         if (ii->block == block)
-          throw TvmUserError("incoming edge added for the same block twice");
+          error_context().error_throw(value->location(), "incoming edge added for the same block twice");
       }
       
       PhiEdge e;
@@ -582,7 +584,7 @@ namespace Psi {
         if (ii->block == block)
           return ii->value;
       }
-      throw TvmUserError("Incoming block not found in PHI node");
+      error_context().error_throw(location(), "Incoming block not found in PHI node");
     }
     
     /**
@@ -626,7 +628,7 @@ namespace Psi {
         break;
       }
       
-      throw TvmUserError("Result of PHI term used in wrong context");
+      error_context().error_throw(location(), "Result of PHI term used in wrong context");
     }
 
     PSI_TVM_VALUE_IMPL(Phi, Value)
@@ -672,7 +674,7 @@ namespace Psi {
         }
       }
       
-      throw TvmUserError("Block address used in incorrect context");
+      error_context().error_throw(location(), "Block address used in incorrect context");
     }
 
     FunctionParameter::FunctionParameter(Context& context, Function *function, const ValuePtr<>& type, bool phantom, const SourceLocation& location)
@@ -709,7 +711,7 @@ namespace Psi {
         break;
       }
       
-      throw TvmUserError("function parameter used in wrong context");
+      error_context().error_throw(location(), "function parameter used in wrong context");
     }
     
     Value* FunctionParameter::disassembler_source() {
@@ -749,11 +751,11 @@ namespace Psi {
       unsigned n_phantom = type->n_phantom();
 
       for (unsigned ii = 0, ie = type->parameter_types().size(); ii != ie; ++ii) {
-        ValuePtr<FunctionParameter> p(::new FunctionParameter(context, this, type->parameter_type_after(previous), ii < n_phantom, location));
+        ValuePtr<FunctionParameter> p(::new FunctionParameter(context, this, type->parameter_type_after(location, previous), ii < n_phantom, location));
         m_parameters.push_back(*p);
         previous.push_back(p);
       }
-      m_result_type = type->result_type_after(previous);
+      m_result_type = type->result_type_after(location, previous);
     }
 
     ValuePtr<FunctionType> Function::function_type() const {
@@ -874,7 +876,7 @@ namespace Psi {
         break;
         
       case CheckSourceParameter::mode_global:
-        throw TvmUserError("Phantom value required to have been instantiated by this point");
+        phantom->error_context().error_throw(phantom->location(), "Phantom value required to have been instantiated by this point");
       }
 
       for (; block; block = block->dominator().get(), instruction = NULL) {
@@ -885,14 +887,14 @@ namespace Psi {
           
           ValuePtr<ConstantType> const_ty = dyn_cast<ConstantType>(solid->value->type());
           if (!const_ty)
-            throw TvmUserError("Argument to solidify does not appear to have constant type");
+            phantom->error_context().error_throw(phantom->location(), "Argument to solidify does not appear to have constant type");
           
           if (phantom == const_ty->value().get())
             return;
         }
       }
       
-      throw TvmUserError("Phantom value required to have been instantiated by this point");
+      phantom->error_context().error_throw(phantom->location(), "Phantom value required to have been instantiated by this point");
     }
   }
 }

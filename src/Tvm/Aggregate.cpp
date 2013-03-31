@@ -9,14 +9,14 @@ namespace Psi {
   namespace Tvm {
     ValuePtr<> element_value_type(const Value& self, const ValuePtr<>& aggregate_type, const ValuePtr<>& index) {
       if (index->type() != FunctionalBuilder::size_type(self.context(), self.location()))
-        throw TvmUserError("element member index is not an intptr");
+        self.error_context().error_throw(self.location(), "element member index is not an intptr");
       
       if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(aggregate_type)) {
         unsigned idx = size_to_unsigned(index);
         if (idx < struct_ty->n_members())
           return struct_ty->member_type(idx);
         else
-          throw TvmUserError("struct gep index out of range");
+          self.error_context().error_throw(self.location(), "struct gep index out of range");
       } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(aggregate_type)) {
         return array_ty->element_type();
       } else if (ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(aggregate_type)) {
@@ -24,13 +24,13 @@ namespace Psi {
         if (idx < union_ty->n_members())
           return union_ty->member_type(idx);
         else
-          throw TvmUserError("union gep index out of range");
+          self.error_context().error_throw(self.location(), "union gep index out of range");
       } else if (ValuePtr<ApplyType> apply_ty = dyn_cast<ApplyType>(aggregate_type)) {
         if (!size_equals_constant(index, 0))
-          throw TvmUserError("Index into generic type is not zero");
+          self.error_context().error_throw(self.location(), "Index into generic type is not zero");
         return apply_ty->unpack();
       } else {
-        throw TvmUserError("parameter to gep or element is not a recognised aggregate type");
+        self.error_context().error_throw(self.location(), "parameter to gep or element is not a recognised aggregate type");
       }
     }
 
@@ -59,9 +59,9 @@ namespace Psi {
     ValuePtr<> MetatypeValue::check_type() const {
       ValuePtr<> intptr_type = FunctionalBuilder::size_type(context(), location());
       if (m_size->type() != intptr_type)
-        throw TvmUserError("first parameter to type_v must be intptr");
+        error_context().error_throw(location(), "first parameter to type_v must be intptr");
       if (m_alignment->type() != intptr_type)
-        throw TvmUserError("second parameter to type_v must be intptr");
+        error_context().error_throw(location(), "second parameter to type_v must be intptr");
       return FunctionalBuilder::type_type(context(), location());
     }
     
@@ -76,7 +76,7 @@ namespace Psi {
 
     ValuePtr<> MetatypeSize::check_type() const {
       if (parameter()->type() != FunctionalBuilder::type_type(context(), location()))
-        throw TvmUserError("Parameter to sizeof must be a type");
+        error_context().error_throw(location(), "Parameter to sizeof must be a type");
       return FunctionalBuilder::size_type(context(), location());
     }
     
@@ -84,7 +84,7 @@ namespace Psi {
 
     ValuePtr<> MetatypeAlignment::check_type() const {
       if (parameter()->type() != FunctionalBuilder::type_type(context(), location()))
-        throw TvmUserError("Parameter to sizeof must be a type");
+        error_context().error_throw(location(), "Parameter to sizeof must be a type");
       return FunctionalBuilder::size_type(context(), location());
     }
     
@@ -134,14 +134,14 @@ namespace Psi {
     ValuePtr<> OuterPtr::check_type() const {
       ValuePtr<PointerType> ptr_type;
       if (!m_pointer || !(ptr_type = dyn_cast<PointerType>(m_pointer->type())))
-        throw TvmUserError("Parameter to outer_ptr is not a pointer");
+        error_context().error_throw(location(), "Parameter to outer_ptr is not a pointer");
       if (!ptr_type->upref())
-        throw TvmUserError("Parameter to outer_ptr does not have a visible upward reference");
+        error_context().error_throw(location(), "Parameter to outer_ptr does not have a visible upward reference");
       
       if (ValuePtr<UpwardReference> up = dyn_cast<UpwardReference>(ptr_type->upref()))
         return FunctionalBuilder::pointer_type(up->outer_type(), up->next(), location());
       else
-        throw TvmInternalError("Unrecognised upward reference type");
+        error_context().error_throw(location(), "Unrecognised upward reference type");
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(OuterPtr, AggregateOp, outer_ptr);
@@ -178,7 +178,7 @@ namespace Psi {
     
     ValuePtr<> UndefinedValue::check_type() const {
       if (!parameter()->is_type())
-        throw TvmUserError("Argument to undef must be a type");
+        error_context().error_throw(location(), "Argument to undef must be a type");
       return parameter();
     }
     
@@ -186,7 +186,7 @@ namespace Psi {
     
     ValuePtr<> ZeroValue::check_type() const {
       if (!parameter()->is_type())
-        throw TvmUserError("Argument to zero must be a type");
+        error_context().error_throw(location(), "Argument to zero must be a type");
       return parameter();
     }
     
@@ -207,7 +207,7 @@ namespace Psi {
     
     ValuePtr<> PointerType::check_type() const {
       if (!m_target_type->is_type())
-        throw TvmUserError("pointer argument must be a type");
+        error_context().error_throw(location(), "pointer argument must be a type");
       return FunctionalBuilder::type_type(context(), location());
     }
     
@@ -249,7 +249,7 @@ namespace Psi {
       const UpwardReference *upref = this;
       while (true) {
         if (!upref)
-          throw TvmUserError("Outer type of upward reference not available");
+          error_context().error_throw(location(), "Outer type of upward reference not available");
 
         if (upref->m_outer_type)
           break;
@@ -269,9 +269,9 @@ namespace Psi {
     
     ValuePtr<> UpwardReference::check_type() const {
       if (!m_outer_type && !m_next)
-        throw TvmUserError("Neither next not outer_type argument of upref is non-NULL");
+        error_context().error_throw(location(), "Neither next not outer_type argument of upref is non-NULL");
       if (m_index->type() != FunctionalBuilder::size_type(context(), location()))
-        throw TvmUserError("Index argument to upref is not a size");
+        error_context().error_throw(location(), "Index argument to upref is not a size");
       return FunctionalBuilder::upref_type(context(), location());
     }
     
@@ -322,9 +322,9 @@ namespace Psi {
     
     ValuePtr<> PointerCast::check_type() const {
       if (!isa<PointerType>(m_pointer->type()))
-        throw TvmUserError("first argument to cast is not a pointer");
+        error_context().error_throw(location(), "first argument to cast is not a pointer");
       if (!m_target_type->is_type())
-        throw TvmUserError("second argument to cast is not a type");
+        error_context().error_throw(location(), "second argument to cast is not a type");
       return context().get_functional(PointerType(m_target_type, m_upref, location()));
     }
 
@@ -345,10 +345,10 @@ namespace Psi {
     
     ValuePtr<> PointerOffset::check_type() const {
       if (!isa<PointerType>(m_pointer->type()))
-        throw TvmUserError("first argument to offset is not a pointer");
+        error_context().error_throw(location(), "first argument to offset is not a pointer");
       ValuePtr<IntegerType> int_ty = dyn_cast<IntegerType>(m_offset->type());
       if (!int_ty || (int_ty->width() != IntegerType::iptr))
-        throw TvmUserError("second argument to offset is not an intptr or uintptr");
+        error_context().error_throw(location(), "second argument to offset is not an intptr or uintptr");
       return m_pointer->type();
     }
 
@@ -369,7 +369,7 @@ namespace Psi {
     
     ValuePtr<> ArrayType::check_type() const {
       if (m_length->type() != FunctionalBuilder::size_type(context(), location()))
-        throw TvmUserError("Array length must be an intptr");
+        error_context().error_throw(location(), "Array length must be an intptr");
       return FunctionalBuilder::type_type(context(), location());
     }
     
@@ -390,11 +390,11 @@ namespace Psi {
     
     ValuePtr<> ArrayValue::check_type() const {
       if (!m_element_type->is_type())
-        throw TvmUserError("first argument to array value is not a type");
+        error_context().error_throw(location(), "first argument to array value is not a type");
 
       for (std::vector<ValuePtr<> >::const_iterator ii = m_elements.begin(), ie = m_elements.end(); ii != ie; ++ii) {
         if ((*ii)->type() != m_element_type)
-          throw TvmUserError("array value element is of the wrong type");
+          error_context().error_throw(location(), "array value element is of the wrong type");
       }
       
       return FunctionalBuilder::array_type(m_element_type, FunctionalBuilder::size_value(m_element_type->context(), m_elements.size(), location()), location());
@@ -416,7 +416,7 @@ namespace Psi {
     ValuePtr<> StructType::check_type() const {
       for (std::vector<ValuePtr<> >::const_iterator ii = m_members.begin(), ie = m_members.end(); ii != ie; ++ii) {
         if (!(*ii)->is_type())
-          throw TvmUserError("struct argument is not a type");
+          error_context().error_throw(location(), "struct argument is not a type");
       }
       return FunctionalBuilder::type_type(context(), location());
     }
@@ -459,10 +459,10 @@ namespace Psi {
     ValuePtr<> StructElementOffset::check_type() const {
       ValuePtr<StructType> struct_ty = dyn_cast<StructType>(m_struct_type);
       if (!struct_ty)
-        throw TvmUserError("first argument to struct_eo is not a struct type");
+        error_context().error_throw(location(), "first argument to struct_eo is not a struct type");
       
       if (m_index >= struct_ty->n_members())
-        throw TvmUserError("struct_eo member index out of range");
+        error_context().error_throw(location(), "struct_eo member index out of range");
       return FunctionalBuilder::size_type(context(), location());
     }
     
@@ -498,7 +498,7 @@ namespace Psi {
     ValuePtr<> UnionType::check_type() const {
       for (std::vector<ValuePtr<> >::const_iterator ii = m_members.begin(), ie = m_members.end(); ii != ie; ++ii) {
         if (!(*ii)->is_type())
-          throw TvmUserError("union argument is not a type");
+          error_context().error_throw(location(), "union argument is not a type");
       }
       return FunctionalBuilder::type_type(context(), location());
     }
@@ -521,9 +521,9 @@ namespace Psi {
     ValuePtr<> UnionValue::check_type() const {
       ValuePtr<UnionType> ty = dyn_cast<UnionType>(m_union_type);
       if (!ty)
-        throw TvmUserError("first argument to union_v is not a union type");
+        error_context().error_throw(location(), "first argument to union_v is not a union type");
       if (!ty->contains_type(m_value->type()))
-        throw TvmUserError("second argument to union_v is not the a member of the result type");
+        error_context().error_throw(location(), "second argument to union_v is not the a member of the result type");
       return m_union_type;
     }
         
@@ -545,9 +545,9 @@ namespace Psi {
     ValuePtr<> ApplyValue::check_type() const {
       ValuePtr<ApplyType> ty = dyn_cast<ApplyType>(m_apply_type);
       if (!ty)
-        throw TvmUserError("first argument to apply_v is not an apply type");
+        error_context().error_throw(location(), "first argument to apply_v is not an apply type");
       if (ty->unpack() != m_value->type())
-        throw TvmUserError("second argument to apply_v has the wrong type");
+        error_context().error_throw(location(), "second argument to apply_v has the wrong type");
       return m_apply_type;
     }
     
@@ -593,10 +593,10 @@ namespace Psi {
     ValuePtr<> ElementPtr::check_type() const {
       ValuePtr<PointerType> ptr_ty = dyn_cast<PointerType>(m_aggregate_ptr->type());
       if (!ptr_ty)
-        throw TvmUserError("First argument to gep is not a pointer");
+        error_context().error_throw(location(), "First argument to gep is not a pointer");
       
       if (m_index->type() != FunctionalBuilder::size_type(context(), location()))
-        throw TvmUserError("second parameter to gep is not an intptr");
+        error_context().error_throw(location(), "second parameter to gep is not an intptr");
 
       return FunctionalBuilder::pointer_type(element_value_type(*this, ptr_ty->target_type(), m_index),
                                              FunctionalBuilder::upref(ptr_ty->target_type(), m_index, ptr_ty->upref(), location()),
@@ -614,26 +614,26 @@ namespace Psi {
     ValuePtr<> FunctionSpecialize::check_type() const {
       ValuePtr<PointerType> target_ptr_type = dyn_cast<PointerType>(m_function->type());
       if (!target_ptr_type)
-        throw TvmUserError("specialize target is not a function pointer");
+        error_context().error_throw(location(), "specialize target is not a function pointer");
 
       ValuePtr<FunctionType> function_type = dyn_cast<FunctionType>(target_ptr_type->target_type());
       if (!function_type)
-        throw TvmUserError("specialize target is not a function pointer");
+        error_context().error_throw(location(), "specialize target is not a function pointer");
 
       if (m_parameters.size() > function_type->n_phantom())
-        throw TvmUserError("Too many parameters given to specialize");
+        error_context().error_throw(location(), "Too many parameters given to specialize");
 
       std::vector<ValuePtr<> > apply_parameters(m_parameters);
       std::vector<ValuePtr<ParameterPlaceholder> > new_parameters;
       while (apply_parameters.size() < function_type->parameter_types().size()) {
-        ValuePtr<> previous_type = function_type->parameter_type_after(apply_parameters);
+        ValuePtr<> previous_type = function_type->parameter_type_after(location(), apply_parameters);
         ValuePtr<ParameterPlaceholder> param =
           function_type->context().new_placeholder_parameter(previous_type, previous_type->location());
         apply_parameters.push_back(param);
         new_parameters.push_back(param);
       }
 
-      ValuePtr<> result_type = function_type->result_type_after(apply_parameters);
+      ValuePtr<> result_type = function_type->result_type_after(location(), apply_parameters);
 
       return m_function->context().get_function_type
         (function_type->calling_convention(),

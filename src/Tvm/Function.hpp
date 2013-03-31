@@ -409,8 +409,8 @@ namespace Psi {
       /// \brief Get the vector parameter types.
       const std::vector<ValuePtr<> >& parameter_types() const {return m_parameter_types;}
 
-      ValuePtr<> parameter_type_after(const std::vector<ValuePtr<> >& previous);
-      ValuePtr<> result_type_after(const std::vector<ValuePtr<> >& parameters);
+      ValuePtr<> parameter_type_after(const SourceLocation& location, const std::vector<ValuePtr<> >& previous);
+      ValuePtr<> result_type_after(const SourceLocation& location, const std::vector<ValuePtr<> >& parameters);
       
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type;}
 

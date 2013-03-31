@@ -3,6 +3,7 @@
 
 #include "Core.hpp"
 
+#include <boost/format.hpp>
 #include <boost/make_shared.hpp>
 
 namespace Psi {
@@ -50,8 +51,8 @@ namespace Psi {
         }
       };
       
-      static ResultType default_throw_callback(UserParameter&, const ValuePtr<TermType>&) {
-        throw TvmInternalError("term type not supported");
+      static ResultType default_throw_callback(UserParameter&, const ValuePtr<TermType>& term) {
+        term->error_context().error_throw(term->location(), boost::format("term type not supported: %s") % term->operation_name());
       }
 
       typedef boost::unordered_map<const char*, boost::shared_ptr<Callback> > CallbackMapType;

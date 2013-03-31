@@ -12,9 +12,11 @@
 namespace Psi {
   namespace Tvm {
     namespace Assembler {
-      void check_n_terms(const std::string& name, std::size_t expected, const Parser::CallExpression& expression) {
+      void check_n_terms(const std::string& name, AssemblerContext& context, std::size_t expected,
+                         const Parser::CallExpression& expression, const LogicalSourceLocationPtr& logical_location) {
         if (expression.terms.size() != expected)
-          throw TvmUserError(str(boost::format("%s: %d parameters expected") % name % expected));
+          context.error_context().error_throw(SourceLocation(expression.location, logical_location),
+                                              boost::format("%s: %d parameters expected") % name % expected);
       }
 
       std::vector<ValuePtr<> > default_parameter_setup(AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
@@ -29,7 +31,7 @@ namespace Psi {
         GetterType getter;
         NullaryOpCallback(GetterType getter_) : getter(getter_) {}
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
-          check_n_terms(name, 0, expression);
+          check_n_terms(name, context, 0, expression, location);
           return getter(context.context(), SourceLocation(expression.location, location));
         }
       };
@@ -39,7 +41,7 @@ namespace Psi {
         GetterType getter;
         UnaryOpCallback(GetterType getter_) : getter(getter_) {}
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
-          check_n_terms(name, 1, expression);
+          check_n_terms(name, context, 1, expression, location);
           return getter(build_expression(context, expression.terms.front(), location), SourceLocation(expression.location, location));
         }
       };
@@ -49,7 +51,7 @@ namespace Psi {
         GetterType getter;
         BinaryOpCallback(GetterType getter_) : getter(getter_) {}
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
-          check_n_terms(name, 2, expression);
+          check_n_terms(name, context, 2, expression, location);
           std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
           return getter(parameters[0], parameters[1], SourceLocation(expression.location, location));
         }
@@ -65,7 +67,8 @@ namespace Psi {
         UnaryOrBinaryCallback(UnaryGetterType unary_getter_, BinaryGetterType binary_getter_) : unary_getter(unary_getter_), binary_getter(binary_getter_) {}
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           if ((expression.terms.size() != 1) && (expression.terms.size() != 2))
-            throw TvmUserError(str(boost::format("%s: 1 or 2 parameters expected") % name));
+            context.error_context().error_throw(SourceLocation(expression.location, location),
+                                                boost::format("%s: 1 or 2 parameters expected") % name);
 
           std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
           if (parameters.size() == 1)
@@ -92,7 +95,8 @@ namespace Psi {
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
           if (parameters.empty())
-            throw TvmUserError(str(boost::format("%s: at least one parameter expected") % name));
+            context.error_context().error_throw(SourceLocation(expression.location, location),
+                                                boost::format("%s: at least one parameter expected") % name);
           ValuePtr<> first = parameters.front();
           parameters.erase(parameters.begin());
           return getter(first, parameters, SourceLocation(expression.location, location));
@@ -104,7 +108,7 @@ namespace Psi {
         GetterType getter;
         TermPlusIndexCallback(GetterType getter_) : getter(getter_) {}
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
-          check_n_terms(name, 2, expression);
+          check_n_terms(name, context, 2, expression, location);
           
           ValuePtr<> aggregate = build_expression(context, expression.terms.front(), location);
           const Parser::Expression& index = expression.terms.back();
@@ -158,7 +162,7 @@ namespace Psi {
         IntTypeCallback(IntegerType::Width width_, bool is_signed_) : width(width_), is_signed(is_signed_) {}
 
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
-          check_n_terms(name, 0, expression);
+          check_n_terms(name, context, 0, expression, location);
           return FunctionalBuilder::int_type(context.context(), width, is_signed, SourceLocation(expression.location, location));
         }
       };
@@ -169,7 +173,7 @@ namespace Psi {
         FloatTypeCallback(FloatType::Width width_) : width(width_) {}
 
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
-          check_n_terms(name, 0, expression);
+          check_n_terms(name, context, 0, expression, location);
           return FunctionalBuilder::float_type(context.context(), width, SourceLocation(expression.location, location));
         }
       };
@@ -180,7 +184,7 @@ namespace Psi {
         BoolValueCallback(bool value_) : value(value_) {}
 
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
-          check_n_terms(name, 0, expression);
+          check_n_terms(name, context, 0, expression, location);
           return FunctionalBuilder::bool_value(context.context(), value, SourceLocation(expression.location, location));
         }
       };
@@ -193,7 +197,8 @@ namespace Psi {
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           UniqueList<Parser::Expression>::const_iterator ii = expression.terms.begin(), ie = expression.terms.end();
           if (ii == ie)
-            throw TvmUserError(name + " operation requires at least one argument");
+            context.error_context().error_throw(SourceLocation(expression.location, location),
+                                                boost::format("%s operation requires at least one argument") % name);
           
           SourceLocation source_location(expression.location, location);
           ValuePtr<> value = build_expression(context, *ii, location);
@@ -265,8 +270,8 @@ namespace Psi {
         typedef ValuePtr<Instruction> (InstructionBuilder::*CreateType) (const SourceLocation&);
         CreateType create;
         NullaryInstructionCallback(CreateType create_) : create(create_) {}
-        ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext&, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
-          check_n_terms(name, 0, expression);
+        ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
+          check_n_terms(name, context, 0, expression, location);
           return (builder.*create)(SourceLocation(expression.location, location));
         }
       };
@@ -276,7 +281,7 @@ namespace Psi {
         Callback callback;
         UnaryInstructionCallback(Callback callback_) : callback(callback_) {}
         ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
-          check_n_terms(name, 1, expression);
+          check_n_terms(name, context, 1, expression, location);
           std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
           return (builder.*callback)(parameters[0], SourceLocation(expression.location, location));
         }
@@ -287,7 +292,7 @@ namespace Psi {
         Callback callback;
         BinaryInstructionCallback(Callback callback_) : callback(callback_) {}
         ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
-          check_n_terms(name, 2, expression);
+          check_n_terms(name, context, 2, expression, location);
           std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
           return (builder.*callback)(parameters[0], parameters[1], SourceLocation(expression.location, location));
         }
@@ -297,7 +302,8 @@ namespace Psi {
         ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
           std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
           if (parameters.empty())
-            throw TvmUserError(str(boost::format("%s: at least one parameter expected") % name));
+            context.error_context().error_throw(SourceLocation(expression.location, location),
+                                                boost::format("%s: at least one parameter expected") % name);
           ValuePtr<> target = parameters.front();
           parameters.erase(parameters.begin());
           return builder.call(target, parameters, SourceLocation(expression.location, location));
@@ -305,27 +311,32 @@ namespace Psi {
       };
       
       namespace {
-        ValuePtr<Block> as_block(const std::string& name, const ValuePtr<>& ptr) {
+        ValuePtr<Block> as_block(const std::string& name, AssemblerContext& context, const ValuePtr<>& ptr, const SourceLocation& location) {
           ValuePtr<Block> bl = dyn_cast<Block>(ptr);
           if (!bl)
-            throw TvmUserError(str(boost::format("Parameter to %s is not a block") % name));
+            context.error_context().error_throw(location, boost::format("Parameter to %s is not a block") % name);
           return bl;
         }
       }
       
       struct UnconditionalBranchCallback {
         ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
-          check_n_terms(name, 1, expression);
+          check_n_terms(name, context, 1, expression, location);
           std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
-          return builder.br(as_block(name, parameters[0]), SourceLocation(expression.location, location));
+          SourceLocation result_location(expression.location, location);
+          return builder.br(as_block(name, context, parameters[0], result_location), result_location);
         }
       };
 
       struct ConditionalBranchCallback {
         ValuePtr<Instruction> operator () (const std::string& name, InstructionBuilder& builder, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) const {
-          check_n_terms(name, 3, expression);
+          check_n_terms(name, context, 3, expression, location);
           std::vector<ValuePtr<> > parameters = default_parameter_setup(context, expression, location);
-          return builder.cond_br(parameters[0], as_block(name, parameters[1]), as_block(name, parameters[2]), SourceLocation(expression.location, location));
+          SourceLocation result_location(expression.location, location);
+          return builder.cond_br(parameters[0],
+                                 as_block(name, context, parameters[1], result_location),
+                                 as_block(name, context, parameters[2], result_location),
+                                 result_location);
         }
       };
       
@@ -337,7 +348,7 @@ namespace Psi {
           case 1: return builder.alloca_(parameters[0], loc);
           case 2: return builder.alloca_(parameters[0], parameters[1], loc);
           case 3: return builder.alloca_(parameters[0], parameters[1], parameters[2], loc);
-          default: throw TvmUserError("alloca expects 1, 2 or 3 parameters");
+          default: context.error_context().error_throw(SourceLocation(expression.location, location), "alloca expects 1, 2 or 3 parameters");
           }
         }
       };

@@ -28,13 +28,15 @@ namespace Psi {
 
     private:
       LibHandle m_handle;
+      CompileErrorPair m_error_handler;
       
       typedef void (*JitFactoryCallback) (const boost::shared_ptr<JitFactory>&, boost::shared_ptr<Jit>&);
       JitFactoryCallback m_callback;
       
     public:
-      LinuxJitFactory(const std::string& name, LibHandle& handle)
-      : JitFactory(name) {
+      LinuxJitFactory(const CompileErrorPair& error_handler, const std::string& name, LibHandle& handle)
+      : JitFactory(name),
+      m_error_handler(error_handler) {
         m_handle.swap(handle);
         
         dlerror();
@@ -43,7 +45,7 @@ namespace Psi {
           const char *err = dlerror();
           std::string err_msg;
           err_msg = err ? err : "tvm_jit_new symbol is null";
-          throw TvmInternalError("Cannot get JIT factory method for " + name + ": " + err_msg);
+          m_error_handler.error_throw("Cannot get JIT factory method for " + name + ": " + err_msg);
         }
       }
       
@@ -56,7 +58,7 @@ namespace Psi {
         return result;
       }
       
-      static boost::shared_ptr<JitFactory> get(const std::string& name) {
+      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const std::string& name) {
         std::string soname = "libpsi-tvm-" + name + ".so";
         /* 
          * I use RTLD_GLOBAL here because it's a bad idea to combine RTLD_LOCAL with
@@ -66,14 +68,14 @@ namespace Psi {
         LibHandle handle(dlopen(soname.c_str(), RTLD_LAZY | RTLD_GLOBAL));
         
         if (!handle.get())
-          throw TvmUserError("Cannot load JIT named " + name + " (from " + soname + "): " + dlerror());
+          error_handler.error_throw("Cannot load JIT named " + name + " (from " + soname + "): " + dlerror());
         
-        return boost::make_shared<LinuxJitFactory>(name, boost::ref(handle));
+        return boost::make_shared<LinuxJitFactory>(error_handler, name, boost::ref(handle));
       }
     };
 
-    boost::shared_ptr<JitFactory> JitFactory::get(const std::string& name) {
-      return LinuxJitFactory::get(name);
+    boost::shared_ptr<JitFactory> JitFactory::get(const CompileErrorPair& error_handler, const std::string& name) {
+      return LinuxJitFactory::get(error_handler, name);
     }
   }
 }

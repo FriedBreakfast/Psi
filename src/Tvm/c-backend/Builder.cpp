@@ -72,7 +72,7 @@ CModuleBuilder::CModuleBuilder(CCompiler* c_compiler)
 : m_c_compiler(c_compiler) {
 }
 
-void CModuleBuilder::run(Tvm::Module& module) {
+void CModuleBuilder::run(Module& module) {
   CModuleCallback lowering_callback;
   AggregateLoweringPass aggregate_lowering_pass(&module, &lowering_callback);
   aggregate_lowering_pass.remove_unions = false;
@@ -81,7 +81,7 @@ void CModuleBuilder::run(Tvm::Module& module) {
   aggregate_lowering_pass.memcpy_to_bytes = true;
   aggregate_lowering_pass.update();
   
-  CModule c_module(m_c_compiler);
+  CModule c_module(m_c_compiler, &module.context().error_context(), module.location());
   
   for (Module::ModuleMemberList::iterator i = module.members().begin(), e = module.members().end(); i != e; ++i) {
     const ValuePtr<Global>& term = i->second;

@@ -15,7 +15,7 @@ namespace Psi {
       require_available(value);
 
       if (value->type() != function()->result_type())
-        throw TvmUserError("return instruction argument has incorrect type");
+        error_context().error_throw(location(), "return instruction argument has incorrect type");
     }
     
     std::vector<ValuePtr<Block> > Return::successors() {
@@ -29,7 +29,7 @@ namespace Psi {
     }
     
     void Return::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Result of return instruction should not be used");
+      error_context().error_throw(location(), "Result of return instruction should not be used");
     }
 
     PSI_TVM_INSTRUCTION_IMPL(Return, TerminatorInstruction, return);
@@ -50,13 +50,13 @@ namespace Psi {
       require_available(false_target);
 
       if (condition->type() != FunctionalBuilder::bool_type(context(), location()))
-        throw TvmUserError("first parameter to branch instruction must be of boolean type");
+        error_context().error_throw(location(), "first parameter to branch instruction must be of boolean type");
 
       if (!true_target || !false_target)
-        throw TvmUserError("jump targets may not be null");
+        error_context().error_throw(location(), "jump targets may not be null");
       
       if ((true_target->function() != function()) || (false_target->function() != function()))
-        throw TvmUserError("jump target must be in the same function");
+        error_context().error_throw(location(), "jump target must be in the same function");
     }
 
     std::vector<ValuePtr<Block> > ConditionalBranch::successors() {
@@ -75,7 +75,7 @@ namespace Psi {
     }
 
     void ConditionalBranch::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Result of cond_br instruction should not be used");
+      error_context().error_throw(location(), "Result of cond_br instruction should not be used");
     }
     
     PSI_TVM_INSTRUCTION_IMPL(ConditionalBranch, TerminatorInstruction, cond_br);
@@ -92,10 +92,10 @@ namespace Psi {
       require_available(target);
       
       if (!target)
-        throw TvmUserError("jump targets may not be null");
+        error_context().error_throw(location(), "jump targets may not be null");
       
       if (target->function() != function())
-        throw TvmUserError("jump target must be in the same function");
+        error_context().error_throw(location(), "jump target must be in the same function");
     }
 
     std::vector<ValuePtr<Block> > UnconditionalBranch::successors() {
@@ -111,7 +111,7 @@ namespace Psi {
     }
 
     void UnconditionalBranch::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Result of br instruction should not be used");
+      error_context().error_throw(location(), "Result of br instruction should not be used");
     }
 
     PSI_TVM_INSTRUCTION_IMPL(UnconditionalBranch, TerminatorInstruction, br);
@@ -129,7 +129,7 @@ namespace Psi {
     }
 
     void Unreachable::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Result of unreachable instruction should not be used");
+      error_context().error_throw(location(), "Result of unreachable instruction should not be used");
     }
 
     std::vector<ValuePtr<Block> > Unreachable::successors() {
@@ -154,27 +154,27 @@ namespace Psi {
     }
     
     void Evaluate::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Result of eval instruction should not be used");
+      error_context().error_throw(location(), "Result of eval instruction should not be used");
     }
     
     PSI_TVM_INSTRUCTION_IMPL(Evaluate, Instruction, eval);
 
     namespace {
-      ValuePtr<> call_type(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters) {
+      ValuePtr<> call_type(const ValuePtr<>& target, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {
         ValuePtr<PointerType> ptr_type = dyn_cast<PointerType>(target->type());
         if (!ptr_type)
-          throw TvmUserError("Function call target is not a pointer");
+          target->error_context().error_throw(location, "Function call target is not a pointer");
         
         ValuePtr<FunctionType> target_type = dyn_cast<FunctionType>(ptr_type->target_type());
         if (!target_type)
-          throw TvmUserError("Function call target does not have function type");
+          target->error_context().error_throw(location, "Function call target does not have function type");
         
-        return target_type->result_type_after(parameters);
+        return target_type->result_type_after(location, parameters);
       }
     }
     
     Call::Call(const ValuePtr<>& target_, const std::vector<ValuePtr<> >& parameters_, const SourceLocation& location)
-    : Instruction(call_type(target_, parameters_), operation, location),
+    : Instruction(call_type(target_, parameters_, location), operation, location),
     target(target_),
     parameters(parameters_) {
     }
@@ -182,8 +182,8 @@ namespace Psi {
     void Call::type_check() {
       require_available(target);
 
-      if (call_type(target, parameters) != type())
-        throw TvmUserError("Type of function call has changed since instruction was created");
+      if (call_type(target, parameters, location()) != type())
+        error_context().error_throw(location(), "Type of function call has changed since instruction was created");
 
       for (std::size_t ii = target_function_type()->n_phantom(), ie = parameters.size(); ii < ie; ++ii)
         require_available(parameters[ii]);
@@ -202,10 +202,10 @@ namespace Psi {
       /**
        * Get the pointed-to type from a pointer.
        */
-      ValuePtr<> pointer_target_type(const ValuePtr<>& ptr) {
+      ValuePtr<> pointer_target_type(const ValuePtr<>& ptr, const SourceLocation& location) {
         ValuePtr<PointerType> target_ptr_type = dyn_cast<PointerType>(ptr->type());
         if (!target_ptr_type)
-          throw TvmUserError("store target is not a pointer type");
+          ptr->error_context().error_throw(location, "store target is not a pointer type");
         return target_ptr_type->target_type();
       }
     }
@@ -220,8 +220,8 @@ namespace Psi {
       require_available(target);
       require_available(value);
       
-      if (pointer_target_type(target) != value->type())
-        throw TvmUserError("store target type is not a pointer to the type of value");
+      if (pointer_target_type(target, location()) != value->type())
+        error_context().error_throw(location(), "store target type is not a pointer to the type of value");
     }
 
     template<typename V>
@@ -232,21 +232,21 @@ namespace Psi {
     }
 
     void Store::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Result of store instruction should not be used");
+      error_context().error_throw(location(), "Result of store instruction should not be used");
     }
 
     PSI_TVM_INSTRUCTION_IMPL(Store, Instruction, store);
 
     Load::Load(const ValuePtr<>& target_, const SourceLocation& location)
-    : Instruction(pointer_target_type(target_), operation, location),
+    : Instruction(pointer_target_type(target_, location), operation, location),
     target(target_) {
     }
 
     void Load::type_check() {
       require_available(target);
       
-      if (type() != pointer_target_type(target))
-        throw TvmUserError("load target type has changed since instruction creation");
+      if (type() != pointer_target_type(target, location()))
+        error_context().error_throw(location(), "load target type has changed since instruction creation");
     }
 
     template<typename V>
@@ -268,20 +268,20 @@ namespace Psi {
       require_available(element_type);
       
       if (!element_type->is_type())
-        throw TvmUserError("first parameter to alloca is not a type");
+        error_context().error_throw(location(), "first parameter to alloca is not a type");
       
       ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location());
 
       if (count) {
         require_available(count);
         if (count->type() != size_type)
-          throw TvmUserError("second parameter to alloca is not a uintptr");
+          error_context().error_throw(location(), "second parameter to alloca is not a uintptr");
       }
 
       if (alignment) {
         require_available(alignment);
         if (alignment->type() != size_type)
-          throw TvmUserError("third parameter to alloca is not a uintptr");
+          error_context().error_throw(location(), "third parameter to alloca is not a uintptr");
       }
     }
     
@@ -320,7 +320,7 @@ namespace Psi {
     void FreeAlloca::type_check() {
       require_available(value);
       if (!isa<Alloca>(value)  && !isa<AllocaConst>(value))
-        throw TvmUserError("Argument to freea is not the result of alloca or alloca_const");
+        error_context().error_throw(location(), "Argument to freea is not the result of alloca or alloca_const");
     }
     
     template<typename V>
@@ -345,19 +345,19 @@ namespace Psi {
       require_available(count);
 
       if (!isa<PointerType>(dest->type()))
-        throw TvmUserError("first parameter to memcpy instruction is not a pointer");
+        error_context().error_throw(location(), "first parameter to memcpy instruction is not a pointer");
       
       if (dest->type() != src->type())
-        throw TvmUserError("first two parameters to memcpy instruction must have the same type");
+        error_context().error_throw(location(), "first two parameters to memcpy instruction must have the same type");
       
       ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location());
       if (count->type() != size_type)
-        throw TvmUserError("size parameter to memcpy instruction must be uintptr");
+        error_context().error_throw(location(), "size parameter to memcpy instruction must be uintptr");
       
       if (alignment) {
         require_available(alignment);
         if (alignment->type() != size_type)
-          throw TvmUserError("alignment parameter to memcpy instruction must be uintptr");
+          error_context().error_throw(location(), "alignment parameter to memcpy instruction must be uintptr");
       }
     }
     
@@ -371,7 +371,7 @@ namespace Psi {
     }
 
     void MemCpy::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Result of memcpy instruction should not be used");
+      error_context().error_throw(location(), "Result of memcpy instruction should not be used");
     }
 
     PSI_TVM_INSTRUCTION_IMPL(MemCpy, Instruction, memcpy);
@@ -388,19 +388,19 @@ namespace Psi {
       require_available(count);
       
       if (!isa<PointerType>(dest->type()))
-        throw TvmUserError("first parameter to memzero instruction is not a pointer");
+        error_context().error_throw(location(), "first parameter to memzero instruction is not a pointer");
       
       if (!isa<ByteType>(value_cast<PointerType>(dest->type())->target_type()))
-        throw TvmUserError("first parameter to memzero instruction is not a byte pointer");
+        error_context().error_throw(location(), "first parameter to memzero instruction is not a byte pointer");
       
       ValuePtr<> size_type = FunctionalBuilder::size_type(context(), location());
       if (count->type() != size_type)
-        throw TvmUserError("size parameter to memzero instruction must be uintptr");
+        error_context().error_throw(location(), "size parameter to memzero instruction must be uintptr");
       
       if (alignment) {
         require_available(alignment);
         if (alignment->type() != size_type)
-          throw TvmUserError("alignment parameter to memzero instruction must be uintptr");
+          error_context().error_throw(location(), "alignment parameter to memzero instruction must be uintptr");
       }
     }
     
@@ -413,7 +413,7 @@ namespace Psi {
     }
 
     void MemZero::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Result of memzero instruction should not be used");
+      error_context().error_throw(location(), "Result of memzero instruction should not be used");
     }
 
     PSI_TVM_INSTRUCTION_IMPL(MemZero, Instruction, memzero);
@@ -425,7 +425,7 @@ namespace Psi {
     
     void Solidify::type_check() {
       if (!isa<ConstantType>(value->type()))
-        throw TvmUserError("Parameter to solidify is not const");
+        error_context().error_throw(location(), "Parameter to solidify is not const");
     }
     
     template<typename V>
@@ -435,7 +435,7 @@ namespace Psi {
     }
 
     void Solidify::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Result of solidify instruction should not be used");
+      error_context().error_throw(location(), "Result of solidify instruction should not be used");
     }
     
     PSI_TVM_INSTRUCTION_IMPL(Solidify, Instruction, solidify);

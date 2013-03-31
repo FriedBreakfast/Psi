@@ -16,6 +16,8 @@
  */
 
 namespace Psi {
+
+class CompileErrorContext;
 namespace Tvm {
 namespace CBackend {
 PSI_SMALL_ENUM(CTypeType) {
@@ -296,6 +298,8 @@ class CCompiler;
 
 class CModule {
   CCompiler *m_c_compiler;
+  CompileErrorContext *m_error_context;
+  SourceLocation m_location;
   WriteMemoryPool m_pool;
   SinglyLinkedList<CType> m_types;
   SinglyLinkedList<CGlobal> m_globals;
@@ -304,11 +308,13 @@ class CModule {
   void add_global(CGlobal *global, const SourceLocation *location, CType *type, const char *name);
 
 public:
-  CModule(CCompiler *compiler);
+  CModule(CCompiler *compiler, CompileErrorContext *error_context, const SourceLocation& location);
   CGlobalVariable *new_global(const SourceLocation *location, CType *type, const char *name);
   CFunction *new_function(const SourceLocation *location, CType *type, const char *name);
 
   WriteMemoryPool& pool() {return m_pool;}
+  const SourceLocation& location() {return m_location;}
+  CompileErrorContext& error_context() {return *m_error_context;}
   void emit(std::ostream& output);
   CCompiler& c_compiler();
   void name_types();

@@ -24,6 +24,7 @@ public:
   CType* build(const ValuePtr<>& term);
   CExpressionBuilder& c_builder() {return m_c_builder;}
   CCompiler& c_compiler() {return c_builder().module().c_compiler();}
+  CompileErrorContext& error_context() {return c_builder().module().error_context();};
   
   CType* void_type();
   CType* integer_type(IntegerType::Width width, bool is_signed);
@@ -84,7 +85,7 @@ struct TypeBuilderCallbacks {
   }
   
   static CType* array_type_callback(TypeBuilder& builder, const ValuePtr<ArrayType>& term) {
-    unsigned length = value_cast<IntegerValue>(term->length())->value().unsigned_value_checked();
+    unsigned length = value_cast<IntegerValue>(term->length())->value().unsigned_value_checked(builder.error_context().bind(term->location()));
     if (length == 0)
       return builder.void_type();
     

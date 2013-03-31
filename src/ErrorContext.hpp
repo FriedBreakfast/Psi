@@ -56,6 +56,8 @@ public:
   template<typename T> void info(const SourceLocation& location, const T& message) {info(location, to_str(message));}
 };
 
+class CompileErrorPair;
+
 class PSI_COMPILER_COMMON_EXPORT CompileErrorContext {
   std::ostream *m_error_stream;
   bool m_error_occurred;
@@ -70,6 +72,9 @@ public:
   bool error_occurred() const {return m_error_occurred;}
   /// \brief Call this to indicate an unrecoverable error occurred at some point during compilation.
   void set_error_occurred() {m_error_occurred = true;}
+  
+  /// \brief Bind to a location to create a CompileErrorPair
+  CompileErrorPair bind(const SourceLocation& location);
 
   void error(const SourceLocation& loc, const std::string& message, unsigned flags=0);
   PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const std::string& message, unsigned flags=0);
@@ -88,14 +93,16 @@ public:
   CompileErrorPair(CompileErrorContext& m_context, const SourceLocation& location);
   
   /// Forwards to CompileErrorContext::error
-  void error(const std::string& message, unsigned flags=0) {m_context->error(m_location, message, flags);}
+  void error(const std::string& message, unsigned flags=0) const {m_context->error(m_location, message, flags);}
   /// Forwards to CompileErrorContext::error_throw
-  PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const std::string& message, unsigned flags=0) {m_context->error(m_location, message, flags);}
+  PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const std::string& message, unsigned flags=0) const {m_context->error_throw(m_location, message, flags);}
   /// Forwards to CompileErrorContext::error
-  template<typename T> void error(const T& message, unsigned flags=0) {m_context->error(m_location, message, flags);}
+  template<typename T> void error(const T& message, unsigned flags=0) const {m_context->error(m_location, message, flags);}
   /// Forwards to CompileErrorContext::error_throw
-  template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const T& message, unsigned flags=0) {m_context->error_throw(m_location, message, flags);}
+  template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const T& message, unsigned flags=0) const {m_context->error_throw(m_location, message, flags);}
 };
+
+inline CompileErrorPair CompileErrorContext::bind(const SourceLocation& location) {return CompileErrorPair(*this, location);}
 }
 
 #endif

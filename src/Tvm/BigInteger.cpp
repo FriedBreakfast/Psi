@@ -30,11 +30,11 @@ namespace Psi {
      * i.e. numbers which are too large to represent in the number of
      * bytes a number currently uses.
      */
-    void BigInteger::parse(const std::string& value, bool negative, unsigned base) {
+    void BigInteger::parse(const CompileErrorPair& error_handler, const std::string& value, bool negative, unsigned base) {
       std::fill(m_words.get(), m_words.get()+m_words.size(), 0);
 
       if ((base < 2) || (base > 35))
-        throw TvmUserError("Unsupported numerical base, must be between 2 and 35 inclusive");
+        error_handler.error_throw("Unsupported numerical base, must be between 2 and 35 inclusive");
       
       const unsigned half_word_bits = std::numeric_limits<WordType>::digits / 2;
 
@@ -58,10 +58,10 @@ namespace Psi {
         else if ((digit >= 'A') && (digit <= 'A'))
           digit_value = digit - 'A';
         else
-          throw TvmUserError("Unrecognised digit in parsing");
+          error_handler.error_throw("Unrecognised digit in parsing");
 
         if (digit_value >= base)
-          throw TvmUserError("Digit out of range for base");
+          error_handler.error_throw("Digit out of range for base");
 
         WordType carry = digit_value;
         for (unsigned i = 0; i < m_words.size(); ++i) {
@@ -88,7 +88,7 @@ namespace Psi {
      * 
      * \return Number of characters in buffer, excluding NULL terminator.
      */
-    std::size_t BigInteger::print(char *out, std::size_t length, bool is_signed, unsigned base) const {
+    std::size_t BigInteger::print(const CompileErrorPair& error_handler, char *out, std::size_t length, bool is_signed, unsigned base) const {
       PSI_ASSERT(length >= 2);
       
       if (zero()) {
@@ -109,9 +109,9 @@ namespace Psi {
       char *out_cur = out, *out_end = out + length;
       BigInteger base_i(bits(), base);
       while (!current.zero() && (out_cur != out_end)) {
-        next.divide_unsigned(current, base_i);
-        rounded.multiply(next, base_i);
-        remainder.subtract(current, rounded);
+        next.divide_unsigned(error_handler, current, base_i);
+        rounded.multiply(error_handler, next, base_i);
+        remainder.subtract(error_handler, current, rounded);
         unsigned digit = *remainder.unsigned_value();
         char digit_c;
         if (digit >= 10)
@@ -123,7 +123,7 @@ namespace Psi {
       }
       
       if (out_cur == out_end)
-        throw TvmUserError("Number output buffer too small");
+        error_handler.error_throw("Number output buffer too small");
       
       std::reverse(out, out_cur);
       *out_cur = '\0';
@@ -138,7 +138,7 @@ namespace Psi {
      * does not print minus signs or base prefixes.
      * \param base Base to print in. Must be between 2 and 35.
      */
-    void BigInteger::print(std::ostream& os, bool is_signed, unsigned base) const {
+    void BigInteger::print(const CompileErrorPair& error_handler, std::ostream& os, bool is_signed, unsigned base) const {
       unsigned log2_base = 0;
       for (unsigned n = base; n > 1; n >>= 1)
         ++log2_base;
@@ -146,7 +146,7 @@ namespace Psi {
       unsigned digits = bits() / log2_base;
       SmallArray<char, 64> buffer;
       buffer.resize(digits + 2);
-      std::size_t n = print(buffer.get(), buffer.size(), is_signed, base);
+      std::size_t n = print(error_handler, buffer.get(), buffer.size(), is_signed, base);
       os.write(buffer.get(), n);
     }
 
@@ -177,8 +177,6 @@ namespace Psi {
      * Check operand size is nonzero and resize this integer.
      */
     void BigInteger::unary_resize(const BigInteger& param) {
-      if (param.bits() == 0)
-        throw TvmUserError("binary operation attempted on zero bit integer");
       resize(param.bits(), false);
     }
 
@@ -186,11 +184,9 @@ namespace Psi {
      * Check that the size of two binary operands are equal and resize this
      * integer to the correct size, in preparation for performing an operation.
      */
-    void BigInteger::binary_resize(const BigInteger& lhs, const BigInteger& rhs) {
+    void BigInteger::binary_resize(const CompileErrorPair& error_location, const BigInteger& lhs, const BigInteger& rhs) {
       if (lhs.bits() != rhs.bits())
-        throw TvmUserError("bit width mismatch in large integer arithmetic");
-      if (lhs.bits() == 0)
-        throw TvmUserError("binary operation attempted on zero bit integer");
+        error_location.error_throw("bit width mismatch in large integer arithmetic");
       resize(lhs.bits(), false);
     }
     
@@ -271,8 +267,8 @@ namespace Psi {
       return m_words[m_words.size()-1] == hi_word;
     }
     
-    void BigInteger::add(const BigInteger& lhs, const BigInteger& rhs) {
-      binary_resize(lhs, rhs);
+    void BigInteger::add(const CompileErrorPair& error_location, const BigInteger& lhs, const BigInteger& rhs) {
+      binary_resize(error_location, lhs, rhs);
 
       WordType carry = 0;
       for (unsigned i = 0; i < m_words.size(); ++i) {
@@ -290,8 +286,8 @@ namespace Psi {
       m_words[m_words.size() - 1] &= mask();
     }
 
-    void BigInteger::subtract(const BigInteger& lhs, const BigInteger& rhs) {
-      binary_resize(lhs, rhs);
+    void BigInteger::subtract(const CompileErrorPair& error_location, const BigInteger& lhs, const BigInteger& rhs) {
+      binary_resize(error_location, lhs, rhs);
       
       WordType borrow = 0;
       for (unsigned i = 0; i < m_words.size(); ++i) {
@@ -309,8 +305,8 @@ namespace Psi {
       m_words[m_words.size() - 1] &= mask();
     }
 
-    void BigInteger::multiply(const BigInteger& lhs, const BigInteger& rhs) {
-      binary_resize(lhs, rhs);
+    void BigInteger::multiply(const CompileErrorPair& error_location, const BigInteger& lhs, const BigInteger& rhs) {
+      binary_resize(error_location, lhs, rhs);
       
       ArrayPtr<WordType> words(m_words);
       bool self_arg = (this == &lhs) || (this == &rhs);
@@ -351,11 +347,11 @@ namespace Psi {
         std::copy(tmp_words.get(), tmp_words.get() + tmp_words.size(), m_words.get());
     }
     
-    void BigInteger::divide_internal(BigInteger& lhs, BigInteger& rhs) {
-      binary_resize(lhs, rhs);
+    void BigInteger::divide_internal(const CompileErrorPair& error_location, BigInteger& lhs, BigInteger& rhs) {
+      binary_resize(error_location, lhs, rhs);
       
       if (rhs.zero())
-        throw TvmUserError("cannot divide integer by zero");
+        error_location.error_throw("cannot divide integer by zero");
       
       const unsigned word_bits = std::numeric_limits<WordType>::digits;
       
@@ -370,8 +366,8 @@ namespace Psi {
       
       rhs.shl(rhs, shift);
       while (true) {
-        if (lhs.cmp_unsigned(rhs) >= 0) {
-          lhs.subtract(lhs, rhs);
+        if (lhs.cmp_unsigned(error_location, rhs) >= 0) {
+          lhs.subtract(error_location, lhs, rhs);
           m_words[word] |= bit;
         }
         
@@ -388,8 +384,8 @@ namespace Psi {
       }
     }
 
-    void BigInteger::divide_signed(const BigInteger& lhs, const BigInteger& rhs) {
-      binary_resize(lhs, rhs);
+    void BigInteger::divide_signed(const CompileErrorPair& error_location, const BigInteger& lhs, const BigInteger& rhs) {
+      binary_resize(error_location, lhs, rhs);
       
       bool result_sign = lhs.sign_bit() != rhs.sign_bit();
       
@@ -404,15 +400,15 @@ namespace Psi {
       else
         rhs_copy = rhs;
       
-      divide_internal(lhs_copy, rhs_copy);
+      divide_internal(error_location, lhs_copy, rhs_copy);
       
       if (result_sign)
         negative(*this);
     }
 
-    void BigInteger::divide_unsigned(const BigInteger& lhs, const BigInteger& rhs) {
+    void BigInteger::divide_unsigned(const CompileErrorPair& error_location, const BigInteger& lhs, const BigInteger& rhs) {
       BigInteger lhs_copy(lhs), rhs_copy(rhs);
-      divide_internal(lhs_copy, rhs_copy);
+      divide_internal(error_location, lhs_copy, rhs_copy);
     }
 
     void BigInteger::negative(const BigInteger& src) {
@@ -429,20 +425,20 @@ namespace Psi {
       }
     }
     
-    void BigInteger::bit_and(const BigInteger& lhs, const BigInteger& rhs) {
-      binary_resize(lhs, rhs);
+    void BigInteger::bit_and(const CompileErrorPair& error_location, const BigInteger& lhs, const BigInteger& rhs) {
+      binary_resize(error_location, lhs, rhs);
       for (unsigned i = 0; i < m_words.size(); ++i)
         m_words[i] = lhs.m_words[i] & rhs.m_words[i];
     }
 
-    void BigInteger::bit_or(const BigInteger& lhs, const BigInteger& rhs) {
-      binary_resize(lhs, rhs);
+    void BigInteger::bit_or(const CompileErrorPair& error_location, const BigInteger& lhs, const BigInteger& rhs) {
+      binary_resize(error_location, lhs, rhs);
       for (unsigned i = 0; i < m_words.size(); ++i)
         m_words[i] = lhs.m_words[i] | rhs.m_words[i];
     }
 
-    void BigInteger::bit_xor(const BigInteger& lhs, const BigInteger& rhs) {
-      binary_resize(lhs, rhs);
+    void BigInteger::bit_xor(const CompileErrorPair& error_location, const BigInteger& lhs, const BigInteger& rhs) {
+      binary_resize(error_location, lhs, rhs);
       for (unsigned i = 0; i < m_words.size(); ++i)
         m_words[i] = lhs.m_words[i] ^ rhs.m_words[i];
     }
@@ -496,10 +492,13 @@ namespace Psi {
       m_words[m_words.size() - 1] &= mask();
     }
 
-    int BigInteger::cmp_signed(const BigInteger& other) const {
+    int BigInteger::cmp_signed(const CompileErrorPair& error_location, const BigInteger& other) const {
       if (m_words.size() != other.m_words.size())
-        throw TvmUserError("cannot compare integers of different sizes");
-      
+        error_location.error_throw("cannot compare integers of different sizes");
+      return cmp_signed_internal(other);
+    }
+    
+    int BigInteger::cmp_signed_internal(const BigInteger& other) const {
       if (sign_bit()) {
         if (!other.sign_bit())
           return -1;
@@ -508,13 +507,16 @@ namespace Psi {
           return 1;
       }
       
-      return cmp_unsigned(other);      
+      return cmp_unsigned_internal(other);      
     }
     
-    int BigInteger::cmp_unsigned(const BigInteger& other) const {
+    int BigInteger::cmp_unsigned(const CompileErrorPair& error_location, const BigInteger& other) const {
       if (m_words.size() != other.m_words.size())
-        throw TvmUserError("cannot compare integers of different sizes");
-      
+        error_location.error_throw("cannot compare integers of different sizes");
+      return cmp_unsigned_internal(other);
+    }
+     
+    int BigInteger::cmp_unsigned_internal(const BigInteger& other) const {
       for (unsigned i = m_words.size(); i != 0; --i) {
         WordType x = m_words[i-1], y = other.m_words[i-1];
         if (x < y)
@@ -595,10 +597,10 @@ namespace Psi {
     /**
      * \brief Calls unsigned_value and throws an exception if the value is out of range.
      */
-    unsigned int BigInteger::unsigned_value_checked(bool is_signed) const {
+    unsigned int BigInteger::unsigned_value_checked(const CompileErrorPair& error_location, bool is_signed) const {
       boost::optional<unsigned> v = unsigned_value(is_signed);
       if (!v)
-        throw TvmUserError("Big integer value out of range for unsigned conversion");
+        error_location.error_throw("Big integer value out of range for unsigned conversion");
       return *v;
     }
   }

@@ -87,9 +87,12 @@ namespace Psi {
           ValuePtr<> register_type = FunctionalBuilder::union_type(rewriter.context(), register_members, term->location());
           return LoweredType::register_(term, size, alignment, register_type);
         } else if (isa<IntegerValue>(size) && isa<IntegerValue>(alignment)) {
+          CompileErrorPair error_pair = rewriter.pass().error_context().bind(term->location());
+          unsigned size_int = value_cast<IntegerValue>(size)->value().unsigned_value_checked(error_pair);
+          unsigned alignment_int = value_cast<IntegerValue>(alignment)->value().unsigned_value_checked(error_pair);
           std::pair<ValuePtr<>, std::size_t> elem_type =
-            rewriter.pass().target_callback->type_from_size(rewriter.context(), value_cast<IntegerValue>(alignment)->value().unsigned_value_checked(), term->location());
-          std::size_t count = value_cast<IntegerValue>(size)->value().unsigned_value_checked() / elem_type.second;
+            rewriter.pass().target_callback->type_from_size(rewriter.context(), alignment_int, term->location());
+          std::size_t count = size_int / elem_type.second;
           PSI_ASSERT(count > 0);
           if (count == 1) {
             return LoweredType::register_(term, size, alignment, elem_type.first);
@@ -161,8 +164,8 @@ namespace Psi {
         return rewriter.rewrite_type(term->value()->type()).with_origin(term);
       }
       
-      static LoweredType upref_type_rewrite(AggregateLoweringRewriter&, const ValuePtr<UpwardReferenceType>&) {
-        throw TvmUserError("Upward reference types should not be encountered during lowering");
+      static LoweredType upref_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<UpwardReferenceType>& term) {
+        rewriter.error_context().error_throw(term->location(), "Upward reference types should not be encountered during lowering");
       }
       
       static LoweredType parameter_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<>& type) {
@@ -314,7 +317,7 @@ namespace Psi {
             return rewriter.bitcast(type, inner, term->location());
           }
         } else {
-          throw TvmUserError("Cannot create union value of unknown size");
+          rewriter.error_context().error_throw(term->location(), "Cannot create union value of unknown size");
         }
       }
       
@@ -352,7 +355,7 @@ namespace Psi {
         } else if (isa<UnionType>(outer_type) || isa<ApplyType>(outer_type)) {
           return LoweredValue::register_(outer_ptr_ty, global, inner_ptr.value);
         } else {
-          throw TvmInternalError("Upward reference cannot be unfolded");
+          rewriter.error_context().error_throw(term->location(), "Upward reference cannot be unfolded", CompileError::error_internal);
         }
         
         offset = FunctionalBuilder::neg(offset, term->location());
@@ -370,7 +373,7 @@ namespace Psi {
       static LoweredValueSimple array_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<>& unchecked_array_ty, const LoweredValueSimple& base, const LoweredValueSimple& index, const SourceLocation& location) {
         ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(unchecked_array_ty);
         if (!array_ty)
-          throw TvmUserError("array type argument did not evaluate to an array type");
+          rewriter.error_context().error_throw(location, "array type argument did not evaluate to an array type");
 
         LoweredType array_ty_l = rewriter.rewrite_type(array_ty);
         if (array_ty_l.mode() == LoweredType::mode_register) {
@@ -446,7 +449,7 @@ namespace Psi {
         }
         
         case LoweredType::mode_blob:
-          throw TvmUserError("Arrays type not supported by the back-end used in register");
+          rewriter.error_context().error_throw(location, "Arrays type not supported by the back-end used in register");
         
         default: PSI_FAIL("unexpected enum value");
         }
@@ -479,7 +482,7 @@ namespace Psi {
         
         ValuePtr<PointerType> pointer_type = dyn_cast<PointerType>(term->aggregate_ptr()->type());
         if (!pointer_type)
-          throw TvmUserError("array_ep argument did not evaluate to a pointer");
+          rewriter.error_context().error_throw(term->location(), "array_ep argument did not evaluate to a pointer");
         
         LoweredType type = rewriter.rewrite_type(term->type());
         LoweredValueSimple result = array_ptr_offset(rewriter, pointer_type->target_type(), array_ptr, index, term->location());
@@ -496,7 +499,7 @@ namespace Psi {
       static LoweredValueSimple struct_ptr_offset(AggregateLoweringRewriter& rewriter, const ValuePtr<>& unchecked_struct_ty, const LoweredValueSimple& base, unsigned index, const SourceLocation& location) {
         ValuePtr<StructType> struct_ty = dyn_cast<StructType>(unchecked_struct_ty);
         if (!struct_ty)
-          throw TvmInternalError("struct type value did not evaluate to a struct type");
+          rewriter.error_context().error_throw(location, "struct type value did not evaluate to a struct type");
 
         LoweredType struct_ty_rewritten = rewriter.rewrite_type(struct_ty);
         if (struct_ty_rewritten.mode() == LoweredType::mode_register) {
@@ -532,7 +535,7 @@ namespace Psi {
         
         ValuePtr<PointerType> pointer_type = dyn_cast<PointerType>(term->aggregate_ptr()->type());
         if (!pointer_type)
-          throw TvmUserError("struct_ep argument did not evaluate to a pointer");
+          rewriter.error_context().error_throw(term->location(), "struct_ep argument did not evaluate to a pointer");
         
         LoweredValueSimple result = struct_ptr_offset(rewriter, pointer_type->target_type(), struct_ptr, size_to_unsigned(term->index()), term->location());
         return LoweredValue::register_(rewriter.rewrite_type(term->type()), result.global, result.value);
@@ -541,7 +544,7 @@ namespace Psi {
       static LoweredValue struct_element_offset_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<StructElementOffset>& term) {
         ValuePtr<StructType> struct_ty = dyn_cast<StructType>(term->struct_type());
         if (!struct_ty)
-          throw TvmUserError("struct_eo argument did not evaluate to a struct type");
+          rewriter.error_context().error_throw(term->location(), "struct_eo argument did not evaluate to a struct type");
 
         ElementOffsetGenerator gen(&rewriter, term->location());
         for (unsigned ii = 0, ie = term->index(); ii <= ie; ++ii)
@@ -561,7 +564,7 @@ namespace Psi {
             return rewriter.bitcast(type, union_val, term->location());
           }
         } else {
-          throw TvmUserError("Cannot get element value from union of unknown size");
+          rewriter.error_context().error_throw(term->location(), "Cannot get element value from union of unknown size");
         }
       }
 
@@ -637,13 +640,13 @@ namespace Psi {
         else if (isa<ApplyType>(ty))
           return apply_element_rewrite(rewriter, term);
         else
-          throw TvmUserError("element_value aggregate argument is not an aggregate type");
+          rewriter.error_context().error_throw(term->location(), "element_value aggregate argument is not an aggregate type");
       }
       
       static LoweredValue element_ptr_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementPtr>& term) {
         ValuePtr<PointerType> ptr_ty = dyn_cast<PointerType>(term->aggregate_ptr()->type());
         if (!ptr_ty)
-          throw TvmUserError("element_ptr aggregate argument is not a pointer");
+          rewriter.error_context().error_throw(term->location(), "element_ptr aggregate argument is not a pointer");
 
         ValuePtr<> ty = ptr_ty->target_type();
         if (isa<StructType>(ty))
@@ -655,7 +658,7 @@ namespace Psi {
         else if (isa<ApplyType>(ty))
           return apply_element_ptr_rewrite(rewriter, term);
         else
-          throw TvmUserError("element_value aggregate argument is not an aggregate type");
+          rewriter.error_context().error_throw(term->location(), "element_value aggregate argument is not an aggregate type");
       }
       
       static LoweredValue build_select(AggregateLoweringRewriter& rewriter, const LoweredValueSimple& cond, const LoweredValue& true_val, const LoweredValue& false_val, const SourceLocation& location) {
@@ -705,7 +708,7 @@ namespace Psi {
         }
           
         case LoweredType::mode_blob:
-          throw TvmUserError("Type unsupported by back-end cannot be used in register");
+          rewriter.error_context().error_throw(location, "Type unsupported by back-end cannot be used in register");
           
         default: PSI_FAIL("unexpected enum value");
         }

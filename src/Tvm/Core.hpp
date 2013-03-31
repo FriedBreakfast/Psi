@@ -220,6 +220,14 @@ namespace Psi {
 
       /** \brief Get the context this Term comes from. */
       Context& context() const {return *m_context;}
+      
+      /**
+       * \brief Get the error handling context from this Terms context.
+       * 
+       * Shorthand for
+       * \code context().error_context() \endcode
+       */
+      CompileErrorContext& error_context() const;
 
       /** \brief Get the term describing the type of this term. */
       const ValuePtr<>& type() const {return m_type;}
@@ -406,6 +414,7 @@ namespace Psi {
       RewriteCallback(Context& context) : m_context(&context) {}
       /// \brief Get the context to create rewritten terms in.
       Context& context() {return *m_context;}
+      CompileErrorContext& error_context();
       virtual ValuePtr<> rewrite(const ValuePtr<>& value) = 0;
     };    
 
@@ -502,7 +511,7 @@ namespace Psi {
     } \
     \
     Value* Type::disassembler_source() { \
-      DisassemblerSourceVisitor v; \
+      DisassemblerSourceVisitor v(context(), location()); \
       boost::array<Type*,1> c = {{this}}; \
       visit_members(v, c); \
       return v.source(); \
@@ -702,6 +711,9 @@ namespace Psi {
     public:
       Context(CompileErrorContext *error_context);
       ~Context();
+      
+      /// \brief Get the error reporting context for this TVM context.
+      CompileErrorContext& error_context() {return *m_error_context;}
 
       /**
        * \brief Get a pointer to a functional term.
@@ -739,6 +751,8 @@ namespace Psi {
       Context(const Context&);
     };
 
+    inline CompileErrorContext& Value::error_context() const {return context().error_context();}
+    inline CompileErrorContext& RewriteCallback::error_context() {return context().error_context();}
     bool term_unique(const ValuePtr<>& term);
     void print_module(std::ostream&, Module*);
     void print_term(std::ostream&, const ValuePtr<>&);
@@ -819,17 +833,19 @@ namespace Psi {
       }
     };
     
-    Value* disassembler_merge_source(Value *lhs, Value *rhs);
+    Value* disassembler_merge_source(const CompileErrorPair& error_pair, Value *lhs, Value *rhs);
     
     class DisassemblerSourceVisitor : public ValuePtrVisitorBase<DisassemblerSourceVisitor> {
+      CompileErrorPair m_error_pair;
       Value *m_source;
       
     public:
-      DisassemblerSourceVisitor() : m_source(NULL) {}
+      DisassemblerSourceVisitor(Context& context, const SourceLocation& location)
+      : m_error_pair(context.error_context(), location), m_source(NULL) {}
       
       void visit_ptr(const ValuePtr<>& ptr) {
         if (ptr)
-          m_source = disassembler_merge_source(m_source, ptr->disassembler_source());
+          m_source = disassembler_merge_source(m_error_pair, m_source, ptr->disassembler_source());
       }
       
       /// Ignore recursive type reference in ApplyTerm.

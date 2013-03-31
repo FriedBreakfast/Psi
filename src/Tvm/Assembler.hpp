@@ -36,6 +36,7 @@ namespace Psi {
 
         Module& module() const;
         Context& context() const;
+        CompileErrorContext& error_context() const;
         ValuePtr<> get(const std::string& name) const;
         void put(const std::string& name, const ValuePtr<>& value);
 

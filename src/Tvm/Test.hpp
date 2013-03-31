@@ -1,6 +1,7 @@
 #ifndef HPP_PSI_TVM_TEST
 #define HPP_PSI_TVM_TEST
 
+#include "../ErrorContext.hpp"
 #include "Core.hpp"
 #include "Jit.hpp"
 
@@ -13,6 +14,7 @@ namespace Psi {
       class ContextFixture {
       public:
         SourceLocation location;
+        CompileErrorContext error_context;
         Context context;
         Module module;
 

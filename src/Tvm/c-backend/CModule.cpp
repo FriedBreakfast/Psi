@@ -770,8 +770,10 @@ CName CNameMap::get(const char *base) {
   return insert(base, true);
 }
 
-CModule::CModule(CCompiler *c_compiler)
+CModule::CModule(CCompiler *c_compiler, CompileErrorContext *error_context, const SourceLocation& location)
 : m_c_compiler(c_compiler),
+m_error_context(error_context),
+m_location(location),
 m_names(&m_pool) {
 }
 

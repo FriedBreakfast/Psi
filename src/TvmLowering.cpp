@@ -182,8 +182,10 @@ m_tvm_context(&tvm_context) {
 
 TvmCompiler::TvmCompiler(CompileContext *compile_context)
 : m_compile_context(compile_context),
+m_tvm_context(&compile_context->error_context()),
 m_root_scope(TvmScope::root()) {
-  boost::shared_ptr<Tvm::JitFactory> factory = Tvm::JitFactory::get("llvm");
+  boost::shared_ptr<Tvm::JitFactory> factory =
+    Tvm::JitFactory::get(compile_context->error_context().bind(SourceLocation::root_location("(jit)")), "llvm");
   m_jit = factory->create_jit();
   m_library_module.reset(new Tvm::Module(&m_tvm_context, "(library)", SourceLocation::root_location("(library)")));
 }

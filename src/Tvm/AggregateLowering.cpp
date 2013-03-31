@@ -39,11 +39,12 @@ namespace Psi {
     TypeSizeAlignment LoweredType::size_alignment_const() const {
       ValuePtr<IntegerValue> size_val = dyn_cast<IntegerValue>(size()), alignment_val = dyn_cast<IntegerValue>(alignment());
       if (!size_val || !alignment_val)
-        throw TvmInternalError("Size and alignment of global type are not constant");
+        origin()->error_context().error_throw(origin()->location(), "Size and alignment of global type are not constant", CompileError::error_internal);
 
       TypeSizeAlignment result;
-      result.size = size_val->value().unsigned_value_checked();
-      result.alignment = alignment_val->value().unsigned_value_checked();
+      CompileErrorPair error_pair = origin()->context().error_context().bind(origin()->location());
+      result.size = size_val->value().unsigned_value_checked(error_pair);
+      result.alignment = alignment_val->value().unsigned_value_checked(error_pair);
       return result;
     }
     
@@ -357,7 +358,7 @@ namespace Psi {
       }
       
       case LoweredType::mode_blob:
-        throw TvmUserError("Cannot load types not supported by the back-end into registers");
+        pass().error_context().error_throw(location, "Cannot load types not supported by the back-end into registers");
       
       default: PSI_FAIL("unexpected enum value");
       }
@@ -384,7 +385,7 @@ namespace Psi {
       } else if (ValuePtr<HashableValue> func_type = dyn_cast<HashableValue>(type)) {
         result = type_term_rewrite(*this, func_type);
       } else if (isa<ParameterPlaceholder>(type)) {
-        throw TvmUserError("Encountered parameter placeholder in aggregate lowering");
+        pass().error_context().error_throw(type->location(), "Encountered parameter placeholder in aggregate lowering");
       } else {
         result = type_term_rewrite_parameter(*this, type);
       }
@@ -418,7 +419,7 @@ namespace Psi {
       } else if (ValuePtr<HashableValue> functional = dyn_cast<HashableValue>(value)) {
         result = hashable_term_rewrite(*this, functional);
       } else {
-        throw TvmUserError("Unexpected term type encountered in value lowering");
+        pass().error_context().error_throw(value->location(), "Unexpected term type encountered in value lowering");
       }
       
       PSI_ASSERT(!result.empty());
@@ -450,7 +451,7 @@ namespace Psi {
       }
       
       case LoweredType::mode_blob:
-        throw TvmUserError("Phi nodes do not work with types not supported by the back-end");
+        pass().error_context().error_throw(location, "Phi nodes do not work with types not supported by the back-end");
       
       default: PSI_FAIL("unexpected enum value");
       }
@@ -480,8 +481,8 @@ namespace Psi {
         return;
       }
 
-      case LoweredType::mode_blob:
-        throw TvmUserError("Phi nodes do not work with types not supported by the back-end");
+      // The error in create_phi_node should be tripped before this one can be reached
+      case LoweredType::mode_blob: PSI_FAIL("Phi nodes do not work with types not supported by the back-end");
 
       default: PSI_FAIL("unrecognised enum value");
       }
@@ -510,7 +511,7 @@ namespace Psi {
       } else if (ValuePtr<HashableValue> functional = dyn_cast<HashableValue>(type)) {
         result = type_term_rewrite(*this, functional);
       } else {
-        throw TvmUserError("Unexpected term type in type lowering");
+        pass().error_context().error_throw(type->location(), "Unexpected term type in type lowering");
       }
       
       PSI_ASSERT(!result.empty());
@@ -525,9 +526,9 @@ namespace Psi {
       
       if (isa<Global>(value)) {
         PSI_ASSERT(value_cast<Global>(value)->module() != pass().source_module());
-        throw TvmUserError("Global from a different module encountered during lowering");
+        pass().error_context().error_throw(value->location(), "Global from a different module encountered during lowering");
       } else if (isa<FunctionType>(value)) {
-        throw TvmUserError("Function type encountered in computed expression");
+        pass().error_context().error_throw(value->location(), "Function type encountered in computed expression");
       }
       
       LoweredValue result;
@@ -536,7 +537,7 @@ namespace Psi {
       } else if (ValuePtr<FunctionalValue> functional = dyn_cast<FunctionalValue>(value)) {
         result = hashable_term_rewrite(*this, functional);
       } else {
-        throw TvmUserError("Non-functional value encountered in global expression: probably instruction or block which has not been inserted into a function");
+        pass().error_context().error_throw(value->location(), "Non-functional value encountered in global expression: probably instruction or block which has not been inserted into a function");
       }
       
       PSI_ASSERT(!result.empty());
@@ -820,9 +821,9 @@ namespace Psi {
       } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(type)) {
         ValuePtr<IntegerValue> length_val = dyn_cast<IntegerValue>(array_ty->length());
         if (!length_val)
-          throw TvmUserError("Array length not constant in value implosion");
+          error_context().error_throw(location, "Array length not constant in value implosion");
         std::vector<ValuePtr<> > elements;
-        for (unsigned ii = 0, ie = length_val->value().unsigned_value_checked(); ii != ie; ++ii)
+        for (unsigned ii = 0, ie = length_val->value().unsigned_value_checked(error_context().bind(location)); ii != ie; ++ii)
           elements.push_back(implode_constant_value(array_ty->element_type(), entries, offset, location));
         offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
         return FunctionalBuilder::array_value(array_ty->element_type(), elements, location);

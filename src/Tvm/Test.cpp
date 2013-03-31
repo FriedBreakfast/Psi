@@ -3,19 +3,22 @@
 
 #include "Test.hpp"
 #include "Assembler.hpp"
+#include "../ErrorContext.hpp"
 
 #include <cstdlib>
 
 namespace {
   struct JitLoader {
+    Psi::CompileErrorContext jit_error_context;
     boost::shared_ptr<Psi::Tvm::JitFactory> jit_factory;
 
-    JitLoader() {
+    JitLoader()
+    : jit_error_context(&std::cerr) {
       const char *jit = std::getenv("PSI_TEST_JIT");
       if (!jit)
         jit = "llvm";
   
-      jit_factory = Psi::Tvm::JitFactory::get(jit);
+      jit_factory = Psi::Tvm::JitFactory::get(jit_error_context.bind(Psi::SourceLocation::root_location("(jit)")), jit);
     }
   };
 
@@ -40,6 +43,8 @@ namespace Psi {
       
       ContextFixture::ContextFixture()
       : location(module_location()),
+      error_context(&std::cerr),
+      context(&error_context),
       module(&context, "test_module", location),
       m_jit(jit_loader.jit_factory->create_jit()) {
       }

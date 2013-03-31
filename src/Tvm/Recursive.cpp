@@ -32,7 +32,7 @@ namespace Psi {
     }
     
     void RecursiveParameter::check_source_hook(CheckSourceParameter&) {
-      throw TvmUserError("Recursive parameter not available in this context");
+      error_context().error_throw(location(), "Recursive parameter not available in this context");
     }
     
     PSI_TVM_VALUE_IMPL(RecursiveParameter, Value);
@@ -63,10 +63,10 @@ namespace Psi {
      */
     void RecursiveType::resolve(const ValuePtr<>& to) {
       if (!isa<Metatype>(to->type()))
-        throw TvmUserError("Term used to resolve recursive type is not a type");
+        error_context().error_throw(location(), "Term used to resolve recursive type is not a type");
 
       if (m_result)
-        throw TvmUserError("resolving a recursive term which has already been resolved");
+        error_context().error_throw(location(), "resolving a recursive term which has already been resolved");
       
       m_result = to;
     }
@@ -135,7 +135,7 @@ namespace Psi {
 
     ValuePtr<> ApplyType::unpack() {
       if (!recursive()->result())
-        throw TvmUserError("Cannot unpack recursive term which has not been assigned");
+        error_context().error_throw(location(), "Cannot unpack recursive term which has not been assigned");
 
       return RecursiveParameterResolverRewriter(recursive(), &m_parameters).rewrite(recursive()->result());
     }
@@ -150,10 +150,10 @@ namespace Psi {
     ValuePtr<> ApplyType::check_type() const {
       ValuePtr<RecursiveType> recursive = dyn_cast<RecursiveType>(m_recursive);
       if (!recursive)
-        throw TvmUserError("Parameter to apply is not a recursive type");
+        error_context().error_throw(location(), "Parameter to apply is not a recursive type");
       
       if (m_parameters.size() != recursive->parameters().size())
-        throw TvmUserError("Wrong number of parameters passed to apply");
+        error_context().error_throw(location(), "Wrong number of parameters passed to apply");
       
       RecursiveParameterResolverRewriter rewriter(recursive, &m_parameters);
       std::vector<ValuePtr<> >::const_iterator ii = m_parameters.begin(), ie = m_parameters.end();
@@ -161,7 +161,7 @@ namespace Psi {
       for (; ii != ie; ++ii, ++ji) {
         PSI_ASSERT(ji != je);
         if ((*ii)->type() != rewriter.rewrite((*ji)->type()))
-          throw TvmUserError("Parameter to apply has the wrong type");
+          error_context().error_throw(location(), "Parameter to apply has the wrong type");
       }
       PSI_ASSERT(ji == je);
       
@@ -170,7 +170,7 @@ namespace Psi {
 
     void ApplyType::hashable_check_source(ApplyType& self, CheckSourceParameter& parameter) {
       if (!self.recursive()->result())
-        throw TvmUserError("Apply type used before recursive type has been resolved");
+        self.error_context().error_throw(self.location(), "Apply type used before recursive type has been resolved");
       
       return self.unpack()->check_source(parameter);
     }

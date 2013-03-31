@@ -1,6 +1,8 @@
 #include "ModuleRewriter.hpp"
 #include "Function.hpp"
 
+#include <boost/format.hpp>
+
 namespace Psi {
   namespace Tvm {
     /**
@@ -51,11 +53,11 @@ namespace Psi {
      */
     ValuePtr<Global> ModuleRewriter::target_symbol(const ValuePtr<Global>& term) {
       if (term->module() != source_module())
-        throw TvmUserError("global symbol is not from this rewriter's source module");
+        error_context().error_throw(term->location(), "global symbol is not from this rewriter's source module");
       
       ValuePtr<Global> t = global_map_get(term);
       if (!t)
-        throw TvmUserError("missing symbol in module rewriter: " + term->name());
+        error_context().error_throw(term->location(), boost::format("missing symbol in module rewriter: %s") % term->name());
       return t;
     }
     

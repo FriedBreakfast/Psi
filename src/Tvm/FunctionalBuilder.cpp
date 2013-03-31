@@ -4,6 +4,8 @@
 #include "Function.hpp"
 #include "Recursive.hpp"
 
+#include <boost/format.hpp>
+
 namespace Psi {
   namespace Tvm {
     /// \brief Get the metatype, the type of types.
@@ -109,43 +111,6 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::parameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location) {
       return type->context().get_functional(ResolvedParameter(type, depth, index, location));
     }
-    
-    class ParameterResolverRewriter : public RewriteCallback {
-      std::vector<ValuePtr<ParameterPlaceholder> > m_parameters;
-      std::size_t m_depth;
-
-    public:
-      ParameterResolverRewriter(Context& context, const std::vector<ValuePtr<ParameterPlaceholder> >& parameters)
-      : RewriteCallback(context), m_parameters(parameters), m_depth(0) {
-      }
-
-      virtual ValuePtr<> rewrite(const ValuePtr<>& term) {
-        if (ValuePtr<ParameterPlaceholder> parameter = dyn_cast<ParameterPlaceholder>(term)) {
-          ValuePtr<> type = rewrite(term->type());
-          for (unsigned i = 0, e = m_parameters.size(); i != e; ++i) {
-            if (m_parameters[i] == term)
-              return FunctionalBuilder::parameter(type, m_depth, i, m_parameters[i]->location());
-          }
-          if (type != term->type())
-            throw TvmUserError("type of unresolved function parameter cannot depend on type of resolved function parameter");
-          return term;
-        } else if (ValuePtr<FunctionType> function_type = dyn_cast<FunctionType>(term)) {
-          ++m_depth;
-          ValuePtr<> result = function_type->rewrite(*this);
-          --m_depth;
-          return result;
-        } else if (ValuePtr<Exists> exists = dyn_cast<Exists>(term)) {
-          ++m_depth;
-          ValuePtr<> result = exists->rewrite(*this);
-          --m_depth;
-          return result;
-        } else if (ValuePtr<HashableValue> hashable = dyn_cast<HashableValue>(term)) {
-          return hashable->rewrite(*this);
-        } else {
-          return term;
-        }
-      }
-    };
 
     /**
      * \brief Get a the type of a pointer to a type.
@@ -370,18 +335,18 @@ namespace Psi {
       } else if (ValuePtr<IntegerValue> index_val = dyn_cast<IntegerValue>(index)) {
         boost::optional<unsigned> index_ui = index_val->value().unsigned_value();
         if (!index_ui)
-          throw TvmUserError("aggregate index out of range");
+          aggregate->error_context().error_throw(location, "aggregate index out of range");
         
         if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(aggregate)) {
           if (*index_ui < struct_val->n_members())
             return struct_val->member_value(*index_ui);
           else
-            throw TvmUserError("struct element index out of range");
+            aggregate->error_context().error_throw(location, "struct element index out of range");
         } else if (ValuePtr<ArrayValue> array_val = dyn_cast<ArrayValue>(aggregate)) {
           if (*index_ui < array_val->length())
             return array_val->value(*index_ui);
           else
-            throw TvmUserError("array element index out of range");
+            aggregate->error_context().error_throw(location, "array element index out of range");
         }
       }
       
@@ -418,7 +383,7 @@ namespace Psi {
       }
       ValuePtr<PointerType> base_type = dyn_cast<PointerType>(my_ptr->type());
       if (!base_type)
-        throw TvmUserError("Target of pointer_cast is not a pointer");
+        ptr->error_context().error_throw(location, "Target of pointer_cast is not a pointer");
 
       if ((base_type->target_type() == result_type) && (base_type->upref() == upref)) {
         return my_ptr;
@@ -519,7 +484,7 @@ namespace Psi {
      */
     ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, const std::string& value, bool negative, unsigned base, const SourceLocation& location) {
       BigInteger bv(IntegerType::value_bits(width));
-      bv.parse(value, negative, base);
+      bv.parse(context.error_context().bind(location), value, negative, base);
       return int_value(context, width, is_signed, bv, location);
     }
 
@@ -638,14 +603,14 @@ namespace Psi {
       
       class IntConstCombiner {
       public:
-        typedef void (BigInteger::*CallbackType) (const BigInteger&, const BigInteger&);
+        typedef void (BigInteger::*CallbackType) (const CompileErrorPair&, const BigInteger&, const BigInteger&);
         
         explicit IntConstCombiner(CallbackType callback) : m_callback(callback) {
         }
         
         ValuePtr<> operator () (const ValuePtr<IntegerValue>& lhs, const ValuePtr<IntegerValue>& rhs, const SourceLocation& location) const {
           BigInteger value;
-          (value.*m_callback)(lhs->value(), rhs->value());
+          (value.*m_callback)(lhs->error_context().bind(location), lhs->value(), rhs->value());
           return FunctionalBuilder::int_value(lhs->type(), value, location);
         }
 
@@ -655,15 +620,15 @@ namespace Psi {
 
       ValuePtr<> int_binary_undef(const char *op, const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location) {
         if (lhs->type() != rhs->type())
-          throw TvmUserError(std::string("type mismatch on parameter to") + op);
+          lhs->error_context().error_throw(location, boost::format("type mismatch on parameter to %s") % op);
         else if (!isa<IntegerType>(lhs->type()))
-          throw TvmUserError(std::string("parameters to ") + op + " are not integers");
+          lhs->error_context().error_throw(location, boost::format("parameters to %s are not integers") % op);
         return FunctionalBuilder::undef(lhs->type(), location);
       }
       
       ValuePtr<> int_unary_undef(const char *op, const ValuePtr<>& parameter, const SourceLocation& location) {
         if (!isa<IntegerType>(parameter->type()))
-          throw TvmUserError(std::string("parameters to ") + op +  " are not integers");
+          parameter->error_context().error_throw(location, boost::format("parameters to %s are not integers") % op);
         return FunctionalBuilder::undef(parameter->type(), location);
       }
     }
@@ -697,9 +662,9 @@ namespace Psi {
           return lhs_val;
         else if (ValuePtr<IntegerValue> rhs_val = dyn_cast<IntegerValue>(rhs)) {
           if (lhs_val->type() != rhs_val->type())
-            throw TvmUserError("Incompatible argument types to mul instruction");
+            lhs->error_context().error_throw(location, "Incompatible argument types to mul instruction");
           BigInteger v;
-          v.multiply(lhs_val->value(), rhs_val->value());
+          v.multiply(lhs->error_context().bind(location), lhs_val->value(), rhs_val->value());
           return int_value(lhs_val->type(), v, location);
         }
       } else if (ValuePtr<IntegerValue> rhs_val = dyn_cast<IntegerValue>(rhs)) {
@@ -721,13 +686,14 @@ namespace Psi {
       if (ValuePtr<IntegerValue> lhs_val = dyn_cast<IntegerValue>(lhs)) {
         if (ValuePtr<IntegerValue> rhs_val = dyn_cast<IntegerValue>(rhs)) {
           if (lhs_val->type() != rhs_val->type())
-            throw TvmUserError("Incompatible argument types to div instruction");
+            lhs->error_context().error_throw(location, "Incompatible argument types to div instruction");
           if (!rhs_val->value().zero()) {
             BigInteger v;
+            CompileErrorPair ep = lhs->error_context().bind(location);
             if (lhs_val->type()->is_signed())
-              v.divide_signed(lhs_val->value(), rhs_val->value());
+              v.divide_signed(ep, lhs_val->value(), rhs_val->value());
             else
-              v.divide_unsigned(lhs_val->value(), rhs_val->value());
+              v.divide_unsigned(ep, lhs_val->value(), rhs_val->value());
             return int_value(lhs_val->type(), v, location);
           }
         }
@@ -883,10 +849,10 @@ namespace Psi {
                         CompareShortcut rhs_undef_min, CompareShortcut rhs_undef_max,
                         const SourceLocation& location) {
         if (lhs->type() != rhs->type())
-          throw TvmUserError(std::string("type mismatch on parameters to ") + Op::operation + " operation");
+          lhs->error_context().error_throw(location, boost::format("type mismatch on parameters to %s operation") % Op::operation);
         ValuePtr<IntegerType> int_ty = dyn_cast<IntegerType>(lhs->type());
         if (!int_ty)
-          throw TvmUserError(std::string("parameters to ") + Op::operation + " are not integers");
+          lhs->error_context().error_throw(location, boost::format("parameters to %s are not integers") % Op::operation);
         bool int_ty_signed = int_ty->is_signed();
         
         bool lhs_undef = isa<UndefinedValue>(lhs), rhs_undef = isa<UndefinedValue>(rhs);
@@ -913,7 +879,8 @@ namespace Psi {
               return FunctionalBuilder::undef(FunctionalBuilder::bool_type(int_ty->context(), location), location);
           }
         } else if (lhs_val && rhs_val) {
-          int cmp_val = int_ty->is_signed() ? lhs_val->value().cmp_signed(rhs_val->value()) : lhs_val->value().cmp_unsigned(rhs_val->value());
+          CompileErrorPair ep = lhs->error_context().bind(location);
+          int cmp_val = int_ty->is_signed() ? lhs_val->value().cmp_signed(ep, rhs_val->value()) : lhs_val->value().cmp_unsigned(ep, rhs_val->value());
           return FunctionalBuilder::bool_value(int_ty->context(), cmp(cmp_val, 0), location);
         }
         
@@ -1021,7 +988,7 @@ namespace Psi {
     ValuePtr<> FunctionalBuilder::specialize(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location) {      
       if (parameters.size() == 0) {
         if (!isa<PointerType>(function) || !isa<FunctionType>(value_cast<PointerType>(function)->target_type()))
-          throw TvmUserError("specialize target is not a function pointer");
+          function->error_context().error_throw(location, "specialize target is not a function pointer");
 
         return function;
       }

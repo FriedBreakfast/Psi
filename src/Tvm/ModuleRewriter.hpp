@@ -31,6 +31,8 @@ namespace Psi {
       Module *target_module() {return m_target_module.get();}
       /// \brief Return ownership of the target module
       Module *release_target_module() {return m_target_module.release();}
+      /// \brief Get the error handling context
+      CompileErrorContext& error_context() {return m_target_module->context().error_context();}
             
       ValuePtr<Global> target_symbol(const ValuePtr<Global>&);
       ValuePtr<Function> target_symbol(const ValuePtr<Function>&);

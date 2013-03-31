@@ -191,33 +191,33 @@ public:
     }
   }
 
-  virtual const char *float_type(CModule&, FloatType::Width width) {
+  virtual const char *float_type(CModule& module, FloatType::Width width) {
     switch (width) {
     case FloatType::fp32: return "float";
     case FloatType::fp64: return "double";
-    case FloatType::fp_ppc_128: throw TvmUserError("C compiler does not support 128-bit PPC extended precision float");
+    case FloatType::fp_ppc_128: module.error_context().error_throw(module.location(), "C compiler does not support 128-bit PPC extended precision float");
 
     case FloatType::fp128:
       if (has_float_128)
         return "__float128";
       else
-        throw TvmUserError("C compiler does not support 128-bit float types");
+        module.error_context().error_throw(module.location(), "C compiler does not support 128-bit float types");
       
     case FloatType::fp_x86_80:
       if (has_float_80)
         return "__float80";
       else
-        throw TvmUserError("C compiler does not support 80-bit X86 extended precision float");
+        module.error_context().error_throw(module.location(), "C compiler does not support 80-bit X86 extended precision float");
       
     default: PSI_FAIL("Unrecognised float width");
     }
   }
   
-  virtual const char* float_suffix(CModule&, FloatType::Width width) {
+  virtual const char* float_suffix(CModule& module, FloatType::Width width) {
     switch (width) {
     case FloatType::fp32: return "f";
     case FloatType::fp64: return "";
-    case FloatType::fp_ppc_128: throw TvmUserError("C compiler does not support 128-bit PPC extended precision float");
+    case FloatType::fp_ppc_128: module.error_context().error_throw(module.location(), "C compiler does not support 128-bit PPC extended precision float");
     case FloatType::fp128: return "q";
     case FloatType::fp_x86_80: return "w";
     default: PSI_FAIL("Unrecognised float width");

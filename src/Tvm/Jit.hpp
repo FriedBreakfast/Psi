@@ -107,7 +107,7 @@ namespace Psi {
       /// \brief Create a new Just-in-time compiler
       virtual boost::shared_ptr<Jit> create_jit() = 0;
 
-      static boost::shared_ptr<JitFactory> get(const std::string& name);
+      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const std::string& name);
     };
   }
 }

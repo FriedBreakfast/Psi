@@ -38,6 +38,7 @@ namespace Psi {
       bool m_in_function_mode;
       bool m_function_body;
       std::ostream *m_output;
+      CompileErrorContext *m_error_context;
       
       typedef boost::unordered_map<ValuePtr<>, boost::shared_ptr<TermName> > TermNameMap;
       TermNameMap m_names;
@@ -77,11 +78,12 @@ namespace Psi {
       void print_block(const ValuePtr<Block>&, const TermDefinitionList&);
 
     public:
-      DisassemblerContext(std::ostream*);
+      DisassemblerContext(std::ostream *output, CompileErrorContext *error_context);
       ~DisassemblerContext();
       
-      void run_module(Module*);
+      void run_module(Module *module);
       void run_term(const ValuePtr<>&);
+      CompileErrorContext& error_context() {return *m_error_context;}
     };
 
     std::ostream& operator << (std::ostream& os, const DisassemblerContext::TermNamePrinter& printer) {
@@ -100,8 +102,8 @@ namespace Psi {
     : name(name_), context(context_), anonymous(anonymous_) {
     }
     
-    DisassemblerContext::DisassemblerContext(std::ostream *output)
-    : m_in_function_mode(false), m_function_body(false), m_output(output), m_parameter_name_index(0) {
+    DisassemblerContext::DisassemblerContext(std::ostream *output, CompileErrorContext *error_context)
+    : m_in_function_mode(false), m_function_body(false), m_output(output), m_error_context(error_context), m_parameter_name_index(0) {
     }
     
     DisassemblerContext::~DisassemblerContext() {
@@ -737,7 +739,7 @@ namespace Psi {
         default: PSI_FAIL("unknown integer width");
         }
         *m_output << width;
-        int_value->value().print(*m_output, type->is_signed());
+        int_value->value().print(error_context().bind(term->location()), *m_output, type->is_signed());
       } else if (ValuePtr<FloatType> float_type = dyn_cast<FloatType>(term)) {
         const char *width;
         switch (float_type->width()) {
@@ -909,7 +911,7 @@ namespace Psi {
      * \brief Print the entire contents of a module.
      */
     void print_module(std::ostream& os, Module *module) {
-      DisassemblerContext context(&os);
+      DisassemblerContext context(&os, &module->context().error_context());
       context.run_module(module);
     }
     
@@ -919,7 +921,7 @@ namespace Psi {
      * The format of the term is dependent on its type.
      */
     void print_term(std::ostream& os, const ValuePtr<>& term) {
-      DisassemblerContext context(&os);
+      DisassemblerContext context(&os, &term->error_context());
       context.run_term(term);
     }
   }

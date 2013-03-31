@@ -251,6 +251,8 @@ namespace Psi {
         
         /// \brief Get the (target) context this pass belongs to
         Context& context() {return pass().context();}
+        /// \brief Get the error reporting context
+        CompileErrorContext& error_context() {return context().error_context();}
         
         /// \brief Get the (lowered) byte type
         const ValuePtr<>& byte_type() const {return m_byte_type;}

@@ -24,6 +24,7 @@ public:
   CExpression* build_rvalue(const ValuePtr<>& value);
   CExpressionBuilder& c_builder() {return m_c_builder;}
   CCompiler& c_compiler() {return c_builder().module().c_compiler();}
+  CompileErrorContext& error_context() {return c_builder().module().error_context();}
   
   CExpression* builtin_psi_alloca();
   CExpression* builtin_psi_freea();
@@ -58,7 +59,8 @@ struct ValueBuilderCallbacks {
   static CExpression* integer_value_callback(ValueBuilder& builder, const ValuePtr<IntegerValue>& term) {
     const std::size_t buf_size = 64;
     char buf[buf_size];
-    std::size_t n = term->value().print(buf, buf_size, term->is_signed(), 10);
+    std::size_t n = term->value().print(CompileErrorPair(builder.error_context(), term->location()),
+                                        buf, buf_size, term->is_signed(), 10);
     CType *ty = builder.build_type(term->type());
     CExpression *expr = builder.c_builder().literal(&term->location(), ty, builder.c_builder().strdup(buf));
     if (term->is_signed())
@@ -95,8 +97,10 @@ struct ValueBuilderCallbacks {
     CType *ty = builder.build_type(term->type());
     unsigned index = term->union_type()->index_of_type(term->value()->type());
     if ((index > 0) && !builder.c_compiler().has_designated_initializer) {
-      throw TvmInternalError("C backend error: target compiler does not support designated initializers,"
-      " and hence cannot initialize any union member except the first");
+      term->context().error_context().error_throw(
+        term->location(),
+        "C backend error: target compiler does not support designated initializers,"
+        " and hence cannot initialize any union member except the first");
     }
     CExpression *member = builder.build(term->value());
     return builder.c_builder().union_value(&term->location(), ty, index, member);
@@ -332,8 +336,8 @@ struct ValueBuilderCallbacks {
     return NULL;
   }
     
-  static CExpression* default_throw_callback(ValueBuilder&, const ValuePtr<>&) {
-    throw TvmInternalError("Term type not supported in TVM to C lowering. See documenation for ValueBuilderCallbacks.");
+  static CExpression* default_throw_callback(ValueBuilder&, const ValuePtr<>& term) {
+    term->context().error_context().error_throw(term->location(), "Term type not supported in TVM to C lowering. See documenation for ValueBuilderCallbacks.");
   }
   
   typedef TermOperationMap<FunctionalValue, CExpression*, ValueBuilder&> FunctionalCallbackMap;

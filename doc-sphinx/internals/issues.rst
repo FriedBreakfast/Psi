@@ -1,39 +1,6 @@
 Issues
 ======
 
-Error message merging
----------------------
-
-Currently, TVM reports errors entirely by throwing exceptions.
-I need to create an error reporting mechanism which is shared by TVM and the high-level code,
-so that any errors occuring in the back-end will provide useful feedback to the user.
-
-Visitor versus overloading
---------------------------
-
-.. highlight:: c++
-
-The macro based system I'm currently using to generate implementations of virtual functions
-through the ``visit()`` mechanism does not easily allow overloading (note the ``match_visit`` flag).
-I should replace it with the following approach::
-
-  class Base {
-  protected:
-    template<typename T>
-    void callback_impl(VisitorTag<T>) {
-      MyVisitor<T> visitor(static_cast<T*>(this));
-      T::visit(visitor);
-    }
-  
-  public:
-    virtual void callback() = 0;
-  };
-
-  #define CLASS_IMPL(name,base) \
-    virtual void callback() {name::callback_impl(VisitorTag<name>());}
-    
-The ``callback_impl`` can be overloaded easily.
-
 Constant folding
 ----------------
 

@@ -14,12 +14,12 @@ namespace Psi {
     unsigned size_to_unsigned(const ValuePtr<>& value) {
       ValuePtr<IntegerValue> val = dyn_cast<IntegerValue>(value);
       if (!val)
-        throw TvmUserError("value is not a constant integer");
+        value->error_context().error_throw(value->location(), "value is not a constant integer");
       
       if (val->width() != IntegerType::iptr)
-        throw TvmUserError("value is a constant integer but has the wrong width");
+        value->error_context().error_throw(value->location(), "value is a constant integer but has the wrong width");
       
-      return val->value().unsigned_value_checked();
+      return val->value().unsigned_value_checked(value->error_context().bind(value->location()));
     }
 
     /**
@@ -30,7 +30,7 @@ namespace Psi {
     bool size_equals_constant(const ValuePtr<>& value, unsigned c) {
       ValuePtr<IntegerType> ty = dyn_cast<IntegerType>(value->type());
       if (!ty || (ty->width() != IntegerType::iptr))
-        throw TvmUserError("value is not a size_type integer");
+        value->error_context().error_throw(value->location(), "value is not a size_type integer");
       
       ValuePtr<IntegerValue> val = dyn_cast<IntegerValue>(value);
       if (!val)
@@ -127,7 +127,7 @@ namespace Psi {
     
     ValuePtr<> IntegerValue::check_type() const {
       if (m_value.bits() != IntegerType::value_bits(m_width))
-        throw TvmUserError("Wrong number of bits supplied to integer constant");
+        error_context().error_throw(location(), "Wrong number of bits supplied to integer constant");
       return FunctionalBuilder::int_type(context(), m_width, m_is_signed, location());
     }
 
@@ -177,7 +177,7 @@ namespace Psi {
     
     ValuePtr<> IntegerUnaryOp::check_type() const {
       if (!isa<IntegerType>(parameter()->type()))
-        throw TvmUserError("Argument to integer unary operation must have integer type");
+        error_context().error_throw(location(), "Argument to integer unary operation must have integer type");
       return parameter()->type();
     }
     
@@ -192,9 +192,9 @@ namespace Psi {
     
     ValuePtr<> IntegerBinaryOp::check_type() const {
       if (!isa<IntegerType>(lhs()->type()))
-        throw TvmUserError("Argument to integer binary operation must have integer type");
+        error_context().error_throw(location(), "Argument to integer binary operation must have integer type");
       if (lhs()->type() != rhs()->type())
-        throw TvmUserError("Both parameters to integer binary operation must have the same type");
+        error_context().error_throw(location(), "Both parameters to integer binary operation must have the same type");
       return lhs()->type();
     }
     
@@ -209,9 +209,9 @@ namespace Psi {
     
     ValuePtr<> IntegerCompareOp::check_type() const {
       if (!isa<IntegerType>(lhs()->type()))
-        throw TvmUserError("Argument to integer compare operation must have integer type");
+        error_context().error_throw(location(), "Argument to integer compare operation must have integer type");
       if (lhs()->type() != rhs()->type())
-        throw TvmUserError("Both parameters to integer compare operation must have the same type");
+        error_context().error_throw(location(), "Both parameters to integer compare operation must have the same type");
       return FunctionalBuilder::bool_type(context(), location());
     }
     
@@ -253,10 +253,10 @@ namespace Psi {
     
     ValuePtr<> IntegerShiftOp::check_type() const {
       if (!isa<IntegerType>(lhs()->type()))
-        throw TvmUserError("bit_shift only works on integer types");
+        error_context().error_throw(location(), "bit_shift only works on integer types");
       ValuePtr<IntegerType> shift_type = dyn_cast<IntegerType>(rhs()->type());
       if (!shift_type || shift_type->is_signed() || (shift_type->width() != IntegerType::i32))
-        throw TvmUserError("Bit shift should be an unsigned 32-bit integer");
+        error_context().error_throw(location(), "Bit shift should be an unsigned 32-bit integer");
       return lhs()->type();
     }
 
@@ -294,9 +294,9 @@ namespace Psi {
     
     ValuePtr<> BitCast::check_type() const {
       if (!bit_castable_type(m_value->type()))
-        throw TvmUserError("bitcast value parameter is not a primitive type");
+        error_context().error_throw(location(), "bitcast value parameter is not a primitive type");
       if (!bit_castable_type(m_target_type))
-        throw TvmUserError("bitcast type parameter is not primitive");
+        error_context().error_throw(location(), "bitcast type parameter is not primitive");
       return m_target_type;
     }
 
@@ -319,9 +319,9 @@ namespace Psi {
     
     ValuePtr<> Select::check_type() const {
       if (!isa<BooleanType>(m_condition->type()))
-        throw TvmUserError("Condition parameter to select must be a boolean");
+        error_context().error_throw(location(), "Condition parameter to select must be a boolean");
       if (m_true_value->type() != m_false_value->type())
-        throw TvmUserError("Second and third parameters to select must have the same type");
+        error_context().error_throw(location(), "Second and third parameters to select must have the same type");
       return m_true_value->type();
     }
     
