@@ -1,6 +1,8 @@
 #include "Builder.hpp"
 #include "CModule.hpp"
+#include "../../Platform.hpp"
 
+#include <boost/format.hpp>
 #include <boost/make_shared.hpp>
 
 namespace Psi {
@@ -251,11 +253,18 @@ public:
     }
   }
   
-  static void gcc_detect(const char *path) {
+  static boost::shared_ptr<CCompiler> detect(CompileErrorPair& err_loc, const std::string& path) {
     const char *src =
     "__GNUC__\n"
     "__GNUC_MINOR__\n"
     "__SIZEOF_POINTER__\n";
+    
+    std::vector<std::string> command;
+    command.push_back(path);
+    command.push_back("-E");
+    command.push_back("-");
+    
+    std::string output = cmd_communicate(err_loc, command, src).first;
   }
 };
 
@@ -273,6 +282,58 @@ public:
     return true;
   }
 };
+
+namespace {
+  enum CompilerType {
+    cc_unknown,
+    cc_gcc,
+    cc_clang,
+    cc_tcc,
+    cc_msvc
+  };
+}
+
+/**
+ * Try to locate a C compiler on the system.
+ */
+boost::shared_ptr<CCompiler> detect_c_compiler(CompileErrorPair& err_loc) {
+  const char *cc_path = std::getenv("PSI_TVM_CC");
+  if (!cc_path)
+    cc_path = PSI_TVM_CC;
+  
+  if (PSI_TVM_CC_TCCLIB && std::strcmp(cc_path, "tcclib"))
+    PSI_NOT_IMPLEMENTED();
+  
+  // Try to identify the compiler by its executable name
+  boost::optional<std::string> cc_full_path = Platform::find_in_path(cc_path);
+  if (!cc_full_path)
+    err_loc.error_throw(boost::format("C compiler not found: %s") % cc_path);
+  
+  std::string filename = Platform::filename(*cc_full_path);
+  CompilerType type = cc_unknown;
+  if (filename.find("gcc") != std::string::npos)
+    type = cc_gcc;
+  else if (filename.find("clang") != std::string::npos)
+    type = cc_clang;
+  else if (filename.find("tcc") != std::string::npos)
+    type = cc_tcc;
+  else if (filename.find("cl.exe") != std::string::npos)
+    type = cc_msvc;
+  
+  boost::shared_ptr<CCompiler> result;
+  
+  if (!result && ((type == cc_unknown) || (type == cc_gcc)))
+    result = CCompilerGCC::detect(err_loc, *cc_full_path);
+  
+  if (!result && ((type == cc_unknown) || (type == cc_clang))) {}
+  if (!result && ((type == cc_unknown) || (type == cc_tcc))) {}
+  if (!result && ((type == cc_unknown) || (type == cc_msvc))) {}
+  
+  if (!result)
+    err_loc.error_throw(boost::format("Could not identify C compiler: %s") % *cc_full_path);
+  
+  return result;
+}
 }
 }
 }

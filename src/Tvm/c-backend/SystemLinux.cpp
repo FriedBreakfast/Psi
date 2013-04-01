@@ -9,8 +9,9 @@
 #include <sys/select.h>
 #include <sys/wait.h>
 
+#include "../../Array.hpp"
 #include "../../Utility.hpp"
-#include "../../UtilityLinux.hpp"
+#include "../../PlatformLinux.hpp"
 #include "../../ErrorContext.hpp"
 
 namespace Psi {
@@ -123,7 +124,8 @@ struct StringCloneAllocator {
 /**
  * Run a command and send data to its standard in, capture standard out and return the result.
  */
-void cmd_communicate(CompileErrorPair& err_loc, const std::vector<std::string>& command, const std::string& input, int expected_status) {
+std::pair<std::string, std::string>
+cmd_communicate(CompileErrorPair& err_loc, const std::vector<std::string>& command, const std::string& input, int expected_status) {
   // Read/write direction refers to the parent process
   FileDescriptor stdin_read, stdin_write, stdout_read, stdout_write, stderr_read, stderr_write;
   cmd_pipe(err_loc, stdin_read, stdin_write);
@@ -223,6 +225,11 @@ void cmd_communicate(CompileErrorPair& err_loc, const std::vector<std::string>& 
   
   if (child_status != expected_status)
     err_loc.error_throw(boost::format("Child process failed (exit status %d): %s") % child_status % command.front(), CompileError::error_internal);
+  
+  std::string stdout_out(stdout_data.begin(), stdout_data.end());
+  std::string stderr_out(stderr_data.begin(), stderr_data.end());
+  
+  return std::make_pair(stdout_out, stderr_out);
 }
 }
 }

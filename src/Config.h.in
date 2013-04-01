@@ -1,8 +1,18 @@
 #ifndef H_PSI_CONFIG
 #define H_PSI_CONFIG
 
+/// Enable Valgrind hooks (not currently implemented)
 #cmakedefine01 PSI_ENABLE_VALGRIND
+/// Enable debug assertions
 #cmakedefine01 PSI_DEBUG
+/// Enable advanced TreePtr instrumentation (very slow)
 #cmakedefine01 PSI_OBJECT_PTR_DEBUG
+/// Whether tcc has been compiled into the C backend
+#cmakedefine01 PSI_TVM_CC_TCCLIB
+
+/// Default TVM JIT library to use (may be overridden by the environment variable PSI_TVM_JIT)
+#define PSI_TVM_JIT "${PSI_TVM_JIT}"
+/// Path to C compiler for the C backend to use (may be overridden by the environment variable PSI_TVM_CC)
+#define PSI_TVM_CC "${PSI_TVM_CC}"
 
 #endif

@@ -13,5 +13,18 @@ namespace Psi {
 
     JitFactory::~JitFactory() {
     }
+    
+    /**
+     * \brief Get a JIT factory for the default JIT compiler.
+     * 
+     * Tries the environment variables PSI_TVM_JIT, and if that is missing reverts to
+     * the built-in default.
+     */
+    boost::shared_ptr<JitFactory> JitFactory::get(const CompileErrorPair& error_handler) {
+      const char *name = std::getenv("PSI_TVM_JIT");
+      if (!name)
+        name = PSI_TVM_JIT;
+      return get(error_handler, name);
+    }
   }
 }

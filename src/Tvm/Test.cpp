@@ -14,11 +14,7 @@ namespace {
 
     JitLoader()
     : jit_error_context(&std::cerr) {
-      const char *jit = std::getenv("PSI_TEST_JIT");
-      if (!jit)
-        jit = "llvm";
-  
-      jit_factory = Psi::Tvm::JitFactory::get(jit_error_context.bind(Psi::SourceLocation::root_location("(jit)")), jit);
+      jit_factory = Psi::Tvm::JitFactory::get(jit_error_context.bind(Psi::SourceLocation::root_location("(jit)")));
     }
   };
 

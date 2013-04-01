@@ -1,7 +1,9 @@
-#ifndef HPP_PSI_UTILITY_LINUX
-#define HPP_PSI_UTILITY_LINUX
+#ifndef HPP_PSI_PLATFORM_LINUX
+#define HPP_PSI_PLATFORM_LINUX
 
 #include <string>
+
+#include "Platform.hpp"
 
 namespace Psi {
 namespace Platform {

@@ -14,7 +14,6 @@
 
 #include "TreeBase.hpp"
 #include "Term.hpp"
-#include "Platform.hpp"
 #include "Enums.hpp"
 #include "Array.hpp"
 #include "ErrorContext.hpp"

@@ -335,6 +335,7 @@ public:
   void emit_type(CType *type);
   void emit_expression(CExpression *expression, unsigned precedence=17, bool is_right=true);
   void emit_expression_def(CExpression *expression, unsigned precedence=17, bool is_right=true);
+  void emit_statement(CExpression *expression);
   void emit_type_prolog(CType *type);
   void emit_type_epilog(CType *type);
   std::ostream& output() {return *m_output;}

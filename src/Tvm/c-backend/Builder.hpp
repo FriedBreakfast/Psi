@@ -111,6 +111,8 @@ public:
   CModuleBuilder(CCompiler *c_compiler, Module& module);
   void run();
 };
+
+std::pair<std::string, std::string> cmd_communicate(CompileErrorPair& err_loc, const std::vector<std::string>& command, const std::string& input="", int expected_status=0);
 }
 }
 }

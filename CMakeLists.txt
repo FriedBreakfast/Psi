@@ -4,10 +4,21 @@ project(type-test)
 include(CPack)
 include(CTest)
 
+if(WIN32)
+  set(PSI_TVM_JIT_DEFAULT "c")
+else()
+  set(PSI_TVM_JIT_DEFAULT "llvm")
+endif()
+
 set(PSI_DEBUG 0 CACHE BOOL "Enable debug checks")
 set(PSI_ENABLE_VALGRIND 0 CACHE BOOL "Enable Valgrind support")
+set(PSI_TVM_JIT ${PSI_TVM_JIT_DEFAULT} CACHE STRING "Default JIT compiler to use")
+set(PSI_TVM_CC ${CMAKE_C_COMPILER} CACHE STRING "Default path to search for C compiler")
 set(PSI_OBJECT_PTR_DEBUG 0 CACHE BOOL "Enable object pointer debug checks (very expensive)")
 mark_as_advanced(PSI_OBJECT_PTR_DEBUG)
+
+# Whether TCC has been compiled in to the C backend
+set(PSI_TVM_CC_TCCLIB 0)
 
 find_library(JSONC_LIB json)
 find_path(JSONC_INCLUDE json_object.h)

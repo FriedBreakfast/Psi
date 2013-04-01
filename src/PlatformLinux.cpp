@@ -1,98 +1,179 @@
-#include <dlfcn.h>
-#include <sstream>
+#include "Array.hpp"
+#include "PlatformLinux.hpp"
 
-#include "Platform.hpp"
-#include "Runtime.hpp"
+#include <boost/format.hpp>
+
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
 
 namespace Psi {
-  namespace Platform {
-    class LibraryLinux : public PlatformLibrary {
-      std::vector<void*> m_handles;
+namespace Platform {
+namespace Linux {
+/**
+ * Translate an error number into a string.
+ */
+std::string error_string(int errcode) {
+  const std::size_t buf_size = 64;
+  SmallArray<char, buf_size> data(buf_size);
+  while (true) {
+    char *ptr = strerror_r(errcode, data.get(), data.size());
+    if (ptr != data.get())
+      return ptr;
+    if (strlen(data.get())+1 < data.size())
+      return data.get();
 
-    public:
-      virtual ~LibraryLinux();
-      virtual boost::optional<void*> symbol(const std::string& symbol);
-      static boost::shared_ptr<PlatformLibrary> load(const PropertyValue& args);
-    };
+    data.resize(data.size() * 2);
+  }
+}
+
+std::string getcwd() {
+  const std::size_t path_max = 256;
+  SmallArray<char, path_max> data;
+  data.resize(path_max);
+  while (true) {
+    if (::getcwd(data.get(), data.size()))
+      return data.get();
     
-    LibraryLinux::~LibraryLinux() {
-      while (!m_handles.empty()) {
-        dlclose(m_handles.back());
-        m_handles.pop_back();
-      }
-    }
-    
-    boost::optional<void*> LibraryLinux::symbol(const std::string& symbol) {
-      dlerror();
-      for (std::vector<void*>::const_reverse_iterator ii = m_handles.rbegin(), ie = m_handles.rend(); ii != ie; ++ii) {
-        void *ptr = dlsym(*ii, symbol.c_str());
-        if (!dlerror())
-          return ptr;
-      }
-      
+    int errcode = errno;
+    if (errcode == ERANGE)
+      data.resize(data.size() * 2);
+    else
+      throw PlatformError(boost::str(boost::format("Could not get working directory: %s") % Platform::Linux::error_string(errcode)));
+  }
+}
+}
+
+/**
+ * \brief Look for an executable in the path.
+ * 
+ * If \c name contains no slashes, search the path for an executable file with the given name.
+ * Otherwise translate \c name to an absolute path.
+ */
+boost::optional<std::string> find_in_path(const std::string& name) {
+  std::string found_name;
+  
+  if (!name.find('/')) {
+    // Relative or absolute path
+    if (access(name.c_str(), X_OK) == 0)
+      found_name = name;
+    else
       return boost::none;
-    }
-
-    boost::shared_ptr<PlatformLibrary> LibraryLinux::load(const PropertyValue& args) {
-      std::vector<std::string> libs, dirs;
-      if (args.has_key("libs"))
-        libs = args.get("libs").str_list();
-      if (args.has_key("dirs"))
-        dirs = args.get("dirs").str_list();
-
-      boost::shared_ptr<LibraryLinux> lib(new LibraryLinux);
-      // Should prevent any exceptions from being thrown by std::vector::push_back
-      lib->m_handles.reserve(libs.size());
-      
-      /*
-       * If no libraries are listed, use default-linked stuff, i.e. libc.
-       */
-      if (libs.empty()) {
-        // Again, to prevent exceptions in push_back so I can be lazy about
-        // exception handling in dlopen().
-        lib->m_handles.reserve(1);
-        void *handle = dlopen(NULL, RTLD_LAZY);
-        if (!handle)
-          throw PlatformError("Failed get handle to main executable");
-        lib->m_handles.push_back(handle);
-        return lib;
+  } else {
+    // Search the system path
+    const char *path = std::getenv("PATH");
+    if (!path)
+      return boost::none;
+    
+    std::string found_name;
+    
+    while (true) {
+      const char *end = std::strchr(path, ':');
+      if (!end)
+        end = path + std::strlen(path);
+      found_name.assign(path, end);
+      if (found_name.empty()) {
+        // Means current directory
+        found_name = name;
+      } else {
+        if (found_name.at(found_name.length()-1) != '/')
+          found_name.push_back('/');
+        found_name.append(name);
       }
       
-      std::ostringstream ss;
-      for (std::vector<std::string>::const_iterator ii = libs.begin(), ie = libs.end(); ii != ie; ++ii) {
-        bool found = false;
-        
-        for (std::vector<std::string>::const_iterator ji = dirs.begin(), je = dirs.end(); ji != je; ++ji) {
-          ss.clear();
-          ss << *ji << '/' << "lib" << *ii << ".so";
-          const std::string& ss_str = ss.str();
-          
-          if (void *handle = dlopen(ss_str.c_str(), RTLD_LAZY|RTLD_GLOBAL)) {
-            lib->m_handles.push_back(handle);
-            found = true;
-            break;
-          }
-        }
-        
-        
-        if (!found) {
-          // Finally, check default search path
-          ss.clear();
-          ss << "lib" << *ii << ".so";
-          const std::string& ss_str = ss.str();
-          if (void *handle = dlopen(ss_str.c_str(), RTLD_LAZY|RTLD_GLOBAL)) {
-            lib->m_handles.push_back(handle);
-          } else {
-            throw PlatformError("Shared object not found: " + *ii);
-          }
-        }
+      if (access(found_name.c_str(), X_OK) == 0) {
+        break;
       }
       
-      return lib;
-    }
-
-    boost::shared_ptr<PlatformLibrary> load_library(const PropertyValue& description) {
-      return LibraryLinux::load(description);
+      if (*end == '\0')
+        return boost::none;
     }
   }
+  
+  // Convert to absolute path
+
+  return absolute_path(found_name);
+}
+
+std::string join_path(const std::string& first, const std::string& second) {
+  if (first.empty())
+    return second;
+  else if (second.empty())
+    return first;
+  
+  if (second.at(0) == '/')
+    return second;
+  
+  if (first.at(first.length()-1) == '/')
+    return first + second;
+  else
+    return first + '/' + second;
+}
+
+std::string normalize_path(const std::string& path) {
+  if (path.empty())
+    return path;
+  
+  std::string result;
+  std::string::size_type pos = 0;
+  while (true) {
+    std::string::size_type next_pos = path.find('/', pos);
+    if (next_pos == pos) {
+      result = '/';
+    } else {
+      std::string part = path.substr(pos, next_pos);
+      if (part == ".") {
+      } else if (part == "..") {
+        if (result.empty()) {
+          result = "../";
+        } else {
+          PSI_ASSERT(result.at(result.length()-1) == '/');
+          std::string::size_type last_pos = result.rfind('/', result.length()-1);
+          if (last_pos == std::string::npos) {
+            result.clear();
+          } else {
+            ++last_pos;
+            std::string::size_type count = result.length() - last_pos;
+            if ((count == 3) && (result.substr(last_pos) == "../"))
+              result += "../";
+            else
+              result.erase(last_pos);
+          }
+        }
+      } else {
+        result += part;
+        if (next_pos != std::string::npos)
+          result += '/';
+      }
+    }
+    
+    if (next_pos == std::string::npos)
+      break;
+    
+    pos = next_pos + 1;
+    if (pos == path.length())
+      break;
+  }
+  
+  return result;
+}
+
+std::string absolute_path(const std::string& path) {
+  if (path.empty())
+    throw PlatformError("Cannot convert empty path to absolute path");
+  
+  if (path.at(0) == '/')
+    return path;
+  
+  return normalize_path(join_path(Linux::getcwd(), path));
+}
+
+std::string filename(const std::string& path) {
+  std::string::size_type n = path.rfind('/');
+  if (n == std::string::npos)
+    return path;
+  else
+    return path.substr(n+1);
+}
+}
 }

@@ -159,10 +159,39 @@ struct ValueBuilderCallbacks {
   
   static CExpression* conditional_branch_callback(ValueBuilder& builder, const ValuePtr<ConditionalBranch>& term) {
     CExpression *cond = builder.build(term->condition);
+    
+    // Need to build PHI values before if/else block (so that values put into the value map are in scope in child blocks)
+    const ValuePtr<Block>& block = term->block();
+    
+    typedef std::vector<std::pair<CExpression*, CExpression*> > PhiListType;
+    PhiListType true_values, false_values;
+
+    for (Block::PhiList::iterator ii = term->true_target->phi_nodes().begin(), ie = term->true_target->phi_nodes().end(); ii != ie; ++ii) {
+      const ValuePtr<Phi>& phi = *ii;
+      true_values.push_back(std::make_pair(builder.build(phi), builder.build(phi->incoming_value_from(block))));
+    }
+
+    for (Block::PhiList::iterator ii = term->false_target->phi_nodes().begin(), ie = term->false_target->phi_nodes().end(); ii != ie; ++ii) {
+      const ValuePtr<Phi>& phi = *ii;
+      false_values.push_back(std::make_pair(builder.build(phi), builder.build(phi->incoming_value_from(block))));
+    }
+
     // Use c_eval_never to prevent emitting the statement since we want it inside the if()
-    CExpression *if_true = builder.c_builder().unary(&term->location(), NULL, c_eval_never, c_op_goto, builder.build(term->true_target));
-    CExpression *if_false = builder.c_builder().unary(&term->location(), NULL, c_eval_never, c_op_goto, builder.build(term->false_target));
-    builder.c_builder().ternary(&term->location(), NULL, c_eval_write, c_op_if, cond, if_true, if_false);
+    builder.c_builder().unary(&term->location(), NULL, c_eval_write, c_op_if, cond);
+    
+    // True handler: set up phi nodes and then "goto"
+    for (PhiListType::const_iterator ii = true_values.begin(), ie = true_values.end(); ii != ie; ++ii)
+      builder.c_builder().binary(&term->location(), NULL, c_eval_write, c_op_assign, ii->first, ii->second);
+    builder.c_builder().unary(&term->location(), NULL, c_eval_write, c_op_goto, builder.build(term->true_target));
+    
+    builder.c_builder().nullary(&term->location(), c_op_else);
+    
+    // False handler: set up phi nodes and then "goto"
+    for (PhiListType::const_iterator ii = true_values.begin(), ie = true_values.end(); ii != ie; ++ii)
+      builder.c_builder().binary(&term->location(), NULL, c_eval_write, c_op_assign, ii->first, ii->second);
+    builder.c_builder().unary(&term->location(), NULL, c_eval_write, c_op_goto, builder.build(term->false_target));
+    
+    builder.c_builder().nullary(&term->location(), c_op_endif);
     return NULL;
   }
 

@@ -184,7 +184,7 @@ CExpression* CExpressionBuilder::nullary(const SourceLocation* location, COperat
 }
 
 void CExpressionBuilder::append(CType *type, const SourceLocation* location, const char *prefix) {
-  type->name.prefix = NULL;
+  type->name.prefix = prefix;
   type->name.index = 0;
   type->location = location;
   type->ptr = NULL;
@@ -491,34 +491,6 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
   if (has_brackets) output().put('(');
   
   switch (op.type) {
-  case c_expr_declare: {
-    CExpressionBinaryIndex *binary = checked_cast<CExpressionBinaryIndex*>(expression);
-    if (binary->index)
-      c_compiler().emit_alignment(*this, binary->index);
-    emit_type_prolog(binary->type);
-    output() << binary->name;
-    emit_type_epilog(binary->type);
-    if (binary->arg) {
-      output() << " = ";
-      emit_expression(binary->arg);
-    }
-    output() << ";\n";
-    break;
-  }
-  
-  case c_expr_vardeclare: {
-    CExpressionBinaryIndex *binary = checked_cast<CExpressionBinaryIndex*>(expression);
-    if (binary->index)
-      c_compiler().emit_alignment(*this, binary->index);
-    emit_type_prolog(binary->type);
-    output() << binary->name;
-    emit_type_epilog(binary->type);
-    output() << '[';
-    emit_expression(binary->arg);
-    output() << ']' << ";\n";
-    break;
-  }
-  
   case c_expr_call: {
     CExpressionCall *call = checked_cast<CExpressionCall*>(expression);
     emit_expression(call->target, op.precedence, false);
@@ -530,7 +502,7 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
     output() << ')';
     break;
   }
-    
+  
   case c_expr_subscript: {
     CExpressionBinary *binary = checked_cast<CExpressionBinary*>(expression);
     emit_expression(binary->left, op.precedence, false);
@@ -580,33 +552,6 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
     emit_expression(checked_cast<CExpressionUnary*>(expression)->arg, op.precedence, true);
     break;
     
-  case c_expr_return:
-    output() << "return ";
-    emit_expression(checked_cast<CExpressionUnary*>(expression)->arg);
-    output() << ";\n";
-    break;
-    
-  case c_expr_goto:
-    output() << "goto ";
-    emit_expression(checked_cast<CExpressionUnary*>(expression)->arg);
-    output() << ";\n";
-    break;
-    
-  case c_expr_if: {
-    CExpressionTernary *ter = checked_cast<CExpressionTernary*>(expression);
-    output() << "if (";
-    emit_expression(ter->first);
-    output() << ") {";
-    emit_expression(ter->second);
-    output() << '}';
-    if (ter->third) {
-      output() << " else {";
-      emit_expression(ter->third);
-      output() << '}';
-    }
-    break;
-  }
-  
   case c_expr_ternary: {
     CExpressionTernary *ter = checked_cast<CExpressionTernary*>(expression);
     emit_expression(ter->first, op.precedence, false);
@@ -617,10 +562,6 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
     break;
   }
 
-  case c_expr_unreachable: c_compiler().emit_unreachable(*this); break;
-  case c_expr_block_begin: output() << "{\n"; break;
-  case c_expr_block_end: output() << "}\n"; break;
-  
   case c_expr_unary: {
     CExpressionUnary *unary = checked_cast<CExpressionUnary*>(expression);
     output() << op.operator_str;
@@ -664,6 +605,91 @@ void CModuleEmitter::emit_expression(CExpression *expression, unsigned precedenc
     output() << expression->name;
   } else {
     emit_expression_def(expression, precedence, is_right);
+  }
+}
+
+/**
+ * \brief Emit a statement.
+ */
+void CModuleEmitter::emit_statement(CExpression *expression) {
+  switch (expression->op) {
+  case c_op_declare: {
+    CExpressionBinaryIndex *binary = checked_cast<CExpressionBinaryIndex*>(expression);
+    if (binary->index)
+      c_compiler().emit_alignment(*this, binary->index);
+    emit_type_prolog(binary->type);
+    output() << binary->name;
+    emit_type_epilog(binary->type);
+    if (binary->arg) {
+      output() << " = ";
+      emit_expression(binary->arg);
+    }
+    output() << ";\n";
+    break;
+  }
+  
+  case c_op_vardeclare: {
+    CExpressionBinaryIndex *binary = checked_cast<CExpressionBinaryIndex*>(expression);
+    if (binary->index)
+      c_compiler().emit_alignment(*this, binary->index);
+    emit_type_prolog(binary->type);
+    output() << binary->name;
+    emit_type_epilog(binary->type);
+    output() << '[';
+    emit_expression(binary->arg);
+    output() << ']' << ";\n";
+    break;
+  }
+  
+  case c_op_return:
+    output() << "return ";
+    emit_expression(checked_cast<CExpressionUnary*>(expression)->arg);
+    output() << ";\n";
+    break;
+    
+  case c_op_goto:
+    output() << "goto ";
+    emit_expression(checked_cast<CExpressionUnary*>(expression)->arg);
+    output() << ";\n";
+    break;
+    
+  case c_op_if: {
+    CExpressionUnary *un = checked_cast<CExpressionUnary*>(expression);
+    output() << "if (";
+    emit_expression(un->arg);
+    output() << ") {\n";
+    break;
+  }
+  
+  case c_op_elif: {
+    CExpressionUnary *un = checked_cast<CExpressionUnary*>(expression);
+    output() << "} else if (";
+    emit_expression(un->arg);
+    output() << ") {\n";
+    break;
+  }
+  
+  case c_op_else: {
+    output() << "} else {\n";
+    break;
+  }
+  
+  case c_op_unreachable: c_compiler().emit_unreachable(*this); break;
+  case c_op_block_begin: output() << "{\n"; break;
+  case c_op_endif:
+  case c_op_block_end: output() << "}\n"; break;
+  
+  default:
+    if (expression->name.prefix) {
+      PSI_ASSERT(expression->type);
+      emit_type_prolog(expression->type);
+      output() << expression->name;
+      emit_type_epilog(expression->type);
+      output() << " = ";
+    }
+    emit_expression_def(expression);
+    output() << ";\n";
+    break;
   }
 }
 
@@ -790,7 +816,7 @@ void CModule::add_global(CGlobal *global, const SourceLocation *location, CType 
   global->requires_name = false;
   global->type = type;
   global->location = location;
-  global->name.prefix = NULL;
+  global->name = m_names.reserve(name);
   m_globals.append(global);
 }
 

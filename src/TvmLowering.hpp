@@ -1,8 +1,11 @@
 #ifndef HPP_PSI_TVMLOWERING
 #define HPP_PSI_TVMLOWERING
 
+#include <boost/optional.hpp>
+
 #include "Tree.hpp"
 #include "SharedMap.hpp"
+#include "PlatformCompile.hpp"
 
 #include "Tvm/Core.hpp"
 #include "Tvm/Jit.hpp"
