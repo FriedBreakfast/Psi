@@ -5,6 +5,7 @@
 #include <boost/optional.hpp>
 
 #include "Runtime.hpp"
+#include "Platform.hpp"
 
 namespace Psi {
   namespace Platform {
@@ -20,21 +21,8 @@ namespace Psi {
      * is stored here.
      */
     String address_to_symbol(void *addr, void **base);
-    
-    class PlatformError : public std::runtime_error {
-    public:
-      PlatformError(const char*);
-      PlatformError(const std::string&);
-      virtual ~PlatformError() throw();
-    };
-    
-    class PlatformLibrary {
-    public:
-      virtual ~PlatformLibrary();
-      virtual boost::optional<void*> symbol(const std::string& name) = 0;
-    };
 
-    boost::shared_ptr<PlatformLibrary> load_library(const PropertyValue& description);
+    boost::shared_ptr<PlatformLibrary> load_module(const PropertyValue& description);
     
     std::vector<std::string> split_command_line(const std::string& args);
 

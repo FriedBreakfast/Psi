@@ -195,8 +195,6 @@ namespace Psi {
 
         virtual void add_module(Module*);
         virtual void remove_module(Module*);
-        virtual void rebuild_module(Module*, bool);
-        virtual void add_or_rebuild_module(Module *module, bool incremental);
         virtual void* get_symbol(const ValuePtr<Global>&);
 
       private:

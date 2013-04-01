@@ -62,30 +62,15 @@ namespace Psi {
        * Remove a module from this JIT.
        */
       virtual void remove_module(Module *module) = 0;
-      
-      /**
-       * Rebuild a module which may have changed. This should
-       * be equivalent to \c remove_module followed by
-       * \c add_module.
-       * 
-       * \param incremental Whether to only build new symbols.
-       * If this is false, throw away existing values of these
-       * symbols. If this flag is true, non-incremental build
-       * may still be used.
-       */
-      virtual void rebuild_module(Module *module, bool incremental) = 0;
-
-      /**
-       * Add a module to the JIT or rebuild it depending on
-       * whether the module is already present.
-       */
-      virtual void add_or_rebuild_module(Module *module, bool incremental) = 0;
 
       /**
        * \brief Get a pointer to the given term, generating code or
        * global data as necessary.
        */
       virtual void* get_symbol(const ValuePtr<Global>& global) = 0;
+      
+      /// \brief Get the JIT factory used to create this JIT
+      const boost::shared_ptr<JitFactory>& factory() {return m_factory;}
     };
     
     /**
@@ -95,14 +80,18 @@ namespace Psi {
      * responsible for system-specific load and unload.
      */
     class PSI_TVM_EXPORT JitFactory {
+      CompileErrorPair m_error_handler;
       std::string m_name;
 
     public:
-      JitFactory(const std::string& name);
+      JitFactory(const CompileErrorPair& error_handler, const std::string& name);
       virtual ~JitFactory();
       
       /// \brief Name under which this JIT was loaded
       const std::string& name() const {return m_name;}
+      
+      /// \brief Get error reporting location
+      const CompileErrorPair& error_handler() const {return m_error_handler;}
       
       /// \brief Create a new Just-in-time compiler
       virtual boost::shared_ptr<Jit> create_jit() = 0;

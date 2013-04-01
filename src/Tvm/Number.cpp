@@ -96,6 +96,24 @@ namespace Psi {
       default: PSI_FAIL("unexpected integer width");
       }
     }
+    
+    /**
+     * \brief Get the smallest integer type which can hold the specified number of bits
+     */
+    boost::optional<IntegerType::Width> IntegerType::width_from_bits(unsigned bits) {
+      if (bits <= 8)
+        return IntegerType::i8;
+      else if (bits <= 16)
+        return IntegerType::i16;
+      else if (bits <= 32)
+        return IntegerType::i32;
+      else if (bits <= 64)
+        return IntegerType::i64;
+      else if (bits <= 128)
+        return IntegerType::i128;
+      else
+        return boost::none;
+    }
 
     template<typename V>
     void IntegerType::visit(V& v) {

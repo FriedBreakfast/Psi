@@ -228,11 +228,12 @@ public:
 };
 
 class CCompilerGCC : public CCompilerGCCLike {
+  std::string m_path;
   unsigned m_major_version, m_minor_version;
   
 public:
-  CCompilerGCC(unsigned major, unsigned minor, IntegerType::Width pointer_width)
-  : CCompilerGCCLike(pointer_width), m_major_version(major), m_minor_version(minor) {
+  CCompilerGCC(const std::string& path, unsigned major, unsigned minor, IntegerType::Width pointer_width)
+  : CCompilerGCCLike(pointer_width), m_path(path), m_major_version(major), m_minor_version(minor) {
     has_variable_length_arrays = true;
     has_designated_initializer = true;
   }
@@ -253,18 +254,43 @@ public:
     }
   }
   
-  static boost::shared_ptr<CCompiler> detect(CompileErrorPair& err_loc, const std::string& path) {
-    const char *src =
-    "__GNUC__\n"
-    "__GNUC_MINOR__\n"
-    "__SIZEOF_POINTER__\n";
+  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
+    const char *src = "__GNUC__ __GNUC_MINOR__ __SIZEOF_POINTER__\n";
     
     std::vector<std::string> command;
     command.push_back(path);
     command.push_back("-E");
     command.push_back("-");
     
-    std::string output = cmd_communicate(err_loc, command, src).first;
+    std::string output;
+    try {
+      Platform::exec_communicate_check(command, src, &output);
+    } catch (Platform::PlatformError& ex) {
+      err_loc.error_throw(ex.what());
+    }
+    
+    std::istringstream preprocessed_src(output);
+    preprocessed_src.imbue(std::locale::classic());
+    
+    // Skip lines starting with a #
+    while (preprocessed_src.peek() == '#') {
+      while (true) {
+        int c = preprocessed_src.get();
+        if (!preprocessed_src || (c == '\n'))
+          break;
+      }
+    }
+      
+    int version_major, version_minor, sizeof_ptr;
+    preprocessed_src >> version_major >> version_minor >> sizeof_ptr;
+    if (preprocessed_src.fail())
+      err_loc.error_throw("Failed to parse GCC preprocess output for version detection");
+    
+    boost::optional<IntegerType::Width> ptr_width = IntegerType::width_from_bits(sizeof_ptr*8);
+    if (!ptr_width)
+      err_loc.error_throw(boost::format("Detected pointer size in GCC to wide (%d bits)") % (sizeof_ptr*8));
+    
+    return boost::make_shared<CCompilerGCC>(path, version_major, version_minor, *ptr_width);
   }
 };
 
@@ -296,7 +322,7 @@ namespace {
 /**
  * Try to locate a C compiler on the system.
  */
-boost::shared_ptr<CCompiler> detect_c_compiler(CompileErrorPair& err_loc) {
+boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc) {
   const char *cc_path = std::getenv("PSI_TVM_CC");
   if (!cc_path)
     cc_path = PSI_TVM_CC;
@@ -325,9 +351,9 @@ boost::shared_ptr<CCompiler> detect_c_compiler(CompileErrorPair& err_loc) {
   if (!result && ((type == cc_unknown) || (type == cc_gcc)))
     result = CCompilerGCC::detect(err_loc, *cc_full_path);
   
-  if (!result && ((type == cc_unknown) || (type == cc_clang))) {}
-  if (!result && ((type == cc_unknown) || (type == cc_tcc))) {}
-  if (!result && ((type == cc_unknown) || (type == cc_msvc))) {}
+  if (!result && ((type == cc_unknown) || (type == cc_clang))) PSI_NOT_IMPLEMENTED();
+  if (!result && ((type == cc_unknown) || (type == cc_tcc))) PSI_NOT_IMPLEMENTED();
+  if (!result && ((type == cc_unknown) || (type == cc_msvc))) PSI_NOT_IMPLEMENTED();
   
   if (!result)
     err_loc.error_throw(boost::format("Could not identify C compiler: %s") % *cc_full_path);

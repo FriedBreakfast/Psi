@@ -9,6 +9,16 @@ namespace Psi {
 namespace Platform {
 namespace Linux {
 std::string error_string(int errcode);
+
+class LibraryLinux : public PlatformLibrary {
+  std::vector<void*> m_handles;
+
+public:
+  LibraryLinux(unsigned hint=0);
+  virtual ~LibraryLinux();
+  virtual boost::optional<void*> symbol(const std::string& symbol);
+  void add_handle(void *handle);
+};
 }
 }
 }

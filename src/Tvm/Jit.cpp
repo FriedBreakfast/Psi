@@ -8,7 +8,8 @@ namespace Psi {
     Jit::~Jit() {
     }
 
-    JitFactory::JitFactory(const std::string& name) : m_name(name) {
+    JitFactory::JitFactory(const CompileErrorPair& error_handler, const std::string& name)
+    : m_error_handler(error_handler), m_name(name) {
     }
 
     JitFactory::~JitFactory() {

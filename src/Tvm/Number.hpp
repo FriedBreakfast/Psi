@@ -58,6 +58,7 @@ namespace Psi {
       IntegerType(Context& context, Width width, bool is_signed, const SourceLocation& location);
 
       static unsigned value_bits(IntegerType::Width width);
+      static boost::optional<IntegerType::Width> width_from_bits(unsigned bits);
       
     private:
       Width m_width;

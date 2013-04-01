@@ -28,15 +28,13 @@ namespace Psi {
 
     private:
       LibHandle m_handle;
-      CompileErrorPair m_error_handler;
       
       typedef void (*JitFactoryCallback) (const boost::shared_ptr<JitFactory>&, boost::shared_ptr<Jit>&);
       JitFactoryCallback m_callback;
       
     public:
       LinuxJitFactory(const CompileErrorPair& error_handler, const std::string& name, LibHandle& handle)
-      : JitFactory(name),
-      m_error_handler(error_handler) {
+      : JitFactory(error_handler, name) {
         m_handle.swap(handle);
         
         dlerror();
@@ -45,7 +43,7 @@ namespace Psi {
           const char *err = dlerror();
           std::string err_msg;
           err_msg = err ? err : "tvm_jit_new symbol is null";
-          m_error_handler.error_throw("Cannot get JIT factory method for " + name + ": " + err_msg);
+          error_handler.error_throw("Cannot get JIT factory method for " + name + ": " + err_msg);
         }
       }
       

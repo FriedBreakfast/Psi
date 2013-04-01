@@ -16,13 +16,12 @@ namespace Psi {
       
     public:
       WindowsJitFactory(const CompileErrorPair& error_handler, const std::string& name, Platform::Windows::LibraryHandle& handle)
-      : JitFactory(name),
-      m_error_handler(error_handler) {
+      : JitFactory(error_handler, name) {
         m_handle.swap(handle);
         
         m_callback = reinterpret_cast<JitFactoryCallback>(GetProcAddress(m_handle.get(), "tvm_jit_new"));
         if (!m_callback)
-          m_error_handler.error_throw("Cannot get JIT factory method for " + name + ": " + Platform::Windows::last_error_string());
+          error_handler.error_throw("Cannot get JIT factory method for " + name + ": " + Platform::Windows::last_error_string());
       }
       
       virtual ~WindowsJitFactory() {

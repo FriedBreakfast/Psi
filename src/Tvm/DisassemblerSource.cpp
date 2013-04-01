@@ -78,7 +78,7 @@ namespace Psi {
           return common_source_fail(error_pair);
       }
 
-      Value* common_source_block_type_parameter(const CompileErrorPair& error_pair, Block*, ParameterPlaceholder *p) {
+      Value* common_source_block_type_parameter(const CompileErrorPair&, Block*, ParameterPlaceholder *p) {
         return p;
       }
 

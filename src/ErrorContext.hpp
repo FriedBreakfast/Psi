@@ -100,6 +100,11 @@ public:
   template<typename T> void error(const T& message, unsigned flags=0) const {m_context->error(m_location, message, flags);}
   /// Forwards to CompileErrorContext::error_throw
   template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const T& message, unsigned flags=0) const {m_context->error_throw(m_location, message, flags);}
+  
+  /// \brief Get the underlying error context
+  CompileErrorContext& context() const {return *m_context;}
+  /// \brief Get the bound error reporting location
+  const SourceLocation& location() const {return m_location;}
 };
 
 inline CompileErrorPair CompileErrorContext::bind(const SourceLocation& location) {return CompileErrorPair(*this, location);}

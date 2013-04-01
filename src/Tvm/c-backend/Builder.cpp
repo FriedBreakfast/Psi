@@ -3,8 +3,10 @@
 
 #include "../AggregateLowering.hpp"
 #include "../FunctionalBuilder.hpp"
+#include "../Jit.hpp"
 
 #include <sstream>
+#include <boost/format.hpp>
 
 namespace Psi {
 namespace Tvm {
@@ -202,6 +204,36 @@ void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFu
   for (; depth > 0; --depth)
     local_value_builder.c_builder().nullary(&function->location(), c_op_block_end);
 }
+
+CJit::CJit(const boost::shared_ptr<JitFactory>& factory, const boost::shared_ptr<CCompiler>& compiler)
+: Jit(factory), m_compiler(compiler) {
+}
+
+CJit::~CJit() {
+}
+
+void CJit::add_module(Module *module) {
+}
+
+void CJit::remove_module(Module *module) {
+}
+
+void* CJit::get_symbol(const ValuePtr<Global>& symbol) {
+  ModuleMap::iterator it = m_modules.find(symbol->module());
+  if (it == m_modules.end())
+    factory()->error_handler().context().error_throw(symbol->location(), "Module has not been JIT compiled");
+  
+  boost::optional<void*> ptr = it->second->symbol(symbol->name());
+  if (!ptr)
+    factory()->error_handler().context().error_throw(symbol->location(), boost::format("Symbol missing from JIT compiled library: %s") % symbol->name());
+  
+  return *ptr;
 }
 }
+}
+}
+
+extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) void tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory, boost::shared_ptr<Psi::Tvm::Jit>& result) {
+  boost::shared_ptr<Psi::Tvm::CBackend::CCompiler> compiler = Psi::Tvm::CBackend::detect_c_compiler(factory->error_handler());
+  result = boost::make_shared<Psi::Tvm::CBackend::CJit>(factory, compiler);
 }

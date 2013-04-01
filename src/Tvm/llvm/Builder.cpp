@@ -542,19 +542,6 @@ namespace Psi {
         m_modules.erase(it);
       }
       
-      void LLVMJit::rebuild_module(Module *module, bool) {
-        remove_module(module);
-        add_module(module);
-      }
-      
-      void LLVMJit::add_or_rebuild_module(Module *module, bool incremental) {
-        boost::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
-        if (it == m_modules.end())
-          add_module(module);
-        else
-          rebuild_module(module, incremental);
-      }
-      
       void* LLVMJit::get_symbol(const ValuePtr<Global>& global) {
         Module *module = global->module();
         boost::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
@@ -622,7 +609,7 @@ namespace Psi {
   }
 }
 
-extern "C" PSI_ATTRIBUTE((dllexport)) void tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory, boost::shared_ptr<Psi::Tvm::Jit>& result) {
+extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) void tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory, boost::shared_ptr<Psi::Tvm::Jit>& result) {
   llvm::InitializeNativeTarget();
   std::string host = llvm::sys::getDefaultTargetTriple();
 

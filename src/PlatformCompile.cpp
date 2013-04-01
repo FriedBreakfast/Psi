@@ -4,9 +4,6 @@
 
 namespace Psi {
   namespace Platform {
-    PlatformLibrary::~PlatformLibrary() {
-    }
-
     /**
      * \brief Parse a command line string into individual strings.
      */

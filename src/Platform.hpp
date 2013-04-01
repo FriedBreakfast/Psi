@@ -23,6 +23,21 @@ public:
 };
 
 /**
+ * A platform library.
+ * 
+ * The only specified operations are that the symbol member allows access
+ * to symbols and that destroying this object will free resources
+ * associated with the loaded module.
+ * 
+ * How to construct this object is platform-specific, although see load_module().
+ */
+class PlatformLibrary {
+public:
+  virtual ~PlatformLibrary();
+  virtual boost::optional<void*> symbol(const std::string& name) = 0;
+};
+
+/**
  * \brief Join two paths to form a combined path.
  * 
  * If second is an absolute path, return second. Otherwise,
@@ -56,6 +71,18 @@ std::string filename(const std::string& path);
  * \brief Find an executable in the current path.
  */
 boost::optional<std::string> find_in_path(const std::string& name);
+
+/**
+ * Run a command and send data to its standard in, capture standard out and return the result.
+ * 
+ * \param command Command line to execute
+ * \param input Data to be passed to stdin
+ * \param output_out stdout data
+ * \param output_err stderr data
+ */
+int exec_communicate(const std::vector<std::string>& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
+
+void exec_communicate_check(const std::vector<std::string>& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
 }
 }
 

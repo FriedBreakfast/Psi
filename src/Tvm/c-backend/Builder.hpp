@@ -3,6 +3,8 @@
 
 #include "../Core.hpp"
 #include "../Number.hpp"
+#include "../Jit.hpp"
+#include "../../Platform.hpp"
 
 #include "CModule.hpp"
 
@@ -112,7 +114,23 @@ public:
   void run();
 };
 
-std::pair<std::string, std::string> cmd_communicate(CompileErrorPair& err_loc, const std::vector<std::string>& command, const std::string& input="", int expected_status=0);
+class CJit : public Jit {
+  typedef std::map<Module*, boost::shared_ptr<Platform::PlatformLibrary> > ModuleMap;
+  ModuleMap m_modules;
+  
+public:
+  CJit(const boost::shared_ptr<JitFactory>& factory, const boost::shared_ptr<CCompiler>& compiler);
+  virtual ~CJit();
+
+  virtual void add_module(Module *module);
+  virtual void remove_module(Module *module);
+  virtual void* get_symbol(const ValuePtr<Global>& global);
+
+private:
+  boost::shared_ptr<CCompiler> m_compiler;
+};
+
+boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc);
 }
 }
 }
