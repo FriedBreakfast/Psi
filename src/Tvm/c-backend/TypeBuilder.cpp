@@ -8,29 +8,6 @@
 namespace Psi {
 namespace Tvm {
 namespace CBackend {
-class TypeBuilder {
-  typedef boost::unordered_map<ValuePtr<>, CType*> TypeMapType;
-  TypeMapType m_types;
-  
-  CType *m_void_type;
-  CType *m_signed_integer_types[IntegerType::i_max];
-  CType *m_unsigned_integer_types[IntegerType::i_max];
-  CType *m_float_types[FloatType::fp_max];
-  
-  CExpressionBuilder m_c_builder;
-  
-public:
-  TypeBuilder();
-  CType* build(const ValuePtr<>& term);
-  CExpressionBuilder& c_builder() {return m_c_builder;}
-  CCompiler& c_compiler() {return c_builder().module().c_compiler();}
-  CompileErrorContext& error_context() {return c_builder().module().error_context();};
-  
-  CType* void_type();
-  CType* integer_type(IntegerType::Width width, bool is_signed);
-  CType* float_type(FloatType::Width width);
-};
-
 struct TypeBuilderCallbacks {
   static const unsigned small_array_length = 16;
   
@@ -140,7 +117,8 @@ struct TypeBuilderCallbacks {
 
 TypeBuilderCallbacks::CallbackMap TypeBuilderCallbacks::callback_map(TypeBuilderCallbacks::callback_map_initializer());
 
-TypeBuilder::TypeBuilder() {
+TypeBuilder::TypeBuilder(CModule *module)
+: m_c_builder(module) {
   m_void_type = NULL;
   std::fill_n(m_signed_integer_types, IntegerType::i_max, static_cast<CType*>(NULL));
   std::fill_n(m_unsigned_integer_types, IntegerType::i_max, static_cast<CType*>(NULL));

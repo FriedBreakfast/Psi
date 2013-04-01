@@ -68,90 +68,140 @@ public:
   }
 };
 
-CModuleBuilder::CModuleBuilder(CCompiler* c_compiler)
-: m_c_compiler(c_compiler) {
+CModuleBuilder::CModuleBuilder(CCompiler* c_compiler, Module& module)
+: m_c_compiler(c_compiler),
+m_module(&module),
+m_c_module(m_c_compiler, &module.context().error_context(), module.location()),
+m_type_builder(&m_c_module),
+m_global_value_builder(&m_c_module) {
 }
 
-void CModuleBuilder::run(Module& module) {
+void CModuleBuilder::run() {
   CModuleCallback lowering_callback;
-  AggregateLoweringPass aggregate_lowering_pass(&module, &lowering_callback);
+  AggregateLoweringPass aggregate_lowering_pass(m_module, &lowering_callback);
   aggregate_lowering_pass.remove_unions = false;
   aggregate_lowering_pass.split_arrays = true;
   aggregate_lowering_pass.split_structs = true;
   aggregate_lowering_pass.memcpy_to_bytes = true;
   aggregate_lowering_pass.update();
-  
-  CModule c_module(m_c_compiler, &module.context().error_context(), module.location());
-  
-  for (Module::ModuleMemberList::iterator i = module.members().begin(), e = module.members().end(); i != e; ++i) {
+
+  std::vector<std::pair<ValuePtr<GlobalVariable>, CGlobalVariable*> > global_variables;
+  std::vector<std::pair<ValuePtr<Function>, CFunction*> > functions;
+  for (Module::ModuleMemberList::iterator i = m_module->members().begin(), e = m_module->members().end(); i != e; ++i) {
     const ValuePtr<Global>& term = i->second;
     ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
-#if 0
+    
+    CType *type = m_type_builder.build(term->type());
+    const char *name = m_c_module.pool().strdup(term->name().c_str());
+    
     switch (rewritten_term->term_type()) {
     case term_global_variable: {
       ValuePtr<GlobalVariable> global = value_cast<GlobalVariable>(rewritten_term);
-      declare_global(decl, global);
-      decl << ";\n";
-      if (global->value()) {
-        defined = true;
-        define_global(def, global);
-      }
+      CGlobalVariable *c_global = m_c_module.new_global(&term->location(), type, name);
+      global_variables.push_back(std::make_pair(global, c_global));
+      m_global_value_builder.put(global, c_global);
       break;
     }
 
     case term_function: {
       ValuePtr<Function> func = value_cast<Function>(rewritten_term);
-      declare_function(decl, func);
-      decl << ";\n";
-      if (!func->blocks().empty()) {
-        defined = true;
-        define_function(def, func);
-      }
+      CFunction *c_func = m_c_module.new_function(&term->location(), type, name);
+      functions.push_back(std::make_pair(func, c_func));
+      m_global_value_builder.put(func, c_func);
       break;
     }
 
     default:
       PSI_FAIL("unexpected global term type");
     }
-#endif
+  }
+  
+  for (std::vector<std::pair<ValuePtr<GlobalVariable>, CGlobalVariable*> >::const_iterator ii = global_variables.begin(), ie = global_variables.end(); ii != ie; ++ii) {
+    const ValuePtr<GlobalVariable>& gv = ii->first;
+    CGlobalVariable* c_gv = ii->second;
+    c_gv->value = m_global_value_builder.build(gv->value());
+    c_gv->is_const = gv->constant();
+    c_gv->is_private = gv->private_();
+    if (gv->alignment()) {
+      ValuePtr<IntegerValue> int_alignment = dyn_cast<IntegerValue>(gv->alignment());
+      if (!int_alignment)
+        m_module->context().error_context().error_throw(gv->location(), "Alignment of global variable is not a constant");
+      
+      boost::optional<unsigned> opt_alignment = int_alignment->value().unsigned_value();
+      if (!opt_alignment)
+        m_module->context().error_context().error_throw(gv->location(), "Alignment of global variable is out of range");
+      
+      c_gv->alignment = *opt_alignment;
+    } else {
+      c_gv->alignment = 0;
+    }
+  }
+  
+  for (std::vector<std::pair<ValuePtr<Function>, CFunction*> >::const_iterator ii = functions.begin(), ie = functions.end(); ii != ie; ++ii) {
+    const ValuePtr<Function>& function = ii->first;
+    CFunction *c_function = ii->second;
+    
+    c_function->is_private = function->private_();
+    
+    if (!function->blocks().empty()) {
+      c_function->is_external = false;
+      build_function_body(ii->first, ii->second);
+    }
   }
   
   std::ostringstream source;
-  c_module.emit(source);
+  m_c_module.emit(source);
 }
 
-#if 0
-boost::optional<unsigned> CModuleBuilder::get_priority(const ConstructorPriorityMap& priority_map, const ValuePtr<Function>& function) {
-  ConstructorPriorityMap::const_iterator ci = priority_map.find(function);
-  if (ci != priority_map.end())
-    return ci->second;
-  return boost::none;
+namespace {
+  /// Get the depth of the block in the function in terms of dominators
+  unsigned block_depth(Block *block) {
+    unsigned n = 0;
+    for (; block; block = block->dominator().get(), ++n) {}
+    return n;
+  }
 }
 
-void CModuleBuilder::declare_function(std::ostream& os, const ValuePtr<Function>& function) {
-  ValuePtr<FunctionType> ftype = function->function_type();
-  
-  boost::optional<unsigned> constructor_priority = get_priority(m_constructor_functions, function);
-  boost::optional<unsigned> destructor_priority = get_priority(m_destructor_functions, function);
-  bool has_attribute = constructor_priority || destructor_priority;
-  
-  if (has_attribute) {
-    os << "__attribute__((";
-    if (constructor_priority) os << "constructor(" << *constructor_priority << "),";
-    if (destructor_priority) os << "destructor(" << *destructor_priority << "),";
-    os << "))";
+void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFunction* c_function) {
+  ValueBuilder local_value_builder(m_global_value_builder, c_function);
+
+  // PHI nodes need to have space prepared in dominator node
+  typedef std::multimap<ValuePtr<Block>, ValuePtr<Phi> > PhiMapType;
+  PhiMapType phi_by_dominator;
+  for (Function::BlockList::iterator ii = function->blocks().begin(), ie = function->blocks().end(); ii != ie; ++ii) {
+    const ValuePtr<Block>& block = *ii;
+    for (Block::PhiList::iterator ji = block->phi_nodes().begin(), je = block->phi_nodes().end(); ji != je; ++ji)
+      phi_by_dominator.insert(std::make_pair(block->dominator(), *ji));
+  }
+
+  unsigned depth = 0;
+  for (Function::BlockList::iterator ii = function->blocks().begin(), ie = function->blocks().end(); ii != ie; ++ii) {
+    const ValuePtr<Block>& block = *ii;
+    
+    unsigned new_depth = block_depth(block.get());
+    PSI_ASSERT(new_depth <= depth+1);
+    for (unsigned ii = depth+1; ii != new_depth; --ii)
+      local_value_builder.c_builder().nullary(&function->location(), c_op_block_end);
+    
+    CExpression *label = local_value_builder.c_builder().nullary(&block->location(), c_op_label);
+    local_value_builder.put(block, label);
+    local_value_builder.c_builder().nullary(&block->location(), c_op_block_begin);
+    
+    depth = new_depth;
+    
+    for (Block::InstructionList::iterator ji = block->instructions().begin(), je = block->instructions().end(); ji != je; ++ji)
+      local_value_builder.build(block);
+    
+    for (PhiMapType::const_iterator ji = phi_by_dominator.lower_bound(block), je = phi_by_dominator.upper_bound(block); ji != je; ++ji) {
+      CType *type = m_type_builder.build(ji->second->type());
+      CExpression *phi_value = local_value_builder.c_builder().declare(&ji->second->location(), type, c_op_declare, NULL, 0);
+      local_value_builder.put(ji->second, phi_value);
+    }
   }
   
-  if (function->private_()) os << "static ";
-  if (function->blocks().empty()) os << "extern ";
-  
-  os << build_type(ftype->result_type()) << ' ' << function->name() << '(';
-  std::size_t n = 0;
-  for (std::vector<ValuePtr<> >::const_iterator ii = ftype->parameter_types().begin(), ie = ftype->parameter_types().end(); ii != ie; ++ii, ++n)
-    os << build_type(*ii) << ' ' << m_parameter_prefix << n;
-  os << ')';
+  for (; depth > 0; --depth)
+    local_value_builder.c_builder().nullary(&function->location(), c_op_block_end);
 }
-#endif
 }
 }
 }

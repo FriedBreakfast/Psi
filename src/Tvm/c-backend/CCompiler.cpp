@@ -85,7 +85,7 @@ public:
   virtual void emit_function_attributes(CModuleEmitter& emitter, CFunction *function) {
     AttributeWriter aw(emitter, "__declspec(", ")");
     
-    if (function->blocks.empty())
+    if (function->is_external)
       aw.next() << "dllimport";
     else if (!function->is_private)
       aw.next() << "dllexport";

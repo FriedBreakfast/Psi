@@ -20,12 +20,16 @@ const COperator c_operators[] = {
 #undef PSI_TVM_C_OP
 };
 
+CExpressionBuilder::CExpressionBuilder(CModule* module, CFunction* function)
+: m_module(module), m_function(function) {
+}
+
 void CExpressionBuilder::append(const SourceLocation* location, CExpression *expr) {
   expr->name.prefix = NULL;
   expr->location = location;
   expr->requires_name = false;
-  if (m_block)
-    m_block->instructions.append(expr);
+  if (m_function)
+    m_function->instructions.append(expr);
 }
 
 const char* CExpressionBuilder::strdup(const char *s) {
@@ -170,12 +174,13 @@ CExpression* CExpressionBuilder::cast(const SourceLocation* location, CType *ty,
   return cast;
 }
 
-void CExpressionBuilder::nullary(const SourceLocation* location, COperatorType op) {
+CExpression* CExpressionBuilder::nullary(const SourceLocation* location, COperatorType op) {
   CExpression *expr = m_module->pool().alloc<CExpression>();
   expr->type = NULL;
   expr->eval = c_eval_write;
   expr->op = op;
   append(location, expr);
+  return expr;
 }
 
 void CExpressionBuilder::append(CType *type, const SourceLocation* location, const char *prefix) {
@@ -459,7 +464,7 @@ void CModuleEmitter::emit_definition(CGlobal& global) {
   } else {
     PSI_ASSERT(global.op == c_op_function);
     CFunction& func = checked_cast<CFunction&>(global);
-    if (!func.blocks.empty()) {
+    if (!func.is_external) {
       emit_declaration(func);
       output() << "{\n";
       output() << "}\n";
@@ -800,6 +805,7 @@ CGlobalVariable *CModule::new_global(const SourceLocation *location, CType *type
 CFunction *CModule::new_function(const SourceLocation *location, CType *type, const char *name) {
   CFunction *f = m_pool.alloc<CFunction>();
   f->op = c_op_function;
+  f->is_external = true;
   add_global(f, location, type, name);
   return f;
 }

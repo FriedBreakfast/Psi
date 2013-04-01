@@ -234,19 +234,18 @@ struct CExpressionCast : CExpression {
 };
 
 class CModule;
-struct CBlock;
+struct CFunction;
 
 class CExpressionBuilder {
   CModule *m_module;
-  CBlock *m_block;
+  CFunction *m_function;
   
   void append(const SourceLocation* location, CExpression *expr);
   void append(CType *type, const SourceLocation* location, const char *prefix=NULL);
   
 public:
-  CExpressionBuilder();
+  CExpressionBuilder(CModule *module, CFunction *function=NULL);
   CModule& module() {return *m_module;}
-  void set_block(CBlock *block);
   
   const char *strdup(const char *s);
   CExpression* unary(const SourceLocation* location, CType *ty, CExpressionEvaluation eval, COperatorType op, CExpression *arg, bool lvalue=false);
@@ -259,7 +258,7 @@ public:
   CExpression* aggregate_value(const SourceLocation* location, COperatorType op, CType *ty, unsigned n_members, CExpression *const* members);
   CExpression* union_value(const SourceLocation* location, CType *ty, unsigned index, CExpression *value);
   CExpression* cast(const SourceLocation* location, CType *ty, CExpression *arg);
-  void nullary(const SourceLocation* location, COperatorType op);
+  CExpression* nullary(const SourceLocation* location, COperatorType op);
   
   CType* void_type();
   CType* builtin_type(const char *name);
@@ -273,11 +272,6 @@ public:
   CType* union_type(const SourceLocation* location, unsigned n_members, const CTypeAggregateMember *members);
 };
 
-struct CBlock : SinglyLinkedListBase {
-  CBlock *parent, *next;
-  SinglyLinkedList<CExpression> instructions;
-};
-
 struct CGlobal : CExpression {
   bool is_private;
   /// Alignment. If zero, default alignment is used.
@@ -285,7 +279,8 @@ struct CGlobal : CExpression {
 };
 
 struct CFunction : CGlobal {
-  SinglyLinkedList<CBlock> blocks;
+  bool is_external;
+  SinglyLinkedList<CExpression> instructions;
 };
 
 struct CGlobalVariable : CGlobal {

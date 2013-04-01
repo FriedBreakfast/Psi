@@ -12,26 +12,6 @@
 namespace Psi {
 namespace Tvm {
 namespace CBackend {
-class ValueBuilder {
-  typedef boost::unordered_map<ValuePtr<>, CExpression*> ExpressionMapType;
-  ExpressionMapType m_expressions;
-  CExpressionBuilder m_c_builder;
-  
-public:
-  CType* build_type(const ValuePtr<>& type);
-  CExpression* integer_literal(int value);
-  CExpression* build(const ValuePtr<>& value, bool force_eval=false);
-  CExpression* build_rvalue(const ValuePtr<>& value);
-  CExpressionBuilder& c_builder() {return m_c_builder;}
-  CCompiler& c_compiler() {return c_builder().module().c_compiler();}
-  CompileErrorContext& error_context() {return c_builder().module().error_context();}
-  
-  CExpression* builtin_psi_alloca();
-  CExpression* builtin_psi_freea();
-  CExpression* builtin_memcpy();
-  CExpression* builtin_memset();
-};
-
 /**
  * Callbacks which translate TVM operations to C.
  * 
@@ -455,6 +435,10 @@ CExpression* ValueBuilder::build_rvalue(const ValuePtr<>& value) {
  */
 CExpression* ValueBuilder::integer_literal(int value) {
   PSI_NOT_IMPLEMENTED();
+}
+
+void ValueBuilder::put(const ValuePtr<>& key, CExpression *value) {
+  m_expressions.insert(std::make_pair(key, value));
 }
 }
 }

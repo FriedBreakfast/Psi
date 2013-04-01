@@ -4,6 +4,8 @@
 #include "../Core.hpp"
 #include "../Number.hpp"
 
+#include "CModule.hpp"
+
 namespace Psi {
 namespace Tvm {
 /**
@@ -18,11 +20,6 @@ namespace Tvm {
  * </ul>
  */
 namespace CBackend {
-class CModuleEmitter;
-class CModule;
-struct CFunction;
-struct CGlobalVariable;
-
 class CCompiler {
 public:
   CCompiler();
@@ -53,16 +50,66 @@ public:
   virtual void emit_global_variable_attributes(CModuleEmitter& emitter, CGlobalVariable *gvar) = 0;
 };
 
-class CModuleBuilder {
-  CCompiler *m_c_compiler;
+class TypeBuilder {
+  typedef boost::unordered_map<ValuePtr<>, CType*> TypeMapType;
+  TypeMapType m_types;
+  
+  CType *m_void_type;
+  CType *m_signed_integer_types[IntegerType::i_max];
+  CType *m_unsigned_integer_types[IntegerType::i_max];
+  CType *m_float_types[FloatType::fp_max];
+  
+  CExpressionBuilder m_c_builder;
   
 public:
-  CModuleBuilder(CCompiler *c_compiler);
-  void run(Module& module);
-  void build_function(const ValuePtr<Function>& function);
-  void build_global_variable(const ValuePtr<GlobalVariable>& gvar);
+  TypeBuilder(CModule *module);
+  CType* build(const ValuePtr<>& term);
+  CExpressionBuilder& c_builder() {return m_c_builder;}
+  CCompiler& c_compiler() {return c_builder().module().c_compiler();}
+  CompileErrorContext& error_context() {return c_builder().module().error_context();};
+  
+  CType* void_type();
+  CType* integer_type(IntegerType::Width width, bool is_signed);
+  CType* float_type(FloatType::Width width);
+};
 
-  const std::string& build_type(const ValuePtr<>& type);
+class ValueBuilder {
+  typedef boost::unordered_map<ValuePtr<>, CExpression*> ExpressionMapType;
+  ExpressionMapType m_expressions;
+  CExpressionBuilder m_c_builder;
+  
+public:
+  ValueBuilder(CModule *module);
+  ValueBuilder(const ValueBuilder& base, CFunction *function);
+  
+  CType* build_type(const ValuePtr<>& type);
+  CExpression* integer_literal(int value);
+  CExpression* build(const ValuePtr<>& value, bool force_eval=false);
+  CExpression* build_rvalue(const ValuePtr<>& value);
+  CExpressionBuilder& c_builder() {return m_c_builder;}
+  CCompiler& c_compiler() {return c_builder().module().c_compiler();}
+  CompileErrorContext& error_context() {return c_builder().module().error_context();}
+  void put(const ValuePtr<>& key, CExpression *value);
+  
+  CExpression* builtin_psi_alloca();
+  CExpression* builtin_psi_freea();
+  CExpression* builtin_memcpy();
+  CExpression* builtin_memset();
+};
+
+class CModuleBuilder {
+  CCompiler *m_c_compiler;
+
+  Module *m_module;
+  CModule m_c_module;
+  TypeBuilder m_type_builder;
+  ValueBuilder m_global_value_builder;
+  
+  void build_function_body(const ValuePtr<Function>& function, CFunction *c_function);
+
+public:
+  CModuleBuilder(CCompiler *c_compiler, Module& module);
+  void run();
 };
 }
 }
