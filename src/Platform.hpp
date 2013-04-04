@@ -15,7 +15,7 @@ namespace Platform {
  */
 String address_to_symbol(void *addr, void **base);
 
-class PlatformError : public std::runtime_error {
+class PSI_COMPILER_COMMON_EXPORT PlatformError : public std::runtime_error {
 public:
   PlatformError(const char*);
   PlatformError(const std::string&);
@@ -31,10 +31,42 @@ public:
  * 
  * How to construct this object is platform-specific, although see load_module().
  */
-class PlatformLibrary {
+class PSI_COMPILER_COMMON_EXPORT PlatformLibrary {
 public:
   virtual ~PlatformLibrary();
   virtual boost::optional<void*> symbol(const std::string& name) = 0;
+};
+
+class PSI_COMPILER_COMMON_EXPORT TemporaryPathImpl {
+  std::string m_path;
+  
+public:
+  TemporaryPathImpl(const std::string& path);
+  virtual ~TemporaryPathImpl();
+  virtual void delete_() = 0;
+  const std::string& path() const {return m_path;}
+};
+
+/// Platform specific implemenation
+TemporaryPathImpl* make_temporary_path_impl();
+
+/**
+ * \brief Temporary path helper class.
+ * 
+ * This class performs two functions: on construction, it gets an absolute
+ * path not corresponding to an existing file.
+ * When delete_() is called, or on class destruction, it deletes the file
+ * at that path (if one exists).
+ * This does not create the file.
+ */
+class PSI_COMPILER_COMMON_EXPORT TemporaryPath : public NonCopyable {
+  TemporaryPathImpl *m_impl;
+  
+public:
+  TemporaryPath();
+  ~TemporaryPath();
+  void delete_();
+  const std::string& path() const {return m_impl->path();}
 };
 
 /**
@@ -44,7 +76,7 @@ public:
  * return second appended to first, with a separating slash
  * if first does not end with a slash already.
  */
-std::string join_path(const std::string& first, const std::string& second);
+PSI_COMPILER_COMMON_EXPORT std::string join_path(const std::string& first, const std::string& second);
 
 /**
  * \brief Normalize a path.
@@ -53,24 +85,24 @@ std::string join_path(const std::string& first, const std::string& second);
  * The resulting path will have a slash if the original path had one,
  * or the original path ended in a '..' or '.'.
  */
-std::string normalize_path(const std::string& path);
+PSI_COMPILER_COMMON_EXPORT std::string normalize_path(const std::string& path);
 
 /**
  * \brief Convert a relative path to an absolute path.
  * 
  * If this is already an absolute path, this is a no-op.
  */
-std::string absolute_path(const std::string& path);
+PSI_COMPILER_COMMON_EXPORT std::string absolute_path(const std::string& path);
 
 /**
  * \brief Get the filename portion of a path.
  */
-std::string filename(const std::string& path);
+PSI_COMPILER_COMMON_EXPORT std::string filename(const std::string& path);
 
 /**
  * \brief Find an executable in the current path.
  */
-boost::optional<std::string> find_in_path(const std::string& name);
+PSI_COMPILER_COMMON_EXPORT boost::optional<std::string> find_in_path(const std::string& name);
 
 /**
  * Run a command and send data to its standard in, capture standard out and return the result.
@@ -80,9 +112,10 @@ boost::optional<std::string> find_in_path(const std::string& name);
  * \param output_out stdout data
  * \param output_err stderr data
  */
-int exec_communicate(const std::vector<std::string>& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
+PSI_COMPILER_COMMON_EXPORT int exec_communicate(const std::vector<std::string>& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
 
-void exec_communicate_check(const std::vector<std::string>& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
+PSI_COMPILER_COMMON_EXPORT void exec_communicate_check(const std::vector<std::string>& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
+PSI_COMPILER_COMMON_EXPORT void exec_communicate_check(const std::string& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
 }
 }
 

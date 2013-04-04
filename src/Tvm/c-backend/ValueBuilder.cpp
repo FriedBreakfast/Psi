@@ -408,6 +408,17 @@ struct ValueBuilderCallbacks {
 ValueBuilderCallbacks::FunctionalCallbackMap ValueBuilderCallbacks::functional_callback_map(ValueBuilderCallbacks::functional_callback_map_initializer());
 ValueBuilderCallbacks::InstructionCallbackMap ValueBuilderCallbacks::instruction_callback_map(ValueBuilderCallbacks::instruction_callback_map_initializer());
 
+ValueBuilder::ValueBuilder(TypeBuilder *type_builder)
+: m_type_builder(type_builder),
+m_c_builder(&type_builder->module()) {
+}
+
+ValueBuilder::ValueBuilder(const ValueBuilder& base, CFunction *function)
+: m_type_builder(base.m_type_builder),
+m_c_builder(&base.module(), function),
+m_expressions(base.m_expressions) {
+}
+
 /**
  * \brief Build a value
  * 
@@ -457,6 +468,15 @@ CExpression* ValueBuilder::build_rvalue(const ValuePtr<>& value) {
   } else {
     return inner;
   }
+}
+
+/**
+ * \brief Build a type
+ * 
+ * Forwards to the type builder passed to this ValueBuilders constructor.
+ */
+CType* ValueBuilder::build_type(const ValuePtr<>& value) {
+  return m_type_builder->build(value);
 }
 
 /**

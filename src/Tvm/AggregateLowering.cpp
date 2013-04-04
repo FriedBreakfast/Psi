@@ -792,7 +792,7 @@ namespace Psi {
       PSI_ASSERT((tsa.alignment != 0) && ((tsa.alignment & (tsa.alignment - 1)) == 0)); // Power of 2 check
 
       if (isa<IntegerType>(type) || isa<PointerType>(type) || isa<FloatType>(type)) {
-        ExplodeEntry start = {offset, {0,0}, ValuePtr<>()}, end = {offset + tsa.size, {0,0}, ValuePtr<>()};
+        ExplodeEntry start = {offset, TypeSizeAlignment(0,0), ValuePtr<>()}, end = {offset + tsa.size, TypeSizeAlignment(0,0), ValuePtr<>()};
         std::vector<ExplodeEntry>::const_iterator first = std::upper_bound(entries.begin(), entries.end(), start, ExplodeCompareEnd());
         std::vector<ExplodeEntry>::const_iterator last = std::lower_bound(entries.begin(), entries.end(), end, ExplodeCompareStart());
     

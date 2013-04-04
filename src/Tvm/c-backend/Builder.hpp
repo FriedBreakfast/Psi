@@ -22,6 +22,20 @@ namespace Tvm {
  * </ul>
  */
 namespace CBackend {
+struct PrimitiveType {
+  std::string name;
+  boost::optional<std::string> suffix;
+  unsigned size;
+  unsigned alignment;
+};
+
+struct PrimitiveTypeSet {
+  unsigned pointer_size, pointer_alignment;
+  PrimitiveType int_types[IntegerType::i_max];
+  PrimitiveType uint_types[IntegerType::i_max];
+  PrimitiveType float_types[FloatType::fp_max];
+};
+
 class CCompiler {
 public:
   CCompiler();
@@ -30,11 +44,8 @@ public:
   bool has_variable_length_arrays;
   /// \brief Has designated initializer support
   bool has_designated_initializer;
-  
-  /// \brief Get a specified integer type name.
-  virtual const char *integer_type(CModule& module, IntegerType::Width width, bool is_signed) = 0;
-  /// \brief Get a specified float type name.
-  virtual const char *float_type(CModule& module, FloatType::Width width) = 0;
+  /// \brief Supported primitive types
+  PrimitiveTypeSet primitive_types;
   
   /**
    * \brief Emit an alignment attribute.
@@ -50,6 +61,12 @@ public:
   
   /// \brief Emit global variable attributes
   virtual void emit_global_variable_attributes(CModuleEmitter& emitter, CGlobalVariable *gvar) = 0;
+  
+  /// \brief Compile a program
+  virtual void compile_program(CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) = 0;
+  
+  /// \brief Compile a shared library
+  virtual void compile_library(CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) = 0;
 };
 
 class TypeBuilder {
@@ -67,6 +84,7 @@ public:
   TypeBuilder(CModule *module);
   CType* build(const ValuePtr<>& term);
   CExpressionBuilder& c_builder() {return m_c_builder;}
+  CModule& module() const {return m_c_builder.module();}
   CCompiler& c_compiler() {return c_builder().module().c_compiler();}
   CompileErrorContext& error_context() {return c_builder().module().error_context();};
   
@@ -76,12 +94,13 @@ public:
 };
 
 class ValueBuilder {
+  TypeBuilder *m_type_builder;
+  CExpressionBuilder m_c_builder;
   typedef boost::unordered_map<ValuePtr<>, CExpression*> ExpressionMapType;
   ExpressionMapType m_expressions;
-  CExpressionBuilder m_c_builder;
   
 public:
-  ValueBuilder(CModule *module);
+  ValueBuilder(TypeBuilder *type_builder);
   ValueBuilder(const ValueBuilder& base, CFunction *function);
   
   CType* build_type(const ValuePtr<>& type);
@@ -89,7 +108,8 @@ public:
   CExpression* build(const ValuePtr<>& value, bool force_eval=false);
   CExpression* build_rvalue(const ValuePtr<>& value);
   CExpressionBuilder& c_builder() {return m_c_builder;}
-  CCompiler& c_compiler() {return c_builder().module().c_compiler();}
+  CModule& module() const {return m_c_builder.module();}
+  CCompiler& c_compiler() const {return module().c_compiler();}
   CompileErrorContext& error_context() {return c_builder().module().error_context();}
   void put(const ValuePtr<>& key, CExpression *value);
   
@@ -111,7 +131,7 @@ class CModuleBuilder {
 
 public:
   CModuleBuilder(CCompiler *c_compiler, Module& module);
-  void run();
+  std::string run();
 };
 
 class CJit : public Jit {

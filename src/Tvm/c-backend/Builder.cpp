@@ -12,7 +12,11 @@ namespace Psi {
 namespace Tvm {
 namespace CBackend {
 class CModuleCallback : public AggregateLoweringPass::TargetCallback {
+  CCompiler *m_c_compiler;
+  
 public:
+  CModuleCallback(CCompiler *c_compiler) : m_c_compiler(c_compiler) {}
+  
   ValuePtr<FunctionType> lower_function_type(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& ftype) {
     unsigned n_phantom = ftype->n_phantom();
     std::vector<ValuePtr<> > parameter_types;
@@ -62,7 +66,21 @@ public:
   }
   
   virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>& type) {
-    PSI_NOT_IMPLEMENTED();
+    const PrimitiveType *pt;
+    if (ValuePtr<IntegerType> int_type = dyn_cast<IntegerType>(type)) {
+      pt = &m_c_compiler->primitive_types.int_types[int_type->width()];
+    } else if (ValuePtr<FloatType> float_type = dyn_cast<FloatType>(type)) {
+      pt = &m_c_compiler->primitive_types.float_types[float_type->width()];
+    } else if (isa<ByteType>(type)) {
+      return TypeSizeAlignment(1,1);
+    } else if (isa<PointerType>(type)) {
+      return {m_c_compiler->primitive_types.pointer_size, m_c_compiler->primitive_types.pointer_alignment};
+    } else if (isa<BlockType>(type)) {
+      return TypeSizeAlignment(0,0);
+    }
+    if (pt->name.empty())
+      type->context().error_context().error_throw(type->location(), "Primitive type not supported");
+    return TypeSizeAlignment(pt->size, pt->alignment);
   }
   
   virtual ValuePtr<> byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int shift, const SourceLocation& location) {
@@ -75,11 +93,11 @@ CModuleBuilder::CModuleBuilder(CCompiler* c_compiler, Module& module)
 m_module(&module),
 m_c_module(m_c_compiler, &module.context().error_context(), module.location()),
 m_type_builder(&m_c_module),
-m_global_value_builder(&m_c_module) {
+m_global_value_builder(&m_type_builder) {
 }
 
-void CModuleBuilder::run() {
-  CModuleCallback lowering_callback;
+std::string CModuleBuilder::run() {
+  CModuleCallback lowering_callback(m_c_compiler);
   AggregateLoweringPass aggregate_lowering_pass(m_module, &lowering_callback);
   aggregate_lowering_pass.remove_unions = false;
   aggregate_lowering_pass.split_arrays = true;
@@ -153,6 +171,7 @@ void CModuleBuilder::run() {
   
   std::ostringstream source;
   m_c_module.emit(source);
+  return source.str();
 }
 
 namespace {
@@ -213,9 +232,16 @@ CJit::~CJit() {
 }
 
 void CJit::add_module(Module *module) {
+  std::string source = CModuleBuilder(m_compiler.get(), *module).run();
+  std::cerr << source << std::endl;
+  PSI_NOT_IMPLEMENTED();
 }
 
 void CJit::remove_module(Module *module) {
+  ModuleMap::iterator it = m_modules.find(module);
+  if (it == m_modules.end())
+    factory()->error_handler().context().error_throw(module->location(), "Module cannot be removed from this JIT because it has not been added");
+  m_modules.erase(it);
 }
 
 void* CJit::get_symbol(const ValuePtr<Global>& symbol) {

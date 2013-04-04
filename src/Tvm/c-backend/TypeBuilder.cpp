@@ -11,7 +11,7 @@ namespace CBackend {
 struct TypeBuilderCallbacks {
   static const unsigned small_array_length = 16;
   
-  static CType* empty_type_callback(TypeBuilder& builder, const ValuePtr<>& term) {
+  static CType* empty_type_callback(TypeBuilder& builder, const ValuePtr<>&) {
     return builder.void_type();
   }
   
@@ -83,11 +83,11 @@ struct TypeBuilderCallbacks {
     return builder.c_builder().struct_type(&term->location(), 1, &member);
   }
   
-  static CType* byte_type_callback(TypeBuilder& builder, const ValuePtr<ByteType>& term) {
+  static CType* byte_type_callback(TypeBuilder& builder, const ValuePtr<ByteType>&) {
     return builder.integer_type(IntegerType::i8, false);
   }
   
-  static CType* boolean_type_callback(TypeBuilder& builder, const ValuePtr<BooleanType>& term) {
+  static CType* boolean_type_callback(TypeBuilder& builder, const ValuePtr<BooleanType>&) {
     return builder.integer_type(IntegerType::i8, false);
   }
   
@@ -145,8 +145,10 @@ CType* TypeBuilder::void_type() {
 CType* TypeBuilder::integer_type(IntegerType::Width width, bool is_signed) {
   CType **arr = is_signed ? m_signed_integer_types : m_unsigned_integer_types;
   if (!arr[width]) {
-    const char *name = c_compiler().integer_type(c_builder().module(), width, is_signed);
-    arr[width] = c_builder().builtin_type(name);
+    const PrimitiveType& pt = (is_signed ? c_compiler().primitive_types.int_types : c_compiler().primitive_types.uint_types)[width];
+    if (pt.name.empty())
+      error_context().error_throw(module().location(), "Primitive type not supported");
+    arr[width] = c_builder().builtin_type(pt.name.c_str());
   }
   
   return arr[width];
@@ -154,8 +156,10 @@ CType* TypeBuilder::integer_type(IntegerType::Width width, bool is_signed) {
 
 CType* TypeBuilder::float_type(FloatType::Width width) {
   if (!m_float_types[width]) {
-    const char *name = c_compiler().float_type(c_builder().module(), width);
-    m_float_types[width] = c_builder().builtin_type(name);
+    const PrimitiveType& pt = c_compiler().primitive_types.float_types[width];
+    if (pt.name.empty())
+      error_context().error_throw(module().location(), "Primitive type not supported");
+    m_float_types[width] = c_builder().builtin_type(pt.name.c_str());
   }
   
   return m_float_types[width];

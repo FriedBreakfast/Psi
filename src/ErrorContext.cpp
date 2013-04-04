@@ -41,8 +41,13 @@ CompileError::CompileError(CompileErrorContext& context, const SourceLocation& l
   if (error_occurred)
     m_context->set_error_occurred();
 
-  m_context->error_stream() << boost::format("%s:%s: in '%s'\n") % location.physical.file->url
-    % location.physical.first_line % location.logical->error_name(LogicalSourceLocationPtr(), true);
+  if (location.physical.file) {
+    m_context->error_stream() << boost::format("%s:%s: in '%s'\n") % location.physical.file->url
+      % location.physical.first_line % location.logical->error_name(LogicalSourceLocationPtr(), true);
+  } else {
+    m_context->error_stream() << boost::format("(no file):%s: in '%s'\n")
+      % location.physical.first_line % location.logical->error_name(LogicalSourceLocationPtr(), true);
+  }
 }
 
 void CompileError::info(const std::string& message) {
@@ -50,8 +55,13 @@ void CompileError::info(const std::string& message) {
 }
 
 void CompileError::info(const SourceLocation& location, const std::string& message) {
-  m_context->error_stream() << boost::format("%s:%s:%s: %s\n")
-    % location.physical.file->url % location.physical.first_line % m_type % message;
+  if (location.physical.file) {
+    m_context->error_stream() << boost::format("%s:%s:%s: %s\n")
+      % location.physical.file->url % location.physical.first_line % m_type % message;
+  } else {
+    m_context->error_stream() << boost::format("(no file):%s:%s: %s\n")
+      % location.physical.first_line % m_type % message;
+  }
 }
 
 void CompileError::end() {

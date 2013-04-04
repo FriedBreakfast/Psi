@@ -25,6 +25,149 @@ bool CCompiler::emit_unreachable(CModuleEmitter& PSI_UNUSED(emitter)) {
   return false;
 }
 
+struct CompilerCommonType {
+  enum Mode {
+    mode_int=0, /// Signed integer type
+    mode_uint=1, /// Unsigned integer type
+    mode_float=2 /// Float type
+  };
+
+  Mode mode;
+  std::string name;
+  /// Numeric suffix
+  std::string suffix;
+  unsigned size;
+  unsigned alignment;
+};
+
+struct CompilerCommonInfo {
+  bool big_endian;
+  unsigned char_bits;
+  unsigned pointer_size;
+  unsigned pointer_alignment;
+  std::vector<CompilerCommonType> types;
+};
+
+namespace {
+  /// Return a copy of s with the whitespace at either end removed
+  std::string trim(const std::string& s) {
+    const std::locale& loc = std::locale::classic();
+    std::size_t start, end;
+    std::size_t n = s.size();
+    for (start = 0; (start != n) && std::isspace(s[start], loc); ++start) {}
+    if (start == n)
+      return "";
+    for (end = n; (end != 0) && std::isspace(s[end-1], loc); --end) {}
+    PSI_ASSERT(start < end);
+    return s.substr(start, end);
+  }
+}
+
+/**
+ * Common implementation for CCompiler.
+ * 
+ * This turns the type/alignment problem into a table.
+ */
+class CCompilerCommon : public CCompiler {
+  bool m_big_endian;
+  
+public:
+  CCompilerCommon(const CompilerCommonInfo& common_info) {
+    m_big_endian = common_info.big_endian;
+    primitive_types.pointer_size = common_info.pointer_size;
+    primitive_types.pointer_alignment = common_info.pointer_alignment;
+    
+    for (std::vector<CompilerCommonType>::const_iterator ii = common_info.types.begin(), ie = common_info.types.end(); ii != ie; ++ii) {
+      PrimitiveType si;
+      if (ii->suffix == "-")
+        si.suffix = "";
+      else if (ii->suffix != ".")
+        si.suffix = ii->suffix;
+      si.name = ii->name;
+      si.size = ii->size;
+      si.alignment = ii->alignment;
+      
+      unsigned bits = ii->size * common_info.char_bits;
+      switch (ii->mode) {
+      case CompilerCommonType::mode_int:
+      case CompilerCommonType::mode_uint: {
+        if ((si.size == common_info.pointer_size) && (si.alignment == common_info.pointer_alignment)) {
+          PrimitiveType& ptr_slot = (ii->mode == CompilerCommonType::mode_int ? primitive_types.int_types : primitive_types.uint_types)[IntegerType::iptr];
+          if (ptr_slot.name.empty())
+            ptr_slot = si;
+        }
+        
+        IntegerType::Width w;
+        if (bits >= 128) w = IntegerType::i128;
+        else if (bits >= 64) w = IntegerType::i64;
+        else if (bits >= 32) w = IntegerType::i32;
+        else if (bits >= 16) w = IntegerType::i16;
+        else if (bits >= 8) w = IntegerType::i8;
+        else
+          break;
+        
+        PrimitiveType& slot = (ii->mode == CompilerCommonType::mode_int ? primitive_types.int_types : primitive_types.uint_types)[w];
+        if (slot.name.empty() || (si.size < slot.size))
+          slot = si;
+        
+        break;
+      }
+      
+      case CompilerCommonType::mode_float: {
+        FloatType::Width w;
+        if (bits >= 64) w = FloatType::fp64;
+        else if (bits >= 32) w = FloatType::fp32;
+        else
+          break;
+        
+        PrimitiveType& slot = primitive_types.float_types[w];
+        if (slot.name.empty() || (si.size < slot.size))
+          slot = si;
+        
+        break;
+      }
+      
+      default: PSI_FAIL("Unrecognied C type mode");
+      }
+    }
+  }
+  
+  /**
+   * \brief Parse compiler types.
+   * 
+   * The first line is expected to be
+   * <pre>big_endian ptr_size ptr_alignment</pre>
+   * 
+   * All remaining lines in \c in are expected to have the format
+   * <pre>size alignment name</pre>
+   * All bytes after the size and alignment are interpreted as the name,
+   * after trimming whitespace.
+   */
+  static CompilerCommonInfo parse_common_info(const CompileErrorPair& err_loc, std::istream& in) {
+    CompilerCommonInfo ci;
+    int big_endian;
+    in >> big_endian >> ci.char_bits >> ci.pointer_size >> ci.pointer_alignment;
+    ci.big_endian = big_endian;
+    if (!in)
+      err_loc.error_throw("Failed to parse C compiler common information");
+    
+    while (true) {
+      CompilerCommonType type;
+      int mode;
+      in >> mode >> type.suffix >> type.size >> type.alignment;
+      if (in.eof())
+        return ci;
+      else if (!in.good())
+        err_loc.error_throw("Failed to parse C compiler common information");
+      
+      type.mode = static_cast<CompilerCommonType::Mode>(mode);
+      std::getline(in, type.name);
+      type.name = trim(type.name);
+      ci.types.push_back(type);
+    }
+  }
+};
+
 namespace {
 class AttributeWriter {
   std::ostream *m_output;
@@ -137,14 +280,13 @@ public:
 /**
  * Base class for compilers which implement GCC \c __attribute__ extension.
  */
-class CCompilerGCCLike : public CCompiler {
+class CCompilerGCCLike : public CCompilerCommon {
 public:
-  IntegerType::Width pointer_width;
   bool has_float_128;
   bool has_float_80;
   
-  CCompilerGCCLike(IntegerType::Width pointer_width_)
-  : pointer_width(pointer_width_),
+  CCompilerGCCLike(const CompilerCommonInfo& common_info)
+  : CCompilerCommon(common_info),
   has_float_128(false),
   has_float_80(false) {
     has_variable_length_arrays = true;
@@ -167,21 +309,9 @@ public:
     if (gvar->alignment) aw.next() << "aligned(" << gvar->alignment << ")";
     aw.done();
   }
-
-  virtual const char *integer_type(CModule&, IntegerType::Width width, bool is_signed) {
-    IntegerType::Width my_width = (width == IntegerType::iptr) ? pointer_width : width;
-    switch (my_width) {
-    case IntegerType::i8: return is_signed ? "char" : "unsigned char";
-    case IntegerType::i16: return is_signed ? "short" : "unsigned short";
-    case IntegerType::i32: return is_signed ? "int" : "unsigned int";
-    case IntegerType::i64: return is_signed ? "long long" : "unsigned long long";
-    case IntegerType::i128: return is_signed ? "__int128" : "unsigned __int128";
-    default: PSI_FAIL("Unrecognised integer width");
-    }
-  }
   
   virtual const char *int_suffix(CModule&, IntegerType::Width width, bool is_signed) {
-    IntegerType::Width my_width = (width == IntegerType::iptr) ? pointer_width : width;
+    IntegerType::Width my_width = width;
     switch (my_width) {
     case IntegerType::i8: return is_signed ? "char" : "unsigned char";
     case IntegerType::i16: return is_signed ? "short" : "unsigned short";
@@ -193,28 +323,6 @@ public:
     }
   }
 
-  virtual const char *float_type(CModule& module, FloatType::Width width) {
-    switch (width) {
-    case FloatType::fp32: return "float";
-    case FloatType::fp64: return "double";
-    case FloatType::fp_ppc_128: module.error_context().error_throw(module.location(), "C compiler does not support 128-bit PPC extended precision float");
-
-    case FloatType::fp128:
-      if (has_float_128)
-        return "__float128";
-      else
-        module.error_context().error_throw(module.location(), "C compiler does not support 128-bit float types");
-      
-    case FloatType::fp_x86_80:
-      if (has_float_80)
-        return "__float80";
-      else
-        module.error_context().error_throw(module.location(), "C compiler does not support 80-bit X86 extended precision float");
-      
-    default: PSI_FAIL("Unrecognised float width");
-    }
-  }
-  
   virtual const char* float_suffix(CModule& module, FloatType::Width width) {
     switch (width) {
     case FloatType::fp32: return "f";
@@ -225,6 +333,38 @@ public:
     default: PSI_FAIL("Unrecognised float width");
     }
   }
+  
+  static void run_gcc_common(const CompileErrorPair& err_loc, const std::string& path,
+                             const std::string& output_file, const std::string& source,
+                             const std::vector<std::string>& extra) {
+    std::vector<std::string> command;
+    command.push_back(path);
+    command.push_back("-xc"); // Required because we pipe source to GCC
+    command.push_back("-std=c99");
+    command.insert(command.end(), extra.begin(), extra.end());
+    command.push_back("-");
+    command.push_back("-o");
+    command.push_back(output_file);
+    try {
+      Platform::exec_communicate_check(command, source);
+    } catch (Platform::PlatformError& ex) {
+      err_loc.error_throw(ex.what());
+    }
+  }
+  
+  static void run_gcc_program(const CompileErrorPair& err_loc, const std::string& path,
+                              const std::string& output_file, const std::string& source) {
+    run_gcc_common(err_loc, path, output_file, source, std::vector<std::string>());
+  }
+  
+  static void run_gcc_library_linux(const CompileErrorPair& err_loc, const std::string& path,
+                                    const std::string& output_file, const std::string& source) {
+    std::vector<std::string> extra;
+    extra.push_back("-shared");
+    extra.push_back("-fPIC");
+    extra.push_back("-Wl,-soname," + Platform::filename(output_file));
+    run_gcc_common(err_loc, path, output_file, source, extra);
+  }
 };
 
 class CCompilerGCC : public CCompilerGCCLike {
@@ -232,8 +372,8 @@ class CCompilerGCC : public CCompilerGCCLike {
   unsigned m_major_version, m_minor_version;
   
 public:
-  CCompilerGCC(const std::string& path, unsigned major, unsigned minor, IntegerType::Width pointer_width)
-  : CCompilerGCCLike(pointer_width), m_path(path), m_major_version(major), m_minor_version(minor) {
+  CCompilerGCC(const CompilerCommonInfo& common_info, const std::string& path, unsigned major, unsigned minor)
+  : CCompilerGCCLike(common_info), m_path(path), m_major_version(major), m_minor_version(minor) {
     has_variable_length_arrays = true;
     has_designated_initializer = true;
   }
@@ -254,54 +394,76 @@ public:
     }
   }
   
+  virtual void compile_program(CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+    run_gcc_program(err_loc, m_path, output_file, source);
+  }
+  
+  virtual void compile_library(CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+    run_gcc_library_linux(err_loc, m_path, output_file, source);
+  }
+  
   static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
-    const char *src = "__GNUC__ __GNUC_MINOR__ __SIZEOF_POINTER__\n";
+    std::ostringstream src;
+    src << "#include <stdio.h>\n"
+        << "#include <limits.h>\n"
+        << "int main() {\n"
+        << "  int big_endian = (__BYTE_ORDER__==__ORDER_BIG_ENDIAN__), little_endian = (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__);\n"
+        << "  printf(\"%d %d %d\\n\", __GNUC__, __GNUC_MINOR__, big_endian||little_endian);\n"
+        << "  printf(\"%d %d %zd %zd\\n\", big_endian, CHAR_BIT, sizeof(void*), __alignof__(void*));\n";
     
-    std::vector<std::string> command;
-    command.push_back(path);
-    command.push_back("-E");
-    command.push_back("-");
+    const struct {CompilerCommonType::Mode mode; const char *name; const char *suffix;} gcc_types[] = {
+      {CompilerCommonType::mode_int, "signed char", "-"},
+      {CompilerCommonType::mode_uint, "unsigned char", "-"},
+      {CompilerCommonType::mode_int, "short", "-"},
+      {CompilerCommonType::mode_uint, "unsigned short", "-"},
+      {CompilerCommonType::mode_int, "int", "-"},
+      {CompilerCommonType::mode_uint, "unsigned int", "-"},
+      {CompilerCommonType::mode_int, "long", "L"},
+      {CompilerCommonType::mode_uint, "unsigned long", "UL"},
+      {CompilerCommonType::mode_int, "long long", "LL"},
+      {CompilerCommonType::mode_uint, "unsigned long long", "ULL"}
+    };
+    for (unsigned n = 0; n < 10; ++n) {
+      src << "  printf(\"" << gcc_types[n].mode << " " << gcc_types[n].suffix << " %zd %zd "
+          << gcc_types[n].name << "\\n\", sizeof(" << gcc_types[n].name
+          << "), __alignof__(" << gcc_types[n].name << "));\n";
+    }
     
-    std::string output;
+    src << "}\n";
+    
+    Platform::TemporaryPath program_path;
+    run_gcc_program(err_loc, path, program_path.path(), src.str());
+    
+    std::string program_output;
     try {
-      Platform::exec_communicate_check(command, src, &output);
+      Platform::exec_communicate_check(program_path.path(), "", &program_output);
     } catch (Platform::PlatformError& ex) {
       err_loc.error_throw(ex.what());
     }
     
-    std::istringstream preprocessed_src(output);
-    preprocessed_src.imbue(std::locale::classic());
+    std::istringstream program_ss;
+    program_ss.imbue(std::locale::classic());
+    program_ss.str(program_output);
+    unsigned version_major, version_minor, known_endian;
+    program_ss >> version_major >> version_minor >> known_endian;
     
-    // Skip lines starting with a #
-    while (preprocessed_src.peek() == '#') {
-      while (true) {
-        int c = preprocessed_src.get();
-        if (!preprocessed_src || (c == '\n'))
-          break;
-      }
-    }
-      
-    int version_major, version_minor, sizeof_ptr;
-    preprocessed_src >> version_major >> version_minor >> sizeof_ptr;
-    if (preprocessed_src.fail())
-      err_loc.error_throw("Failed to parse GCC preprocess output for version detection");
+    if (!known_endian)
+      err_loc.error_throw("GCC compiler uses unsupported byte order");
     
-    boost::optional<IntegerType::Width> ptr_width = IntegerType::width_from_bits(sizeof_ptr*8);
-    if (!ptr_width)
-      err_loc.error_throw(boost::format("Detected pointer size in GCC to wide (%d bits)") % (sizeof_ptr*8));
+    CompilerCommonInfo common_info = CCompilerCommon::parse_common_info(err_loc, program_ss);
     
-    return boost::make_shared<CCompilerGCC>(path, version_major, version_minor, *ptr_width);
+    return boost::make_shared<CCompilerGCC>(common_info, path, version_major, version_minor);
   }
 };
 
 class CCompilerTCC : public CCompilerGCCLike {
 public:
-  CCompilerTCC(IntegerType::Width pointer_width) : CCompilerGCCLike(pointer_width) {}
+  CCompilerTCC(const CompilerCommonInfo& common_info) : CCompilerGCCLike(common_info) {}
 };
 
 class CCompilerClang : public CCompilerGCCLike {
 public:
-  CCompilerClang(IntegerType::Width pointer_width) : CCompilerGCCLike(pointer_width) {}
+  CCompilerClang(const CompilerCommonInfo& common_info) : CCompilerGCCLike(common_info) {}
 
   virtual bool emit_unreachable(CModuleEmitter& emitter) {
     emitter.output() << "__builtin_unreachable()";

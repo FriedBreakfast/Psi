@@ -21,6 +21,8 @@ namespace Psi {
      * \brief Size and alignment of a type after lowering.
      */
     struct TypeSizeAlignment {
+      TypeSizeAlignment() : size(0), alignment(0) {}
+      TypeSizeAlignment(std::size_t size_, std::size_t alignment_) : size(size_), alignment(alignment_) {}
       std::size_t size;
       std::size_t alignment;
     };

@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/select.h>
@@ -15,6 +16,20 @@
 namespace Psi {
 namespace Platform {
 namespace Linux {
+/// Template class which owns a pointer allocated by malloc()
+template<typename T>
+class MallocPtr : public NonCopyable, public PointerBase<T> {
+public:
+  MallocPtr(T *ptr=NULL) : PointerBase<T>(ptr) {}
+  ~MallocPtr() {reset();}
+
+  void reset(T *ptr=NULL) {
+    if (PointerBase<T>::m_ptr)
+      free(PointerBase<T>::m_ptr);
+    PointerBase<T>::m_ptr = ptr;
+  }
+};
+
 /**
  * \param hint Number of entries in the handle vector to reserve
  */
@@ -440,6 +455,26 @@ int exec_communicate(const std::vector<std::string>& command, const std::string&
     output_err->assign(stderr_data.begin(), stderr_data.end());
   
   return child_status;
+}
+
+namespace Linux {
+class TemporaryPathImplLinux : public TemporaryPathImpl {
+public:
+  TemporaryPathImplLinux(const std::string& path) : TemporaryPathImpl(path) {}
+  
+  virtual void delete_() {
+    unlink(path().c_str());
+  }
+};
+}
+
+TemporaryPathImpl* make_temporary_path_impl() {
+  Linux::MallocPtr<char> name(tempnam(NULL, NULL));
+  if (!name) {
+    int errcode = errno;
+    throw PlatformError(boost::str(boost::format("Failed to get temporary file name: %s") % Linux::error_string(errcode)));
+  }
+  return new Linux::TemporaryPathImplLinux(name.get());
 }
 }
 }

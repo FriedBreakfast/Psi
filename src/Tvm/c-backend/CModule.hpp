@@ -245,7 +245,7 @@ class CExpressionBuilder {
   
 public:
   CExpressionBuilder(CModule *module, CFunction *function=NULL);
-  CModule& module() {return *m_module;}
+  CModule& module() const {return *m_module;}
   
   const char *strdup(const char *s);
   CExpression* unary(const SourceLocation* location, CType *ty, CExpressionEvaluation eval, COperatorType op, CExpression *arg, bool lvalue=false);

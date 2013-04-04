@@ -158,7 +158,8 @@ namespace Psi {
   }
   
   std::ostream& operator << (std::ostream& os, const String& str) {
-    os << str.c_str();
+    if (!str.empty())
+      os << str.c_str();
     return os;
   }
   

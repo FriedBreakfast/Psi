@@ -59,7 +59,10 @@ namespace Psi {
       virtual void add_module(Module *module) = 0;
       
       /**
-       * Remove a module from this JIT.
+       * \brief Remove a module from this JIT.
+       * 
+       * Note that it is an error to call this method if other loaded modules depend
+       * on the specified one.
        */
       virtual void remove_module(Module *module) = 0;
 
