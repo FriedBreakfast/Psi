@@ -13,12 +13,8 @@ endif()
 set(PSI_DEBUG 0 CACHE BOOL "Enable debug checks")
 set(PSI_ENABLE_VALGRIND 0 CACHE BOOL "Enable Valgrind support")
 set(PSI_TVM_JIT ${PSI_TVM_JIT_DEFAULT} CACHE STRING "Default JIT compiler to use")
-set(PSI_TVM_CC ${CMAKE_C_COMPILER} CACHE STRING "Default path to search for C compiler")
 set(PSI_OBJECT_PTR_DEBUG 0 CACHE BOOL "Enable object pointer debug checks (very expensive)")
 mark_as_advanced(PSI_OBJECT_PTR_DEBUG)
-
-# Whether TCC has been compiled in to the C backend
-set(PSI_TVM_CC_TCCLIB 0)
 
 find_library(JSONC_LIB json)
 find_path(JSONC_INCLUDE json_object.h)
@@ -33,7 +29,7 @@ if(WIN32)
   llvm_map_components_to_libraries(LLVM_LIBS jit native ipo)
 else()
   find_program(LLVM_CONFIG NAMES llvm-config)
-  if(${LLVM_CONFIG} STREQUAL "LLVM_CONFIG-NOTFOUND")
+  if(NOT LLVM_CONFIG)
     message(SEND_ERROR "LLVM not found")
   else()
     execute_process(COMMAND ${LLVM_CONFIG} --cxxflags OUTPUT_VARIABLE LLVM_CXX_FLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -45,6 +41,21 @@ endif()
 if(LLVM_CXX_FLAGS MATCHES "-fno-exceptions" OR LLVM_CXX_FLAGS MATCHES "-fno-rtti")
   message(SEND_ERROR "LLVM must be built with REQUIRES_EH=1 and REQUIRES_RTTI=1 set\nBuild LLVM using: env REQUIRES_EH=1 REQUIRES_RTTI=1 sh -c './configure && make install'")
 endif()
+
+# Find TCC
+find_library(TCC_LIB tcc)
+find_path(TCC_INCLUDE tcclib.h)
+if(TCC_LIB AND TCC_INCLUDE)
+  # Whether TCC has been compiled in to the C backend
+  set(PSI_TVM_CC_TCCLIB 1)
+  set(PSI_TVM_CC_DEFAULT "tcclib")
+else()
+  # Whether TCC has been compiled in to the C backend
+  set(PSI_TVM_CC_TCCLIB 0)
+  set(PSI_TVM_CC_DEFAULT ${CMAKE_C_COMPILER})
+endif()
+
+set(PSI_TVM_CC ${PSI_TVM_CC_DEFAULT} CACHE STRING "Default path to search for C compiler")
 
 # Set up useful GCC flags
 if(CMAKE_COMPILER_IS_GNUCXX)
@@ -90,7 +101,7 @@ if(DOXYGEN_FOUND)
 endif()
 
 find_program(SPHINX_BUILD NAMES sphinx-build)
-if(NOT ${SPHINX_BUILD} STREQUAL "SPHINX_BUILD-NOTFOUND")
+if(SPHINX_BUILD)
   configure_file(doc-sphinx/conf.py conf.py)
   add_custom_target(doc-sphinx ${SPHINX_BUILD} -c . ${CMAKE_CURRENT_SOURCE_DIR}/doc-sphinx doc-sphinx)
   add_dependencies(doc doc-sphinx)

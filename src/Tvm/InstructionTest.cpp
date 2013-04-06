@@ -235,6 +235,23 @@ namespace Psi {
       f(6817, &value);
       BOOST_CHECK_EQUAL(value, 6817);
     }
+    
+    BOOST_AUTO_TEST_CASE(LoadStoreOrderTest) {
+      const char *src =
+        "%f = function (%x : i32, %y : (pointer i32)) > i32 {\n"
+        "  %a = load %y;\n"
+        "  store %x %y;\n"
+        "  return %a;\n"
+        "};\n";
+        
+      typedef Jit::Int32 (*func_type) (Jit::Int32,Jit::Int32*);
+      func_type f = reinterpret_cast<func_type>(jit_single("f", src));
+      const Jit::Int32 a = 32, b = 54;
+      Jit::Int32 dat[1] = {b};
+      Jit::Int32 r = f(a, dat);
+      BOOST_CHECK_EQUAL(dat[0], a);
+      BOOST_CHECK_EQUAL(r, b);
+    }
 
     namespace {
       Jit::Int32 alloca_test_cb(Jit::Int32 *ptr) {

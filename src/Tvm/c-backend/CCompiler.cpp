@@ -641,7 +641,7 @@ boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc) 
   if (!cc_path)
     cc_path = PSI_TVM_CC;
   
-  if (PSI_TVM_CC_TCCLIB && std::strcmp(cc_path, "tcclib"))
+  if (PSI_TVM_CC_TCCLIB && (std::strcmp(cc_path, "tcclib") == 0))
     PSI_NOT_IMPLEMENTED();
   
   // Try to identify the compiler by its executable name

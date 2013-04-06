@@ -1,3 +1,4 @@
+
 #include "Builder.hpp"
 #include "CModule.hpp"
 
@@ -101,6 +102,7 @@ CExpression* CExpressionBuilder::parameter(const SourceLocation* location, CType
   sub->lvalue = false;
   sub->type = type;
   sub->op = c_op_parameter;
+  sub->eval = c_eval_never;
   append(location, sub, false);
   PSI_ASSERT(m_function);
   m_function->parameters.append(sub);
@@ -160,6 +162,7 @@ CExpression* CExpressionBuilder::aggregate_value(const SourceLocation* location,
   agg->op = op;
   agg->n_members = n_members;
   agg->eval = c_eval_read;
+  agg->lvalue = false;
   std::copy(members, members+n_members, agg->members);
   append(location, agg);
   return agg;
@@ -172,6 +175,7 @@ CExpression* CExpressionBuilder::union_value(const SourceLocation* location, CTy
   agg->op = c_op_union_value;
   agg->index = index;
   agg->value = value;
+  agg->lvalue = false;
   agg->eval = c_eval_read;
   append(location, agg);
   return agg;
@@ -183,6 +187,7 @@ CExpression* CExpressionBuilder::cast(const SourceLocation* location, CType *ty,
   cast->op = c_op_cast;
   cast->arg = arg;
   cast->eval = c_eval_pure;
+  cast->lvalue = false;
   append(location, cast);
   return cast;
 }
@@ -192,6 +197,7 @@ CExpression* CExpressionBuilder::nullary(const SourceLocation* location, COperat
   expr->type = NULL;
   expr->eval = c_eval_write;
   expr->op = op;
+  expr->lvalue = false;
   append(location, expr, insert);
   return expr;
 }

@@ -7,6 +7,7 @@
 
 #include <sstream>
 #include <boost/format.hpp>
+#include <boost/ptr_container/ptr_map.hpp>
 
 namespace Psi {
 namespace Tvm {
@@ -187,14 +188,15 @@ namespace {
 }
 
 void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFunction* c_function) {
-  ValueBuilder local_value_builder(m_global_value_builder, c_function);
+  boost::ptr_map<ValuePtr<Block>, ValueBuilder> block_builders;
+  ValueBuilder& entry_value_builder = *block_builders.insert(ValuePtr<Block>(), std::auto_ptr<ValueBuilder>(new ValueBuilder(m_global_value_builder, c_function))).first->second;
   
   // Insert function parameters into builder
   for (Function::ParameterList::iterator ii = function->parameters().begin(), ie = function->parameters().end(); ii != ie; ++ii) {
     const ValuePtr<FunctionParameter>& parameter = *ii;
     CType *type = m_type_builder.build(parameter->type());
-    CExpression *c_parameter = local_value_builder.c_builder().parameter(&parameter->location(), type);
-    local_value_builder.put(parameter, c_parameter);
+    CExpression *c_parameter = entry_value_builder.c_builder().parameter(&parameter->location(), type);
+    entry_value_builder.put(parameter, c_parameter);
   }
 
   // PHI nodes need to have space prepared in dominator node
@@ -203,41 +205,41 @@ void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFu
   for (Function::BlockList::iterator ii = function->blocks().begin(), ie = function->blocks().end(); ii != ie; ++ii) {
     const ValuePtr<Block>& block = *ii;
     
-    CExpression *label = local_value_builder.c_builder().nullary(&block->location(), c_op_label, false);
-    local_value_builder.put(block, label);
+    CExpression *label = entry_value_builder.c_builder().nullary(&block->location(), c_op_label, false);
+    entry_value_builder.put(block, label);
 
     for (Block::PhiList::iterator ji = block->phi_nodes().begin(), je = block->phi_nodes().end(); ji != je; ++ji)
       phi_by_dominator.insert(std::make_pair(block->dominator(), *ji));
   }
   
-
   unsigned depth = 0;
   for (Function::BlockList::iterator ii = function->blocks().begin(), ie = function->blocks().end(); ii != ie; ++ii) {
     const ValuePtr<Block>& block = *ii;
+    ValueBuilder& block_builder = *block_builders.insert(block, std::auto_ptr<ValueBuilder>(new ValueBuilder(block_builders.at(block->dominator()), c_function))).first->second;
     
     unsigned new_depth = block_depth(block.get());
     PSI_ASSERT(new_depth <= depth+1);
     for (unsigned ii = depth+1; ii != new_depth; --ii)
-      local_value_builder.c_builder().nullary(&function->location(), c_op_block_end);
+      block_builder.c_builder().nullary(&function->location(), c_op_block_end);
     
-    CExpression *label = local_value_builder.build(block);
+    CExpression *label = block_builder.build(block);
     c_function->instructions.append(label);
-    local_value_builder.c_builder().nullary(&block->location(), c_op_block_begin);
+    block_builder.c_builder().nullary(&block->location(), c_op_block_begin);
     
     depth = new_depth;
     
     for (Block::InstructionList::iterator ji = block->instructions().begin(), je = block->instructions().end(); ji != je; ++ji)
-      local_value_builder.build(*ji);
+      block_builder.build(*ji);
     
     for (PhiMapType::const_iterator ji = phi_by_dominator.lower_bound(block), je = phi_by_dominator.upper_bound(block); ji != je; ++ji) {
       CType *type = m_type_builder.build(ji->second->type());
-      CExpression *phi_value = local_value_builder.c_builder().declare(&ji->second->location(), type, c_op_declare, NULL, 0);
-      local_value_builder.put(ji->second, phi_value);
+      CExpression *phi_value = block_builder.c_builder().declare(&ji->second->location(), type, c_op_declare, NULL, 0);
+      block_builder.put(ji->second, phi_value);
     }
   }
   
   for (; depth > 0; --depth)
-    local_value_builder.c_builder().nullary(&function->location(), c_op_block_end);
+    entry_value_builder.c_builder().nullary(&function->location(), c_op_block_end);
 }
 
 CJit::CJit(const boost::shared_ptr<JitFactory>& factory, const boost::shared_ptr<CCompiler>& compiler)

@@ -1,4 +1,7 @@
 include_directories(${Boost_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${JSONC_INCLUDE})
+if(TCC_INCLUDE)
+  include_directories(${TCC_INCLUDE})
+endif()
 
 configure_file(Config.h.in Config.h)
 
@@ -99,13 +102,22 @@ add_library(psi-tvm-llvm MODULE
 set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS ${LLVM_CXX_FLAGS})
 target_link_libraries(psi-tvm-llvm psi-tvm ${LLVM_LIBS} debug psi-assert ${LLVM_LDFLAGS})
 
+if(PSI_TVM_CC_TCCLIB)
+  set(PSI_TVM_CC_SOURCES Tvm/c-backend/CCompilerTCCLib.cpp)
+endif()
+
 add_library(psi-tvm-c MODULE
   Tvm/c-backend/Builder.cpp
   Tvm/c-backend/CCompiler.cpp
   Tvm/c-backend/CModule.cpp Tvm/c-backend/CModule.hpp Tvm/c-backend/COperators.def
   Tvm/c-backend/ValueBuilder.cpp
   Tvm/c-backend/TypeBuilder.cpp
+  ${PSI_TVM_CC_SOURCES}
 )
+
+if(PSI_TVM_CC_TCCLIB)
+  target_link_libraries(psi-tvm-c ${TCC_LIB})
+endif()
 
 add_library(psi-runtime SHARED
 Runtime/StackAlloc.c
