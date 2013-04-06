@@ -27,12 +27,12 @@ public:
   }
   
   virtual void lower_function_call(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<Call>& term) {
-    ValuePtr<FunctionType> ftype = lower_function_type(runner, term->function()->function_type());
+    ValuePtr<FunctionType> ftype = lower_function_type(runner, term->target_function_type());
 
     std::vector<ValuePtr<> > parameters;
     std::size_t n_phantom = term->target_function_type()->n_phantom();
     for (std::size_t ii = 0, ie = ftype->parameter_types().size(); ii != ie; ++ii)
-      parameters.push_back(runner.rewrite_value_register(ftype->parameter_types()[ii + n_phantom]).value);
+      parameters.push_back(runner.rewrite_value_register(term->parameters[ii + n_phantom]).value);
     
     ValuePtr<> lowered_target = runner.rewrite_value_register(term->target).value;
     ValuePtr<> cast_target = FunctionalBuilder::pointer_cast(lowered_target, ftype, term->location());
@@ -76,6 +76,8 @@ public:
       return TypeSizeAlignment(1,1);
     } else if (isa<PointerType>(type)) {
       return TypeSizeAlignment(m_c_compiler->primitive_types.pointer_size, m_c_compiler->primitive_types.pointer_alignment);
+    } else if (isa<EmptyType>(type)) {
+      return TypeSizeAlignment(0,1);
     } else if (isa<BlockType>(type)) {
       return TypeSizeAlignment(0,0);
     } else {
@@ -112,7 +114,7 @@ std::string CModuleBuilder::run() {
     const ValuePtr<Global>& term = i->second;
     ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
     
-    CType *type = m_type_builder.build(term->value_type());
+    CType *type = m_type_builder.build(rewritten_term->value_type());
     const char *name = m_c_module.pool().strdup(term->name().c_str());
     
     switch (rewritten_term->term_type()) {

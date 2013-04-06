@@ -104,6 +104,7 @@ CExpression* CExpressionBuilder::parameter(const SourceLocation* location, CType
   append(location, sub, false);
   PSI_ASSERT(m_function);
   m_function->parameters.append(sub);
+  sub->requires_name = true; // Parameters must have names in C
   return sub;
 }
 
@@ -138,11 +139,14 @@ CExpression* CExpressionBuilder::literal(const SourceLocation* location, CType *
 
 CExpression* CExpressionBuilder::call(const SourceLocation* location, CExpression *target, unsigned n_args, CExpression *const* args, bool conditional) {
   CExpressionCall *call = m_module->pool().alloc_varstruct<CExpressionCall, CExpression*>(n_args);
-  call->type = checked_cast<CTypeFunction*>(target->type)->result_type;
+  if (target->lvalue)
+    call->type = checked_cast<CTypeFunction*>(target->type)->result_type;
+  else
+    call->type = checked_cast<CTypeFunction*>(checked_cast<CTypePointer*>(target->type)->target)->result_type;
   call->op = c_op_call;
   call->target = target;
   call->n_args = n_args;
-  call->eval = (conditional ? c_eval_write : c_eval_never);
+  call->eval = (conditional ? c_eval_never : c_eval_write);
   call->lvalue = false;
   std::copy(args, args+n_args, call->args);
   append(location, call);
@@ -369,36 +373,33 @@ void CModuleEmitter::emit_location(const SourceLocation& location) {
  * \brief Print a string with escapes.
  */
 void CModuleEmitter::emit_string(const char *s) {
-  const char *escapes = "\aa\bb\ff\nn\rr\tt\vv\'\'\"\"\\\\";
-  
-  const std::locale& c_locale = std::locale::classic();
+  const char *escape_ascii = "\a\b\t\n\v\f\r\"\'\\";
+  const char *escape_code = "abtnvfr\"\'\\";
   
   for (const char *p = s; *p; ++p) {
     unsigned char c = *p;
+    // This assumes that c is ASCII encoded
     
-    if ((c < 128) && std::isgraph(c, c_locale)) {
-      output().put(c);
-    } else if (c == ' ') {
-      output().put(' ');
+    if (const char *escapes_p = std::strchr(escape_ascii, c)) {
+      // Handle standard escape characters
+      output().put('\\').put(escape_code[escapes_p-escape_ascii]);
     } else if (c == '?') {
       // Avoid trigraph interpretation
       if ((p != s) && (p[-1] == '?'))
         output().put('\\');
       output().put('?');
+    } else if ((c >= 32) && (c <= 126)) {
+      // Printable characters
+      output().put(c);
     } else {
-      // Check for a standard escape character
-      if (const char *escapes_p = std::strchr(escapes, c)) {
-        output().put('\\').put(escapes_p[1]);
-      } else {
-        // Print octal code
-        char data[5];
-        // If the next character is a digit, force a 3 digit octal escape to
-        // avoid the next character being interpreted as part of the escape sequence
-        unsigned width = std::isdigit(p[1], c_locale) ? 3 : 1;
-        unsigned count = std::sprintf(data, "\\%*o", width, c);
-        PSI_ASSERT(count < 5);
-        output().write(data, count);
-      }      
+      // Print octal code
+      char data[5];
+      // If the next character is a digit, force a 3 digit octal escape to
+      // avoid the next character being interpreted as part of the escape sequence
+      unsigned width = ((p[1] >= '0') && (p[1] >= '9')) ? 3 : 1;
+      unsigned count = std::sprintf(data, "\\%*o", width, c);
+      PSI_ASSERT(count < 5);
+      output().write(data, count);
     }
   }
 }
@@ -478,7 +479,7 @@ void CModuleEmitter::emit_definition(CGlobal& global) {
     if (gvar.value) {
       emit_declaration(gvar, true);
       output() << " = ";
-      emit_expression(gvar.value);
+      emit_expression(gvar.value, EmitFlags().initializer(true));
       output() << ";\n";
     }
   } else {
@@ -496,6 +497,7 @@ void CModuleEmitter::emit_definition(CGlobal& global) {
         if (arg_index) output() << ", ";
         CTypeFunctionArgument& arg = ftype->args[arg_index];
         emit_type_prolog(arg.type, true);
+        PSI_ASSERT(ii->name.prefix); // Parameters cannot be anonymous in C
         output() << ii->name;
         emit_type_epilog(arg.type);
       }
@@ -514,15 +516,15 @@ void CModuleEmitter::emit_definition(CGlobal& global) {
  * 
  * This will not print the name of the expression.
  */
-void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned precedence, bool is_right) {
+void CModuleEmitter::emit_expression_def(CExpression *expression, EmitFlags flags) {
   COperatorType op_idx = expression->op;
   const COperator& op = c_operators[op_idx];
   
   bool has_brackets = false;
-  if (op.precedence > precedence) {
+  if (op.precedence > flags.precedence()) {
     has_brackets = true;
-  } else if (op.precedence == precedence) {
-    has_brackets = (is_right != op.right_associative);
+  } else if (op.precedence == flags.precedence()) {
+    has_brackets = (flags.right() != op.right_associative);
   }
   
   if (has_brackets) output().put('(');
@@ -530,7 +532,7 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
   switch (op.type) {
   case c_expr_call: {
     CExpressionCall *call = checked_cast<CExpressionCall*>(expression);
-    emit_expression(call->target, op.precedence, false);
+    emit_expression(call->target, EmitFlags().precedence(op.precedence).right(false));
     output() << '(';
     for (unsigned ii = 0, ie = call->n_args; ii != ie; ++ii) {
       if (ii) output() << ", ";
@@ -542,7 +544,7 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
   
   case c_expr_subscript: {
     CExpressionBinary *binary = checked_cast<CExpressionBinary*>(expression);
-    emit_expression(binary->left, op.precedence, false);
+    emit_expression(binary->left, EmitFlags().precedence(op.precedence).right(false));
     output() << '[';
     emit_expression(binary->right);
     output() << ']';
@@ -556,10 +558,16 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
   case c_expr_array_value:
   case c_expr_struct_value: {
     CExpressionAggregateValue *agg = checked_cast<CExpressionAggregateValue*>(expression);
+    if (!flags.initializer()) {
+      output() << '(';
+      emit_type_prolog(agg->type, false);
+      emit_type_epilog(agg->type);
+      output() << ')';
+    }
     output() << '{';
     for (unsigned ii = 0, ie = agg->n_members; ii != ie; ++ii) {
       if (ii) output() << ", ";
-      emit_expression(agg->members[ii]);
+      emit_expression(agg->members[ii], EmitFlags().initializer(true));
     }
     output() << '}';
     break;
@@ -567,18 +575,24 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
   
   case c_expr_union_value: {
     CExpressionUnionValue *agg = checked_cast<CExpressionUnionValue*>(expression);
+    if (!flags.initializer()) {
+      output() << '(';
+      emit_type_prolog(agg->type, false);
+      emit_type_epilog(agg->type);
+      output() << ')';
+    }
     output() << '{';
     if (c_compiler().has_designated_initializer) {
       CTypeAggregate *agg_type = checked_cast<CTypeAggregate*>(agg->type);
       output() << '.' << agg_type->members[agg->index].name << " = ";
     }
-    emit_expression(agg->value);
+    emit_expression(agg->value, EmitFlags().initializer(true));
     output() << '}';
     break;
   }
     
   case c_expr_load:
-    emit_expression(checked_cast<CExpressionUnary*>(expression)->arg, precedence, is_right);
+    emit_expression(checked_cast<CExpressionUnary*>(expression)->arg, flags);
     break;
     
   case c_expr_cast:
@@ -586,16 +600,16 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
     emit_type_prolog(expression->type, false);
     emit_type_epilog(expression->type);
     output().put(')');
-    emit_expression(checked_cast<CExpressionUnary*>(expression)->arg, op.precedence, true);
+    emit_expression(checked_cast<CExpressionUnary*>(expression)->arg, EmitFlags().precedence(op.precedence).right(true));
     break;
     
   case c_expr_ternary: {
     CExpressionTernary *ter = checked_cast<CExpressionTernary*>(expression);
-    emit_expression(ter->first, op.precedence, false);
+    emit_expression(ter->first, EmitFlags().precedence(op.precedence).right(false));
     output() << " ? ";
     emit_expression(ter->second);
     output() << " : ";
-    emit_expression(ter->third, op.precedence, true);
+    emit_expression(ter->third, EmitFlags().precedence(op.precedence).right(true));
     break;
   }
 
@@ -605,21 +619,21 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
     // Avoid consecutive unary operators printing two characters which become one token
     if (c_operators[unary->arg->op].type == c_expr_unary)
       output() << ' ';
-    emit_expression(unary->arg, op.precedence, true);
+    emit_expression(unary->arg, EmitFlags().precedence(op.precedence).right(true));
     break;
   }
   
   case c_expr_binary: {
     CExpressionBinary *binary = checked_cast<CExpressionBinary*>(expression);
-    emit_expression(binary->left, op.precedence, false);
+    emit_expression(binary->left, EmitFlags().precedence(op.precedence).right(false));
     output() << ' ' << op.operator_str << ' ';
-    emit_expression(binary->right, op.precedence, true);
+    emit_expression(binary->right, EmitFlags().precedence(op.precedence).right(true));
     break;
   }
   
   case c_expr_member: {
     CExpressionMember *member = checked_cast<CExpressionMember*>(expression);
-    emit_expression(member->arg, op.precedence, false);
+    emit_expression(member->arg, EmitFlags().precedence(op.precedence).right(false));
     output() << op.operator_str << member->aggregate_type->members[member->index].name;
     break;
   }
@@ -635,11 +649,11 @@ void CModuleEmitter::emit_expression_def(CExpression *expression, unsigned prece
  * 
  * Uses the name of the expression if it has one.
  */
-void CModuleEmitter::emit_expression(CExpression *expression, unsigned precedence, bool is_right) {
+void CModuleEmitter::emit_expression(CExpression *expression, EmitFlags flags) {
   if (expression->name.prefix) {
     output() << expression->name;
   } else {
-    emit_expression_def(expression, precedence, is_right);
+    emit_expression_def(expression, flags);
   }
 }
 
@@ -657,7 +671,7 @@ void CModuleEmitter::emit_statement(CExpression *expression) {
     emit_type_epilog(binary->type);
     if (binary->arg) {
       output() << " = ";
-      emit_expression(binary->arg);
+      emit_expression(binary->arg, EmitFlags().initializer(true));
     }
     output() << ";\n";
     break;
@@ -667,9 +681,10 @@ void CModuleEmitter::emit_statement(CExpression *expression) {
     CExpressionBinaryIndex *binary = checked_cast<CExpressionBinaryIndex*>(expression);
     if (binary->index)
       c_compiler().emit_alignment(*this, binary->index);
-    emit_type_prolog(binary->type, true);
+    CType *inner_type = checked_cast<CTypePointer*>(binary->type)->target;
+    emit_type_prolog(inner_type, true);
     output() << binary->name;
-    emit_type_epilog(binary->type);
+    emit_type_epilog(inner_type);
     output() << '[';
     emit_expression(binary->arg);
     output() << ']' << ";\n";
@@ -681,11 +696,17 @@ void CModuleEmitter::emit_statement(CExpression *expression) {
       output() << expression->name << ":\n";
     break;
   
-  case c_op_return:
-    output() << "return ";
-    emit_expression(checked_cast<CExpressionUnary*>(expression)->arg);
-    output() << ";\n";
+  case c_op_return: {
+    CExpressionUnary *unary = checked_cast<CExpressionUnary*>(expression);
+    if (unary->arg) {
+      output() << "return ";
+      emit_expression(unary->arg);
+      output() << ";\n";
+    } else {
+      output() << "return;\n";
+    }
     break;
+  }
     
   case c_op_goto:
     output() << "goto ";
@@ -912,14 +933,15 @@ void CModule::name_types() {
 void CModule::name_locals(CFunction *function) {
   CNameMap local_names(m_names);
   for (SinglyLinkedList<CExpression>::iterator ii = function->parameters.begin(), ie = function->parameters.end(); ii != ie; ++ii) {
-    PSI_ASSERT(ii->requires_name && !ii->name.prefix);
+    PSI_ASSERT(!ii->name.prefix && ii->requires_name);
     std::string base_name = location_to_c_identifier(*ii->location, *function->location, false);
     ii->name = local_names.get(base_name.c_str());
   }
   
   for (SinglyLinkedList<CExpression>::iterator ii = function->instructions.begin(), ie = function->instructions.end(); ii != ie; ++ii) {
+    PSI_ASSERT(!ii->name.prefix);
     if (ii->requires_name) {
-      PSI_ASSERT(!ii->name.prefix);
+      PSI_ASSERT(ii->eval != c_eval_never);
       std::string base_name = location_to_c_identifier(*ii->location, *function->location, false);
       ii->name = local_names.get(base_name.c_str());
     }

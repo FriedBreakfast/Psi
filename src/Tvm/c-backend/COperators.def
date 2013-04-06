@@ -36,9 +36,11 @@ PSI_TVM_C_OP(call, 2, false)
 PSI_TVM_C_OP(subscript, 2, true)
 PSI_TVM_C_OP(literal, 0, false)
 
-PSI_TVM_C_OP(struct_value, 0, false)
-PSI_TVM_C_OP(array_value, 0, false)
-PSI_TVM_C_OP(union_value, 0, false)
+// These have the same precedence as the cast operator because
+// C99 aggregate literals are written using that operator
+PSI_TVM_C_OP(struct_value, 3, true)
+PSI_TVM_C_OP(array_value, 3, true)
+PSI_TVM_C_OP(union_value, 3, true)
 
 PSI_TVM_C_OP(if, 0, false)
 PSI_TVM_C_OP(else, 0, false)

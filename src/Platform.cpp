@@ -45,6 +45,13 @@ void TemporaryPath::delete_() {
  * \copydoc exec_communicate
  */
 void exec_communicate_check(const std::vector<std::string>& command, const std::string& input, std::string *output_out, std::string *output_err) {
+#if PSI_DEBUG
+  // In debug output capture error output whether the user requests it or not
+  std::string local_output_err;
+  if (!output_err)
+    output_err = &local_output_err;
+#endif
+  
   int status = exec_communicate(command, input, output_out, output_err);
   if (status != 0)
     throw PlatformError(boost::str(boost::format("Child process failed (exit status %d): %s") % status % command.front()));

@@ -339,14 +339,29 @@ class CModuleEmitter {
   void emit_definition(CGlobal& global);
   
 public:
+  class EmitFlags {
+    unsigned m_precedence;
+    bool m_right;
+    bool m_initializer;
+    
+  public:
+    EmitFlags() : m_precedence(17), m_right(true), m_initializer(false) {}
+    unsigned precedence() const {return m_precedence;}
+    EmitFlags precedence(unsigned precedence) const {EmitFlags ef(*this); ef.m_precedence = precedence; return ef;}
+    bool right() const {return m_right;}
+    EmitFlags right(bool flag) const {EmitFlags ef(*this); ef.m_right = flag; return ef;}
+    bool initializer() const {return m_initializer;}
+    EmitFlags initializer(bool flag) const {EmitFlags ef(*this); ef.m_initializer = flag; return ef;}
+  };
+  
   CModuleEmitter(std::ostream *output, CModule *module);
   CCompiler& c_compiler() {return m_module->c_compiler();}
   void run();
   void emit_location(const SourceLocation& location);
   void emit_string(const char *s);
   void emit_type(CType *type);
-  void emit_expression(CExpression *expression, unsigned precedence=17, bool is_right=true);
-  void emit_expression_def(CExpression *expression, unsigned precedence=17, bool is_right=true);
+  void emit_expression(CExpression *expression, EmitFlags flags=EmitFlags());
+  void emit_expression_def(CExpression *expression, EmitFlags flags=EmitFlags());
   void emit_statement(CExpression *expression);
   void emit_type_prolog(CType *type, bool with_space, bool dont_use_name=false);
   void emit_type_epilog(CType *type, bool dont_use_name=false);

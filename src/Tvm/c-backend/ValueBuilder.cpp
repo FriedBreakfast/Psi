@@ -28,8 +28,7 @@ struct ValueBuilderCallbacks {
   static const unsigned small_array_size = 8;
     
   static CExpression* empty_value_callback(ValueBuilder& builder, const ValuePtr<EmptyValue>& term) {
-    CType *ty = builder.build_type(term->type());
-    return builder.c_builder().literal(&term->location(), ty, "{}");
+    return NULL;
   }
   
   static CExpression* boolean_value_callback(ValueBuilder& builder, const ValuePtr<BooleanValue>& term) {
@@ -67,8 +66,7 @@ struct ValueBuilderCallbacks {
     for (unsigned i = 0; i != n; ++i)
       members[i] = builder.build(term->value(i));
     CExpression *array_value = builder.c_builder().aggregate_value(&term->location(), c_op_array_value, inner_ty, n, members.get());
-    CExpression *inner = builder.c_builder().aggregate_value(&term->location(), c_op_struct_value, ty, 1, &array_value);
-    return builder.c_builder().cast(&term->location(), ty, inner);
+    return builder.c_builder().aggregate_value(&term->location(), c_op_struct_value, ty, 1, &array_value);
   }
   
   static CExpression* struct_value_callback(ValueBuilder& builder, const ValuePtr<StructValue>& term) {
@@ -77,8 +75,7 @@ struct ValueBuilderCallbacks {
     SmallArray<CExpression*, small_array_size> members(n);
     for (unsigned i = 0; i != n; ++i)
       members[i] = builder.build(term->member_value(i));
-    CExpression *inner = builder.c_builder().aggregate_value(&term->location(), c_op_struct_value, ty, n, members.get());
-    return builder.c_builder().cast(&term->location(), ty, inner);
+    return builder.c_builder().aggregate_value(&term->location(), c_op_struct_value, ty, n, members.get());
   }
   
   static CExpression* union_value_callback(ValueBuilder& builder, const ValuePtr<UnionValue>& term) {
@@ -91,8 +88,7 @@ struct ValueBuilderCallbacks {
         " and hence cannot initialize any union member except the first");
     }
     CExpression *member = builder.build(term->value());
-    CExpression *inner = builder.c_builder().union_value(&term->location(), ty, index, member);
-    return builder.c_builder().cast(&term->location(), ty, inner);
+    return builder.c_builder().union_value(&term->location(), ty, index, member);
   }
   
   static CExpression* undefined_zero_value_callback(ValueBuilder& builder, const ValuePtr<>& term) {
@@ -167,46 +163,51 @@ struct ValueBuilderCallbacks {
     return NULL;
   }
   
+  typedef std::vector<std::pair<CExpression*, CExpression*> > PhiListType;
+
+  /**
+   * Prepare values for assignment to PHI nodes
+   * 
+   * In the case of conditional branching this is done before the if/else statement to ensure
+   * values remain in scope in case they are re-used in a child block.
+   */
+  static PhiListType prepare_jump(ValueBuilder& builder, const ValuePtr<Block>& current, const ValuePtr<Block>& target) {
+    PhiListType result;
+    for (Block::PhiList::iterator ii = target->phi_nodes().begin(), ie = target->phi_nodes().end(); ii != ie; ++ii) {
+      const ValuePtr<Phi>& phi = *ii;
+      result.push_back(std::make_pair(builder.build(phi), builder.build(phi->incoming_value_from(current))));
+    }
+    return result;
+  }
+  
+  /**
+   * Assign PHI values and do goto.
+   */
+  static void execute_jump(ValueBuilder& builder, const ValuePtr<Block>& target, const PhiListType& phi_values, const SourceLocation& location) {
+    for (PhiListType::const_iterator ii = phi_values.begin(), ie = phi_values.end(); ii != ie; ++ii)
+      builder.c_builder().binary(&location, NULL, c_eval_write, c_op_assign, ii->first, ii->second);
+    builder.c_builder().unary(&location, NULL, c_eval_write, c_op_goto, builder.build(target));
+  }
+  
   static CExpression* conditional_branch_callback(ValueBuilder& builder, const ValuePtr<ConditionalBranch>& term) {
     CExpression *cond = builder.build(term->condition);
     
     // Need to build PHI values before if/else block (so that values put into the value map are in scope in child blocks)
     const ValuePtr<Block>& block = term->block();
-    
-    typedef std::vector<std::pair<CExpression*, CExpression*> > PhiListType;
-    PhiListType true_values, false_values;
+    PhiListType true_values = prepare_jump(builder, block, term->true_target);
+    PhiListType false_values = prepare_jump(builder, block, term->false_target);
 
-    for (Block::PhiList::iterator ii = term->true_target->phi_nodes().begin(), ie = term->true_target->phi_nodes().end(); ii != ie; ++ii) {
-      const ValuePtr<Phi>& phi = *ii;
-      true_values.push_back(std::make_pair(builder.build(phi), builder.build(phi->incoming_value_from(block))));
-    }
-
-    for (Block::PhiList::iterator ii = term->false_target->phi_nodes().begin(), ie = term->false_target->phi_nodes().end(); ii != ie; ++ii) {
-      const ValuePtr<Phi>& phi = *ii;
-      false_values.push_back(std::make_pair(builder.build(phi), builder.build(phi->incoming_value_from(block))));
-    }
-
-    // Use c_eval_never to prevent emitting the statement since we want it inside the if()
     builder.c_builder().unary(&term->location(), NULL, c_eval_write, c_op_if, cond);
-    
-    // True handler: set up phi nodes and then "goto"
-    for (PhiListType::const_iterator ii = true_values.begin(), ie = true_values.end(); ii != ie; ++ii)
-      builder.c_builder().binary(&term->location(), NULL, c_eval_write, c_op_assign, ii->first, ii->second);
-    builder.c_builder().unary(&term->location(), NULL, c_eval_write, c_op_goto, builder.build(term->true_target));
-    
+    execute_jump(builder, term->true_target, true_values, term->location());
     builder.c_builder().nullary(&term->location(), c_op_else);
-    
-    // False handler: set up phi nodes and then "goto"
-    for (PhiListType::const_iterator ii = true_values.begin(), ie = true_values.end(); ii != ie; ++ii)
-      builder.c_builder().binary(&term->location(), NULL, c_eval_write, c_op_assign, ii->first, ii->second);
-    builder.c_builder().unary(&term->location(), NULL, c_eval_write, c_op_goto, builder.build(term->false_target));
-    
+    execute_jump(builder, term->false_target, false_values, term->location());
     builder.c_builder().nullary(&term->location(), c_op_endif);
     return NULL;
   }
 
   static CExpression* unconditional_branch_callback(ValueBuilder& builder, const ValuePtr<UnconditionalBranch>& term) {
-    builder.c_builder().unary(&term->location(), NULL, c_eval_write, c_op_goto, builder.build(term->target));
+    PhiListType phi_values = prepare_jump(builder, term->block(), term->target);
+    execute_jump(builder, term->target, phi_values, term->location());
     return NULL;
   }
   
@@ -438,7 +439,8 @@ CExpression* ValueBuilder::build(const ValuePtr<>& value, bool PSI_UNUSED(force_
   ExpressionMapType::const_iterator it = m_expressions.find(value);
   if (it != m_expressions.end()) {
     PSI_ASSERT(it->second);
-    it->second->requires_name = true;
+    if (it->second->eval != c_eval_never)
+      it->second->requires_name = true;
     return it->second;
   }
   
