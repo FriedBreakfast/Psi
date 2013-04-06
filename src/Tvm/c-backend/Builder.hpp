@@ -100,6 +100,8 @@ class ValueBuilder {
   CExpressionBuilder m_c_builder;
   typedef boost::unordered_map<ValuePtr<>, CExpression*> ExpressionMapType;
   ExpressionMapType m_expressions;
+  typedef boost::unordered_map<int, CExpression*> IntegerLiteralMapType;
+  IntegerLiteralMapType m_integer_literals;
   
 public:
   ValueBuilder(TypeBuilder *type_builder);

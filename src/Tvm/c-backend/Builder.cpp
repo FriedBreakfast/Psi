@@ -191,7 +191,7 @@ void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFu
   for (Function::ParameterList::iterator ii = function->parameters().begin(), ie = function->parameters().end(); ii != ie; ++ii) {
     const ValuePtr<FunctionParameter>& parameter = *ii;
     CType *type = m_type_builder.build(parameter->type());
-    CExpression *c_parameter = local_value_builder.c_builder().declare(&parameter->location(), type, c_op_declare, NULL, 0, true);
+    CExpression *c_parameter = local_value_builder.c_builder().parameter(&parameter->location(), type);
     local_value_builder.put(parameter, c_parameter);
   }
 

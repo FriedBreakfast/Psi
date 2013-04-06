@@ -6,6 +6,7 @@
 #include "Builder.hpp"
 #include "CModule.hpp"
 
+#include <cstring>
 #include <sstream>
 #include <fstream>
 
@@ -37,10 +38,15 @@ struct ValueBuilderCallbacks {
   }
   
   static CExpression* integer_value_callback(ValueBuilder& builder, const ValuePtr<IntegerValue>& term) {
+    const boost::optional<std::string>& suffix =
+      (term->is_signed() ? builder.c_compiler().primitive_types.int_types : builder.c_compiler().primitive_types.uint_types)[term->width()].suffix;
+    if (!suffix)
+      builder.error_context().error_throw(term->location(), "Integer literals of this type not supported by C compiler");
     const std::size_t buf_size = 64;
     char buf[buf_size];
     std::size_t n = term->value().print(CompileErrorPair(builder.error_context(), term->location()),
                                         buf, buf_size, term->is_signed(), 10);
+    std::strcat(buf, suffix->c_str());
     CType *ty = builder.build_type(term->type());
     CExpression *expr = builder.c_builder().literal(&term->location(), ty, builder.c_builder().strdup(buf));
     if (term->is_signed() && term->value().sign_bit())
@@ -96,7 +102,7 @@ struct ValueBuilderCallbacks {
   
   static CExpression* pointer_cast_callback(ValueBuilder& builder, const ValuePtr<PointerCast>& term) {
     CType *ty = builder.build_type(term->type());
-    CExpression *val = builder.build(term->pointer());
+    CExpression *val = builder.build_rvalue(term->pointer());
     return builder.c_builder().cast(&term->location(), ty, val);
   }
   
@@ -108,7 +114,8 @@ struct ValueBuilderCallbacks {
   
   static CExpression* element_ptr_callback(ValueBuilder& builder, const ValuePtr<ElementPtr>& term) {
     CExpression *inner = builder.build(term->aggregate_ptr());
-    if (isa<StructType>(term) || isa<UnionType>(term)) {
+    ValuePtr<> aggregate_type = value_cast<PointerType>(term->aggregate_ptr()->type())->target_type();
+    if (isa<StructType>(aggregate_type) || isa<UnionType>(aggregate_type)) {
       unsigned idx = size_to_unsigned(term->index());
       return builder.c_builder().member(&term->location(), inner->lvalue ? c_op_member : c_op_ptr_member, inner, idx);
     } else {
@@ -483,7 +490,16 @@ CType* ValueBuilder::build_type(const ValuePtr<>& value) {
  * \brief Get an integer literal.
  */
 CExpression* ValueBuilder::integer_literal(int value) {
-  PSI_NOT_IMPLEMENTED();
+  IntegerLiteralMapType::iterator it = m_integer_literals.find(value);
+  if (it != m_integer_literals.end())
+    return it->second;
+  std::ostringstream ss;
+  ss << value;
+  std::string ss_str = ss.str();
+  char *ss_p = module().pool().strdup(ss_str.c_str());
+  CExpression *result = c_builder().literal(&module().location(), m_type_builder->integer_type(IntegerType::i32, true), ss_p);
+  m_integer_literals.insert(std::make_pair(value, result));
+  return result;
 }
 
 void ValueBuilder::put(const ValuePtr<>& key, CExpression *value) {

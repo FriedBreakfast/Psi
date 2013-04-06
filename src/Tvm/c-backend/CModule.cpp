@@ -96,7 +96,18 @@ CExpression* CExpressionBuilder::member(const SourceLocation* location, COperato
   return sub;
 }
 
-CExpression* CExpressionBuilder::declare(const SourceLocation* location, CType *type, COperatorType op, CExpression *arg, unsigned index, bool parameter) {
+CExpression* CExpressionBuilder::parameter(const SourceLocation* location, CType *type) {
+  CExpression *sub = m_module->pool().alloc<CExpression>();
+  sub->lvalue = false;
+  sub->type = type;
+  sub->op = c_op_parameter;
+  append(location, sub, false);
+  PSI_ASSERT(m_function);
+  m_function->parameters.append(sub);
+  return sub;
+}
+
+CExpression* CExpressionBuilder::declare(const SourceLocation* location, CType *type, COperatorType op, CExpression *arg, unsigned index) {
   CExpressionBinaryIndex *sub = m_module->pool().alloc<CExpressionBinaryIndex>();
   if (op == c_op_vardeclare) {
     sub->type = pointer_type(type);
@@ -110,9 +121,7 @@ CExpression* CExpressionBuilder::declare(const SourceLocation* location, CType *
   sub->arg = arg;
   sub->index = index;
   sub->eval = c_eval_write;
-  append(location, sub, !parameter);
-  if (parameter && m_function)
-    m_function->parameters.append(sub);
+  append(location, sub);
   return sub;
 }
 
@@ -272,7 +281,7 @@ CModuleEmitter::CModuleEmitter(std::ostream *output, CModule *module)
  */
 void CModuleEmitter::emit_type_prolog(CType *type, bool with_space, bool dont_use_name) {
   if (type->name.prefix && !dont_use_name) {
-    output() << type->name << ' ';
+    output() << type->name;
     if (with_space)
       output() << ' ';
   } else {

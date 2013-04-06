@@ -29,6 +29,7 @@ PSI_TVM_C_OP_STR(ptr_member, member, 2, false, "->")
 
 PSI_TVM_C_OP(global_variable, 0, false)
 PSI_TVM_C_OP(function, 0, false)
+PSI_TVM_C_OP(parameter, 0, false)
 PSI_TVM_C_OP(declare, 0, false)
 PSI_TVM_C_OP(vardeclare, 0, false)
 PSI_TVM_C_OP(call, 2, false)

@@ -123,8 +123,6 @@ boost::optional<std::string> find_in_path(const std::string& name) {
     if (!path)
       return boost::none;
     
-    std::string found_name;
-    
     while (true) {
       const char *end = std::strchr(path, ':');
       if (!end)
@@ -139,12 +137,13 @@ boost::optional<std::string> find_in_path(const std::string& name) {
         found_name.append(name);
       }
       
-      if (access(found_name.c_str(), X_OK) == 0) {
+      if (access(found_name.c_str(), X_OK) == 0)
         break;
-      }
       
       if (*end == '\0')
         return boost::none;
+      
+      path = end + 1;
     }
   }
   

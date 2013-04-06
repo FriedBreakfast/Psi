@@ -261,7 +261,8 @@ public:
   CExpression* binary(const SourceLocation* location, CType *ty, CExpressionEvaluation eval, COperatorType op, CExpression *left, CExpression *right, bool lvalue=false);
   CExpression* ternary(const SourceLocation* location, CType *ty, CExpressionEvaluation eval, COperatorType op, CExpression *a, CExpression *b, CExpression *c);
   CExpression* member(const SourceLocation* location, COperatorType op, CExpression *arg, unsigned index);
-  CExpression* declare(const SourceLocation* location, CType *type, COperatorType op, CExpression *arg, unsigned index_or_alignment, bool parameter=false);
+  CExpression* parameter(const SourceLocation* location, CType *type);
+  CExpression* declare(const SourceLocation* location, CType *type, COperatorType op, CExpression *arg, unsigned index_or_alignment);
   CExpression* literal(const SourceLocation* location, CType *ty, const char *str);
   CExpression* call(const SourceLocation* location, CExpression *target, unsigned n_args, CExpression *const* args, bool conditional=false);
   CExpression* aggregate_value(const SourceLocation* location, COperatorType op, CType *ty, unsigned n_members, CExpression *const* members);

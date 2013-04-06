@@ -2,6 +2,7 @@
 #include "CModule.hpp"
 #include "../../Platform.hpp"
 
+#include <fstream>
 #include <boost/format.hpp>
 #include <boost/make_shared.hpp>
 
@@ -365,6 +366,26 @@ public:
     extra.push_back("-Wl,-soname," + Platform::filename(output_file));
     run_gcc_common(err_loc, path, output_file, source, extra);
   }
+
+  static void gcc_type_detection_code(std::ostream& src) {
+    const struct {CompilerCommonType::Mode mode; const char *name; const char *suffix;} gcc_types[] = {
+      {CompilerCommonType::mode_int, "signed char", "-"},
+      {CompilerCommonType::mode_uint, "unsigned char", "-"},
+      {CompilerCommonType::mode_int, "short", "-"},
+      {CompilerCommonType::mode_uint, "unsigned short", "-"},
+      {CompilerCommonType::mode_int, "int", "-"},
+      {CompilerCommonType::mode_uint, "unsigned int", "-"},
+      {CompilerCommonType::mode_int, "long", "L"},
+      {CompilerCommonType::mode_uint, "unsigned long", "UL"},
+      {CompilerCommonType::mode_int, "long long", "LL"},
+      {CompilerCommonType::mode_uint, "unsigned long long", "ULL"}
+    };
+    for (unsigned n = 0; n < 10; ++n) {
+      src << "  printf(\"" << gcc_types[n].mode << " " << gcc_types[n].suffix << " %zd %zd "
+          << gcc_types[n].name << "\\n\", sizeof(" << gcc_types[n].name
+          << "), __alignof__(" << gcc_types[n].name << "));\n";
+    }
+  }
 };
 
 class CCompilerGCC : public CCompilerGCCLike {
@@ -410,26 +431,9 @@ public:
         << "  int big_endian = (__BYTE_ORDER__==__ORDER_BIG_ENDIAN__), little_endian = (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__);\n"
         << "  printf(\"%d %d %d\\n\", __GNUC__, __GNUC_MINOR__, big_endian||little_endian);\n"
         << "  printf(\"%d %d %zd %zd\\n\", big_endian, CHAR_BIT, sizeof(void*), __alignof__(void*));\n";
-    
-    const struct {CompilerCommonType::Mode mode; const char *name; const char *suffix;} gcc_types[] = {
-      {CompilerCommonType::mode_int, "signed char", "-"},
-      {CompilerCommonType::mode_uint, "unsigned char", "-"},
-      {CompilerCommonType::mode_int, "short", "-"},
-      {CompilerCommonType::mode_uint, "unsigned short", "-"},
-      {CompilerCommonType::mode_int, "int", "-"},
-      {CompilerCommonType::mode_uint, "unsigned int", "-"},
-      {CompilerCommonType::mode_int, "long", "L"},
-      {CompilerCommonType::mode_uint, "unsigned long", "UL"},
-      {CompilerCommonType::mode_int, "long long", "LL"},
-      {CompilerCommonType::mode_uint, "unsigned long long", "ULL"}
-    };
-    for (unsigned n = 0; n < 10; ++n) {
-      src << "  printf(\"" << gcc_types[n].mode << " " << gcc_types[n].suffix << " %zd %zd "
-          << gcc_types[n].name << "\\n\", sizeof(" << gcc_types[n].name
-          << "), __alignof__(" << gcc_types[n].name << "));\n";
-    }
-    
-    src << "}\n";
+    gcc_type_detection_code(src);
+    src << "  return 0;"
+        << "}\n";
     
     Platform::TemporaryPath program_path;
     run_gcc_program(err_loc, path, program_path.path(), src.str());
@@ -456,18 +460,166 @@ public:
   }
 };
 
-class CCompilerTCC : public CCompilerGCCLike {
-public:
-  CCompilerTCC(const CompilerCommonInfo& common_info) : CCompilerGCCLike(common_info) {}
-};
-
 class CCompilerClang : public CCompilerGCCLike {
+  std::string m_path;
+  unsigned m_major_version, m_minor_version;
+  
 public:
-  CCompilerClang(const CompilerCommonInfo& common_info) : CCompilerGCCLike(common_info) {}
+  CCompilerClang(const CompilerCommonInfo& common_info, const std::string& path, unsigned major, unsigned minor)
+  : CCompilerGCCLike(common_info), m_path(path), m_major_version(major), m_minor_version(minor) {
+    has_variable_length_arrays = true;
+    has_designated_initializer = true;
+  }
 
   virtual bool emit_unreachable(CModuleEmitter& emitter) {
     emitter.output() << "__builtin_unreachable()";
     return true;
+  }
+  
+  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+    run_gcc_program(err_loc, m_path, output_file, source);
+  }
+  
+  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+    run_gcc_library_linux(err_loc, m_path, output_file, source);
+  }
+
+  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
+    std::ostringstream src;
+    src << "#include <stdio.h>\n"
+        << "#include <limits.h>\n"
+        << "#include <stdint.h>\n"
+        << "int main() {\n"
+        << "  union {uint8_t a[4]; uint32_t b;} endian_test = {1, 2, 3, 4};\n"
+        << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
+        << "  printf(\"%d %d %d\\n\", __clang_major__, __clang_minor__, big_endian||little_endian);\n"
+        << "  printf(\"%d %d %zd %zd\\n\", big_endian, CHAR_BIT, sizeof(void*), __alignof__(void*));\n";
+    gcc_type_detection_code(src);
+    src << "  return 0;"
+        << "}\n";
+    
+    Platform::TemporaryPath program_path;
+    run_gcc_program(err_loc, path, program_path.path(), src.str());
+    
+    std::string program_output;
+    try {
+      Platform::exec_communicate_check(program_path.path(), "", &program_output);
+    } catch (Platform::PlatformError& ex) {
+      err_loc.error_throw(ex.what());
+    }
+    
+    std::istringstream program_ss;
+    program_ss.imbue(std::locale::classic());
+    program_ss.str(program_output);
+    unsigned version_major, version_minor, known_endian;
+    program_ss >> version_major >> version_minor >> known_endian;
+    
+    if (!known_endian)
+      err_loc.error_throw("clang compiler uses unsupported byte order");
+    
+    CompilerCommonInfo common_info = CCompilerCommon::parse_common_info(err_loc, program_ss);
+    
+    return boost::make_shared<CCompilerClang>(common_info, path, version_major, version_minor);
+  }
+};
+
+class CCompilerTCC : public CCompilerGCCLike {
+  std::string m_path;
+  unsigned m_major_version, m_minor_version;
+  
+public:
+  CCompilerTCC(const CompilerCommonInfo& common_info, const std::string& path, unsigned major, unsigned minor)
+  : CCompilerGCCLike(common_info), m_path(path), m_major_version(major), m_minor_version(minor) {
+    has_variable_length_arrays = true;
+    has_designated_initializer = true;
+  }
+  
+  static void run_tcc_common(const CompileErrorPair& err_loc, const std::string& path,
+                             const std::string& output_file, const std::string& source,
+                             const std::vector<std::string>& extra) {
+    Platform::TemporaryPath source_path;
+    std::filebuf source_file;
+    source_file.open(source_path.path().c_str(), std::ios::out);
+    std::copy(source.begin(), source.end(), std::ostreambuf_iterator<char>(&source_file));
+    source_file.close();
+
+    std::vector<std::string> command;
+    command.push_back(path);
+    command.insert(command.end(), extra.begin(), extra.end());
+    command.push_back(source_path.path());
+    command.push_back("-g");
+    command.push_back("-o");
+    command.push_back(output_file);
+    try {
+      Platform::exec_communicate_check(command, source);
+    } catch (Platform::PlatformError& ex) {
+      err_loc.error_throw(ex.what());
+    }
+  }
+  
+  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+    run_tcc_common(err_loc, m_path, output_file, source, std::vector<std::string>());
+  }
+  
+  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+    std::vector<std::string> extra;
+    extra.push_back("-shared");
+    extra.push_back("-soname");
+    extra.push_back(Platform::filename(output_file));
+    run_tcc_common(err_loc, m_path, output_file, source, extra);
+  }
+
+  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
+    std::stringstream src;
+    src << "#include <stdio.h>\n"
+        << "#include <limits.h>\n"
+        << "#include <stdint.h>\n"
+        << "int main() {\n"
+        << "  union {uint8_t a[4]; uint32_t b;} endian_test = {1, 2, 3, 4};\n"
+        << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
+        << "  printf(\"%d %d\\n\", __TINYC__, big_endian||little_endian);\n"
+        << "  printf(\"%d %d %zd %zd\\n\", big_endian, CHAR_BIT, sizeof(void*), __alignof__(void*));\n";
+    gcc_type_detection_code(src);
+    src << "  return 0;"
+        << "}\n";
+    
+    Platform::TemporaryPath source_path;
+    std::filebuf source_file;
+    source_file.open(source_path.path().c_str(), std::ios::out);
+    std::copy(std::istreambuf_iterator<char>(src.rdbuf()),
+              std::istreambuf_iterator<char>(),
+              std::ostreambuf_iterator<char>(&source_file));
+    source_file.close();
+    
+    std::vector<std::string> tcc_args;
+    tcc_args.push_back(path);
+    tcc_args.push_back("-xc");
+    tcc_args.push_back("-run");
+    tcc_args.push_back(source_path.path());
+    
+    std::string program_output;
+    try {
+      Platform::exec_communicate_check(tcc_args, "", &program_output);
+    } catch (Platform::PlatformError& ex) {
+      err_loc.error_throw(ex.what());
+    }
+    
+    std::istringstream program_ss;
+    program_ss.imbue(std::locale::classic());
+    program_ss.str(program_output);
+    unsigned version, known_endian;
+    program_ss >> version >> known_endian;
+    
+    if (!known_endian)
+      err_loc.error_throw("tcc compiler uses unsupported byte order");
+    
+    unsigned version_major, version_minor;
+    version_major = version / 10000;
+    version_minor = (version / 100) % 100;
+    
+    CompilerCommonInfo common_info = CCompilerCommon::parse_common_info(err_loc, program_ss);
+    
+    return boost::make_shared<CCompilerTCC>(common_info, path, version_major, version_minor);
   }
 };
 
@@ -512,9 +664,10 @@ boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc) 
   
   if (!result && ((type == cc_unknown) || (type == cc_gcc)))
     result = CCompilerGCC::detect(err_loc, *cc_full_path);
-  
-  if (!result && ((type == cc_unknown) || (type == cc_clang))) PSI_NOT_IMPLEMENTED();
-  if (!result && ((type == cc_unknown) || (type == cc_tcc))) PSI_NOT_IMPLEMENTED();
+  if (!result && ((type == cc_unknown) || (type == cc_clang)))
+    result = CCompilerClang::detect(err_loc, *cc_full_path);
+  if (!result && ((type == cc_unknown) || (type == cc_tcc)))
+    result = CCompilerTCC::detect(err_loc, *cc_full_path);
   if (!result && ((type == cc_unknown) || (type == cc_msvc))) PSI_NOT_IMPLEMENTED();
   
   if (!result)
