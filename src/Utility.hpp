@@ -201,6 +201,15 @@ namespace Psi {
       return new (alloc(sizeof(T), PSI_ALIGNOF(T))) T;
     }
     
+    template<typename T, typename Var>
+    T* alloc_varstruct(std::size_t n_extra) {
+      T *ptr = new (alloc(sizeof(T) + sizeof(Var)*n_extra, std::max(PSI_ALIGNOF(T), PSI_ALIGNOF(Var)))) T;
+      Var *extra = reinterpret_cast<Var*>(ptr+1);
+      for (std::size_t i = 0; i != n_extra; ++i)
+        new (extra + i) Var;
+      return ptr;
+    }
+    
     template<typename T>
     T* alloc(const T& src) {
       return new (alloc(sizeof(T), PSI_ALIGNOF(T))) T(src);
@@ -412,6 +421,14 @@ namespace Psi {
   template<typename Container>
   typename Container::pointer vector_end_ptr(Container& container) {
     return container.empty() ? typename Container::pointer(0) : (&container.back() + 1);
+  }
+  
+  /**
+   * Function which returns the length of an array.
+   */
+  template<typename T, std::size_t N>
+  std::size_t array_size(T(&)[N]) {
+    return N;
   }
 }
 

@@ -362,7 +362,7 @@ namespace Psi {
         return;
       
       unsigned word = shift / word_bits;
-      WordType bit = 1 << (shift % word_bits);
+      WordType bit = static_cast<WordType>(1) << (shift % word_bits);
       
       rhs.shl(rhs, shift);
       while (true) {

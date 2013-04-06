@@ -37,6 +37,13 @@ public:
   virtual boost::optional<void*> symbol(const std::string& name) = 0;
 };
 
+/**
+ * Generic library loading function.
+ * 
+ * Implementation is platform-specific.
+ */
+boost::shared_ptr<PlatformLibrary> load_library(const std::string& path);
+
 class PSI_COMPILER_COMMON_EXPORT TemporaryPathImpl {
   std::string m_path;
   

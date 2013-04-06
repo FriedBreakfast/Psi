@@ -63,10 +63,10 @@ public:
   virtual void emit_global_variable_attributes(CModuleEmitter& emitter, CGlobalVariable *gvar) = 0;
   
   /// \brief Compile a program
-  virtual void compile_program(CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) = 0;
+  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) = 0;
   
   /// \brief Compile a shared library
-  virtual void compile_library(CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) = 0;
+  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) = 0;
 };
 
 class TypeBuilder {
@@ -79,6 +79,8 @@ class TypeBuilder {
   CType *m_float_types[FloatType::fp_max];
   
   CExpressionBuilder m_c_builder;
+
+  CType* build_function_type(const ValuePtr<FunctionType>& ftype);
   
 public:
   TypeBuilder(CModule *module);
@@ -135,7 +137,12 @@ public:
 };
 
 class CJit : public Jit {
-  typedef std::map<Module*, boost::shared_ptr<Platform::PlatformLibrary> > ModuleMap;
+  struct JitModule {
+    boost::shared_ptr<Platform::TemporaryPath> path;
+    boost::shared_ptr<Platform::PlatformLibrary> library;
+  };
+  
+  typedef std::map<Module*, JitModule> ModuleMap;
   ModuleMap m_modules;
   
 public:

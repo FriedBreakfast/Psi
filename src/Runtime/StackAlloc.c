@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <stdlib.h>
 
 /**
@@ -24,7 +25,11 @@
  */
 void* __psi_alloca(size_t count, size_t align) {
   void *p = malloc(count);
-  if (!p) abort();
+  if (!p) {
+    raise(SIGSEGV);
+    // raise should not return
+    abort();
+  }
   return p;
 }
 

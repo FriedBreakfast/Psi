@@ -394,11 +394,11 @@ public:
     }
   }
   
-  virtual void compile_program(CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
     run_gcc_program(err_loc, m_path, output_file, source);
   }
   
-  virtual void compile_library(CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
     run_gcc_library_linux(err_loc, m_path, output_file, source);
   }
   

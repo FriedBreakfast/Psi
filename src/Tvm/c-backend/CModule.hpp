@@ -132,6 +132,8 @@ public:
 
 std::ostream& operator << (std::ostream& os, const CName& name);
 
+std::string location_to_c_identifier(const SourceLocation& location, const SourceLocation& context, bool is_global);
+
 /**
  * \brief Base class of C source code elements.
  */
@@ -188,6 +190,11 @@ struct CExpression : CElement {
   CType *type;
   COperatorType op;
   CExpressionEvaluation eval;
+  /**
+   * If true, this is an lvalue. This stands in for alloca() and globals in C output.
+   * In this case, \c type will be the pointed-to type rather than the original
+   * type before lowering.
+   */
   bool lvalue;
   bool requires_name;
 };
@@ -229,8 +236,10 @@ struct CExpressionBinaryIndex : CExpression {
   unsigned index;
 };
 
-struct CExpressionCast : CExpression {
+struct CExpressionMember : CExpression {
+  CTypeAggregate *aggregate_type;
   CExpression *arg;
+  unsigned index;
 };
 
 class CModule;
@@ -240,7 +249,7 @@ class CExpressionBuilder {
   CModule *m_module;
   CFunction *m_function;
   
-  void append(const SourceLocation* location, CExpression *expr);
+  void append(const SourceLocation* location, CExpression *expr, bool insert=true);
   void append(CType *type, const SourceLocation* location, const char *prefix=NULL);
   
 public:
@@ -252,13 +261,13 @@ public:
   CExpression* binary(const SourceLocation* location, CType *ty, CExpressionEvaluation eval, COperatorType op, CExpression *left, CExpression *right, bool lvalue=false);
   CExpression* ternary(const SourceLocation* location, CType *ty, CExpressionEvaluation eval, COperatorType op, CExpression *a, CExpression *b, CExpression *c);
   CExpression* member(const SourceLocation* location, COperatorType op, CExpression *arg, unsigned index);
-  CExpression* declare(const SourceLocation* location, CType *type, COperatorType op, CExpression *arg, unsigned index);
+  CExpression* declare(const SourceLocation* location, CType *type, COperatorType op, CExpression *arg, unsigned index_or_alignment, bool parameter=false);
   CExpression* literal(const SourceLocation* location, CType *ty, const char *str);
   CExpression* call(const SourceLocation* location, CExpression *target, unsigned n_args, CExpression *const* args, bool conditional=false);
   CExpression* aggregate_value(const SourceLocation* location, COperatorType op, CType *ty, unsigned n_members, CExpression *const* members);
   CExpression* union_value(const SourceLocation* location, CType *ty, unsigned index, CExpression *value);
   CExpression* cast(const SourceLocation* location, CType *ty, CExpression *arg);
-  CExpression* nullary(const SourceLocation* location, COperatorType op);
+  CExpression* nullary(const SourceLocation* location, COperatorType op, bool insert=true);
   
   CType* void_type();
   CType* builtin_type(const char *name);
@@ -280,6 +289,7 @@ struct CGlobal : CExpression {
 
 struct CFunction : CGlobal {
   bool is_external;
+  SinglyLinkedList<CExpression> parameters;
   SinglyLinkedList<CExpression> instructions;
 };
 
@@ -311,8 +321,9 @@ public:
   const SourceLocation& location() {return m_location;}
   CompileErrorContext& error_context() {return *m_error_context;}
   void emit(std::ostream& output);
-  CCompiler& c_compiler();
+  CCompiler& c_compiler() {return *m_c_compiler;}
   void name_types();
+  void name_locals(CFunction *function);
   SinglyLinkedList<CType>& types() {return m_types;}
   SinglyLinkedList<CGlobal>& globals() {return m_globals;}
 };
@@ -323,7 +334,7 @@ class CModuleEmitter {
   SourceFile *m_file;
 
   void emit_types();
-  void emit_declaration(CGlobal& global);
+  void emit_declaration(CGlobal& global, bool no_extern);
   void emit_definition(CGlobal& global);
   
 public:
@@ -336,8 +347,8 @@ public:
   void emit_expression(CExpression *expression, unsigned precedence=17, bool is_right=true);
   void emit_expression_def(CExpression *expression, unsigned precedence=17, bool is_right=true);
   void emit_statement(CExpression *expression);
-  void emit_type_prolog(CType *type);
-  void emit_type_epilog(CType *type);
+  void emit_type_prolog(CType *type, bool with_space, bool dont_use_name=false);
+  void emit_type_epilog(CType *type, bool dont_use_name=false);
   std::ostream& output() {return *m_output;}
 };
 

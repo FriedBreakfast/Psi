@@ -6,6 +6,7 @@
 #include "../ErrorContext.hpp"
 
 #include <cstdlib>
+#include <csignal>
 
 namespace {
   struct JitLoader {
@@ -43,6 +44,12 @@ namespace Psi {
       context(&error_context),
       module(&context, "test_module", location),
       m_jit(jit_loader.jit_factory->create_jit()) {
+        // Some versions of Boost.Test (I'm using 1.46) treat child processes exiting
+        // with a nonzero status as a test failure. Ignoring SIGCHLD works around this.
+        // Note that even though SIGCHLD is ignored by default SIG_DFL is distinct from
+        // SIG_IGN here, because SIG_IGN causes child processes to be orphaned on creation
+        // and thus the exit status is not available.
+        std::signal(SIGCHLD, SIG_DFL);
       }
 
       ContextFixture::~ContextFixture() {

@@ -130,7 +130,12 @@ CType* TypeBuilder::build(const ValuePtr<>& term) {
   if (ii != m_types.end())
     return ii->second;
   
-  CType *ty = TypeBuilderCallbacks::callback_map.call(*this, value_cast<FunctionalValue>(term));
+  CType *ty;
+  if (ValuePtr<FunctionType> function_type = dyn_cast<FunctionType>(term))
+    ty = build_function_type(function_type);
+  else
+    ty = TypeBuilderCallbacks::callback_map.call(*this, value_cast<FunctionalValue>(term));
+
   m_types.insert(std::make_pair(term, ty));
   return ty;
 }
@@ -163,6 +168,16 @@ CType* TypeBuilder::float_type(FloatType::Width width) {
   }
   
   return m_float_types[width];
+}
+
+CType* TypeBuilder::build_function_type(const ValuePtr<FunctionType>& ftype) {
+  SmallArray<CTypeFunctionArgument, 8> arguments;
+  arguments.resize(ftype->parameter_types().size());
+  for (std::size_t ii = 0, ie = arguments.size(); ii != ie; ++ii) {
+    arguments[ii].type = build(ftype->parameter_types()[ii]);
+  }
+  CType *result_type = build(ftype->result_type());
+  return c_builder().function_type(&ftype->location(), result_type, arguments.size(), arguments.get());
 }
 }
 }

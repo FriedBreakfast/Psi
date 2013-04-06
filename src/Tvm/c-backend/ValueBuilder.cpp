@@ -43,7 +43,7 @@ struct ValueBuilderCallbacks {
                                         buf, buf_size, term->is_signed(), 10);
     CType *ty = builder.build_type(term->type());
     CExpression *expr = builder.c_builder().literal(&term->location(), ty, builder.c_builder().strdup(buf));
-    if (term->is_signed())
+    if (term->is_signed() && term->value().sign_bit())
       expr = builder.c_builder().unary(&term->location(), ty, c_eval_never, c_op_negate, expr);
     return expr;
   }
@@ -61,7 +61,8 @@ struct ValueBuilderCallbacks {
     for (unsigned i = 0; i != n; ++i)
       members[i] = builder.build(term->value(i));
     CExpression *array_value = builder.c_builder().aggregate_value(&term->location(), c_op_array_value, inner_ty, n, members.get());
-    return builder.c_builder().aggregate_value(&term->location(), c_op_struct_value, ty, 1, &array_value);
+    CExpression *inner = builder.c_builder().aggregate_value(&term->location(), c_op_struct_value, ty, 1, &array_value);
+    return builder.c_builder().cast(&term->location(), ty, inner);
   }
   
   static CExpression* struct_value_callback(ValueBuilder& builder, const ValuePtr<StructValue>& term) {
@@ -70,7 +71,8 @@ struct ValueBuilderCallbacks {
     SmallArray<CExpression*, small_array_size> members(n);
     for (unsigned i = 0; i != n; ++i)
       members[i] = builder.build(term->member_value(i));
-    return builder.c_builder().aggregate_value(&term->location(), c_op_struct_value, ty, n, members.get());
+    CExpression *inner = builder.c_builder().aggregate_value(&term->location(), c_op_struct_value, ty, n, members.get());
+    return builder.c_builder().cast(&term->location(), ty, inner);
   }
   
   static CExpression* union_value_callback(ValueBuilder& builder, const ValuePtr<UnionValue>& term) {
@@ -83,7 +85,8 @@ struct ValueBuilderCallbacks {
         " and hence cannot initialize any union member except the first");
     }
     CExpression *member = builder.build(term->value());
-    return builder.c_builder().union_value(&term->location(), ty, index, member);
+    CExpression *inner = builder.c_builder().union_value(&term->location(), ty, index, member);
+    return builder.c_builder().cast(&term->location(), ty, inner);
   }
   
   static CExpression* undefined_zero_value_callback(ValueBuilder& builder, const ValuePtr<>& term) {
@@ -240,8 +243,6 @@ struct ValueBuilderCallbacks {
   }
   
   static CExpression* alloca_callback(ValueBuilder& builder, const ValuePtr<Alloca>& term) {
-    builder.c_builder().nullary(&term->location(), c_op_block_begin);
-    
     boost::optional<unsigned> max_count;
     
     CExpression *count = NULL;
@@ -299,7 +300,6 @@ struct ValueBuilderCallbacks {
   
   static CExpression* alloca_const_callback(ValueBuilder& builder, const ValuePtr<AllocaConst>& term) {
     CExpression *value = builder.build(term->value);
-    builder.c_builder().nullary(&term->location(), c_op_block_begin);
     return builder.c_builder().binary(&term->location(), value->type, c_eval_write, c_op_declare, value, NULL);
   }
   
@@ -318,7 +318,6 @@ struct ValueBuilderCallbacks {
       CExpression *call_args[3] = {src, base_call->args[0], base_call->args[1]};
       builder.c_builder().call(&term->location(), builder.builtin_psi_freea(), 3, call_args);
     }
-    builder.c_builder().nullary(&term->location(), c_op_block_end);
     return NULL;
   }
   
@@ -432,6 +431,7 @@ CExpression* ValueBuilder::build(const ValuePtr<>& value, bool PSI_UNUSED(force_
   ExpressionMapType::const_iterator it = m_expressions.find(value);
   if (it != m_expressions.end()) {
     PSI_ASSERT(it->second);
+    it->second->requires_name = true;
     return it->second;
   }
   

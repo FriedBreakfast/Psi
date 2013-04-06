@@ -41,7 +41,8 @@ public:
   }
   
   virtual ValuePtr<Instruction> lower_return(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& value, const SourceLocation& location) {
-    return runner.builder().return_(value, location);
+    ValuePtr<> lowered = runner.rewrite_value_register(value).value;
+    return runner.builder().return_(lowered, location);
   }
   
   virtual ValuePtr<Function> lower_function(AggregateLoweringPass& pass, const ValuePtr<Function>& function) {
@@ -71,12 +72,14 @@ public:
       pt = &m_c_compiler->primitive_types.int_types[int_type->width()];
     } else if (ValuePtr<FloatType> float_type = dyn_cast<FloatType>(type)) {
       pt = &m_c_compiler->primitive_types.float_types[float_type->width()];
-    } else if (isa<ByteType>(type)) {
+    } else if (isa<ByteType>(type) || isa<BooleanType>(type)) {
       return TypeSizeAlignment(1,1);
     } else if (isa<PointerType>(type)) {
-      return {m_c_compiler->primitive_types.pointer_size, m_c_compiler->primitive_types.pointer_alignment};
+      return TypeSizeAlignment(m_c_compiler->primitive_types.pointer_size, m_c_compiler->primitive_types.pointer_alignment);
     } else if (isa<BlockType>(type)) {
       return TypeSizeAlignment(0,0);
+    } else {
+      PSI_FAIL("unexpected type");
     }
     if (pt->name.empty())
       type->context().error_context().error_throw(type->location(), "Primitive type not supported");
@@ -100,8 +103,6 @@ std::string CModuleBuilder::run() {
   CModuleCallback lowering_callback(m_c_compiler);
   AggregateLoweringPass aggregate_lowering_pass(m_module, &lowering_callback);
   aggregate_lowering_pass.remove_unions = false;
-  aggregate_lowering_pass.split_arrays = true;
-  aggregate_lowering_pass.split_structs = true;
   aggregate_lowering_pass.memcpy_to_bytes = true;
   aggregate_lowering_pass.update();
 
@@ -111,7 +112,7 @@ std::string CModuleBuilder::run() {
     const ValuePtr<Global>& term = i->second;
     ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
     
-    CType *type = m_type_builder.build(term->type());
+    CType *type = m_type_builder.build(term->value_type());
     const char *name = m_c_module.pool().strdup(term->name().c_str());
     
     switch (rewritten_term->term_type()) {
@@ -185,15 +186,28 @@ namespace {
 
 void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFunction* c_function) {
   ValueBuilder local_value_builder(m_global_value_builder, c_function);
+  
+  // Insert function parameters into builder
+  for (Function::ParameterList::iterator ii = function->parameters().begin(), ie = function->parameters().end(); ii != ie; ++ii) {
+    const ValuePtr<FunctionParameter>& parameter = *ii;
+    CType *type = m_type_builder.build(parameter->type());
+    CExpression *c_parameter = local_value_builder.c_builder().declare(&parameter->location(), type, c_op_declare, NULL, 0, true);
+    local_value_builder.put(parameter, c_parameter);
+  }
 
   // PHI nodes need to have space prepared in dominator node
   typedef std::multimap<ValuePtr<Block>, ValuePtr<Phi> > PhiMapType;
   PhiMapType phi_by_dominator;
   for (Function::BlockList::iterator ii = function->blocks().begin(), ie = function->blocks().end(); ii != ie; ++ii) {
     const ValuePtr<Block>& block = *ii;
+    
+    CExpression *label = local_value_builder.c_builder().nullary(&block->location(), c_op_label, false);
+    local_value_builder.put(block, label);
+
     for (Block::PhiList::iterator ji = block->phi_nodes().begin(), je = block->phi_nodes().end(); ji != je; ++ji)
       phi_by_dominator.insert(std::make_pair(block->dominator(), *ji));
   }
+  
 
   unsigned depth = 0;
   for (Function::BlockList::iterator ii = function->blocks().begin(), ie = function->blocks().end(); ii != ie; ++ii) {
@@ -204,14 +218,14 @@ void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFu
     for (unsigned ii = depth+1; ii != new_depth; --ii)
       local_value_builder.c_builder().nullary(&function->location(), c_op_block_end);
     
-    CExpression *label = local_value_builder.c_builder().nullary(&block->location(), c_op_label);
-    local_value_builder.put(block, label);
+    CExpression *label = local_value_builder.build(block);
+    c_function->instructions.append(label);
     local_value_builder.c_builder().nullary(&block->location(), c_op_block_begin);
     
     depth = new_depth;
     
     for (Block::InstructionList::iterator ji = block->instructions().begin(), je = block->instructions().end(); ji != je; ++ji)
-      local_value_builder.build(block);
+      local_value_builder.build(*ji);
     
     for (PhiMapType::const_iterator ji = phi_by_dominator.lower_bound(block), je = phi_by_dominator.upper_bound(block); ji != je; ++ji) {
       CType *type = m_type_builder.build(ji->second->type());
@@ -233,8 +247,15 @@ CJit::~CJit() {
 
 void CJit::add_module(Module *module) {
   std::string source = CModuleBuilder(m_compiler.get(), *module).run();
-  std::cerr << source << std::endl;
-  PSI_NOT_IMPLEMENTED();
+  JitModule jm;
+  jm.path = boost::make_shared<Platform::TemporaryPath>();
+  m_compiler->compile_library(factory()->error_handler().context().bind(module->location()), jm.path->path(), source);
+  try {
+    jm.library = Platform::load_library(jm.path->path());
+  } catch (Platform::PlatformError& ex) {
+    factory()->error_handler().context().error_throw(module->location(), ex.what());
+  }
+  m_modules.insert(std::make_pair(module, jm));
 }
 
 void CJit::remove_module(Module *module) {
@@ -249,7 +270,7 @@ void* CJit::get_symbol(const ValuePtr<Global>& symbol) {
   if (it == m_modules.end())
     factory()->error_handler().context().error_throw(symbol->location(), "Module has not been JIT compiled");
   
-  boost::optional<void*> ptr = it->second->symbol(symbol->name());
+  boost::optional<void*> ptr = it->second.library->symbol(symbol->name());
   if (!ptr)
     factory()->error_handler().context().error_throw(symbol->location(), boost::format("Symbol missing from JIT compiled library: %s") % symbol->name());
   

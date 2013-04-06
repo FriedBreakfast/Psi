@@ -2,6 +2,7 @@
 #include "PlatformLinux.hpp"
 
 #include <boost/format.hpp>
+#include <boost/make_shared.hpp>
 
 #include <dlfcn.h>
 #include <errno.h>
@@ -475,6 +476,16 @@ TemporaryPathImpl* make_temporary_path_impl() {
     throw PlatformError(boost::str(boost::format("Failed to get temporary file name: %s") % Linux::error_string(errcode)));
   }
   return new Linux::TemporaryPathImplLinux(name.get());
+}
+
+boost::shared_ptr<PlatformLibrary> load_library(const std::string& path) {
+  boost::shared_ptr<Linux::LibraryLinux> lib = boost::make_shared<Linux::LibraryLinux>(1);
+  dlerror();
+  void *handle = dlopen(path.c_str(), RTLD_LAZY|RTLD_GLOBAL);
+  if (!handle)
+    throw PlatformError(boost::str(boost::format("Could not open library: %s: %s\n") % path % dlerror()));
+  lib->add_handle(handle);
+  return lib;
 }
 }
 }
