@@ -106,6 +106,7 @@ namespace Psi {
             value->setName(term_name(param));
             value->addAttr(llvm::Attributes::get(module_builder()->llvm_context(), llvm::Attributes::StructRet));
             m_value_terms.insert(std::make_pair(param, value));
+            ++ii;
           }
           
           for (std::size_t in = 0; ii != ie; ++ii, ++in) {

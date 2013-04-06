@@ -53,7 +53,7 @@ namespace Psi {
           unsigned sret = 0;
           if (function_type->sret()) {
             sret = 1;
-            parameters[0] = builder.build_value(insn->parameters.back());
+            parameters.push_back(builder.build_value(insn->parameters.back()));
           }
 
           for (std::size_t ii = 0, ie = insn->parameters.size() - sret; ii != ie; ++ii)
