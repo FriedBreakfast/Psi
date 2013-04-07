@@ -4,13 +4,17 @@
 
 namespace Psi {
 namespace Platform {
-PlatformError::PlatformError(const char* message) : std::runtime_error(message) {
+PlatformError::PlatformError(const char* message) : m_message(message) {
 }
 
-PlatformError::PlatformError(const std::string& message) : std::runtime_error(message) {
+PlatformError::PlatformError(const std::string& message) : m_message(message) {
 }
 
 PlatformError::~PlatformError() throw() {
+}
+
+const char *PlatformError::what() const throw() {
+  return m_message.c_str();
 }
 
 PlatformLibrary::~PlatformLibrary() {

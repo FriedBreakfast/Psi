@@ -3,6 +3,7 @@
 #include "CModule.hpp"
 
 #include <algorithm>
+#include <locale>
 #include <cstdio>
 #include <cstring>
 
@@ -17,7 +18,7 @@ namespace CBackend {
 const COperator c_operators[] = {
 #define PSI_TVM_C_OP(op,prec,right_assoc) {c_expr_##op, prec, right_assoc, NULL},
 #define PSI_TVM_C_OP_STR(op,ty,prec,right_assoc,str) {c_expr_##ty, prec, right_assoc, str},
-#include "COperators.def"
+#include "COperators.hpp"
 #undef PSI_TVM_C_OP_STR
 #undef PSI_TVM_C_OP
 };
@@ -207,6 +208,7 @@ void CExpressionBuilder::append(CType *type, const SourceLocation* location, con
   type->name.index = 0;
   type->location = location;
   type->ptr = NULL;
+  type->name_used = false;
   m_module->types().append(type);
 }
 
@@ -414,6 +416,9 @@ void CModuleEmitter::emit_string(const char *s) {
 void CModuleEmitter::emit_types() {
   for (SinglyLinkedList<CType>::iterator ii = m_module->types().begin(), ie = m_module->types().end(); ii != ie; ++ii) {
     CType& ty = *ii;
+    if (!ty.name_used)
+      continue;
+
     switch (ty.type) {
     case c_type_builtin:
     case c_type_pointer:
@@ -906,6 +911,9 @@ CFunction *CModule::new_function(const SourceLocation *location, CType *type, co
 /// Name any types which require names and are not currently named
 void CModule::name_types() {
   for (SinglyLinkedList<CType>::iterator ii = m_types.begin(), ie = m_types.end(); ii != ie; ++ii) {
+    if (!ii->name_used)
+      continue;
+
     switch (ii->type) {
     case c_type_struct:
     case c_type_union:

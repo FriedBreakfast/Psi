@@ -1,5 +1,6 @@
 #include "../TermOperationMap.hpp"
 #include "../Aggregate.hpp"
+#include "../FunctionalBuilder.hpp"
 #include "../Number.hpp"
 
 #include "Builder.hpp"
@@ -118,23 +119,32 @@ struct TypeBuilderCallbacks {
 TypeBuilderCallbacks::CallbackMap TypeBuilderCallbacks::callback_map(TypeBuilderCallbacks::callback_map_initializer());
 
 TypeBuilder::TypeBuilder(CModule *module)
-: m_c_builder(module) {
+: m_c_builder(module),
+m_psi_alloca(NULL),
+m_psi_freea(NULL),
+m_memcpy(NULL) {
   m_void_type = NULL;
-  std::fill_n(m_signed_integer_types, IntegerType::i_max, static_cast<CType*>(NULL));
-  std::fill_n(m_unsigned_integer_types, IntegerType::i_max, static_cast<CType*>(NULL));
-  std::fill_n(m_float_types, FloatType::fp_max, static_cast<CType*>(NULL));
+  std::fill_n(m_signed_integer_types, array_size(m_signed_integer_types), static_cast<CType*>(NULL));
+  std::fill_n(m_unsigned_integer_types, array_size(m_signed_integer_types), static_cast<CType*>(NULL));
+  std::fill_n(m_float_types, array_size(m_signed_integer_types), static_cast<CType*>(NULL));
 }
 
-CType* TypeBuilder::build(const ValuePtr<>& term) {
+CType* TypeBuilder::build(const ValuePtr<>& term, bool name_used) {
   TypeMapType::const_iterator ii = m_types.find(term);
-  if (ii != m_types.end())
+  if (ii != m_types.end()) {
+    if (name_used)
+      ii->second->name_used = true;
     return ii->second;
+  }
   
   CType *ty;
   if (ValuePtr<FunctionType> function_type = dyn_cast<FunctionType>(term))
     ty = build_function_type(function_type);
   else
     ty = TypeBuilderCallbacks::callback_map.call(*this, value_cast<FunctionalValue>(term));
+
+  if (name_used)
+    ty->name_used = true;
 
   m_types.insert(std::make_pair(term, ty));
   return ty;
@@ -178,6 +188,56 @@ CType* TypeBuilder::build_function_type(const ValuePtr<FunctionType>& ftype) {
   }
   CType *result_type = build(ftype->result_type());
   return c_builder().function_type(&ftype->location(), result_type, arguments.size(), arguments.get());
+}
+
+CExpression *TypeBuilder::get_psi_alloca() {
+  if (!m_psi_alloca) {
+    CType *size_type = integer_type(IntegerType::iptr, false);
+    CTypeFunctionArgument args[2];
+    args[0].type = size_type;
+    args[1].type = size_type;
+    CType *type = c_builder().function_type(&module().location(), c_builder().pointer_type(void_type()), 2, args);
+    m_psi_alloca = module().new_function(&module().location(), type, "__psi_alloca");
+  }
+  return m_psi_alloca;
+}
+
+CExpression *TypeBuilder::get_psi_freea() {
+  if (!m_psi_freea) {
+    CType *size_type = integer_type(IntegerType::iptr, false);
+    CTypeFunctionArgument args[3];
+    args[0].type = c_builder().pointer_type(void_type());
+    args[1].type = size_type;
+    args[2].type = size_type;
+    CType *type = c_builder().function_type(&module().location(), void_type(), 3, args);
+    m_psi_freea = module().new_function(&module().location(), type, "__psi_freea");
+  }
+  return m_psi_freea;
+}
+
+CExpression *TypeBuilder::get_memcpy() {
+  if (!m_memcpy) {
+    CType *vptr_type = c_builder().pointer_type(void_type());
+    CTypeFunctionArgument args[2];
+    args[0].type = vptr_type;
+    args[1].type = vptr_type;
+    CType *type = c_builder().function_type(&module().location(), vptr_type, 2, args);
+    m_memcpy = module().new_function(&module().location(), type, "memcpy");
+  }
+  return m_memcpy;
+}
+
+CExpression *TypeBuilder::get_memset() {
+  if (!m_memset) {
+    CType *vptr_type = c_builder().pointer_type(void_type());
+    CTypeFunctionArgument args[3];
+    args[0].type = vptr_type;
+    args[1].type = c_builder().builtin_type("int");
+    args[2].type = integer_type(IntegerType::iptr, false);
+    CType *type = c_builder().function_type(&module().location(), vptr_type, 3, args);
+    m_memset = module().new_function(&module().location(), type, "memset");
+  }
+  return m_memset;
 }
 }
 }

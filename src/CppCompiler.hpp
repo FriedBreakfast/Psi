@@ -14,6 +14,7 @@ namespace Psi {
 #define PSI_SMALL_ENUM(name) enum __attribute__((packed)) name
 #define PSI_ASSUME(x) void()
 #define PSI_THREAD_LOCAL __thread
+#define PSI_FLEXIBLE_ARRAY(decl) decl[0]
 
 #ifdef _WIN32
 #define PSI_EXPORT dllexport
@@ -50,6 +51,7 @@ namespace Psi {
 #define PSI_UNREACHABLE() __assume(false)
 #define PSI_ASSUME(x) __assume(x)
 #define PSI_THREAD_LOCAL __declspec(thread)
+#define PSI_FLEXIBLE_ARRAY(decl) __pragma(warning(push)) __pragma(warning(disable:4200)); decl[]; __pragma(warning(pop))
 #define PSI_SMALL_ENUM(name) enum name : unsigned char
 #define PSI_EXPORT dllexport
 #define PSI_IMPORT dllimport

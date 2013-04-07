@@ -290,7 +290,7 @@ struct ValueBuilderCallbacks {
       }
     } else if (!has_vla || (max_count && (*max_count == 0))) {
       CExpression *args[2] = {count, alignment_expr};
-      CExpression *ptr = builder.c_builder().call(&term->location(), builder.builtin_psi_alloca(), 2, args, true);
+      CExpression *ptr = builder.c_builder().call(&term->location(), builder.type_builder().get_psi_alloca(), 2, args, true);
       return builder.c_builder().unary(&term->location(), ptr_ty, c_eval_write, c_op_cast, ptr);
     } else {
       PSI_ASSERT(has_vla);
@@ -301,7 +301,7 @@ struct ValueBuilderCallbacks {
       CExpression *count = builder.build(term->count);
       CExpression *local_alloc = builder.c_builder().declare(&term->location(), el_ty, c_op_vardeclare, local_count, alignment_value);
       CExpression *call_args[2] = {count, alignment_expr};
-      CExpression *call_alloc = builder.c_builder().call(&term->location(), builder.builtin_psi_alloca(), 2, call_args);
+      CExpression *call_alloc = builder.c_builder().call(&term->location(), builder.type_builder().get_psi_alloca(), 2, call_args);
       return builder.c_builder().ternary(&term->location(), ptr_ty, c_eval_pure, c_op_ternary, count_is_large, call_alloc, local_alloc);
     }
   }
@@ -318,13 +318,13 @@ struct ValueBuilderCallbacks {
       CExpressionTernary *src_ternary = checked_cast<CExpressionTernary*>(src);
       CExpressionCall *base_call = checked_cast<CExpressionCall*>(src_ternary->second);
       CExpression *call_args[3] = {src, base_call->args[0], base_call->args[1]};
-      CExpression *free_op = builder.c_builder().call(&term->location(), builder.builtin_psi_freea(), 3, call_args, true);
+      CExpression *free_op = builder.c_builder().call(&term->location(), builder.type_builder().get_psi_freea(), 3, call_args, true);
       builder.c_builder().ternary(&term->location(), NULL, c_eval_write, c_op_if, src_ternary->first, free_op, NULL);
     } else if (src->op == c_op_cast) {
       CExpressionUnary *src_unary = checked_cast<CExpressionUnary*>(src);
       CExpressionCall *base_call = checked_cast<CExpressionCall*>(src_unary->arg);
       CExpression *call_args[3] = {src, base_call->args[0], base_call->args[1]};
-      builder.c_builder().call(&term->location(), builder.builtin_psi_freea(), 3, call_args);
+      builder.c_builder().call(&term->location(), builder.type_builder().get_psi_freea(), 3, call_args);
     }
     return NULL;
   }
@@ -339,7 +339,7 @@ struct ValueBuilderCallbacks {
     args[0] = builder.build_rvalue(term->dest);
     args[1] = builder.build_rvalue(term->src);
     args[2] = builder.build(term->count);
-    builder.c_builder().call(&term->location(), builder.builtin_memcpy(), 3, args);
+    builder.c_builder().call(&term->location(), builder.type_builder().get_memcpy(), 3, args);
     return NULL;
   }
   
@@ -348,7 +348,7 @@ struct ValueBuilderCallbacks {
     args[0] = builder.build_rvalue(term->dest);
     args[1] = builder.integer_literal(0);
     args[2] = builder.build(term->count);
-    builder.c_builder().call(&term->location(), builder.builtin_memset(), 3, args);
+    builder.c_builder().call(&term->location(), builder.type_builder().get_memset(), 3, args);
     return NULL;
   }
     
@@ -484,8 +484,8 @@ CExpression* ValueBuilder::build_rvalue(const ValuePtr<>& value) {
  * 
  * Forwards to the type builder passed to this ValueBuilders constructor.
  */
-CType* ValueBuilder::build_type(const ValuePtr<>& value) {
-  return m_type_builder->build(value);
+CType* ValueBuilder::build_type(const ValuePtr<>& value, bool name_used) {
+  return m_type_builder->build(value, name_used);
 }
 
 /**

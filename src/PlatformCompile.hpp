@@ -1,11 +1,11 @@
 #ifndef HPP_PSI_PLATFORM_COMPILE
 #define HPP_PSI_PLATFORM_COMPILE
 
-#include <stdexcept>
+#include <exception>
 #include <boost/optional.hpp>
 
-#include "Runtime.hpp"
 #include "Platform.hpp"
+#include "PropertyValue.hpp"
 
 namespace Psi {
   namespace Platform {

@@ -25,6 +25,7 @@ namespace Psi {
 #define PSI_ASSERT(cond) void()
 #define PSI_FAIL(msg) PSI_UNREACHABLE()
 #define PSI_WARNING(cond) void()
+#define PSI_WARNING_MSG(cond,msg) void()
 #define PSI_WARNING_FAIL(msg) void()
 #define PSI_WARNING_FAIL2(msg1,msg2) void()
 #define PSI_NOT_IMPLEMENTED() (std::abort())

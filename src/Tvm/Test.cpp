@@ -6,7 +6,9 @@
 #include "../ErrorContext.hpp"
 
 #include <cstdlib>
-#include <csignal>
+#ifdef __linux__
+#include <signal.h>
+#endif
 
 namespace {
   struct JitLoader {
@@ -49,7 +51,9 @@ namespace Psi {
         // Note that even though SIGCHLD is ignored by default SIG_DFL is distinct from
         // SIG_IGN here, because SIG_IGN causes child processes to be orphaned on creation
         // and thus the exit status is not available.
+#ifdef __linux__
         std::signal(SIGCHLD, SIG_DFL);
+#endif
       }
 
       ContextFixture::~ContextFixture() {

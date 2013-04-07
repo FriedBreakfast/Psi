@@ -146,9 +146,7 @@ public:
    */
   static CompilerCommonInfo parse_common_info(const CompileErrorPair& err_loc, std::istream& in) {
     CompilerCommonInfo ci;
-    int big_endian;
-    in >> big_endian >> ci.char_bits >> ci.pointer_size >> ci.pointer_alignment;
-    ci.big_endian = big_endian;
+    in >> ci.big_endian >> ci.char_bits >> ci.pointer_size >> ci.pointer_alignment;
     if (!in)
       err_loc.error_throw("Failed to parse C compiler common information");
     
@@ -170,6 +168,28 @@ public:
 };
 
 namespace {
+struct CommonTypeName {
+  CompilerCommonType::Mode mode;
+  const char *name;
+  const char *suffix;
+};
+
+/**
+  * Table of types supported by most C compilers.
+  */
+const CommonTypeName common_types[] = {
+  {CompilerCommonType::mode_int, "signed char", "-"},
+  {CompilerCommonType::mode_uint, "unsigned char", "-"},
+  {CompilerCommonType::mode_int, "short", "-"},
+  {CompilerCommonType::mode_uint, "unsigned short", "-"},
+  {CompilerCommonType::mode_int, "int", "-"},
+  {CompilerCommonType::mode_uint, "unsigned int", "-"},
+  {CompilerCommonType::mode_int, "long", "L"},
+  {CompilerCommonType::mode_uint, "unsigned long", "UL"},
+  {CompilerCommonType::mode_int, "long long", "LL"},
+  {CompilerCommonType::mode_uint, "unsigned long long", "ULL"}
+};
+
 class AttributeWriter {
   std::ostream *m_output;
   const char *m_start_str, *m_end_str;
@@ -197,12 +217,13 @@ public:
 };
 }
 
-class CCompilerMSVC : public CCompiler {
-  IntegerType::Width m_pointer_width;
-  
+class CCompilerMSVC : public CCompilerCommon {
+  std::string m_path;
+  unsigned m_version;
+
 public:
-  CCompilerMSVC(IntegerType::Width pointer_width)
-  : m_pointer_width(pointer_width) {
+  CCompilerMSVC(const CompilerCommonInfo& common_info, const std::string& path, unsigned version)
+  : CCompilerCommon(common_info), m_path(path), m_version(version) {
   }
   
   virtual void emit_alignment(CModuleEmitter& emitter, unsigned n) {
@@ -254,27 +275,99 @@ public:
     aw.done();
   }
 
-  virtual const char *integer_type(CModule&, IntegerType::Width width, bool is_signed) {
-    IntegerType::Width my_width = (width == IntegerType::iptr) ? m_pointer_width : width;
-    switch (my_width) {
-    case IntegerType::i8: return is_signed ? "char" : "unsigned char";
-    case IntegerType::i16: return is_signed ? "short" : "unsigned short";
-    case IntegerType::i32: return is_signed ? "int" : "unsigned int";
-    case IntegerType::i64: return is_signed ? "__int64" : "unsigned __int64";
-    case IntegerType::i128: return is_signed ? "__int128" : "unsigned __int128";
-    default: PSI_FAIL("Unrecognised integer width");
+  static void run_msvc_common(const CompileErrorPair& err_loc, const std::string& path,
+                              const std::string& output_file, const std::string& source,
+                              const std::vector<std::string>& extra) {
+    Platform::TemporaryPath source_path;
+    std::filebuf source_file;
+    source_file.open(source_path.path().c_str(), std::ios::out);
+    std::copy(source.begin(), source.end(), std::ostreambuf_iterator<char>(&source_file));
+    source_file.close();
+
+    std::vector<std::string> command;
+    command.push_back(path);
+    command.insert(command.end(), extra.begin(), extra.end());
+    command.push_back("/Tc");
+    command.push_back(source_path.path());
+    command.push_back("/Fe");
+    command.push_back(output_file);
+    try {
+      Platform::exec_communicate_check(command);
+    } catch (Platform::PlatformError& ex) {
+      err_loc.error_throw(ex.what());
     }
   }
+  
+  static void run_msvc_program(const CompileErrorPair& err_loc, const std::string& path,
+                               const std::string& output_file, const std::string& source) {
+    std::vector<std::string> extra;
+#ifdef _DEBUG
+    extra.push_back("/MTd");
+#else
+    extra.push_back("/MT");
+#endif
+    run_msvc_common(err_loc, path, output_file, source, extra);
+  }
+  
+  static void run_msvc_library(const CompileErrorPair& err_loc, const std::string& path,
+                               const std::string& output_file, const std::string& source) {
+    std::vector<std::string> extra;
+#ifdef _DEBUG
+    extra.push_back("/MDd");
+#else
+    extra.push_back("/MD");
+#endif
+    run_msvc_common(err_loc, path, output_file, source, extra);
+  }
 
-  virtual const char *float_type(CompileErrorPair& err_loc, CModule&, FloatType::Width width) {
-    switch (width) {
-    case FloatType::fp32: return "float";
-    case FloatType::fp64: return "double";
-    case FloatType::fp128: err_loc.error_throw("MSVC does not support 128-bit float types");
-    case FloatType::fp_x86_80: err_loc.error_throw("MSVC does not support 80-bit X86 extended precision float");
-    case FloatType::fp_ppc_128: err_loc.error_throw("MSVC does not support 128-bit PPC extended precision float");
-    default: PSI_FAIL("Unrecognised float width");
+  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+    run_msvc_program(err_loc, m_path, output_file, source);
+  }
+  
+  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+    run_msvc_library(err_loc, m_path, output_file, source);
+  }
+
+  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
+    std::ostringstream src;
+    src << "#include <stdio.h>\n"
+        << "#include <limits.h>\n"
+        << "int main() {\n"
+        << "  union {unsigned __int8 a[4]; unsigned __int32 b;} endian_test = {1, 2, 3, 4};\n"
+        << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
+        << "  printf(\"%d %d\\n\", _MSC_VER, big_endian||little_endian);\n"
+        << "  printf(\"%d %d %zd %zd\\n\", big_endian, CHAR_BIT, sizeof(void*), __alignof(void*));\n";
+    for (unsigned n = 0; n < array_size(common_types); ++n) {
+      const CommonTypeName& ty = common_types[n];
+      src << "  printf(\"" << ty.mode << " " << ty.suffix << " %zd %zd "
+          << ty.name << "\\n\", sizeof(" << ty.name
+          << "), __alignof(" << ty.name << "));\n";
     }
+    src << "  return 0;"
+        << "}\n";
+    
+    Platform::TemporaryPath program_path;
+    run_msvc_program(err_loc, path, program_path.path(), src.str());
+    
+    std::string program_output;
+    try {
+      Platform::exec_communicate_check(program_path.path(), "", &program_output);
+    } catch (Platform::PlatformError& ex) {
+      err_loc.error_throw(ex.what());
+    }
+    
+    std::istringstream program_ss;
+    program_ss.imbue(std::locale::classic());
+    program_ss.str(program_output);
+    unsigned version, known_endian;
+    program_ss >> version >> known_endian;
+    
+    if (!known_endian)
+      err_loc.error_throw("Microsoft C compiler uses unsupported byte order");
+    
+    CompilerCommonInfo common_info = CCompilerCommon::parse_common_info(err_loc, program_ss);
+    
+    return boost::make_shared<CCompilerMSVC>(common_info, path, version);
   }
 };
 
@@ -311,30 +404,6 @@ public:
     aw.done();
   }
   
-  virtual const char *int_suffix(CModule&, IntegerType::Width width, bool is_signed) {
-    IntegerType::Width my_width = width;
-    switch (my_width) {
-    case IntegerType::i8: return is_signed ? "char" : "unsigned char";
-    case IntegerType::i16: return is_signed ? "short" : "unsigned short";
-    case IntegerType::i32: return is_signed ? "int" : "unsigned int";
-    case IntegerType::i64: return is_signed ? "LL" : "ULL";
-    // GCC doesn't support 128-bit integer constants, so we try for "long long" and hope the constant isn't too large
-    case IntegerType::i128: return is_signed ? "LL" : "ULL";
-    default: PSI_FAIL("Unrecognised integer width");
-    }
-  }
-
-  virtual const char* float_suffix(CModule& module, FloatType::Width width) {
-    switch (width) {
-    case FloatType::fp32: return "f";
-    case FloatType::fp64: return "";
-    case FloatType::fp_ppc_128: module.error_context().error_throw(module.location(), "C compiler does not support 128-bit PPC extended precision float");
-    case FloatType::fp128: return "q";
-    case FloatType::fp_x86_80: return "w";
-    default: PSI_FAIL("Unrecognised float width");
-    }
-  }
-  
   static void run_gcc_common(const CompileErrorPair& err_loc, const std::string& path,
                              const std::string& output_file, const std::string& source,
                              const std::vector<std::string>& extra) {
@@ -368,22 +437,11 @@ public:
   }
 
   static void gcc_type_detection_code(std::ostream& src) {
-    const struct {CompilerCommonType::Mode mode; const char *name; const char *suffix;} gcc_types[] = {
-      {CompilerCommonType::mode_int, "signed char", "-"},
-      {CompilerCommonType::mode_uint, "unsigned char", "-"},
-      {CompilerCommonType::mode_int, "short", "-"},
-      {CompilerCommonType::mode_uint, "unsigned short", "-"},
-      {CompilerCommonType::mode_int, "int", "-"},
-      {CompilerCommonType::mode_uint, "unsigned int", "-"},
-      {CompilerCommonType::mode_int, "long", "L"},
-      {CompilerCommonType::mode_uint, "unsigned long", "UL"},
-      {CompilerCommonType::mode_int, "long long", "LL"},
-      {CompilerCommonType::mode_uint, "unsigned long long", "ULL"}
-    };
-    for (unsigned n = 0; n < 10; ++n) {
-      src << "  printf(\"" << gcc_types[n].mode << " " << gcc_types[n].suffix << " %zd %zd "
-          << gcc_types[n].name << "\\n\", sizeof(" << gcc_types[n].name
-          << "), __alignof__(" << gcc_types[n].name << "));\n";
+    for (unsigned n = 0; n < array_size(common_types); ++n) {
+      const CommonTypeName& ty = common_types[n];
+      src << "  printf(\"" << ty.mode << " " << ty.suffix << " %zd %zd "
+          << ty.name << "\\n\", sizeof(" << ty.name
+          << "), __alignof__(" << ty.name << "));\n";
     }
   }
 };
@@ -668,7 +726,8 @@ boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc) 
     result = CCompilerClang::detect(err_loc, *cc_full_path);
   if (!result && ((type == cc_unknown) || (type == cc_tcc)))
     result = CCompilerTCC::detect(err_loc, *cc_full_path);
-  if (!result && ((type == cc_unknown) || (type == cc_msvc))) PSI_NOT_IMPLEMENTED();
+  if (!result && ((type == cc_unknown) || (type == cc_msvc)))
+    result = CCompilerMSVC::detect(err_loc, *cc_full_path);
   
   if (!result)
     err_loc.error_throw(boost::format("Could not identify C compiler: %s") % *cc_full_path);

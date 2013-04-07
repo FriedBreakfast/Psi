@@ -1,17 +1,21 @@
-include_directories(${Boost_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${JSONC_INCLUDE})
+include_directories(${Boost_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
 if(TCC_INCLUDE)
   include_directories(${TCC_INCLUDE})
 endif()
 
 configure_file(Config.h.in Config.h)
 
+if(PSI_DEBUG)
 add_library(psi-assert SHARED Assert.cpp Assert.hpp)
+set(PSI_ASSERT_LIB psi-assert)
+endif()
 
 bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated)
 set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
 
 if(WIN32)
 set(PSI_COMPILER_COMMON_SOURCES PlatformWindows.cpp PlatformWindows.hpp)
+set(PSI_COMPILER_COMMON_LIBS Shlwapi)
 set(PSI_COMPILER_SOURCES PlatformCompileWindows.cpp)
 set(PSI_TVM_SOURCES Tvm/JitWindows.cpp)
 elseif(UNIX)
@@ -23,6 +27,7 @@ endif()
 
 add_library(psi-compiler-common SHARED
   Runtime.cpp Runtime.hpp
+  PropertyValue.cpp PropertyValue.hpp
   SourceLocation.cpp SourceLocation.hpp
   Utility.cpp Utility.hpp
   ErrorContext.cpp ErrorContext.hpp
@@ -32,7 +37,7 @@ add_library(psi-compiler-common SHARED
   ${PSI_COMPILER_COMMON_SOURCES}
 )
 
-target_link_libraries(psi-compiler-common psi-assert ${JSONC_LIB})
+target_link_libraries(psi-compiler-common ${PSI_ASSERT_LIB} ${PSI_COMPILER_COMMON_LIBS})
 
 add_library(psi-tvm SHARED
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
@@ -60,7 +65,7 @@ add_library(psi-tvm SHARED
   ${PSI_TVM_SOURCES}
 )
 
-target_link_libraries(psi-tvm psi-compiler-common debug psi-assert)
+target_link_libraries(psi-tvm psi-compiler-common ${PSI_ASSERT_LIB})
 if(UNIX)
   target_link_libraries(psi-tvm -ldl)
 endif()
@@ -80,41 +85,48 @@ if(BUILD_TESTING)
   if(NOT WIN32)
     set_target_properties(psi-tvm-test PROPERTIES COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
   endif()
-  target_link_libraries(psi-tvm-test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} psi-tvm debug psi-assert)
-  add_dependencies(psi-tvm-test psi-tvm-llvm)
+  target_link_libraries(psi-tvm-test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} psi-tvm ${PSI_ASSERT_LIB})
+  if(PSI_TVM_JIT STREQUAL "llvm")
+    add_dependencies(psi-tvm-test psi-tvm-llvm)
+  elseif(PSI_TVM_JIT STREQUAL "c")
+    add_dependencies(psi-tvm-test psi-tvm-c)
+  endif()
 
   add_test(psi-tvm-test psi-tvm-test)
 endif()
 
-add_library(psi-tvm-llvm MODULE
-  Tvm/llvm/Builder.cpp Tvm/llvm/Builder.hpp
-  Tvm/llvm/Function.cpp
-  Tvm/llvm/FunctionalConstant.cpp
-  Tvm/llvm/FunctionalInstruction.cpp
-  Tvm/llvm/Instructions.cpp
-  Tvm/llvm/Target.cpp Tvm/llvm/Target.hpp
-  Tvm/llvm/Target_Linux_x86.cpp
-  Tvm/llvm/Target_AMD64.cpp
-  Tvm/llvm/Target_Win32.cpp
-  Tvm/llvm/Type.cpp
-)
+if(HAVE_LLVM)
+  add_library(psi-tvm-llvm MODULE
+    Tvm/llvm/Builder.cpp Tvm/llvm/Builder.hpp
+    Tvm/llvm/Function.cpp
+    Tvm/llvm/FunctionalConstant.cpp
+    Tvm/llvm/FunctionalInstruction.cpp
+    Tvm/llvm/Instructions.cpp
+    Tvm/llvm/Target.cpp Tvm/llvm/Target.hpp
+    Tvm/llvm/Target_Linux_x86.cpp
+    Tvm/llvm/Target_AMD64.cpp
+    Tvm/llvm/Target_Win32.cpp
+    Tvm/llvm/Type.cpp
+  )
 
-set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS ${LLVM_CXX_FLAGS})
-target_link_libraries(psi-tvm-llvm psi-tvm ${LLVM_LIBS} debug psi-assert ${LLVM_LDFLAGS})
+  set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}")
+  target_link_libraries(psi-tvm-llvm psi-tvm ${LLVM_LIBS} ${LLVM_LDFLAGS} ${PSI_ASSERT_LIB})
+endif()
 
 if(PSI_TVM_CC_TCCLIB)
   set(PSI_TVM_CC_SOURCES Tvm/c-backend/CCompilerTCCLib.cpp)
 endif()
 
 add_library(psi-tvm-c MODULE
-  Tvm/c-backend/Builder.cpp
+  Tvm/c-backend/Builder.cpp Tvm/c-backend/Builder.hpp
   Tvm/c-backend/CCompiler.cpp
-  Tvm/c-backend/CModule.cpp Tvm/c-backend/CModule.hpp Tvm/c-backend/COperators.def
+  Tvm/c-backend/CModule.cpp Tvm/c-backend/CModule.hpp Tvm/c-backend/COperators.hpp
   Tvm/c-backend/ValueBuilder.cpp
   Tvm/c-backend/TypeBuilder.cpp
   ${PSI_TVM_CC_SOURCES}
 )
 
+target_link_libraries(psi-tvm-c psi-tvm ${PSI_ASSERT_LIB})
 if(PSI_TVM_CC_TCCLIB)
   target_link_libraries(psi-tvm-c ${TCC_LIB})
 endif()
@@ -154,7 +166,7 @@ add_library(psi-compiler SHARED
   ${PSI_COMPILER_SOURCES}
 )
 
-target_link_libraries(psi-compiler psi-compiler-common psi-tvm debug psi-assert)
+target_link_libraries(psi-compiler psi-compiler-common psi-tvm ${PSI_ASSERT_LIB})
 if (UNIX)
   target_link_libraries(psi-compiler -ldl)
 endif()
@@ -162,9 +174,6 @@ endif()
 if (UNIX)
   add_library(psi-compiler-gcchecker SHARED GCChecker.c)
 endif()
-
-set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}" LINK_FLAGS "${LLVM_LDFLAGS}")
-target_link_libraries(psi-tvm-llvm ${LLVM_LIBS} debug psi-assert)
 
 add_executable(psi Main.cpp)
 target_link_libraries(psi psi-compiler)

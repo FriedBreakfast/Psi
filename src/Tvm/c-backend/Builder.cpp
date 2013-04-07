@@ -115,7 +115,7 @@ std::string CModuleBuilder::run() {
     const ValuePtr<Global>& term = i->second;
     ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
     
-    CType *type = m_type_builder.build(rewritten_term->value_type());
+    CType *type = m_type_builder.build(rewritten_term->value_type(), rewritten_term->term_type() == term_global_variable);
     const char *name = m_c_module.pool().strdup(term->name().c_str());
     
     switch (rewritten_term->term_type()) {

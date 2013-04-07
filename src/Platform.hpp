@@ -13,13 +13,15 @@ namespace Platform {
  * \param base If non-NULL, the actual base address of the symbol
  * is stored here.
  */
-String address_to_symbol(void *addr, void **base);
+PSI_COMPILER_COMMON_EXPORT String address_to_symbol(void *addr, void **base);
 
-class PSI_COMPILER_COMMON_EXPORT PlatformError : public std::runtime_error {
+class PSI_COMPILER_COMMON_EXPORT PlatformError : public std::exception {
+  std::string m_message;
 public:
   PlatformError(const char*);
   PlatformError(const std::string&);
   virtual ~PlatformError() throw();
+  virtual const char *what() const throw();
 };
 
 /**
@@ -42,7 +44,7 @@ public:
  * 
  * Implementation is platform-specific.
  */
-boost::shared_ptr<PlatformLibrary> load_library(const std::string& path);
+PSI_COMPILER_COMMON_EXPORT boost::shared_ptr<PlatformLibrary> load_library(const std::string& path);
 
 class PSI_COMPILER_COMMON_EXPORT TemporaryPathImpl {
   std::string m_path;

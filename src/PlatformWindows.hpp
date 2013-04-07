@@ -85,6 +85,16 @@ namespace Psi {
 
       PSI_COMPILER_COMMON_EXPORT std::string error_string(DWORD error);
       PSI_COMPILER_COMMON_EXPORT std::string last_error_string();
+
+      class LibraryWindows : public PlatformLibrary {
+        std::vector<HMODULE> m_handles;
+
+      public:
+        LibraryWindows(unsigned hint=0);
+        virtual ~LibraryWindows();
+        virtual boost::optional<void*> symbol(const std::string& symbol);
+        void add_handle(HMODULE handle);
+      };
     }
   }
 }

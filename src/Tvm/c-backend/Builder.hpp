@@ -69,6 +69,9 @@ public:
   virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) = 0;
 };
 
+/**
+ * Converts TVM types to CType. Also handles builtin functions.
+ */
 class TypeBuilder {
   typedef boost::unordered_map<ValuePtr<>, CType*> TypeMapType;
   TypeMapType m_types;
@@ -77,6 +80,8 @@ class TypeBuilder {
   CType *m_signed_integer_types[IntegerType::i_max];
   CType *m_unsigned_integer_types[IntegerType::i_max];
   CType *m_float_types[FloatType::fp_max];
+
+  CExpression *m_psi_alloca, *m_psi_freea, *m_memcpy, *m_memset;
   
   CExpressionBuilder m_c_builder;
 
@@ -84,7 +89,7 @@ class TypeBuilder {
   
 public:
   TypeBuilder(CModule *module);
-  CType* build(const ValuePtr<>& term);
+  CType* build(const ValuePtr<>& term, bool name_used=true);
   CExpressionBuilder& c_builder() {return m_c_builder;}
   CModule& module() const {return m_c_builder.module();}
   CCompiler& c_compiler() {return c_builder().module().c_compiler();}
@@ -93,6 +98,11 @@ public:
   CType* void_type();
   CType* integer_type(IntegerType::Width width, bool is_signed);
   CType* float_type(FloatType::Width width);
+
+  CExpression *get_psi_alloca();
+  CExpression *get_psi_freea();
+  CExpression *get_memcpy();
+  CExpression *get_memset();
 };
 
 class ValueBuilder {
@@ -107,7 +117,8 @@ public:
   ValueBuilder(TypeBuilder *type_builder);
   ValueBuilder(const ValueBuilder& base, CFunction *function);
   
-  CType* build_type(const ValuePtr<>& type);
+  TypeBuilder& type_builder() {return *m_type_builder;}
+  CType* build_type(const ValuePtr<>& type, bool name_used=true);
   CExpression* integer_literal(int value);
   CExpression* build(const ValuePtr<>& value, bool force_eval=false);
   CExpression* build_rvalue(const ValuePtr<>& value);
@@ -116,11 +127,6 @@ public:
   CCompiler& c_compiler() const {return module().c_compiler();}
   CompileErrorContext& error_context() {return c_builder().module().error_context();}
   void put(const ValuePtr<>& key, CExpression *value);
-  
-  CExpression* builtin_psi_alloca();
-  CExpression* builtin_psi_freea();
-  CExpression* builtin_memcpy();
-  CExpression* builtin_memset();
 };
 
 class CModuleBuilder {

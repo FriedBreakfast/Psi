@@ -231,7 +231,7 @@ namespace Psi {
         return false;
       
       unsigned hi_word_shift = m_bits - (m_words.size() - 1)*std::numeric_limits<WordType>::digits - 1;
-      return (m_words[m_words.size() - 1] & (1 << hi_word_shift)) != 0;
+      return (m_words[m_words.size() - 1] & (WordType(1) << hi_word_shift)) != 0;
     }
     
     bool BigInteger::zero() const {

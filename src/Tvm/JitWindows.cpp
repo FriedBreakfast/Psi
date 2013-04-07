@@ -1,5 +1,5 @@
 #include "Jit.hpp"
-#include "../UtilityWindows.hpp"
+#include "../PlatformWindows.hpp"
 
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/make_shared.hpp>
@@ -16,7 +16,8 @@ namespace Psi {
       
     public:
       WindowsJitFactory(const CompileErrorPair& error_handler, const std::string& name, Platform::Windows::LibraryHandle& handle)
-      : JitFactory(error_handler, name) {
+      : JitFactory(error_handler, name),
+      m_error_handler(error_handler) {
         m_handle.swap(handle);
         
         m_callback = reinterpret_cast<JitFactoryCallback>(GetProcAddress(m_handle.get(), "tvm_jit_new"));

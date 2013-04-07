@@ -224,8 +224,8 @@ namespace Psi {
       ValuePtr<> m_false_value;
     };
     
-    unsigned size_to_unsigned(const ValuePtr<>& value);
-    bool size_equals_constant(const ValuePtr<>& value, unsigned c);
+    PSI_TVM_EXPORT unsigned size_to_unsigned(const ValuePtr<>& value);
+    PSI_TVM_EXPORT bool size_equals_constant(const ValuePtr<>& value, unsigned c);
   }
 }
 

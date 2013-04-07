@@ -39,7 +39,7 @@ PSI_SMALL_ENUM(CExpressionType) {
   c_expr_member,
 #define PSI_TVM_C_OP_STR(op,ty,prev,right_assoc,str)
 #define PSI_TVM_C_OP(op,prec,right_assoc) c_expr_##op,
-#include "COperators.def"
+#include "COperators.hpp"
 #undef PSI_TVM_C_OP_STR
 #undef PSI_TVM_C_OP
 };
@@ -56,7 +56,7 @@ extern const COperator c_operators[];
 PSI_SMALL_ENUM(COperatorType) {
 #define PSI_TVM_C_OP(op,prec,right_assoc) c_op_##op,
 #define PSI_TVM_C_OP_STR(op,ty,prec,right_assoc,str) c_op_##op,
-#include "COperators.def"
+#include "COperators.hpp"
 #undef PSI_TVM_C_OP_STR
 #undef PSI_TVM_C_OP
 };
@@ -143,6 +143,7 @@ struct CElement : SinglyLinkedListBase, CheckedCastBase {
 };
 
 struct CType : CElement {
+  bool name_used;
   CTypeType type;
   CTypePointer *ptr;
 };
@@ -159,7 +160,7 @@ struct CTypeFunctionArgument {
 struct CTypeFunction : CType {
   CType *result_type;
   unsigned n_args;
-  CTypeFunctionArgument args[];
+  PSI_FLEXIBLE_ARRAY(CTypeFunctionArgument args);
 };
 
 struct CTypeAggregateMember {
@@ -169,7 +170,7 @@ struct CTypeAggregateMember {
 
 struct CTypeAggregate : CType {
   unsigned n_members;
-  CTypeAggregateMember members[];
+  PSI_FLEXIBLE_ARRAY(CTypeAggregateMember members);
 };
 
 struct CTypePointer : CType {
@@ -206,12 +207,12 @@ struct CExpressionLiteral : CExpression {
 struct CExpressionCall : CExpression {
   CExpression *target;
   unsigned n_args;
-  CExpression *args[];
+  PSI_FLEXIBLE_ARRAY(CExpression *args);
 };
 
 struct CExpressionAggregateValue : CExpression {
   unsigned n_members;
-  CExpression *members[];
+  PSI_FLEXIBLE_ARRAY(CExpression *members);
 };
 
 struct CExpressionUnionValue : CExpression {

@@ -181,7 +181,7 @@ namespace Psi {
     struct Page {
       Page *next;
       std::size_t offset, length;
-      char data[] PSI_ATTRIBUTE((PSI_ALIGNED_MAX));
+      PSI_FLEXIBLE_ARRAY(char data);
     };
 
     std::size_t m_page_size;
@@ -241,7 +241,10 @@ namespace Psi {
     const_pointer address(const_reference x) const {return &x;}
     pointer allocate(size_type n, const_pointer PSI_UNUSED(hint)=0) {return static_cast<T*>(m_pool->alloc(n*sizeof(value_type), PSI_ALIGNOF(value_type)));}
     void deallocate(pointer PSI_UNUSED(p), size_type PSI_UNUSED(n)) {}
-    size_type max_size() const throw() {return std::numeric_limits<std::size_t>::max() / sizeof(value_type);}
+    size_type max_size() const throw() {
+      // Extra brackets avoid Windows.h max() macro
+      return (std::numeric_limits<std::size_t>::max)() / sizeof(value_type);
+    }
     void construct(pointer p, const_reference val) {new (p) T (val);}
     void destroy(pointer p) {p->~T();}
     
