@@ -2,7 +2,6 @@
 #include "Tree.hpp"
 #include "Macros.hpp"
 #include "TermBuilder.hpp"
-#include <json_object.h>
 
 namespace Psi {
   namespace Compiler {

@@ -433,6 +433,24 @@ namespace Psi {
   std::size_t array_size(T(&)[N]) {
     return N;
   }
+
+  /**
+   * RAII for an array of C strings.
+   * 
+   * Each string should be allocated with malloc() since it is freed
+   * with free().
+   */
+  class PSI_COMPILER_COMMON_EXPORT CStringArray : public NonCopyable {
+    std::size_t m_length;
+    char **m_strings;
+  
+  public:
+    CStringArray(std::size_t n);
+    ~CStringArray();
+    char** data() {return m_strings;}
+    char*& operator [] (std::size_t n) {return m_strings[n];}
+    static char* checked_strdup(const std::string& s);
+  };
 }
 
 #endif

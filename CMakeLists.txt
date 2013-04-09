@@ -51,7 +51,7 @@ else()
   set(PSI_TVM_CC_DEFAULT ${CMAKE_C_COMPILER})
 endif()
 
-set(PSI_TVM_CC ${PSI_TVM_CC_DEFAULT} CACHE STRING "Default path to search for C compiler")
+set(PSI_TVM_CC ${PSI_TVM_CC_DEFAULT} CACHE FILEPATH "Default path to search for C compiler")
 
 if(WIN32 OR NOT HAVE_LLVM)
   set(PSI_TVM_JIT_DEFAULT "c")

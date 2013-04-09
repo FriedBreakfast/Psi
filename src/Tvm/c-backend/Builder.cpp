@@ -251,15 +251,8 @@ CJit::~CJit() {
 
 void CJit::add_module(Module *module) {
   std::string source = CModuleBuilder(m_compiler.get(), *module).run();
-  JitModule jm;
-  jm.path = boost::make_shared<Platform::TemporaryPath>();
-  m_compiler->compile_library(factory()->error_handler().context().bind(module->location()), jm.path->path(), source);
-  try {
-    jm.library = Platform::load_library(jm.path->path());
-  } catch (Platform::PlatformError& ex) {
-    factory()->error_handler().context().error_throw(module->location(), ex.what());
-  }
-  m_modules.insert(std::make_pair(module, jm));
+  boost::shared_ptr<Platform::PlatformLibrary> lib = m_compiler->compile_load_library(factory()->error_handler().context().bind(module->location()), source);
+  m_modules.insert(std::make_pair(module, lib));
 }
 
 void CJit::remove_module(Module *module) {
@@ -274,7 +267,7 @@ void* CJit::get_symbol(const ValuePtr<Global>& symbol) {
   if (it == m_modules.end())
     factory()->error_handler().context().error_throw(symbol->location(), "Module has not been JIT compiled");
   
-  boost::optional<void*> ptr = it->second.library->symbol(symbol->name());
+  boost::optional<void*> ptr = it->second->symbol(symbol->name());
   if (!ptr)
     factory()->error_handler().context().error_throw(symbol->location(), boost::format("Symbol missing from JIT compiled library: %s") % symbol->name());
   

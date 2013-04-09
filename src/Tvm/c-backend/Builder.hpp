@@ -67,6 +67,9 @@ public:
   
   /// \brief Compile a shared library
   virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) = 0;
+  
+  /// \brief Compile and load a shared library
+  virtual boost::shared_ptr<Platform::PlatformLibrary> compile_load_library(const CompileErrorPair& err_loc, const std::string& source);
 };
 
 /**
@@ -145,12 +148,7 @@ public:
 };
 
 class CJit : public Jit {
-  struct JitModule {
-    boost::shared_ptr<Platform::TemporaryPath> path;
-    boost::shared_ptr<Platform::PlatformLibrary> library;
-  };
-  
-  typedef std::map<Module*, JitModule> ModuleMap;
+  typedef std::map<Module*, boost::shared_ptr<Platform::PlatformLibrary> > ModuleMap;
   ModuleMap m_modules;
   
 public:

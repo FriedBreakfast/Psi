@@ -1,6 +1,7 @@
 #include "TvmLowering.hpp"
 #include "TermBuilder.hpp"
 #include "TopologicalSort.hpp"
+#include "PlatformCompile.hpp"
 
 #include "Tvm/FunctionalBuilder.hpp"
 #include "Tvm/Function.hpp"
@@ -221,7 +222,7 @@ TvmCompiler::TvmPlatformLibrary& TvmCompiler::get_platform_library(const TreePtr
   TvmPlatformLibrary& tvm_lib = m_libraries[lib];
   if (!tvm_lib.library) {
     PropertyValue pv = lib->callback->evaluate(m_local_target, m_local_target);
-    tvm_lib.library = Platform::load_library(pv);
+    tvm_lib.library = Platform::load_module(pv);
   }
   
   return tvm_lib;

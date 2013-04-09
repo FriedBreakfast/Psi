@@ -54,4 +54,28 @@ namespace Psi {
     std::memcpy(sc, s, n);
     return sc;
   }
+
+  CStringArray::CStringArray(std::size_t n) : m_length(n), m_strings(new char* [n]) {
+    std::fill_n(m_strings, m_length, static_cast<char*>(NULL));
+  }
+  
+  CStringArray::~CStringArray() {
+    for (std::size_t ii = 0, ie = m_length; ii != ie; ++ii) {
+      if (m_strings[ii])
+        free(m_strings[ii]);
+    }
+    delete [] m_strings;
+  }
+
+  /**
+   * strdup() with checked memory allocation.
+   */
+  char* CStringArray::checked_strdup(const std::string& s) {
+    char *p = static_cast<char*>(std::malloc(s.size() + 1));
+    if (!p)
+      throw std::bad_alloc();
+    std::copy(s.begin(), s.end(), p);
+    p[s.size()] = '\0';
+    return p;
+  }
 }

@@ -6,6 +6,10 @@
 #include <boost/format.hpp>
 #include <boost/make_shared.hpp>
 
+#ifdef PSI_TVM_CC_TCCLIB
+#include <libtcc.h>
+#endif
+
 namespace Psi {
 namespace Tvm {
 namespace CBackend {
@@ -15,6 +19,24 @@ CCompiler::CCompiler() {
 }
 
 void CCompiler::emit_alignment(CModuleEmitter& PSI_UNUSED(emitter), unsigned PSI_UNUSED(alignment)) {
+}
+
+namespace {
+  struct LibraryTempFilePair {
+    Platform::TemporaryPath path;
+    boost::shared_ptr<Platform::PlatformLibrary> library;
+  };
+}
+
+boost::shared_ptr<Platform::PlatformLibrary> CCompiler::compile_load_library(const CompileErrorPair& err_loc, const std::string& source) {
+  boost::shared_ptr<LibraryTempFilePair> result = boost::make_shared<LibraryTempFilePair>();
+  compile_library(err_loc, result->path.path(), source);
+  try {
+    result->library = Platform::load_library(result->path.path());
+  } catch (Platform::PlatformError& ex) {
+    err_loc.error_throw(ex.what());
+  }
+  return boost::shared_ptr<Platform::PlatformLibrary>(result, result->library.get());
 }
 
 /**
@@ -336,12 +358,12 @@ public:
         << "  union {unsigned __int8 a[4]; unsigned __int32 b;} endian_test = {1, 2, 3, 4};\n"
         << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
         << "  printf(\"%d %d\\n\", _MSC_VER, big_endian||little_endian);\n"
-        << "  printf(\"%d %d %zd %zd\\n\", big_endian, CHAR_BIT, sizeof(void*), __alignof(void*));\n";
+        << "  printf(\"%d %d %d %d\\n\", big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof(void*));\n";
     for (unsigned n = 0; n < array_size(common_types); ++n) {
       const CommonTypeName& ty = common_types[n];
-      src << "  printf(\"" << ty.mode << " " << ty.suffix << " %zd %zd "
-          << ty.name << "\\n\", sizeof(" << ty.name
-          << "), __alignof(" << ty.name << "));\n";
+      src << "  printf(\"" << ty.mode << " " << ty.suffix << " %d %d "
+          << ty.name << "\\n\", (int)sizeof(" << ty.name
+          << "), (int)__alignof(" << ty.name << "));\n";
     }
     src << "  return 0;"
         << "}\n";
@@ -376,13 +398,8 @@ public:
  */
 class CCompilerGCCLike : public CCompilerCommon {
 public:
-  bool has_float_128;
-  bool has_float_80;
-  
   CCompilerGCCLike(const CompilerCommonInfo& common_info)
-  : CCompilerCommon(common_info),
-  has_float_128(false),
-  has_float_80(false) {
+  : CCompilerCommon(common_info) {
     has_variable_length_arrays = true;
     has_designated_initializer = true;
   }
@@ -390,17 +407,25 @@ public:
   virtual void emit_alignment(CModuleEmitter& emitter, unsigned n) {
     emitter.output() << "__attribute__((aligned(" << n << "))) ";
   }
+
+  void emit_global_attributes(AttributeWriter& aw, CGlobal *global, bool is_external) {
+    if (global->alignment) aw.next() << "aligned(" << global->alignment << ")";
+#ifdef _WIN32
+    if (is_external) aw.next() << "dllimport";
+    else if (!global->is_private) aw.next() << "dllexport";
+#endif
+  }
   
   /// \todo Emit calling convention
   virtual void emit_function_attributes(CModuleEmitter& emitter, CFunction *function) {
     AttributeWriter aw(emitter, "__attribute__((", "))");
-    if (function->alignment) aw.next() << "aligned(" << function->alignment << ")";
+    emit_global_attributes(aw, function, function->is_external);
     aw.done();
   }
   
   virtual void emit_global_variable_attributes(CModuleEmitter& emitter, CGlobalVariable *gvar) {
     AttributeWriter aw(emitter, "__attribute__((", "))");
-    if (gvar->alignment) aw.next() << "aligned(" << gvar->alignment << ")";
+    emit_global_attributes(aw, gvar, !gvar->value);
     aw.done();
   }
   
@@ -427,21 +452,23 @@ public:
     run_gcc_common(err_loc, path, output_file, source, std::vector<std::string>());
   }
   
-  static void run_gcc_library_linux(const CompileErrorPair& err_loc, const std::string& path,
-                                    const std::string& output_file, const std::string& source) {
+  static void run_gcc_library(const CompileErrorPair& err_loc, const std::string& path,
+                              const std::string& output_file, const std::string& source) {
     std::vector<std::string> extra;
     extra.push_back("-shared");
+#ifdef __linux__
     extra.push_back("-fPIC");
     extra.push_back("-Wl,-soname," + Platform::filename(output_file));
+#endif
     run_gcc_common(err_loc, path, output_file, source, extra);
   }
 
-  static void gcc_type_detection_code(std::ostream& src) {
+  static void gcc_type_detection_code(std::ostream& src, const char *fp="stdout") {
     for (unsigned n = 0; n < array_size(common_types); ++n) {
       const CommonTypeName& ty = common_types[n];
-      src << "  printf(\"" << ty.mode << " " << ty.suffix << " %zd %zd "
-          << ty.name << "\\n\", sizeof(" << ty.name
-          << "), __alignof__(" << ty.name << "));\n";
+      src << "  fprintf(" << fp << ", \"" << ty.mode << " " << ty.suffix << " %d %d "
+          << ty.name << "\\n\", (int)sizeof(" << ty.name
+          << "), (int)__alignof__(" << ty.name << "));\n";
     }
   }
 };
@@ -478,17 +505,18 @@ public:
   }
   
   virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
-    run_gcc_library_linux(err_loc, m_path, output_file, source);
+    run_gcc_library(err_loc, m_path, output_file, source);
   }
   
   static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
     std::ostringstream src;
+    src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
         << "#include <limits.h>\n"
         << "int main() {\n"
         << "  int big_endian = (__BYTE_ORDER__==__ORDER_BIG_ENDIAN__), little_endian = (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__);\n"
         << "  printf(\"%d %d %d\\n\", __GNUC__, __GNUC_MINOR__, big_endian||little_endian);\n"
-        << "  printf(\"%d %d %zd %zd\\n\", big_endian, CHAR_BIT, sizeof(void*), __alignof__(void*));\n";
+        << "  printf(\"%d %d %d %d\\n\", big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
     gcc_type_detection_code(src);
     src << "  return 0;"
         << "}\n";
@@ -539,11 +567,12 @@ public:
   }
   
   virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
-    run_gcc_library_linux(err_loc, m_path, output_file, source);
+    run_gcc_library(err_loc, m_path, output_file, source);
   }
 
   static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
     std::ostringstream src;
+    src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
         << "#include <limits.h>\n"
         << "#include <stdint.h>\n"
@@ -551,7 +580,7 @@ public:
         << "  union {uint8_t a[4]; uint32_t b;} endian_test = {1, 2, 3, 4};\n"
         << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
         << "  printf(\"%d %d %d\\n\", __clang_major__, __clang_minor__, big_endian||little_endian);\n"
-        << "  printf(\"%d %d %zd %zd\\n\", big_endian, CHAR_BIT, sizeof(void*), __alignof__(void*));\n";
+        << "  printf(\"%d %d %d %d\\n\", big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
     gcc_type_detection_code(src);
     src << "  return 0;"
         << "}\n";
@@ -629,6 +658,7 @@ public:
 
   static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
     std::stringstream src;
+    src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
         << "#include <limits.h>\n"
         << "#include <stdint.h>\n"
@@ -636,7 +666,7 @@ public:
         << "  union {uint8_t a[4]; uint32_t b;} endian_test = {1, 2, 3, 4};\n"
         << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
         << "  printf(\"%d %d\\n\", __TINYC__, big_endian||little_endian);\n"
-        << "  printf(\"%d %d %zd %zd\\n\", big_endian, CHAR_BIT, sizeof(void*), __alignof__(void*));\n";
+        << "  printf(\"%d %d %d %d\\n\", big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
     gcc_type_detection_code(src);
     src << "  return 0;"
         << "}\n";
@@ -682,6 +712,220 @@ public:
 };
 
 namespace {
+class TCCError : public std::exception {
+  std::string m_msg;
+public:
+  TCCError(const char *s) : m_msg(s) {}
+  TCCError(std::string& s) {m_msg.swap(s);}
+  virtual ~TCCError() throw() {}
+  virtual const char *what() const throw() {return m_msg.c_str();}
+};
+
+class TCCLibContext {
+  std::string m_error_msg;
+  TCCState *m_state;
+
+  static void error_func(void *self_void_ptr, const char *msg) {
+    TCCLibContext& self = *static_cast<TCCLibContext*>(self_void_ptr);
+    self.m_error_msg = msg;
+  }
+
+  void clear_tcc_error() {
+    m_error_msg.clear();
+  }
+
+  void throw_tcc_error() {
+    if (m_error_msg.empty())
+      throw TCCError("Unknown TCC error");
+    throw TCCError(m_error_msg);
+  }
+
+public:
+  TCCLibContext(int output_type) {
+    m_state = tcc_new();
+    if (!m_state)
+      throw TCCError("Failed to create TCC context");
+    tcc_set_error_func(m_state, this, error_func);
+    if (tcc_set_output_type(m_state, output_type) == -1)
+      throw_tcc_error();
+  }
+
+  ~TCCLibContext() {
+    tcc_delete(m_state);
+  }
+
+  TCCState *state() {
+    return m_state;
+  }
+
+  void compile_string(const std::string& src) {
+    clear_tcc_error();
+    if (tcc_compile_string(m_state, src.c_str()) == -1)
+      throw_tcc_error();
+  }
+
+  void output_file(const std::string& name) {
+    clear_tcc_error();
+    if (tcc_output_file(m_state, name.c_str()) == -1)
+      throw_tcc_error();
+  }
+
+  int run(int argc, char **argv) {
+    return tcc_run(m_state, argc, argv);
+  }
+
+  void relocate() {
+    clear_tcc_error();
+    if (tcc_relocate(m_state, TCC_RELOCATE_AUTO) == -1)
+      throw_tcc_error();
+  }
+
+  void add_symbol(const char *name, const void *value) {
+    clear_tcc_error();
+    if (tcc_add_symbol(m_state, name, value) == -1)
+      throw_tcc_error();
+  }
+
+  void* get_symbol(const std::string& name) {
+    return tcc_get_symbol(m_state, name.c_str());
+  }
+};
+
+/**
+ * Implementation of PlatformLibrary for TCC memory compiled modules.
+ */
+class TCCPlatformLibrary : public Platform::PlatformLibrary {
+  TCCLibContext m_context;
+
+public:
+  TCCPlatformLibrary() : m_context(TCC_OUTPUT_MEMORY) {}
+  TCCLibContext& context() {return m_context;}
+
+  virtual boost::optional<void*> symbol(const std::string& name) {
+    void *s = m_context.get_symbol(name);
+    return s ? boost::optional<void*>(s) : boost::none;
+  }
+};
+
+class StdioTempFile : public NonCopyable {
+  FILE *m_fp;
+public:
+  StdioTempFile() {
+    m_fp = tmpfile();
+  }
+
+  ~StdioTempFile() {
+    if (m_fp)
+      fclose(m_fp);
+  }
+
+  FILE *fp() {return m_fp;}
+};
+}
+
+class CCompilerTCCLib : public CCompilerGCCLike {
+  unsigned m_version_major, m_version_minor;
+
+public:
+  CCompilerTCCLib(const CompilerCommonInfo& info, unsigned version_major, unsigned version_minor)
+  : CCompilerGCCLike(info), m_version_major(version_major), m_version_minor(version_minor) {
+  }
+
+  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+    try {
+      TCCLibContext ctx(TCC_OUTPUT_EXE);
+      ctx.compile_string(source);
+      ctx.output_file(output_file);
+    } catch (TCCError& ex) {
+      err_loc.error_throw(ex.what());
+    }
+  }
+  
+  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+    try {
+      TCCLibContext ctx(TCC_OUTPUT_DLL);
+      ctx.compile_string(source);
+      ctx.output_file(output_file);
+    } catch (TCCError& ex) {
+      err_loc.error_throw(ex.what());
+    }
+  }
+
+  virtual boost::shared_ptr<Platform::PlatformLibrary> compile_load_library(const CompileErrorPair& err_loc, const std::string& source) {
+    try {
+      boost::shared_ptr<TCCPlatformLibrary> pl = boost::make_shared<TCCPlatformLibrary>();
+      pl->context().compile_string(source);
+      pl->context().relocate();
+      return pl;
+    } catch (TCCError& ex) {
+      err_loc.error_throw(ex.what());
+    }
+  }
+
+  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc) {
+    std::stringstream src;
+    src.imbue(std::locale::classic());
+    src << "#include <stdio.h>\n"
+        << "#include <limits.h>\n"
+        << "#include <stdint.h>\n"
+        << "void callback(FILE *fp) {\n"
+        << "  union {uint8_t a[4]; uint32_t b;} endian_test = {1, 2, 3, 4};\n"
+        << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
+        << "  fprintf(fp, \"%d %d\\n\", __TINYC__, big_endian||little_endian);\n"
+        << "  fprintf(fp, \"%d %d %d %d\\n\", big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
+    CCompilerGCCLike::gcc_type_detection_code(src, "fp");
+    src << "}\n";
+
+    std::vector<char> output;
+    try {
+      boost::shared_ptr<TCCPlatformLibrary> pl = boost::make_shared<TCCPlatformLibrary>();
+      pl->context().compile_string(src.str());
+      pl->context().add_symbol("fprintf", fprintf);
+      pl->context().relocate();
+
+      void (*fptr) (FILE*) = reinterpret_cast<void(*)(FILE*)>(pl->context().get_symbol("callback"));
+
+      StdioTempFile tf;
+      if (!tf.fp())
+        err_loc.error_throw("Failed to create temporary file");
+      fptr(tf.fp());
+      
+      long length = ftell(tf.fp());
+      if (length < 0)
+        PSI_NOT_IMPLEMENTED();
+
+      output.resize(length);
+      if (length > 0) {
+        if (fseek(tf.fp(), 0, SEEK_SET) != 0)
+          PSI_NOT_IMPLEMENTED();
+
+        if (fread(&output[0], 1, length, tf.fp()) != length)
+          PSI_NOT_IMPLEMENTED();
+      }
+    } catch (TCCError& ex) {
+      err_loc.error_throw(ex.what());
+    }
+
+    std::istringstream program_ss;
+    program_ss.imbue(std::locale::classic());
+    program_ss.str(std::string(output.begin(), output.end()));
+    unsigned version, known_endian;
+    program_ss >> version >> known_endian;
+    
+    if (!known_endian)
+      err_loc.error_throw("tcc compiler uses unsupported byte order");
+    
+    unsigned version_major, version_minor;
+    version_major = version / 10000;
+    version_minor = (version / 100) % 100;
+    
+    CompilerCommonInfo common_info = CCompilerCommon::parse_common_info(err_loc, program_ss);
+    
+    return boost::make_shared<CCompilerTCCLib>(common_info, version_major, version_minor);
+  }
+};
+
+namespace {
   enum CompilerType {
     cc_unknown,
     cc_gcc,
@@ -699,8 +943,8 @@ boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc) 
   if (!cc_path)
     cc_path = PSI_TVM_CC;
   
-  if (PSI_TVM_CC_TCCLIB && (std::strcmp(cc_path, "tcclib") == 0))
-    PSI_NOT_IMPLEMENTED();
+  if (PSI_TVM_CC_TCCLIB && (std::strcmp(cc_path, "libtcc") == 0))
+    return CCompilerTCCLib::detect(err_loc);
   
   // Try to identify the compiler by its executable name
   boost::optional<std::string> cc_full_path = Platform::find_in_path(cc_path);

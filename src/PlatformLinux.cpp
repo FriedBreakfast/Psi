@@ -312,40 +312,6 @@ bool cmd_write_by_buffer(FileDescriptor& fd, const char*& ptr, const char *end) 
     return ptr != end;
   }
 }
-
-/// Convert a std::string to a C string, allocating the array with new[]
-char* checked_strdup(const std::string& s) {
-  char *p = strdup(s.c_str());
-  if (!p)
-    throw std::bad_alloc();
-  return p;
-}
-
-/**
- * RAII for an array of C strings.
- * 
- * Each string should be allocated with malloc().
- */
-class CStringArray : NonCopyable {
-  std::size_t m_length;
-  char **m_strings;
-  
-public:
-  CStringArray(std::size_t n) : m_length(n), m_strings(new char* [n]) {
-    std::fill_n(m_strings, m_length, static_cast<char*>(NULL));
-  }
-  
-  ~CStringArray() {
-    for (std::size_t ii = 0, ie = m_length; ii != ie; ++ii) {
-      if (m_strings[ii])
-        free(m_strings[ii]);
-    }
-    delete [] m_strings;
-  }
-  
-  char** data() {return m_strings;}
-  char*& operator [] (std::size_t n) {return m_strings[n];}
-};
 }
 
 int exec_communicate(const std::vector<std::string>& command, const std::string& input, std::string *output_out, std::string *output_err) {
@@ -357,7 +323,7 @@ int exec_communicate(const std::vector<std::string>& command, const std::string&
   
   CStringArray args(command.size()+1);
   for (std::size_t ii = 0, ie = command.size(); ii != ie; ++ii)
-    args[ii] = checked_strdup(command[ii]);
+    args[ii] = CStringArray::checked_strdup(command[ii]);
   args[command.size()] = NULL;
   
   pid_t child_pid = fork();

@@ -8,6 +8,7 @@
 #include "Compiler.hpp"
 #include "StaticDispatch.hpp"
 #include "Enums.hpp"
+#include "PropertyValue.hpp"
 
 namespace Psi {
   namespace Compiler {

@@ -113,10 +113,6 @@ if(HAVE_LLVM)
   target_link_libraries(psi-tvm-llvm psi-tvm ${LLVM_LIBS} ${LLVM_LDFLAGS} ${PSI_ASSERT_LIB})
 endif()
 
-if(PSI_TVM_CC_TCCLIB)
-  set(PSI_TVM_CC_SOURCES Tvm/c-backend/CCompilerTCCLib.cpp)
-endif()
-
 add_library(psi-tvm-c MODULE
   Tvm/c-backend/Builder.cpp Tvm/c-backend/Builder.hpp
   Tvm/c-backend/CCompiler.cpp

@@ -125,8 +125,8 @@ m_psi_freea(NULL),
 m_memcpy(NULL) {
   m_void_type = NULL;
   std::fill_n(m_signed_integer_types, array_size(m_signed_integer_types), static_cast<CType*>(NULL));
-  std::fill_n(m_unsigned_integer_types, array_size(m_signed_integer_types), static_cast<CType*>(NULL));
-  std::fill_n(m_float_types, array_size(m_signed_integer_types), static_cast<CType*>(NULL));
+  std::fill_n(m_unsigned_integer_types, array_size(m_unsigned_integer_types), static_cast<CType*>(NULL));
+  std::fill_n(m_float_types, array_size(m_float_types), static_cast<CType*>(NULL));
 }
 
 CType* TypeBuilder::build(const ValuePtr<>& term, bool name_used) {
