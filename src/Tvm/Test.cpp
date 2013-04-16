@@ -3,6 +3,7 @@
 
 #include "Test.hpp"
 #include "Assembler.hpp"
+#include "../Platform.hpp"
 #include "../ErrorContext.hpp"
 
 #include <cstdlib>

@@ -4,6 +4,13 @@
 #include <boost/optional.hpp>
 
 #include "Runtime.hpp"
+#include "PropertyValue.hpp"
+
+#if defined(_WIN32)
+#include "PlatformImplWindows.hpp"
+#elif defined(__linux__)
+#include "PlatformImplLinux.hpp"
+#endif
 
 namespace Psi {
 namespace Platform {
@@ -39,25 +46,66 @@ public:
   virtual boost::optional<void*> symbol(const std::string& name) = 0;
 };
 
+class PSI_COMPILER_COMMON_EXPORT Path {
+  PathData m_data;
+
+public:
+  Path();
+  Path(const PathData& data);
+  Path(const std::string& pth);
+  ~Path();
+
+  /// \brief Get the underlying representation of the path
+  const PathData& data() const {return m_data;}
+
+  /// \brief Convert this path to a string representation
+  std::string str() const;
+
+  /**
+   * \brief Join two paths to form a combined path.
+   * 
+   * If second is an absolute path, return second. Otherwise,
+   * return second appended to first, with a separating slash
+   * if first does not end with a slash already.
+   */
+  Path join(const Path& second) const;
+
+  /**
+   * \brief Normalize a path.
+   * 
+   * Removes any occurences of './', '../' and '//'.
+   * The resulting path will have a slash if the original path had one,
+   * or the original path ended in a '..' or '.'.
+   */
+  Path normalize() const;
+
+  /**
+   * \brief Convert a relative path to an absolute path.
+   * 
+   * If this is already an absolute path, this is a no-op.
+   */
+  Path absolute() const;
+
+  /**
+   * \brief Get the filename portion of a path.
+   */
+  Path filename() const;
+};
+
+/// \brief Get the current working directory
+PSI_COMPILER_COMMON_EXPORT Path getcwd();
+
+/**
+  * \brief Find an executable in the current path.
+  */
+PSI_COMPILER_COMMON_EXPORT boost::optional<Path> find_in_path(const Path& name);
+
 /**
  * Generic library loading function.
  * 
  * Implementation is platform-specific.
  */
-PSI_COMPILER_COMMON_EXPORT boost::shared_ptr<PlatformLibrary> load_library(const std::string& path);
-
-class PSI_COMPILER_COMMON_EXPORT TemporaryPathImpl {
-  std::string m_path;
-  
-public:
-  TemporaryPathImpl(const std::string& path);
-  virtual ~TemporaryPathImpl();
-  virtual void delete_() = 0;
-  const std::string& path() const {return m_path;}
-};
-
-/// Platform specific implemenation
-TemporaryPathImpl* make_temporary_path_impl();
+PSI_COMPILER_COMMON_EXPORT boost::shared_ptr<PlatformLibrary> load_library(const Path& path);
 
 /**
  * \brief Temporary path helper class.
@@ -69,62 +117,35 @@ TemporaryPathImpl* make_temporary_path_impl();
  * This does not create the file.
  */
 class PSI_COMPILER_COMMON_EXPORT TemporaryPath : public NonCopyable {
-  TemporaryPathImpl *m_impl;
+  TemporaryPathData m_data;
+  Path m_path;
   
 public:
   TemporaryPath();
   ~TemporaryPath();
   void delete_();
-  const std::string& path() const {return m_impl->path();}
+  const Path& path() const {return m_path;}
 };
-
-/**
- * \brief Join two paths to form a combined path.
- * 
- * If second is an absolute path, return second. Otherwise,
- * return second appended to first, with a separating slash
- * if first does not end with a slash already.
- */
-PSI_COMPILER_COMMON_EXPORT std::string join_path(const std::string& first, const std::string& second);
-
-/**
- * \brief Normalize a path.
- * 
- * Removes any occurences of './', '../' and '//'.
- * The resulting path will have a slash if the original path had one,
- * or the original path ended in a '..' or '.'.
- */
-PSI_COMPILER_COMMON_EXPORT std::string normalize_path(const std::string& path);
-
-/**
- * \brief Convert a relative path to an absolute path.
- * 
- * If this is already an absolute path, this is a no-op.
- */
-PSI_COMPILER_COMMON_EXPORT std::string absolute_path(const std::string& path);
-
-/**
- * \brief Get the filename portion of a path.
- */
-PSI_COMPILER_COMMON_EXPORT std::string filename(const std::string& path);
-
-/**
- * \brief Find an executable in the current path.
- */
-PSI_COMPILER_COMMON_EXPORT boost::optional<std::string> find_in_path(const std::string& name);
 
 /**
  * Run a command and send data to its standard in, capture standard out and return the result.
  * 
- * \param command Command line to execute
+ * \param command Command to execute
+ * \param args Arguments to pass to \c command
  * \param input Data to be passed to stdin
  * \param output_out stdout data
  * \param output_err stderr data
  */
-PSI_COMPILER_COMMON_EXPORT int exec_communicate(const std::vector<std::string>& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
+PSI_COMPILER_COMMON_EXPORT int exec_communicate(const Path& command, const std::vector<std::string>& args,
+                                                const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
 
-PSI_COMPILER_COMMON_EXPORT void exec_communicate_check(const std::vector<std::string>& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
-PSI_COMPILER_COMMON_EXPORT void exec_communicate_check(const std::string& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
+PSI_COMPILER_COMMON_EXPORT void exec_communicate_check(const Path& command, const std::vector<std::string>& args, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
+PSI_COMPILER_COMMON_EXPORT void exec_communicate_check(const Path& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
+
+/**
+ * Read configuration data from files and update a configuration map.
+ */
+PSI_COMPILER_COMMON_EXPORT void read_configuration_files(PropertyValue& pv, const std::string& name);
 }
 }
 

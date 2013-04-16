@@ -2,6 +2,7 @@
 #define HPP_PSI_TVM_JIT
 
 #include "Core.hpp"
+#include "../PropertyValue.hpp"
 
 #include <boost/shared_ptr.hpp>
 
@@ -100,7 +101,7 @@ namespace Psi {
       virtual boost::shared_ptr<Jit> create_jit() = 0;
 
       /// \brief Get a JIT factory for a named JIT compiler.
-      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const std::string& name);
+      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config);
 
       static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler);
     };

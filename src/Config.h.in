@@ -10,9 +10,14 @@
 /// Whether tcc has been compiled into the C backend
 #cmakedefine01 PSI_TVM_CC_TCCLIB
 
-/// Default TVM JIT library to use (may be overridden by the environment variable PSI_TVM_JIT)
+/// Default TVM JIT library to use
 #define PSI_TVM_JIT "${PSI_TVM_JIT}"
-/// Path to C compiler for the C backend to use (may be overridden by the environment variable PSI_TVM_CC)
-#define PSI_TVM_CC "${PSI_TVM_CC}"
+/// Type of C compiler
+#define PSI_TVM_CC_KIND "${PSI_TVM_CC_KIND}"
+/// Path to C compiler for the C backend to use
+#define PSI_TVM_CC_PATH "${PSI_TVM_CC_PATH}"
+/// Path to auxiliary files for TCC
+#define PSI_TVM_CC_TCC_INCLUDE "${PSI_TVM_CC_TCC_INCLUDE}"
+#define PSI_TVM_CC_TCC_PATH "${PSI_TVM_CC_TCC_PATH}"
 
 #endif

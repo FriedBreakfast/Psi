@@ -277,7 +277,7 @@ void* CJit::get_symbol(const ValuePtr<Global>& symbol) {
 }
 }
 
-extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) void tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory, boost::shared_ptr<Psi::Tvm::Jit>& result) {
-  boost::shared_ptr<Psi::Tvm::CBackend::CCompiler> compiler = Psi::Tvm::CBackend::detect_c_compiler(factory->error_handler());
+extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) void tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory, boost::shared_ptr<Psi::Tvm::Jit>& result, const Psi::PropertyValue& configuration) {
+  boost::shared_ptr<Psi::Tvm::CBackend::CCompiler> compiler = Psi::Tvm::CBackend::detect_c_compiler(factory->error_handler(), configuration);
   result = boost::make_shared<Psi::Tvm::CBackend::CJit>(factory, compiler);
 }

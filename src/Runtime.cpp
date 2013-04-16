@@ -158,6 +158,9 @@ namespace Psi {
     }
   }
   
+  /**
+   * Encode a Unicode character to UTF-8.
+   */
   void unicode_encode(std::vector<char>& output, unsigned value) {
     unsigned n_continuation;
     unsigned char high_bits;

@@ -14,7 +14,7 @@ bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGener
 set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
 
 if(WIN32)
-set(PSI_COMPILER_COMMON_SOURCES PlatformWindows.cpp PlatformWindows.hpp)
+set(PSI_COMPILER_COMMON_SOURCES PlatformWindows.cpp PlatformWindows.hpp PlatformImplWindows.hpp)
 set(PSI_COMPILER_COMMON_LIBS Shlwapi)
 set(PSI_COMPILER_SOURCES PlatformCompileWindows.cpp)
 set(PSI_TVM_SOURCES Tvm/JitWindows.cpp)

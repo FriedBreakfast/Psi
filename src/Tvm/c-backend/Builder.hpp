@@ -63,10 +63,10 @@ public:
   virtual void emit_global_variable_attributes(CModuleEmitter& emitter, CGlobalVariable *gvar) = 0;
   
   /// \brief Compile a program
-  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) = 0;
+  virtual void compile_program(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) = 0;
   
   /// \brief Compile a shared library
-  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) = 0;
+  virtual void compile_library(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) = 0;
   
   /// \brief Compile and load a shared library
   virtual boost::shared_ptr<Platform::PlatformLibrary> compile_load_library(const CompileErrorPair& err_loc, const std::string& source);
@@ -163,7 +163,7 @@ private:
   boost::shared_ptr<CCompiler> m_compiler;
 };
 
-boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc);
+boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc, const PropertyValue& configuration);
 }
 }
 }

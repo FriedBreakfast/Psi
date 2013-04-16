@@ -1,4 +1,5 @@
 #include "Jit.hpp"
+#include "../Platform.hpp"
 
 namespace Psi {
   namespace Tvm {
@@ -14,6 +15,12 @@ namespace Psi {
 
     JitFactory::~JitFactory() {
     }
+
+    namespace {
+      bool str_nonempty(const char *s) {
+        return s[0] != '\0';
+      }
+    }
     
     /**
      * \brief Get a JIT factory for the default JIT compiler.
@@ -22,10 +29,29 @@ namespace Psi {
      * the built-in default.
      */
     boost::shared_ptr<JitFactory> JitFactory::get(const CompileErrorPair& error_handler) {
-      const char *name = std::getenv("PSI_TVM_JIT");
-      if (!name)
-        name = PSI_TVM_JIT;
-      return get(error_handler, name);
+      PropertyValue config;
+      config["tvm"]["jit"] = PSI_TVM_JIT;
+      if (str_nonempty(PSI_TVM_CC_KIND)) {
+        config["tvm"]["c"]["cc"] = PSI_TVM_CC_KIND;
+        config["tvm"]["c"][PSI_TVM_CC_KIND]["kind"] = PSI_TVM_CC_KIND;
+        if (str_nonempty(PSI_TVM_CC_PATH))
+          config["tvm"]["c"][PSI_TVM_CC_KIND]["path"] = PSI_TVM_CC_PATH;
+      }
+
+#if PSI_TVM_CC_TCCLIB
+      config["tvm"]["c"]["tcclib"]["kind"] = "tcclib";
+      if (str_nonempty(PSI_TVM_CC_TCC_INCLUDE))
+        config["tvm"]["c"]["tcclib"]["include"] = PSI_TVM_CC_TCC_INCLUDE;
+      if (str_nonempty(PSI_TVM_CC_TCC_PATH))
+        config["tvm"]["c"]["tcclib"]["path"] = PSI_TVM_CC_TCC_PATH;
+#endif
+
+      Platform::read_configuration_files(config, "psi.cfg");
+
+      const PropertyValue& tvm_config = config.get("tvm");
+      String name = tvm_config.get("jit").str();
+
+      return get(error_handler, name, tvm_config.get(name));
     }
   }
 }

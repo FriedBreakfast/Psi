@@ -240,11 +240,11 @@ public:
 }
 
 class CCompilerMSVC : public CCompilerCommon {
-  std::string m_path;
+  Platform::Path m_path;
   unsigned m_version;
 
 public:
-  CCompilerMSVC(const CompilerCommonInfo& common_info, const std::string& path, unsigned version)
+  CCompilerMSVC(const CompilerCommonInfo& common_info, const Platform::Path& path, unsigned version)
   : CCompilerCommon(common_info), m_path(path), m_version(version) {
   }
   
@@ -297,31 +297,30 @@ public:
     aw.done();
   }
 
-  static void run_msvc_common(const CompileErrorPair& err_loc, const std::string& path,
-                              const std::string& output_file, const std::string& source,
+  static void run_msvc_common(const CompileErrorPair& err_loc, const Platform::Path& path,
+                              const Platform::Path& output_file, const std::string& source,
                               const std::vector<std::string>& extra) {
     Platform::TemporaryPath source_path;
     std::filebuf source_file;
-    source_file.open(source_path.path().c_str(), std::ios::out);
+    source_file.open(source_path.path().str().c_str(), std::ios::out);
     std::copy(source.begin(), source.end(), std::ostreambuf_iterator<char>(&source_file));
     source_file.close();
 
     std::vector<std::string> command;
-    command.push_back(path);
     command.insert(command.end(), extra.begin(), extra.end());
     command.push_back("/Tc");
-    command.push_back(source_path.path());
+    command.push_back(source_path.path().str());
     command.push_back("/Fe");
-    command.push_back(output_file);
+    command.push_back(output_file.str());
     try {
-      Platform::exec_communicate_check(command);
+      Platform::exec_communicate_check(path, command);
     } catch (Platform::PlatformError& ex) {
       err_loc.error_throw(ex.what());
     }
   }
   
-  static void run_msvc_program(const CompileErrorPair& err_loc, const std::string& path,
-                               const std::string& output_file, const std::string& source) {
+  static void run_msvc_program(const CompileErrorPair& err_loc, const Platform::Path& path,
+                               const Platform::Path& output_file, const std::string& source) {
     std::vector<std::string> extra;
 #ifdef _DEBUG
     extra.push_back("/MTd");
@@ -331,8 +330,8 @@ public:
     run_msvc_common(err_loc, path, output_file, source, extra);
   }
   
-  static void run_msvc_library(const CompileErrorPair& err_loc, const std::string& path,
-                               const std::string& output_file, const std::string& source) {
+  static void run_msvc_library(const CompileErrorPair& err_loc, const Platform::Path& path,
+                               const Platform::Path& output_file, const std::string& source) {
     std::vector<std::string> extra;
 #ifdef _DEBUG
     extra.push_back("/MDd");
@@ -342,15 +341,15 @@ public:
     run_msvc_common(err_loc, path, output_file, source, extra);
   }
 
-  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_program(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) {
     run_msvc_program(err_loc, m_path, output_file, source);
   }
   
-  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_library(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) {
     run_msvc_library(err_loc, m_path, output_file, source);
   }
 
-  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
+  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const Platform::Path& path, const PropertyValue&) {
     std::ostringstream src;
     src << "#include <stdio.h>\n"
         << "#include <limits.h>\n"
@@ -429,31 +428,30 @@ public:
     aw.done();
   }
   
-  static void run_gcc_common(const CompileErrorPair& err_loc, const std::string& path,
-                             const std::string& output_file, const std::string& source,
+  static void run_gcc_common(const CompileErrorPair& err_loc, const Platform::Path& path,
+                             const Platform::Path& output_file, const std::string& source,
                              const std::vector<std::string>& extra) {
     std::vector<std::string> command;
-    command.push_back(path);
     command.push_back("-xc"); // Required because we pipe source to GCC
     command.push_back("-std=c99");
     command.insert(command.end(), extra.begin(), extra.end());
     command.push_back("-");
     command.push_back("-o");
-    command.push_back(output_file);
+    command.push_back(output_file.str());
     try {
-      Platform::exec_communicate_check(command, source);
+      Platform::exec_communicate_check(path, command, source);
     } catch (Platform::PlatformError& ex) {
       err_loc.error_throw(ex.what());
     }
   }
   
-  static void run_gcc_program(const CompileErrorPair& err_loc, const std::string& path,
-                              const std::string& output_file, const std::string& source) {
+  static void run_gcc_program(const CompileErrorPair& err_loc, const Platform::Path& path,
+                              const Platform::Path& output_file, const std::string& source) {
     run_gcc_common(err_loc, path, output_file, source, std::vector<std::string>());
   }
   
-  static void run_gcc_library(const CompileErrorPair& err_loc, const std::string& path,
-                              const std::string& output_file, const std::string& source) {
+  static void run_gcc_library(const CompileErrorPair& err_loc, const Platform::Path& path,
+                              const Platform::Path& output_file, const std::string& source) {
     std::vector<std::string> extra;
     extra.push_back("-shared");
 #ifdef __linux__
@@ -474,11 +472,11 @@ public:
 };
 
 class CCompilerGCC : public CCompilerGCCLike {
-  std::string m_path;
+  Platform::Path m_path;
   unsigned m_major_version, m_minor_version;
   
 public:
-  CCompilerGCC(const CompilerCommonInfo& common_info, const std::string& path, unsigned major, unsigned minor)
+  CCompilerGCC(const CompilerCommonInfo& common_info, const Platform::Path& path, unsigned major, unsigned minor)
   : CCompilerGCCLike(common_info), m_path(path), m_major_version(major), m_minor_version(minor) {
     has_variable_length_arrays = true;
     has_designated_initializer = true;
@@ -500,15 +498,15 @@ public:
     }
   }
   
-  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_program(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) {
     run_gcc_program(err_loc, m_path, output_file, source);
   }
   
-  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_library(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) {
     run_gcc_library(err_loc, m_path, output_file, source);
   }
   
-  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
+  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const Platform::Path& path, const PropertyValue&) {
     std::ostringstream src;
     src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
@@ -547,11 +545,11 @@ public:
 };
 
 class CCompilerClang : public CCompilerGCCLike {
-  std::string m_path;
+  Platform::Path m_path;
   unsigned m_major_version, m_minor_version;
   
 public:
-  CCompilerClang(const CompilerCommonInfo& common_info, const std::string& path, unsigned major, unsigned minor)
+  CCompilerClang(const CompilerCommonInfo& common_info, const Platform::Path& path, unsigned major, unsigned minor)
   : CCompilerGCCLike(common_info), m_path(path), m_major_version(major), m_minor_version(minor) {
     has_variable_length_arrays = true;
     has_designated_initializer = true;
@@ -562,15 +560,15 @@ public:
     return true;
   }
   
-  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_program(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) {
     run_gcc_program(err_loc, m_path, output_file, source);
   }
   
-  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_library(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) {
     run_gcc_library(err_loc, m_path, output_file, source);
   }
 
-  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
+  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const Platform::Path& path, const PropertyValue&) {
     std::ostringstream src;
     src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
@@ -611,52 +609,51 @@ public:
 };
 
 class CCompilerTCC : public CCompilerGCCLike {
-  std::string m_path;
+  Platform::Path m_path;
   unsigned m_major_version, m_minor_version;
   
 public:
-  CCompilerTCC(const CompilerCommonInfo& common_info, const std::string& path, unsigned major, unsigned minor)
+  CCompilerTCC(const CompilerCommonInfo& common_info, const Platform::Path& path, unsigned major, unsigned minor)
   : CCompilerGCCLike(common_info), m_path(path), m_major_version(major), m_minor_version(minor) {
     has_variable_length_arrays = true;
     has_designated_initializer = true;
   }
   
-  static void run_tcc_common(const CompileErrorPair& err_loc, const std::string& path,
-                             const std::string& output_file, const std::string& source,
+  static void run_tcc_common(const CompileErrorPair& err_loc, const Platform::Path& path,
+                             const Platform::Path& output_file, const std::string& source,
                              const std::vector<std::string>& extra) {
     Platform::TemporaryPath source_path;
     std::filebuf source_file;
-    source_file.open(source_path.path().c_str(), std::ios::out);
+    source_file.open(source_path.path().str().c_str(), std::ios::out);
     std::copy(source.begin(), source.end(), std::ostreambuf_iterator<char>(&source_file));
     source_file.close();
 
     std::vector<std::string> command;
-    command.push_back(path);
     command.insert(command.end(), extra.begin(), extra.end());
-    command.push_back(source_path.path());
+    command.push_back(source_path.path().str());
     command.push_back("-g");
     command.push_back("-o");
-    command.push_back(output_file);
+    command.push_back(output_file.str());
     try {
-      Platform::exec_communicate_check(command, source);
+      Platform::exec_communicate_check(path, command, source);
     } catch (Platform::PlatformError& ex) {
       err_loc.error_throw(ex.what());
     }
   }
   
-  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_program(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) {
     run_tcc_common(err_loc, m_path, output_file, source, std::vector<std::string>());
   }
   
-  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_library(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) {
     std::vector<std::string> extra;
     extra.push_back("-shared");
     extra.push_back("-soname");
-    extra.push_back(Platform::filename(output_file));
+    extra.push_back(output_file.filename().str());
     run_tcc_common(err_loc, m_path, output_file, source, extra);
   }
 
-  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const std::string& path) {
+  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const Platform::Path& path, const PropertyValue&) {
     std::stringstream src;
     src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
@@ -673,21 +670,20 @@ public:
     
     Platform::TemporaryPath source_path;
     std::filebuf source_file;
-    source_file.open(source_path.path().c_str(), std::ios::out);
+    source_file.open(source_path.path().str().c_str(), std::ios::out);
     std::copy(std::istreambuf_iterator<char>(src.rdbuf()),
               std::istreambuf_iterator<char>(),
               std::ostreambuf_iterator<char>(&source_file));
     source_file.close();
     
     std::vector<std::string> tcc_args;
-    tcc_args.push_back(path);
     tcc_args.push_back("-xc");
     tcc_args.push_back("-run");
-    tcc_args.push_back(source_path.path());
+    tcc_args.push_back(source_path.path().str());
     
     std::string program_output;
     try {
-      Platform::exec_communicate_check(tcc_args, "", &program_output);
+      Platform::exec_communicate_check(path, tcc_args, "", &program_output);
     } catch (Platform::PlatformError& ex) {
       err_loc.error_throw(ex.what());
     }
@@ -721,6 +717,11 @@ public:
   virtual const char *what() const throw() {return m_msg.c_str();}
 };
 
+struct TCCConfiguration {
+  boost::optional<std::string> path;
+  boost::optional<std::string> include_path;
+};
+
 class TCCLibContext {
   std::string m_error_msg;
   TCCState *m_state;
@@ -741,10 +742,16 @@ class TCCLibContext {
   }
 
 public:
-  TCCLibContext(int output_type) {
+  TCCLibContext(const TCCConfiguration& config, int output_type) {
     m_state = tcc_new();
     if (!m_state)
       throw TCCError("Failed to create TCC context");
+
+    if (config.include_path)
+      tcc_add_sysinclude_path(m_state, config.include_path->c_str());
+    if (config.path)
+      tcc_set_lib_path(m_state, config.path->c_str());
+
     tcc_set_error_func(m_state, this, error_func);
     if (tcc_set_output_type(m_state, output_type) == -1)
       throw_tcc_error();
@@ -798,7 +805,7 @@ class TCCPlatformLibrary : public Platform::PlatformLibrary {
   TCCLibContext m_context;
 
 public:
-  TCCPlatformLibrary() : m_context(TCC_OUTPUT_MEMORY) {}
+  TCCPlatformLibrary(const TCCConfiguration& config) : m_context(config, TCC_OUTPUT_MEMORY) {}
   TCCLibContext& context() {return m_context;}
 
   virtual boost::optional<void*> symbol(const std::string& name) {
@@ -825,27 +832,28 @@ public:
 
 class CCompilerTCCLib : public CCompilerGCCLike {
   unsigned m_version_major, m_version_minor;
+  TCCConfiguration m_configuration;
 
 public:
-  CCompilerTCCLib(const CompilerCommonInfo& info, unsigned version_major, unsigned version_minor)
-  : CCompilerGCCLike(info), m_version_major(version_major), m_version_minor(version_minor) {
+  CCompilerTCCLib(const CompilerCommonInfo& info, const TCCConfiguration& configuration, unsigned version_major, unsigned version_minor)
+  : CCompilerGCCLike(info), m_configuration(configuration), m_version_major(version_major), m_version_minor(version_minor) {
   }
 
-  virtual void compile_program(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_program(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) {
     try {
-      TCCLibContext ctx(TCC_OUTPUT_EXE);
+      TCCLibContext ctx(m_configuration, TCC_OUTPUT_EXE);
       ctx.compile_string(source);
-      ctx.output_file(output_file);
+      ctx.output_file(output_file.str());
     } catch (TCCError& ex) {
       err_loc.error_throw(ex.what());
     }
   }
   
-  virtual void compile_library(const CompileErrorPair& err_loc, const std::string& output_file, const std::string& source) {
+  virtual void compile_library(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) {
     try {
-      TCCLibContext ctx(TCC_OUTPUT_DLL);
+      TCCLibContext ctx(m_configuration, TCC_OUTPUT_DLL);
       ctx.compile_string(source);
-      ctx.output_file(output_file);
+      ctx.output_file(output_file.str());
     } catch (TCCError& ex) {
       err_loc.error_throw(ex.what());
     }
@@ -853,7 +861,7 @@ public:
 
   virtual boost::shared_ptr<Platform::PlatformLibrary> compile_load_library(const CompileErrorPair& err_loc, const std::string& source) {
     try {
-      boost::shared_ptr<TCCPlatformLibrary> pl = boost::make_shared<TCCPlatformLibrary>();
+      boost::shared_ptr<TCCPlatformLibrary> pl = boost::make_shared<TCCPlatformLibrary>(m_configuration);
       pl->context().compile_string(source);
       pl->context().relocate();
       return pl;
@@ -862,7 +870,11 @@ public:
     }
   }
 
-  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc) {
+  static boost::shared_ptr<CCompiler> detect(const CompileErrorPair& err_loc, const PropertyValue& config) {
+    TCCConfiguration tcc_config;
+    tcc_config.include_path = config.path_str("include");
+    tcc_config.path = config.path_str("path");
+
     std::stringstream src;
     src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
@@ -878,7 +890,7 @@ public:
 
     std::vector<char> output;
     try {
-      boost::shared_ptr<TCCPlatformLibrary> pl = boost::make_shared<TCCPlatformLibrary>();
+      boost::shared_ptr<TCCPlatformLibrary> pl = boost::make_shared<TCCPlatformLibrary>(tcc_config);
       pl->context().compile_string(src.str());
       pl->context().add_symbol("fprintf", fprintf);
       pl->context().relocate();
@@ -921,62 +933,37 @@ public:
     
     CompilerCommonInfo common_info = CCompilerCommon::parse_common_info(err_loc, program_ss);
     
-    return boost::make_shared<CCompilerTCCLib>(common_info, version_major, version_minor);
+    return boost::make_shared<CCompilerTCCLib>(common_info, tcc_config, version_major, version_minor);
   }
 };
-
-namespace {
-  enum CompilerType {
-    cc_unknown,
-    cc_gcc,
-    cc_clang,
-    cc_tcc,
-    cc_msvc
-  };
-}
 
 /**
  * Try to locate a C compiler on the system.
  */
-boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc) {
-  const char *cc_path = std::getenv("PSI_TVM_CC");
-  if (!cc_path)
-    cc_path = PSI_TVM_CC;
-  
-  if (PSI_TVM_CC_TCCLIB && (std::strcmp(cc_path, "libtcc") == 0))
-    return CCompilerTCCLib::detect(err_loc);
-  
-  // Try to identify the compiler by its executable name
-  boost::optional<std::string> cc_full_path = Platform::find_in_path(cc_path);
-  if (!cc_full_path)
-    err_loc.error_throw(boost::format("C compiler not found: %s") % cc_path);
-  
-  std::string filename = Platform::filename(*cc_full_path);
-  CompilerType type = cc_unknown;
-  if (filename.find("gcc") != std::string::npos)
-    type = cc_gcc;
-  else if (filename.find("clang") != std::string::npos)
-    type = cc_clang;
-  else if (filename.find("tcc") != std::string::npos)
-    type = cc_tcc;
-  else if (filename.find("cl.exe") != std::string::npos)
-    type = cc_msvc;
-  
-  boost::shared_ptr<CCompiler> result;
-  
-  if (!result && ((type == cc_unknown) || (type == cc_gcc)))
-    result = CCompilerGCC::detect(err_loc, *cc_full_path);
-  if (!result && ((type == cc_unknown) || (type == cc_clang)))
-    result = CCompilerClang::detect(err_loc, *cc_full_path);
-  if (!result && ((type == cc_unknown) || (type == cc_tcc)))
-    result = CCompilerTCC::detect(err_loc, *cc_full_path);
-  if (!result && ((type == cc_unknown) || (type == cc_msvc)))
-    result = CCompilerMSVC::detect(err_loc, *cc_full_path);
-  
-  if (!result)
-    err_loc.error_throw(boost::format("Could not identify C compiler: %s") % *cc_full_path);
-  
-  return result;
+boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc, const PropertyValue& configuration) {
+  String key = configuration.get("cc").str();
+  const PropertyValue& cc_config = configuration.get(key);
+
+  String kind = cc_config.get("kind").str();
+  if (kind == "tcclib") {
+    return CCompilerTCCLib::detect(err_loc, cc_config);
+  } else {
+    // Try to identify the compiler by its executable name
+    Platform::Path cc_path = std::string(cc_config.get("path").str());
+    boost::optional<Platform::Path> cc_full_path = Platform::find_in_path(cc_path);
+    if (!cc_full_path)
+      err_loc.error_throw(boost::format("C compiler not found: %s") % cc_path.str());
+
+    if (kind == "gcc") {
+      return CCompilerGCC::detect(err_loc, *cc_full_path, cc_config);
+    } else if (kind == "clang") {
+      return CCompilerClang::detect(err_loc, *cc_full_path, cc_config);
+    } else if (kind == "tcc") {
+      return CCompilerTCC::detect(err_loc, *cc_full_path, cc_config);
+    } else {
+      err_loc.error_throw(boost::format("Could not identify C compiler: %s") % cc_full_path->str());
+    }
+  }
 }
 }
 }

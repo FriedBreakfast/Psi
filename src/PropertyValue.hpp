@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <boost/optional.hpp>
 
 #include "Export.hpp"
 #include "Runtime.hpp"
@@ -53,11 +54,14 @@ private:
   void assign(const PropertyValue& src);
   void assign(const std::string& src);
   void assign(const String& src);
+  void assign(const char *src);
   void assign(bool src);
   void assign(int src);
   void assign(double src);
   void assign(const PropertyMap& src);
   void assign(const PropertyList& src);
+
+  const PropertyValue *path_value(const std::string& name) const;
   
 public:
   PropertyValue() : m_type(t_null) {}
@@ -65,6 +69,7 @@ public:
   PropertyValue(const PropertyValue& src) : m_type(t_null) {assign(src);}
   PropertyValue(const std::string& src) : m_type(t_null) {assign(src);}
   PropertyValue(const String& src) : m_type(t_null) {assign(src);}
+  PropertyValue(const char *src) : m_type(t_null) {assign(src);}
   PropertyValue(bool src) : m_type(t_null) {assign(src);}
   PropertyValue(int src) : m_type(t_null) {assign(src);}
   PropertyValue(double src) : m_type(t_null) {assign(src);}
@@ -83,6 +88,7 @@ public:
   PropertyValue& operator = (const PropertyValue& src) {assign(src); return *this;}
   PropertyValue& operator = (const std::string& src) {assign(src); return *this;}
   PropertyValue& operator = (const String& src) {assign(src); return *this;}
+  PropertyValue& operator = (const char *src) {assign(src); return *this;}
   PropertyValue& operator = (bool src) {assign(src); return *this;}
   PropertyValue& operator = (int src) {assign(src); return *this;}
   PropertyValue& operator = (double src) {assign(src); return *this;}
@@ -98,12 +104,17 @@ public:
   const PropertyMap& map() const {PSI_ASSERT(m_type == t_map); return *m_value.map.ptr();}
   const PropertyValue& get(const String& key) const;
   bool has_key(const String& key) const;
+  PropertyValue& operator [] (const String& key);
 
   PropertyList& list() {PSI_ASSERT(m_type == t_list); return *m_value.list.ptr();}
   const PropertyList& list() const {PSI_ASSERT(m_type == t_list); return *m_value.list.ptr();}
   std::vector<std::string> str_list() const;
   
+  boost::optional<std::string> path_str(const std::string& key) const;
+
   static PropertyValue parse(const char *begin, const char *end);
+  static PropertyValue parse(const char *s);
+  void parse_configuration(const char *begin, const char *end);
 };
 
 PSI_COMPILER_COMMON_EXPORT bool operator == (const PropertyValue& lhs, const PropertyValue& rhs);

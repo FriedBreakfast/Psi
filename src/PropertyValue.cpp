@@ -72,6 +72,10 @@ void PropertyValue::assign(const String& src) {
   }
 }
 
+void PropertyValue::assign(const char *src) {
+  assign(String(src));
+}
+
 void PropertyValue::assign(bool src) {
   if (m_type != t_boolean) {
     reset();
@@ -138,6 +142,13 @@ bool PropertyValue::has_key(const String& key) const {
   return (it != map().end());
 }
 
+PropertyValue& PropertyValue::operator [] (const String& key) {
+  if (type() != t_map)
+    assign(PropertyMap());
+
+  return (*m_value.map.ptr())[key];
+}
+
 std::vector<std::string> PropertyValue::str_list() const {
   if (type() != t_list)
     throw std::runtime_error("Property value is not a list");
@@ -150,6 +161,33 @@ std::vector<std::string> PropertyValue::str_list() const {
   }
   
   return result;
+}
+
+const PropertyValue *PropertyValue::path_value(const std::string& key) const {
+  if (key.empty())
+    return this;
+
+  const PropertyValue *pv = this;
+  for (std::size_t pos = 0; ; ) {
+    if (pv->type() != t_map)
+      return NULL;
+    std::size_t next_pos = key.find('.', pos);
+    std::string part = key.substr(pos, next_pos);
+    PropertyMap::const_iterator ci = pv->m_value.map.ptr()->find(part);
+    if (ci == pv->m_value.map.ptr()->end())
+      return NULL;
+    pv = &ci->second;
+    if (next_pos = std::string::npos)
+      return pv;
+    pos = next_pos + 1;
+  }
+}
+
+boost::optional<std::string> PropertyValue::path_str(const std::string& key) const {
+  const PropertyValue *pv = path_value(key);
+  if (pv && (pv->type() == t_str))
+    return pv->str();
+  return boost::none;
 }
 
 bool operator == (const PropertyValue& lhs, const PropertyValue& rhs) {
@@ -195,6 +233,7 @@ public:
 class ParseHelper {
   const char *m_current, *m_end;
   bool m_skip_whitespace;
+  bool m_allow_comments;
   char m_next;
 
   void to_next() {
@@ -203,9 +242,15 @@ class ParseHelper {
     m_next = (m_current != m_end) ? *m_current : '\0';
   }
 
+  void next_char() {
+    PSI_ASSERT(m_current != m_end);
+    ++m_current;
+    m_next = (m_current == m_end) ? '\0' : *m_current;
+  }
+
 public:
-  ParseHelper(const char *begin, const char *end)
-    : m_current(begin), m_end(end), m_skip_whitespace(true) {
+  ParseHelper(const char *begin, const char *end, bool allow_comments)
+    : m_current(begin), m_end(end), m_skip_whitespace(true), m_allow_comments(allow_comments) {
     to_next();
   }
 
@@ -221,8 +266,20 @@ public:
   /// Skip any whitespace characters at the current point
   void skip_whitespace() {
     const std::locale& c_locale = std::locale::classic();
-    while(!end() && std::isspace(peek(), c_locale))
-      accept();
+    bool in_comment = false;
+    while(!end()) {
+      char c = peek();
+      if (c == '\n') {
+        in_comment = false;
+        next_char();
+      } else if (m_allow_comments && (c == '#')) {
+        in_comment = true;
+      } else if (in_comment || std::isspace(c, c_locale)) {
+        next_char();
+      } else {
+        break;
+      }
+    }
   }
 
   /// Enable or disable automatic whitespace skipping
@@ -244,9 +301,8 @@ public:
 
   /// Accept the next character (unconditionally)
   void accept() {
-    PSI_ASSERT(m_current != m_end);
-    ++m_current;
-    m_next = (m_current == m_end) ? '\0' : *m_current;
+    next_char();
+    to_next();
   }
 
   /// Require the next character is a particular one, else throw an exception
@@ -280,7 +336,6 @@ std::string json_parse_string(ParseHelper& tokener) {
             throw ParseError();
           }
         }
-        unsigned value;
         digits[5] = '\0'; 
         unicode_encode(s, atoi(digits));
       } else {
@@ -354,14 +409,14 @@ PropertyValue json_parse_number(ParseHelper& tokener) {
   if (real) {
     unsigned count = 0;
     double value;
-    int tokens = sscanf(digits.c_str(), "%f%n", &value, &count);
+    sscanf(digits.c_str(), "%f%n", &value, &count);
     if (count != digits.length())
       throw ParseError();
     return value;
   } else {
     unsigned count = 0;
     int value;
-    int tokens = sscanf(digits.c_str(), "%d%n", &value, &count);
+    sscanf(digits.c_str(), "%d%n", &value, &count);
     if (count != digits.length())
       throw ParseError();
     return value;
@@ -416,7 +471,7 @@ PropertyValue json_parse_element(ParseHelper& tokener) {
 }
 
 PropertyValue PropertyValue::parse(const char *begin, const char *end) {
-  ParseHelper tokener(begin, end);
+  ParseHelper tokener(begin, end, false);
   PropertyMap pv;
   try {
     pv = json_parse_object(tokener, true);
@@ -426,5 +481,38 @@ PropertyValue PropertyValue::parse(const char *begin, const char *end) {
   }
   PSI_ASSERT(tokener.end());
   return pv;
+}
+
+PropertyValue PropertyValue::parse(const char *s) {
+  return parse(s, s+std::strlen(s));
+}
+
+/**
+ * \brief Parse a configuration file and update an existing PropertyValue map with the results.
+ */
+void PropertyValue::parse_configuration(const char *begin, const char *end) {
+  ParseHelper tokener(begin, end, true);
+  try {
+    while (!tokener.end()) {
+      PropertyValue *location = this;
+      while (true) {
+        String name = json_parse_key(tokener);
+        if (location->type() != PropertyValue::t_map)
+          *location = PropertyMap();
+        location = &location->map()[name];
+
+        if (tokener.accept('.')) {
+          continue;
+        } else if (tokener.accept('=')) {
+          *location = json_parse_element(tokener);
+          break;
+        } else {
+          throw ParseError();
+        }
+      }
+    }
+  } catch (ParseError& ex) {
+    throw;
+  }
 }
 }

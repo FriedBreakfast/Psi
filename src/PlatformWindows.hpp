@@ -85,6 +85,7 @@ namespace Psi {
 
       PSI_COMPILER_COMMON_EXPORT std::string error_string(DWORD error);
       PSI_COMPILER_COMMON_EXPORT std::string last_error_string();
+      PSI_COMPILER_COMMON_EXPORT PSI_ATTRIBUTE((PSI_NORETURN)) void throw_last_error();
 
       class LibraryWindows : public PlatformLibrary {
         std::vector<HMODULE> m_handles;
