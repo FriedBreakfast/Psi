@@ -329,7 +329,7 @@ namespace Psi {
       v("value", &FreeAlloca::value);
     }
     
-    PSI_TVM_INSTRUCTION_IMPL(FreeAlloca, Instruction, alloca_const);
+    PSI_TVM_INSTRUCTION_IMPL(FreeAlloca, Instruction, freea);
     
     MemCpy::MemCpy(const ValuePtr<>& dest_, const ValuePtr<>& src_, const ValuePtr<>& count_, const ValuePtr<>& alignment_, const SourceLocation& location)
     : Instruction(FunctionalBuilder::empty_type(dest_->context(), location), operation, location),

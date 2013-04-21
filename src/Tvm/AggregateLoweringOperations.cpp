@@ -772,6 +772,8 @@ namespace Psi {
 
     struct AggregateLoweringPass::InstructionTermRewriter {
       static LoweredValue return_rewrite(FunctionRunner& runner, const ValuePtr<Return>& term) {
+        // Clean up all remaining allocas()
+        runner.alloca_free(ValuePtr<>(), term->location());
         runner.pass().target_callback->lower_return(runner, term->value, term->location());
         return LoweredValue();
       }
@@ -784,8 +786,8 @@ namespace Psi {
 
       static LoweredValue cond_br_rewrite(FunctionRunner& runner, const ValuePtr<ConditionalBranch>& term) {
         ValuePtr<> cond = runner.rewrite_value_register(term->condition).value;
-        ValuePtr<Block> true_target = runner.prepare_jump(term->block(), term->true_target, term->location());
-        ValuePtr<Block> false_target = runner.prepare_jump(term->block(), term->false_target, term->location());
+        ValuePtr<Block> true_target = runner.prepare_cond_jump(term->block(), term->true_target, term->location());
+        ValuePtr<Block> false_target = runner.prepare_cond_jump(term->block(), term->false_target, term->location());
         runner.builder().cond_br(cond, true_target, false_target, term->location());
         return LoweredValue();
       }
@@ -824,7 +826,7 @@ namespace Psi {
         LoweredType type = runner.rewrite_type(term->element_type);
         ValuePtr<> count = term->count ? runner.rewrite_value_register(term->count).value : ValuePtr<>();
         ValuePtr<> alignment = term->alignment ? runner.rewrite_value_register(term->alignment).value : ValuePtr<>();
-        ValuePtr<> stack_ptr;
+        ValuePtr<Instruction> stack_ptr;
         if (type.mode() == LoweredType::mode_register) {
           stack_ptr = runner.builder().alloca_(type.register_type(), count, alignment, term->location());
         } else {
@@ -836,13 +838,15 @@ namespace Psi {
             total_alignment = FunctionalBuilder::max(total_alignment, alignment, term->location());
           stack_ptr = runner.builder().alloca_(FunctionalBuilder::byte_type(runner.context(), term->location()), total_size, total_alignment, term->location());
         }
+        runner.alloca_push(stack_ptr);
         ValuePtr<> cast_stack_ptr = FunctionalBuilder::pointer_cast(stack_ptr, runner.byte_type(), term->location());
         return LoweredValue::register_(runner.pass().pointer_type(), false, cast_stack_ptr);
       }
       
       static LoweredValue alloca_const_rewrite(FunctionRunner& runner, const ValuePtr<AllocaConst>& term) {
         ValuePtr<> value = runner.rewrite_value_register(term->value).value;
-        ValuePtr<> stack_ptr = runner.builder().alloca_const(value, term->location());
+        ValuePtr<Instruction> stack_ptr = runner.builder().alloca_const(value, term->location());
+        runner.alloca_push(stack_ptr);
         ValuePtr<> cast_stack_ptr = FunctionalBuilder::pointer_cast(stack_ptr, runner.byte_type(), term->location());
         return LoweredValue::register_(runner.pass().pointer_type(), false, cast_stack_ptr);
       }
@@ -852,7 +856,7 @@ namespace Psi {
         if (ValuePtr<PointerCast> cast = dyn_cast<PointerCast>(ptr))
           ptr = cast->pointer();
         PSI_ASSERT(isa<Alloca>(ptr) || isa<AllocaConst>(ptr));
-        runner.builder().freea(ptr, term->location());
+        runner.alloca_free(ptr, term->location());
         return LoweredValue();
       }
       

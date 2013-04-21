@@ -5,6 +5,7 @@
 #include "../FunctionalBuilder.hpp"
 #include "../Jit.hpp"
 
+#include <list>
 #include <sstream>
 #include <boost/format.hpp>
 #include <boost/ptr_container/ptr_map.hpp>
@@ -185,11 +186,36 @@ namespace {
     for (; block; block = block->dominator().get(), ++n) {}
     return n;
   }
+  
+  typedef std::multimap<ValuePtr<Block>, ValuePtr<Block> > BlockDominatorMap;
+  
+  void depth_first_block_order(std::vector<ValuePtr<Block> >& order,
+                               const ValuePtr<Block>& block,
+                               const BlockDominatorMap& blocks_by_dominator) {
+    std::pair<BlockDominatorMap::const_iterator, BlockDominatorMap::const_iterator> range = blocks_by_dominator.equal_range(block);
+    for (BlockDominatorMap::const_iterator ii = range.first; ii != range.second; ++ii) {
+      order.push_back(ii->second);
+      depth_first_block_order(order, ii->second, blocks_by_dominator);
+    }
+  }
 }
 
 void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFunction* c_function) {
   boost::ptr_map<ValuePtr<Block>, ValueBuilder> block_builders;
   ValueBuilder& entry_value_builder = *block_builders.insert(ValuePtr<Block>(), std::auto_ptr<ValueBuilder>(new ValueBuilder(m_global_value_builder, c_function))).first->second;
+  
+  // Need to sort blocks by dominator: the order of block emission must be
+  // such that if block A occurs between block B and C, and B dominates C,
+  // then B dominates A. This is due to C variable scoping rules.
+  BlockDominatorMap blocks_by_dominator;
+  for (Function::BlockList::iterator ii = function->blocks().begin(), ie = function->blocks().end(); ii != ie; ++ii) {
+    const ValuePtr<Block>& block = *ii;
+    blocks_by_dominator.insert(std::make_pair(block->dominator(), block));
+  }
+  
+  std::vector<ValuePtr<Block> > block_order;
+  depth_first_block_order(block_order, ValuePtr<Block>(), blocks_by_dominator);
+  PSI_ASSERT(block_order.size() == function->blocks().size());
   
   // Insert function parameters into builder
   for (Function::ParameterList::iterator ii = function->parameters().begin(), ie = function->parameters().end(); ii != ie; ++ii) {
@@ -213,7 +239,7 @@ void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFu
   }
   
   unsigned depth = 0;
-  for (Function::BlockList::iterator ii = function->blocks().begin(), ie = function->blocks().end(); ii != ie; ++ii) {
+  for (std::vector<ValuePtr<Block> >::iterator ii = block_order.begin(), ie = block_order.end(); ii != ie; ++ii) {
     const ValuePtr<Block>& block = *ii;
     ValueBuilder& block_builder = *block_builders.insert(block, std::auto_ptr<ValueBuilder>(new ValueBuilder(block_builders.at(block->dominator()), c_function))).first->second;
     

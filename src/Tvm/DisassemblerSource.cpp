@@ -25,7 +25,7 @@ namespace Psi {
           return common_source_fail(error_pair);
       }
 
-      Value* common_source_global_phi(const CompileErrorPair& error_pair, Global *g, BlockMember *p) {
+      Value* common_source_global_phi(const CompileErrorPair& error_pair, Global *g, Phi *p) {
         if (g->module() == p->block_ptr()->function_ptr()->module())
           return p;
         else
@@ -57,7 +57,7 @@ namespace Psi {
           return common_source_fail(error_pair);
       }
 
-      Value* common_source_block_phi(const CompileErrorPair& error_pair, Block *b, BlockMember *p) {
+      Value* common_source_block_phi(const CompileErrorPair& error_pair, Block *b, Phi *p) {
         if (p->block_ptr()->function_ptr() == b->function_ptr())
           return p;
         else
@@ -82,9 +82,9 @@ namespace Psi {
         return p;
       }
 
-      Value *common_source_phi_phi(const CompileErrorPair& error_pair, BlockMember *p1, BlockMember *p2) {
+      Value *common_source_phi_phi(const CompileErrorPair& error_pair, Phi *p1, Phi *p2) {
         Block *b1 = p1->block_ptr(), *b2 = p2->block_ptr();
-        if (b1->dominated_by(b2))
+        if (b1->same_or_dominated_by(b2))
           return p1;
         else if (b2->dominated_by(b1))
           return p2;
@@ -92,24 +92,24 @@ namespace Psi {
           return common_source_fail(error_pair);
       }
       
-      Value *common_source_phi_instruction(const CompileErrorPair& error_pair, BlockMember *p, Instruction *i) {
+      Value *common_source_phi_instruction(const CompileErrorPair& error_pair, Phi *p, Instruction *i) {
         Block *b = p->block_ptr();
-        if (i->block_ptr()->dominated_by(b))
+        if (i->block_ptr()->same_or_dominated_by(b))
           return i;
-        else if (b->dominated_by(i->block()))
+        else if (b->dominated_by(i->block_ptr()))
           return p;
         else
           return common_source_fail(error_pair);
       }
       
-      Value *common_source_phi_parameter(const CompileErrorPair& error_pair, BlockMember *p, FunctionParameter *pa) {
+      Value *common_source_phi_parameter(const CompileErrorPair& error_pair, Phi *p, FunctionParameter *pa) {
         if (p->block_ptr()->function_ptr() == pa->function_ptr())
           return p;
         else
           return common_source_fail(error_pair);
       }
       
-      Value *common_source_phi_type_parameter(const CompileErrorPair&, BlockMember*, ParameterPlaceholder *pa) {
+      Value *common_source_phi_type_parameter(const CompileErrorPair&, Phi*, ParameterPlaceholder *pa) {
         return pa;
       }
 
@@ -165,7 +165,7 @@ namespace Psi {
           case term_global_variable:
           case term_function: return common_source_global_global(error_pair, value_cast<Global>(t1), value_cast<Global>(t2));
           case term_block: return common_source_global_block(error_pair, value_cast<Global>(t1), value_cast<Block>(t2));
-          case term_phi: return common_source_global_phi(error_pair, value_cast<Global>(t1), value_cast<BlockMember>(t2));
+          case term_phi: return common_source_global_phi(error_pair, value_cast<Global>(t1), value_cast<Phi>(t2));
           case term_instruction: return common_source_global_instruction(error_pair, value_cast<Global>(t1), value_cast<Instruction>(t2));
           case term_function_parameter: return common_source_global_parameter(error_pair, value_cast<Global>(t1), value_cast<FunctionParameter>(t2));
           case term_parameter_placeholder: return common_source_global_type_parameter(error_pair, value_cast<Global>(t1), value_cast<ParameterPlaceholder>(t2));
@@ -177,7 +177,7 @@ namespace Psi {
           case term_global_variable:
           case term_function: return common_source_global_block(error_pair, value_cast<Global>(t2), value_cast<Block>(t1));
           case term_block: return common_source_block_block(error_pair, value_cast<Block>(t1), value_cast<Block>(t2));
-          case term_phi: return common_source_block_phi(error_pair, value_cast<Block>(t1), value_cast<BlockMember>(t2));
+          case term_phi: return common_source_block_phi(error_pair, value_cast<Block>(t1), value_cast<Phi>(t2));
           case term_instruction: return common_source_block_instruction(error_pair, value_cast<Block>(t1), value_cast<Instruction>(t2));
           case term_function_parameter: return common_source_block_parameter(error_pair, value_cast<Block>(t1), value_cast<FunctionParameter>(t2));
           case term_parameter_placeholder: return common_source_block_type_parameter(error_pair, value_cast<Block>(t1), value_cast<ParameterPlaceholder>(t2));
@@ -187,12 +187,12 @@ namespace Psi {
         case term_phi:
           switch (t2->term_type()) {
           case term_global_variable:
-          case term_function: return common_source_global_phi(error_pair, value_cast<Global>(t2), value_cast<BlockMember>(t1));
-          case term_block: return common_source_block_phi(error_pair, value_cast<Block>(t2), value_cast<BlockMember>(t1));
-          case term_phi: return common_source_phi_phi(error_pair, value_cast<BlockMember>(t1), value_cast<BlockMember>(t2));
-          case term_instruction: return common_source_phi_instruction(error_pair, value_cast<BlockMember>(t1), value_cast<Instruction>(t2));
-          case term_function_parameter: return common_source_phi_parameter(error_pair, value_cast<BlockMember>(t1), value_cast<FunctionParameter>(t2));
-          case term_parameter_placeholder: return common_source_phi_type_parameter(error_pair, value_cast<BlockMember>(t1), value_cast<ParameterPlaceholder>(t2));
+          case term_function: return common_source_global_phi(error_pair, value_cast<Global>(t2), value_cast<Phi>(t1));
+          case term_block: return common_source_block_phi(error_pair, value_cast<Block>(t2), value_cast<Phi>(t1));
+          case term_phi: return common_source_phi_phi(error_pair, value_cast<Phi>(t1), value_cast<Phi>(t2));
+          case term_instruction: return common_source_phi_instruction(error_pair, value_cast<Phi>(t1), value_cast<Instruction>(t2));
+          case term_function_parameter: return common_source_phi_parameter(error_pair, value_cast<Phi>(t1), value_cast<FunctionParameter>(t2));
+          case term_parameter_placeholder: return common_source_phi_type_parameter(error_pair, value_cast<Phi>(t1), value_cast<ParameterPlaceholder>(t2));
           default: PSI_FAIL("unexpected term type");
           }
 
@@ -213,7 +213,7 @@ namespace Psi {
           case term_global_variable:
           case term_function: return common_source_global_parameter(error_pair, value_cast<Global>(t2), value_cast<FunctionParameter>(t1));
           case term_block: return common_source_block_parameter(error_pair, value_cast<Block>(t2), value_cast<FunctionParameter>(t1));
-          case term_phi: return common_source_phi_parameter(error_pair, value_cast<BlockMember>(t2), value_cast<FunctionParameter>(t1));
+          case term_phi: return common_source_phi_parameter(error_pair, value_cast<Phi>(t2), value_cast<FunctionParameter>(t1));
           case term_instruction: return common_source_instruction_parameter(error_pair, value_cast<Instruction>(t1), value_cast<FunctionParameter>(t2));
           case term_function_parameter: return common_source_parameter_parameter(error_pair, value_cast<FunctionParameter>(t1), value_cast<FunctionParameter>(t2));
           case term_parameter_placeholder: return common_source_parameter_type_parameter(error_pair, value_cast<FunctionParameter>(t1), value_cast<ParameterPlaceholder>(t2));
@@ -225,7 +225,7 @@ namespace Psi {
           case term_global_variable:
           case term_function: return common_source_global_type_parameter(error_pair, value_cast<Global>(t2), value_cast<ParameterPlaceholder>(t1));
           case term_block: return common_source_block_type_parameter(error_pair, value_cast<Block>(t2), value_cast<ParameterPlaceholder>(t1));
-          case term_phi: return common_source_phi_type_parameter(error_pair, value_cast<BlockMember>(t2), value_cast<ParameterPlaceholder>(t1));
+          case term_phi: return common_source_phi_type_parameter(error_pair, value_cast<Phi>(t2), value_cast<ParameterPlaceholder>(t1));
           case term_instruction: return common_source_instruction_type_parameter(error_pair, value_cast<Instruction>(t1), value_cast<ParameterPlaceholder>(t2));
           case term_function_parameter: return common_source_parameter_type_parameter(error_pair, value_cast<FunctionParameter>(t1), value_cast<ParameterPlaceholder>(t2));
           case term_parameter_placeholder: return common_source_type_parameter_type_parameter(error_pair, value_cast<ParameterPlaceholder>(t1), value_cast<ParameterPlaceholder>(t2));

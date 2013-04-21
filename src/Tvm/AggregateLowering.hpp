@@ -299,18 +299,29 @@ namespace Psi {
         ValuePtr<Function> m_old_function, m_new_function;
         InstructionBuilder m_builder;
         
+        struct AllocaListEntry {
+          boost::shared_ptr<AllocaListEntry> next;
+          ValuePtr<Instruction> insn;
+          
+          AllocaListEntry(const boost::shared_ptr<AllocaListEntry>& next_, const ValuePtr<Instruction>& insn_)
+          : next(next_), insn(insn_) {}
+        };
+        
         struct BlockBuildState {
           TypeMapType types;
           ValueMapType values;
+          boost::shared_ptr<AllocaListEntry> alloca_list;
         };
         
         typedef boost::unordered_map<ValuePtr<Block>, BlockBuildState> BlockSlotMapType;
-        typedef boost::unordered_map<std::pair<ValuePtr<Block>, ValuePtr<Block> >, ValuePtr<Block> > PhiEdgeMapType;
+        typedef boost::unordered_map<std::pair<ValuePtr<Block>, ValuePtr<Block> >, std::pair<ValuePtr<Block>, bool> > PhiEdgeMapType;
 
         /// Build state of each block
         BlockSlotMapType m_block_state;
         /// Map of edges which have been replaced by their own blocks, key is (source,dest) pair
         PhiEdgeMapType m_edge_map;
+        /// List of alloca blocks which have not yet had a freea generated
+        boost::shared_ptr<AllocaListEntry> m_alloca_list;
         
         void switch_to_block(const ValuePtr<Block>& block);
         LoweredValue create_phi_node(const ValuePtr<Block>& block, const LoweredType& type, const SourceLocation& location);
@@ -332,10 +343,14 @@ namespace Psi {
         void add_mapping(const ValuePtr<>& source, const LoweredValue& target);
         ValuePtr<Block> rewrite_block(const ValuePtr<Block>&);
         ValuePtr<Block> prepare_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location);
+        ValuePtr<Block> prepare_cond_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location);
         
         ValuePtr<> alloca_(const LoweredType& type, const SourceLocation& location);
         LoweredValue load_value(const LoweredType& type, const ValuePtr<>& ptr, const SourceLocation& location);
         void store_value(const LoweredValue& value, const ValuePtr<>& ptr, const SourceLocation& location);
+
+        void alloca_push(const ValuePtr<Instruction>& alloc_insn);
+        void alloca_free(const ValuePtr<>& alloc_insn, const SourceLocation& location);
 
         virtual LoweredType rewrite_type(const ValuePtr<>&);
         virtual LoweredValue rewrite_value(const ValuePtr<>&);

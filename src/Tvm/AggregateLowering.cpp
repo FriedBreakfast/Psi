@@ -191,16 +191,57 @@ namespace Psi {
     /**
      * \brief Prepare a jump between two blocks.
      * 
+     * Insertings \c freea instructions for any dangling \c alloca instances.
+     */
+    ValuePtr<Block> AggregateLoweringPass::FunctionRunner::prepare_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location) {
+      ValuePtr<Block> lowered_target = value_cast<Block>(rewrite_value_register(target).value);
+      for (; m_alloca_list && !lowered_target->dominated_by(m_alloca_list->insn->block());
+           m_alloca_list = m_alloca_list->next) {
+        builder().freea(m_alloca_list->insn, location);
+      }
+      m_edge_map.insert(std::make_pair(std::make_pair(source, target), std::make_pair(builder().block(), false)));
+      return lowered_target;
+    }
+    
+    /**
+     * \brief Prepare a conditional jump between two blocks.
+     * 
      * This may generate an alternative jump target block which performs state fixes from one block
      * to the other.
      * 
      * \return Block in the lowered function which should be jumped to.
      */
-    ValuePtr<Block> AggregateLoweringPass::FunctionRunner::prepare_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location) {
+    ValuePtr<Block> AggregateLoweringPass::FunctionRunner::prepare_cond_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location) {
       ValuePtr<Block> lowered_target = value_cast<Block>(rewrite_value_register(target).value);
-      ValuePtr<Block> lowered_source = value_cast<Block>(rewrite_value_register(source).value);
-      m_edge_map.insert(std::make_pair(std::make_pair(source, target), lowered_source));
-      return lowered_target;
+
+      // Check whether we need to generate an edge block
+      const AllocaListEntry *alloca_entry = m_alloca_list.get();
+      for (; alloca_entry; alloca_entry = alloca_entry->next.get()) {
+        if (lowered_target->dominated_by(alloca_entry->insn->block()))
+          break;
+      }
+      
+      if (alloca_entry == m_alloca_list.get()) {
+        // No frees needed so no edge block required
+        m_edge_map.insert(std::make_pair(std::make_pair(source, target), std::make_pair(builder().block(), false)));
+        return lowered_target;
+      } else {
+        ValuePtr<Block> edge_block = builder().new_block(location);
+        InstructionBuilder edge_builder(edge_block);
+        
+        // Note that the alloca list is not modified because we do
+        // not generate a build state for the edge block
+        for (alloca_entry = m_alloca_list.get();
+             alloca_entry && !lowered_target->dominated_by(alloca_entry->insn->block());
+             alloca_entry = alloca_entry->next.get()) {
+          edge_builder.freea(alloca_entry->insn, location);
+        }
+        
+        edge_builder.br(lowered_target, location);
+        
+        m_edge_map.insert(std::make_pair(std::make_pair(source, target), std::make_pair(edge_block, true)));
+        return edge_block;
+      }
     }
 
     /**
@@ -255,10 +296,12 @@ namespace Psi {
       BlockBuildState& old_st = m_block_state[builder().block()];
       old_st.types = m_type_map;
       old_st.values = m_value_map;
+      old_st.alloca_list = m_alloca_list;
       BlockSlotMapType::const_iterator new_st = m_block_state.find(block);
       PSI_ASSERT(new_st != m_block_state.end());
       m_type_map = new_st->second.types;
       m_value_map = new_st->second.values;
+      m_alloca_list = new_st->second.alloca_list;
       builder().set_insert_point(block->instructions().back());
     }
 
@@ -334,9 +377,62 @@ namespace Psi {
           PhiEdgeMapType::const_iterator li = m_edge_map.find(std::make_pair(e.block, old_phi_node->block()));
           if (li == m_edge_map.end())
             continue; // No jump exists along this edge
-          switch_to_block(li->second);
+            
+          if (li->second.second) {
+            // Is an edge block
+            switch_to_block(li->second.first->dominator());
+            builder().set_insert_point(li->second.first);
+          } else {
+            // Is not an edge block
+            switch_to_block(li->second.first);
+          }
+          
           create_phi_edge(new_phi_node, rewrite_value(e.value));
         }
+      }
+    }
+    
+    /**
+     * \brief Notify that an alloca() instruction has been inserted.
+     * 
+     * Must be called for all alloca() instructions in the function.
+     */
+    void AggregateLoweringPass::FunctionRunner::alloca_push(const ValuePtr<Instruction>& alloc_insn) {
+      PSI_ASSERT(isa<Alloca>(alloc_insn) || isa<AllocaConst>(alloc_insn));
+      m_alloca_list = boost::make_shared<AllocaListEntry>(m_alloca_list, alloc_insn);
+    }
+    
+    /**
+     * \brief Free memory allocated by a specific instruction.
+     * 
+     * Also inserts \c freea operations for all \c alloca operations after the specified one.
+     * If the instruction is not in the alloca list, no instructions are generated because
+     * it should have already been freed due to some other instruction.
+     * 
+     * If \c alloc_insn is NULL, free all remaining allocas.
+     */
+    void AggregateLoweringPass::FunctionRunner::alloca_free(const ValuePtr<>& alloc_insn, const SourceLocation& location) {
+      const AllocaListEntry *entry;
+      
+      if (alloc_insn) {
+        // Look for instruction
+        entry = m_alloca_list.get();
+        for (; entry; entry = entry->next.get()) {
+          if (entry->insn == alloc_insn)
+            break;
+        }
+
+        // Instruction has already been freed
+        if (!entry)
+          return;
+      }
+      
+      while (m_alloca_list) {
+        bool last = (m_alloca_list->insn == alloc_insn);
+        builder().freea(m_alloca_list->insn, location);
+        m_alloca_list = m_alloca_list->next;
+        if (last)
+          break;
       }
     }
 
@@ -344,12 +440,13 @@ namespace Psi {
      * \brief Allocate space for a specific type.
      */
     ValuePtr<> AggregateLoweringPass::FunctionRunner::alloca_(const LoweredType& type, const SourceLocation& location) {
-      ValuePtr<> stack_ptr;
+      ValuePtr<Instruction> stack_ptr;
       if (type.mode() == LoweredType::mode_register) {
         stack_ptr = builder().alloca_(type.register_type(), location);
       } else {
         stack_ptr = builder().alloca_(FunctionalBuilder::byte_type(context(), location), type.size(), type.alignment(), location);
       }
+      alloca_push(stack_ptr);
       return FunctionalBuilder::pointer_cast(stack_ptr, FunctionalBuilder::byte_type(context(), location), location);
     }
     

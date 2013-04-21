@@ -69,6 +69,27 @@ namespace Psi {
       BOOST_CHECK_EQUAL(f(true, 10, 25), 10);
       BOOST_CHECK_EQUAL(f(false, 15, 30), 30);
     }
+    
+    BOOST_AUTO_TEST_CASE(PhiEdgeTest) {
+      const char *src =
+        "%f = function (%a: bool, %b: i32, %c: i32) > i32 {\n"
+        "  br %entry;\n"
+        "block %entry:\n"
+        "  %x = alloca i32;\n"
+        "  store %b %x;\n"
+        "  cond_br %a %tb %tc;\n"
+        "block %tb(%entry):\n"
+        "  %y = load %x;\n"
+        "  return %y;\n"
+        "block %tc:\n"
+        "  return %c;\n"
+        "};\n";
+
+      typedef Jit::Int32 (*FuncType) (Jit::Boolean,Jit::Int32,Jit::Int32);
+      FuncType f = reinterpret_cast<FuncType>(jit_single("f", src));
+      BOOST_CHECK_EQUAL(f(true, 10, 25), 10);
+      BOOST_CHECK_EQUAL(f(false, 15, 30), 30);
+    }
 
     BOOST_AUTO_TEST_SUITE_END()
  }

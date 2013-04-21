@@ -55,8 +55,7 @@ namespace Psi {
       static boost::shared_ptr<DisassemblerContext::TermName> make_term_name(const ValuePtr<>&, const ValuePtr<Function>&);
 
       void setup_function(const ValuePtr<Function>&);
-      void setup_block_instructions(const ValuePtr<Block>&);
-      void setup_block_phis(const ValuePtr<Block>&);
+      void setup_block(const ValuePtr<Block>&);
       void setup_term(const ValuePtr<>&);
       void setup_term_definition(const ValuePtr<>&);
       void setup_term_name(const ValuePtr<>&);
@@ -206,8 +205,7 @@ namespace Psi {
         ValuePtr<Block> block = value_cast<Block>(term);
         m_in_function_mode = true;
         setup_term_name(block);
-        setup_block_instructions(block);
-        setup_block_phis(block);
+        setup_block(block);
         build_unique_names();
         print_block(block, m_global_definitions);
         break;
@@ -253,18 +251,18 @@ namespace Psi {
 
         for (Function::BlockList::const_iterator ji = function->blocks().begin(), je = function->blocks().end(); ji != je; ++ji) {
           setup_term_name(*ji);
-          setup_block_instructions(*ji);
-          setup_block_phis(*ji);
+          setup_block(*ji);
         }
       }
     }
     
-    void DisassemblerContext::setup_block_phis(const ValuePtr<Block>& block) {
+    void DisassemblerContext::setup_block(const ValuePtr<Block>& block) {
+      if (block->dominator())
+        setup_term_name(block->dominator());
+      
       for (Block::PhiList::const_iterator ii = block->phi_nodes().begin(), ie = block->phi_nodes().end(); ii != ie; ++ii)
         setup_term_definition(*ii);
-    }
-      
-    void DisassemblerContext::setup_block_instructions(const ValuePtr<Block>& block) {
+
       for (Block::InstructionList::const_iterator ii = block->instructions().begin(), ie = block->instructions().end(); ii != ie; ++ii)
         setup_term_definition(*ii);
     }
@@ -890,7 +888,10 @@ namespace Psi {
     }
 
     void DisassemblerContext::print_block(const ValuePtr<Block>& block, const TermDefinitionList& definitions) {
-      *m_output << "block " << name(block) << ":\n";
+      *m_output << "block " << name(block);
+      if (block->dominator())
+        *m_output << '(' << name(block->dominator()) << ')';
+      *m_output << ":\n";
       for (Block::PhiList::const_iterator ii = block->phi_nodes().begin(), ie = block->phi_nodes().end(); ii != ie; ++ii) {
         *m_output << "  ";
         print_term_definition(*ii);

@@ -392,7 +392,7 @@ namespace Psi {
       switch (parameter.mode) {
       case CheckSourceParameter::mode_before_instruction: {
         Instruction *insn = value_cast<Instruction>(parameter.point);
-        if (insn->block_ptr()->dominator() && insn->block_ptr()->dominator()->dominated_by(block_ptr())) {
+        if (insn->block_ptr()->dominated_by(block_ptr())) {
           return;
         } else if (insn->block_ptr() == block_ptr()) {
           if (block_ptr()->instructions().before(*this, *insn))
@@ -403,14 +403,14 @@ namespace Psi {
       
       case CheckSourceParameter::mode_after_block: {
         Block *block = value_cast<Block>(parameter.point);
-        if (block->dominated_by(block_ptr()))
+        if (block->same_or_dominated_by(block_ptr()))
           return;
         break;
       }
       
       case CheckSourceParameter::mode_before_block: {
         Block *block = value_cast<Block>(parameter.point);
-        if (block->dominator() && block->dominator()->dominated_by(block_ptr()))
+        if (block->dominated_by(block_ptr()))
           return;
         break;
       }
@@ -426,14 +426,6 @@ namespace Psi {
     : Instruction(FunctionalBuilder::empty_type(context, location), operation, location) {
     }
 
-    /**
-     * Utility function to check that the dominator of a jump target also dominates this instruction.
-     */
-    void TerminatorInstruction::check_dominated(const ValuePtr<Block>& target) {
-      if (!block_ptr()->dominated_by(target->dominator()))
-        error_context().error_throw(location(), "instruction jump target dominator block may not have run");
-    }
-    
     bool TerminatorInstruction::isa_impl(const Value& ptr) {
       const Instruction *insn = dyn_cast<Instruction>(&ptr);
       if (!insn)
@@ -455,17 +447,24 @@ namespace Psi {
      * dominator block refers to the function entry, i.e. before the
      * entry block is run, and therefore eveything is dominated by it.
      * 
-     * If \c block is the same as \c this, this function returns true.
+     * If \c block is the same as \c this, this function returns false.
      */
     bool Block::dominated_by(Block *block) {
       if (!block)
         return true;
 
-      for (Block *b = this; b; b = b->m_dominator.get()) {
+      for (Block *b = m_dominator.get(); b; b = b->m_dominator.get()) {
         if (block == b)
           return true;
       }
       return false;
+    }
+    
+    /**
+     * \brief Return true if \c block dominates this block, or block == this.
+     */
+    bool Block::same_or_dominated_by(Block *block) {
+      return (this == block) || dominated_by(block);
     }
     
     /**
@@ -477,12 +476,12 @@ namespace Psi {
       PSI_ASSERT(first->function() == second->function());
 
       for (ValuePtr<Block> i = first; i; i = i->dominator()) {
-        if (second->dominated_by(i))
+        if (second->same_or_dominated_by(i))
           return i;
       }
       
       for (ValuePtr<Block> i = second; i; i = i->dominator()) {
-        if (first->dominated_by(i))
+        if (first->same_or_dominated_by(i))
           return i;
       }
       
@@ -553,20 +552,20 @@ namespace Psi {
      * phantom value, since it makes no sense for phi terms to allow
      * phantom values.
      */
-    void Phi::add_edge(const ValuePtr<Block>& block, const ValuePtr<>& value) {
-      CheckSourceParameter cs(CheckSourceParameter::mode_after_block, block.get());
+    void Phi::add_edge(const ValuePtr<Block>& incoming_block, const ValuePtr<>& value) {
+      CheckSourceParameter cs(CheckSourceParameter::mode_after_block, incoming_block.get());
       value->check_source(cs);
       
-      if (!block->dominated_by(block_ptr()->dominator().get()))
+      if (!incoming_block->same_or_dominated_by(block_ptr()->dominator()))
         error_context().error_throw(value->location(), "incoming edge added to PHI term for block which does not dominate the current one");
       
       for (std::vector<PhiEdge>::const_iterator ii = m_edges.begin(), ie = m_edges.end(); ii != ie; ++ii) {
-        if (ii->block == block)
+        if (ii->block == incoming_block)
           error_context().error_throw(value->location(), "incoming edge added for the same block twice");
       }
       
       PhiEdge e;
-      e.block = block;
+      e.block = incoming_block;
       e.value = value;
       
       m_edges.push_back(e);
@@ -605,21 +604,21 @@ namespace Psi {
       switch (parameter.mode) {
       case CheckSourceParameter::mode_before_instruction: {
         Instruction *insn = value_cast<Instruction>(parameter.point);
-        if (insn->block_ptr()->dominated_by(block_ptr()))
+        if (insn->block_ptr()->same_or_dominated_by(block_ptr()))
           return;
         break;
       }
       
       case CheckSourceParameter::mode_after_block: {
         Block *block = value_cast<Block>(parameter.point);
-        if (block->dominated_by(block_ptr()))
+        if (block->same_or_dominated_by(block_ptr()))
           return;
         break;
       }
       
       case CheckSourceParameter::mode_before_block: {
         Block *block = value_cast<Block>(parameter.point);
-        if (block->dominator()->dominated_by(block_ptr()))
+        if (block->dominated_by(block_ptr()))
           return;
         break;
       }
@@ -669,7 +668,7 @@ namespace Psi {
     void Block::check_source_hook(CheckSourceParameter& parameter) {
       if (parameter.mode == CheckSourceParameter::mode_before_instruction) {
         if (TerminatorInstruction *insn = dyn_cast<TerminatorInstruction>(parameter.point)) {
-          if (insn->block_ptr()->dominated_by(dominator()))
+          if (insn->block_ptr()->same_or_dominated_by(dominator()))
             return;
         }
       }

@@ -99,9 +99,6 @@ namespace Psi {
      * \brief Base class for instructions which terminate blocks.
      */
     class PSI_TVM_EXPORT TerminatorInstruction : public Instruction {
-    protected:
-      void check_dominated(const ValuePtr<Block>& target);
-
     public:
       TerminatorInstruction(Context& context, const char *operation, const SourceLocation& location);
       
@@ -223,7 +220,11 @@ namespace Psi {
       std::vector<ValuePtr<Block> > successors();
 
       bool dominated_by(Block *block);
+      /// \copydoc dominated_by(Block*)
       bool dominated_by(const ValuePtr<Block>& block) {return dominated_by(block.get());}
+      bool same_or_dominated_by(Block *block);
+      /// \copydoc same_or_dominated_by(Block*)
+      bool same_or_dominated_by(const ValuePtr<Block>& block) {return same_or_dominated_by(block.get());}
       
       virtual Value* disassembler_source();
       
