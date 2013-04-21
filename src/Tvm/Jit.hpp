@@ -5,6 +5,7 @@
 #include "../PropertyValue.hpp"
 
 #include <boost/shared_ptr.hpp>
+#include <boost/enable_shared_from_this.hpp>
 
 /**
  * \file
@@ -104,6 +105,17 @@ namespace Psi {
       static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config);
 
       static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler);
+    };
+    
+    class JitFactoryCommon : public JitFactory, public boost::enable_shared_from_this<JitFactoryCommon> {
+    public:
+      typedef void (*JitFactoryCallback) (const boost::shared_ptr<JitFactory>&, boost::shared_ptr<Jit>&, const PropertyValue& config);
+      virtual boost::shared_ptr<Jit> create_jit();
+      JitFactoryCommon(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config);
+      
+    protected:
+      JitFactoryCallback m_callback;
+      PropertyValue m_config;
     };
   }
 }

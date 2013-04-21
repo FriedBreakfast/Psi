@@ -140,6 +140,8 @@ std::string hresult_error_string(HRESULT error) {
 }
 
 TemporaryPath::TemporaryPath() {
+  m_data.deleted = true; // Prevent delete until we get the file
+  
   WCHAR path_buffer[MAX_PATH+1], file_buffer[MAX_PATH+1];
   DWORD retval = GetTempPathW(MAX_PATH, path_buffer);
   if (retval == 0)
@@ -150,6 +152,7 @@ TemporaryPath::TemporaryPath() {
     Windows::throw_last_error();
 
   m_path = Path(std::wstring(file_buffer));
+  m_data.deleted = false;
 }
 
 TemporaryPath::~TemporaryPath() {
@@ -157,8 +160,10 @@ TemporaryPath::~TemporaryPath() {
 }
 
 void TemporaryPath::delete_() {
-  if (!m_data.deleted)
+  if (!m_data.deleted) {
     DeleteFileW(m_path.data().c_str());
+    m_data.deleted = true;
+  }
 }
 
 namespace Windows {

@@ -3,6 +3,7 @@
 
 #include <boost/format.hpp>
 #include <boost/make_shared.hpp>
+#include <fstream>
 
 #include <dlfcn.h>
 #include <errno.h>
@@ -84,22 +85,6 @@ std::string error_string(int errcode) {
     data.resize(data.size() * 2);
   }
 }
-
-std::string getcwd() {
-  const std::size_t path_max = 256;
-  SmallArray<char, path_max> data;
-  data.resize(path_max);
-  while (true) {
-    if (::getcwd(data.get(), data.size()))
-      return data.get();
-    
-    int errcode = errno;
-    if (errcode == ERANGE)
-      data.resize(data.size() * 2);
-    else
-      throw PlatformError(boost::str(boost::format("Could not get working directory: %s") % Platform::Linux::error_string(errcode)));
-  }
-}
 }
 
 /**
@@ -108,13 +93,14 @@ std::string getcwd() {
  * If \c name contains no slashes, search the path for an executable file with the given name.
  * Otherwise translate \c name to an absolute path.
  */
-boost::optional<std::string> find_in_path(const std::string& name) {
+boost::optional<Path> find_in_path(const Path& name) {
   std::string found_name;
   
-  if (!name.find('/')) {
+  const std::string& name_str = name.data().path;
+  if (!name_str.find('/')) {
     // Relative or absolute path
-    if (access(name.c_str(), X_OK) == 0)
-      found_name = name;
+    if (access(name_str.c_str(), X_OK) == 0)
+      found_name = name_str;
     else
       return boost::none;
   } else {
@@ -130,11 +116,11 @@ boost::optional<std::string> find_in_path(const std::string& name) {
       found_name.assign(path, end);
       if (found_name.empty()) {
         // Means current directory
-        found_name = name;
+        found_name = name_str;
       } else {
         if (found_name.at(found_name.length()-1) != '/')
           found_name.push_back('/');
-        found_name.append(name);
+        found_name.append(name_str);
       }
       
       if (access(found_name.c_str(), X_OK) == 0)
@@ -149,36 +135,54 @@ boost::optional<std::string> find_in_path(const std::string& name) {
   
   // Convert to absolute path
 
-  return absolute_path(found_name);
+  return Path(found_name).absolute();
 }
 
-std::string join_path(const std::string& first, const std::string& second) {
-  if (first.empty())
-    return second;
-  else if (second.empty())
-    return first;
+Path::Path() {
+}
+
+Path::Path(const std::string& path)
+: m_data(path) {
+}
+
+Path::Path(const PathData& path)
+: m_data(path) {
+}
+
+Path::~Path() {
+}
+
+std::string Path::str() const {
+  return m_data.path;
+}
+
+Path Path::join(const Path& other) const {
+  if (m_data.path.empty())
+    return other;
+  else if (other.m_data.path.empty())
+    return *this;
   
-  if (second.at(0) == '/')
-    return second;
+  if (other.m_data.path.at(0) == '/')
+    return other;
   
-  if (first.at(first.length()-1) == '/')
-    return first + second;
+  if (m_data.path.at(m_data.path.length()-1) == '/')
+    return Path(m_data.path + other.m_data.path);
   else
-    return first + '/' + second;
+    return Path(m_data.path + '/' + other.m_data.path);
 }
 
-std::string normalize_path(const std::string& path) {
-  if (path.empty())
-    return path;
+Path Path::normalize() const {
+  if (m_data.path.empty())
+    return *this;
   
   std::string result;
   std::string::size_type pos = 0;
   while (true) {
-    std::string::size_type next_pos = path.find('/', pos);
+    std::string::size_type next_pos = m_data.path.find('/', pos);
     if (next_pos == pos) {
       result = '/';
     } else {
-      std::string part = path.substr(pos, next_pos);
+      std::string part = m_data.path.substr(pos, next_pos);
       if (part == ".") {
       } else if (part == "..") {
         if (result.empty()) {
@@ -208,29 +212,45 @@ std::string normalize_path(const std::string& path) {
       break;
     
     pos = next_pos + 1;
-    if (pos == path.length())
+    if (pos == m_data.path.length())
       break;
   }
   
   return result;
 }
 
-std::string absolute_path(const std::string& path) {
-  if (path.empty())
+Path Path::absolute() const {
+  if (m_data.path.empty())
     throw PlatformError("Cannot convert empty path to absolute path");
   
-  if (path.at(0) == '/')
-    return path;
+  if (m_data.path.at(0) == '/')
+    return *this;
   
-  return normalize_path(join_path(Linux::getcwd(), path));
+  return getcwd().join(*this).normalize();
 }
 
-std::string filename(const std::string& path) {
-  std::string::size_type n = path.rfind('/');
+Path getcwd() {
+  const std::size_t path_max = 256;
+  SmallArray<char, path_max> data;
+  data.resize(path_max);
+  while (true) {
+    if (::getcwd(data.get(), data.size()))
+      return Path(data.get());
+    
+    int errcode = errno;
+    if (errcode == ERANGE)
+      data.resize(data.size() * 2);
+    else
+      throw PlatformError(boost::str(boost::format("Could not get working directory: %s") % Platform::Linux::error_string(errcode)));
+  }
+}
+
+Path Path::filename() const {
+  std::string::size_type n = m_data.path.rfind('/');
   if (n == std::string::npos)
-    return path;
+    return m_data.path;
   else
-    return path.substr(n+1);
+    return m_data.path.substr(n+1);
 }
 
 namespace {
@@ -314,17 +334,18 @@ bool cmd_write_by_buffer(FileDescriptor& fd, const char*& ptr, const char *end) 
 }
 }
 
-int exec_communicate(const std::vector<std::string>& command, const std::string& input, std::string *output_out, std::string *output_err) {
+int exec_communicate(const Path& command, const std::vector<std::string>& args, const std::string& input, std::string *output_out, std::string *output_err) {
   // Read/write direction refers to the parent process
   FileDescriptor stdin_read, stdin_write, stdout_read, stdout_write, stderr_read, stderr_write;
   cmd_pipe(stdin_read, stdin_write);
   cmd_pipe(stdout_read, stdout_write);
   cmd_pipe(stderr_read, stderr_write);
   
-  CStringArray args(command.size()+1);
-  for (std::size_t ii = 0, ie = command.size(); ii != ie; ++ii)
-    args[ii] = CStringArray::checked_strdup(command[ii]);
-  args[command.size()] = NULL;
+  CStringArray c_args(args.size()+2);
+  c_args[0] = CStringArray::checked_strdup(command.str());
+  for (std::size_t ii = 0, ie = args.size(); ii != ie; ++ii)
+    c_args[ii+1] = CStringArray::checked_strdup(args[ii]);
+  c_args[args.size()+1] = NULL;
   
   pid_t child_pid = fork();
   if (child_pid == 0) {
@@ -340,7 +361,7 @@ int exec_communicate(const std::vector<std::string>& command, const std::string&
     stderr_read.close();
     stderr_write.close();
     
-    char *const* args_ptr = args.data();
+    char *const* args_ptr = c_args.data();
     execvp(args_ptr[0], args_ptr);
     _exit(1);
   }
@@ -423,34 +444,52 @@ int exec_communicate(const std::vector<std::string>& command, const std::string&
   return child_status;
 }
 
-namespace Linux {
-class TemporaryPathImplLinux : public TemporaryPathImpl {
-public:
-  TemporaryPathImplLinux(const std::string& path) : TemporaryPathImpl(path) {}
-  
-  virtual void delete_() {
-    unlink(path().c_str());
-  }
-};
-}
-
-TemporaryPathImpl* make_temporary_path_impl() {
+TemporaryPath::TemporaryPath() {
+  m_data.deleted = false; // Prevent delete until we have a filename
   Linux::MallocPtr<char> name(tempnam(NULL, NULL));
   if (!name) {
     int errcode = errno;
     throw PlatformError(boost::str(boost::format("Failed to get temporary file name: %s") % Linux::error_string(errcode)));
   }
-  return new Linux::TemporaryPathImplLinux(name.get());
+  m_path = Path(name.get());
+  m_data.deleted = false;
 }
 
-boost::shared_ptr<PlatformLibrary> load_library(const std::string& path) {
+TemporaryPath::~TemporaryPath() {
+  delete_();
+}
+
+void TemporaryPath::delete_() {
+  if (!m_data.deleted) {
+    unlink(m_path.data().path.c_str());
+    m_data.deleted = true;
+  }
+}
+
+boost::shared_ptr<PlatformLibrary> load_library(const Path& path) {
   boost::shared_ptr<Linux::LibraryLinux> lib = boost::make_shared<Linux::LibraryLinux>(1);
   dlerror();
-  void *handle = dlopen(path.c_str(), RTLD_LAZY|RTLD_GLOBAL);
+  void *handle = dlopen(path.data().path.c_str(), RTLD_LAZY|RTLD_GLOBAL);
   if (!handle)
-    throw PlatformError(boost::str(boost::format("Could not open library: %s: %s\n") % path % dlerror()));
+    throw PlatformError(boost::str(boost::format("Could not open library: %s: %s\n") % path.str() % dlerror()));
   lib->add_handle(handle);
   return lib;
+}
+
+namespace {
+  void read_configuration_file(PropertyValue& pv, const Path& path) {
+    std::vector<char> data;
+    std::filebuf f;
+    f.open(path.data().path.c_str(), std::ios::in);
+    std::copy(std::istreambuf_iterator<char>(&f), std::istreambuf_iterator<char>(), std::back_inserter(data));
+    if (!data.empty())
+      pv.parse_configuration(&data[0], &data[0] + data.size());
+  }
+}
+
+void read_configuration_files(PropertyValue& pv, const std::string& name) {
+  read_configuration_file(pv, Path("/etc").join(name));
+  //read_configuration_file(pv, Path().join(name));
 }
 }
 }

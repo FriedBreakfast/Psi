@@ -19,7 +19,7 @@ set(PSI_COMPILER_COMMON_LIBS Shlwapi)
 set(PSI_COMPILER_SOURCES PlatformCompileWindows.cpp)
 set(PSI_TVM_SOURCES Tvm/JitWindows.cpp)
 elseif(UNIX)
-set(PSI_COMPILER_COMMON_SOURCES PlatformLinux.cpp PlatformLinux.hpp)
+set(PSI_COMPILER_COMMON_SOURCES PlatformLinux.cpp PlatformLinux.hpp PlatformImplLinux.hpp)
 set(PSI_COMPILER_SOURCES PlatformCompileLinux.cpp)
 set(PSI_TVM_SOURCES Tvm/JitLinux.cpp)
 set(PSI_RUNTIME_SOURCES Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
@@ -95,7 +95,7 @@ if(BUILD_TESTING)
   add_test(psi-tvm-test psi-tvm-test)
 endif()
 
-if(HAVE_LLVM)
+if(PSI_TVM_LLVM)
   add_library(psi-tvm-llvm MODULE
     Tvm/llvm/Builder.cpp Tvm/llvm/Builder.hpp
     Tvm/llvm/Function.cpp

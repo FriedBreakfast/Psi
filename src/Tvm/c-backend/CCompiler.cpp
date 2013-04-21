@@ -2,6 +2,7 @@
 #include "CModule.hpp"
 #include "../../Platform.hpp"
 
+#include <stdio.h>
 #include <fstream>
 #include <boost/format.hpp>
 #include <boost/make_shared.hpp>
@@ -456,7 +457,7 @@ public:
     extra.push_back("-shared");
 #ifdef __linux__
     extra.push_back("-fPIC");
-    extra.push_back("-Wl,-soname," + Platform::filename(output_file));
+    extra.push_back("-Wl,-soname," + output_file.filename().str());
 #endif
     run_gcc_common(err_loc, path, output_file, source, extra);
   }
@@ -892,7 +893,7 @@ public:
     try {
       boost::shared_ptr<TCCPlatformLibrary> pl = boost::make_shared<TCCPlatformLibrary>(tcc_config);
       pl->context().compile_string(src.str());
-      pl->context().add_symbol("fprintf", fprintf);
+      pl->context().add_symbol("fprintf", reinterpret_cast<const void*>(fprintf));
       pl->context().relocate();
 
       void (*fptr) (FILE*) = reinterpret_cast<void(*)(FILE*)>(pl->context().get_symbol("callback"));

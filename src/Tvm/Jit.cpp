@@ -45,6 +45,10 @@ namespace Psi {
       if (str_nonempty(PSI_TVM_CC_TCC_PATH))
         config["tvm"]["c"]["tcclib"]["path"] = PSI_TVM_CC_TCC_PATH;
 #endif
+        
+#if PSI_TVM_LLVM
+      config["tvm"]["llvm"]; // Ensure key is present in map
+#endif
 
       Platform::read_configuration_files(config, "psi.cfg");
 
@@ -52,6 +56,17 @@ namespace Psi {
       String name = tvm_config.get("jit").str();
 
       return get(error_handler, name, tvm_config.get(name));
+    }
+    
+    JitFactoryCommon::JitFactoryCommon(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config)
+    : JitFactory(error_handler, name),
+    m_config(config) {
+    }
+    
+    boost::shared_ptr<Jit> JitFactoryCommon::create_jit() {
+      boost::shared_ptr<Jit> result;
+      m_callback(shared_from_this(), result, m_config);
+      return result;
     }
   }
 }

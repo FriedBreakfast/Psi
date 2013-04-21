@@ -9,6 +9,8 @@
 #cmakedefine01 PSI_OBJECT_PTR_DEBUG
 /// Whether tcc has been compiled into the C backend
 #cmakedefine01 PSI_TVM_CC_TCCLIB
+/// Whether the LLVM backend is being built
+#cmakedefine01 PSI_TVM_LLVM
 
 /// Default TVM JIT library to use
 #define PSI_TVM_JIT "${PSI_TVM_JIT}"

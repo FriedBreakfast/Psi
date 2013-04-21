@@ -1,6 +1,7 @@
 #include "PropertyValue.hpp"
 
 #include <locale>
+#include <stdio.h>
 
 namespace Psi {
 /**
@@ -177,7 +178,7 @@ const PropertyValue *PropertyValue::path_value(const std::string& key) const {
     if (ci == pv->m_value.map.ptr()->end())
       return NULL;
     pv = &ci->second;
-    if (next_pos = std::string::npos)
+    if (next_pos == std::string::npos)
       return pv;
     pos = next_pos + 1;
   }
@@ -186,7 +187,7 @@ const PropertyValue *PropertyValue::path_value(const std::string& key) const {
 boost::optional<std::string> PropertyValue::path_str(const std::string& key) const {
   const PropertyValue *pv = path_value(key);
   if (pv && (pv->type() == t_str))
-    return pv->str();
+    return std::string(pv->str());
   return boost::none;
 }
 
@@ -409,7 +410,7 @@ PropertyValue json_parse_number(ParseHelper& tokener) {
   if (real) {
     unsigned count = 0;
     double value;
-    sscanf(digits.c_str(), "%f%n", &value, &count);
+    sscanf(digits.c_str(), "%lf%n", &value, &count);
     if (count != digits.length())
       throw ParseError();
     return value;

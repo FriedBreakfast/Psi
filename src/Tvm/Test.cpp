@@ -6,7 +6,7 @@
 #include "../Platform.hpp"
 #include "../ErrorContext.hpp"
 
-#include <cstdlib>
+#include <stdlib.h>
 #ifdef __linux__
 #include <signal.h>
 #endif
@@ -53,7 +53,7 @@ namespace Psi {
         // SIG_IGN here, because SIG_IGN causes child processes to be orphaned on creation
         // and thus the exit status is not available.
 #ifdef __linux__
-        std::signal(SIGCHLD, SIG_DFL);
+        signal(SIGCHLD, SIG_DFL);
 #endif
       }
 

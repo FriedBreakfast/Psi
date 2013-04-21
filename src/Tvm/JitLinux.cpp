@@ -1,6 +1,5 @@
 #include "Jit.hpp"
 
-#include <boost/enable_shared_from_this.hpp>
 #include <boost/make_shared.hpp>
 #include <boost/ref.hpp>
 
@@ -8,7 +7,7 @@
 
 namespace Psi {
   namespace Tvm {
-    class LinuxJitFactory : public JitFactory, public boost::enable_shared_from_this<LinuxJitFactory> {
+    class LinuxJitFactory : public JitFactoryCommon {
     public:
       class LibHandle : public boost::noncopyable {
         void *m_handle;
@@ -29,12 +28,9 @@ namespace Psi {
     private:
       LibHandle m_handle;
       
-      typedef void (*JitFactoryCallback) (const boost::shared_ptr<JitFactory>&, boost::shared_ptr<Jit>&);
-      JitFactoryCallback m_callback;
-      
     public:
-      LinuxJitFactory(const CompileErrorPair& error_handler, const std::string& name, LibHandle& handle)
-      : JitFactory(error_handler, name) {
+      LinuxJitFactory(const CompileErrorPair& error_handler, const std::string& name, LibHandle& handle, const PropertyValue& config)
+      : JitFactoryCommon(error_handler, name, config) {
         m_handle.swap(handle);
         
         dlerror();
@@ -47,16 +43,7 @@ namespace Psi {
         }
       }
       
-      virtual ~LinuxJitFactory() {
-      }
-      
-      virtual boost::shared_ptr<Jit> create_jit() {
-        boost::shared_ptr<Jit> result;
-        m_callback(shared_from_this(), result);
-        return result;
-      }
-      
-      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const std::string& name) {
+      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config) {
         std::string soname = "libpsi-tvm-" + name + ".so";
         /* 
          * I use RTLD_GLOBAL here because it's a bad idea to combine RTLD_LOCAL with
@@ -68,12 +55,12 @@ namespace Psi {
         if (!handle.get())
           error_handler.error_throw("Cannot load JIT named " + name + " (from " + soname + "): " + dlerror());
         
-        return boost::make_shared<LinuxJitFactory>(error_handler, name, boost::ref(handle));
+        return boost::make_shared<LinuxJitFactory>(error_handler, name, boost::ref(handle), boost::cref(config));
       }
     };
 
-    boost::shared_ptr<JitFactory> JitFactory::get(const CompileErrorPair& error_handler, const std::string& name) {
-      return LinuxJitFactory::get(error_handler, name);
+    boost::shared_ptr<JitFactory> JitFactory::get(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config) {
+      return LinuxJitFactory::get(error_handler, name, config);
     }
   }
 }
