@@ -350,6 +350,11 @@ ID '>' expression {
   UniquePtr<Expression> value(list_to_ptr($3));
   $$ = list_one<PhiNode>(new PhiNode(@$, label, value));
 }
+| '>' expression {
+  UniquePtr<Token> label;
+  UniquePtr<Expression> value(list_to_ptr($2));
+  $$ = list_one<PhiNode>(new PhiNode(@$, label, value));
+}
 ;
 
 %%

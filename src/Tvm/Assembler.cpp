@@ -215,6 +215,8 @@ namespace Psi {
           // check that all the incoming edges listed are indeed label values
           for (UniqueList<Parser::PhiNode>::const_iterator kt = phi_expr.nodes.begin();
                kt != phi_expr.nodes.end(); ++kt) {
+            if (!kt->label)
+              continue; // Jump in from entry block
             ValuePtr<> block = context.get(kt->label->text);
             if (block->term_type() != term_block)
               throw AssemblerError("incoming label of phi node does not name a block");
@@ -318,7 +320,7 @@ namespace Psi {
 
             for (UniqueList<Parser::PhiNode>::const_iterator kt = phi_expr.nodes.begin();
                  kt != phi_expr.nodes.end(); ++kt) {
-              ValuePtr<Block> block = value_cast<Block>(my_context.get(kt->label->text));
+              ValuePtr<Block> block = kt->label ? value_cast<Block>(my_context.get(kt->label->text)) : function->blocks().front();
               ValuePtr<> value = build_expression(my_context, *kt->expression, phi_term->location().logical);
               phi_term->add_edge(block, value);
             }

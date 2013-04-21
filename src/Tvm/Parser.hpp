@@ -203,13 +203,13 @@ namespace Psi {
        * A token character is alphanumeric or underscore, so this is
        * equivalent the following in the C locale:
        *
-       * \code isalpha(c) || isdigit(c) || c == '_' || (c == '-') || (c == '%') \endcode
+       * \code isalpha(c) || isdigit(c) || c == '_' || (c == '-') || (c == '%') || (c == '.') \endcode
        */
       inline bool token_char(char c) {
         return ((c >= 'A') && (c <= 'Z')) ||
           ((c >= 'a') && (c <= 'z')) ||
           ((c >= '0') && (c <= '9')) ||
-          (c == '_') || (c == '-') || (c == '\\');
+          (c == '_') || (c == '-') || (c == '.');
       }
     }
 

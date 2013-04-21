@@ -305,9 +305,12 @@ namespace Psi {
         };
         
         typedef boost::unordered_map<ValuePtr<Block>, BlockBuildState> BlockSlotMapType;
+        typedef boost::unordered_map<std::pair<ValuePtr<Block>, ValuePtr<Block> >, ValuePtr<Block> > PhiEdgeMapType;
 
         /// Build state of each block
         BlockSlotMapType m_block_state;
+        /// Map of edges which have been replaced by their own blocks, key is (source,dest) pair
+        PhiEdgeMapType m_edge_map;
         
         void switch_to_block(const ValuePtr<Block>& block);
         LoweredValue create_phi_node(const ValuePtr<Block>& block, const LoweredType& type, const SourceLocation& location);
@@ -328,6 +331,7 @@ namespace Psi {
         
         void add_mapping(const ValuePtr<>& source, const LoweredValue& target);
         ValuePtr<Block> rewrite_block(const ValuePtr<Block>&);
+        ValuePtr<Block> prepare_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location);
         
         ValuePtr<> alloca_(const LoweredType& type, const SourceLocation& location);
         LoweredValue load_value(const LoweredType& type, const ValuePtr<>& ptr, const SourceLocation& location);

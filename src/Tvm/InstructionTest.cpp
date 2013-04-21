@@ -307,21 +307,34 @@ namespace Psi {
       BOOST_CHECK_EQUAL(b, v);
     }
     
-    BOOST_AUTO_TEST_CASE(StackSaveRestoreTest) {
+    /*
+     * Check that alloca() in a loop reuses memory from previous iterations.
+     */
+    BOOST_AUTO_TEST_CASE(StackAllocLoopTest) {
       const char *src =
-        "%f = function() > (struct (pointer i8) (pointer i8)) {\n"
-        "  %a = alloca i8 #up8;\n"
-        "  freea %a;\n"
-        "  %b = alloca i8 #up8;\n"
-        "  return (struct_v %a %b);\n"
+        "%f = function(%c : uiptr, %n : uiptr, %r : pointer (array (pointer i8) %n)) > empty {\n"
+        "  br %entry;\n"
+        "block %entry:\n"
+        "  %idx = phi uiptr: > #up0, %body > (add %idx #up1);\n"
+        "  %test = cmp_lt %idx %n;\n"
+        "  cond_br %test %body %exit;\n"
+        "block %body(%entry):\n"
+        "  %p = alloca i8 %c;\n"
+        "  store %p (gep %r %idx);\n"
+        "  br %entry;\n"
+        "block %exit:\n"
+        "  return empty_v;\n"
         "};\n";
         
-      struct PointerPair {void *p1; void *p2;};
-      typedef PointerPair (*func_type) ();
+      typedef void (*func_type) (Jit::IntPtr,Jit::IntPtr,Jit::Int8**);
       func_type f = reinterpret_cast<func_type>(jit_single("f", src));
       
-      PointerPair pp = f();
-      BOOST_CHECK_EQUAL(pp.p1, pp.p2);
+      const Jit::IntPtr loop_count = 100;
+      Jit::Int8* pointers[loop_count];
+      Jit::IntPtr alloc_size = 1000;
+      
+      f(alloc_size, loop_count, pointers);
+      BOOST_CHECK(std::abs(static_cast<std::ptrdiff_t>(pointers[loop_count - 1] - pointers[0])) < alloc_size);
     }
     
     BOOST_AUTO_TEST_CASE(EvaluateTest1) {

@@ -777,16 +777,16 @@ namespace Psi {
       }
 
       static LoweredValue br_rewrite(FunctionRunner& runner, const ValuePtr<UnconditionalBranch>& term) {
-        ValuePtr<Block> target = runner.rewrite_block(term->target);
+        ValuePtr<Block> target = runner.prepare_jump(term->block(), term->target, term->location());
         runner.builder().br(target, term->location());
         return LoweredValue();
       }
 
       static LoweredValue cond_br_rewrite(FunctionRunner& runner, const ValuePtr<ConditionalBranch>& term) {
         ValuePtr<> cond = runner.rewrite_value_register(term->condition).value;
-        ValuePtr<> true_target = runner.rewrite_value_register(term->true_target).value;
-        ValuePtr<> false_target = runner.rewrite_value_register(term->false_target).value;
-        runner.builder().cond_br(cond, value_cast<Block>(true_target), value_cast<Block>(false_target), term->location());
+        ValuePtr<Block> true_target = runner.prepare_jump(term->block(), term->true_target, term->location());
+        ValuePtr<Block> false_target = runner.prepare_jump(term->block(), term->false_target, term->location());
+        runner.builder().cond_br(cond, true_target, false_target, term->location());
         return LoweredValue();
       }
       

@@ -117,22 +117,22 @@ namespace Psi {
     * \param ignore_anonymous_tail Do not include anonymous nodes at
     * the bottom of the tree.
     */
-  String LogicalSourceLocation::error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous_tail) {
+  String LogicalSourceLocation::error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous, bool null_root) {
     unsigned print_depth = depth();
     if (relative_to) {
-            // Find the common ancestor of this and relative_to.
-            unsigned this_depth = print_depth;
-            unsigned relative_to_depth = relative_to->depth();
-            unsigned min_depth = std::min(this_depth, relative_to_depth);
-            print_depth = this_depth - min_depth;
-            LogicalSourceLocation *this_ancestor = ancestor(print_depth).get();
-            LogicalSourceLocation *relative_to_ancestor = relative_to->ancestor(relative_to_depth - min_depth).get();
+      // Find the common ancestor of this and relative_to.
+      unsigned this_depth = print_depth;
+      unsigned relative_to_depth = relative_to->depth();
+      unsigned min_depth = std::min(this_depth, relative_to_depth);
+      print_depth = this_depth - min_depth;
+      LogicalSourceLocation *this_ancestor = ancestor(print_depth).get();
+      LogicalSourceLocation *relative_to_ancestor = relative_to->ancestor(relative_to_depth - min_depth).get();
 
-            while (this_ancestor != relative_to_ancestor) {
-              ++print_depth;
-              this_ancestor = this_ancestor->parent().get();
-              relative_to_ancestor = relative_to_ancestor->parent().get();
-            }
+      while (this_ancestor != relative_to_ancestor) {
+        ++print_depth;
+        this_ancestor = this_ancestor->parent().get();
+        relative_to_ancestor = relative_to_ancestor->parent().get();
+      }
     }
 
     print_depth = std::max(print_depth, 1u);
@@ -141,38 +141,39 @@ namespace Psi {
     bool last_anonymous = false;
     for (LogicalSourceLocation *l = this; print_depth; l = l->parent().get(), --print_depth) {
       if (!l->anonymous()) {
-              nodes.push_back(l);
-              last_anonymous = false;
+        nodes.push_back(l);
+        last_anonymous = false;
       } else {
-              if (!last_anonymous)
-                nodes.push_back(l);
-              last_anonymous = true;
+        if (!last_anonymous)
+          nodes.push_back(l);
+        last_anonymous = true;
       }
     }
 
-    if (ignore_anonymous_tail) {
-            if (nodes.front()->anonymous())
-              nodes.erase(nodes.begin());
-            if (nodes.empty())
-              return "(anonymous)";
-    }
-
     if (!nodes.back()->parent()) {
-            nodes.pop_back();
-            if (nodes.empty())
-              return "(root namespace)";
+      nodes.pop_back();
+      if (nodes.empty()) {
+        if (null_root)
+          return "";
+        else
+          return "(root namespace)";
+      }
     }
 
     std::stringstream ss;
-    for (std::vector<LogicalSourceLocation*>::reverse_iterator ib = nodes.rbegin(),
-          ii = nodes.rbegin(), ie = nodes.rend(); ii != ie; ++ii) {
-            if (ii != ib)
-              ss << '.';
-
-            if ((*ii)->anonymous())
-              ss << "(anonymous)";
-            else
-              ss << (*ii)->name();
+    bool first = true;
+    for (std::vector<LogicalSourceLocation*>::reverse_iterator ii = nodes.rbegin(), ie = nodes.rend(); ii != ie; ++ii) {
+      if ((*ii)->anonymous() && ignore_anonymous)
+        continue;
+      
+      if (!first)
+        ss << '.';
+      first = false;
+      
+      if ((*ii)->anonymous())
+        ss << "(anonymous)";
+      else
+        ss << (*ii)->name();
     }
 
     const std::string& sss = ss.str();

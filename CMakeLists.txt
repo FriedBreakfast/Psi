@@ -40,10 +40,10 @@ endif()
 
 # Find TCC
 find_library(TCC_LIB tcc)
-find_path(TCC_INCLUDE tcclib.h)
-find_path(TCC_PATH lib/libtcc1.a)
+find_path(TCC_INCLUDE libtcc.h)
+find_path(TCC_PATH libtcc1.a)
 find_path(TCC_CC_INCLUDE stdio.h)
-if(TCC_LIB AND TCC_INCLUDE AND TCC_CC_LIB AND TCC_CC_INCLUDE)
+if(TCC_LIB AND TCC_INCLUDE AND TCC_PATH AND TCC_CC_INCLUDE)
   # Whether TCC has been compiled in to the C backend
   set(PSI_TVM_CC_TCCLIB 1)
   set(PSI_TVM_CC_KIND tcclib)

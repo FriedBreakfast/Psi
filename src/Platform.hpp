@@ -52,6 +52,7 @@ class PSI_COMPILER_COMMON_EXPORT Path {
 public:
   Path();
   Path(const PathData& data);
+  Path(const char *pth);
   Path(const std::string& pth);
   ~Path();
 

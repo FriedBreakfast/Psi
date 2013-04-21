@@ -187,6 +187,21 @@ namespace Psi {
     ValuePtr<Block> AggregateLoweringPass::FunctionRunner::rewrite_block(const ValuePtr<Block>& block) {
       return value_cast<Block>(lookup_value_register(block).value);
     }
+    
+    /**
+     * \brief Prepare a jump between two blocks.
+     * 
+     * This may generate an alternative jump target block which performs state fixes from one block
+     * to the other.
+     * 
+     * \return Block in the lowered function which should be jumped to.
+     */
+    ValuePtr<Block> AggregateLoweringPass::FunctionRunner::prepare_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location) {
+      ValuePtr<Block> lowered_target = value_cast<Block>(rewrite_value_register(target).value);
+      ValuePtr<Block> lowered_source = value_cast<Block>(rewrite_value_register(source).value);
+      m_edge_map.insert(std::make_pair(std::make_pair(source, target), lowered_source));
+      return lowered_target;
+    }
 
     /**
      * \brief Store a value to a pointer.
@@ -261,12 +276,17 @@ namespace Psi {
 
       ValuePtr<Block> prolog_block = new_function()->blocks().front();
 
-      std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > > sorted_blocks;
+      typedef std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > > BlockPairList;
+      typedef std::vector<std::pair<ValuePtr<Phi>, LoweredValue> > PhiPairList;
+      BlockPairList sorted_blocks;
       
-      // Set up block mapping for all blocks except the entry block,
-      // which has already been handled
+      // Set up block mapping for all blocks. The entry block moves away from the
+      // start of the function and is jumped to from the prolog block.
       for (Function::BlockList::const_iterator ii = old_function()->blocks().begin(), ie = old_function()->blocks().end(); ii != ie; ++ii) {
-        ValuePtr<Block> dominator = (*ii)->dominator() ? rewrite_block((*ii)->dominator()) : prolog_block;
+        ValuePtr<Block> dominator =
+          (*ii)->dominator() ? rewrite_block((*ii)->dominator())
+          : !sorted_blocks.empty() ? sorted_blocks.front().first
+          : prolog_block;
         ValuePtr<Block> new_block = new_function()->new_block((*ii)->location(), dominator);
         sorted_blocks.push_back(std::make_pair(*ii, new_block));
         m_value_map.insert(std::make_pair(*ii, LoweredValue::register_(pass().block_type(), false, new_block)));
@@ -276,6 +296,7 @@ namespace Psi {
       InstructionBuilder(prolog_block).br(rewrite_block(old_function()->blocks().front()), prolog_block->location());
       
       // Generate PHI nodes and convert instructions!
+      PhiPairList phi_nodes;
       for (std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > >::iterator ii = sorted_blocks.begin(), ie = sorted_blocks.end(); ii != ie; ++ii) {
         const ValuePtr<Block>& old_block = ii->first;
         const ValuePtr<Block>& new_block = ii->second;
@@ -286,8 +307,9 @@ namespace Psi {
 
         // Generate PHI nodes
         for (Block::PhiList::const_iterator ji = old_block->phi_nodes().begin(), je = old_block->phi_nodes().end(); ji != je; ++ji) {
-          LoweredValue v = create_phi_node(new_block, rewrite_type((*ji)->type()), (*ji)->location());
-          m_value_map.insert(std::make_pair(*ji, v));
+          PhiPairList::value_type v(*ji, create_phi_node(new_block, rewrite_type((*ji)->type()), (*ji)->location()));
+          phi_nodes.push_back(v);
+          m_value_map.insert(v);
         }
 
         // Create instructions
@@ -300,17 +322,20 @@ namespace Psi {
       }
       
       // Populate preexisting PHI nodes with values
-      for (std::vector<std::pair<ValuePtr<Block>, ValuePtr<Block> > >::iterator ii = sorted_blocks.begin(), ie = sorted_blocks.end(); ii != ie; ++ii) {
-        ValuePtr<Block> old_block = ii->first;
-        for (Block::PhiList::const_iterator ji = old_block->phi_nodes().begin(), je = old_block->phi_nodes().end(); ji != je; ++ji) {
-          const ValuePtr<Phi>& old_phi_node = *ji;
-          LoweredValue new_phi_node = lookup_value(old_phi_node);
+      for (PhiPairList::const_iterator ii = phi_nodes.begin(), ie = phi_nodes.end(); ii != ie; ++ii) {
+        const ValuePtr<Phi>& old_phi_node = ii->first;
+        const LoweredValue& new_phi_node = ii->second;
+        PSI_ASSERT(!new_phi_node.empty());
 
-          for (unsigned ki = 0, ke = old_phi_node->edges().size(); ki != ke; ++ki) {
-            const PhiEdge& e = old_phi_node->edges()[ki];
-            switch_to_block(value_cast<Block>(lookup_value_register(e.block).value));
-            create_phi_edge(new_phi_node, rewrite_value(e.value));
-          }
+        for (unsigned ki = 0, ke = old_phi_node->edges().size(); ki != ke; ++ki) {
+          const PhiEdge& e = old_phi_node->edges()[ki];
+          // Figure out which block we really jump to the target block from
+          // A new block may have been created along the edge between the original source and target blocks
+          PhiEdgeMapType::const_iterator li = m_edge_map.find(std::make_pair(e.block, old_phi_node->block()));
+          if (li == m_edge_map.end())
+            continue; // No jump exists along this edge
+          switch_to_block(li->second);
+          create_phi_edge(new_phi_node, rewrite_value(e.value));
         }
       }
     }

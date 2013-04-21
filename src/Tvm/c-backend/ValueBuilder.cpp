@@ -175,7 +175,7 @@ struct ValueBuilderCallbacks {
     PhiListType result;
     for (Block::PhiList::iterator ii = target->phi_nodes().begin(), ie = target->phi_nodes().end(); ii != ie; ++ii) {
       const ValuePtr<Phi>& phi = *ii;
-      result.push_back(std::make_pair(builder.build(phi), builder.build(phi->incoming_value_from(current))));
+      result.push_back(std::make_pair(builder.phi_get(phi), builder.build(phi->incoming_value_from(current))));
     }
     return result;
   }
@@ -423,7 +423,8 @@ m_c_builder(&type_builder->module()) {
 ValueBuilder::ValueBuilder(const ValueBuilder& base, CFunction *function)
 : m_type_builder(base.m_type_builder),
 m_c_builder(&base.module(), function),
-m_expressions(base.m_expressions) {
+m_expressions(base.m_expressions),
+m_phis(base.m_phis) {
 }
 
 /**
@@ -506,6 +507,16 @@ CExpression* ValueBuilder::integer_literal(int value) {
 
 void ValueBuilder::put(const ValuePtr<>& key, CExpression *value) {
   m_expressions.insert(std::make_pair(key, value));
+}
+
+void ValueBuilder::phi_put(const ValuePtr<Phi>& key, CExpression *value) {
+  PSI_CHECK(m_phis.insert(std::make_pair(key, value)).second);
+}
+
+CExpression* ValueBuilder::phi_get(const ValuePtr<Phi>& key) {
+  PhiMapType::const_iterator ii = m_phis.find(key);
+  PSI_ASSERT(ii != m_phis.end());
+  return ii->second;
 }
 }
 }

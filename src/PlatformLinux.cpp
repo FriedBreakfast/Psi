@@ -141,6 +141,10 @@ boost::optional<Path> find_in_path(const Path& name) {
 Path::Path() {
 }
 
+Path::Path(const char *path)
+: m_data(path) {
+}
+
 Path::Path(const std::string& path)
 : m_data(path) {
 }
@@ -489,7 +493,8 @@ namespace {
 
 void read_configuration_files(PropertyValue& pv, const std::string& name) {
   read_configuration_file(pv, Path("/etc").join(name));
-  //read_configuration_file(pv, Path().join(name));
+  if (const char *home = std::getenv("HOME"))
+    read_configuration_file(pv, Path(home).join(".config").join(name));
 }
 }
 }

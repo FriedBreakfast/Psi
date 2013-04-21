@@ -228,14 +228,22 @@ void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFu
     
     depth = new_depth;
     
-    for (Block::InstructionList::iterator ji = block->instructions().begin(), je = block->instructions().end(); ji != je; ++ji)
-      block_builder.build(*ji);
-    
     for (PhiMapType::const_iterator ji = phi_by_dominator.lower_bound(block), je = phi_by_dominator.upper_bound(block); ji != je; ++ji) {
       CType *type = m_type_builder.build(ji->second->type());
       CExpression *phi_value = block_builder.c_builder().declare(&ji->second->location(), type, c_op_declare, NULL, 0);
-      block_builder.put(ji->second, phi_value);
+      block_builder.phi_put(ji->second, phi_value);
     }
+    
+    for (Block::PhiList::iterator ji = block->phi_nodes().begin(), je = block->phi_nodes().end(); ji != je; ++ji) {
+      const ValuePtr<Phi>& phi = *ji;
+      CType *type = m_type_builder.build(phi->type());
+      CExpression *temporary_value = block_builder.phi_get(*ji);
+      CExpression *phi_value = block_builder.c_builder().declare(&phi->location(), type, c_op_declare, temporary_value, 0);
+      block_builder.put(*ji, phi_value);
+    }
+
+    for (Block::InstructionList::iterator ji = block->instructions().begin(), je = block->instructions().end(); ji != je; ++ji)
+      block_builder.build(*ji);
   }
   
   for (; depth > 0; --depth)

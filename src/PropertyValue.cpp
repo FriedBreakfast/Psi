@@ -371,7 +371,7 @@ std::string json_parse_keyword(ParseHelper& tokener) {
   std::string s;
   const std::locale& c_locale = std::locale::classic();
   tokener.set_skip_whitespace(false);
-  while (!std::isspace(tokener.peek(), c_locale)) {
+  while (std::isalnum(tokener.peek(), c_locale) || std::strchr("!$%^&*@~?<>/", tokener.peek())) {
     s.push_back(tokener.peek());
     tokener.accept();
   }

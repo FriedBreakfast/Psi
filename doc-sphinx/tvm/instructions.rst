@@ -424,6 +424,24 @@ Note that numerical constants are covered in :ref:`psi.tvm.numerical_constants`
 add
 """
 
+cmp_eq
+""""""
+
+cmp_ge
+""""""
+
+cmp_gt
+""""""
+
+cmp_le
+""""""
+
+cmp_lt
+""""""
+
+cmp_ne
+""""""
+
 div
 """
 
@@ -558,6 +576,11 @@ freea
 ``freea {ptr}``
 
 Restore the stack pointer to its position before ``{ptr}`` was allocated.
+
+This instruction is strictly advisory: the compiler is required to free the memory eventually anyway,
+and may not use an unlimited amount of memory during loops using :ref:`psi.tvm.instructions.alloca`.
+This instruction tells the compiler that it may free the memory (and any other memory allocated by
+:ref:`psi.tvm.instructions.alloca` since ``{ptr}`` was allocated) immediately.
 
 ``{ptr}``
   Point returned by :ref:`psi.tvm.instructions.alloca` or :ref:`psi.tvm.instructions.alloca_const`.

@@ -126,6 +126,7 @@ CExpression* CExpressionBuilder::declare(const SourceLocation* location, CType *
   sub->index = index;
   sub->eval = c_eval_write;
   append(location, sub);
+  sub->requires_name = true;
   return sub;
 }
 

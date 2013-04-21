@@ -2,6 +2,7 @@
 #define HPP_PSI_TVM_CBACKEND_BUILDER
 
 #include "../Core.hpp"
+#include "../Function.hpp"
 #include "../Number.hpp"
 #include "../Jit.hpp"
 #include "../../Platform.hpp"
@@ -113,6 +114,8 @@ class ValueBuilder {
   CExpressionBuilder m_c_builder;
   typedef boost::unordered_map<ValuePtr<>, CExpression*> ExpressionMapType;
   ExpressionMapType m_expressions;
+  typedef boost::unordered_map<ValuePtr<Phi>, CExpression*> PhiMapType;
+  PhiMapType m_phis;
   typedef boost::unordered_map<int, CExpression*> IntegerLiteralMapType;
   IntegerLiteralMapType m_integer_literals;
   
@@ -130,6 +133,9 @@ public:
   CCompiler& c_compiler() const {return module().c_compiler();}
   CompileErrorContext& error_context() {return c_builder().module().error_context();}
   void put(const ValuePtr<>& key, CExpression *value);
+  
+  void phi_put(const ValuePtr<Phi>& key, CExpression *value);
+  CExpression* phi_get(const ValuePtr<Phi>& key);
 };
 
 class CModuleBuilder {

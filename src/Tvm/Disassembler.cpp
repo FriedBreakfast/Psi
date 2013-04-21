@@ -92,7 +92,7 @@ namespace Psi {
         if (Parser::token_char(*ii))
           os << *ii;
         else
-          os << '%' << ((unsigned(*ii) & 0xF0) >> 8) << (unsigned(*ii) & 0xF);
+          os << '%' << ((unsigned(*ii) & 0xF0) >> 4) << (unsigned(*ii) & 0xF);
       }
       
       return os;
@@ -115,14 +115,12 @@ namespace Psi {
         Function::TermNameMap::const_iterator it = name_map.find(term);
         if (it != name_map.end())
           return boost::make_shared<TermName>(it->second, function, false);
-        return boost::make_shared<TermName>("", function, true);
       } else if (ValuePtr<Global> global = dyn_cast<Global>(term)) {
         return boost::make_shared<TermName>(global->name(), ValuePtr<Function>(), false);
-      } else if (ValuePtr<RecursiveType> recursive = dyn_cast<RecursiveType>(term)) {
-        return boost::make_shared<TermName>(recursive->location().logical->name(), ValuePtr<Function>(), false);
-      } else {
-        return boost::make_shared<TermName>("", function, true);
       }
+      
+      std::string name = term->location().logical->error_name(function ? function->location().logical : LogicalSourceLocationPtr(), true, true);
+      return boost::make_shared<TermName>(name, function, true);
     }
     
     bool DisassemblerContext::TermNameSort::operator () (const boost::shared_ptr<TermName>& lhs, const boost::shared_ptr<TermName>& rhs) const {
