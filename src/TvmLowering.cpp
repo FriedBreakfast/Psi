@@ -208,14 +208,16 @@ std::string TvmCompiler::mangle_name(const LogicalSourceLocationPtr& location) {
 }
 
 TvmCompiler::TvmModule& TvmCompiler::get_module(const TreePtr<Module>& module) {
-  TvmModule& tvm_module = m_modules[module];
-  if (!tvm_module.module) {
-    tvm_module.jit_current = false;
-    tvm_module.n_constructors = 0;
-    tvm_module.scope = TvmScope::new_(m_root_scope);
-    tvm_module.module.reset(new Tvm::Module(&m_tvm_context, module->name, module->location()));
+  ModuleMap::iterator ii = m_modules.find(module);
+  if (ii == m_modules.end()) {
+    TvmModule m;
+    m.n_constructors = 0;
+    m.scope = TvmScope::new_(m_root_scope);
+    ii = m_modules.insert(std::make_pair(module, m)).first;
   }
-  return tvm_module;
+  if (!ii->second.module)
+    ii->second.module.reset(new Tvm::Module(&m_tvm_context, module->name, module->location()));
+  return ii->second;
 }
 
 TvmCompiler::TvmPlatformLibrary& TvmCompiler::get_platform_library(const TreePtr<Library>& lib) {
@@ -617,9 +619,10 @@ void* TvmCompiler::jit_compile(const TreePtr<Global>& global) {
   
   // Ensure all modules are up to date in the JIT
   for (ModuleMap::iterator ii = m_modules.begin(), ie = m_modules.end(); ii != ie; ++ii) {
-    if (!ii->second.jit_current) {
-      m_jit->add_or_rebuild_module(ii->second.module.get(), true);
-      ii->second.jit_current = true;
+    if (ii->second.module) {
+      m_jit->add_module(ii->second.module.get());
+      ii->second.built_modules.push_back(ii->second.module);
+      ii->second.module.reset();
     }
   }
   

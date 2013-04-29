@@ -659,6 +659,10 @@ namespace Psi {
     m_dominator(dominator),
     m_landing_pad(landing_pad),
     m_is_landing_pad(is_landing_pad) {
+      if (dominator && (dominator->function_ptr() != function))
+        function->context().error_context().error_throw(location, "Dominator block in a different function");
+      if (landing_pad && (landing_pad->function_ptr() != function))
+        function->context().error_context().error_throw(location, "Landing pad in a different function");
     }
     
     Value* Block::disassembler_source() {

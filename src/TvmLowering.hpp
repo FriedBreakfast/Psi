@@ -137,8 +137,8 @@ namespace Psi {
       typedef boost::unordered_map<TreePtr<ModuleGlobal>, Tvm::ValuePtr<Tvm::Global> > ModuleExternalGlobalMap;
       
       struct TvmModule {
-        bool jit_current;
         boost::shared_ptr<Tvm::Module> module;
+        std::vector<boost::shared_ptr<Tvm::Module> > built_modules;
         ModuleGlobalMap symbols;
         ModuleLibrarySymbolMap library_symbols;
         ModuleExternalGlobalMap external_symbols;

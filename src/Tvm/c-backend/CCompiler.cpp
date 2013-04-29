@@ -7,7 +7,7 @@
 #include <boost/format.hpp>
 #include <boost/make_shared.hpp>
 
-#ifdef PSI_TVM_CC_TCCLIB
+#if PSI_TVM_CC_TCCLIB
 #include <libtcc.h>
 #endif
 
@@ -65,6 +65,7 @@ struct CompilerCommonType {
 };
 
 struct CompilerCommonInfo {
+  bool windows;
   bool big_endian;
   unsigned char_bits;
   unsigned pointer_size;
@@ -93,10 +94,12 @@ namespace {
  * This turns the type/alignment problem into a table.
  */
 class CCompilerCommon : public CCompiler {
+  bool m_windows;
   bool m_big_endian;
   
 public:
   CCompilerCommon(const CompilerCommonInfo& common_info) {
+    m_windows = common_info.windows;
     m_big_endian = common_info.big_endian;
     primitive_types.pointer_size = common_info.pointer_size;
     primitive_types.pointer_alignment = common_info.pointer_alignment;
@@ -169,7 +172,7 @@ public:
    */
   static CompilerCommonInfo parse_common_info(const CompileErrorPair& err_loc, std::istream& in) {
     CompilerCommonInfo ci;
-    in >> ci.big_endian >> ci.char_bits >> ci.pointer_size >> ci.pointer_alignment;
+    in >> ci.windows >> ci.big_endian >> ci.char_bits >> ci.pointer_size >> ci.pointer_alignment;
     if (!in)
       err_loc.error_throw("Failed to parse C compiler common information");
     
@@ -187,6 +190,17 @@ public:
       type.name = trim(type.name);
       ci.types.push_back(type);
     }
+  }
+  
+  bool big_endian() const {return m_big_endian;}
+  bool windows() const {return m_windows;}
+  
+  static void windows_detection_code(std::ostream& os) {
+    os << "#ifdef _WIN32\n"
+       << "#define PSI_C_WINDOWS 1\n"
+       << "#else\n"
+       << "#define PSI_C_WINDOWS 0\n"
+       << "#endif\n";
   }
 };
 
@@ -357,7 +371,7 @@ public:
         << "int main() {\n"
         << "  union {unsigned __int8 a[4]; unsigned __int32 b;} endian_test = {1, 2, 3, 4};\n"
         << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
-        << "  printf(\"%d %d\\n\", _MSC_VER, big_endian||little_endian);\n"
+        << "  printf(\"1 %d %d\\n\", _MSC_VER, big_endian||little_endian);\n"
         << "  printf(\"%d %d %d %d\\n\", big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof(void*));\n";
     for (unsigned n = 0; n < array_size(common_types); ++n) {
       const CommonTypeName& ty = common_types[n];
@@ -365,7 +379,7 @@ public:
           << ty.name << "\\n\", (int)sizeof(" << ty.name
           << "), (int)__alignof(" << ty.name << "));\n";
     }
-    src << "  return 0;"
+    src << "  return 0;\n"
         << "}\n";
     
     Platform::TemporaryPath program_path;
@@ -410,10 +424,10 @@ public:
 
   void emit_global_attributes(AttributeWriter& aw, CGlobal *global, bool is_external) {
     if (global->alignment) aw.next() << "aligned(" << global->alignment << ")";
-#ifdef _WIN32
-    if (is_external) aw.next() << "dllimport";
-    else if (!global->is_private) aw.next() << "dllexport";
-#endif
+    if (windows()) {
+      if (is_external) aw.next() << "dllimport";
+      else if (!global->is_private) aw.next() << "dllexport";
+    }
   }
   
   /// \todo Emit calling convention
@@ -511,13 +525,14 @@ public:
     std::ostringstream src;
     src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
-        << "#include <limits.h>\n"
-        << "int main() {\n"
+        << "#include <limits.h>\n";
+    windows_detection_code(src);
+    src << "int main() {\n"
         << "  int big_endian = (__BYTE_ORDER__==__ORDER_BIG_ENDIAN__), little_endian = (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__);\n"
         << "  printf(\"%d %d %d\\n\", __GNUC__, __GNUC_MINOR__, big_endian||little_endian);\n"
-        << "  printf(\"%d %d %d %d\\n\", big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
+        << "  printf(\"%d %d %d %d %d\\n\", PSI_C_WINDOWS, big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
     gcc_type_detection_code(src);
-    src << "  return 0;"
+    src << "  return 0;\n"
         << "}\n";
     
     Platform::TemporaryPath program_path;
@@ -574,14 +589,15 @@ public:
     src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
         << "#include <limits.h>\n"
-        << "#include <stdint.h>\n"
-        << "int main() {\n"
+        << "#include <stdint.h>\n";
+    windows_detection_code(src);
+    src << "int main() {\n"
         << "  union {uint8_t a[4]; uint32_t b;} endian_test = {1, 2, 3, 4};\n"
         << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
         << "  printf(\"%d %d %d\\n\", __clang_major__, __clang_minor__, big_endian||little_endian);\n"
-        << "  printf(\"%d %d %d %d\\n\", big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
+        << "  printf(\"%d %d %d %d %d\\n\", PSI_C_WINDOWS, big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
     gcc_type_detection_code(src);
-    src << "  return 0;"
+    src << "  return 0;\n"
         << "}\n";
     
     Platform::TemporaryPath program_path;
@@ -659,14 +675,15 @@ public:
     src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
         << "#include <limits.h>\n"
-        << "#include <stdint.h>\n"
-        << "int main() {\n"
+        << "#include <stdint.h>\n";
+    windows_detection_code(src); 
+    src << "int main() {\n"
         << "  union {uint8_t a[4]; uint32_t b;} endian_test = {1, 2, 3, 4};\n"
         << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
         << "  printf(\"%d %d\\n\", __TINYC__, big_endian||little_endian);\n"
-        << "  printf(\"%d %d %d %d\\n\", big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
+        << "  printf(\"%d %d %d %d %d\\n\", PSI_C_WINDOWS, big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
     gcc_type_detection_code(src);
-    src << "  return 0;"
+    src << "  return 0;\n"
         << "}\n";
     
     Platform::TemporaryPath source_path;
@@ -831,9 +848,10 @@ public:
 };
 }
 
+#if PSI_TVM_CC_TCCLIB
 class CCompilerTCCLib : public CCompilerGCCLike {
-  unsigned m_version_major, m_version_minor;
   TCCConfiguration m_configuration;
+  unsigned m_version_major, m_version_minor;
 
 public:
   CCompilerTCCLib(const CompilerCommonInfo& info, const TCCConfiguration& configuration, unsigned version_major, unsigned version_minor)
@@ -880,12 +898,13 @@ public:
     src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
         << "#include <limits.h>\n"
-        << "#include <stdint.h>\n"
-        << "void callback(FILE *fp) {\n"
+        << "#include <stdint.h>\n";
+    windows_detection_code(src); 
+    src << "void callback(FILE *fp) {\n"
         << "  union {uint8_t a[4]; uint32_t b;} endian_test = {1, 2, 3, 4};\n"
         << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
         << "  fprintf(fp, \"%d %d\\n\", __TINYC__, big_endian||little_endian);\n"
-        << "  fprintf(fp, \"%d %d %d %d\\n\", big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
+        << "  fprintf(fp, \"%d %d %d %d %d\\n\", PSI_C_WINDOWS, big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
     CCompilerGCCLike::gcc_type_detection_code(src, "fp");
     src << "}\n";
 
@@ -900,20 +919,20 @@ public:
 
       StdioTempFile tf;
       if (!tf.fp())
-        err_loc.error_throw("Failed to create temporary file");
+        err_loc.error_throw("Failed to create temporary file for libtcc autodetection");
       fptr(tf.fp());
       
       long length = ftell(tf.fp());
       if (length < 0)
-        PSI_NOT_IMPLEMENTED();
+        err_loc.error_throw("Could not determine length of libtcc detection result file");
 
       output.resize(length);
       if (length > 0) {
         if (fseek(tf.fp(), 0, SEEK_SET) != 0)
-          PSI_NOT_IMPLEMENTED();
+          err_loc.error_throw("Could not seek to start of libtcc detection result file");
 
-        if (fread(&output[0], 1, length, tf.fp()) != length)
-          PSI_NOT_IMPLEMENTED();
+        if (fread(&output[0], 1, length, tf.fp()) != static_cast<unsigned long>(length))
+          err_loc.error_throw("Could not read libtcc detection result file");
       }
     } catch (TCCError& ex) {
       err_loc.error_throw(ex.what());
@@ -937,6 +956,7 @@ public:
     return boost::make_shared<CCompilerTCCLib>(common_info, tcc_config, version_major, version_minor);
   }
 };
+#endif
 
 /**
  * Try to locate a C compiler on the system.
@@ -946,24 +966,26 @@ boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc, 
   const PropertyValue& cc_config = configuration.get(key);
 
   String kind = cc_config.get("kind").str();
-  if (kind == "tcclib") {
-    return CCompilerTCCLib::detect(err_loc, cc_config);
-  } else {
-    // Try to identify the compiler by its executable name
-    Platform::Path cc_path = std::string(cc_config.get("path").str());
-    boost::optional<Platform::Path> cc_full_path = Platform::find_in_path(cc_path);
-    if (!cc_full_path)
-      err_loc.error_throw(boost::format("C compiler not found: %s") % cc_path.str());
 
-    if (kind == "gcc") {
-      return CCompilerGCC::detect(err_loc, *cc_full_path, cc_config);
-    } else if (kind == "clang") {
-      return CCompilerClang::detect(err_loc, *cc_full_path, cc_config);
-    } else if (kind == "tcc") {
-      return CCompilerTCC::detect(err_loc, *cc_full_path, cc_config);
-    } else {
-      err_loc.error_throw(boost::format("Could not identify C compiler: %s") % cc_full_path->str());
-    }
+#if PSI_TVM_CC_TCCLIB
+  if (kind == "tcclib")
+    return CCompilerTCCLib::detect(err_loc, cc_config);
+#endif
+  
+  // Try to identify the compiler by its executable name
+  Platform::Path cc_path = std::string(cc_config.get("path").str());
+  boost::optional<Platform::Path> cc_full_path = Platform::find_in_path(cc_path);
+  if (!cc_full_path)
+    err_loc.error_throw(boost::format("C compiler not found: %s") % cc_path.str());
+
+  if (kind == "gcc") {
+    return CCompilerGCC::detect(err_loc, *cc_full_path, cc_config);
+  } else if (kind == "clang") {
+    return CCompilerClang::detect(err_loc, *cc_full_path, cc_config);
+  } else if (kind == "tcc") {
+    return CCompilerTCC::detect(err_loc, *cc_full_path, cc_config);
+  } else {
+    err_loc.error_throw(boost::format("Could not identify C compiler: %s") % cc_full_path->str());
   }
 }
 }

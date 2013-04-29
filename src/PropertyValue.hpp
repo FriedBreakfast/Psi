@@ -13,6 +13,19 @@
 namespace Psi {
 class PropertyValue;
 
+class PropertyValueParseError : public std::exception {
+  unsigned m_line, m_column;
+  std::string m_message;
+  
+public:
+  PropertyValueParseError(unsigned line, unsigned column, const std::string& message);
+  virtual ~PropertyValueParseError() throw();
+  unsigned line() const {return m_line;}
+  unsigned column() const {return m_column;}
+  const std::string& message() const {return m_message;}
+  virtual const char *what() const throw();
+};
+
 /**
  * Property map object. This is equivalent to a JSON object.
  */
@@ -112,9 +125,9 @@ public:
   
   boost::optional<std::string> path_str(const std::string& key) const;
 
-  static PropertyValue parse(const char *begin, const char *end);
+  static PropertyValue parse(const char *begin, const char *end, unsigned first_line=1, unsigned first_column=1);
   static PropertyValue parse(const char *s);
-  void parse_configuration(const char *begin, const char *end);
+  void parse_configuration(const char *begin, const char *end, unsigned first_line=1, unsigned first_column=1);
 };
 
 PSI_COMPILER_COMMON_EXPORT bool operator == (const PropertyValue& lhs, const PropertyValue& rhs);

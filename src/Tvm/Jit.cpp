@@ -1,14 +1,11 @@
 #include "Jit.hpp"
 #include "../Platform.hpp"
 
+#include <boost/make_shared.hpp>
+#include <boost/ref.hpp>
+
 namespace Psi {
   namespace Tvm {
-    Jit::Jit(const boost::shared_ptr<JitFactory>& factory) : m_factory(factory) {
-    }
-
-    Jit::~Jit() {
-    }
-
     JitFactory::JitFactory(const CompileErrorPair& error_handler, const std::string& name)
     : m_error_handler(error_handler), m_name(name) {
     }
@@ -63,10 +60,44 @@ namespace Psi {
     m_config(config) {
     }
     
+    namespace {
+      class JitAutoPtr {
+      public:
+        JitAutoPtr(Jit *p) : ptr(p) {}
+        ~JitAutoPtr() {
+          if (ptr)
+            ptr->destroy();
+        }
+        
+        Jit *release() {
+          Jit *p = ptr;
+          ptr = NULL;
+          return p;
+        }
+        
+      private:
+        Jit *ptr;
+      };
+      
+      struct JitWrapper {
+        boost::shared_ptr<JitFactory> factory;
+        Jit *jit;
+        
+        JitWrapper(const boost::shared_ptr<JitFactory>& factory_, JitAutoPtr& jit_)
+        : factory(factory_) {
+          jit = jit_.release();
+        }
+        
+        ~JitWrapper() {
+          jit->destroy();
+        }
+      };
+    }
+    
     boost::shared_ptr<Jit> JitFactoryCommon::create_jit() {
-      boost::shared_ptr<Jit> result;
-      m_callback(shared_from_this(), result, m_config);
-      return result;
+      JitAutoPtr p(m_callback(error_handler(), m_config));
+      boost::shared_ptr<JitWrapper> jw = boost::make_shared<JitWrapper>(shared_from_this(), boost::ref(p));
+      return boost::shared_ptr<Jit>(jw, jw->jit);
     }
   }
 }

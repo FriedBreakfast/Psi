@@ -190,8 +190,8 @@ namespace Psi {
 
       class LLVMJit : public Jit {
       public:
-        LLVMJit(const boost::shared_ptr<JitFactory>&, const std::string&, const boost::shared_ptr<llvm::TargetMachine>&);
-        virtual ~LLVMJit();
+        LLVMJit(const std::string&, const boost::shared_ptr<llvm::TargetMachine>&);
+        virtual void destroy();
 
         virtual void add_module(Module*);
         virtual void remove_module(Module*);

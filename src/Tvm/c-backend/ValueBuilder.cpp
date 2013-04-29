@@ -158,7 +158,7 @@ struct ValueBuilderCallbacks {
   };
   
   static CExpression* return_callback(ValueBuilder& builder, const ValuePtr<Return>& term) {
-    CExpression *value = builder.build(term->value);
+    CExpression *value = builder.is_void_type(term->value->type()) ? NULL : builder.build(term->value);
     builder.c_builder().unary(&term->location(), NULL, c_eval_write, c_op_return, value);
     return NULL;
   }
@@ -233,6 +233,9 @@ struct ValueBuilderCallbacks {
   }
   
   static CExpression* load_callback(ValueBuilder& builder, const ValuePtr<Load>& term) {
+    if (builder.is_void_type(term->type()))
+      return NULL;
+
     CExpression *target = builder.build(term->target);
     if (!target->lvalue) {
       CType *ty = builder.build_type(term->type());
@@ -242,6 +245,9 @@ struct ValueBuilderCallbacks {
   }
   
   static CExpression* store_callback(ValueBuilder& builder, const ValuePtr<Store>& term) {
+    if (builder.is_void_type(term->value->type()))
+      return NULL;
+
     CExpression *value = builder.build_rvalue(term->value);
     CExpression *target = builder.build(term->target);
     if (!target->lvalue)
@@ -251,6 +257,9 @@ struct ValueBuilderCallbacks {
   }
   
   static CExpression* alloca_callback(ValueBuilder& builder, const ValuePtr<Alloca>& term) {
+    if (builder.is_void_type(term->element_type))
+      return builder.type_builder().get_null();
+    
     boost::optional<unsigned> max_count;
     
     CExpression *count = NULL;
@@ -308,10 +317,13 @@ struct ValueBuilderCallbacks {
   
   static CExpression* alloca_const_callback(ValueBuilder& builder, const ValuePtr<AllocaConst>& term) {
     CExpression *value = builder.build(term->value);
-    return builder.c_builder().binary(&term->location(), value->type, c_eval_write, c_op_declare, value, NULL);
+    return builder.c_builder().declare(&term->location(), value->type, c_op_declare, value, 0);
   }
   
   static CExpression* freea_callback(ValueBuilder& builder, const ValuePtr<FreeAlloca>& term) {
+    if (builder.is_void_type(value_cast<PointerType>(term->value->type())->target_type()))
+      return NULL;
+    
     CExpression *src = builder.build(term->value);
     if (src->op == c_op_ternary) {
       PSI_ASSERT(builder.c_compiler().has_variable_length_arrays);
@@ -517,6 +529,11 @@ CExpression* ValueBuilder::phi_get(const ValuePtr<Phi>& key) {
   PhiMapType::const_iterator ii = m_phis.find(key);
   PSI_ASSERT(ii != m_phis.end());
   return ii->second;
+}
+
+/// \copydoc TypeBuilder::is_void_type
+bool ValueBuilder::is_void_type(const ValuePtr<>& type) {
+  return type_builder().is_void_type(type);
 }
 }
 }

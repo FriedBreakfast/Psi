@@ -15,7 +15,7 @@ namespace Psi {
       struct InstructionBuilder {
         static llvm::Instruction* return_callback(FunctionBuilder& builder, const ValuePtr<Return>& insn) {
           if (builder.function()->function_type()->sret()) {
-            return builder.irbuilder().CreateRet(&builder.llvm_function()->getArgumentList().back());
+            return builder.irbuilder().CreateRetVoid();
           } else {
             return builder.irbuilder().CreateRet(builder.build_value(insn->value));
           }

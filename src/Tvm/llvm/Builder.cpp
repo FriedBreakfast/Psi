@@ -158,7 +158,7 @@ namespace Psi {
           
           llvm::LLVMContext& c = m.getContext();
           llvm::Type *args[] = {llvm::Type::getInt64Ty(c), llvm::Type::getInt8PtrTy(c)};
-          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(c), args, false);
+          llvm::FunctionType *ft = llvm::FunctionType::get(llvm::StructType::get(c)->getPointerTo(), args, false);
           f = llvm::Function::Create(ft, llvm::GlobalValue::ExternalLinkage, name, &m);
 
           return f;
@@ -398,7 +398,8 @@ namespace Psi {
             params.push_back(build_type(function_type->parameter_types().back()));
           for (std::size_t i = 0, e = function_type->parameter_types().size() - sret; i != e; ++i)
             params.push_back(build_type(function_type->parameter_types()[i]));
-          llvm::Type *result = build_type(function_type->result_type());
+          llvm::Type *result = function_type->sret() ?
+            llvm::Type::getVoidTy(*m_llvm_context) : build_type(function_type->result_type());
           t = llvm::FunctionType::get(result, params, false);
           break;
         }
@@ -474,16 +475,15 @@ namespace Psi {
         }
       }
 
-      LLVMJit::LLVMJit(const boost::shared_ptr<JitFactory>& jit_factory,
-                       const std::string& host_triple,
+      LLVMJit::LLVMJit(const std::string& host_triple,
                        const boost::shared_ptr<llvm::TargetMachine>& host_machine)
-        : Jit(jit_factory),
-          m_target_fixes(create_target_fixes(&m_llvm_context, host_machine, host_triple)),
+        : m_target_fixes(create_target_fixes(&m_llvm_context, host_machine, host_triple)),
           m_target_machine(host_machine) {
         init_llvm_passes();
       }
 
-      LLVMJit::~LLVMJit() {
+      void LLVMJit::destroy() {
+        delete this;
       }
       
       void LLVMJit::init_llvm_passes() {
@@ -522,6 +522,13 @@ namespace Psi {
         
         m_llvm_module_pass.run(*llvm_module);
 
+#ifdef PSI_DEBUG
+        if (const char *debug_mode = std::getenv("PSI_LLVM_DEBUG")) {
+          if ((std::strcmp(debug_mode, "all") == 0) || (std::strcmp(debug_mode, "ir") == 0))
+            llvm_module->dump();
+        }
+#endif
+
         mapping = new_mapping;
 
         if (!m_llvm_engine) {
@@ -557,23 +564,12 @@ namespace Psi {
 #if PSI_DEBUG
       class DebugListener : public llvm::JITEventListener {
       public:
-        DebugListener(bool dump_ir, bool dump_asm)
-          : m_dump_ir(dump_ir), m_dump_asm(dump_asm) {
-        }
-
         virtual void NotifyFunctionEmitted (const llvm::Function &F, void*, size_t, const EmittedFunctionDetails& details) {
           llvm::raw_os_ostream out(std::cerr);
-          if (m_dump_ir)
-            F.print(out);
-          if (m_dump_asm)
-            details.MF->print(out);
+          details.MF->print(out);
         }
 
         //virtual void NotifyFreeingMachineCode (void *OldPtr)
-
-      private:
-        bool m_dump_ir;
-        bool m_dump_asm;
       };
 #endif
 
@@ -587,19 +583,8 @@ namespace Psi {
 #if PSI_DEBUG
         const char *debug_mode = std::getenv("PSI_LLVM_DEBUG");
         if (debug_mode) {
-          bool dump_ir, dump_asm;
-          if (std::strcmp(debug_mode, "all") == 0) {
-            dump_ir = dump_asm = true;
-          } else if (std::strcmp(debug_mode, "asm") == 0) {
-            dump_ir = false; dump_asm = true;
-          } else if (std::strcmp(debug_mode, "ir") == 0) {
-            dump_ir = true; dump_asm = false;
-          } else {
-            dump_ir = dump_asm = false;
-          }
-          
-          if (dump_asm || dump_ir) {
-            m_debug_listener = boost::make_shared<DebugListener>(dump_ir, dump_asm);
+          if ((std::strcmp(debug_mode, "all") == 0) || (std::strcmp(debug_mode, "asm") == 0)) {
+            m_debug_listener = boost::make_shared<DebugListener>();
             m_llvm_engine->RegisterJITEventListener(m_debug_listener.get());
           }
         }
@@ -609,7 +594,7 @@ namespace Psi {
   }
 }
 
-extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) void tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory, boost::shared_ptr<Psi::Tvm::Jit>& result) {
+extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) Psi::Tvm::Jit* tvm_jit_new(const Psi::CompileErrorPair& error_handler, const Psi::PropertyValue& config) {
   llvm::InitializeNativeTarget();
   std::string host = llvm::sys::getDefaultTargetTriple();
 
@@ -622,5 +607,5 @@ extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) void tvm_jit_new(const boost::shared_ptr<
   if (!tm)
     throw Psi::Tvm::LLVM::BuildError("Failed to create target machine");
   
-  result = boost::make_shared<Psi::Tvm::LLVM::LLVMJit>(factory, host, tm);
+  return new Psi::Tvm::LLVM::LLVMJit(host, tm);
 }

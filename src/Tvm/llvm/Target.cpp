@@ -83,7 +83,7 @@ namespace Psi {
       void TargetCommon::lower_function_call(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<Call>& term) {
         LowerFunctionHelperResult helper_result = lower_function_helper(runner, term->target_function_type());
         
-        int sret = helper_result.lowered_type->sret() ? 1 : 0;
+        int sret = helper_result.return_handler->return_by_sret() ? 1 : 0;
         std::size_t n_parameters = helper_result.lowered_type->parameter_types().size() - sret;
         std::vector<ValuePtr<> > parameters;
 
@@ -92,7 +92,7 @@ namespace Psi {
           parameters.push_back(helper_result.parameter_handlers[ii]->pack(runner, term->parameters[n_phantom+ii], term->location()));
 
         ValuePtr<> sret_addr;
-        if (helper_result.lowered_type->sret()) {
+        if (helper_result.return_handler->return_by_sret()) {
           sret_addr = helper_result.return_handler->return_by_sret_setup(runner, term->location());
           parameters.push_back(sret_addr);
         }

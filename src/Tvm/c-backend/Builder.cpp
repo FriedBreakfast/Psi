@@ -255,17 +255,21 @@ void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFu
     depth = new_depth;
     
     for (PhiMapType::const_iterator ji = phi_by_dominator.lower_bound(block), je = phi_by_dominator.upper_bound(block); ji != je; ++ji) {
-      CType *type = m_type_builder.build(ji->second->type());
-      CExpression *phi_value = block_builder.c_builder().declare(&ji->second->location(), type, c_op_declare, NULL, 0);
-      block_builder.phi_put(ji->second, phi_value);
+      if (!m_type_builder.is_void_type(ji->second->type())) {
+        CType *type = m_type_builder.build(ji->second->type());
+        CExpression *phi_value = block_builder.c_builder().declare(&ji->second->location(), type, c_op_declare, NULL, 0);
+        block_builder.phi_put(ji->second, phi_value);
+      }
     }
     
     for (Block::PhiList::iterator ji = block->phi_nodes().begin(), je = block->phi_nodes().end(); ji != je; ++ji) {
       const ValuePtr<Phi>& phi = *ji;
-      CType *type = m_type_builder.build(phi->type());
-      CExpression *temporary_value = block_builder.phi_get(*ji);
-      CExpression *phi_value = block_builder.c_builder().declare(&phi->location(), type, c_op_declare, temporary_value, 0);
-      block_builder.put(*ji, phi_value);
+      if (m_type_builder.is_void_type(phi->type())) {
+        CType *type = m_type_builder.build(phi->type());
+        CExpression *temporary_value = block_builder.phi_get(*ji);
+        CExpression *phi_value = block_builder.c_builder().declare(&phi->location(), type, c_op_declare, temporary_value, 0);
+        block_builder.put(*ji, phi_value);
+      }
     }
 
     for (Block::InstructionList::iterator ji = block->instructions().begin(), je = block->instructions().end(); ji != je; ++ji)
@@ -276,34 +280,35 @@ void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFu
     entry_value_builder.c_builder().nullary(&function->location(), c_op_block_end);
 }
 
-CJit::CJit(const boost::shared_ptr<JitFactory>& factory, const boost::shared_ptr<CCompiler>& compiler)
-: Jit(factory), m_compiler(compiler) {
+CJit::CJit(CompileErrorContext& error_context, const boost::shared_ptr<CCompiler>& compiler)
+: m_error_context(&error_context), m_compiler(compiler) {
 }
 
-CJit::~CJit() {
+void CJit::destroy() {
+  delete this;
 }
 
 void CJit::add_module(Module *module) {
   std::string source = CModuleBuilder(m_compiler.get(), *module).run();
-  boost::shared_ptr<Platform::PlatformLibrary> lib = m_compiler->compile_load_library(factory()->error_handler().context().bind(module->location()), source);
+  boost::shared_ptr<Platform::PlatformLibrary> lib = m_compiler->compile_load_library(error_context().bind(module->location()), source);
   m_modules.insert(std::make_pair(module, lib));
 }
 
 void CJit::remove_module(Module *module) {
   ModuleMap::iterator it = m_modules.find(module);
   if (it == m_modules.end())
-    factory()->error_handler().context().error_throw(module->location(), "Module cannot be removed from this JIT because it has not been added");
+    error_context().error_throw(module->location(), "Module cannot be removed from this JIT because it has not been added");
   m_modules.erase(it);
 }
 
 void* CJit::get_symbol(const ValuePtr<Global>& symbol) {
   ModuleMap::iterator it = m_modules.find(symbol->module());
   if (it == m_modules.end())
-    factory()->error_handler().context().error_throw(symbol->location(), "Module has not been JIT compiled");
+    error_context().error_throw(symbol->location(), "Module has not been JIT compiled");
   
   boost::optional<void*> ptr = it->second->symbol(symbol->name());
   if (!ptr)
-    factory()->error_handler().context().error_throw(symbol->location(), boost::format("Symbol missing from JIT compiled library: %s") % symbol->name());
+    error_context().error_throw(symbol->location(), boost::format("Symbol missing from JIT compiled library: %s") % symbol->name());
   
   return *ptr;
 }
@@ -311,7 +316,7 @@ void* CJit::get_symbol(const ValuePtr<Global>& symbol) {
 }
 }
 
-extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) void tvm_jit_new(const boost::shared_ptr<Psi::Tvm::JitFactory>& factory, boost::shared_ptr<Psi::Tvm::Jit>& result, const Psi::PropertyValue& configuration) {
-  boost::shared_ptr<Psi::Tvm::CBackend::CCompiler> compiler = Psi::Tvm::CBackend::detect_c_compiler(factory->error_handler(), configuration);
-  result = boost::make_shared<Psi::Tvm::CBackend::CJit>(factory, compiler);
+extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) Psi::Tvm::Jit* tvm_jit_new(const Psi::CompileErrorPair& error_handler, const Psi::PropertyValue& configuration) {
+  boost::shared_ptr<Psi::Tvm::CBackend::CCompiler> compiler = Psi::Tvm::CBackend::detect_c_compiler(error_handler, configuration);
+  return new Psi::Tvm::CBackend::CJit(error_handler.context(), compiler);
 }

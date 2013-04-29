@@ -122,7 +122,8 @@ TypeBuilder::TypeBuilder(CModule *module)
 : m_c_builder(module),
 m_psi_alloca(NULL),
 m_psi_freea(NULL),
-m_memcpy(NULL) {
+m_memcpy(NULL),
+m_null(NULL) {
   m_void_type = NULL;
   std::fill_n(m_signed_integer_types, array_size(m_signed_integer_types), static_cast<CType*>(NULL));
   std::fill_n(m_unsigned_integer_types, array_size(m_unsigned_integer_types), static_cast<CType*>(NULL));
@@ -238,6 +239,20 @@ CExpression *TypeBuilder::get_memset() {
     m_memset = module().new_function(&module().location(), type, "memset");
   }
   return m_memset;
+}
+
+CExpression *TypeBuilder::get_null() {
+  if (!m_null) {
+    CType *vptr_type = c_builder().pointer_type(void_type());
+    CExpression *zero = c_builder().literal(&module().location(), integer_type(IntegerType::i8, false), "0");
+    m_null = c_builder().cast(&module().location(), vptr_type, zero);
+  }
+  return m_null;
+}
+
+/// \brief Does a type lower to \c void
+bool TypeBuilder::is_void_type(const ValuePtr<>& type) {
+  return build(type) == void_type();
 }
 }
 }

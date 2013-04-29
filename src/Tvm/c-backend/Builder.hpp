@@ -85,9 +85,9 @@ class TypeBuilder {
   CType *m_unsigned_integer_types[IntegerType::i_max];
   CType *m_float_types[FloatType::fp_max];
 
-  CExpression *m_psi_alloca, *m_psi_freea, *m_memcpy, *m_memset;
-  
   CExpressionBuilder m_c_builder;
+
+  CExpression *m_psi_alloca, *m_psi_freea, *m_memcpy, *m_memset, *m_null;
 
   CType* build_function_type(const ValuePtr<FunctionType>& ftype);
   
@@ -98,6 +98,7 @@ public:
   CModule& module() const {return m_c_builder.module();}
   CCompiler& c_compiler() {return c_builder().module().c_compiler();}
   CompileErrorContext& error_context() {return c_builder().module().error_context();};
+  bool is_void_type(const ValuePtr<>& type);
   
   CType* void_type();
   CType* integer_type(IntegerType::Width width, bool is_signed);
@@ -107,6 +108,7 @@ public:
   CExpression *get_psi_freea();
   CExpression *get_memcpy();
   CExpression *get_memset();
+  CExpression *get_null();
 };
 
 class ValueBuilder {
@@ -133,6 +135,7 @@ public:
   CCompiler& c_compiler() const {return module().c_compiler();}
   CompileErrorContext& error_context() {return c_builder().module().error_context();}
   void put(const ValuePtr<>& key, CExpression *value);
+  bool is_void_type(const ValuePtr<>& type);
   
   void phi_put(const ValuePtr<Phi>& key, CExpression *value);
   CExpression* phi_get(const ValuePtr<Phi>& key);
@@ -154,19 +157,20 @@ public:
 };
 
 class CJit : public Jit {
+  CompileErrorContext *m_error_context;
   typedef std::map<Module*, boost::shared_ptr<Platform::PlatformLibrary> > ModuleMap;
   ModuleMap m_modules;
+  boost::shared_ptr<CCompiler> m_compiler;
   
 public:
-  CJit(const boost::shared_ptr<JitFactory>& factory, const boost::shared_ptr<CCompiler>& compiler);
-  virtual ~CJit();
+  CJit(CompileErrorContext& error_conext, const boost::shared_ptr<CCompiler>& compiler);
+  virtual void destroy();
 
   virtual void add_module(Module *module);
   virtual void remove_module(Module *module);
   virtual void* get_symbol(const ValuePtr<Global>& global);
 
-private:
-  boost::shared_ptr<CCompiler> m_compiler;
+  CompileErrorContext& error_context() {return *m_error_context;}
 };
 
 boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc, const PropertyValue& configuration);

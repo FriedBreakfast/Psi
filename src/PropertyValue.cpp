@@ -1,7 +1,9 @@
 #include "PropertyValue.hpp"
 
 #include <locale>
+#include <sstream>
 #include <stdio.h>
+#include <boost/format.hpp>
 
 namespace Psi {
 /**
@@ -223,35 +225,42 @@ bool operator == (const char *lhs, const PropertyValue& rhs) {
   return (rhs.type() == PropertyValue::t_str) && (rhs.str() == lhs);
 }
 
-namespace {
-class ParseError : public std::exception {
-public:
-  ParseError() {}
-  virtual ~ParseError() throw() {}
-  virtual const char *what() const throw() {return "Parse error";}
-};
+PropertyValueParseError::PropertyValueParseError(unsigned line, unsigned column, const std::string& message)
+: m_line(line), m_column(column), m_message(message) {
+}
 
+PropertyValueParseError::~PropertyValueParseError() throw() {
+}
+
+const char* PropertyValueParseError::what() const throw() {
+  return m_message.c_str();
+}
+
+namespace {
 class ParseHelper {
   const char *m_current, *m_end;
   bool m_skip_whitespace;
   bool m_allow_comments;
+  unsigned m_line, m_column;
   char m_next;
 
   void to_next() {
     if (m_skip_whitespace)
       skip_whitespace();
-    m_next = (m_current != m_end) ? *m_current : '\0';
   }
 
   void next_char() {
     PSI_ASSERT(m_current != m_end);
     ++m_current;
+    ++m_column;
     m_next = (m_current == m_end) ? '\0' : *m_current;
   }
 
 public:
-  ParseHelper(const char *begin, const char *end, bool allow_comments)
-    : m_current(begin), m_end(end), m_skip_whitespace(true), m_allow_comments(allow_comments) {
+  ParseHelper(const char *begin, const char *end, bool allow_comments, unsigned first_line, unsigned first_column)
+  : m_current(begin), m_end(end), m_skip_whitespace(true), m_allow_comments(allow_comments),
+  m_line(first_line), m_column(first_column) {
+    m_next = (m_current != m_end) ? *m_current : '\0';
     to_next();
   }
 
@@ -263,6 +272,9 @@ public:
   bool end() const {
     return m_current == m_end;
   }
+  
+  unsigned line() const {return m_line;}
+  unsigned column() const {return m_column;}
 
   /// Skip any whitespace characters at the current point
   void skip_whitespace() {
@@ -271,6 +283,8 @@ public:
     while(!end()) {
       char c = peek();
       if (c == '\n') {
+        m_line++;
+        m_column = 0;
         in_comment = false;
         next_char();
       } else if (m_allow_comments && (c == '#')) {
@@ -309,7 +323,14 @@ public:
   /// Require the next character is a particular one, else throw an exception
   void expect(char c) {
     if (!accept(c))
-      throw ParseError();
+      throw_error(boost::format("Expected '%c'") % c);
+  }
+  
+  template<typename T>
+  PSI_ATTRIBUTE((PSI_NORETURN)) void throw_error(const T& message) {
+    std::stringstream ss;
+    ss << message;
+    throw PropertyValueParseError(m_line, m_column, ss.str());
   }
 };
 
@@ -321,20 +342,22 @@ std::string json_parse_string(ParseHelper& tokener) {
   tokener.expect('\"');
   while (true) {
     if (tokener.end()) {
-      throw ParseError();
+      tokener.throw_error("Unexpected end of JSON data");
     } else if (tokener.accept('\\')) {
       if (tokener.end()) {
-        throw ParseError();
+        tokener.throw_error("Unexpected end of JSON data after '\\'");
       } else if (tokener.peek() == 'u') {
         char digits[5];
         for (unsigned i = 0; i != 4; ++i) {
+          if (tokener.end())
+            tokener.throw_error("Unexpected end of data in '\\u': expected 4 digits");
           char c = tokener.peek();
           digits[i] = tokener.peek();
           if ((c >= '0') && (c <= '9')) {
             digits[i] = c;
             tokener.accept();
           } else {
-            throw ParseError();
+            tokener.throw_error(boost::format("Expected 4 digits after '\\u' but got a '%c'") % tokener.peek());
           }
         }
         digits[5] = '\0'; 
@@ -342,7 +365,7 @@ std::string json_parse_string(ParseHelper& tokener) {
       } else {
         char esc;
         switch (tokener.peek()) {
-        default: throw ParseError();
+        default: tokener.throw_error(boost::format("Unknown escape character '%c'") % tokener.peek());
         case '\"': esc = '\"'; break;
         case '\\': esc = '\\'; break;
         case '/': esc = '/'; break;
@@ -393,6 +416,7 @@ String json_parse_key(ParseHelper& helper) {
 
 PropertyValue json_parse_number(ParseHelper& tokener) {
   const std::locale& c_locale = std::locale::classic();
+  unsigned line = tokener.line(), column = tokener.column();
   bool real = false;
   std::string digits;
   tokener.set_skip_whitespace(false);
@@ -412,14 +436,14 @@ PropertyValue json_parse_number(ParseHelper& tokener) {
     double value;
     sscanf(digits.c_str(), "%lf%n", &value, &count);
     if (count != digits.length())
-      throw ParseError();
+      throw PropertyValueParseError(line, column, "Error parsing number");
     return value;
   } else {
     unsigned count = 0;
     int value;
     sscanf(digits.c_str(), "%d%n", &value, &count);
     if (count != digits.length())
-      throw ParseError();
+      throw PropertyValueParseError(line, column, "Error parsing number");
     return value;
   }
 }
@@ -466,21 +490,17 @@ PropertyValue json_parse_element(ParseHelper& tokener) {
     if (s == "null") return PropertyValue();
     else if (s == "true") return true;
     else if (s == "false") return false;
-    else throw ParseError();
+    else tokener.throw_error(boost::format("Unknown JSON element '%s'") % s);
   }
 }
 }
 
-PropertyValue PropertyValue::parse(const char *begin, const char *end) {
-  ParseHelper tokener(begin, end, false);
+PropertyValue PropertyValue::parse(const char *begin, const char *end, unsigned first_line, unsigned first_column) {
+  ParseHelper tokener(begin, end, false, first_line, first_column);
   PropertyMap pv;
-  try {
-    pv = json_parse_object(tokener, true);
-  } catch (ParseError& ex) {
-    // TODO: property error handling here
-    throw;
-  }
-  PSI_ASSERT(tokener.end());
+  pv = json_parse_object(tokener, true);
+  if (!tokener.end())
+    tokener.throw_error("Extra tokens at end of JSON data");
   return pv;
 }
 
@@ -491,29 +511,25 @@ PropertyValue PropertyValue::parse(const char *s) {
 /**
  * \brief Parse a configuration file and update an existing PropertyValue map with the results.
  */
-void PropertyValue::parse_configuration(const char *begin, const char *end) {
-  ParseHelper tokener(begin, end, true);
-  try {
-    while (!tokener.end()) {
-      PropertyValue *location = this;
-      while (true) {
-        String name = json_parse_key(tokener);
-        if (location->type() != PropertyValue::t_map)
-          *location = PropertyMap();
-        location = &location->map()[name];
+void PropertyValue::parse_configuration(const char *begin, const char *end, unsigned first_line, unsigned first_column) {
+  ParseHelper tokener(begin, end, true, first_line, first_column);
+  while (!tokener.end()) {
+    PropertyValue *location = this;
+    while (true) {
+      String name = json_parse_key(tokener);
+      if (location->type() != PropertyValue::t_map)
+        *location = PropertyMap();
+      location = &location->map()[name];
 
-        if (tokener.accept('.')) {
-          continue;
-        } else if (tokener.accept('=')) {
-          *location = json_parse_element(tokener);
-          break;
-        } else {
-          throw ParseError();
-        }
+      if (tokener.accept('.')) {
+        continue;
+      } else if (tokener.accept('=')) {
+        *location = json_parse_element(tokener);
+        break;
+      } else {
+        tokener.throw_error(boost::format("Unexpected character '%c'") % tokener.peek());
       }
     }
-  } catch (ParseError& ex) {
-    throw;
   }
 }
 }

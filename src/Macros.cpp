@@ -490,9 +490,14 @@ namespace Psi {
       
       PropertyValue pv;
       try {
-        pv = PropertyValue::parse(value_cast->text.begin, value_cast->text.end);
-      } catch (std::runtime_error&) {
-        compile_context.error_throw(location, "Error parsing JSON data");
+        pv = PropertyValue::parse(value_cast->text.begin, value_cast->text.end,
+                                  value_cast->text.location.first_line,
+                                  value_cast->text.location.first_column);
+      } catch (PropertyValueParseError& ex) {
+        PhysicalSourceLocation loc = value_cast->text.location;
+        loc.first_line = loc.last_line = ex.line();
+        loc.first_column = loc.last_column = ex.column();
+        compile_context.error_throw(location.relocate(loc), "Error parsing JSON data");
       }
       
       return TreePtr<TargetCallback>(::new TargetCallbackConst(compile_context, pv, location));

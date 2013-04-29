@@ -24,8 +24,6 @@ namespace Psi {
      * given type to.
      */
     class PSI_TVM_EXPORT Jit {
-      boost::shared_ptr<JitFactory> m_factory;
-
     public:
       typedef int8_t Boolean;
 
@@ -52,9 +50,6 @@ namespace Psi {
         UIntPtr align;
       };
 
-      Jit(const boost::shared_ptr<JitFactory>& factory);
-      virtual ~Jit();
-      
       /**
        * Add a module to this JIT.
        */
@@ -74,8 +69,10 @@ namespace Psi {
        */
       virtual void* get_symbol(const ValuePtr<Global>& global) = 0;
       
-      /// \brief Get the JIT factory used to create this JIT
-      const boost::shared_ptr<JitFactory>& factory() {return m_factory;}
+      /**
+       * \brief Destroy this JIT.
+       */
+      virtual void destroy() = 0;
     };
     
     /**
@@ -109,7 +106,7 @@ namespace Psi {
     
     class JitFactoryCommon : public JitFactory, public boost::enable_shared_from_this<JitFactoryCommon> {
     public:
-      typedef void (*JitFactoryCallback) (const boost::shared_ptr<JitFactory>&, boost::shared_ptr<Jit>&, const PropertyValue& config);
+      typedef Jit* (*JitFactoryCallback) (const CompileErrorPair& error_handler, const PropertyValue& config);
       virtual boost::shared_ptr<Jit> create_jit();
       JitFactoryCommon(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config);
       
