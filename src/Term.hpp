@@ -578,7 +578,12 @@ namespace Psi {
       PSI_COMPILER_EXPORT static const SIVtable vtable;
       Functional(const VtableType *vptr);
       ~Functional();
-      template<typename V> static void visit(V& v);
+      
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<Term>(v);
+      }
+      
       
       /**
        * Simplify this term.

@@ -193,6 +193,13 @@ boost::optional<std::string> PropertyValue::path_str(const std::string& key) con
   return boost::none;
 }
 
+bool PropertyValue::path_bool(const std::string& key) const {
+  const PropertyValue *pv = path_value(key);
+  if (!pv)
+    return false;
+  return (pv->type() == t_boolean) && pv->boolean();
+}
+
 bool operator == (const PropertyValue& lhs, const PropertyValue& rhs) {
   if (lhs.type() != rhs.type())
     return false;
@@ -289,6 +296,7 @@ public:
         next_char();
       } else if (m_allow_comments && (c == '#')) {
         in_comment = true;
+        next_char();
       } else if (in_comment || std::isspace(c, c_locale)) {
         next_char();
       } else {
@@ -394,7 +402,7 @@ std::string json_parse_keyword(ParseHelper& tokener) {
   std::string s;
   const std::locale& c_locale = std::locale::classic();
   tokener.set_skip_whitespace(false);
-  while (std::isalnum(tokener.peek(), c_locale) || std::strchr("!$%^&*@~?<>/", tokener.peek())) {
+  while (std::isalnum(tokener.peek(), c_locale) || std::strchr("!$%^&*@~?<>/_", tokener.peek())) {
     s.push_back(tokener.peek());
     tokener.accept();
   }

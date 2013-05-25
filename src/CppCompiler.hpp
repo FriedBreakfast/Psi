@@ -19,9 +19,11 @@ namespace Psi {
 #ifdef _WIN32
 #define PSI_EXPORT dllexport
 #define PSI_IMPORT dllimport
+#define PSI_LOCAL_ATTR
 #else
-#define PSI_EXPORT
-#define PSI_IMPORT
+#define PSI_EXPORT visibility("default")
+#define PSI_IMPORT visibility("default")
+#define PSI_LOCAL_ATTR visibility("hidden")
 #endif
 
   struct DebugLocation {
@@ -55,6 +57,7 @@ namespace Psi {
 #define PSI_SMALL_ENUM(name) enum name : unsigned char
 #define PSI_EXPORT dllexport
 #define PSI_IMPORT dllimport
+#define PSI_LOCAL_ATTR
 
   struct DebugLocation {
     const char *file;

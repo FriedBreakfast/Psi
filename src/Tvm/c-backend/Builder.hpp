@@ -161,9 +161,10 @@ class CJit : public Jit {
   typedef std::map<Module*, boost::shared_ptr<Platform::PlatformLibrary> > ModuleMap;
   ModuleMap m_modules;
   boost::shared_ptr<CCompiler> m_compiler;
+  bool m_dump_code;
   
 public:
-  CJit(CompileErrorContext& error_conext, const boost::shared_ptr<CCompiler>& compiler);
+  CJit(CompileErrorContext& error_conext, const boost::shared_ptr<CCompiler>& compiler, const Psi::PropertyValue& configuration);
   virtual void destroy();
 
   virtual void add_module(Module *module);

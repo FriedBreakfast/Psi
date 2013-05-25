@@ -124,6 +124,7 @@ public:
   std::vector<std::string> str_list() const;
   
   boost::optional<std::string> path_str(const std::string& key) const;
+  bool path_bool(const std::string& key) const;
 
   static PropertyValue parse(const char *begin, const char *end, unsigned first_line=1, unsigned first_column=1);
   static PropertyValue parse(const char *s);

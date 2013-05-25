@@ -6,6 +6,7 @@
 #include "../Jit.hpp"
 
 #include <list>
+#include <iostream>
 #include <sstream>
 #include <boost/format.hpp>
 #include <boost/ptr_container/ptr_map.hpp>
@@ -264,7 +265,7 @@ void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFu
     
     for (Block::PhiList::iterator ji = block->phi_nodes().begin(), je = block->phi_nodes().end(); ji != je; ++ji) {
       const ValuePtr<Phi>& phi = *ji;
-      if (m_type_builder.is_void_type(phi->type())) {
+      if (!m_type_builder.is_void_type(phi->type())) {
         CType *type = m_type_builder.build(phi->type());
         CExpression *temporary_value = block_builder.phi_get(*ji);
         CExpression *phi_value = block_builder.c_builder().declare(&phi->location(), type, c_op_declare, temporary_value, 0);
@@ -280,8 +281,9 @@ void CModuleBuilder::build_function_body(const ValuePtr<Function>& function, CFu
     entry_value_builder.c_builder().nullary(&function->location(), c_op_block_end);
 }
 
-CJit::CJit(CompileErrorContext& error_context, const boost::shared_ptr<CCompiler>& compiler)
+CJit::CJit(CompileErrorContext& error_context, const boost::shared_ptr<CCompiler>& compiler, const Psi::PropertyValue& configuration)
 : m_error_context(&error_context), m_compiler(compiler) {
+  m_dump_code = configuration.path_bool("jit_dump");
 }
 
 void CJit::destroy() {
@@ -290,6 +292,8 @@ void CJit::destroy() {
 
 void CJit::add_module(Module *module) {
   std::string source = CModuleBuilder(m_compiler.get(), *module).run();
+  if (m_dump_code)
+    std::cerr << source;
   boost::shared_ptr<Platform::PlatformLibrary> lib = m_compiler->compile_load_library(error_context().bind(module->location()), source);
   m_modules.insert(std::make_pair(module, lib));
 }
@@ -318,5 +322,5 @@ void* CJit::get_symbol(const ValuePtr<Global>& symbol) {
 
 extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) Psi::Tvm::Jit* tvm_jit_new(const Psi::CompileErrorPair& error_handler, const Psi::PropertyValue& configuration) {
   boost::shared_ptr<Psi::Tvm::CBackend::CCompiler> compiler = Psi::Tvm::CBackend::detect_c_compiler(error_handler, configuration);
-  return new Psi::Tvm::CBackend::CJit(error_handler.context(), compiler);
+  return new Psi::Tvm::CBackend::CJit(error_handler.context(), compiler, configuration);
 }

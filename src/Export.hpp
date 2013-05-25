@@ -3,6 +3,8 @@
 
 #include "CppCompiler.hpp"
 
+#define PSI_LOCAL PSI_ATTRIBUTE((PSI_LOCAL_ATTR))
+
 #ifdef psi_assert_EXPORTS
 #define PSI_ASSERT_EXPORT_ATTR PSI_EXPORT
 #else

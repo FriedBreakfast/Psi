@@ -271,11 +271,12 @@ public:
     close();
   }
   
+  bool is_open() const {return m_fd >= 0;}
   int fd() {return m_fd;}
   void set_fd(int fd) {close(); m_fd = fd;}
   
   void close() {
-    if (m_fd >= 0) {
+    if (is_open()) {
       ::close(m_fd);
       m_fd = -1;
     }
@@ -394,7 +395,7 @@ int exec_communicate(const Path& command, const std::vector<std::string>& args, 
   while (true) {
     int nfds = -1;
     
-    if (FD_ISSET(stdin_write.fd(), &writefds)) {
+    if (stdin_write.is_open() && FD_ISSET(stdin_write.fd(), &writefds)) {
       if (cmd_write_by_buffer(stdin_write, write_ptr, write_end)) {
         nfds = std::max(stdin_write.fd(), nfds);
         FD_SET(stdin_write.fd(), &writefds);
@@ -404,7 +405,7 @@ int exec_communicate(const Path& command, const std::vector<std::string>& args, 
       }
     }
     
-    if (FD_ISSET(stdout_read.fd(), &readfds)) {
+    if (stdout_read.is_open() && FD_ISSET(stdout_read.fd(), &readfds)) {
       if (cmd_read_by_buffer(stdout_read, buffer, stdout_data)) {
         nfds = std::max(stdout_read.fd(), nfds);
         FD_SET(stdout_read.fd(), &readfds);
@@ -414,7 +415,7 @@ int exec_communicate(const Path& command, const std::vector<std::string>& args, 
       }
     }
     
-    if (FD_ISSET(stderr_read.fd(), &readfds)) {
+    if (stderr_read.is_open() && FD_ISSET(stderr_read.fd(), &readfds)) {
       if (cmd_read_by_buffer(stderr_read, buffer, stderr_data)) {
         nfds = std::max(stderr_read.fd(), nfds);
         FD_SET(stderr_read.fd(), &readfds);

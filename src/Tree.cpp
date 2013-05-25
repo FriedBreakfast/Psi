@@ -93,11 +93,6 @@ namespace Psi {
       }
     }
     
-    template<typename V>
-    void Functional::visit(V& v) {
-      visit_base<Term>(v);
-    }
-    
     const SIVtable Functional::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Functional", Term);
 
     Constructor::Constructor(const VtableType* vtable)
