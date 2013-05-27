@@ -420,8 +420,8 @@ TvmResult TvmCompiler::get_global(const TreePtr<Global>& global, const TreePtr<M
       if (external_it != tvm_module.external_symbols.end())
         return TvmResult(scope, external_it->second);
 
-      if (mod_global->local)
-        compile_context().error_throw(global.location(), "Module-global global variable used in a different module");
+      if (mod_global->linkage != link_public)
+        compile_context().error_throw(global.location(), "Module private global variable used in a different module");
       
       TvmResult type = build_type(global->type, mod_global->location());
       std::string name = mangle_name(global->location().logical);

@@ -742,7 +742,7 @@ namespace Psi {
     ValuePtr<Function> Module::new_constructor(const std::string& name, const SourceLocation& location) {
       ValuePtr<FunctionType> type = FunctionalBuilder::constructor_type(context(), location);
       ValuePtr<Function> result(::new Function(context(), type, name, this, location));
-      result->set_private(true);
+      result->set_linkage(link_local);
       add_member(result);
       return result;
     }

@@ -138,7 +138,7 @@ namespace Psi {
     : Value(context, term_type, FunctionalBuilder::pointer_type(type, location), location),
       m_name(name),
       m_module(module),
-      m_private(false) {
+      m_linkage(link_private) {
     }
 
     /**

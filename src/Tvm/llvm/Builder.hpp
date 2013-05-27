@@ -8,7 +8,9 @@
 
 #include <llvm/LLVMContext.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/GlobalValue.h>
 #include <llvm/IRBuilder.h>
+#include <llvm/ADT/Triple.h>
 #include <llvm/PassManager.h>
 #include <llvm/Support/TargetFolder.h>
 #include <llvm/Target/TargetMachine.h>
@@ -80,7 +82,8 @@ namespace Psi {
 
         /// \brief Get the LLVM context used to create IR.
         llvm::LLVMContext& llvm_context() {return *m_llvm_context;}
-
+        /// \brief Get the LLVM target triple
+        const llvm::Triple& llvm_triple() {return m_llvm_triple;}
         /// \brief Get the llvm::TargetMachine we're building IR for.
         llvm::TargetMachine* llvm_target_machine() {return m_llvm_target_machine;}
         
@@ -109,6 +112,7 @@ namespace Psi {
 
       private:
         llvm::LLVMContext *m_llvm_context;
+        llvm::Triple m_llvm_triple;
         llvm::TargetMachine *m_llvm_target_machine;
         llvm::FunctionPassManager *m_llvm_function_pass;
         llvm::Module *m_llvm_module;
@@ -130,6 +134,9 @@ namespace Psi {
         llvm::Function *m_llvm_memcpy, *m_llvm_memset, *m_llvm_stacksave, *m_llvm_stackrestore,
         *m_llvm_invariant_start, *m_llvm_invariant_end,
         *m_llvm_eh_exception, *m_llvm_eh_selector, *m_llvm_eh_typeid_for;
+
+        llvm::GlobalValue::LinkageTypes llvm_linkage_for(Linkage linkage);
+        void apply_linkage(Linkage linkage, llvm::GlobalValue *value);
       };
 
       class FunctionBuilder {
@@ -203,6 +210,7 @@ namespace Psi {
         llvm::PassManager m_llvm_module_pass;
         llvm::CodeGenOpt::Level m_llvm_opt;
         boost::shared_ptr<TargetCallback> m_target_fixes;
+        llvm::Triple m_target_triple;
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
         boost::unordered_map<Module*, ModuleMapping> m_modules;
 #if PSI_DEBUG

@@ -111,7 +111,8 @@ namespace Psi {
     : ModuleGlobal(&vtable, module,
                    TermResultInfo(TermBuilder::to_global_functional(module, value_->type, location),
                                   (mode_ == statement_mode_functional) ? value_->mode : term_mode_lref, true),
-                   false, location),
+                   mode_ == statement_mode_value ? link_private : link_none,
+                   location),
     value(value_),
     mode(mode_) {
       switch (mode) {
@@ -172,29 +173,29 @@ namespace Psi {
 
     const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
 
-    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const TreePtr<Term>& type, PsiBool local_, const SourceLocation& location)
+    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const TreePtr<Term>& type, Linkage linkage_, const SourceLocation& location)
     : Global(vptr, type, location),
     module(module_),
-    local(local_) {
+    linkage(linkage_) {
     }
 
-    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const TermResultInfo& type, PsiBool local_, const SourceLocation& location)
+    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const TermResultInfo& type, Linkage linkage_, const SourceLocation& location)
     : Global(vptr, type, location),
     module(module_),
-    local(local_) {
+    linkage(linkage_) {
     }
     
     template<typename V>
     void ModuleGlobal::visit(V& v) {
       visit_base<Global>(v);
       v("module", &ModuleGlobal::module)
-      ("local", &ModuleGlobal::local);
+      ("linkage", &ModuleGlobal::linkage);
     }
 
     const SIVtable ModuleGlobal::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ModuleGlobal", Global);
 
     ExternalGlobal::ExternalGlobal(const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location)
-    : ModuleGlobal(&vtable, module, type, false, location) {
+    : ModuleGlobal(&vtable, module, type, link_public, location) {
     }
     
     template<typename V>
@@ -1762,7 +1763,7 @@ namespace Psi {
     const TermVtable FunctionalEvaluate::vtable = PSI_COMPILER_TERM(FunctionalEvaluate, "psi.compiler.FunctionalEvaluate", Term);
     
     GlobalEvaluate::GlobalEvaluate(const TreePtr<Module>& module, const TreePtr<Term>& value_, const SourceLocation& location)
-    : ModuleGlobal(&vtable, module, TermResultInfo(value->type, term_mode_value, true), false, location), value(value_) {
+    : ModuleGlobal(&vtable, module, TermResultInfo(value->type, term_mode_value, true), link_none, location), value(value_) {
       if (value->type && !value->type->is_functional())
         compile_context().error_throw(location, "Argument to GlobalEvaluate does not have functional type", CompileError::error_internal);
       if (value->pure && (value->mode == term_mode_value))

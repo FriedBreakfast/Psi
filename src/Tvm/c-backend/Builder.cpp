@@ -147,7 +147,7 @@ std::string CModuleBuilder::run() {
     CGlobalVariable* c_gv = ii->second;
     c_gv->value = m_global_value_builder.build(gv->value());
     c_gv->is_const = gv->constant();
-    c_gv->is_private = gv->private_();
+    c_gv->linkage = gv->linkage();
     if (gv->alignment()) {
       ValuePtr<IntegerValue> int_alignment = dyn_cast<IntegerValue>(gv->alignment());
       if (!int_alignment)
@@ -167,7 +167,7 @@ std::string CModuleBuilder::run() {
     const ValuePtr<Function>& function = ii->first;
     CFunction *c_function = ii->second;
     
-    c_function->is_private = function->private_();
+    c_function->linkage = function->linkage();
     
     if (!function->blocks().empty()) {
       c_function->is_external = false;

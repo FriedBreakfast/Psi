@@ -272,43 +272,28 @@ public:
     return true;
   }
   
-  void declspec_next(CModuleEmitter& emitter, bool& started) {
-    if (started) {
-      emitter.output() << ',';
-    } else {
-      emitter.output() << "__declspec(";
-      started = true;
+  void emit_global_attributes(AttributeWriter& aw, CGlobal *global) {
+    switch (global->linkage) {
+    case link_local: break;
+    case link_private: break;
+    case link_one_definition: aw.next() << "selectany"; break;
+    case link_export: aw.next() << "dllexport"; break;
+    case link_import: aw.next() << "dllimport"; break;
+    default: PSI_FAIL("Unknown linkage type");
     }
-  }
-  
-  void declspec_end(CModuleEmitter& emitter, bool& started) {
-    if (started)
-      emitter.output() << ')';
+
+    if (global->alignment) aw.next() << "align(" << global->alignment << ")";
   }
   
   virtual void emit_function_attributes(CModuleEmitter& emitter, CFunction *function) {
     AttributeWriter aw(emitter, "__declspec(", ")");
-    
-    if (function->is_external)
-      aw.next() << "dllimport";
-    else if (!function->is_private)
-      aw.next() << "dllexport";
-    
-    if (function->alignment) aw.next() << "align(" << function->alignment << ")";
-
+    emit_global_attributes(aw, function);
     aw.done();
   }
   
   virtual void emit_global_variable_attributes(CModuleEmitter& emitter, CGlobalVariable* gvar) {
     AttributeWriter aw(emitter, "__declspec(", ")");
-    
-    if (!gvar->value)
-      aw.next() << "dllimport";
-    else if (!gvar->is_private)
-      aw.next() << "dllexport";
-
-    if (gvar->alignment) aw.next() << "align(" << gvar->alignment << ")";
-    
+    emit_global_attributes(aw, gvar);
     aw.done();
   }
 
@@ -412,34 +397,59 @@ public:
  */
 class CCompilerGCCLike : public CCompilerCommon {
 public:
+  bool has_attribute_visibility;
+  
   CCompilerGCCLike(const CompilerCommonInfo& common_info)
   : CCompilerCommon(common_info) {
     has_variable_length_arrays = true;
     has_designated_initializer = true;
+    has_attribute_visibility = false;
   }
 
   virtual void emit_alignment(CModuleEmitter& emitter, unsigned n) {
     emitter.output() << "__attribute__((aligned(" << n << "))) ";
   }
 
-  void emit_global_attributes(AttributeWriter& aw, CGlobal *global, bool is_external) {
+  void emit_global_attributes(AttributeWriter& aw, CGlobal *global) {
     if (global->alignment) aw.next() << "aligned(" << global->alignment << ")";
-    if (windows()) {
-      if (is_external) aw.next() << "dllimport";
-      else if (!global->is_private) aw.next() << "dllexport";
+    
+    switch (global->linkage) {
+    case link_local:
+      break;
+      
+    case link_private:
+      if (has_attribute_visibility) aw.next() << "visibility(hidden)";
+      break;
+      
+    case link_one_definition:
+      aw.next() << "weak";
+      if (has_attribute_visibility) aw.next() << "visibility(protected)";
+      break;
+      
+    case link_export:
+      if (has_attribute_visibility) aw.next() << "visibility(protected)";
+      if (windows()) aw.next() << "dllexport";
+      break;
+
+    case link_import:
+      if (has_attribute_visibility) aw.next() << "visibility(protected)";
+      if (windows()) aw.next() << "dllimport";
+      break;
+
+    default: PSI_FAIL("Unknown linkage type");
     }
   }
   
   /// \todo Emit calling convention
   virtual void emit_function_attributes(CModuleEmitter& emitter, CFunction *function) {
     AttributeWriter aw(emitter, "__attribute__((", "))");
-    emit_global_attributes(aw, function, function->is_external);
+    emit_global_attributes(aw, function);
     aw.done();
   }
   
   virtual void emit_global_variable_attributes(CModuleEmitter& emitter, CGlobalVariable *gvar) {
     AttributeWriter aw(emitter, "__attribute__((", "))");
-    emit_global_attributes(aw, gvar, !gvar->value);
+    emit_global_attributes(aw, gvar);
     aw.done();
   }
   
@@ -465,14 +475,14 @@ public:
     run_gcc_common(err_loc, path, output_file, source, std::vector<std::string>());
   }
   
-  static void run_gcc_library(const CompileErrorPair& err_loc, const Platform::Path& path,
-                              const Platform::Path& output_file, const std::string& source) {
+  void run_gcc_library(const CompileErrorPair& err_loc, const Platform::Path& path,
+                       const Platform::Path& output_file, const std::string& source) {
     std::vector<std::string> extra;
     extra.push_back("-shared");
-#ifdef __linux__
-    extra.push_back("-fPIC");
-    extra.push_back("-Wl,-soname," + output_file.filename().str());
-#endif
+    if (!windows()) {
+      extra.push_back("-fPIC");
+      extra.push_back("-Wl,-soname," + output_file.filename().str());
+    }
     run_gcc_common(err_loc, path, output_file, source, extra);
   }
 
@@ -495,6 +505,7 @@ public:
   : CCompilerGCCLike(common_info), m_path(path), m_major_version(major), m_minor_version(minor) {
     has_variable_length_arrays = true;
     has_designated_initializer = true;
+    has_attribute_visibility = !windows();
   }
   
   /**
@@ -569,6 +580,7 @@ public:
   : CCompilerGCCLike(common_info), m_path(path), m_major_version(major), m_minor_version(minor) {
     has_variable_length_arrays = true;
     has_designated_initializer = true;
+    has_attribute_visibility = !windows();
   }
 
   virtual bool emit_unreachable(CModuleEmitter& emitter) {

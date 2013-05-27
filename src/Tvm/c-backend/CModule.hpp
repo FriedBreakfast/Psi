@@ -4,6 +4,7 @@
 #include "../../CppCompiler.hpp"
 #include "../../Utility.hpp"
 #include "../../SourceLocation.hpp"
+#include "../Core.hpp"
 
 #include <set>
 #include <boost/intrusive/list.hpp>
@@ -284,7 +285,7 @@ public:
 };
 
 struct CGlobal : CExpression {
-  bool is_private;
+  Linkage linkage;
   /// Alignment. If zero, default alignment is used.
   unsigned alignment;
 };

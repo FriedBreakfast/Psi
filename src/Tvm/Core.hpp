@@ -521,6 +521,25 @@ namespace Psi {
       hashable_check_source(*this, parameter); \
     }
     
+    PSI_SMALL_ENUM(Linkage) {
+      /// \brief Never merged with another symbol
+      link_local,
+      /// \brief Public within a shared object but not exported from a shared object
+      link_private,
+      /**
+       * \brief Equivalent to any other symbol with the same name
+       * 
+       * These are not exported from shared objects because it is expected that any object
+       * which uses such a symbol should contain the definition.
+       */
+      link_one_definition,
+      /// \brief Exported from the current shared object
+      link_export,
+      /// \brief Imported from another shared object
+      link_import
+    };
+    PSI_VISIT_SIMPLE(Linkage)
+    
     /**
      * \brief Base class for globals: these are GlobalVariableTerm and FunctionTerm.
      */
@@ -542,8 +561,8 @@ namespace Psi {
       void set_alignment(const ValuePtr<>& alignment) {m_alignment = alignment;}
       
       /// \brief Whether this variable should not be visible outside of the module in which it is defined.
-      bool private_() const {return m_private;}
-      void set_private(bool b) {m_private = b;}
+      Linkage linkage() const {return m_linkage;}
+      void set_linkage(Linkage b) {m_linkage = b;}
       
       virtual Value* disassembler_source();
 
@@ -565,7 +584,7 @@ namespace Psi {
       std::string m_name;
       Module *m_module;
       ValuePtr<> m_alignment;
-      bool m_private;
+      Linkage m_linkage;
       
       virtual void check_source_hook(CheckSourceParameter& parameter);
     };

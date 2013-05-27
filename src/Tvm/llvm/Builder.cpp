@@ -212,7 +212,7 @@ namespace Psi {
 
       ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module,
                                    llvm::FunctionPassManager *llvm_function_pass, TargetCallback *target_callback)
-        : m_llvm_context(llvm_context), m_llvm_target_machine(target_machine),
+        : m_llvm_context(llvm_context), m_llvm_triple(target_machine->getTargetTriple()), m_llvm_target_machine(target_machine),
         m_llvm_function_pass(llvm_function_pass), m_llvm_module(llvm_module), m_target_callback(target_callback) {
         m_llvm_memcpy = intrinsic_memcpy(*llvm_module, target_machine);
         m_llvm_memset = intrinsic_memset(*llvm_module, target_machine);
@@ -226,6 +226,36 @@ namespace Psi {
       }
 
       ModuleBuilder::~ModuleBuilder() {
+      }
+      
+      /**
+       * Get the LLVM equivalent of the specified linkage mode.
+       */
+      llvm::GlobalValue::LinkageTypes ModuleBuilder::llvm_linkage_for(Linkage linkage) {
+        switch (linkage) {
+        case link_local: return llvm::GlobalValue::LinkerPrivateLinkage;
+        case link_private: return llvm::GlobalValue::ExternalLinkage;
+        case link_one_definition: return llvm::GlobalValue::LinkOnceODRLinkage;
+        case link_export: return llvm_triple().isOSWindows() ? llvm::GlobalValue::DLLExportLinkage : llvm::GlobalValue::ExternalLinkage;
+        case link_import: return llvm_triple().isOSWindows() ? llvm::GlobalValue::DLLImportLinkage : llvm::GlobalValue::ExternalLinkage;
+        default: PSI_FAIL("Unknown linkage type");
+        }
+      }
+      
+      /**
+       * Apply any additional modifications due to the specified linkage type.
+       */
+      void ModuleBuilder::apply_linkage(Linkage linkage, llvm::GlobalValue *value) {
+        llvm::GlobalValue::VisibilityTypes visibility;
+        switch (linkage) {
+        case link_local: visibility = llvm::GlobalValue::HiddenVisibility; break;
+        case link_private: visibility = llvm::GlobalValue::HiddenVisibility; break;
+        case link_one_definition: visibility = llvm::GlobalValue::HiddenVisibility; break;
+        case link_export: visibility = llvm::GlobalValue::ProtectedVisibility; break;
+        case link_import: visibility = llvm::GlobalValue::DefaultVisibility; break;
+        default: PSI_FAIL("Unknown linkage type");
+        }
+        value->setVisibility(visibility);
       }
 
       ModuleMapping ModuleBuilder::run(Module *module) {
@@ -241,7 +271,7 @@ namespace Psi {
           const ValuePtr<Global>& term = i->second;
           ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
           llvm::GlobalValue *result;
-          llvm::GlobalValue::LinkageTypes linkage = term->private_() ? llvm::GlobalVariable::LinkerPrivateLinkage : llvm::GlobalValue::ExternalLinkage;
+          llvm::GlobalValue::LinkageTypes linkage = llvm_linkage_for(term->linkage());
           switch (rewritten_term->term_type()) {
           case term_global_variable: {
             ValuePtr<GlobalVariable> global = value_cast<GlobalVariable>(rewritten_term);

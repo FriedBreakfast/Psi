@@ -380,8 +380,8 @@ void TermBuilder::to_functional(PSI_STD::vector<TreePtr<Term> >& values, const S
  * This constructor does not support self-referencing globals, and hence
  * allows a simple value to be passed in.
  */
-TreePtr<Global> TermBuilder::global_variable(const TreePtr<Module>& module, bool local, bool constant, bool merge, const SourceLocation& location, const TreePtr<Term>& value) {
-  return global_variable(module, value->type, local, constant, merge, location, value);
+TreePtr<Global> TermBuilder::global_variable(const TreePtr<Module>& module, Linkage linkage, bool constant, bool merge, const SourceLocation& location, const TreePtr<Term>& value) {
+  return global_variable(module, value->type, linkage, constant, merge, location, value);
 }
 
 class GlobalEvaluateRewriter : public TermRewriter {

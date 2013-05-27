@@ -467,7 +467,7 @@ void CModuleEmitter::emit_types() {
  */
 void CModuleEmitter::emit_declaration(CGlobal& global, bool no_extern) {
   CGlobalVariable *global_var = NULL;
-  if (global.is_private)
+  if (global.linkage == link_local)
     output() << "static ";
   else if (!no_extern)
     output() << "extern ";
@@ -883,7 +883,7 @@ m_names(&m_pool) {
 
 void CModule::add_global(CGlobal *global, const SourceLocation *location, CType *type, const char *name) {
   global->alignment = 0;
-  global->is_private = false;
+  global->linkage = link_local;
   global->eval = c_eval_write;
   global->lvalue = true;
   global->requires_name = false;

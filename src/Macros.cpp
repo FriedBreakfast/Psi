@@ -639,7 +639,7 @@ namespace Psi {
 
         TreePtr<Term> zero_size = TermBuilder::size_value(0, self.compile_context(), location);
         TreePtr<Term> string_val = TermBuilder::string_value(self.compile_context(), utf8_str, location);
-        TreePtr<Global> string_global = TermBuilder::global_variable(evaluate_context->module(), true, true, true, location, string_val);
+        TreePtr<Global> string_global = TermBuilder::global_variable(evaluate_context->module(), link_local, true, true, location, string_val);
         TreePtr<Term> string_base_ref = TermBuilder::element_value(string_global, zero_size, location);
         return TermBuilder::ptr_to(string_base_ref, location);
       }

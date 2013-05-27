@@ -116,22 +116,22 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
    * \brief Create a global function.
    */
   template<typename T>
-  static TreePtr<Global> function(const TreePtr<Module>& module, const TreePtr<FunctionType>& type, bool local,
+  static TreePtr<Global> function(const TreePtr<Module>& module, const TreePtr<FunctionType>& type, Linkage linkage,
                                   const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
                                   const TreePtr<JumpTarget>& return_target, const SourceLocation& location, const T& body_callback) {
-    return tree_from(::new Function(module, type, local, arguments, return_target, location, body_callback));
+    return tree_from(::new Function(module, type, linkage, arguments, return_target, location, body_callback));
   }
   
   /**
    * \brief Create a global variable.
    */
   template<typename T>
-  static TreePtr<Global> global_variable(const TreePtr<Module>& module, const TreePtr<Term>& type, bool local, bool constant, bool merge, const SourceLocation& location,
+  static TreePtr<Global> global_variable(const TreePtr<Module>& module, const TreePtr<Term>& type, Linkage linkage, bool constant, bool merge, const SourceLocation& location,
                                          const T& value_callback) {
-    return tree_from(::new GlobalVariable(module, type, local, constant, merge, location, value_callback));
+    return tree_from(::new GlobalVariable(module, type, linkage, constant, merge, location, value_callback));
   }
 
-  static TreePtr<Global> global_variable(const TreePtr<Module>& module, bool local, bool constant, bool merge, const SourceLocation& location, const TreePtr<Term>& value);
+  static TreePtr<Global> global_variable(const TreePtr<Module>& module, Linkage linkage, bool constant, bool merge, const SourceLocation& location, const TreePtr<Term>& value);
   static TreePtr<Term> to_global_functional(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location);
   static TreePtr<Term> global_evaluate(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location);
   static TreePtr<GlobalStatement> global_statement(const TreePtr<Module>& module, const TreePtr<Term>& value, StatementMode mode, const SourceLocation& location);
