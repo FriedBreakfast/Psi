@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
     
     // Create main function
     TreePtr<FunctionType> main_type = TermBuilder::function_type(result_mode_functional, compile_context.builtins().empty_type, default_, default_, init_location);
-    TreePtr<Global> main_function = TermBuilder::function(my_module, main_type, false, default_, default_, init_location, init_tree);
+    TreePtr<Global> main_function = TermBuilder::function(my_module, main_type, link_public, default_, default_, init_location, init_tree);
     
     void (*main_ptr) ();
     *reinterpret_cast<void**>(&main_ptr) = compile_context.jit_compile(main_function);

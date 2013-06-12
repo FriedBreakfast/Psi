@@ -85,7 +85,13 @@ namespace Psi {
         * all definitions must be equivalent.
         */
       link_one_definition,
-      /// Public symbol; exported from a shared library
+      /**
+       * \brief Public symbol; exported from a shared library
+       * 
+       * The compiler will automatically work out whether import or export linkage
+       * is required (i.e. dllimport/dllexport on Windows since Linux doesn't care)
+       * from the modules which each symbol appears in.
+       */
       link_public
     };
     PSI_VISIT_SIMPLE(Linkage)

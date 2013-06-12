@@ -97,3 +97,14 @@ C backend
   does not occur between the ``load`` instruction an this use, no local variable is required.
 
 * libtcc implementation.
+
+Compiling and linking
+---------------------
+
+* Outputs of compilation are objects and modules. Modules are executables or shared objects;
+  objects are like ``.o`` files.
+
+* An object may be composed of several source files; a module will usually comprise several objects.
+
+* The compiler must know during compilation which module will eventually contain any given symbol so
+  that it can automatically handle import/export linkage.

@@ -13,7 +13,7 @@
 namespace Psi {
 class PropertyValue;
 
-class PropertyValueParseError : public std::exception {
+class PSI_COMPILER_COMMON_EXPORT PropertyValueParseError : public std::exception {
   unsigned m_line, m_column;
   std::string m_message;
   

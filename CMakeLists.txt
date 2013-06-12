@@ -4,12 +4,17 @@ project(Psi)
 include(CPack)
 include(CTest)
 
+# Enable -fvisibility=hidden on GCC
+include(GenerateExportHeader)
+add_compiler_export_flags()
+
 set(PSI_DEBUG 0 CACHE BOOL "Enable debug checks")
 set(PSI_ENABLE_VALGRIND 0 CACHE BOOL "Enable Valgrind support")
 set(PSI_OBJECT_PTR_DEBUG 0 CACHE BOOL "Enable object pointer debug checks (very expensive)")
 mark_as_advanced(PSI_OBJECT_PTR_DEBUG)
 
 # Locate LLVM
+set(PSI_LLVM_MODULES engine ipo)
 if(WIN32)
   find_path(LLVM_PATH share/llvm/cmake/LLVMConfig.cmake)
   if(LLVM_PATH)
@@ -18,7 +23,7 @@ if(WIN32)
     include(LLVMConfig)
     set(LLVM_CXX_FLAGS -I${LLVM_INCLUDE_DIRS} -D${LLVM_DEFINITIONS})
     set(LLVM_LDFLAGS -LIBPATH:${LLVM_LIBRARY_DIRS})
-    llvm_map_components_to_libraries(LLVM_LIBS jit native ipo)
+    llvm_map_components_to_libraries(LLVM_LIBS ${PSI_LLVM_MODULES})
   else()
     set(PSI_TVM_LLVM 0)
   endif()
@@ -28,14 +33,10 @@ else()
     set(PSI_TVM_LLVM 1)
     execute_process(COMMAND ${LLVM_CONFIG} --cxxflags OUTPUT_VARIABLE LLVM_CXX_FLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
     execute_process(COMMAND ${LLVM_CONFIG} --ldflags OUTPUT_VARIABLE LLVM_LDFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
-    execute_process(COMMAND ${LLVM_CONFIG} --libs OUTPUT_VARIABLE LLVM_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(COMMAND ${LLVM_CONFIG} --libs ${PSI_LLVM_MODULES} OUTPUT_VARIABLE LLVM_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
   else()
     set(PSI_TVM_LLVM 0)
   endif()
-endif()
-
-if(LLVM_CXX_FLAGS MATCHES "-fno-exceptions" OR LLVM_CXX_FLAGS MATCHES "-fno-rtti")
-  message(SEND_ERROR "LLVM must be built with REQUIRES_EH=1 and REQUIRES_RTTI=1 set\nBuild LLVM using: env REQUIRES_EH=1 REQUIRES_RTTI=1 sh -c './configure && make install'")
 endif()
 
 # Find TCC
@@ -73,16 +74,14 @@ set(PSI_TVM_JIT ${PSI_TVM_JIT_DEFAULT} CACHE STRING "Default JIT compiler to use
 if(CMAKE_COMPILER_IS_GNUCXX)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
-  # These flags do not have to be consistent between compilation units
-  string(REGEX REPLACE "-Woverloaded-virtual" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
-  string(REGEX REPLACE "-O.?" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
-  string(REGEX REPLACE "-g.?" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
+
+  # Try to eliminate LLVM compilation flags which we don't need
+  string(REGEX REPLACE "-[WOfg][^ ]*" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
 endif()
 
 # Have to ensure _GLIBCXX_DEBUG is consistently defined everywhere otherwise the binary inteface may break
 if (LLVM_CXX_FLAGS MATCHES "-D_GLIBCXX_DEBUG")
-  string(REGEX REPLACE "-D_GLIBCXX_DEBUG" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_DEBUG")
+  message(SEND_ERROR "Please compile LLVM without _GLIBCXX_DEBUG defined")
 endif()
 
 # Locate Boost

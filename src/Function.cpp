@@ -344,7 +344,8 @@ namespace Psi {
 
       TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_values, evaluate_context);
 
-      return TermBuilder::function(evaluate_context->module(), common.type, false, parameter_trees, TreePtr<JumpTarget>(), location,
+      /// \todo Implement function linkage specification.
+      return TermBuilder::function(evaluate_context->module(), common.type, link_private, parameter_trees, TreePtr<JumpTarget>(), location,
                                    FunctionBodyCompiler(body_context, body));
     }
 

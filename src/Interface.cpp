@@ -256,7 +256,8 @@ namespace Psi {
       
       TreePtr<Term> result_type = setup.function_type->result_type_after(setup.location, setup_parameters_term)->parameterize(setup.location, parameters);
       TreePtr<FunctionType> function_type = TermBuilder::function_type(setup.function_type->result_mode, result_type, parameter_types, function_interfaces, setup.location);
-      TreePtr<Global> function = TermBuilder::function(module, function_type, false, parameters, return_target, setup.location, wrapped_body);
+      /// \todo Implementation functions should inherit their linkage from the implementation
+      TreePtr<Global> function = TermBuilder::function(module, function_type, link_private, parameters, return_target, setup.location, wrapped_body);
       return TermBuilder::ptr_to(function, setup.location);
     }
     

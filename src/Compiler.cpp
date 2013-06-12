@@ -99,7 +99,7 @@ namespace Psi {
       m_root_location.physical.first_line = m_root_location.physical.first_column = 0;
       m_root_location.physical.last_line = m_root_location.physical.last_column = 0;
       m_builtins.initialize(*this);
-      m_tvm_compiler.reset(new TvmCompiler(this));
+      m_jit = boost::make_shared<TvmJit>(boost::ref(*this), PropertyValue());
     }
     
 #if PSI_DEBUG
@@ -128,7 +128,7 @@ namespace Psi {
 
     CompileContext::~CompileContext() {
       m_builtins = BuiltinTypes();
-      m_tvm_compiler.reset();
+      m_jit.reset();
 
       // Add extra reference to each Tree
       BOOST_FOREACH(Object& t, m_gc_list)
@@ -353,7 +353,7 @@ namespace Psi {
      * \brief JIT compile a global variable or function.
      */
     void* CompileContext::jit_compile(const TreePtr<Global>& global) {
-      return m_tvm_compiler->jit_compile(global);
+      return m_jit->jit_compiler().compile(global);
     }
     
     namespace {

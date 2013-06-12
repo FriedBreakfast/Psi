@@ -10,7 +10,7 @@ namespace Platform {
 namespace Linux {
 std::string error_string(int errcode);
 
-class LibraryLinux : public PlatformLibrary {
+class PSI_COMPILER_COMMON_EXPORT LibraryLinux : public PlatformLibrary {
   std::vector<void*> m_handles;
 
 public:

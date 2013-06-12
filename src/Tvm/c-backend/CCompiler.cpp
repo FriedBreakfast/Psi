@@ -737,6 +737,7 @@ public:
   }
 };
 
+#if PSI_TVM_CC_TCCLIB
 namespace {
 class TCCError : public std::exception {
   std::string m_msg;
@@ -860,7 +861,6 @@ public:
 };
 }
 
-#if PSI_TVM_CC_TCCLIB
 class CCompilerTCCLib : public CCompilerGCCLike {
   TCCConfiguration m_configuration;
   unsigned m_version_major, m_version_minor;

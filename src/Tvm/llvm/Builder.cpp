@@ -10,7 +10,6 @@
 #include <boost/make_shared.hpp>
 
 #include <llvm/DerivedTypes.h>
-#include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/Module.h>
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Support/Host.h>
@@ -591,34 +590,12 @@ namespace Psi {
         return m_llvm_engine->getPointerToGlobal(jt->second);
       }
 
-#if PSI_DEBUG
-      class DebugListener : public llvm::JITEventListener {
-      public:
-        virtual void NotifyFunctionEmitted (const llvm::Function &F, void*, size_t, const EmittedFunctionDetails& details) {
-          llvm::raw_os_ostream out(std::cerr);
-          details.MF->print(out);
-        }
-
-        //virtual void NotifyFreeingMachineCode (void *OldPtr)
-      };
-#endif
-
       /**
        * Create the LLVM Jit.
        */
       void LLVMJit::init_llvm_engine(llvm::Module *module) {
         m_llvm_engine.reset(llvm::ExecutionEngine::create(module, false, 0, m_llvm_opt, false));
         PSI_ASSERT_MSG(m_llvm_engine, "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
-        
-#if PSI_DEBUG
-        const char *debug_mode = std::getenv("PSI_LLVM_DEBUG");
-        if (debug_mode) {
-          if ((std::strcmp(debug_mode, "all") == 0) || (std::strcmp(debug_mode, "asm") == 0)) {
-            m_debug_listener = boost::make_shared<DebugListener>();
-            m_llvm_engine->RegisterJITEventListener(m_debug_listener.get());
-          }
-        }
-#endif
       }
     }
   }

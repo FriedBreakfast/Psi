@@ -308,11 +308,14 @@ namespace Psi {
    * if PSI_DEBUG is defined, so checked_cast will be able to verify
    * casts.
    */
-  struct CheckedCastBase {
 #if PSI_DEBUG
-    PSI_COMPILER_COMMON_EXPORT virtual ~CheckedCastBase();
-#endif
+  struct PSI_COMPILER_COMMON_EXPORT CheckedCastBase {
+    virtual ~CheckedCastBase();
   };
+#else
+  struct CheckedCastBase {
+  };
+#endif
 
   /**
    * \brief Does nothing.

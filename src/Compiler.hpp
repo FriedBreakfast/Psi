@@ -259,7 +259,7 @@ namespace Psi {
     };
     
     class Function;
-    class TvmCompiler;
+    class TvmJit;
 
     /**
      * \brief Context for objects used during compilation.
@@ -291,7 +291,7 @@ namespace Psi {
 
       SourceLocation m_root_location;
       BuiltinTypes m_builtins;
-      boost::shared_ptr<TvmCompiler> m_tvm_compiler;
+      boost::shared_ptr<TvmJit> m_jit;
 
       TreePtr<Functional> get_functional_ptr(const Functional& f, const SourceLocation& location);
       
