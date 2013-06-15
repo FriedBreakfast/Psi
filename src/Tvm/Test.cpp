@@ -5,7 +5,9 @@
 #include "Test.hpp"
 #include "Assembler.hpp"
 #include "../Platform.hpp"
+#include "../Configuration.hpp"
 #include "../ErrorContext.hpp"
+#include "../PropertyValue.hpp"
 
 #include <stdlib.h>
 #ifdef __linux__
@@ -19,7 +21,13 @@ namespace {
 
     JitLoader()
     : jit_error_context(&std::cerr) {
-      jit_factory = Psi::Tvm::JitFactory::get(jit_error_context.bind(Psi::SourceLocation::root_location("(jit)")));
+      Psi::PropertyValue config;
+      Psi::configuration_builtin(config);
+      Psi::configuration_read_files(config);
+      if (const char *s = std::getenv("PSI_TEST_CONFIG"))
+        config.parse_file(s);
+      config.get("tvm");
+      jit_factory = Psi::Tvm::JitFactory::get(jit_error_context.bind(Psi::SourceLocation::root_location("(jit)")), config.path_value("tvm"));
     }
   };
 

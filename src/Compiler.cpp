@@ -78,7 +78,7 @@ namespace Psi {
     }
 #endif
 
-    CompileContext::CompileContext(CompileErrorContext *error_context)
+    CompileContext::CompileContext(CompileErrorContext *error_context, const PropertyValue& jit_configuration)
     : m_error_context(error_context),
     m_running_completion_stack(NULL),
     m_functional_term_buckets(initial_functional_term_buckets),
@@ -99,7 +99,8 @@ namespace Psi {
       m_root_location.physical.first_line = m_root_location.physical.first_column = 0;
       m_root_location.physical.last_line = m_root_location.physical.last_column = 0;
       m_builtins.initialize(*this);
-      m_jit = boost::make_shared<TvmJit>(boost::ref(*this), PropertyValue());
+      CompileErrorPair err_loc(*error_context, SourceLocation::root_location("(jit)"));
+      m_jit = boost::make_shared<TvmJit>(boost::ref(*this), boost::ref(err_loc), jit_configuration);
     }
     
 #if PSI_DEBUG

@@ -977,7 +977,9 @@ boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc, 
   String key = configuration.get("cc").str();
   const PropertyValue& cc_config = configuration.get(key);
 
-  String kind = cc_config.get("kind").str();
+  boost::optional<std::string> kind = cc_config.path_str("kind");
+  if (!kind)
+    err_loc.error_throw("C compiler kind not specified (property 'kind' missing): should be one of 'gcc', 'clang', 'tcc' or 'tcclib'");
 
 #if PSI_TVM_CC_TCCLIB
   if (kind == "tcclib")
@@ -985,16 +987,18 @@ boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc, 
 #endif
   
   // Try to identify the compiler by its executable name
-  Platform::Path cc_path = std::string(cc_config.get("path").str());
-  boost::optional<Platform::Path> cc_full_path = Platform::find_in_path(cc_path);
+  boost::optional<std::string> str_path = cc_config.path_str("path");
+  if (!str_path)
+    err_loc.error_throw("C compiler path not specified (property 'path' missing)");
+  boost::optional<Platform::Path> cc_full_path = Platform::find_in_path(*str_path);
   if (!cc_full_path)
-    err_loc.error_throw(boost::format("C compiler not found: %s") % cc_path.str());
+    err_loc.error_throw(boost::format("C compiler not found: %s") % *str_path);
 
-  if (kind == "gcc") {
+  if (*kind == "gcc") {
     return CCompilerGCC::detect(err_loc, *cc_full_path, cc_config);
-  } else if (kind == "clang") {
+  } else if (*kind == "clang") {
     return CCompilerClang::detect(err_loc, *cc_full_path, cc_config);
-  } else if (kind == "tcc") {
+  } else if (*kind == "tcc") {
     return CCompilerTCC::detect(err_loc, *cc_full_path, cc_config);
   } else {
     err_loc.error_throw(boost::format("Could not identify C compiler: %s") % cc_full_path->str());

@@ -2,6 +2,7 @@
 
 #include <locale>
 #include <sstream>
+#include <fstream>
 #include <stdio.h>
 #include <boost/format.hpp>
 
@@ -166,7 +167,7 @@ std::vector<std::string> PropertyValue::str_list() const {
   return result;
 }
 
-const PropertyValue *PropertyValue::path_value(const std::string& key) const {
+const PropertyValue *PropertyValue::path_value_ptr(const std::string& key) const {
   if (key.empty())
     return this;
 
@@ -187,14 +188,22 @@ const PropertyValue *PropertyValue::path_value(const std::string& key) const {
 }
 
 boost::optional<std::string> PropertyValue::path_str(const std::string& key) const {
-  const PropertyValue *pv = path_value(key);
+  const PropertyValue *pv = path_value_ptr(key);
   if (pv && (pv->type() == t_str))
     return std::string(pv->str());
   return boost::none;
 }
 
+/**
+ * \brief Return the named element
+ */
+PropertyValue PropertyValue::path_value(const std::string& key) const {
+  const PropertyValue *pv = path_value_ptr(key);
+  return pv ? *pv : PropertyValue();
+}
+
 bool PropertyValue::path_bool(const std::string& key) const {
-  const PropertyValue *pv = path_value(key);
+  const PropertyValue *pv = path_value_ptr(key);
   if (!pv)
     return false;
   return (pv->type() == t_boolean) && pv->boolean();
@@ -538,6 +547,29 @@ void PropertyValue::parse_configuration(const char *begin, const char *end, unsi
         tokener.throw_error(boost::format("Unexpected character '%c'") % tokener.peek());
       }
     }
+  }
+}
+
+/**
+ * \brief Parse a string configuration item(s)
+ */
+void PropertyValue::parse_configuration(const char *s) {
+  parse_configuration(s, s+std::strlen(s));
+}
+
+/**
+ * \brief Read data from a file and parse it into this map.
+ */
+void PropertyValue::parse_file(const std::string& filename) {
+  std::vector<char> data;
+  std::filebuf in;;
+  if (!in.open(filename.c_str(), std::ios::in))
+    throw PropertyValueParseError(0, 0, "Could not open: " + filename);
+  std::copy(std::istreambuf_iterator<char>(&in), std::istreambuf_iterator<char>(), std::back_inserter(data));
+  in.close();
+  if (!data.empty()) {
+    const char *ptr = &data[0];
+    parse_configuration(ptr, ptr + data.size());
   }
 }
 }

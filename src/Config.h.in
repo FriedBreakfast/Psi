@@ -12,6 +12,17 @@
 /// Whether the LLVM backend is being built
 #cmakedefine01 PSI_TVM_LLVM
 
+// Host system definitions. See DetectPlatform.cmake for values
+// Note that this reflects the minimum system that the program is expected to run on, not the actual host
+/// Host CPU
+#define PSI_HOST_CPU "${PSI_HOST_CPU}"
+/// Host CPU version
+#define PSI_HOST_CPU_VERSION ${PSI_HOST_CPU_VERSION}
+/// Host OS
+#define PSI_HOST_OS "${PSI_HOST_OS}"
+/// Host ABI. May not be set on all platforms.
+#define PSI_HOST_ABI "${PSI_HOST_ABI}"
+
 /// Default TVM JIT library to use
 #define PSI_TVM_JIT "${PSI_TVM_JIT}"
 /// Type of C compiler

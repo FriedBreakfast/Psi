@@ -26,6 +26,7 @@ set(PSI_RUNTIME_SOURCES Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
 endif()
 
 add_library(psi-compiler-common SHARED
+  Configuration.cpp Configuration.hpp
   Runtime.cpp Runtime.hpp
   PropertyValue.cpp PropertyValue.hpp
   SourceLocation.cpp SourceLocation.hpp
@@ -102,6 +103,7 @@ if(PSI_TVM_LLVM)
     Tvm/llvm/FunctionalConstant.cpp
     Tvm/llvm/FunctionalInstruction.cpp
     Tvm/llvm/Instructions.cpp
+    Tvm/llvm/LLVMPushWarnings.hpp Tvm/llvm/LLVMPopWarnings.hpp
     Tvm/llvm/Target.cpp Tvm/llvm/Target.hpp
     Tvm/llvm/Target_Linux_x86.cpp
     Tvm/llvm/Target_AMD64.cpp
@@ -171,7 +173,10 @@ if (UNIX)
   add_library(psi-compiler-gcchecker SHARED GCChecker.c)
 endif()
 
-add_executable(psi Main.cpp)
+add_executable(psi
+Main.cpp
+OptionParser.cpp OptionParser.hpp
+)
 target_link_libraries(psi psi-compiler)
 
 #install(TARGETS psi

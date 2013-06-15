@@ -243,7 +243,7 @@ namespace Psi {
       Tvm::ValuePtr<Tvm::Global> build_library_symbol(const TreePtr<LibrarySymbol>& lib_sym);
 
     public:
-      TvmJitCompiler(TvmTargetScope& target);
+      TvmJitCompiler(TvmTargetScope& target, const PropertyValue& jit_configuration);
       void *compile(const TreePtr<Global>& global);
       void load_library(const TreePtr<Library>& library);
     };
@@ -256,8 +256,11 @@ namespace Psi {
       TvmTargetScope m_target_scope;
       TvmJitCompiler m_jit_compiler;
       
+      const PropertyValue& target_configuration(CompileErrorPair& err_loc, const PropertyValue& configuration);
+      const PropertyValue& jit_configuration(CompileErrorPair& err_loc, const PropertyValue& configuration);
+      
     public:
-      TvmJit(CompileContext& compile_context, const PropertyValue& target_info);
+      TvmJit(CompileContext& compile_context, CompileErrorPair& err_loc, const PropertyValue& configuration);
       Tvm::Context& tvm_context() {return m_tvm_context;}
       TvmJitCompiler& jit_compiler() {return m_jit_compiler;}
     };

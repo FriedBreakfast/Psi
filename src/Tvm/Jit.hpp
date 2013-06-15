@@ -83,14 +83,10 @@ namespace Psi {
      */
     class PSI_TVM_EXPORT JitFactory {
       CompileErrorPair m_error_handler;
-      std::string m_name;
 
     public:
-      JitFactory(const CompileErrorPair& error_handler, const std::string& name);
+      JitFactory(const CompileErrorPair& error_handler);
       virtual ~JitFactory();
-      
-      /// \brief Name under which this JIT was loaded
-      const std::string& name() const {return m_name;}
       
       /// \brief Get error reporting location
       const CompileErrorPair& error_handler() const {return m_error_handler;}
@@ -98,17 +94,22 @@ namespace Psi {
       /// \brief Create a new Just-in-time compiler
       virtual boost::shared_ptr<Jit> create_jit() = 0;
 
-      /// \brief Get a JIT factory for a named JIT compiler.
-      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config);
+      /**
+       * \brief Get a JIT factory for a named JIT compiler.
+       * 
+       * This function gets a specific JIT; the configuration passed in should be a description
+       * of a particular JIT rather than a global configuration with a selector passed to get().
+       */
+      static boost::shared_ptr<JitFactory> get_specific(const CompileErrorPair& error_handler, const PropertyValue& config);
 
-      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler);
+      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const PropertyValue& config);
     };
     
     class JitFactoryCommon : public JitFactory, public boost::enable_shared_from_this<JitFactoryCommon> {
     public:
       typedef Jit* (*JitFactoryCallback) (const CompileErrorPair& error_handler, const PropertyValue& config);
       virtual boost::shared_ptr<Jit> create_jit();
-      JitFactoryCommon(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config);
+      JitFactoryCommon(const CompileErrorPair& error_handler, const PropertyValue& config);
       
     protected:
       JitFactoryCallback m_callback;

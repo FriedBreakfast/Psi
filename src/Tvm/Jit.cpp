@@ -3,60 +3,37 @@
 
 #include <boost/make_shared.hpp>
 #include <boost/ref.hpp>
+#include <boost/format.hpp>
 
 namespace Psi {
   namespace Tvm {
-    JitFactory::JitFactory(const CompileErrorPair& error_handler, const std::string& name)
-    : m_error_handler(error_handler), m_name(name) {
+    JitFactory::JitFactory(const CompileErrorPair& error_handler)
+    : m_error_handler(error_handler) {
     }
 
     JitFactory::~JitFactory() {
     }
 
-    namespace {
-      bool str_nonempty(const char *s) {
-        return s[0] != '\0';
-      }
-    }
-    
     /**
      * \brief Get a JIT factory for the default JIT compiler.
      * 
-     * Tries the environment variables PSI_TVM_JIT, and if that is missing reverts to
-     * the built-in default.
+     * \param config Global JIT configuration.
+     * 
+     * This function selects a single JIT configuration from the global configuration and
+     * hands off to get_specific().
      */
-    boost::shared_ptr<JitFactory> JitFactory::get(const CompileErrorPair& error_handler) {
-      PropertyValue config;
-      config["tvm"]["jit"] = PSI_TVM_JIT;
-      if (str_nonempty(PSI_TVM_CC_KIND)) {
-        config["tvm"]["c"]["cc"] = PSI_TVM_CC_KIND;
-        config["tvm"]["c"][PSI_TVM_CC_KIND]["kind"] = PSI_TVM_CC_KIND;
-        if (str_nonempty(PSI_TVM_CC_PATH))
-          config["tvm"]["c"][PSI_TVM_CC_KIND]["path"] = PSI_TVM_CC_PATH;
-      }
-
-#if PSI_TVM_CC_TCCLIB
-      config["tvm"]["c"]["tcclib"]["kind"] = "tcclib";
-      if (str_nonempty(PSI_TVM_CC_TCC_INCLUDE))
-        config["tvm"]["c"]["tcclib"]["include"] = PSI_TVM_CC_TCC_INCLUDE;
-      if (str_nonempty(PSI_TVM_CC_TCC_PATH))
-        config["tvm"]["c"]["tcclib"]["path"] = PSI_TVM_CC_TCC_PATH;
-#endif
-        
-#if PSI_TVM_LLVM
-      config["tvm"]["llvm"]; // Ensure key is present in map
-#endif
-
-      Platform::read_configuration_files(config, "psi.cfg");
-
-      const PropertyValue& tvm_config = config.get("tvm");
-      String name = tvm_config.get("jit").str();
-
-      return get(error_handler, name, tvm_config.get(name));
+    boost::shared_ptr<JitFactory> JitFactory::get(const CompileErrorPair& error_handler, const PropertyValue& config) {
+      boost::optional<std::string> name = config.path_str("jit");
+      if (!name)
+        error_handler.error_throw("Default JIT not specified (configuration property 'tvm.jit' missing)");
+      const PropertyValue *config_ptr = config.path_value_ptr(*name);
+      if (!config_ptr)
+        error_handler.error_throw(boost::format("No configuration specified for JIT type '%1%' (configuration property 'tvm.jit.%1%' missing)") % *name);
+      return get_specific(error_handler, *config_ptr);
     }
     
-    JitFactoryCommon::JitFactoryCommon(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config)
-    : JitFactory(error_handler, name),
+    JitFactoryCommon::JitFactoryCommon(const CompileErrorPair& error_handler, const PropertyValue& config)
+    : JitFactory(error_handler),
     m_config(config) {
     }
     

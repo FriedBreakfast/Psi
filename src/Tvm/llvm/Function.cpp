@@ -7,8 +7,10 @@
 #include <boost/next_prior.hpp>
 #include <boost/unordered_set.hpp>
 
+#include "LLVMPushWarnings.hpp"
 #include <llvm/Function.h>
 #include <llvm/Module.h>
+#include "LLVMPopWarnings.hpp"
 
 namespace Psi {
   namespace Tvm {

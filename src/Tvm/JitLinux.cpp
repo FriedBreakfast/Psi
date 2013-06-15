@@ -29,8 +29,8 @@ namespace Psi {
       LibHandle m_handle;
       
     public:
-      LinuxJitFactory(const CompileErrorPair& error_handler, const std::string& name, LibHandle& handle, const PropertyValue& config)
-      : JitFactoryCommon(error_handler, name, config) {
+      LinuxJitFactory(const CompileErrorPair& error_handler, const std::string& soname, LibHandle& handle, const PropertyValue& config)
+      : JitFactoryCommon(error_handler, config) {
         m_handle.swap(handle);
         
         dlerror();
@@ -39,12 +39,15 @@ namespace Psi {
           const char *err = dlerror();
           std::string err_msg;
           err_msg = err ? err : "tvm_jit_new symbol is null";
-          error_handler.error_throw("Cannot get JIT factory method for " + name + ": " + err_msg);
+          error_handler.error_throw("Cannot get JIT factory method in " + soname + ": " + err_msg);
         }
       }
       
-      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config) {
-        std::string soname = "libpsi-tvm-" + name + ".so";
+      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const PropertyValue& config) {
+        boost::optional<std::string> sobase = config.path_str("kind");
+        if (!sobase)
+          error_handler.error_throw("JIT 'kind' key missing from configuration");
+        std::string soname = "libpsi-tvm-" + *sobase + ".so";
         /* 
          * I use RTLD_GLOBAL here because it's a bad idea to combine RTLD_LOCAL with
          * C++ due to vague linkage (this can break cross-library exception handling,
@@ -53,14 +56,14 @@ namespace Psi {
         LibHandle handle(dlopen(soname.c_str(), RTLD_LAZY | RTLD_GLOBAL));
         
         if (!handle.get())
-          error_handler.error_throw("Cannot load JIT named " + name + " (from " + soname + "): " + dlerror());
+          error_handler.error_throw("Cannot load JIT named from " + soname + ": " + dlerror());
         
-        return boost::make_shared<LinuxJitFactory>(error_handler, name, boost::ref(handle), boost::cref(config));
+        return boost::make_shared<LinuxJitFactory>(error_handler, soname, boost::ref(handle), boost::cref(config));
       }
     };
 
-    boost::shared_ptr<JitFactory> JitFactory::get(const CompileErrorPair& error_handler, const std::string& name, const PropertyValue& config) {
-      return LinuxJitFactory::get(error_handler, name, config);
+    boost::shared_ptr<JitFactory> JitFactory::get_specific(const CompileErrorPair& error_handler, const PropertyValue& config) {
+      return LinuxJitFactory::get(error_handler, config);
     }
   }
 }

@@ -4,6 +4,8 @@ project(Psi)
 include(CPack)
 include(CTest)
 
+include(DetectPlatform.cmake)
+
 # Enable -fvisibility=hidden on GCC
 include(GenerateExportHeader)
 add_compiler_export_flags()

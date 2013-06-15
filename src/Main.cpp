@@ -19,13 +19,95 @@
 #include "Macros.hpp"
 #include "TermBuilder.hpp"
 
+#include "Configuration.hpp"
+#include "OptionParser.hpp"
+
 namespace {
-  std::string find_program_name(const char *path) {
-    std::string exe_name(path);
-    std::size_t name_pos = exe_name.find_last_of("/\\");
-    if (name_pos != std::string::npos)
-      exe_name = exe_name.substr(name_pos + 1);
-    return exe_name;
+  enum OptionKeys {
+    opt_key_help,
+    opt_key_config,
+    opt_key_set,
+    opt_key_nodefault
+  };
+  
+  struct OptionSet {
+    Psi::PropertyValue configuration;
+    std::string filename;
+    std::vector<std::string> arguments;
+  };
+  
+  bool parse_options(int argc, const char **argv, OptionSet& options) {
+    std::string help_extra = " [file] [args] ...";
+    Psi::OptionsDescription desc;
+    desc.allow_unknown = false;
+    desc.allow_positional = true;
+    desc.opts.push_back(Psi::option_description(opt_key_help, false, 'h', "help", "Print this help"));
+    desc.opts.push_back(Psi::option_description(opt_key_config, true, 'c', "config", "Read a configuration file"));
+    desc.opts.push_back(Psi::option_description(opt_key_set, true, 's', "set", "Set a configuration property"));
+    desc.opts.push_back(Psi::option_description(opt_key_nodefault, false, '\0', "nodefault", "Disable loading of default configuration files"));
+    
+    bool read_default = true;
+    bool file_given = false;
+    std::vector<std::string> config_files;
+    std::vector<std::string> extra_config;
+    
+    Psi::OptionParser parser(desc, argc, argv);
+    while (!parser.empty()) {
+      Psi::OptionValue val;
+      try {
+        val = parser.next();
+      } catch (Psi::OptionParseError& ex) {
+        std::cerr << ex.what() << '\n';
+        Psi::options_usage(argv[0], help_extra, "-h");
+        return false;
+      }
+      
+      switch (val.key) {
+      case Psi::OptionValue::positional:
+        file_given = true;
+        options.filename = val.value;
+        while (!parser.empty())
+          options.arguments.push_back(parser.take());
+        break;
+        
+      case opt_key_help:
+        Psi::options_help(argv[0], help_extra, desc);
+        return false;
+
+      case opt_key_nodefault:
+        read_default = false;
+        break;
+        
+      case opt_key_config:
+        config_files.push_back(val.value);
+        break;
+        
+      case opt_key_set:
+        extra_config.push_back(val.value);
+        break;
+        
+      default: PSI_FAIL("Unexpected option key");
+      }
+    }
+
+    // Check that the user has specified a file
+    if (!file_given) {
+      Psi::options_usage(argv[0], help_extra, "-h");
+      return false;
+    }
+    
+    // Load configuration
+    options.configuration = Psi::PropertyValue();
+    // Always load built in configuration
+    Psi::configuration_builtin(options.configuration);
+    if (read_default)
+      Psi::configuration_read_files(options.configuration);
+    for (std::vector<std::string>::const_iterator ii = config_files.begin(), ie = config_files.end(); ii != ie; ++ii)
+      options.configuration.parse_file(*ii);
+    for (std::vector<std::string>::const_iterator ii = extra_config.begin(), ie = extra_config.end(); ii != ie; ++ii)
+      options.configuration.parse(ii->c_str());
+    
+    return true;
   }
 }
 
@@ -71,18 +153,17 @@ Psi::Parser::ParserLocation url_location(const Psi::String& url, const char *tex
   return file_text;
 }
 
-int main(int argc, char *argv[]) {
-  std::string prog_name = find_program_name(argv[0]);
+int main(int argc, const char **argv) {
+  std::string prog_name = Psi::find_program_name(argv[0]);
   
-  if (argc < 2) {
-    std::cerr << boost::format("Usage: %s [file] [arg] ...\n") % prog_name;
+  OptionSet opts;
+  if (!parse_options(argc, argv, opts))
     return EXIT_FAILURE;
-  }
   
   // argv[1] is the script name
-  std::ifstream source_file(argv[1]);
+  std::ifstream source_file(opts.filename.c_str());
   if (source_file.fail()) {
-    std::cerr << boost::format("%s: cannot open %s: %s\n") % prog_name % argv[1] % strerror(errno);
+    std::cerr << boost::format("%s: cannot open %s: %s\n") % prog_name % opts.filename % strerror(errno);
     return EXIT_FAILURE;
   }
   
@@ -97,7 +178,7 @@ int main(int argc, char *argv[]) {
   using namespace Psi::Compiler;
 
   CompileErrorContext error_context(&std::cerr);
-  CompileContext compile_context(&error_context);
+  CompileContext compile_context(&error_context, opts.configuration);
   TreePtr<Module> global_module = Module::new_(compile_context, "psi", compile_context.root_location().named_child("psi"));
   TreePtr<Module> my_module = Module::new_(compile_context, "main", compile_context.root_location());
   TreePtr<EvaluateContext> root_evaluate_context = create_globals(global_module);

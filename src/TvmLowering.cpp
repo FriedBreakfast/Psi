@@ -367,7 +367,7 @@ const TvmTargetSymbol& TvmTargetScope::library_symbol(const TreePtr<LibrarySymbo
 }
 
 TvmObjectCompilerBase::TvmObjectCompilerBase(TvmJitCompiler *jit_compiler, TvmTargetScope *target, const TreePtr<Module>& module, Tvm::Module *tvm_module)
-: m_target(target), m_jit_compiler(jit_compiler), m_module(module), m_tvm_module(tvm_module) {
+: m_jit_compiler(jit_compiler), m_target(target), m_module(module), m_tvm_module(tvm_module) {
   m_scope = TvmScope::new_(m_target->scope());
   m_n_constructors = 0;
 }
@@ -603,10 +603,10 @@ void TvmJitObjectCompiler::notify_library_symbol(const TreePtr<LibrarySymbol>& l
     common = tvm_global;
 }
 
-TvmJitCompiler::TvmJitCompiler(TvmTargetScope& target)
+TvmJitCompiler::TvmJitCompiler(TvmTargetScope& target, const PropertyValue& jit_configuration)
 : m_target(&target) {
   boost::shared_ptr<Tvm::JitFactory> factory =
-    Tvm::JitFactory::get(target.compile_context().error_context().bind(SourceLocation::root_location("(jit)")));
+    Tvm::JitFactory::get_specific(target.compile_context().error_context().bind(SourceLocation::root_location("(jit)")), jit_configuration);
   m_jit = factory->create_jit();
 }
 
@@ -834,10 +834,31 @@ void* TvmJitCompiler::compile(const TreePtr<Global>& global) {
   return m_jit->get_symbol(built);
 }
 
-TvmJit::TvmJit(CompileContext& compile_context, const PropertyValue& target_info)
+const PropertyValue& TvmJit::target_configuration(CompileErrorPair& err_loc, const PropertyValue& configuration) {
+  boost::optional<std::string> jit_key = configuration.path_str("jit_target");
+  if (!jit_key)
+    err_loc.error_throw("Configuration property 'jit_target' specified");
+  const PropertyValue *target = configuration.path_value_ptr("targets." + *jit_key);
+  if (!target)
+    err_loc.error_throw(boost::format("JIT target '%s' (specified by 'jit_target' property) does not exist") % *jit_key);
+  return *target;
+}
+
+const PropertyValue& TvmJit::jit_configuration(CompileErrorPair& err_loc, const PropertyValue& configuration) {
+  const PropertyValue& target = target_configuration(err_loc, configuration);
+  boost::optional<std::string> tvm_key = target.path_str("tvm");
+  if (!tvm_key)
+    err_loc.error_throw("JIT target missing 'tvm' property");
+  const PropertyValue *config = configuration.path_value_ptr("tvm." + *tvm_key);
+  if (!config)
+    err_loc.error_throw(boost::format("TVM configuration '%s' used by JIT does not exist") % *tvm_key);
+  return *config;
+}
+
+TvmJit::TvmJit(CompileContext& compile_context, CompileErrorPair& err_loc, const PropertyValue& configuration)
 : m_tvm_context(&compile_context.error_context()),
-m_target_scope(compile_context, m_tvm_context, target_info),
-m_jit_compiler(m_target_scope) {
+m_target_scope(compile_context, m_tvm_context, target_configuration(err_loc, configuration)),
+m_jit_compiler(m_target_scope, jit_configuration(err_loc, configuration)) {
 }
 }
 }

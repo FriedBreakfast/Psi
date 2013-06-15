@@ -90,7 +90,7 @@ class PSI_COMPILER_COMMON_EXPORT CompileErrorPair {
   SourceLocation m_location;
   
 public:
-  CompileErrorPair(CompileErrorContext& m_context, const SourceLocation& location);
+  CompileErrorPair(CompileErrorContext& context, const SourceLocation& location);
   
   /// Forwards to CompileErrorContext::error
   void error(const std::string& message, unsigned flags=0) const {m_context->error(m_location, message, flags);}

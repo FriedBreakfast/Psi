@@ -6,6 +6,7 @@
 #include <exception>
 #include <boost/unordered_map.hpp>
 
+#include "LLVMPushWarnings.hpp"
 #include <llvm/LLVMContext.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/GlobalValue.h>
@@ -20,6 +21,7 @@
 #if PSI_DEBUG
 #include <llvm/ExecutionEngine/JITEventListener.h>
 #endif
+#include "LLVMPopWarnings.hpp"
 
 #include "../Core.hpp"
 #include "../AggregateLowering.hpp"

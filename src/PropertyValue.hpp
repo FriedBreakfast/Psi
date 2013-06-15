@@ -73,8 +73,6 @@ private:
   void assign(double src);
   void assign(const PropertyMap& src);
   void assign(const PropertyList& src);
-
-  const PropertyValue *path_value(const std::string& name) const;
   
 public:
   PropertyValue() : m_type(t_null) {}
@@ -125,10 +123,14 @@ public:
   
   boost::optional<std::string> path_str(const std::string& key) const;
   bool path_bool(const std::string& key) const;
+  const PropertyValue *path_value_ptr(const std::string& name) const;
+  PropertyValue path_value(const std::string& key) const;
 
   static PropertyValue parse(const char *begin, const char *end, unsigned first_line=1, unsigned first_column=1);
   static PropertyValue parse(const char *s);
   void parse_configuration(const char *begin, const char *end, unsigned first_line=1, unsigned first_column=1);
+  void parse_configuration(const char *s);
+  void parse_file(const std::string& filename);
 };
 
 PSI_COMPILER_COMMON_EXPORT bool operator == (const PropertyValue& lhs, const PropertyValue& rhs);

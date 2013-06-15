@@ -17,6 +17,7 @@
 #include "Enums.hpp"
 #include "Array.hpp"
 #include "ErrorContext.hpp"
+#include "PropertyValue.hpp"
 
 namespace Psi {
   namespace Parser {
@@ -314,7 +315,7 @@ namespace Psi {
 #endif
 
     public:
-      CompileContext(CompileErrorContext *error_context);
+      CompileContext(CompileErrorContext *error_context, const PropertyValue& jit_configuration);
       ~CompileContext();
       
 #if PSI_DEBUG
