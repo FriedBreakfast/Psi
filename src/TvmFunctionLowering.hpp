@@ -23,14 +23,25 @@ struct TvmJumpData {
   Tvm::ValuePtr<> storage;
 };
 
+/**
+ * Value type of list of interface implementations visible in the current scope.
+ */
+struct TvmGeneratedImplementation {
+  TreePtr<Interface> interface;
+  PSI_STD::vector<TreePtr<Term> > parameters;
+  TvmResult result;
+};
+
 struct TvmFunctionState {
   typedef boost::shared_ptr<TvmCleanup> CleanupPtr;
   typedef SharedMap<TreePtr<>, TvmResult> VariableMapType;
   typedef SharedList<TreePtr<IntroduceImplementation> > LocalImplementationList;
+  typedef SharedList<TvmGeneratedImplementation> GeneratedImplemenationList;
   typedef std::map<TreePtr<JumpTarget>, TvmJumpData> JumpMapType;
   
   TvmScopePtr scope;
   LocalImplementationList implementation_list;
+  GeneratedImplemenationList generated_implementation_list;
   CleanupPtr cleanup;
   JumpMapType jump_map;
 };
@@ -143,15 +154,21 @@ public:
   Tvm::InstructionBuilder& builder() {return m_builder;}
 
   TvmResult build_instruction(const TreePtr<Term>& term);
-
-  bool object_initialize_default(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& type, bool except_only, const SourceLocation& location);
-  bool object_initialize_term(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& value, bool except_only, const SourceLocation& location);
-  bool object_initialize_move(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, bool except_only, const SourceLocation& location);
-  bool object_initialize_copy(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, bool except_only, const SourceLocation& location);
-  bool object_assign_default(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& type, const SourceLocation& location);
-  bool object_assign_term(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& value, const SourceLocation& location);
-  bool object_assign_move(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, const SourceLocation& location);
-  bool object_assign_copy(const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, const SourceLocation& location);
+  
+  enum ConstructMode {
+    /// \brief Initialize a value
+    construct_initialize,
+    /// \brief Initialize a value and push a destructor onto the context heap
+    construct_initialize_destroy,
+    /// \brief Assign a value
+    construct_assign,
+    /// \brief Create interfaces required for given constructor
+    construct_interfaces
+  };
+  
+  bool object_construct_default(ConstructMode mode, const Tvm::ValuePtr<>& dest, const TreePtr<Term>& type, const SourceLocation& location);
+  bool object_construct_term(ConstructMode mode, const Tvm::ValuePtr<>& dest, const TreePtr<Term>& value, const SourceLocation& location);
+  bool object_construct_move_copy(ConstructMode mode, bool move, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const TreePtr<Term>& type, const SourceLocation& location);
   void object_destroy(const Tvm::ValuePtr<>& dest, const TreePtr<Term>& type, const SourceLocation& location);
   
   void copy_construct(const TreePtr<Term>& type, const Tvm::ValuePtr<>& dest, const Tvm::ValuePtr<>& src, const SourceLocation& location);

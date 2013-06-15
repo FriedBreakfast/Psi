@@ -35,18 +35,22 @@ struct TvmFunctionBuilder::InstructionLowering {
     for (PSI_STD::vector<TreePtr<Statement> >::const_iterator ii = block->statements.begin(), ie = block->statements.end(); ii != ie; ++ii) {
       const TreePtr<Statement>& statement = *ii;
 
-      TvmCleanupPtr before_statement_cleanup = builder.m_state.cleanup;
+      TvmCleanupPtr before_statement_cleanup;
       TvmResult value;
       
       Tvm::ValuePtr<> stack_slot;
       if ((statement->mode == statement_mode_value) || ((statement->mode == statement_mode_destroy) && !statement->value->is_functional())) {
         TvmResult type = builder.build(statement->value->type);
         stack_slot = builder.builder().alloca_(type.value, statement->location());
-        if (builder.object_initialize_term(stack_slot, statement->value, true, statement->location()))
+        builder.push_cleanup(boost::make_shared<StackFreeCleanup>(stack_slot, statement->location()));
+        PSI_CHECK(builder.object_construct_term(construct_interfaces, stack_slot, statement->value, statement->location()));
+        before_statement_cleanup = builder.m_state.cleanup;
+        if (builder.object_construct_term(construct_initialize, stack_slot, statement->value, statement->location()))
           value = TvmResult(builder.m_state.scope, stack_slot);
         else
           value = TvmResult::bottom();
       } else {
+        before_statement_cleanup = builder.m_state.cleanup;
         switch (statement->mode) {
         case statement_mode_functional: {
           // Let FunctionalEvaluate handler handle this
@@ -190,12 +194,11 @@ struct TvmFunctionBuilder::InstructionLowering {
       if ((*ii)->argument) {
         if ((*ii)->argument_mode == result_mode_by_value) {
           Tvm::ValuePtr<> dest_ptr = builder.builder().alloca_(Tvm::value_cast<Tvm::PointerType>(jd.storage->type())->target_type(), (*ii)->location());
+          builder.push_cleanup(boost::make_shared<StackFreeCleanup>(dest_ptr, (*ii)->location()));
           builder.move_construct_destroy((*ii)->argument->type, dest_ptr, jd.storage, (*ii)->location());
 
           if ((*ii)->argument->type->type_info().type_mode == type_mode_complex)
             builder.push_cleanup(boost::make_shared<DestroyCleanup>(dest_ptr, (*ii)->argument->type, (*ii)->location()));
-          else
-            builder.push_cleanup(boost::make_shared<StackFreeCleanup>(dest_ptr, (*ii)->location()));
           builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope, dest_ptr));
         } else {
           builder.m_state.scope->put((*ii)->argument, TvmResult(builder.m_state.scope, jd.storage));
@@ -221,7 +224,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       // Do not use var.assign here - it might try and destroy the existing stack storage
       switch (jump_to->target->argument_mode) {
       case result_mode_by_value:
-        if (!builder.object_initialize_term(exit_storage, jump_to->argument, true, jump_to->location()))
+        if (!builder.object_construct_term(construct_initialize, exit_storage, jump_to->argument, jump_to->location()))
           return TvmResult::bottom();
         break;
       
@@ -286,7 +289,8 @@ struct TvmFunctionBuilder::InstructionLowering {
       if ((argument->mode == term_mode_value) && !argument->type->is_register_type()) {
         TvmResult type = builder.build(argument->type);
         Tvm::ValuePtr<> stack_slot = builder.builder().alloca_(type.value, call->location());
-        if (!builder.object_initialize_term(stack_slot, argument, false, argument->location()))
+        builder.push_cleanup(boost::make_shared<StackFreeCleanup>(stack_slot, argument->location()));
+        if (!builder.object_construct_term(construct_initialize_destroy, stack_slot, argument, argument->location()))
           return TvmResult::bottom();
         builder.push_cleanup(boost::make_shared<DestroyCleanup>(stack_slot, argument->type, argument->location()));
         arg_result = TvmResult(builder.m_state.scope, stack_slot);
@@ -368,13 +372,13 @@ struct TvmFunctionBuilder::InstructionLowering {
   
   static TvmResult run_initialize(TvmFunctionBuilder& builder, const TreePtr<InitializeValue>& initialize) {
     TvmResult dest_ptr = builder.build(initialize->target_ref);
-    builder.object_initialize_term(dest_ptr.value, initialize->assign_value, true, initialize.location());
+    builder.object_construct_term(construct_initialize, dest_ptr.value, initialize->assign_value, initialize.location());
     return builder.build(initialize->inner);
   }
 
   static TvmResult run_assign(TvmFunctionBuilder& builder, const TreePtr<AssignValue>& assign) {
     TvmResult dest_ptr = builder.build(assign->target_ref);
-    builder.object_assign_term(dest_ptr.value, assign->assign_value, assign.location());
+    builder.object_construct_term(construct_assign, dest_ptr.value, assign->assign_value, assign.location());
     return TvmResult(builder.m_state.scope, Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), assign.location()));
   }
 

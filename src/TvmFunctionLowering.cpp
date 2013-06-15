@@ -28,7 +28,6 @@ DestroyCleanup::DestroyCleanup(const Tvm::ValuePtr<>& slot, const TreePtr<Term>&
   
 void DestroyCleanup::run(TvmFunctionBuilder& builder) const {
   builder.object_destroy(m_slot, m_type, location());
-  builder.builder().freea(m_slot, location());
 }
 
 TvmFunctionBuilder::TvmFunctionBuilder(TvmObjectCompilerBase& tvm_compiler, const TreePtr<Module>& module, std::set<TreePtr<ModuleGlobal> >& dependencies)
@@ -206,9 +205,15 @@ void TvmFunctionBuilder::exit_to(const TreePtr<JumpTarget>& target, const Source
  * \brief Generate a cleanup sequence for normal (rather than exceptional) exit.
  */
 void TvmFunctionBuilder::cleanup_to(const TvmCleanupPtr& top) {
-  for (; m_state.cleanup != top; m_state = m_state.cleanup->m_state) {
-    if (!m_state.cleanup->m_except_only)
-      m_state.cleanup->run(*this);
+  while (m_state.cleanup != top) {
+    /*
+     * Pop state before running cleanup in case cleanup generates a new
+     * state (which would lead to infinte recursion)
+     */
+    TvmCleanupPtr cleanup = m_state.cleanup;
+    m_state = m_state.cleanup->m_state;
+    if (!cleanup->m_except_only)
+      cleanup->run(*this);
   }
 }
 
@@ -345,8 +350,26 @@ void TvmFunctionBuilder::push_cleanup(const TvmCleanupPtr& cleanup) {
   m_state.cleanup = cleanup;
 }
 
+/**
+ * \todo Add parent implementations to global implementation list so e.g. a copy constructor does not generate an extra
+ * interface instantiation for the corresponding destructor.
+ */
 TvmResult TvmFunctionBuilder::get_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
                                                  const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation) {
+  // Check for existing copy
+  for (TvmFunctionState::GeneratedImplemenationList::const_iterator ii = m_state.generated_implementation_list.begin(), ie = m_state.generated_implementation_list.end(); ii != ie; ++ii) {
+    if (ii->interface == interface) {
+      PSI_ASSERT(parameters.size() == ii->parameters.size());
+      for (std::size_t ji = 0, je = parameters.size(); ji != je; ++ji) {
+        if (!ii->parameters[ji]->convert_match(parameters[ji]))
+          goto no_match;
+      }
+      // Successful match
+      return ii->result;
+    }
+  no_match:;
+  }
+  
   TreePtr<Implementation> implementation;
   if (!maybe_implementation) {
     PSI_STD::vector<TreePtr<OverloadValue> > scope_extra;
@@ -361,22 +384,32 @@ TvmResult TvmFunctionBuilder::get_implementation(const TreePtr<Interface>& inter
     implementation = maybe_implementation;
   }
   
-  if (implementation->dynamic)
-    return build(implementation->value);
-  
-  TreePtr<Term> value = implementation->value->specialize(location, parameters);
-  if (false) {
-    // This could have global scope, and thus be moved directly into a global
-    PSI_NOT_IMPLEMENTED();
+  TvmResult result;
+  if (implementation->dynamic) {
+    result = build(implementation->value);
   } else {
-    PSI_ASSERT(value->is_functional());
-    TvmResult tvm_value = build(value);
-    Tvm::ValuePtr<> ptr = builder().alloca_const(tvm_value.value, location);
-    for (PSI_STD::vector<int>::const_iterator ii = implementation->path.begin(), ie = implementation->path.end(); ii != ie; ++ii)
-      ptr = Tvm::FunctionalBuilder::element_ptr(ptr, *ii, location);
-    // Need to add a cleanup
-    return TvmResult(m_state.scope, ptr);
+    TreePtr<Term> value = implementation->value->specialize(location, parameters);
+    if (false) {
+      /// \todo This could have global scope, and thus be moved directly into a global
+      PSI_NOT_IMPLEMENTED();
+    } else {
+      PSI_ASSERT(value->is_functional());
+      TvmResult tvm_value = build(value);
+      Tvm::ValuePtr<> ptr = builder().alloca_const(tvm_value.value, location);
+      push_cleanup(boost::make_shared<StackFreeCleanup>(ptr, location));
+      for (PSI_STD::vector<int>::const_iterator ii = implementation->path.begin(), ie = implementation->path.end(); ii != ie; ++ii)
+        ptr = Tvm::FunctionalBuilder::element_ptr(ptr, *ii, location);
+      result = TvmResult(m_state.scope, ptr);
+    }
   }
+  
+  TvmGeneratedImplementation gen_impl;
+  gen_impl.interface = interface;
+  gen_impl.parameters = parameters;
+  gen_impl.result = result;
+  m_state.generated_implementation_list.push_front(gen_impl);
+  
+  return result;
 }
 }
 }
