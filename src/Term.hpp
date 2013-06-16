@@ -278,7 +278,15 @@ namespace Psi {
       }
       
       PSI_COMPILER_EXPORT bool unify(TreePtr<Term>& other, const SourceLocation& location) const;
-      PSI_COMPILER_EXPORT bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const;
+      
+      enum UprefMatchMode {
+        upref_match_read,
+        upref_match_write,
+        upref_match_exact,
+        upref_match_ignore
+      };
+      
+      PSI_COMPILER_EXPORT bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth, UprefMatchMode upref_mode) const;
       PSI_COMPILER_EXPORT bool convert_match(const TreePtr<Term>& value) const;
       PSI_COMPILER_EXPORT TreePtr<Term> parameterize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements) const;
       PSI_COMPILER_EXPORT TreePtr<Term> specialize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values) const;
@@ -797,24 +805,24 @@ namespace Psi {
       unsigned index;
     };
 
-    TreePtr<Term> term_unwrap(const TreePtr<Term>& term, bool with_derived=true);
+    TreePtr<Term> term_unwrap(const TreePtr<Term>& term);
     
     /**
      * \brief Try to unwrap a term and cast it to another term type.
      * 
      * This uses \c type_unwrap to unwrap the term.
      */
-    template<typename T> TreePtr<T> term_unwrap_dyn_cast(const TreePtr<Term>& term, bool with_derived=true) {return dyn_treeptr_cast<T>(term_unwrap(term, with_derived));}
+    template<typename T> TreePtr<T> term_unwrap_dyn_cast(const TreePtr<Term>& term) {return dyn_treeptr_cast<T>(term_unwrap(term));}
     
     /**
      * \brief Unwrap a term and cast it to another term type.
      */
-    template<typename T> TreePtr<T> term_unwrap_cast(const TreePtr<Term>& term, bool with_derived=true) {return treeptr_cast<T>(term_unwrap(term, with_derived));}
+    template<typename T> TreePtr<T> term_unwrap_cast(const TreePtr<Term>& term) {return treeptr_cast<T>(term_unwrap(term));}
 
     /**
      * \brief Try to unwrap a term to a type.
      */
-    template<typename T> bool term_unwrap_isa(const TreePtr<Term>& term, bool with_derived=true) {return tree_isa<T>(term_unwrap(term, with_derived));}
+    template<typename T> bool term_unwrap_isa(const TreePtr<Term>& term) {return tree_isa<T>(term_unwrap(term));}
   }
 }
 

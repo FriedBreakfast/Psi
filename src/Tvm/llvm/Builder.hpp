@@ -151,6 +151,7 @@ namespace Psi {
 
         const ValuePtr<Function>& function() {return m_function;}
         llvm::Function* llvm_function() {return m_llvm_function;}
+        llvm::LLVMContext& llvm_context() {return m_module_builder->llvm_context();}
         IRBuilder& irbuilder() {return m_irbuilder;}
 
         unsigned unknown_alloca_align();
@@ -196,6 +197,11 @@ namespace Psi {
       llvm::TargetMachine* host_machine();
 
       boost::shared_ptr<TargetCallback> create_target_fixes(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&, const std::string&);
+      
+      struct LLVMJitModule {
+        ModuleMapping mapping;
+        std::size_t load_priority;
+      };
 
       class LLVMJit : public Jit {
       public:
@@ -214,7 +220,8 @@ namespace Psi {
         boost::shared_ptr<TargetCallback> m_target_fixes;
         llvm::Triple m_target_triple;
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
-        boost::unordered_map<Module*, ModuleMapping> m_modules;
+        std::size_t m_load_priority_max;
+        boost::unordered_map<Module*, LLVMJitModule> m_modules;
 #if PSI_DEBUG
         boost::shared_ptr<llvm::JITEventListener> m_debug_listener;
 #endif

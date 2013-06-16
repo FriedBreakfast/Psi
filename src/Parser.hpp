@@ -12,7 +12,6 @@
 
 namespace Psi {
   namespace Parser {
-    using Compiler::ResultMode;
     using Compiler::ParameterMode;
     
     struct ParserLocation {

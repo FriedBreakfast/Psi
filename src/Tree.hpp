@@ -376,13 +376,15 @@ namespace Psi {
     class PointerType : public Type {
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
-      PointerType(const TreePtr<Term>& target_type, const SourceLocation& location);
+      PointerType(const TreePtr<Term>& target_type, const TreePtr<Term>& upref, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const PointerType& self);
       static TermTypeInfo type_info_impl(const PointerType& self);
       
       /// \brief Get the type referenced by this pointer type.
       TreePtr<Term> target_type;
+      /// \brief Upward reference information.
+      TreePtr<Term> upref;
     };
     
     /**
@@ -435,7 +437,7 @@ namespace Psi {
     };
     
     /**
-     * \brief Get a reference to a member from a reference to a value.
+     * \brief Get a reference to a member from a reference to an aggregate value.
      */
     class ElementValue : public Functional {
     public:
@@ -454,18 +456,35 @@ namespace Psi {
     };
     
     /**
-     * \brief Get a reference to a containing structure from a reference to an inner value.
+     * \brief Get a pointer to a member from a pointer to an aggregate value.
      */
-    class OuterValue : public Functional {
+    class ElementPointer : public Functional {
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
-      OuterValue(const TreePtr<Term>& value);
+      ElementPointer(const TreePtr<Term>& value, const TreePtr<Term>& index);
       template<typename V> static void visit(V& v);
-      static TermResultInfo check_type_impl(const OuterValue& self);
-      static TermTypeInfo type_info_impl(const OuterValue& self);
+      static TermResultInfo check_type_impl(const ElementPointer& self);
+      static TermTypeInfo type_info_impl(const ElementPointer& self);
       
-      /// \brief Pointer to data structure, which must have type DerivedType
-      TreePtr<Term> value;
+      /// \brief Pointer to aggregate.
+      TreePtr<Term> pointer;
+      /// \brief Index of member to get.
+      TreePtr<Term> index;
+    };
+    
+    /**
+     * \brief Get a reference to a containing structure from a reference to an inner value.
+     */
+    class OuterPointer : public Functional {
+    public:
+      PSI_COMPILER_EXPORT static const VtableType vtable;
+      OuterPointer(const TreePtr<Term>& pointer);
+      template<typename V> static void visit(V& v);
+      static TermResultInfo check_type_impl(const OuterPointer& self);
+      static TermTypeInfo type_info_impl(const OuterPointer& self);
+      
+      /// \brief Pointer to data structure, which must have type Pointer
+      TreePtr<Term> pointer;
     };
 
     /**
@@ -601,25 +620,15 @@ namespace Psi {
     };
     
     /**
-     * \brief Associates upward reference information with a type.
-     * 
-     * This maps onto the functionality provided by the second parameter to
-     * TVM's pointer type, but has to be a separate class here because references
-     * are pointers with implicit behaviour and cannot have an extra parameter
-     * added.
+     * \brief Value of NULL upward references.
      */
-    class DerivedType : public Type {
+    class UpwardReferenceNull : public Constant {
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
-      DerivedType(const TreePtr<Term>& value_type, const TreePtr<Term>& upref, const SourceLocation& location);
+      UpwardReferenceNull();
+      static TermResultInfo check_type_impl(const UpwardReferenceNull& self);
+      static TermTypeInfo type_info_impl(const UpwardReferenceNull& self);
       template<typename V> static void visit(V& v);
-      static TermResultInfo check_type_impl(const DerivedType& self);
-      static TermTypeInfo type_info_impl(const DerivedType& self);
-      
-      /// \brief Type of the value associated with this inner pointer/reference.
-      TreePtr<Term> value_type;
-      /// \brief Upward reference information.
-      TreePtr<Term> upref;
     };
     
     class InterfaceValue;
@@ -670,7 +679,9 @@ namespace Psi {
       TreePtr<Term> parameter_type_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& arguments) const;
       TreePtr<Term> result_after(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& arguments) const;
       
+      /// \brief Type of the inner value.
       TreePtr<Term> result;
+      /// \brief Parameter types
       PSI_STD::vector<TreePtr<Term> > parameter_types;
     };
     

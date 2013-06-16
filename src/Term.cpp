@@ -231,15 +231,16 @@ namespace Psi {
     class MatchComparator : public TermComparator {
       PSI_STD::vector<TreePtr<Term> > *m_wildcards;
       unsigned m_depth;
+      Term::UprefMatchMode m_upref_mode;
       
     public:
       static const TermComparatorVtable vtable;
       
-      MatchComparator(PSI_STD::vector<TreePtr<Term> > *wildcards, unsigned depth)
-      : TermComparator(&vtable), m_wildcards(wildcards), m_depth(depth) {}
+      MatchComparator(PSI_STD::vector<TreePtr<Term> > *wildcards, unsigned depth, Term::UprefMatchMode upref_mode)
+      : TermComparator(&vtable), m_wildcards(wildcards), m_depth(depth), m_upref_mode(upref_mode) {}
       
       static bool compare_impl(MatchComparator& self, const TreePtr<Term>& lhs, const TreePtr<Term>& rhs) {
-        TreePtr<Term> lhs_unwrapped = term_unwrap(lhs, false), rhs_unwrapped = term_unwrap(rhs, false);
+        TreePtr<Term> lhs_unwrapped = term_unwrap(lhs), rhs_unwrapped = term_unwrap(rhs);
         
         if (TreePtr<Parameter> parameter = dyn_treeptr_cast<Parameter>(lhs_unwrapped)) {
           if (parameter->depth == self.m_depth) {
@@ -267,29 +268,63 @@ namespace Psi {
         if (lhs_unwrapped == rhs_unwrapped)
           return true;
         
-        TreePtr<DerivedType> lhs_derived = dyn_treeptr_cast<DerivedType>(lhs_unwrapped), rhs_derived = dyn_treeptr_cast<DerivedType>(rhs_unwrapped);
-        if (lhs_derived && rhs_derived) {
-          return self.compare(lhs_derived->value_type, rhs_derived->value_type) &&
-            self.compare(lhs_derived->upref, rhs_derived->upref);
-        } else if (lhs_derived) {
-          return false;
-        } else if (rhs_derived) {
-          return self.compare(lhs_unwrapped, rhs_derived->value_type);
-        }
-
+        // Note upref_match_exact cast is handled implicitly by lhs_unwrapped == rhs_unwrapped
+        if (tree_isa<UpwardReferenceNull>(lhs_unwrapped))
+          return self.m_upref_mode == Term::upref_match_read;
+        else if (tree_isa<UpwardReferenceNull>(rhs_unwrapped))
+          return self.m_upref_mode == Term::upref_match_write;
+        
         if (si_vptr(lhs_unwrapped.get()) == si_vptr(rhs_unwrapped.get())) {
           if (TreePtr<UpwardReference> lhs_upref = dyn_treeptr_cast<UpwardReference>(lhs_unwrapped)) {
             TreePtr<UpwardReference> rhs_upref = treeptr_cast<UpwardReference>(rhs_unwrapped);
             if (!self.compare(lhs_upref->outer_index, rhs_upref->outer_index))
               return false;
             
-            if (lhs_upref->next)
-              return rhs_upref->next && self.compare(lhs_upref->next, rhs_upref->next);
-            else
-              return self.compare(lhs_upref->outer_type(), rhs_upref->outer_type());
+            if (!term_unwrap_isa<UpwardReference>(lhs_upref->next) || !term_unwrap_isa<UpwardReference>(rhs_upref->next)) {
+              if (!self.compare(lhs_upref->outer_type(), rhs_upref->outer_type()))
+                return false;
+            }
+            
+            return self.compare(lhs_upref->next, rhs_upref->next);
+          } else if (TreePtr<FunctionType> lhs_ftype = dyn_treeptr_cast<FunctionType>(lhs_unwrapped)) {
+            // Need to reverse the upward reference mode for the result
+            TreePtr<FunctionType> rhs_ftype = treeptr_cast<FunctionType>(rhs_unwrapped);
+            PSI_ASSERT(lhs_ftype->interfaces.empty() && rhs_ftype->interfaces.empty());
+            if (lhs_ftype->result_mode != rhs_ftype->result_mode)
+              return false;
+            if (lhs_ftype->parameter_types.size() != rhs_ftype->parameter_types.size())
+              return false;
+            
+            MatchComparator arg_child(self.m_wildcards, self.m_depth + 1, self.m_upref_mode);
+            for (std::size_t ii = 0, ie = lhs_ftype->parameter_types.size(); ii != ie; ++ii) {
+              if (lhs_ftype->parameter_types[ii].mode != rhs_ftype->parameter_types[ii].mode)
+                return false;
+              if (!arg_child.compare(lhs_ftype->parameter_types[ii].type, rhs_ftype->parameter_types[ii].type))
+                return false;
+            }
+            
+            Term::UprefMatchMode reverse_upref_mode;
+            switch (self.m_upref_mode) {
+            case Term::upref_match_read: reverse_upref_mode = Term::upref_match_write; break;
+            case Term::upref_match_write: reverse_upref_mode = Term::upref_match_read; break;
+            case Term::upref_match_exact: reverse_upref_mode = Term::upref_match_exact; break;
+            case Term::upref_match_ignore: reverse_upref_mode = Term::upref_match_ignore; break;
+            default: PSI_FAIL("Unrecognised enumeration value");
+            }
+            MatchComparator arg_result(self.m_wildcards, self.m_depth + 1, reverse_upref_mode);
+          } else if (TreePtr<PointerType> lhs_ptr = dyn_treeptr_cast<PointerType>(lhs_unwrapped)) {
+            TreePtr<PointerType> rhs_ptr = dyn_treeptr_cast<PointerType>(rhs_unwrapped);
+            MatchComparator child(self.m_wildcards, self.m_depth, Term::upref_match_exact);
+            if (!child.compare(lhs_ptr->target_type, rhs_ptr->target_type))
+              return false;
+            if (self.m_upref_mode != Term::upref_match_ignore) {
+              if (!self.compare(lhs_ptr->upref, rhs_ptr->upref))
+                return false;
+            }
+            return true;
           } else if (TreePtr<Functional> lhs_func = dyn_treeptr_cast<Functional>(lhs_unwrapped)) {
             if (tree_isa<ParameterizedType>(lhs_func)) {
-              MatchComparator child(self.m_wildcards, self.m_depth + 1);
+              MatchComparator child(self.m_wildcards, self.m_depth + 1, self.m_upref_mode);
               return lhs_func->compare(*tree_cast<Functional>(rhs_unwrapped.get()), child);
             } else {
               return lhs_func->compare(*tree_cast<Functional>(rhs_unwrapped.get()), self);
@@ -313,8 +348,8 @@ namespace Psi {
      * Note that it is important that when \c wildcards is empty, this function simply
      * checks that this tree and \c value are the same.
      */
-    bool Term::match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth) const {
-      return MatchComparator(&wildcards, depth).compare(tree_from(this), value);
+    bool Term::match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth, UprefMatchMode upref_mode) const {
+      return MatchComparator(&wildcards, depth, upref_mode).compare(tree_from(this), value);
     }
     
     /**
@@ -333,7 +368,7 @@ namespace Psi {
         PSI_NOT_IMPLEMENTED();
       } else {
         PSI_STD::vector<TreePtr<Term> > wildcards;
-        return match(value, wildcards, 0);
+        return match(value, wildcards, 0, upref_match_read);
       }
     }
 
@@ -420,26 +455,19 @@ namespace Psi {
       ("index", &Parameter::index);
     }
     
-    const FunctionalVtable Parameter::vtable = PSI_COMPILER_FUNCTIONAL(Parameter, "psi.compiler.Parameter", Term);
+    const FunctionalVtable Parameter::vtable = PSI_COMPILER_FUNCTIONAL(Parameter, "psi.compiler.Parameter", Functional);
     
     /**
      * \brief Find the underlying type of a term.
      * 
      * This unwraps \c GlobalStatement, \c Statement and \c DerivedType.
      */
-    TreePtr<Term> term_unwrap(const TreePtr<Term>& term, bool with_derived) {
+    TreePtr<Term> term_unwrap(const TreePtr<Term>& term) {
       if (!term)
         return term;
       
       TreePtr<Term> my_term = term;
       while (true) {
-        if (with_derived) {
-          if (TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(my_term)) {
-            my_term = derived->value_type;
-            continue;
-          }
-        }
-        
         if (TreePtr<GlobalStatement> def = dyn_treeptr_cast<GlobalStatement>(my_term)) {
           if ((def->mode == statement_mode_functional) && def->value->pure)
             my_term = def->value;

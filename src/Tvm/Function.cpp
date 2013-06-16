@@ -11,7 +11,7 @@
 namespace Psi {
   namespace Tvm {
     ResolvedParameter::ResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location)
-    : FunctionalValue(type->context(), location),
+    : HashableValue(type->context(), term_resolved_parameter, location),
     m_parameter_type(type),
     m_depth(depth),
     m_index(index) {
@@ -19,7 +19,7 @@ namespace Psi {
     
     template<typename V>
     void ResolvedParameter::visit(V& v) {
-      visit_base<FunctionalValue>(v);
+      visit_base<HashableValue>(v);
       v("parameter_type", &ResolvedParameter::m_parameter_type)
       ("depth", &ResolvedParameter::m_depth)
       ("index", &ResolvedParameter::m_index);
@@ -31,7 +31,7 @@ namespace Psi {
       return m_parameter_type;
     }
     
-    PSI_TVM_FUNCTIONAL_IMPL(ResolvedParameter, SimpleOp, resolved_parameter)
+    PSI_TVM_HASHABLE_IMPL(ResolvedParameter, HashableValue, resolved_parameter)
 
     FunctionType::FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
                                const std::vector<ValuePtr<> >& parameter_types,
@@ -146,9 +146,10 @@ namespace Psi {
               return m_previous[parameter->index()];
             else
               return parameter->rewrite(*this);
-          } else if (ValuePtr<FunctionType> function_type = dyn_cast<FunctionType>(term)) {
+          } else if (isa<FunctionType>(term) || isa<Exists>(term)) {
+            ValuePtr<HashableValue> hashable = value_cast<HashableValue>(term);
             ++m_depth;
-            ValuePtr<> result = function_type->rewrite(*this);
+            ValuePtr<> result = hashable->rewrite(*this);
             --m_depth;
             return result;
           } else if (ValuePtr<HashableValue> hashable = dyn_cast<HashableValue>(term)) {
@@ -261,13 +262,15 @@ namespace Psi {
     }
     
     ValuePtr<> Exists::check_type() const {
+      if (!result()->is_type())
+        error_context().error_throw(location(), "Exists result is not a type");
       for (std::vector<ValuePtr<> >::const_iterator ii = m_parameter_types.begin(), ie = m_parameter_types.end(); ii != ie; ++ii)
         if (!(*ii)->is_type())
           error_context().error_throw(location(), "Exists argument type is not a type");
       return FunctionalBuilder::type_type(context(), location());
     }
 
-    PSI_TVM_HASHABLE_IMPL(Exists, HashableValue, function)
+    PSI_TVM_HASHABLE_IMPL(Exists, HashableValue, exists)
     
     Unwrap::Unwrap(const ValuePtr<>& value, const SourceLocation& location)
     : FunctionalValue(value->context(), location),
@@ -327,6 +330,33 @@ namespace Psi {
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(UnwrapParameter, FunctionalValue, unwrap_param)
+    
+    IntroduceExists::IntroduceExists(const ValuePtr<>& exists_type, const ValuePtr<>& value, const SourceLocation& location)
+    : FunctionalValue(exists_type->context(), location),
+    m_exists_type(exists_type),
+    m_value(value) {
+    }
+    
+    template<typename V>
+    void IntroduceExists::visit(V& v) {
+      visit_base<FunctionalValue>(v);
+      v("exists_type", &IntroduceExists::m_exists_type)
+      ("value", &IntroduceExists::m_value);
+    }
+    
+    ValuePtr<> IntroduceExists::check_type() const {
+      ValuePtr<Exists> exists = dyn_cast<Exists>(m_exists_type);
+      if (!exists)
+        error_context().error_throw(location(), "introduce_exists type parameter is not an exists quantified type");
+      
+      std::vector<ValuePtr<> > wildcards(exists->parameter_types().size());
+      if (!exists->result()->match(m_value->type(), wildcards))
+        error_context().error_throw(location(), "Value argument to introduce_exists is not a possible instantiation of the exists type");
+      
+      return m_exists_type;
+    }
+    
+    PSI_TVM_FUNCTIONAL_IMPL(IntroduceExists, FunctionalValue, introduce_exists)
 
     ParameterPlaceholder::ParameterPlaceholder(Context& context, const ValuePtr<>& type, const SourceLocation& location)
     : Value(context, term_parameter_placeholder, type, location),
@@ -741,10 +771,7 @@ namespace Psi {
      */
     ValuePtr<Function> Module::new_constructor(const std::string& name, const SourceLocation& location) {
       ValuePtr<FunctionType> type = FunctionalBuilder::constructor_type(context(), location);
-      ValuePtr<Function> result(::new Function(context(), type, name, this, location));
-      result->set_linkage(link_local);
-      add_member(result);
-      return result;
+      return new_function(name, type, location);
     }
     
     Function::Function(Context& context, const ValuePtr<FunctionType>& type, const std::string& name, Module* module, const SourceLocation& location)

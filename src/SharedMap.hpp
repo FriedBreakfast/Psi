@@ -337,6 +337,7 @@ namespace Psi {
     bool insert(const value_type& value) {return m_tree.insert(value);}
     bool put(const key_type& key, const mapped_type& value) {return m_tree.insert(value_type(key, value));}
     const mapped_type* lookup(const key_type& key) const {const value_type *ptr = m_tree.lookup(key); return ptr ? &ptr->second : NULL;}
+    const mapped_type get_default(const key_type& key, const mapped_type& def=mapped_type()) const {const value_type *ptr = m_tree.lookup(key); return ptr ? ptr->second : def;}
   };
   
   /**
@@ -365,8 +366,8 @@ namespace Psi {
   /**
    * A shared list in which the elements can be modified.
    */
-  template<typename T>
-  class MutableSharedList {
+  template<typename T, typename Derived>
+  class SharedListBase {
     struct Node;
     typedef boost::shared_ptr<Node> Ptr;
     
@@ -377,6 +378,9 @@ namespace Psi {
     };
     
     Ptr m_list;
+    
+    Derived& derived() {return *static_cast<Derived*>(this);}
+    const Derived& derived() const {return *static_cast<const Derived*>(this);}
     
   public:
     typedef T value_type;
@@ -395,6 +399,12 @@ namespace Psi {
       m_list = m_list->next;
     }
     
+    Derived extend(const T& data) const {
+      Derived child(derived());
+      child.push_front(data);
+      return child;
+    }
+
     class iterator : public boost::iterator_facade<iterator, T, boost::forward_traversal_tag> {
       friend class boost::iterator_core_access;
       Node *m_node;
@@ -421,7 +431,8 @@ namespace Psi {
     std::size_t size() const {return std::distance(begin(), end());}
   };
   
-  template<typename T> class SharedList : public MutableSharedList<const T> {};
+  template<typename T> class MutableSharedList : public SharedListBase<T, MutableSharedList<T> > {};
+  template<typename T> class SharedList : public SharedListBase<const T, SharedList<T> > {};
 }
 
 #endif

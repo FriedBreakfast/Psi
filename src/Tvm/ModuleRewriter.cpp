@@ -82,6 +82,14 @@ namespace Psi {
       if (!incremental)
         m_global_map.clear();
       update_implementation(incremental);
+      
+      // Rebuild constructor/destructor list
+      m_target_module->constructors().clear();
+      for (Module::ConstructorList::const_iterator ii = m_source_module->constructors().begin(), ie = m_source_module->constructors().end(); ii != ie; ++ii)
+        m_target_module->constructors().push_back(std::make_pair(target_symbol(ii->first), ii->second));
+      m_target_module->destructors().clear();
+      for (Module::ConstructorList::const_iterator ii = m_source_module->destructors().begin(), ie = m_source_module->destructors().end(); ii != ie; ++ii)
+        m_target_module->destructors().push_back(std::make_pair(target_symbol(ii->first), ii->second));
     }
   }
 }

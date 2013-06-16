@@ -48,7 +48,9 @@ namespace Psi {
       term_function_type, ///< FunctionType: \copybrief FunctionType
       term_parameter_placeholder, ///< ParameterPlaceholder: \copybrief ParameterPlaceholder
       term_functional, ///< Functional: \copybrief Functional
-      term_exists ///< Exists: \copybrief Exists
+      term_exists, ///< Exists: \copybrief Exists
+      term_upref_null, /// Upward reference null placeholder: \copybrief UpwardReferenceNull
+      term_resolved_parameter ///< Resolved paramter: \copybrief ResolvedParameter
     };
 
     /**
@@ -235,6 +237,15 @@ namespace Psi {
       /** \brief Get the location this value originated from */
       const SourceLocation& location() const {return m_location;}
       
+      enum UprefMatchMode {
+        upref_match_read,
+        upref_match_write,
+        upref_match_exact
+      };
+      
+      bool match(const ValuePtr<>& child) const;
+      bool match(const ValuePtr<>& child, std::vector<ValuePtr<> >& wildcards, unsigned depth=0, UprefMatchMode upref_mode=upref_match_read) const;
+      
       /**
        * \brief Get an approximate source for this term.
        *
@@ -284,6 +295,8 @@ namespace Psi {
       
       void set_type(const ValuePtr<>& type);
     };
+    
+    bool value_match();
     
 #define PSI_TVM_VALUE_DECL(Type) \
   private: \
@@ -370,6 +383,11 @@ namespace Psi {
     }
     
     template<typename T>
+    bool isa(const Value& ref) {
+      return T::isa_impl(ref);
+    }
+    
+    template<typename T>
     bool isa(const Value *ptr) {
       return ptr && T::isa_impl(*ptr);
     }
@@ -431,7 +449,7 @@ namespace Psi {
       
       static bool isa_impl(const Value& v) {
         return (v.term_type() == term_functional) || (v.term_type() == term_function_type)
-          || (v.term_type() == term_apply);
+          || (v.term_type() == term_apply) || (v.term_type() == term_exists) || (v.term_type() == term_upref_null);
       }
       
       template<typename V> static void visit(V& v) {visit_base<Value>(v);}

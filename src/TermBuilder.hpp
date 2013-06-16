@@ -18,7 +18,7 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
   static TreePtr<Term> upref_type(CompileContext& compile_context);
   
   static TreePtr<Term> primitive_type(CompileContext& compile_context, const String& name, const SourceLocation& location);
-  static TreePtr<Term> derived(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location);
+  static TreePtr<Term> pointer(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location);
   static TreePtr<Term> pointer(const TreePtr<Term>& type, const SourceLocation& location);
   static TreePtr<Term> exists(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& parameter_types, const SourceLocation& location);
   static TreePtr<Term> constant(const TreePtr<Term>& value, const SourceLocation& location);
@@ -63,6 +63,8 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
   static TreePtr<Term> builtin_value(const String& constructor, const String& data, const TreePtr<Term>& type, const SourceLocation& location);
   static TreePtr<Term> upref(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next, const SourceLocation& location);
   static TreePtr<Term> upref(const TreePtr<Term>& outer_type, unsigned outer_index, const TreePtr<Term>& next, const SourceLocation& location);
+  static TreePtr<Term> upref_null(CompileContext& compile_context);
+  static TreePtr<Term> introduce_exists_upref(const TreePtr<Term>& pointer, const SourceLocation& location);
   
   static TreePtr<Term> size_value(unsigned index, CompileContext& compile_context, const SourceLocation& location);
   static unsigned size_from(const TreePtr<Term>& value, const SourceLocation& location);
@@ -81,9 +83,11 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
 //@{
   static TreePtr<Term> element_value(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location);
   static TreePtr<Term> element_value(const TreePtr<Term>& aggregate, unsigned index, const SourceLocation& location);
+  static TreePtr<Term> element_pointer(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location);
+  static TreePtr<Term> element_pointer(const TreePtr<Term>& aggregate, unsigned index, const SourceLocation& location);
   static TreePtr<Term> ptr_target(const TreePtr<Term>& pointer, const SourceLocation& location);
   static TreePtr<Term> ptr_to(const TreePtr<Term>& value, const SourceLocation& location);
-  static TreePtr<Term> outer_value(const TreePtr<Term>& reference, const SourceLocation& location);
+  static TreePtr<Term> outer_pointer(const TreePtr<Term>& reference, const SourceLocation& location);
 //@}
 
 /// \name Lifecycle functions

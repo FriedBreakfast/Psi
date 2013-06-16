@@ -811,6 +811,8 @@ namespace Psi {
           std::pair<ValuePtr<>, ValuePtr<> > type_alignment = build_global_type(old_var->value_type(), term->location());
           ValuePtr<GlobalVariable> new_var = target_module()->new_global_variable(old_var->name(), type_alignment.first, term->location());
           new_var->set_constant(old_var->constant());
+          new_var->set_merge(old_var->merge());
+          new_var->set_linkage(old_var->linkage());
           
           if (old_var->alignment()) {
             LoweredValueSimple old_align = m_global_rewriter.rewrite_value_register(old_var->alignment());

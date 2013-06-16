@@ -39,9 +39,9 @@ namespace Psi {
           PSI_STD::vector<TreePtr<Term> > members;
           
           TreePtr<Term> self_instance = TermBuilder::instance(self, vector_of<TreePtr<Term> >(upref, param), self.location());
-          TreePtr<Term> self_derived = TermBuilder::derived(self_instance, upref, self.location());
+          TreePtr<Term> self_pointer = TermBuilder::pointer(self_instance, upref, self.location());
           
-          FunctionParameterType self_derived_p(parameter_mode_input, self_derived);
+          FunctionParameterType self_derived_p(parameter_mode_functional, self_pointer);
           FunctionParameterType out_param_p(parameter_mode_output, param);
           FunctionParameterType in_param_p(parameter_mode_input, param);
           
@@ -60,7 +60,7 @@ namespace Psi {
             members[interface_movable_move_init] = binary_ptr_type;
           } else {
             members.resize(3);
-            members[interface_copyable_movable] = self.compile_context().builtins().movable_interface->pointer_type_after(vector_of<TreePtr<Term> >(param), self.location().named_child("MovableBasePointer"));
+            members[interface_copyable_movable] = self.compile_context().builtins().movable_interface->type_after(vector_of<TreePtr<Term> >(param), self.location().named_child("MovableBasePointer"));
             members[interface_copyable_copy] = binary_ptr_type;
             members[interface_copyable_copy_init] = binary_ptr_type;
           }
@@ -77,8 +77,8 @@ namespace Psi {
         TreePtr<Term> upref = TermBuilder::parameter(builtins.upref_type, 0, 0, location.named_child("y0"));
         TreePtr<Term> param = TermBuilder::parameter(builtins.metatype, 1, 0, location.named_child("y1"));
         TreePtr<TypeInstance> inst = TermBuilder::instance(generic, vector_of(upref, param), location);
-        TreePtr<Term> derived = TermBuilder::derived(inst, upref, location);
-        TreePtr<Term> exists = TermBuilder::exists(derived, vector_of<TreePtr<Term> >(builtins.upref_type), location);
+        TreePtr<Term> pointer = TermBuilder::pointer(inst, upref, location);
+        TreePtr<Term> exists = TermBuilder::exists(pointer, vector_of<TreePtr<Term> >(builtins.upref_type), location);
         
         PSI_STD::vector<Interface::InterfaceBase> bases;
         if (!movable)
@@ -97,6 +97,7 @@ namespace Psi {
       empty_value = TermBuilder::default_value(empty_type, psi_location.named_child("Empty"));
       bottom_type = compile_context.get_functional(BottomType(), psi_location.named_child("Bottom"));
       upref_type = compile_context.get_functional(UpwardReferenceType(), psi_location.named_child("UpwardReference"));
+      upref_null = compile_context.get_functional(UpwardReferenceNull(), psi_location.named_child("UpwardReferenceNull"));
       size_type = compile_context.get_functional(PrimitiveType("core.uint.ptr"), psi_location.named_child("Size"));
       string_element_type = compile_context.get_functional(PrimitiveType("core.uint.8"), psi_location.named_child("Unsigned8"));
       boolean_type = compile_context.get_functional(PrimitiveType("core.bool"), psi_location.named_child("Bool"));

@@ -355,8 +355,8 @@ namespace Psi {
     /**
      * \brief Term type appearing in dependent types of completed function types.
      */
-    class PSI_TVM_EXPORT ResolvedParameter : public FunctionalValue {
-      PSI_TVM_FUNCTIONAL_DECL(ResolvedParameter)
+    class PSI_TVM_EXPORT ResolvedParameter : public HashableValue {
+      PSI_TVM_HASHABLE_DECL(ResolvedParameter)
       
     private:
       ValuePtr<> m_parameter_type;
@@ -365,6 +365,8 @@ namespace Psi {
       
     public:
       ResolvedParameter(const ValuePtr<>& type, unsigned depth, unsigned index, const SourceLocation& location);
+
+      static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_resolved_parameter;}
 
       /// \brief Get the depth of this parameter relative to the
       /// function type it is part of.
@@ -395,7 +397,7 @@ namespace Psi {
                    const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom,
                    bool sret, const SourceLocation& location);
 
-      CallingConvention calling_convention() {return m_calling_convention;}
+      CallingConvention calling_convention() const {return m_calling_convention;}
       const ValuePtr<>& result_type() const {return m_result_type;}
       /// \brief Get the number of phantom parameters.
       unsigned n_phantom() const {return m_n_phantom;}
@@ -433,9 +435,10 @@ namespace Psi {
      */
     class PSI_TVM_EXPORT Exists : public HashableValue {
       PSI_TVM_HASHABLE_DECL(Exists)
-      friend class Context;
 
     public:
+      Exists(const ValuePtr<>& result, const std::vector<ValuePtr<> >& parameter_types, const SourceLocation& location);
+
       const ValuePtr<>& result() const {return m_result;}
       /// \brief Get the vector parameter types.
       const std::vector<ValuePtr<> >& parameter_types() const {return m_parameter_types;}
@@ -446,8 +449,6 @@ namespace Psi {
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_exists;}
 
     private:
-      Exists(const ValuePtr<>& result, const std::vector<ValuePtr<> >& parameter_types, const SourceLocation& location);
-
       std::vector<ValuePtr<> > m_parameter_types;
       ValuePtr<> m_result;
     };
@@ -487,6 +488,25 @@ namespace Psi {
     private:
       ValuePtr<> m_value;
       unsigned m_index;
+    };
+    
+    /**
+     * \brief Introduce exists quantification to a value.
+     */
+    class PSI_TVM_EXPORT IntroduceExists : public FunctionalValue {
+      PSI_TVM_FUNCTIONAL_DECL(IntroduceExists)
+      
+    public:
+      IntroduceExists(const ValuePtr<>& exists_type, const ValuePtr<>& value, const SourceLocation& location);
+      
+      /// \brief Get the expected type of this term
+      const ValuePtr<>& exists_type() const {return m_exists_type;}
+      /// \brief Get the value of this term
+      const ValuePtr<>& value() const {return m_value;}
+      
+    private:
+      ValuePtr<> m_exists_type;
+      ValuePtr<> m_value;
     };
     
     /**

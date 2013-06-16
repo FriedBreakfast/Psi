@@ -14,7 +14,7 @@ namespace Psi {
     void Return::type_check() {
       require_available(value);
 
-      if (value->type() != function()->result_type())
+      if (!function()->result_type()->match(value->type()))
         error_context().error_throw(location(), "return instruction argument has incorrect type");
     }
     
@@ -182,7 +182,7 @@ namespace Psi {
     void Call::type_check() {
       require_available(target);
 
-      if (call_type(target, parameters, location()) != type())
+      if (!type()->match(call_type(target, parameters, location())))
         error_context().error_throw(location(), "Type of function call has changed since instruction was created");
 
       for (std::size_t ii = target_function_type()->n_phantom(), ie = parameters.size(); ii < ie; ++ii)
@@ -220,7 +220,7 @@ namespace Psi {
       require_available(target);
       require_available(value);
       
-      if (pointer_target_type(target, location()) != value->type())
+      if (!pointer_target_type(target, location())->match(value->type()))
         error_context().error_throw(location(), "store target type is not a pointer to the type of value");
     }
 
@@ -245,7 +245,7 @@ namespace Psi {
     void Load::type_check() {
       require_available(target);
       
-      if (type() != pointer_target_type(target, location()))
+      if (!type()->match(pointer_target_type(target, location())))
         error_context().error_throw(location(), "load target type has changed since instruction creation");
     }
 

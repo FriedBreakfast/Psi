@@ -208,10 +208,21 @@ namespace Psi {
     ValuePtr<> PointerType::check_type() const {
       if (!m_target_type->is_type())
         error_context().error_throw(location(), "pointer argument must be a type");
+      if (!isa<UpwardReferenceType>(m_upref->type()))
+        error_context().error_throw(location(), "pointer upref argument is not of type upref_type");
       return FunctionalBuilder::type_type(context(), location());
     }
     
     void PointerType::hashable_check_source(PointerType&, CheckSourceParameter&) {
+    }
+
+    bool PointerType::match_impl(const FunctionalValue& child, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const {
+      const PointerType& child_ptr = checked_cast<const PointerType&>(child);
+      if (!target_type()->match(child_ptr.target_type(), parameters, depth, upref_match_exact))
+        return false;
+      if (!upref()->match(child_ptr.upref(), parameters, depth, upref_mode))
+        return false;
+      return true;
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(PointerType, Type, pointer)
@@ -268,8 +279,10 @@ namespace Psi {
     }
     
     ValuePtr<> UpwardReference::check_type() const {
-      if (!m_outer_type && !m_next)
+      if (!m_outer_type && !isa<UpwardReference>(m_next))
         error_context().error_throw(location(), "Neither next not outer_type argument of upref is non-NULL");
+      if (!isa<UpwardReferenceType>(m_next->type()))
+        error_context().error_throw(location(), "Next pointer of upref is not of type upref_type");
       if (m_index->type() != FunctionalBuilder::size_type(context(), location()))
         error_context().error_throw(location(), "Index argument to upref is not a size");
       return FunctionalBuilder::upref_type(context(), location());
@@ -286,7 +299,40 @@ namespace Psi {
       ("index", &UpwardReference::m_index);
     }
 
+    bool UpwardReference::match_impl(const FunctionalValue& other, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const {
+      const UpwardReference& other_cast = checked_cast<const UpwardReference&>(other);
+      if (index() != other_cast.index())
+        return false;
+      
+      if (!next()->match(other_cast.next(), parameters, depth, upref_mode))
+        return false;
+      
+      // Only do this check in the case where the next values are not themselves upward references,
+      // in which case this check will be effectively performed by a check on the next values
+      if (!isa<UpwardReference>(next()) || !isa<UpwardReference>(other_cast.next())) {
+        if (!outer_type()->match(other_cast.outer_type(), parameters, depth, upref_match_exact))
+          return false;
+      }
+      
+      return true;
+    }
+
     PSI_TVM_FUNCTIONAL_IMPL(UpwardReference, FunctionalValue, upref)
+    
+    UpwardReferenceNull::UpwardReferenceNull(Context& context, const SourceLocation& location)
+    : HashableValue(context, term_upref_null, location) {
+    }
+    
+    ValuePtr<> UpwardReferenceNull::check_type() const {
+      return FunctionalBuilder::upref_type(context(), location());
+    }
+    
+    template<typename V>
+    void UpwardReferenceNull::visit(V& v) {
+      visit_base<HashableValue>(v);
+    }
+
+    PSI_TVM_HASHABLE_IMPL(UpwardReferenceNull, HashableValue, upref_null)
     
     ConstantType::ConstantType(const ValuePtr<>& value, const SourceLocation& location)
     : Type(value->context(), location),
@@ -373,6 +419,13 @@ namespace Psi {
       return FunctionalBuilder::type_type(context(), location());
     }
     
+    bool ArrayType::match_impl(const FunctionalValue& child, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const {
+      const ArrayType& child_arr = checked_cast<const ArrayType&>(child);
+      if (length() != child_arr.length())
+        return false;
+      return element_type()->match(child_arr.element_type(), parameters, depth, upref_mode);
+    }
+    
     PSI_TVM_FUNCTIONAL_IMPL(ArrayType, Type, array);
     
     ArrayValue::ArrayValue(const ValuePtr<>& element_type, const std::vector<ValuePtr<> >& elements, const SourceLocation& location)
@@ -419,6 +472,17 @@ namespace Psi {
           error_context().error_throw(location(), "struct argument is not a type");
       }
       return FunctionalBuilder::type_type(context(), location());
+    }
+    
+    bool StructType::match_impl(const FunctionalValue& child, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const {
+      const StructType& child_st = checked_cast<const StructType&>(child);
+      if (m_members.size() != child_st.m_members.size())
+        return false;
+      for (std::vector<ValuePtr<> >::const_iterator ii = m_members.begin(), ie = m_members.end(), ji = child_st.m_members.begin(); ii != ie; ++ii, ++ji) {
+        if (!(*ii)->match(*ji, parameters, depth, upref_mode))
+          return false;
+      }
+      return true;
     }
     
     PSI_TVM_FUNCTIONAL_IMPL(StructType, Type, struct)
@@ -502,6 +566,17 @@ namespace Psi {
       }
       return FunctionalBuilder::type_type(context(), location());
     }
+    
+    bool UnionType::match_impl(const FunctionalValue& child, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const {
+      const UnionType& child_st = checked_cast<const UnionType&>(child);
+      if (m_members.size() != child_st.m_members.size())
+        return false;
+      for (std::vector<ValuePtr<> >::const_iterator ii = m_members.begin(), ie = m_members.end(), ji = child_st.m_members.begin(); ii != ie; ++ii, ++ji) {
+        if (!(*ii)->match(*ji, parameters, depth, upref_mode))
+          return false;
+      }
+      return true;
+    }
         
     PSI_TVM_FUNCTIONAL_IMPL(UnionType, Type, union)
     
@@ -546,7 +621,7 @@ namespace Psi {
       ValuePtr<ApplyType> ty = dyn_cast<ApplyType>(m_apply_type);
       if (!ty)
         error_context().error_throw(location(), "first argument to apply_v is not an apply type");
-      if (ty->unpack() != m_value->type())
+      if (!ty->unpack()->match(m_value->type()))
         error_context().error_throw(location(), "second argument to apply_v has the wrong type");
       return m_apply_type;
     }

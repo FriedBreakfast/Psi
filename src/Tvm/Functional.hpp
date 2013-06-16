@@ -33,6 +33,7 @@ namespace Psi {
      */
     class PSI_TVM_EXPORT FunctionalValue : public HashableValue {
       friend class Context;
+      friend class Value;
       template<typename> friend class FunctionalTermWithData;
 
     public:
@@ -43,13 +44,16 @@ namespace Psi {
 
     protected:
       FunctionalValue(Context& context, const SourceLocation& location);
+      
+    private:
+      virtual bool match_impl(const FunctionalValue& other, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const;
     };
     
 #define PSI_TVM_FUNCTIONAL_DECL(Type) \
     PSI_TVM_HASHABLE_DECL(Type) \
   public: \
     virtual void functional_visit(FunctionalValueVisitor& visitor) const; \
-    static bool isa_impl(const Value& ptr) {return (ptr.term_type() == term_functional) && (operation == checked_cast<const FunctionalValue&>(ptr).operation_name());}
+    static bool isa_impl(const Value& ptr) {return (ptr.term_type() == term_functional) && (operation == checked_cast<const FunctionalValue&>(ptr).operation_name());} \
 
 #define PSI_TVM_FUNCTIONAL_IMPL(Type,Base,Name) \
     PSI_TVM_HASHABLE_IMPL(Type,Base,Name) \
@@ -59,7 +63,7 @@ namespace Psi {
       boost::array<const Type*,1> c = {{this}}; \
       visit_members(vw, c); \
     }
-
+    
     class PSI_TVM_EXPORT UnaryOp : public FunctionalValue {
     protected:
       UnaryOp(const ValuePtr<>& parameter, const SourceLocation& location);

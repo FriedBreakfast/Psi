@@ -24,15 +24,8 @@ namespace Psi {
        */
       Tvm::ValuePtr<> value;
       
-      /**
-       * If the result is a derived type, this is the upward refernce.
-       * This PointerType(DerivedType(a,b)) to become PointerType(a,b) in TVM.
-       */
-      Tvm::ValuePtr<> upref;
-      
       TvmResultBase() {}
-      TvmResultBase(const Tvm::ValuePtr<>& value_, const Tvm::ValuePtr<>& upref_)
-      : value(value_), upref(upref_) {}
+      TvmResultBase(const Tvm::ValuePtr<>& value_) : value(value_) {}
       bool is_bottom() const {return !value;}
     };
     
@@ -53,11 +46,25 @@ namespace Psi {
       TvmResult() {}
       TvmResult(const TvmResultScope& scope_, const TvmResultBase& base)
       : TvmResultBase(base), scope(scope_) {}
-      TvmResult(const TvmResultScope& scope_, const Tvm::ValuePtr<>& value_, const Tvm::ValuePtr<>& upref_=Tvm::ValuePtr<>())
-      : TvmResultBase(value_, upref_), scope(scope_) {}
+      TvmResult(const TvmResultScope& scope_, const Tvm::ValuePtr<>& value_)
+      : TvmResultBase(value_), scope(scope_) {}
       
       static TvmResult bottom() {return TvmResult();}
     };
+
+    /**
+     * Value type of list of interface implementations visible in the current scope.
+     */
+    struct TvmGeneratedImplementation {
+      PSI_STD::vector<TreePtr<Term> > parameters;
+      TvmResult result;
+      std::set<TreePtr<ModuleGlobal> > dependencies;
+    };
+    
+    typedef SharedMap<TreePtr<Interface>, SharedList<TvmGeneratedImplementation> > TvmGeneratedImplementationSet;
+    
+    TvmResult tvm_check_implementation(const TvmGeneratedImplementationSet& implementations, const TreePtr<Interface>& interface,
+                                       const PSI_STD::vector<TreePtr<Term> >& parameters, std::set<TreePtr<ModuleGlobal> >& dependencies);
     
     struct TvmGenericScope;
     class TvmFunctionalBuilder;
@@ -171,6 +178,7 @@ namespace Psi {
       TreePtr<Module> m_module;
       Tvm::Module *m_tvm_module;
       std::size_t m_n_constructors;
+      TvmGeneratedImplementationSet m_implementations;
       
       /** Notify a global with a matching name to one that has been requested already exists.
        * The derived class should check this matches the global used to create the symbol. */
@@ -187,8 +195,13 @@ namespace Psi {
       const TvmScopePtr& scope() {return m_scope;}
       TvmJitCompiler& jit_compiler() {return *m_jit_compiler;}
       Tvm::ValuePtr<Tvm::Global> get_global_bare(const TreePtr<Global>& global);
-      virtual TvmResult get_global(const TreePtr<Global>& global);
-      virtual TvmResult get_global_evaluate(const TreePtr<GlobalEvaluate>& evaluate);
+      TvmResult get_global(const TreePtr<Global>& global);
+      TvmResult get_global_evaluate(const TreePtr<GlobalEvaluate>& evaluate);
+      
+      TvmResult check_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, std::set<TreePtr<ModuleGlobal> >& dependencies);
+      TvmResult get_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                                   std::set<TreePtr<ModuleGlobal> >& dependencies, const SourceLocation& location,
+                                   const TreePtr<Implementation>& maybe_implementation);
 
       void run_module_global(const TreePtr<ModuleGlobal>& global, TvmGlobalStatus& status);
       Tvm::Module *tvm_module() {return m_tvm_module;}
@@ -278,6 +291,8 @@ namespace Psi {
       virtual TvmResult build_generic(const TreePtr<GenericType>& generic) = 0;
       virtual TvmResult build_global(const TreePtr<Global>& global) = 0;
       virtual TvmResult build_global_evaluate(const TreePtr<GlobalEvaluate>& global) = 0;
+      virtual TvmResult build_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                                             const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation=TreePtr<Implementation>()) = 0;
     };
     
     void tvm_lower_function(TvmObjectCompilerBase& tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output, std::set<TreePtr<ModuleGlobal> >& dependencies);

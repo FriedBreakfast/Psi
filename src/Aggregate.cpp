@@ -481,12 +481,12 @@ public:
   
   TreePtr<Implementation> build_copyable(const TreePtr<GenericType>& generic) {
     TreePtr<Term> instance = generic_instance(generic);
-    SourceLocation location = generic.location().named_child("Movable");
+    SourceLocation location = generic.location().named_child("Copyable");
     ImplementationHelper helper(location, generic.compile_context().builtins().copyable_interface,
                                 m_common->argument_list, vector_of(instance), default_);
 
     PSI_STD::vector<TreePtr<Term> > members(3);
-    members[interface_copyable_movable] = TermBuilder::ptr_to(TermBuilder::interface_value(generic.compile_context().builtins().movable_interface, vector_of(instance), default_, location), location);
+    members[interface_copyable_movable] = TermBuilder::interface_value(generic.compile_context().builtins().movable_interface, vector_of(instance), default_, location);
     members[interface_copyable_copy] = build_copy(instance, helper, location);
     members[interface_copyable_copy_init] = build_copy_init(instance, helper, location);
     return helper.finish(TermBuilder::struct_value(generic.compile_context(), members, location));

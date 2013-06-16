@@ -292,6 +292,9 @@ public:
   virtual TvmResult build(const TreePtr<Term>& term) {
     if (boost::optional<TvmResult> r = m_scope->get(term))
       return *r;
+    
+    if (term->type && !term->type->is_primitive_type())
+      throw TvmNotGlobalException();
 
     TvmResult value;
     if (tree_isa<Functional>(term) || tree_isa<Global>(term)) {
@@ -316,6 +319,11 @@ public:
   }
   
   virtual TvmResult build_global_evaluate(const TreePtr<GlobalEvaluate>&) {
+    throw TvmNotGlobalException();
+  }
+  
+  virtual TvmResult build_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                                         const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation) {
     throw TvmNotGlobalException();
   }
 };
@@ -450,6 +458,41 @@ TvmResult TvmObjectCompilerBase::get_global_evaluate(const TreePtr<GlobalEvaluat
 }
 
 /**
+ * \brief Check if a particular implementation has already been instantiated.
+ * 
+ * Returns TvmResult::bottom() if no matching implementation is found.
+ */
+TvmResult tvm_check_implementation(const TvmGeneratedImplementationSet& implementations, const TreePtr<Interface>& interface,
+                                   const PSI_STD::vector<TreePtr<Term> >& parameters, std::set<TreePtr<ModuleGlobal> >& dependencies) {
+  // Check for existing copy
+  const SharedList<TvmGeneratedImplementation> *interface_impls = implementations.lookup(interface);
+  if (!interface_impls)
+    return TvmResult::bottom();
+  
+  for (SharedList<TvmGeneratedImplementation>::const_iterator ii = interface_impls->begin(), ie = interface_impls->end(); ii != ie; ++ii) {
+    PSI_ASSERT(parameters.size() == ii->parameters.size());
+    for (std::size_t ji = 0, je = parameters.size(); ji != je; ++ji) {
+      if (!ii->parameters[ji]->convert_match(parameters[ji]))
+        goto no_match;
+    }
+    // Successful match
+    dependencies.insert(ii->dependencies.begin(), ii->dependencies.end());
+    return ii->result;
+
+  no_match:;
+  }
+  
+  return TvmResult::bottom();
+}
+
+/**
+ * \brief Get an existing implementation if available.
+ */
+TvmResult TvmObjectCompilerBase::check_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, std::set<TreePtr<ModuleGlobal> >& dependencies) {
+  return tvm_check_implementation(m_implementations, interface, parameters, dependencies);
+}
+
+/**
  * TvmFunctionalBuilder specialization used to build constant global variables.
  */
 class TvmGlobalBuilder : public TvmFunctionalBuilder {
@@ -466,6 +509,9 @@ public:
   virtual TvmResult build(const TreePtr<Term>& term) {
     if (boost::optional<TvmResult> r = m_self->scope()->get(term))
       return *r;
+
+    if (term->type && !term->type->is_primitive_type())
+      throw TvmNotGlobalException();
 
     TvmResult value;
     if (tree_isa<Functional>(term) || tree_isa<Global>(term)) {
@@ -494,7 +540,54 @@ public:
     m_dependencies->insert(global);
     return m_self->get_global_evaluate(global);
   }
+  
+  virtual TvmResult build_implementation(const TreePtr<Interface>& interface, const std::vector<TreePtr<Term> >& parameters,
+                                         const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation) {
+    return m_self->get_implementation(interface, parameters, *m_dependencies, location, maybe_implementation);
+  }
 };
+
+/**
+ * \brief Get an implementation in a global variable.
+ */
+TvmResult TvmObjectCompilerBase::get_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                                                    std::set<TreePtr<ModuleGlobal> >& dependencies, const SourceLocation& location,
+                                                    const TreePtr<Implementation>& maybe_implementation) {
+  TreePtr<Implementation> implementation;
+  if (!maybe_implementation)
+    implementation = treeptr_cast<Implementation>(overload_lookup(interface, parameters, location, default_));
+  else
+    implementation = maybe_implementation;
+  
+  PSI_ASSERT(!implementation->dynamic);
+  TreePtr<Term> value = implementation->value->specialize(location, parameters);
+  PSI_ASSERT(value->is_functional());
+  std::set<TreePtr<ModuleGlobal> > my_dependencies;
+  TvmResult tvm_value = TvmGlobalBuilder(this, my_dependencies).build(value);
+  Tvm::ValuePtr<Tvm::GlobalVariable> gvar = m_tvm_module->new_global_variable_set(mangle_name(implementation->location().logical), tvm_value.value, location);
+  gvar->set_linkage(Tvm::link_local);
+  gvar->set_constant(true);
+  gvar->set_merge(true);
+  
+  Tvm::ValuePtr<> ptr = gvar;
+  for (PSI_STD::vector<int>::const_iterator ii = implementation->path.begin(), ie = implementation->path.end(); ii != ie; ++ii)
+    ptr = Tvm::FunctionalBuilder::element_ptr(ptr, *ii, location);
+  
+  TvmResult expected_type = TvmGlobalBuilder(this, my_dependencies).build(interface->type_after(parameters, location));
+  if (Tvm::isa<Tvm::Exists>(expected_type.value))
+    ptr = Tvm::FunctionalBuilder::introduce_exists(expected_type.value, ptr, location);
+
+  TvmResult result = TvmResult(m_scope, ptr);
+  
+  TvmGeneratedImplementation gen_impl;
+  gen_impl.parameters = parameters;
+  gen_impl.result = result;
+  gen_impl.dependencies = my_dependencies;
+  m_implementations.put(interface, m_implementations.get_default(interface).extend(gen_impl));
+  
+  dependencies.insert(my_dependencies.begin(), my_dependencies.end());
+  return result;
+}
 
 void TvmObjectCompilerBase::run_module_global(const TreePtr<ModuleGlobal>& global, TvmGlobalStatus& status) {
   if (!status.lowered)
@@ -514,18 +607,18 @@ void TvmObjectCompilerBase::run_module_global(const TreePtr<ModuleGlobal>& globa
       tvm_gvar->set_constant(global_var->constant);
       tvm_gvar->set_merge(global_var->merge);
     } catch (TvmNotGlobalException&) {
+      tvm_gvar->set_value(Tvm::FunctionalBuilder::undef(tvm_gvar->value_type(), global_var->location()));
       unsigned ctor_idx = m_n_constructors++;
       std::string ctor_name = boost::str(boost::format("_Y_ctor%d") % ctor_idx);
       Tvm::ValuePtr<Tvm::Function> constructor = m_tvm_module->new_constructor(ctor_name, global_var->location());
-      TreePtr<Term> gv_ptr = TermBuilder::ptr_to(global_var, global_var->location());
-      TreePtr<Term> ctor_tree = TermBuilder::initialize_value(gv_ptr, global_var->value(), TermBuilder::empty_value(compile_context()), global_var->location());
+      TreePtr<Term> ctor_tree = TermBuilder::initialize_value(global_var, global_var->value(), TermBuilder::empty_value(compile_context()), global_var->location());
       tvm_lower_init(*this, global_var->module, ctor_tree, constructor, status.dependencies);
       status.init = constructor;
       
       if (global_var->type && (global_var->type->type_info().type_mode == type_mode_complex)) {
         std::string dtor_name = str(boost::format("_Y_dtor%d") % ctor_idx);
         Tvm::ValuePtr<Tvm::Function> destructor = m_tvm_module->new_constructor(dtor_name, global_var->location());
-        TreePtr<Term> dtor_body = TermBuilder::finalize_value(gv_ptr, global_var->location());
+        TreePtr<Term> dtor_body = TermBuilder::finalize_value(global_var, global_var->location());
         tvm_lower_init(*this, global_var->module, dtor_body, destructor, status.dependencies);
         status.fini = destructor;
       }
@@ -539,18 +632,18 @@ void TvmObjectCompilerBase::run_module_global(const TreePtr<ModuleGlobal>& globa
       value = TvmGlobalBuilder(this, status.dependencies).build(global_stmt->value);
       tvm_gvar->set_value(value.value);
     } catch (TvmNotGlobalException&) {
+      tvm_gvar->set_value(Tvm::FunctionalBuilder::undef(tvm_gvar->value_type(), global_stmt->location()));
       unsigned ctor_idx = m_n_constructors++;
       std::string ctor_name = boost::str(boost::format("_Y_ctor%d") % ctor_idx);
       Tvm::ValuePtr<Tvm::Function> constructor = m_tvm_module->new_constructor(ctor_name, global_stmt->location());
-      TreePtr<Term> gv_ptr = TermBuilder::ptr_to(global_stmt, global_stmt->location());
-      TreePtr<Term> ctor_tree = TermBuilder::initialize_value(gv_ptr, global_stmt->value, TermBuilder::empty_value(compile_context()), global_stmt->location());
+      TreePtr<Term> ctor_tree = TermBuilder::initialize_value(global_stmt, global_stmt->value, TermBuilder::empty_value(compile_context()), global_stmt->location());
       tvm_lower_init(*this, global_stmt->module, ctor_tree, constructor, status.dependencies);
       status.init = constructor;
       
       if (global_stmt->type && (global_stmt->type->type_info().type_mode == type_mode_complex)) {
         std::string dtor_name = boost::str(boost::format("_Y_dtor%d") % ctor_idx);
         Tvm::ValuePtr<Tvm::Function> destructor = m_tvm_module->new_constructor(dtor_name, global_stmt->location());
-        TreePtr<Term> dtor_body = TermBuilder::finalize_value(gv_ptr, global_stmt->location());
+        TreePtr<Term> dtor_body = TermBuilder::finalize_value(global_stmt, global_stmt->location());
         tvm_lower_init(*this, global_stmt->module, dtor_body, destructor, status.dependencies);
         status.fini = destructor;
       }

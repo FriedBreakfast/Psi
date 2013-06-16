@@ -239,6 +239,8 @@ namespace Psi {
       TreePtr<Type> bottom_type;
       /// \brief The type of upward references
       TreePtr<Type> upref_type;
+      /// \brief The NULL upward reference
+      TreePtr<Term> upref_null;
       /// \brief intrptr type
       TreePtr<Type> size_type;
       /// \brief Type of string elements, i.e. unsigned char

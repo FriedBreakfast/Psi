@@ -47,19 +47,20 @@ bool TvmFunctionBuilder::object_construct_default(ConstructMode mode, const Tvm:
       if (inst_type->generic->primitive_mode == GenericType::primitive_recurse)
         return object_construct_default(mode, dest, inst_type->unwrap(), location);
 
-    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
+    TvmResult exists_movable = build_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
+    Tvm::ValuePtr<> movable = Tvm::FunctionalBuilder::unwrap(exists_movable.value, location);
     switch (mode) {
     case construct_initialize:
     case construct_initialize_destroy: {
-      Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable.value, interface_movable_init, location), location);
-      builder().call2(init_func, movable.value, dest, location);
-      push_cleanup(boost::make_shared<LifecycleConstructorCleanup>(mode == construct_initialize, dest, movable.value, location));
+      Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable, interface_movable_init, location), location);
+      builder().call2(init_func, movable, dest, location);
+      push_cleanup(boost::make_shared<LifecycleConstructorCleanup>(mode == construct_initialize, dest, movable, location));
       return true;
     }
     
     case construct_assign: {
-      Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable.value, interface_movable_clear, location), location);
-      builder().call2(init_func, movable.value, dest, location);
+      Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable, interface_movable_clear, location), location);
+      builder().call2(init_func, movable, dest, location);
       return true;
     }
     
@@ -154,19 +155,20 @@ bool TvmFunctionBuilder::object_construct_move_copy(ConstructMode mode, bool mov
         return object_construct_move_copy(mode, move, dest, src, inst_type->unwrap(), location);
 
     if (move) {
-      TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
+      TvmResult exists_movable = build_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
+      Tvm::ValuePtr<> movable = Tvm::FunctionalBuilder::unwrap(exists_movable.value, location);
       switch (mode) {
       case construct_initialize:
       case construct_initialize_destroy: {
-        Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable.value, interface_movable_move_init, location), location);
-        builder().call3(init_func, movable.value, dest, src, location);
-        push_cleanup(boost::make_shared<LifecycleConstructorCleanup>(mode == construct_initialize, dest, movable.value, location));
+        Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable, interface_movable_move_init, location), location);
+        builder().call3(init_func, movable, dest, src, location);
+        push_cleanup(boost::make_shared<LifecycleConstructorCleanup>(mode == construct_initialize, dest, movable, location));
         return true;
       }
       
       case construct_assign: {
-        Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable.value, interface_movable_move, location), location);
-        builder().call3(init_func, movable.value, dest, src, location);
+        Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable, interface_movable_move, location), location);
+        builder().call3(init_func, movable, dest, src, location);
         return true;
       }
       
@@ -176,20 +178,21 @@ bool TvmFunctionBuilder::object_construct_move_copy(ConstructMode mode, bool mov
       default: PSI_FAIL("Unrecognised constructor mode");
       }
     } else {
-      TvmResult copyable = get_implementation(compile_context().builtins().copyable_interface, vector_of(unwrapped_type), location);
+      TvmResult exists_copyable = build_implementation(compile_context().builtins().copyable_interface, vector_of(unwrapped_type), location);
+      Tvm::ValuePtr<> copyable = Tvm::FunctionalBuilder::unwrap(exists_copyable.value, location);
       switch (mode) {
       case construct_initialize:
       case construct_initialize_destroy: {
-        Tvm::ValuePtr<> movable = builder().load(Tvm::FunctionalBuilder::element_ptr(copyable.value, interface_copyable_movable, location), location);
-        Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(copyable.value, interface_copyable_copy_init, location), location);
-        builder().call3(init_func, copyable.value, dest, src, location);
+        Tvm::ValuePtr<> movable = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(copyable, interface_copyable_movable, location), location);
+        Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(copyable, interface_copyable_copy_init, location), location);
+        builder().call3(init_func, copyable, dest, src, location);
         push_cleanup(boost::make_shared<LifecycleConstructorCleanup>(mode == construct_initialize, dest, movable, location));
         return true;
       }
       
       case construct_assign: {
-        Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::element_ptr(copyable.value, interface_copyable_copy, location), location);
-        builder().call3(init_func, copyable.value, dest, src, location);
+        Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(copyable, interface_copyable_copy, location), location);
+        builder().call3(init_func, copyable, dest, src, location);
         return true;
       }
       
@@ -216,9 +219,10 @@ void TvmFunctionBuilder::object_destroy(const Tvm::ValuePtr<>& dest, const TreeP
     PSI_NOT_IMPLEMENTED();
   } else {
     // Use Movable interface
-    TvmResult movable = get_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
-    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable.value, interface_movable_fini, location), location);
-    builder().call2(init_func, movable.value, dest, location);
+    TvmResult exists_movable = build_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
+    Tvm::ValuePtr<> movable = Tvm::FunctionalBuilder::unwrap(exists_movable.value, location);
+    Tvm::ValuePtr<> init_func = builder().load(Tvm::FunctionalBuilder::apply_element_ptr(movable, interface_movable_fini, location), location);
+    builder().call2(init_func, movable, dest, location);
   }
 }
 

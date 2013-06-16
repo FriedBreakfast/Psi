@@ -23,25 +23,15 @@ struct TvmJumpData {
   Tvm::ValuePtr<> storage;
 };
 
-/**
- * Value type of list of interface implementations visible in the current scope.
- */
-struct TvmGeneratedImplementation {
-  TreePtr<Interface> interface;
-  PSI_STD::vector<TreePtr<Term> > parameters;
-  TvmResult result;
-};
-
 struct TvmFunctionState {
   typedef boost::shared_ptr<TvmCleanup> CleanupPtr;
   typedef SharedMap<TreePtr<>, TvmResult> VariableMapType;
   typedef SharedList<TreePtr<IntroduceImplementation> > LocalImplementationList;
-  typedef SharedList<TvmGeneratedImplementation> GeneratedImplemenationList;
   typedef std::map<TreePtr<JumpTarget>, TvmJumpData> JumpMapType;
   
   TvmScopePtr scope;
   LocalImplementationList implementation_list;
-  GeneratedImplemenationList generated_implementation_list;
+  TvmGeneratedImplementationSet generated_implementations;
   CleanupPtr cleanup;
   JumpMapType jump_map;
 };
@@ -112,8 +102,6 @@ class TvmFunctionBuilder : public TvmFunctionalBuilder {
   Tvm::ValuePtr<> m_current_result_storage;
 
   void push_cleanup(const TvmCleanupPtr& cleanup);
-  TvmResult get_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
-                               const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation=TreePtr<Implementation>());
   
   struct DominatorState {
     Tvm::ValuePtr<Tvm::Block> block;
@@ -144,6 +132,8 @@ public:
   virtual TvmResult build_generic(const TreePtr<GenericType>& generic);
   virtual TvmResult build_global(const TreePtr<Global>& global);
   virtual TvmResult build_global_evaluate(const TreePtr<GlobalEvaluate>& global);
+  virtual TvmResult build_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                                         const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation=TreePtr<Implementation>());
 
   /**
    * \brief Get the instruction builder for this function.

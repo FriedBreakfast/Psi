@@ -41,20 +41,14 @@ TreePtr<Term> TermBuilder::primitive_type(CompileContext& compile_context, const
   return compile_context.get_functional(PrimitiveType(name), location);
 }
 
-/**
- * \brief Get a derived type
- * 
- * Derived types carry upward reference information. They are derived in the sense
- * that a reference to this type is derived from a reference to another type,
- * which can be recovered using the upward reference information.
- */
-TreePtr<Term> TermBuilder::derived(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location) {
-  return type.compile_context().get_functional(DerivedType(type, upref, location), location);
+/// \brief Get a pointer type
+TreePtr<Term> TermBuilder::pointer(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location) {
+  return type.compile_context().get_functional(PointerType(type, upref, location), location);
 }
 
 /// \brief Get a pointer type
 TreePtr<Term> TermBuilder::pointer(const TreePtr<Term>& type, const SourceLocation& location) {
-  return type.compile_context().get_functional(PointerType(type, location), location);
+  return pointer(type, upref_null(type.compile_context()), location);
 }
 
 /// \brief Get a type for <tt>exists x.f(x)</tt>
@@ -137,12 +131,30 @@ TreePtr<Term> TermBuilder::builtin_value(const String& constructor, const String
 
 /// \brief Get an upward reference
 TreePtr<Term> TermBuilder::upref(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next, const SourceLocation& location) {
-  return outer_type.compile_context().get_functional(UpwardReference(outer_type, outer_index, next, location), location);
+  PSI_ASSERT(outer_type || tree_isa<UpwardReference>(next));
+  const Term *nonnull_term = outer_type ? outer_type.get() : next.get();
+  return nonnull_term->compile_context().get_functional(UpwardReference(outer_type, outer_index, next, location), location);
 }
 
 /// \copydoc TermBuilder::upref
 TreePtr<Term> TermBuilder::upref(const TreePtr<Term>& outer_type, unsigned outer_index, const TreePtr<Term>& next, const SourceLocation& location) {
-  return upref(outer_type, size_value(outer_index, outer_type.compile_context(), location), next, location);
+  PSI_ASSERT(outer_type || tree_isa<UpwardReference>(next));
+  const Term *nonnull_term = outer_type ? outer_type.get() : next.get();
+  return upref(outer_type, size_value(outer_index, nonnull_term->compile_context(), location), next, location);
+}
+
+/// \brief Get the value of the empty type.
+TreePtr<Term> TermBuilder::upref_null(CompileContext& compile_context) {
+  return compile_context.builtins().upref_null;
+}
+
+/**
+ * \brief Wrap a pointer with an upward reference in an IntroduceExists term on the upward reference.
+ * 
+ * This is a utility function which is widely used to implement interfaces.
+ */
+TreePtr<Term> TermBuilder::introduce_exists_upref(const TreePtr<Term>& pointer, const SourceLocation& location) {
+  PSI_NOT_IMPLEMENTED();
 }
 
 /**
@@ -220,6 +232,16 @@ TreePtr<Term> TermBuilder::element_value(const TreePtr<Term>& aggregate, unsigne
   return element_value(aggregate, size_value(index, aggregate.compile_context(), location), location);
 }
 
+/// \brief Get a pointer to an element of an aggreagte from a poiner to that aggregate
+TreePtr<Term> TermBuilder::element_pointer(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location) {
+  return aggregate.compile_context().get_functional(ElementPointer(aggregate, index), location);
+}
+
+/// \copydoc TermBuilder::element_pointer
+TreePtr<Term> TermBuilder::element_pointer(const TreePtr<Term>& aggregate, unsigned index, const SourceLocation& location) {
+  return element_pointer(aggregate, size_value(index, aggregate.compile_context(), location), location);
+}
+
 /**
  * \brief Convert a pointer into a reference.
  */
@@ -235,10 +257,10 @@ TreePtr<Term> TermBuilder::ptr_to(const TreePtr<Term>& value, const SourceLocati
 }
 
 /**
- * \brief Get a reference to an outer object from an object whose type is Derived.
+ * \brief Get a reference to an outer object from an object whose type is Pointer.
  */
-TreePtr<Term> TermBuilder::outer_value(const TreePtr<Term>& reference, const SourceLocation& location) {
-  return reference.compile_context().get_functional(OuterValue(reference), location);
+TreePtr<Term> TermBuilder::outer_pointer(const TreePtr<Term>& reference, const SourceLocation& location) {
+  return reference.compile_context().get_functional(OuterPointer(reference), location);
 }
 
 /**

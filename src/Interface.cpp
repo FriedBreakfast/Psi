@@ -114,7 +114,8 @@ namespace Psi {
       
       TreePtr<Term> evaluate(const TreePtr<GenericType>& self) {
         TreePtr<Term> instance = TermBuilder::instance(self, m_pattern_parameters, self.location());
-        TreePtr<Term> upref = TermBuilder::upref(instance, m_members.size(), default_, self.location());
+        TreePtr<Term> upref = TermBuilder::upref(instance, 0, TermBuilder::upref_null(self.compile_context()), self.location());
+        upref = TermBuilder::upref(default_, m_members.size(), upref, self.location());
         m_inner_parameters.insert(m_inner_parameters.begin(), upref);
         TreePtr<Term> inner_instance = TermBuilder::instance(m_inner_generic, m_inner_parameters, self.location());
         m_members.push_back(inner_instance);
@@ -150,11 +151,12 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Term> > type_pattern;
       
       if (TreePtr<Exists> interface_exists = term_unwrap_dyn_cast<Exists>(m_interface->type))
-        if (TreePtr<TypeInstance> interface_inst = term_unwrap_dyn_cast<TypeInstance>(interface_exists->result))
-          m_generic = interface_inst->generic;
+        if (TreePtr<PointerType> interface_ptr = term_unwrap_dyn_cast<PointerType>(interface_exists->result))
+          if (TreePtr<TypeInstance> interface_inst = term_unwrap_dyn_cast<TypeInstance>(interface_ptr->target_type))
+            m_generic = interface_inst->generic;
         
       if (!m_generic)
-        interface.compile_context().error_throw(location, "ImplementationHelper is only suitable for interfaces whose value is of the form Exists.Derived.Instance", CompileError::error_internal);
+        interface.compile_context().error_throw(location, "ImplementationHelper is only suitable for interfaces whose value is of the form Exists.PointerType.Instance", CompileError::error_internal);
       
       PSI_STD::vector<TreePtr<Term> > member_types;
       for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = pattern_parameters.begin(), ie = pattern_parameters.end(); ii != ie; ++ii) {
@@ -178,7 +180,11 @@ namespace Psi {
                                                ImplementationHelperWrapperGeneric(type_pattern, member_types, m_generic, m_interface_parameters));
       
       TreePtr<Term> wrapper_instance = TermBuilder::instance(m_wrapper_generic, type_pattern, location);
-      TreePtr<Term> upref = TermBuilder::upref(wrapper_instance, m_wrapper_member_values.size(), default_, location);
+      
+      // Need a double upward reference: one for the struct and one for the containing generic
+      TreePtr<Term> upref = TermBuilder::upref(wrapper_instance, 0, TermBuilder::upref_null(interface.compile_context()), location);
+      upref = TermBuilder::upref(default_, m_wrapper_member_values.size(), upref, location);
+      
       m_generic_parameters.insert(m_generic_parameters.begin(), upref);
     }
     
@@ -202,7 +208,7 @@ namespace Psi {
         result.parameters.push_back(param);
       }
       
-      result.implementation = TermBuilder::outer_value(result.parameters.front(), result.parameters.front().location());
+      result.implementation = TermBuilder::outer_pointer(result.parameters.front(), result.parameters.front().location());
       
       return result;
     }
@@ -213,22 +219,23 @@ namespace Psi {
       int offset = 0;
       PSI_STD::vector<TreePtr<Term> > solidify_values;
       for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = m_pattern_parameters.begin(), ie = m_pattern_parameters.end(); ii != ie; ++ii, ++offset)
-        solidify_values.push_back(TermBuilder::element_value(setup.implementation, offset, setup.location));
+        solidify_values.push_back(TermBuilder::ptr_target(TermBuilder::element_pointer(setup.implementation, offset, setup.location), setup.location));
       if (!solidify_values.empty())
         wrapped_body = TermBuilder::solidify_during(solidify_values, wrapped_body, setup.location);
       
       PSI_STD::vector<TreePtr<Implementation> > implementations;
       for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = m_pattern_interfaces.begin(), ie = m_pattern_interfaces.end(); ii != ie; ++ii, ++offset) {
-        TreePtr<Term> ptr_value = TermBuilder::element_value(setup.implementation, offset, setup.location);
+        TreePtr<Term> ptr_value = TermBuilder::ptr_target(TermBuilder::element_pointer(setup.implementation, offset, setup.location), setup.location);
         TreePtr<Term> value = TermBuilder::ptr_target(ptr_value, setup.location);
         implementations.push_back(Implementation::new_(default_, value, (*ii)->interface, 0, (*ii)->parameters, true, default_, setup.location));
       }
       
-      TreePtr<Term> inner_implementation = TermBuilder::element_value(setup.implementation, m_wrapper_member_values.size(), setup.location);
+      TreePtr<Term> inner_implementation = TermBuilder::element_pointer(setup.implementation, m_wrapper_member_values.size(), setup.location);
       for (PSI_STD::vector<Interface::InterfaceBase>::const_iterator ii = m_interface->bases.begin(), ie = m_interface->bases.end(); ii != ie; ++ii) {
         TreePtr<Term> value = inner_implementation;
         for (PSI_STD::vector<int>::const_iterator ji = ii->path.begin(), je = ii->path.end(); ji != je; ++ji)
-          value = TermBuilder::element_value(value, *ji, setup.location);
+          value = TermBuilder::element_pointer(value, *ji, setup.location);
+        value = TermBuilder::ptr_target(value, setup.location);
         PSI_STD::vector<TreePtr<Term> > parameters;
         for (PSI_STD::vector<TreePtr<Term> >::const_iterator ji = ii->parameters.begin(), je = ii->parameters.end(); ji != je; ++ji)
           parameters.push_back((*ji)->specialize(setup.location, m_generic_parameters));

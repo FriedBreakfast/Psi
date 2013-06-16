@@ -180,6 +180,23 @@ exists
 
 Turn an expression with a specific type into a generic one.
 The parameter list may be empty, although this would be unusual since then the ``exists`` term would serve no purpose.
+  
+.. _psi.tvm.instructions.introduce_exists:
+
+introduce_exists
+""""""""""""""""
+
+``introduce_exists {ty} {val}``
+
+Change the type of a term from to ``{ty}``.
+
+``{ty}``
+  An type which must be a :ref:`psi.tvm.instructions.exists` instance.
+
+``{val}``
+  Value whose type must match the pattern implied by ``{ty}``.
+
+.. _psi.tvm.instructions.specialize:
 
 specialize
 """"""""""
@@ -401,6 +418,14 @@ Structure upward reference.
   Index into ``{ty}``.
 ``{next}``
   Next upward reference.
+  
+upref_null
+""""""""""
+
+``upref_null``
+
+Null upward reference.
+This is used to end a chain of upward reference and indicates that the containing data structure is unknown.
 
 zero
 """"

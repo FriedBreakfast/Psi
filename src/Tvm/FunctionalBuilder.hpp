@@ -57,6 +57,8 @@ namespace Psi {
       static ValuePtr<> pointer_type(const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location);
       static ValuePtr<> upref_type(Context& context, const SourceLocation& location);
       static ValuePtr<> upref(const ValuePtr<>& outer_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location);
+      static ValuePtr<> upref_null(Context& context, const SourceLocation& location);
+      static ValuePtr<> introduce_exists(const ValuePtr<>& exists_type, const ValuePtr<>& value, const SourceLocation& location);
       static ValuePtr<> const_type(const ValuePtr<>& value, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
       static ValuePtr<> array_type(const ValuePtr<>& element_type, unsigned length, const SourceLocation& location);
@@ -161,6 +163,7 @@ namespace Psi {
       static ValuePtr<> select(const ValuePtr<>&, const ValuePtr<>&, const ValuePtr<>&, const SourceLocation& location);
       static ValuePtr<> specialize(const ValuePtr<>&, const std::vector<ValuePtr<> >&, const SourceLocation& location);
       
+      static ValuePtr<> exists(const ValuePtr<>& result, const std::vector<ValuePtr<> >& parameter_types, const SourceLocation& location);
       static ValuePtr<> unwrap(const ValuePtr<>& value, const SourceLocation& location);
       static ValuePtr<> unwrap_param(const ValuePtr<>& value, unsigned index, const SourceLocation& location);
     };

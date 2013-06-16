@@ -9,6 +9,10 @@ namespace Psi {
     : HashableValue(context, term_functional, location) {
     }
     
+    bool FunctionalValue::match_impl(const FunctionalValue& PSI_UNUSED(other), std::vector<ValuePtr<> >& PSI_UNUSED(wildcards), unsigned PSI_UNUSED(depth), UprefMatchMode PSI_UNUSED(upref_mode)) const {
+      return false;
+    }
+    
     Constructor::Constructor(Context& context, const SourceLocation& location)
     : FunctionalValue(context, location) {
     }

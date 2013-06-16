@@ -14,7 +14,7 @@ namespace Psi {
     namespace LLVM {
       struct InstructionBuilder {
         static llvm::Instruction* return_callback(FunctionBuilder& builder, const ValuePtr<Return>& insn) {
-          if (builder.function()->function_type()->sret()) {
+          if (isa<EmptyType>(builder.function()->result_type())) {
             return builder.irbuilder().CreateRetVoid();
           } else {
             return builder.irbuilder().CreateRet(builder.build_value(insn->value));
@@ -37,7 +37,7 @@ namespace Psi {
           return builder.irbuilder().CreateUnreachable();
         }
 
-        static llvm::Instruction* function_call_callback(FunctionBuilder& builder, const ValuePtr<Call>& insn) {
+        static llvm::Value* function_call_callback(FunctionBuilder& builder, const ValuePtr<Call>& insn) {
           // Prepare target pointer
           ValuePtr<FunctionType> function_type = value_cast<FunctionType>
             (value_cast<PointerType>(insn->target->type())->target_type());
@@ -59,7 +59,14 @@ namespace Psi {
           for (std::size_t ii = 0, ie = insn->parameters.size() - sret; ii != ie; ++ii)
             parameters.push_back(builder.build_value(insn->parameters[ii]));
           
-          return builder.irbuilder().CreateCall(cast_target, parameters);
+          llvm::Value *call = builder.irbuilder().CreateCall(cast_target, parameters);
+          if (function_type->sret()) {
+            return NULL;
+          } else if (isa<EmptyType>(function_type->result_type())) {
+            return llvm::ConstantStruct::getAnon(builder.llvm_context(), llvm::ArrayRef<llvm::Constant*>());
+          } else {
+            return call;
+          }
         }
         
         static llvm::Instruction* load_callback(FunctionBuilder& builder, const ValuePtr<Load>& term) {

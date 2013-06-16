@@ -354,21 +354,17 @@ void TvmFunctionBuilder::push_cleanup(const TvmCleanupPtr& cleanup) {
  * \todo Add parent implementations to global implementation list so e.g. a copy constructor does not generate an extra
  * interface instantiation for the corresponding destructor.
  */
-TvmResult TvmFunctionBuilder::get_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
-                                                 const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation) {
-  // Check for existing copy
-  for (TvmFunctionState::GeneratedImplemenationList::const_iterator ii = m_state.generated_implementation_list.begin(), ie = m_state.generated_implementation_list.end(); ii != ie; ++ii) {
-    if (ii->interface == interface) {
-      PSI_ASSERT(parameters.size() == ii->parameters.size());
-      for (std::size_t ji = 0, je = parameters.size(); ji != je; ++ji) {
-        if (!ii->parameters[ji]->convert_match(parameters[ji]))
-          goto no_match;
-      }
-      // Successful match
-      return ii->result;
-    }
-  no_match:;
-  }
+TvmResult TvmFunctionBuilder::build_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                                                   const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation) {
+  TvmResult result;
+
+  // Check for existing implementation
+  result = m_tvm_compiler->check_implementation(interface, parameters, *m_dependencies);
+  if (!result.is_bottom())
+    return result;
+  result = tvm_check_implementation(m_state.generated_implementations, interface, parameters, *m_dependencies);
+  if (!result.is_bottom())
+    return result;
   
   TreePtr<Implementation> implementation;
   if (!maybe_implementation) {
@@ -384,30 +380,32 @@ TvmResult TvmFunctionBuilder::get_implementation(const TreePtr<Interface>& inter
     implementation = maybe_implementation;
   }
   
-  TvmResult result;
   if (implementation->dynamic) {
     result = build(implementation->value);
   } else {
     TreePtr<Term> value = implementation->value->specialize(location, parameters);
-    if (false) {
-      /// \todo This could have global scope, and thus be moved directly into a global
-      PSI_NOT_IMPLEMENTED();
+    PSI_ASSERT(value->is_functional());
+    TvmResult tvm_value = build(value);
+    if (tvm_value.scope.scope->depth() <= TvmScope::depth_global) {
+      return m_tvm_compiler->get_implementation(interface, parameters, *m_dependencies, location, maybe_implementation);
     } else {
-      PSI_ASSERT(value->is_functional());
-      TvmResult tvm_value = build(value);
       Tvm::ValuePtr<> ptr = builder().alloca_const(tvm_value.value, location);
       push_cleanup(boost::make_shared<StackFreeCleanup>(ptr, location));
       for (PSI_STD::vector<int>::const_iterator ii = implementation->path.begin(), ie = implementation->path.end(); ii != ie; ++ii)
         ptr = Tvm::FunctionalBuilder::element_ptr(ptr, *ii, location);
+      
+      TvmResult expected_type = build(interface->type_after(parameters, location));
+      if (Tvm::isa<Tvm::Exists>(expected_type.value))
+        ptr = Tvm::FunctionalBuilder::introduce_exists(expected_type.value, ptr, location);
+
       result = TvmResult(m_state.scope, ptr);
     }
   }
   
   TvmGeneratedImplementation gen_impl;
-  gen_impl.interface = interface;
   gen_impl.parameters = parameters;
   gen_impl.result = result;
-  m_state.generated_implementation_list.push_front(gen_impl);
+  m_state.generated_implementations.put(interface, m_state.generated_implementations.get_default(interface).extend(gen_impl));
   
   return result;
 }

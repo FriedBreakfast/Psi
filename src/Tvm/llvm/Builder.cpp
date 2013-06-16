@@ -266,14 +266,17 @@ namespace Psi {
         aggregate_lowering_pass.memcpy_to_bytes = true;
         aggregate_lowering_pass.update();
         
+        Module *rewritten_module = aggregate_lowering_pass.target_module();
+        
         for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {
-          const ValuePtr<Global>& term = i->second;
-          ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
+          const ValuePtr<Global>& old_term = i->second;
+          ValuePtr<Global> term = aggregate_lowering_pass.target_symbol(old_term);
+          
           llvm::GlobalValue *result;
           llvm::GlobalValue::LinkageTypes linkage = llvm_linkage_for(term->linkage());
-          switch (rewritten_term->term_type()) {
+          switch (term->term_type()) {
           case term_global_variable: {
-            ValuePtr<GlobalVariable> global = value_cast<GlobalVariable>(rewritten_term);
+            ValuePtr<GlobalVariable> global = value_cast<GlobalVariable>(term);
             llvm::Type *llvm_type = build_type(global->value_type());
             result = new llvm::GlobalVariable(*m_llvm_module, llvm_type,
                                               global->constant(), linkage,
@@ -284,7 +287,7 @@ namespace Psi {
           }
 
           case term_function: {
-            ValuePtr<Function> func = value_cast<Function>(rewritten_term);
+            ValuePtr<Function> func = value_cast<Function>(term);
             ValuePtr<PointerType> type = value_cast<PointerType>(func->type());
             ValuePtr<FunctionType> func_type = value_cast<FunctionType>(type->target_type());
             llvm::Type *llvm_type = build_type(func_type);
@@ -301,18 +304,17 @@ namespace Psi {
           if (term->alignment())
             result->setAlignment(build_constant_integer(term->alignment()).getZExtValue());
           
-          m_global_terms[rewritten_term] = result;
-          module_result.globals[term] = result;
+          m_global_terms[term] = result;
+          module_result.globals[old_term] = result;
         }
         
-        for (Module::ModuleMemberList::iterator i = module->members().begin(), e = module->members().end(); i != e; ++i) {
+        for (Module::ModuleMemberList::iterator i = rewritten_module->members().begin(), e = rewritten_module->members().end(); i != e; ++i) {
           const ValuePtr<Global>& term = i->second;
-          ValuePtr<Global> rewritten_term = aggregate_lowering_pass.target_symbol(term);
-          PSI_ASSERT(m_global_terms.find(rewritten_term) != m_global_terms.end());
-          llvm::GlobalValue *llvm_term = m_global_terms.find(rewritten_term)->second;
+          PSI_ASSERT(m_global_terms.find(term) != m_global_terms.end());
+          llvm::GlobalValue *llvm_term = m_global_terms.find(term)->second;
           
-          if (rewritten_term->term_type() == term_function) {
-            ValuePtr<Function> func = value_cast<Function>(rewritten_term);
+          if (term->term_type() == term_function) {
+            ValuePtr<Function> func = value_cast<Function>(term);
             if (!func->blocks().empty()) {
               llvm::Function *llvm_func = llvm::cast<llvm::Function>(llvm_term);
               FunctionBuilder fb(this, func, llvm_func);
@@ -321,15 +323,15 @@ namespace Psi {
             }
           } else {
             PSI_ASSERT(term->term_type() == term_global_variable);
-            if (ValuePtr<> value = value_cast<GlobalVariable>(rewritten_term)->value()) {
+            if (ValuePtr<> value = value_cast<GlobalVariable>(term)->value()) {
               llvm::Constant *llvm_value = build_constant(value);
               llvm::cast<llvm::GlobalVariable>(llvm_term)->setInitializer(llvm_value);
             }
           }
         }
         
-        build_constructor_list("llvm.global_ctors", module->constructors());
-        build_constructor_list("llvm.global_dtors", module->destructors());
+        build_constructor_list("llvm.global_ctors", aggregate_lowering_pass.target_module()->constructors());
+        build_constructor_list("llvm.global_dtors", aggregate_lowering_pass.target_module()->destructors());
         
         return module_result;
       }
@@ -427,7 +429,7 @@ namespace Psi {
             params.push_back(build_type(function_type->parameter_types().back()));
           for (std::size_t i = 0, e = function_type->parameter_types().size() - sret; i != e; ++i)
             params.push_back(build_type(function_type->parameter_types()[i]));
-          llvm::Type *result = function_type->sret() ?
+          llvm::Type *result = isa<EmptyType>(function_type->result_type()) ?
             llvm::Type::getVoidTy(*m_llvm_context) : build_type(function_type->result_type());
           t = llvm::FunctionType::get(result, params, false);
           break;
@@ -469,7 +471,9 @@ namespace Psi {
         llvm::Type *constructor_ptr_type = llvm::FunctionType::get(llvm::Type::getVoidTy(llvm_context()), false)->getPointerTo();
         llvm::StructType *element_type = llvm::StructType::get(priority_type, constructor_ptr_type, NULL);
         for (Module::ConstructorList::const_iterator ii = constructors.begin(), ie = constructors.end(); ii != ie; ++ii) {
-          llvm::Constant *values[2] = {llvm::ConstantInt::get(priority_type, ii->second), build_global(ii->first)};
+          llvm::GlobalValue *function = build_global(ii->first);
+          llvm::Constant *priority = llvm::ConstantInt::get(priority_type, ii->second);
+          llvm::Constant *values[2] = {priority, function};
           elements.push_back(llvm::ConstantStruct::getAnon(values));
         }
         llvm::ArrayType *constructor_list_type = llvm::ArrayType::get(element_type, elements.size());
@@ -507,11 +511,19 @@ namespace Psi {
       LLVMJit::LLVMJit(const std::string& host_triple,
                        const boost::shared_ptr<llvm::TargetMachine>& host_machine)
         : m_target_fixes(create_target_fixes(&m_llvm_context, host_machine, host_triple)),
-          m_target_machine(host_machine) {
+          m_target_machine(host_machine),
+          m_load_priority_max(0) {
         init_llvm_passes();
       }
 
       void LLVMJit::destroy() {
+        // Run module destructor functions
+        std::map<std::size_t, llvm::Module*> load_order;
+        for (boost::unordered_map<Module*, LLVMJitModule>::const_iterator ii = m_modules.begin(), ie = m_modules.end(); ii != ie; ++ii)
+          load_order.insert(std::make_pair(ii->second.load_priority, ii->second.mapping.module));
+        for (std::map<std::size_t, llvm::Module*>::reverse_iterator ii = load_order.rbegin(), ie = load_order.rend(); ii != ie; ++ii)
+          m_llvm_engine->runStaticConstructorsDestructors(ii->second, true);
+        
         delete this;
       }
       
@@ -535,18 +547,20 @@ namespace Psi {
       }
 
       void LLVMJit::add_module(Module *module) {
-        ModuleMapping& mapping = m_modules[module];
-        if (mapping.module)
+        LLVMJitModule& mapping = m_modules[module];
+        if (mapping.mapping.module)
           throw BuildError("module already exists in this JIT");
 
-        std::auto_ptr<llvm::Module> llvm_module(new llvm::Module(module->name(), m_llvm_context));
+        std::auto_ptr<llvm::Module> llvm_module_auto(new llvm::Module(module->name(), m_llvm_context));
+        llvm::Module *llvm_module = llvm_module_auto.get();
+        
         llvm_module->setTargetTriple(m_target_machine->getTargetTriple());
         llvm_module->setDataLayout(m_target_machine->getDataLayout()->getStringRepresentation());
         
-        llvm::FunctionPassManager fpm(llvm_module.get());
+        llvm::FunctionPassManager fpm(llvm_module);
         m_llvm_pass_builder.populateFunctionPassManager(fpm);
 
-        ModuleBuilder builder(&m_llvm_context, m_target_machine.get(), llvm_module.get(), &fpm, m_target_fixes.get());
+        ModuleBuilder builder(&m_llvm_context, m_target_machine.get(), llvm_module, &fpm, m_target_fixes.get());
         ModuleMapping new_mapping = builder.run(module);
         
         m_llvm_module_pass.run(*llvm_module);
@@ -558,34 +572,38 @@ namespace Psi {
         }
 #endif
 
-        mapping = new_mapping;
+        mapping.mapping = new_mapping;
 
         if (!m_llvm_engine) {
-          init_llvm_engine(llvm_module.get());
+          init_llvm_engine(llvm_module);
         } else {
-          m_llvm_engine->addModule(llvm_module.get());
+          m_llvm_engine->addModule(llvm_module);
         }
 
-        llvm_module.release();
+        llvm_module_auto.release();
+        
+        mapping.load_priority = m_load_priority_max++;
+        m_llvm_engine->runStaticConstructorsDestructors(llvm_module, false);
       }
       
       void LLVMJit::remove_module(Module *module) {
-        boost::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
+        boost::unordered_map<Module*, LLVMJitModule>::iterator it = m_modules.find(module);
         if (it == m_modules.end())
           throw BuildError("module not present");
-        m_llvm_engine->removeModule(it->second.module);
-        delete it->second.module;
+        m_llvm_engine->runStaticConstructorsDestructors(it->second.mapping.module, true);
+        m_llvm_engine->removeModule(it->second.mapping.module);
+        delete it->second.mapping.module;
         m_modules.erase(it);
       }
       
       void* LLVMJit::get_symbol(const ValuePtr<Global>& global) {
         Module *module = global->module();
-        boost::unordered_map<Module*, ModuleMapping>::iterator it = m_modules.find(module);
+        boost::unordered_map<Module*, LLVMJitModule>::iterator it = m_modules.find(module);
         if (it == m_modules.end())
           throw BuildError("Module does not appear to be available in this JIT");
         
-        boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator jt = it->second.globals.find(global);
-        PSI_ASSERT(jt != it->second.globals.end());
+        boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator jt = it->second.mapping.globals.find(global);
+        PSI_ASSERT(jt != it->second.mapping.globals.end());
         
         return m_llvm_engine->getPointerToGlobal(jt->second);
       }

@@ -82,6 +82,15 @@ namespace Psi {
       ValuePtr<> m_next;
       
       static void hashable_check_source(UpwardReference&, CheckSourceParameter&);
+      virtual bool match_impl(const FunctionalValue& other, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const;
+    };
+    
+    class PSI_TVM_EXPORT UpwardReferenceNull : public HashableValue {
+      PSI_TVM_HASHABLE_DECL(UpwardReferenceUnknown)
+      
+    public:
+      UpwardReferenceNull(Context& context, const SourceLocation& location);
+      static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_upref_null;}
     };
     
     /**
@@ -195,6 +204,7 @@ namespace Psi {
       ValuePtr<> m_upref;
 
       static void hashable_check_source(PointerType& self, CheckSourceParameter& parameter);
+      virtual bool match_impl(const FunctionalValue& other, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const;
     };
 
     /**
@@ -261,6 +271,8 @@ namespace Psi {
     private:
       ValuePtr<> m_element_type;
       ValuePtr<> m_length;
+      
+      virtual bool match_impl(const FunctionalValue& other, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const;
     };
 
     /**
@@ -301,6 +313,8 @@ namespace Psi {
       
     private:
       std::vector<ValuePtr<> > m_members;
+
+      virtual bool match_impl(const FunctionalValue& other, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const;
     };
 
     /**
@@ -361,6 +375,8 @@ namespace Psi {
       
     private:
       std::vector<ValuePtr<> > m_members;
+
+      virtual bool match_impl(const FunctionalValue& other, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const;
     };
 
     /**

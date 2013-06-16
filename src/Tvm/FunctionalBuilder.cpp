@@ -128,7 +128,7 @@ namespace Psi {
      * \param target Type being pointed to.
      */
     ValuePtr<> FunctionalBuilder::pointer_type(const ValuePtr<>& target, const SourceLocation& location) {
-      return pointer_type(target, ValuePtr<>(), location);
+      return pointer_type(target, upref_null(target->context(), location), location);
     }
     
     /**
@@ -142,10 +142,24 @@ namespace Psi {
      * \brief Get an upward reference.
      */
     ValuePtr<> FunctionalBuilder::upref(const ValuePtr<>& outer_type, const ValuePtr<>& index, const ValuePtr<>& next, const SourceLocation& location) {
-      ValuePtr<> result = index->context().get_functional(UpwardReference(outer_type, index, next, location));
+      ValuePtr<> result = next->context().get_functional(UpwardReference(outer_type, index, next, location));
       if (isa<UndefinedValue>(index))
         return undef(result->type(), location);
       return result;
+    }
+    
+    /**
+     * \brief Get a NULL upward reference
+     */
+    ValuePtr<> FunctionalBuilder::upref_null(Context& context, const SourceLocation& location) {
+      return context.get_functional(UpwardReferenceNull(context, location));
+    }
+    
+    /**
+     * \brief Introduce exists quantification to a terms type.
+     */
+    ValuePtr<> FunctionalBuilder::introduce_exists(const ValuePtr<>& exists_type, const ValuePtr<>& value, const SourceLocation& location) {
+      return exists_type->context().get_functional(IntroduceExists(exists_type, value, location));
     }
     
     /**
@@ -398,7 +412,7 @@ namespace Psi {
     }
     
     ValuePtr<> FunctionalBuilder::pointer_cast(const ValuePtr<>& ptr, const ValuePtr<>& result_type, const SourceLocation& location) {
-      return pointer_cast(ptr, result_type, ValuePtr<>(), location);
+      return pointer_cast(ptr, result_type, upref_null(ptr->context(), location), location);
     }
     
     /**
@@ -1001,6 +1015,13 @@ namespace Psi {
      */
     ValuePtr<> FunctionalBuilder::float_type(Context& context, FloatType::Width width, const SourceLocation& location) {
       return context.get_functional(FloatType(context, width, location));
+    }
+    
+    /**
+     * \brief Get an Exists term.
+     */
+    ValuePtr<> FunctionalBuilder::exists(const ValuePtr<>& result, const std::vector<ValuePtr<> >& parameter_types, const SourceLocation& location) {
+      return result->context().get_functional(Exists(result, parameter_types, location));
     }
     
     ValuePtr<> FunctionalBuilder::unwrap(const ValuePtr<>& value, const SourceLocation& location) {

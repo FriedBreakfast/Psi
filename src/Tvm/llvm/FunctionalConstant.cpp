@@ -75,7 +75,7 @@ namespace Psi {
         
         static llvm::Constant* element_value_callback(ModuleBuilder& builder, const ValuePtr<ElementValue>& term) {
           llvm::Constant *aggregate = builder.build_constant(term->aggregate());
-          unsigned indices[] = {builder.build_constant_integer(term->index()).getZExtValue()};
+          unsigned indices[] = {(unsigned)builder.build_constant_integer(term->index()).getZExtValue()};
           return llvm::ConstantExpr::getExtractValue(aggregate, indices);
         }
         
@@ -85,10 +85,12 @@ namespace Psi {
 
           // Need to ensure the index is i32 for a struct because this is required by LLVM
           llvm::Constant *idx;
-          if (llvm::isa<llvm::StructType>(llvm::cast<llvm::PointerType>(aggregate_ptr->getType())->getElementType()))
-            idx = llvm::ConstantInt::get(i32_ty, builder.build_constant_integer(term->index()));
-          else
+          if (llvm::isa<llvm::StructType>(llvm::cast<llvm::PointerType>(aggregate_ptr->getType())->getElementType())) {
+            llvm::APInt ap_idx = builder.build_constant_integer(term->index()).zextOrTrunc(32);
+            idx = llvm::ConstantInt::get(i32_ty, ap_idx);
+          } else {
             idx = builder.build_constant(term->index());
+          }
 
           llvm::Constant *indices[] = {llvm::ConstantInt::get(i32_ty, 0), idx};
           return llvm::ConstantExpr::getInBoundsGetElementPtr(aggregate_ptr, indices);

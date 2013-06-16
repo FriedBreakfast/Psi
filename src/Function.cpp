@@ -225,7 +225,7 @@ namespace Psi {
       all_arguments.insert(all_arguments.end(), explicit_arguments.begin(), explicit_arguments.end());
       
       for (unsigned ii = 0, ie = explicit_arguments.size(); ii != ie; ++ii) {
-        if (!ftype->parameter_types[ii].type->match(explicit_arguments[ii]->type, all_arguments, 0))
+        if (!ftype->parameter_types[ii].type->match(explicit_arguments[ii]->type, all_arguments, 0, Term::upref_match_read))
           function.compile_context().error_throw(explicit_arguments[ii].location(), "Incorrect argument type");
       }
 

@@ -7,11 +7,6 @@
 namespace Psi {
 namespace Compiler {
 struct TvmFunctionBuilder::InstructionLowering {
-  static TvmResult run_interface_value(TvmFunctionBuilder& builder, const TreePtr<InterfaceValue>& interface_value) {
-    return builder.get_implementation(interface_value->interface, interface_value->parameters,
-                                      interface_value.location(), interface_value->implementation);
-  }
-  
   static TvmResult run_introduce_implementation(TvmFunctionBuilder& builder, const TreePtr<IntroduceImplementation>& introduce_impl) {
     TvmFunctionState::LocalImplementationList impl_list = builder.m_state.implementation_list;
     builder.m_state.implementation_list.push_front(introduce_impl);
@@ -393,7 +388,6 @@ struct TvmFunctionBuilder::InstructionLowering {
 
   static CallbackMap::Initializer callback_map_initializer() {
     return CallbackMap::initializer()
-      .add<InterfaceValue>(run_interface_value)
       .add<IntroduceImplementation>(run_introduce_implementation)
       .add<Block>(run_block)
       .add<IfThenElse>(run_if_then_else)

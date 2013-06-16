@@ -24,7 +24,8 @@ namespace Psi {
         if (term_type == term_recursive) {
           m_category = category_recursive;
         } else {
-          PSI_ASSERT((term_type == term_functional) || (term_type == term_apply) || (term_type == term_function_type) || (term_type == term_exists));
+          PSI_ASSERT((term_type == term_functional) || (term_type == term_apply) || (term_type == term_function_type)
+            || (term_type == term_exists) || (term_type == term_upref_null) || (term_type == term_resolved_parameter));
           m_category = category_undetermined;
         }
       } else {
@@ -108,6 +109,127 @@ namespace Psi {
     }
 #endif
 
+    /**
+     * \brief Checks whether a value of type child can be used in place of a value of type parent.
+     */
+    bool Value::match(const ValuePtr<>& child) const {
+      std::vector<ValuePtr<> > wildcards;
+      return match(child, wildcards);
+    }
+
+    /**
+     * \brief Checks whether another tree matches this one, which is a pattern.
+     * 
+     * \param upref_write Whether NULL upward references should be considered from the point of view
+     * of reading or writing. If false, a shorter chain in this object is considered to match a longer
+     * chain in \c child, if true the reverse holds.
+     */
+    bool Value::match(const ValuePtr<>& child, std::vector<ValuePtr<> >& wildcards, unsigned depth, UprefMatchMode upref_mode) const {
+      if (term_type() == term_resolved_parameter) {
+        const ResolvedParameter& rp = checked_cast<const ResolvedParameter&>(*this);
+        if (rp.depth() == depth) {
+          // Check type also matches
+          if (!rp.type()->match(child->type(), wildcards, depth, upref_match_exact))
+            return false;
+
+          if (rp.index() >= wildcards.size())
+            return false;
+
+          ValuePtr<>& wildcard = wildcards[rp.index()];
+          if (wildcard) {
+            std::vector<ValuePtr<> > empty_wildcards;
+            // Need to do this rather than == because upref_match_exact does not always imply equivalence
+            return wildcard->match(child, empty_wildcards, 0, upref_match_exact);
+          } else {
+            wildcard = child;
+            return true;
+          }
+        }
+      }
+      
+      if (this == child.get())
+        return true;
+      
+      // Note case of both being UpwardReferenceNull is handled by checking for reference equality
+      if (term_type() == term_upref_null)
+        return upref_mode == upref_match_read;
+      else if (child->term_type() == term_upref_null)
+        return upref_mode == upref_match_write;
+      
+      if (term_type() != child->term_type())
+        return false;
+      
+      switch (term_type()) {
+      case term_functional: {
+        const FunctionalValue& this_fn = checked_cast<const FunctionalValue&>(*this);
+        const FunctionalValue& child_fn = checked_cast<const FunctionalValue&>(*child);
+        if (this_fn.operation_name() != child_fn.operation_name())
+          return false;
+        return this_fn.match_impl(child_fn, wildcards, depth, upref_mode);
+      }
+      
+      case term_apply: {
+        const ApplyType& this_ap = checked_cast<const ApplyType&>(*this);
+        const ApplyType& child_ap = checked_cast<const ApplyType&>(*child);
+        if (this_ap.recursive() != child_ap.recursive())
+          return false;
+        PSI_ASSERT(this_ap.parameters().size() == child_ap.parameters().size());
+        for (std::size_t ii = 0, ie = this_ap.parameters().size(); ii != ie; ++ii) {
+          if (!this_ap.parameters()[ii]->match(child_ap.parameters()[ii], wildcards, depth, upref_mode))
+            return false;
+        }
+        return true;
+      }
+
+      case term_function_type: {
+        const FunctionType& this_ft = checked_cast<const FunctionType&>(*this);
+        const FunctionType& child_ft = checked_cast<const FunctionType&>(*child);
+        if ((this_ft.parameter_types().size() != child_ft.parameter_types().size()) ||
+            (this_ft.n_phantom() != child_ft.n_phantom()) ||
+            (this_ft.sret() != child_ft.sret()) ||
+            (this_ft.calling_convention() != child_ft.calling_convention())) {
+          return false;
+        }
+        
+        for (std::size_t ii = 0, ie = this_ft.parameter_types().size(); ii != ie; ++ii) {
+          if (!this_ft.parameter_types()[ii]->match(child_ft.parameter_types()[ii], wildcards, depth+1, upref_mode))
+            return false;
+        }
+        
+        UprefMatchMode reverse_mode;
+        switch (upref_mode) {
+        case upref_match_read: reverse_mode = upref_match_write;
+        case upref_match_write: reverse_mode = upref_match_read;
+        case upref_match_exact: reverse_mode = upref_match_exact;
+        default: PSI_FAIL("Unrecognised enumeration value");
+        }
+        
+        if (!this_ft.result_type()->match(child_ft.result_type(), wildcards, depth+1, reverse_mode))
+          return false;
+        
+        return true;
+      }
+      
+      case term_exists: {
+        const Exists& this_ex = checked_cast<const Exists&>(*this);
+        const Exists& child_ex = checked_cast<const Exists&>(*child);
+        if (this_ex.parameter_types().size() != child_ex.parameter_types().size())
+          return false;
+        
+        for (std::size_t ii = 0, ie = this_ex.parameter_types().size(); ii != ie; ++ii) {
+          if (!this_ex.parameter_types()[ii]->match(child_ex.parameter_types()[ii], wildcards, depth+1, upref_match_exact))
+            return false;
+        }
+        
+        return this_ex.result()->match(child_ex.result(), wildcards, depth+1, upref_mode);
+      }
+      
+      default:
+        // All other cases cannot be base types
+        return false;
+      }
+    }
+    
     HashableValue::HashableValue(Context& context, TermType term_type, const SourceLocation& location)
     : Value(context, term_type, ValuePtr<>(), location),
     m_hash(0),

@@ -222,7 +222,7 @@ namespace Psi {
     
     const TermVtable GlobalVariable::vtable = PSI_COMPILER_TERM(GlobalVariable, "psi.compiler.GlobalVariable", ModuleGlobal);
     
-    ParameterizedType::ParameterizedType(const VtableType  *vptr)
+    ParameterizedType::ParameterizedType(const VtableType *vptr)
     : Type(vptr) {
     }
     
@@ -590,20 +590,26 @@ namespace Psi {
 
     const FunctionalVtable DefaultValue::vtable = PSI_COMPILER_FUNCTIONAL(DefaultValue, "psi.compiler.DefaultValue", Constructor);
 
-    PointerType::PointerType(const TreePtr<Term>& target_type_, const SourceLocation& location)
+    PointerType::PointerType(const TreePtr<Term>& target_type_, const TreePtr<Term>& upref_, const SourceLocation& location)
     : Type(&vtable),
-    target_type(TermBuilder::to_functional(target_type_, location)) {
+    target_type(TermBuilder::to_functional(target_type_, location)),
+    upref(upref_) {
     }
     
     template<typename V>
     void PointerType::visit(V& v) {
       visit_base<Type>(v);
-      v("target_type", &PointerType::target_type);
+      v("target_type", &PointerType::target_type)
+      ("upref", &PointerType::upref);
     }
     
     TermResultInfo PointerType::check_type_impl(const PointerType& self) {
       if (!self.target_type->is_type())
         self.compile_context().error_throw(self.location(), "Pointer target type is not a type");
+      
+      if (!term_unwrap_isa<UpwardReferenceType>(self.upref->type))
+        self.compile_context().error_throw(self.location(), "Upward reference parameter to pointer type is not an upward reference");
+
       return term_result_type(self.compile_context());
     }
     
@@ -744,63 +750,81 @@ namespace Psi {
     }
     
     TermResultInfo ElementValue::check_type_impl(const ElementValue& self) {
-      TreePtr<DerivedType> derived = term_unwrap_dyn_cast<DerivedType>(self.value->type, false);
-      TreePtr<Term> my_aggregate_type, next_upref;
-      if (derived) {
-        my_aggregate_type = derived->value_type;
-        next_upref = derived->upref;
-      } else {
-        my_aggregate_type = self.value->type;
-      }
-      
-      TreePtr<Term> upref = TermBuilder::upref(my_aggregate_type, self.index, next_upref, self.location());
-      return TermResultInfo(TermBuilder::derived(element_type(my_aggregate_type, self.index, self.location()), upref, self.location()),
+      return TermResultInfo(element_type(self.value->type, self.index, self.location()),
                             term_mode_lref, self.value->pure && self.index->pure);
     }
 
     TermTypeInfo ElementValue::type_info_impl(const ElementValue& self) {
       TermTypeInfo rt;
-      rt.type_mode = type_mode_none;
-      rt.type_fixed_size = self.type->type_info().type_fixed_size;
+      rt.type_mode = (self.type->type_info().type_mode == type_mode_metatype) ? type_mode_complex : type_mode_none;
+      rt.type_fixed_size = false;
       return rt;
     }
     
     const FunctionalVtable ElementValue::vtable = PSI_COMPILER_FUNCTIONAL(ElementValue, "psi.compiler.ElementValue", Functional);
     
-    OuterValue::OuterValue(const TreePtr<Term>& value_)
+    ElementPointer::ElementPointer(const TreePtr<Term>& pointer_, const TreePtr<Term>& index_)
     : Functional(&vtable),
-    value(value_) {
+    pointer(pointer_),
+    index(index_) {
     }
-    
+
     template<typename V>
-    void OuterValue::visit(V& v) {
+    void ElementPointer::visit(V& v) {
       visit_base<Functional>(v);
-      v("value", &OuterValue::value);
+      v("pointer", &ElementPointer::pointer)
+      ("index", &ElementPointer::index);
     }
     
-    TermResultInfo OuterValue::check_type_impl(const OuterValue& self) {
-      TreePtr<DerivedType> derived = term_unwrap_dyn_cast<DerivedType>(self.value->type, false);
-      if (!derived)
-        self.compile_context().error_throw(self.location(), "Outer value operation called on value with no upward reference");
+    TermResultInfo ElementPointer::check_type_impl(const ElementPointer& self) {
+      TreePtr<PointerType> ptr_ty = term_unwrap_dyn_cast<PointerType>(self.pointer->type);
+      if (!ptr_ty)
+        self.compile_context().error_throw(self.location(), "Argument to ElementPointer is not a pointer");
       
-      TreePtr<UpwardReference> upref = term_unwrap_dyn_cast<UpwardReference>(derived->upref);
-      if (!upref)
-        self.compile_context().error_throw(self.location(), "Outer value operation called on value with unknown upward reference");
-      
-      if ((self.value->mode != term_mode_lref) && (self.value->mode != term_mode_rref))
-        self.compile_context().error_throw(self.location(), "Outer value argument is not a reference");
-      
-      return TermResultInfo(TermBuilder::derived(upref->outer_type(), upref->next, self.location()),
-                            term_mode_lref, self.value->pure);
+      TreePtr<Term> upref = TermBuilder::upref(ptr_ty->target_type, self.index, ptr_ty->upref, self.location());
+      TreePtr<Term> inner = TermBuilder::pointer(ElementValue::element_type(ptr_ty->target_type, self.index, self.location()), upref, self.location());
+      return TermResultInfo(inner, term_mode_value, self.pointer->pure && self.index->pure);
     }
-    
-    TermTypeInfo OuterValue::type_info_impl(const OuterValue&) {
+
+    TermTypeInfo ElementPointer::type_info_impl(const ElementPointer& PSI_UNUSED(self)) {
       TermTypeInfo rt;
       rt.type_mode = type_mode_none;
       return rt;
     }
     
-    const FunctionalVtable OuterValue::vtable = PSI_COMPILER_FUNCTIONAL(OuterValue, "psi.compiler.OuterValue", Functional);
+    const FunctionalVtable ElementPointer::vtable = PSI_COMPILER_FUNCTIONAL(ElementPointer, "psi.compiler.ElementPointer", Functional);
+
+    OuterPointer::OuterPointer(const TreePtr<Term>& pointer_)
+    : Functional(&vtable),
+    pointer(pointer_) {
+    }
+    
+    template<typename V>
+    void OuterPointer::visit(V& v) {
+      visit_base<Functional>(v);
+      v("pointer", &OuterPointer::pointer);
+    }
+    
+    TermResultInfo OuterPointer::check_type_impl(const OuterPointer& self) {
+      TreePtr<PointerType> pointer_ty = term_unwrap_dyn_cast<PointerType>(self.pointer->type);
+      if (!pointer_ty)
+        self.compile_context().error_throw(self.location(), "Outer value operation called on value which is not a pointer");
+      
+      TreePtr<UpwardReference> upref = term_unwrap_dyn_cast<UpwardReference>(pointer_ty->upref);
+      if (!upref)
+        self.compile_context().error_throw(self.location(), "Outer value operation called on value with unknown upward reference");
+      
+      return TermResultInfo(TermBuilder::pointer(upref->outer_type(), upref->next, self.location()),
+                            term_mode_value, self.pointer->pure);
+    }
+    
+    TermTypeInfo OuterPointer::type_info_impl(const OuterPointer&) {
+      TermTypeInfo rt;
+      rt.type_mode = type_mode_none;
+      return rt;
+    }
+    
+    const FunctionalVtable OuterPointer::vtable = PSI_COMPILER_FUNCTIONAL(OuterPointer, "psi.compiler.OuterPointer", Functional);
     
     StructType::StructType(const PSI_STD::vector<TreePtr<Term> >& members_, const SourceLocation& location)
     : Type(&vtable),
@@ -1094,12 +1118,11 @@ namespace Psi {
       if (self.outer_index->type != TermBuilder::size_type(self.compile_context()))
         self.compile_context().error_throw(self.location(), "Upward reference index is not a size");
       
-      if (self.next) {
-        if (!term_unwrap_isa<UpwardReference>(self.next))
-          self.compile_context().error_throw(self.location(), "Next reference of upward reference is not itself an upward reference");
-      } else if (!self.maybe_outer_type) {
+      if (!term_unwrap_isa<UpwardReferenceType>(self.next->type))
+        self.compile_context().error_throw(self.location(), "Next reference of upward reference is not itself an upward reference");
+
+      if (!term_unwrap_isa<UpwardReference>(self.next) && !self.maybe_outer_type)
         self.compile_context().error_throw(self.location(), "One of outer_type and next of an upref must be non-NULL");
-      }
       
       return TermResultInfo(TermBuilder::upref_type(self.compile_context()), term_mode_value, true);
     }
@@ -1115,44 +1138,34 @@ namespace Psi {
       outer_index = rewriter.rewrite(self.outer_index);
       if (self.next)
         next = rewriter.rewrite(self.next);
-      if (!next)
+      if (!tree_isa<UpwardReference>(next))
         outer_type = rewriter.rewrite(self.outer_type());
       return TermBuilder::upref(outer_type, outer_index, next, location);
     }
     
     const FunctionalVtable UpwardReference::vtable = PSI_COMPILER_FUNCTIONAL(UpwardReference, "psi.compiler.UpwardReference", Constructor);
     
-    DerivedType::DerivedType(const TreePtr<Term>& value_type_, const TreePtr<Term>& upref_, const SourceLocation& location)
-    : Type(&vtable),
-    value_type(TermBuilder::to_functional(value_type_, location)),
-    upref(upref_) {
+    UpwardReferenceNull::UpwardReferenceNull()
+    : Constant(&vtable) {
     }
     
     template<typename V>
-    void DerivedType::visit(V& v) {
-      visit_base<Type>(v);
-      v("value_type", &DerivedType::value_type)
-      ("upref", &DerivedType::upref);
+    void UpwardReferenceNull::visit(V& v) {
+      visit_base<Constant>(v);
     }
     
-    TermResultInfo DerivedType::check_type_impl(const DerivedType& self) {
-      if (self.upref) {
-        if (!term_unwrap_isa<UpwardReferenceType>(self.upref->type))
-          self.compile_context().error_throw(self.location(), "Upward reference parameter to DerivedType is not an upward reference");
-      }
-      
-      return term_result_type(self.compile_context());
+    TermResultInfo UpwardReferenceNull::check_type_impl(const UpwardReferenceNull& self) {
+      return TermResultInfo(TermBuilder::upref_type(self.compile_context()), term_mode_value, true);
     }
     
-    TermTypeInfo DerivedType::type_info_impl(const DerivedType& self) {
-      TermTypeInfo rt = self.value_type->type_info();
-      rt.type_mode = type_mode_complex;
-      rt.type_fixed_size = false;
+    TermTypeInfo UpwardReferenceNull::type_info_impl(const UpwardReferenceNull&) {
+      TermTypeInfo rt;
+      rt.type_mode = type_mode_none;
       return rt;
     }
     
-    const FunctionalVtable DerivedType::vtable = PSI_COMPILER_FUNCTIONAL(DerivedType, "psi.compiler.DerivedType", Type);
-
+    const FunctionalVtable UpwardReferenceNull::vtable = PSI_COMPILER_FUNCTIONAL(UpwardReferenceNull, "psi.compiler.UpwardReferenceNull", Constant);
+    
     template<typename Visitor>
     void GenericType::visit(Visitor& v) {
       visit_base<Tree>(v);

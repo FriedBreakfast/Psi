@@ -629,6 +629,10 @@ namespace Psi {
         return rewriter.rewrite_value(term->value());
       }
       
+      static LoweredValue introduce_exists_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<IntroduceExists>& term) {
+        return rewriter.rewrite_value(term->value());
+      }
+      
       static LoweredValue element_value_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ElementValue>& term) {
         ValuePtr<> ty = term->aggregate()->type();
         if (isa<StructType>(ty))
@@ -751,6 +755,7 @@ namespace Psi {
           .add<PointerOffset>(pointer_offset_rewrite)
           .add<PointerCast>(pointer_cast_rewrite)
           .add<Unwrap>(unwrap_rewrite)
+          .add<IntroduceExists>(introduce_exists_rewrite)
           .add<ElementValue>(element_value_rewrite)
           .add<ElementPtr>(element_ptr_rewrite)
           .add<Select>(select_rewrite)

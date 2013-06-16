@@ -71,13 +71,6 @@ namespace Psi {
       return type->specialize(result_location, parameters);
     }
     
-    /**
-     * \brief Utility function for getting a pointer to the result of type_after.
-     */
-    TreePtr<Term> Interface::pointer_type_after(const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) const {
-      return TermBuilder::pointer(type_after(parameters, location), location);
-    }
-    
     const TreeVtable Interface::vtable = PSI_COMPILER_TREE(Interface, "psi.compiler.Interface", OverloadType);
     
     Implementation::Implementation(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& dependent_, const TreePtr<Term>& value_, const TreePtr<Interface>& interface,
@@ -187,7 +180,7 @@ namespace Psi {
         PSI_ASSERT(target[ii]);
         PSI_ASSERT(src[ii]);
         
-        if (!src[ii]->match(target[ii], match, 0))
+        if (!src[ii]->match(target[ii], match, 0, Term::upref_match_ignore))
           return false;
       }
       
@@ -210,8 +203,8 @@ namespace Psi {
       while (true) {
         if (TreePtr<PointerType> ptr = dyn_treeptr_cast<PointerType>(my_term))
           my_term = ptr->target_type;
-        else if (TreePtr<DerivedType> derived = dyn_treeptr_cast<DerivedType>(my_term))
-          my_term = derived->value_type;
+        else if (TreePtr<Exists> exists = dyn_treeptr_cast<Exists>(my_term))
+          my_term = exists->result;
         else if (TreePtr<GlobalStatement> def = dyn_treeptr_cast<GlobalStatement>(my_term)) {
           if ((def->mode == statement_mode_functional) && def->value->pure)
             my_term = def->value;

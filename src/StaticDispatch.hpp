@@ -102,7 +102,6 @@ namespace Psi {
                                      const SourceLocation& location);
       
       TreePtr<Term> type_after(const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) const;
-      TreePtr<Term> pointer_type_after(const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) const;
       
       /// \brief The derived parameter pattern.
       PSI_STD::vector<TreePtr<Term> > derived_pattern;

@@ -90,7 +90,7 @@ namespace Psi {
       std::size_t n_parameters() {return m_parameters.size();}
       ValuePtr<> unpack();
 
-      const ValuePtr<RecursiveType>& recursive() {return m_recursive;}
+      const ValuePtr<RecursiveType>& recursive() const {return m_recursive;}
       const std::vector<ValuePtr<> >& parameters() const {return m_parameters;}
       
       static bool isa_impl(const Value& v) {return v.term_type() == term_apply;}

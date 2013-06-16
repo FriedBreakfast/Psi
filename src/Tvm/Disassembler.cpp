@@ -500,20 +500,10 @@ namespace Psi {
         break;
       }
       
-      case term_recursive: {
-        *m_output << "[recursive]";
-        break;
-      }
-      
-      case term_recursive_parameter: {
-        *m_output << "[recursive parameter]";
-        break;
-      }
-      
-      case term_parameter_placeholder: {
-        *m_output << "[parameter placeholder]";
-        break;
-      }
+      case term_recursive: *m_output << "[recursive]"; break;
+      case term_recursive_parameter: *m_output << "[recursive parameter]"; break;
+      case term_parameter_placeholder: *m_output << "[parameter placeholder]"; break;
+      case term_upref_null: *m_output << "upref_null"; break;
         
       default:
         PSI_FAIL("unexpected term type - this term should have had a name assigned");
@@ -606,6 +596,7 @@ namespace Psi {
       
       case term_recursive_parameter: *m_output << "[recursive parameter]\n"; return;
       case term_parameter_placeholder: *m_output << "[parameter placeholder]\n"; return;
+      case term_upref_null: *m_output << "upref_null\n"; return;
         
       default:
         PSI_FAIL("unexpected term type - cannot print a definition");
