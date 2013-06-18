@@ -1,5 +1,5 @@
-char : builtin_type {core.uint.8};
-int : builtin_type {core.int.32}; 
+char : number_type {u8};
+int : number_type {i32}; 
 libc : library {};
 puts : libc.symbol (function_type (::pointer(char) -: int)) {"type":"c","name":"puts"};
 

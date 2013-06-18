@@ -532,34 +532,6 @@ public:
   }
 };
 
-void symbol_type_name(SymbolNameBuilder& builder, const TreePtr<Term>& term) {
-  if (TreePtr<TypeInstance> inst = term_unwrap_dyn_cast<TypeInstance>(term)) {
-    if (inst->parameters.empty()) {
-      builder.emit(inst->generic->location().logical);
-    } else {
-      builder.enter();
-      builder.emit(inst->generic->location().logical);
-      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = inst->parameters.begin(), ie = inst->parameters.end(); ii != ie; ++ii)
-        symbol_type_name(builder, *ii);
-      builder.exit();
-    }
-  } else if (TreePtr<BuiltinValue> value = term_unwrap_dyn_cast<BuiltinValue>(term)) {
-    PSI_NOT_IMPLEMENTED();
-  } else if (TreePtr<PrimitiveType> type = term_unwrap_dyn_cast<PrimitiveType>(term)) {
-    PSI_NOT_IMPLEMENTED();
-  } else {
-    builder.emit(term->location().logical);
-  }
-}
-
-std::string symbol_implementation_name(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters) {
-  SymbolNameBuilder builder;
-  builder.emit(interface->location().logical);
-  for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = parameters.begin(), ie = parameters.end(); ii != ie; ++ii)
-    symbol_type_name(builder, *ii);
-  return builder.name();
-}
-
 /**
  * \brief Get an implementation in a global variable.
  */
@@ -675,11 +647,14 @@ void TvmJitObjectCompiler::notify_existing_global(const TreePtr<Global>& global,
   if (TreePtr<ModuleGlobal> module_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
     TvmJitCompiler::BuiltGlobalMap& globals = jit_compiler().m_built_globals;
     TvmJitCompiler::BuiltGlobalMap::iterator it = globals.find(module_global);
-    PSI_ASSERT(it != globals.end());
+    if (it == globals.end())
+      compile_context().error_throw(global->location(), boost::format("Conflicting global symbol name: %s") % tvm_global->name());
     previous = it->second.lowered;
   } else if (TreePtr<LibrarySymbol> lib_sym = dyn_treeptr_cast<LibrarySymbol>(global)) {
     TvmJitCompiler::LibrarySymbolMap& symbols = jit_compiler().m_library_symbols;
     TvmJitCompiler::LibrarySymbolMap::iterator it = symbols.find(lib_sym);
+    if (it == symbols.end())
+      it = symbols.insert(std::make_pair(lib_sym, tvm_global)).first;
     PSI_ASSERT(it != symbols.end());
     previous = it->second;
   } else {

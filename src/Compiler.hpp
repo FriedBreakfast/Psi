@@ -241,12 +241,15 @@ namespace Psi {
       TreePtr<Type> upref_type;
       /// \brief The NULL upward reference
       TreePtr<Term> upref_null;
-      /// \brief intrptr type
-      TreePtr<Type> size_type;
       /// \brief Type of string elements, i.e. unsigned char
       TreePtr<Type> string_element_type;
       /// \brief Type of booleans
       TreePtr<Type> boolean_type;
+
+      /// \brief Signed integer types
+      TreePtr<Type> i8_type, i16_type, i32_type, i64_type, iptr_type;
+      /// \brief Unsigned integer types
+      TreePtr<Type> u8_type, u16_type, u32_type, u64_type, uptr_type;
       
       /// \brief The Macro interface.
       TreePtr<MetadataType> macro_tag;

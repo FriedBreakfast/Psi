@@ -9,12 +9,12 @@ namespace Psi {
     BigInteger::BigInteger() : m_bits(0) {
     }
     
-    BigInteger::BigInteger(unsigned bits, unsigned value) : m_bits(0) {
+    BigInteger::BigInteger(unsigned bits, uint64_t value) : m_bits(0) {
       resize(bits, false);
       assign(value);
     }
     
-    BigInteger::BigInteger(unsigned bits, int value) : m_bits(0) {
+    BigInteger::BigInteger(unsigned bits, int64_t value) : m_bits(0) {
       resize(bits, false);
       assign(value);
     }
@@ -107,7 +107,7 @@ namespace Psi {
       BigInteger next(bits()), rounded(bits()), remainder(bits());
       
       char *out_cur = out, *out_end = out + length;
-      BigInteger base_i(bits(), base);
+      BigInteger base_i(bits(), uint64_t(base));
       while (!current.zero() && (out_cur != out_end)) {
         next.divide_unsigned(error_handler, current, base_i);
         rounded.multiply(error_handler, next, base_i);
@@ -150,18 +150,18 @@ namespace Psi {
       os.write(buffer.get(), n);
     }
 
-    void BigInteger::assign(unsigned value) {
+    void BigInteger::assign(uint64_t value) {
       m_words[0] = value;
       std::fill(m_words.get()+1, m_words.get()+m_words.size(), 0);
       m_words[m_words.size()-1] &= mask();
     }
     
-    void BigInteger::assign(int value) {
+    void BigInteger::assign(int64_t value) {
       if (value >= 0) {
-        assign(unsigned(value));
+        assign(uint64_t(value));
       } else {
         // damn... i'm feeling lazy
-        assign(unsigned(-value));
+        assign(uint64_t(-value));
         negative(*this);
       }
     }

@@ -2,6 +2,8 @@
 #include "Parser.hpp"
 #include "TermBuilder.hpp"
 
+#include <map>
+#include <boost/assign/list_of.hpp>
 #include <boost/format.hpp>
 #include <boost/lexical_cast.hpp>
 
@@ -329,15 +331,22 @@ namespace Psi {
       return make_macro_term(m, location);
     }
     
-    class BuiltinTypeMacro : public MacroMemberCallback {
+    namespace {
+      static const std::map<std::string, NumberType::ScalarType> number_type_names =
+      boost::assign::map_list_of("bool", NumberType::n_bool)
+      ("i8", NumberType::n_i8)("i16", NumberType::n_i16)("i32", NumberType::n_i32)("i64", NumberType::n_i64)("iptr", NumberType::n_iptr)
+      ("u8", NumberType::n_u8)("u16", NumberType::n_u16)("u32", NumberType::n_u32)("u64", NumberType::n_u64)("uptr", NumberType::n_uptr);
+    }
+    
+    class NumberTypeMacro : public MacroMemberCallback {
     public:
       static const MacroMemberCallbackVtable vtable;
 
-      BuiltinTypeMacro(CompileContext& compile_context, const SourceLocation& location)
+      NumberTypeMacro(CompileContext& compile_context, const SourceLocation& location)
       : MacroMemberCallback(&vtable, compile_context, location) {
       }
 
-      static TreePtr<Term> evaluate_impl(const BuiltinTypeMacro& self,
+      static TreePtr<Term> evaluate_impl(const NumberTypeMacro& self,
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>&,
@@ -349,15 +358,20 @@ namespace Psi {
         if (!(name = expression_as_token_type(parameters[0], Parser::token_brace)))
           self.compile_context().error_throw(location, "Parameter to builtin type macro is not a {...}");
         
-        String name_s = name->text.to_string();
-        return TermBuilder::primitive_type(self.compile_context(), name_s, location);
+        std::string name_s = name->text.to_string();
+        std::map<std::string, NumberType::ScalarType>::const_iterator it = number_type_names.find(name_s);
+        if (it == number_type_names.end())
+          self.compile_context().error_throw(location, boost::format("Unknown builtin type '%s'") % name_s);
+        
+        
+        return TermBuilder::number_type(self.compile_context(), it->second);
       }
     };
     
-    const MacroMemberCallbackVtable BuiltinTypeMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(BuiltinTypeMacro, "psi.compiler.BuiltinTypeMacro", MacroMemberCallback);
+    const MacroMemberCallbackVtable NumberTypeMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(NumberTypeMacro, "psi.compiler.NumberTypeMacro", MacroMemberCallback);
     
-    TreePtr<Term> builtin_type_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new BuiltinTypeMacro(compile_context, location));
+    TreePtr<Term> number_type_macro(CompileContext& compile_context, const SourceLocation& location) {
+      TreePtr<MacroMemberCallback> callback(::new NumberTypeMacro(compile_context, location));
       TreePtr<Macro> m = make_macro(compile_context, location, callback);
       return make_macro_term(m, location);
     }
@@ -414,45 +428,62 @@ namespace Psi {
       return make_macro_term(m, location);
     }
     
-    class BuiltinValueMacro : public MacroMemberCallback {
+    class NumberValueMacro : public MacroMemberCallback {
     public:
       static const MacroMemberCallbackVtable vtable;
 
-      BuiltinValueMacro(CompileContext& compile_context, const SourceLocation& location)
+      NumberValueMacro(CompileContext& compile_context, const SourceLocation& location)
       : MacroMemberCallback(&vtable, compile_context, location) {
       }
 
-      static TreePtr<Term> evaluate_impl(const BuiltinValueMacro& self,
+      static TreePtr<Term> evaluate_impl(const NumberValueMacro& self,
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
-        if (parameters.size() != 3)
+        if (parameters.size() != 2)
           self.compile_context().error_throw(location, "Wrong number of parameters to builtin value macro (expected 3)");
         
-        SharedPtr<Parser::TokenExpression> constructor, data, type_expr;
+        SharedPtr<Parser::TokenExpression> data, type_expr;
         if (!(type_expr = expression_as_token_type(parameters[0], Parser::token_bracket)))
-          self.compile_context().error_throw(location, "First parameter to builtin function macro is not a {...}");
+          self.compile_context().error_throw(location, "First parameter to builtin number constant macro is not a {...}");
 
-        if (!(constructor = expression_as_token_type(parameters[1], Parser::token_brace)))
-          self.compile_context().error_throw(location, "Second parameter to builtin function macro is not a {...}");
-        
-        if (!(data = expression_as_token_type(parameters[2], Parser::token_brace)))
-          self.compile_context().error_throw(location, "Third parameter to builtin function macro is not a {...}");
+        if (!(data = expression_as_token_type(parameters[1], Parser::token_brace)))
+          self.compile_context().error_throw(location, "Second parameter to builtin number constant macro is not a {...}");
         
         TreePtr<Term> type = compile_expression(Parser::parse_expression(type_expr->text), evaluate_context, location.logical);
+        TreePtr<NumberType> number_type = term_unwrap_dyn_cast<NumberType>(type);
+        if (!number_type)
+          self.compile_context().error_throw(location, "First parameter to builtin number constant macro is not a primitive numerical type");
+        if (number_type->vector_size != 0)
+          self.compile_context().error_throw(location, "Primitive numerical constants of vector types are not supported");
+        if (!NumberType::is_integer(number_type->scalar_type))
+          self.compile_context().error_throw(location, "Non-integer numerical constants of are not supported");
 
-        String constructor_s = constructor->text.to_string();
-        String data_s = data->text.to_string();
+        std::string data_s = data->text.to_string();
+        uint64_t value;
+        if (NumberType::is_signed(number_type->scalar_type)) {
+          try {
+            value = boost::lexical_cast<int64_t>(data_s);
+          } catch (boost::bad_lexical_cast&) {
+            self.compile_context().error_throw(location, boost::format("'%s' is not a valid signed integer") % data_s);
+          }
+        } else {
+          try {
+            value = boost::lexical_cast<uint64_t>(data_s);
+          } catch (boost::bad_lexical_cast&) {
+            self.compile_context().error_throw(location, boost::format("'%s' is not a valid unsigned integer") % data_s);
+          }
+        }
        
-        return TermBuilder::builtin_value(constructor_s, data_s, type, location);
+        return TermBuilder::integer_value(self.compile_context(), (NumberType::ScalarType)number_type->scalar_type, value, location);
       }
     };
 
-    const MacroMemberCallbackVtable BuiltinValueMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(BuiltinValueMacro, "psi.compiler.BuiltinValueMacro", MacroMemberCallback);
+    const MacroMemberCallbackVtable NumberValueMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(NumberValueMacro, "psi.compiler.NumberValueMacro", MacroMemberCallback);
 
-    TreePtr<Term> builtin_value_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new BuiltinValueMacro(compile_context, location));
+    TreePtr<Term> number_value_macro(CompileContext& compile_context, const SourceLocation& location) {
+      TreePtr<MacroMemberCallback> callback(::new NumberValueMacro(compile_context, location));
       TreePtr<Macro> m = make_macro(compile_context, location, callback);
       return make_macro_term(m, location);
     }

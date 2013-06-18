@@ -179,54 +179,10 @@ namespace Psi {
       
     public:
       std::string unique_name(const std::string& base);
+      
       const std::string& symbol_name(const TreePtr<ModuleGlobal>& name);
     };
-    
-    class SymbolNameBuilder : public NonCopyable {
-      struct Node;
-      struct NodeDisposer;
 
-      typedef boost::intrusive::unordered_set<Node> NodeSet;
-      typedef boost::intrusive::list<Node> NodeList;
-      
-      struct Node : boost::intrusive::list_base_hook<>, boost::intrusive::unordered_set_base_hook<> {
-        Node();
-        ~Node();
-        void clear();
-        bool operator == (const Node& other) const;
-        std::size_t hash() const;
-        
-        bool index_first;
-        unsigned index;
-        Node *parent;
-        std::string name;
-        NodeList children;
-        
-        friend std::size_t hash_value(const Node& node) {
-          return node.hash();
-        }
-      };
-      
-      static bool equals(const Node& lhs, const Node& rhs);
-      
-      static const unsigned initial_buckets = 16;
-      UniqueArray<NodeSet::bucket_type> m_buckets;
-      Node m_root;
-      Node *m_current;
-      NodeSet m_nodes;
-      unsigned m_node_index;
-      
-    public:
-      SymbolNameBuilder();
-      ~SymbolNameBuilder();
-      
-      void enter();
-      void exit();
-      void emit(const std::string& name);
-      void emit(const LogicalSourceLocationPtr& location);
-      std::string name();
-    };
-    
     std::string symbol_implementation_name(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters);
     
     class TvmObjectCompilerBase {

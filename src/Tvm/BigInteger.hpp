@@ -38,8 +38,8 @@ namespace Psi {
       
     public:
       BigInteger();
-      BigInteger(unsigned bits, unsigned value=0);
-      BigInteger(unsigned bits, int value);
+      BigInteger(unsigned bits, uint64_t value=0);
+      BigInteger(unsigned bits, int64_t value);
 
       /**
        * Numer of words in the internal array. Just to facilitate LLVM
@@ -56,8 +56,8 @@ namespace Psi {
       void parse(const CompileErrorPair& error_handler, const std::string&, bool=false, unsigned=10);
       void print(const CompileErrorPair& error_handler, std::ostream&, bool=false, unsigned=10) const;
       std::size_t print(const CompileErrorPair& error_handler, char *out, std::size_t length, bool=false, unsigned=10) const ;
-      void assign(unsigned);
-      void assign(int);
+      void assign(uint64_t);
+      void assign(int64_t);
       
       /// \brief The number of bits in this integer.
       unsigned bits() const {return m_bits;}

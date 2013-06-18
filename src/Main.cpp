@@ -121,9 +121,9 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
   //global_names["__number__"] = TreePtr<Term>();
   global_names["__brace__"] = string_macro(compile_context, psi_location.named_child("cstring"));
-  global_names["builtin_type"] = builtin_type_macro(compile_context, psi_location.named_child("builtin_type"));
+  global_names["number_type"] = number_type_macro(compile_context, psi_location.named_child("number_type"));
   global_names["builtin_function"] = builtin_function_macro(compile_context, psi_location.named_child("builtin_function"));
-  global_names["builtin_value"] = builtin_value_macro(compile_context, psi_location.named_child("builtin_function"));
+  global_names["number_value"] = number_value_macro(compile_context, psi_location.named_child("number_value"));
   
   global_names["pointer"] = pointer_macro(compile_context, psi_location.named_child("pointer"));
   global_names["struct"] = struct_macro(compile_context, psi_location.named_child("struct"));

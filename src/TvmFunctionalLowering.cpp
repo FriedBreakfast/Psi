@@ -96,21 +96,29 @@ struct TvmFunctionalLowererMap {
     return Tvm::FunctionalBuilder::int_type(context, width, is_signed, location);
   }
   
-  static TvmResult build_primitive_type(TvmFunctionalBuilder& builder, const TreePtr<PrimitiveType>& primitive_ty) {
+  static TvmResult build_number_type(TvmFunctionalBuilder& builder, const TreePtr<NumberType>& number_ty) {
+    PSI_ASSERT(number_ty->vector_size == 0);
     Tvm::ValuePtr<> tvm_type;
+    switch (number_ty->scalar_type) {
+    case NumberType::n_bool: tvm_type = Tvm::FunctionalBuilder::bool_type(builder.tvm_context(), number_ty->location()); break;
+
+    case NumberType::n_i8: tvm_type = Tvm::FunctionalBuilder::int_type(builder.tvm_context(), Tvm::IntegerType::i8, true, number_ty->location()); break;
+    case NumberType::n_i16: tvm_type = Tvm::FunctionalBuilder::int_type(builder.tvm_context(), Tvm::IntegerType::i16, true, number_ty->location()); break;
+    case NumberType::n_i32: tvm_type = Tvm::FunctionalBuilder::int_type(builder.tvm_context(), Tvm::IntegerType::i32, true, number_ty->location()); break;
+    case NumberType::n_i64: tvm_type = Tvm::FunctionalBuilder::int_type(builder.tvm_context(), Tvm::IntegerType::i64, true, number_ty->location()); break;
+    case NumberType::n_iptr: tvm_type = Tvm::FunctionalBuilder::int_type(builder.tvm_context(), Tvm::IntegerType::iptr, true, number_ty->location()); break;
     
-    std::vector<std::string> parts = string_split(primitive_ty->name, '.');
-    if (parts[0] == "core") {
-      if (parts.size() >= 1) {
-        if (parts[1] == "int")
-          tvm_type = build_int_type(builder.tvm_context(), primitive_ty->location(), true, parts);
-        else if (parts[1] == "uint")
-          tvm_type = build_int_type(builder.tvm_context(), primitive_ty->location(), false, parts);
-      }
+    case NumberType::n_u8: tvm_type = Tvm::FunctionalBuilder::int_type(builder.tvm_context(), Tvm::IntegerType::i8, false, number_ty->location()); break;
+    case NumberType::n_u16: tvm_type = Tvm::FunctionalBuilder::int_type(builder.tvm_context(), Tvm::IntegerType::i16, false, number_ty->location()); break;
+    case NumberType::n_u32: tvm_type = Tvm::FunctionalBuilder::int_type(builder.tvm_context(), Tvm::IntegerType::i32, false, number_ty->location()); break;
+    case NumberType::n_u64: tvm_type = Tvm::FunctionalBuilder::int_type(builder.tvm_context(), Tvm::IntegerType::i64, false, number_ty->location()); break;
+    case NumberType::n_uptr: tvm_type = Tvm::FunctionalBuilder::int_type(builder.tvm_context(), Tvm::IntegerType::iptr, false, number_ty->location()); break;
+
+    case NumberType::n_f32: tvm_type = Tvm::FunctionalBuilder::float_type(builder.tvm_context(), Tvm::FloatType::fp32, number_ty->location()); break;
+    case NumberType::n_f64: tvm_type = Tvm::FunctionalBuilder::float_type(builder.tvm_context(), Tvm::FloatType::fp64, number_ty->location()); break;
+    
+    default: PSI_FAIL("Unknown number type");
     }
-    
-    if (!tvm_type)
-      primitive_ty->compile_context().error_throw(primitive_ty->location(), boost::format("Unknown primitive type '%s'") % primitive_ty->name);
     
     return TvmResult(TvmResultScope(), tvm_type);
   }
@@ -251,9 +259,10 @@ struct TvmFunctionalLowererMap {
     return builder.build(value->value);
   }
   
-  static TvmResult build_integer_value(TvmFunctionalBuilder& builder, const TreePtr<IntegerValue>& int_value) {
+  static TvmResult build_integer_constant(TvmFunctionalBuilder& builder, const TreePtr<IntegerConstant>& int_value) {
     TvmResult type = builder.build(int_value->type);
-    return TvmResult(TvmResultScope(), Tvm::FunctionalBuilder::int_value(Tvm::value_cast<Tvm::IntegerType>(type.value), int_value->value, int_value->location()));
+    Tvm::ValuePtr<Tvm::IntegerType> ty = Tvm::value_cast<Tvm::IntegerType>(type.value);
+    return TvmResult(TvmResultScope(), Tvm::FunctionalBuilder::int_value(ty, int_value->value, int_value->location()));
   }
   
   static TvmResult build_string_value(TvmFunctionalBuilder& builder, const TreePtr<StringValue>& str_value) {
@@ -265,10 +274,6 @@ struct TvmFunctionalLowererMap {
     return TvmResult(TvmResultScope(), Tvm::FunctionalBuilder::array_value(char_type, elements, str_value->location()));
   }
   
-  static TvmResult build_builtin_value(TvmFunctionalBuilder& builder, const TreePtr<BuiltinValue>& builtin_value) {
-    PSI_NOT_IMPLEMENTED();
-  }
-
   static TvmResult build_default_value(TvmFunctionalBuilder& builder, const TreePtr<DefaultValue>& default_value) {
     TvmResult type = builder.build(default_value->type);
     return TvmResult(type.scope, Tvm::FunctionalBuilder::undef(type.value, default_value->location()));
@@ -352,7 +357,7 @@ struct TvmFunctionalLowererMap {
       .add<UnionType>(build_union_type)
       .add<EmptyType>(build_empty_type)
       .add<PointerType>(build_pointer_type)
-      .add<PrimitiveType>(build_primitive_type)
+      .add<NumberType>(build_number_type)
       .add<FunctionType>(build_function_type)
       .add<Exists>(build_exists)
       .add<Parameter>(build_parameter)
@@ -366,9 +371,8 @@ struct TvmFunctionalLowererMap {
       .add<PointerTarget>(build_pointer_target)
       .add<PointerTo>(build_pointer_to)
       .add<MovableValue>(build_movable_value)
-      .add<IntegerValue>(build_integer_value)
+      .add<IntegerConstant>(build_integer_constant)
       .add<StringValue>(build_string_value)
-      .add<BuiltinValue>(build_builtin_value)
       .add<DefaultValue>(build_default_value)
       .add<StructValue>(build_struct_value)
       .add<ArrayValue>(build_array_value)

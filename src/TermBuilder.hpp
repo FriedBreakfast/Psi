@@ -17,7 +17,7 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
   static TreePtr<Term> boolean_type(CompileContext& compile_context);
   static TreePtr<Term> upref_type(CompileContext& compile_context);
   
-  static TreePtr<Term> primitive_type(CompileContext& compile_context, const String& name, const SourceLocation& location);
+  static TreePtr<Term> number_type(CompileContext& compile_context, NumberType::ScalarType type);
   static TreePtr<Term> pointer(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location);
   static TreePtr<Term> pointer(const TreePtr<Term>& type, const SourceLocation& location);
   static TreePtr<Term> exists(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& parameter_types, const SourceLocation& location);
@@ -60,7 +60,7 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
   static TreePtr<Term> empty_value(CompileContext& compile_context);
   static TreePtr<Term> movable(const TreePtr<Term>& value, const SourceLocation& location);
   static TreePtr<Term> default_value(const TreePtr<Term>& type, const SourceLocation& location);
-  static TreePtr<Term> builtin_value(const String& constructor, const String& data, const TreePtr<Term>& type, const SourceLocation& location);
+  static TreePtr<Term> integer_value(CompileContext& context, NumberType::ScalarType type, uint64_t value, const SourceLocation& location);
   static TreePtr<Term> upref(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next, const SourceLocation& location);
   static TreePtr<Term> upref(const TreePtr<Term>& outer_type, unsigned outer_index, const TreePtr<Term>& next, const SourceLocation& location);
   static TreePtr<Term> upref_null(CompileContext& compile_context);

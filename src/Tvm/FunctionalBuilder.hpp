@@ -107,12 +107,16 @@ namespace Psi {
       static ValuePtr<IntegerType> size_type(Context&, const SourceLocation& location);
       static ValuePtr<> int_value(Context&, IntegerType::Width, bool, int, const SourceLocation& location);
       static ValuePtr<> int_value(Context&, IntegerType::Width, bool, unsigned, const SourceLocation& location);
+      static ValuePtr<> int_value(Context&, IntegerType::Width, bool, int64_t, const SourceLocation& location);
+      static ValuePtr<> int_value(Context&, IntegerType::Width, bool, uint64_t, const SourceLocation& location);
       static ValuePtr<> int_value(Context&, IntegerType::Width, bool, const std::string&, const SourceLocation& location);
       static ValuePtr<> int_value(Context&, IntegerType::Width, bool, const std::string&, bool, const SourceLocation& location);
       static ValuePtr<> int_value(Context&, IntegerType::Width, bool, const std::string&, bool/*=false*/, unsigned/*=10*/, const SourceLocation& location);
       static ValuePtr<> int_value(Context&, IntegerType::Width, bool, const BigInteger&, const SourceLocation& location);
       static ValuePtr<> int_value(const ValuePtr<IntegerType>&, int, const SourceLocation& location);
       static ValuePtr<> int_value(const ValuePtr<IntegerType>&, unsigned, const SourceLocation& location);
+      static ValuePtr<> int_value(const ValuePtr<IntegerType>&, int64_t, const SourceLocation& location);
+      static ValuePtr<> int_value(const ValuePtr<IntegerType>&, uint64_t, const SourceLocation& location);
       static ValuePtr<> int_value(const ValuePtr<IntegerType>&, const std::string&, const SourceLocation& location);
       static ValuePtr<> int_value(const ValuePtr<IntegerType>&, const std::string&, bool, const SourceLocation& location);
       static ValuePtr<> int_value(const ValuePtr<IntegerType>&, const std::string&, bool/*=false*/, unsigned/*=10*/, const SourceLocation& location);

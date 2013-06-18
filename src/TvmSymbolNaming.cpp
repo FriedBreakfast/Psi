@@ -10,7 +10,7 @@ namespace Compiler {
  * if \f$ n >= 31 \f$ the digit is \f$ n-31 \f$ and there is another digit after.
  * If \f$ n<31 \f$, then the encoded digit is \f$ n \f$ and it is the last digit.
  */
-void symbol_encode_number(std::ostream& os, unsigned n) {
+void symbol_encode_number(std::ostream& os, uint64_t n) {
   const char *low_digits =  "0123456789ABCDEFGHIJKLMNOPQRSTU";
   const char *high_digits = "VWXYZabcdefghijklmnopqrstuvwxyz";
   
@@ -21,12 +21,29 @@ void symbol_encode_number(std::ostream& os, unsigned n) {
   
   unsigned char digits[32];
   unsigned n_digits = 0;
-  for (unsigned m = n; m > 0; m /= 31)
+  for (uint64_t m = n; m > 0; m /= 31)
     digits[n_digits++] = m%31;
   PSI_ASSERT(n_digits > 0);
   while (--n_digits)
     os << high_digits[digits[n_digits]];
   os << low_digits[digits[0]];
+}
+
+/**
+ * \brief Encode a signed number into an ASCII string.
+ * 
+ * Zero is encoded as zero. Positive numbers are encoded as
+ * 1, 2, 3 -> 2, 4, 5... and negative numbers are encoded as
+ * -1, -2, -3 -> 1, 3, 5 and then symbol_encode_number is used.
+ */
+void symbol_encode_signed_number(std::ostream& os, int64_t n) {
+  if (n > 0) {
+    symbol_encode_number(os, n*2);
+  } else if (n < 0) {
+    symbol_encode_number(os, -2*n-1);
+  } else {
+    os << '\0';
+  }
 }
 
 std::string SymbolNameSet::unique_name(const std::string& base) {
@@ -37,6 +54,66 @@ std::string SymbolNameSet::unique_name(const std::string& base) {
   return ss.str();
 }
 
+class SymbolLocationWriter {
+  struct Node {
+    int key;
+    std::map<std::string, Node> children;
+    Node() : key(-1) {}
+  };
+  std::ostream *m_output;
+  int m_index;
+  Node m_root;
+  
+public:
+  SymbolLocationWriter(std::ostream& os) : m_output(&os), m_index(1) {m_root.key = 0;}
+  std::ostream& output() {return *m_output;}
+  
+  void write(const LogicalSourceLocationPtr& loc, bool full, char prefix_full, char prefix_part) {
+    std::vector<const LogicalSourceLocation*> ancestors;
+    for (const LogicalSourceLocation *ptr = loc.get(); ptr->parent(); ptr = ptr->parent().get())
+      ancestors.push_back(ptr);
+    
+    if (full)
+      symbol_encode_number(output(), ancestors.size());
+    
+    Node *ptr = &m_root;
+    while (!ancestors.empty()) {
+      const std::string& s = ancestors.back()->name();
+      Node *next = &ptr->children[s];
+      
+      if (next->key < 0)
+        break;
+      
+      if (full) {
+        symbol_encode_number(output(), s.size());
+        output() << s;
+      }
+      
+      ptr = next;
+      ancestors.pop_back();
+    }
+    
+    if (!full) {
+      if (ptr == &m_root) {
+        output() << prefix_full;
+      } else {
+        output() << prefix_part;
+        symbol_encode_number(output(), ptr->key);
+      }
+      symbol_encode_number(output(), ancestors.size());
+    }
+    
+    while (!ancestors.empty()) {
+      const std::string& s = ancestors.back()->name();
+      symbol_encode_number(output(), s.size());
+      output() << s;
+      ptr = &ptr->children[s];
+      ptr->key = m_index++;
+      ancestors.pop_back();
+    }
+  }
+};
+
 const std::string& SymbolNameSet::symbol_name(const TreePtr<ModuleGlobal>& global) {
   std::string& name = m_symbol_names[global];
   if (!name.empty())
@@ -46,144 +123,55 @@ const std::string& SymbolNameSet::symbol_name(const TreePtr<ModuleGlobal>& globa
     PSI_ASSERT(global->linkage != link_local);
     name = global->symbol_name;
   } else {
-    SymbolNameBuilder symbol_name_builder;
-    symbol_name_builder.emit(global->location().logical);
-    name = symbol_name_builder.name();
+    std::ostringstream ss;
+    ss << "_Y0";
+    SymbolLocationWriter lw(ss);
+    lw.write(global->location().logical, true, '\0', '\0');
+    name = ss.str();
     if (global->linkage == link_local)
       name = unique_name(name);
   }
   return name;
 }
 
-SymbolNameBuilder::SymbolNameBuilder()
-: m_buckets(initial_buckets),
-m_nodes(NodeSet::bucket_traits(m_buckets.get(), initial_buckets)) {
-  m_node_index = 0;
-  m_current = &m_root;
-  m_root.parent = NULL;
-}
 
-SymbolNameBuilder::~SymbolNameBuilder() {
-  m_nodes.clear();
-}
-
-SymbolNameBuilder::Node::Node() {
-  index_first = false;
-}
-
-struct SymbolNameBuilder::NodeDisposer {
-  void operator () (Node *ptr) {
-    delete ptr;
-  }
-};
-
-SymbolNameBuilder::Node::~Node() {
-  clear();
-}
-
-void SymbolNameBuilder::Node::clear() {
-  children.clear_and_dispose(NodeDisposer());
-  std::string().swap(name);
-}
-
-bool SymbolNameBuilder::Node::operator == (const Node& other) const {
-  return equals(*this, other);
-}
-
-std::size_t SymbolNameBuilder::Node::hash() const {
-  std::size_t h = 0;
-  boost::hash_combine(h, name);
-  for (NodeList::const_iterator ii = children.begin(), ie = children.end(); ii != ie; ++ii)
-    boost::hash_combine(h, ii->index);
-  return h;
-}
-
-bool SymbolNameBuilder::equals(const Node& lhs, const Node& rhs) {
-  if (lhs.name != rhs.name)
-    return false;
-  if (lhs.children.size() != rhs.children.size())
-    return false;
-  
-  for (NodeList::const_iterator ii = lhs.children.begin(), ji = rhs.children.begin(), ie = lhs.children.end(); ii != ie; ++ii, ++ji) {
-    if (ii->index != ji->index)
-      return false;
-  }
-  
-  return true;
-}
-
-void SymbolNameBuilder::enter() {
-  Node *child = new Node;
-  child->parent = m_current;
-  m_current->children.push_back(*child);
-  m_current = child;
-}
-
-void SymbolNameBuilder::exit() {
-  PSI_ASSERT(m_current->parent);
-  std::pair<NodeSet::iterator, bool> ins = m_nodes.insert(*m_current);
-  if (ins.second) {
-    m_current->index_first = false;
-    m_current->index = ins.first->index;
-  } else {
-    m_current->index_first = true;
-    m_current->index = m_node_index++;
-    m_current->clear();
-  }
-  m_current = m_current->parent;
-  
-  if (m_nodes.size() > m_buckets.size()) {
-    UniqueArray<NodeSet::bucket_type> new_buckets(m_buckets.size() * 2);
-    m_nodes.rehash(NodeSet::bucket_traits(new_buckets.get(), new_buckets.size()));
-    m_buckets.swap(new_buckets);
-  }
-}
-
-void SymbolNameBuilder::emit(const std::string& name) {
-  enter();
-  m_current->name = name;
-  exit();
-}
-
-void SymbolNameBuilder::emit(const LogicalSourceLocationPtr& location) {
-  std::vector<const LogicalSourceLocation*> ancestors;
-  for (const LogicalSourceLocation *ptr = location.get(); ptr->parent(); ptr = ptr->parent().get())
-    ancestors.push_back(ptr);
-  enter();
-  for (std::vector<const LogicalSourceLocation*>::const_reverse_iterator ii = ancestors.rbegin(), ie = ancestors.rend(); ii != ie; ++ii)
-    emit((*ii)->name());
-  exit();
-}
-
-std::string SymbolNameBuilder::name() {
-  PSI_ASSERT(m_current == &m_root);
-  std::ostringstream ss;
-  ss << "_Y";
-  Node *p = &m_root;
-  while (true) {
-    PSI_ASSERT(p->name.empty() || p->children.empty());
-    if (!p->children.empty()) {
-      symbol_encode_number(ss, p->children.size()*2 + 1);
-      p = &p->children.front();
+/**
+ * \brief Generate a name of a type for use in a symbol.
+ */
+void symbol_type_name(SymbolLocationWriter& lw, const TreePtr<Term>& term) {
+  if (TreePtr<TypeInstance> inst = term_unwrap_dyn_cast<TypeInstance>(term)) {
+    if (inst->parameters.empty()) {
+      lw.write(inst->generic->location().logical, false, 'A', 'B');
     } else {
-      symbol_encode_number(ss, p->name.size()*2);
-      ss << p->name;
-      
-      while (true) {
-        if (!p->parent)
-          return ss.str();
-        
-        NodeList::iterator next = p->parent->children.iterator_to(*p);
-        ++next;
-        if (next == p->parent->children.end()) {
-          p = p->parent;
-        } else {
-          p = &*next;
-          break;
-        }
-      }
+      lw.write(inst->generic->location().logical, false, 'C', 'D');
+      symbol_encode_number(lw.output(), inst->parameters.size());
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = inst->parameters.begin(), ie = inst->parameters.end(); ii != ie; ++ii)
+        symbol_type_name(lw, *ii);
     }
+  } else if (TreePtr<NumberType> type = term_unwrap_dyn_cast<NumberType>(term)) {
+    PSI_ASSERT(type->vector_size == 0);
+    const char *type_keys = "GHIJKLMNOPQ";
+    lw.output() << type_keys[type->scalar_type];
+  } else if (TreePtr<IntegerConstant> value = term_unwrap_dyn_cast<IntegerConstant>(term)) {
+    const char *type_keys = "ghijklmnopq";
+    lw.output() << type_keys[value->number_type];
+    if (NumberType::is_signed(value->number_type))
+      symbol_encode_signed_number(lw.output(), value->value);
+    else
+      symbol_encode_number(lw.output(), value->value);
+  } else {
+    lw.write(inst->location().logical, false, 'E', 'F');
   }
+}
+
+std::string symbol_implementation_name(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters) {
+  std::ostringstream ss;
+  ss << "_Y1";
+  SymbolLocationWriter lw(ss);
+  lw.write(interface->location().logical, true, '\0', '\0');
+  for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = parameters.begin(), ie = parameters.end(); ii != ie; ++ii)
+    symbol_type_name(lw, *ii);
+  return ss.str();
 }
 }
 }

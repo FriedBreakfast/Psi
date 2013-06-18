@@ -474,11 +474,21 @@ namespace Psi {
      * \param value Value of the integer to get.
      */    
     ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, int value, const SourceLocation& location) {
-      return int_value(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value), location);
+      return int_value(context, width, is_signed, BigInteger(IntegerType::value_bits(width), int64_t(value)), location);
     }
 
     /// \copydoc FunctionalBuilder::int_value(Term*,int)
     ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, unsigned value, const SourceLocation& location) {
+      return int_value(context, width, is_signed, BigInteger(IntegerType::value_bits(width), uint64_t(value)), location);
+    }
+
+    /// \copydoc FunctionalBuilder::int_value(Term*,int)
+    ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, int64_t value, const SourceLocation& location) {
+      return int_value(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value), location);
+    }
+
+    /// \copydoc FunctionalBuilder::int_value(Term*,int)
+    ValuePtr<> FunctionalBuilder::int_value(Context& context, IntegerType::Width width, bool is_signed, uint64_t value, const SourceLocation& location) {
       return int_value(context, width, is_signed, BigInteger(IntegerType::value_bits(width), value), location);
     }
     
@@ -534,6 +544,16 @@ namespace Psi {
     
     /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,int)
     ValuePtr<> FunctionalBuilder::int_value(const ValuePtr<IntegerType>& type, unsigned value, const SourceLocation& location) {
+      return int_value(type->context(), type->width(), type->is_signed(), value, location);
+    }
+    
+    /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,int)
+    ValuePtr<> FunctionalBuilder::int_value(const ValuePtr<IntegerType>& type, int64_t value, const SourceLocation& location) {
+      return int_value(type->context(), type->width(), type->is_signed(), value, location);
+    }
+    
+    /// \copydoc FunctionalBuilder::int_value(Context&,IntegerType::Width,bool,int)
+    ValuePtr<> FunctionalBuilder::int_value(const ValuePtr<IntegerType>& type, uint64_t value, const SourceLocation& location) {
       return int_value(type->context(), type->width(), type->is_signed(), value, location);
     }
     

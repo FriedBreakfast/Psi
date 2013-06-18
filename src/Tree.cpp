@@ -926,7 +926,7 @@ namespace Psi {
     TermTypeInfo ArrayType::type_info_impl(const ArrayType& self) {
       const TermTypeInfo& elem_info = self.element_type->type_info();
       TermTypeInfo rt;
-      rt.type_fixed_size = elem_info.type_fixed_size && !tree_isa<IntegerValue>(self.length);
+      rt.type_fixed_size = elem_info.type_fixed_size && !tree_isa<IntegerConstant>(self.length);
       rt.type_mode = elem_info.type_mode;
       return rt;
     }
@@ -1439,82 +1439,97 @@ namespace Psi {
     
     const TermVtable SolidifyDuring::vtable = PSI_COMPILER_TERM(SolidifyDuring, "psi.compiler.SolidifyDuring", Term);
     
-    PrimitiveType::PrimitiveType(const String& name_)
+    /// \brief Returns true if the key is a valid number type
+    bool NumberType::is_number(unsigned key) {
+      switch (key) {
+      case n_bool:
+      case n_i8: case n_i16: case n_i32: case n_i64: case n_iptr:
+      case n_u8: case n_u16: case n_u32: case n_u64: case n_uptr:
+      case n_f32: case n_f64:
+        return true;
+        
+      default:
+        return false;
+      }
+    }
+    
+    /// \brief Returns true if the key is an integer type
+    bool NumberType::is_integer(unsigned key) {
+      switch (key) {
+      case n_i8: case n_i16: case n_i32: case n_i64: case n_iptr:
+      case n_u8: case n_u16: case n_u32: case n_u64: case n_uptr:
+        return true;
+        
+      default:
+        return false;
+      }
+    }
+    
+    /// \brief Returns true if the key is a signed integer type
+    bool NumberType::is_signed(unsigned key) {
+      switch (key) {
+      case n_i8: case n_i16: case n_i32: case n_i64: case n_iptr:
+        return true;
+        
+      default:
+        return false;
+      }
+    }
+    
+    NumberType::NumberType(ScalarType scalar_type_, unsigned vector_size_)
     : Type(&vtable),
-    name(name_) {
+    scalar_type(scalar_type_),
+    vector_size(vector_size_) {
     }
     
-    template<typename Visitor> void PrimitiveType::visit(Visitor& v) {
+    template<typename Visitor> void NumberType::visit(Visitor& v) {
       visit_base<Type>(v);
-      v("name", &PrimitiveType::name);
+      v("scalar_type", &NumberType::scalar_type)
+      ("vector_size", &NumberType::vector_size);
     }
     
-    TermResultInfo PrimitiveType::check_type_impl(const PrimitiveType& self) {
+    TermResultInfo NumberType::check_type_impl(const NumberType& self) {
+      if (!is_number(self.scalar_type))
+        self.compile_context().error_throw(self.location(), boost::format("%d is not a valid number type") % self.scalar_type);
       return term_result_type(self.compile_context());
     }
     
-    TermTypeInfo PrimitiveType::type_info_impl(const PrimitiveType&) {
+    TermTypeInfo NumberType::type_info_impl(const NumberType&) {
       TermTypeInfo rt;
       rt.type_fixed_size = true;
       rt.type_mode = type_mode_primitive;
       return rt;
     }
 
-    const FunctionalVtable PrimitiveType::vtable = PSI_COMPILER_FUNCTIONAL(PrimitiveType, "psi.compiler.PrimitiveType", Type);
-    
-    BuiltinValue::BuiltinValue(const String& constructor_, const String& data_, const TreePtr<Term>& type)
-    : Constant(&vtable),
-    builtin_type(type),
-    constructor(constructor_),
-    data(data_) {
-    }
-    
-    template<typename Visitor>
-    void BuiltinValue::visit(Visitor& v) {
-      visit_base<Constant>(v);
-      v("builtin_type", &BuiltinValue::builtin_type)
-      ("constructor", &BuiltinValue::constructor)
-      ("data", &BuiltinValue::data);
-    }
-    
-    TermResultInfo BuiltinValue::check_type_impl(const BuiltinValue& self) {
-      if (!tree_isa<PrimitiveType>(self.builtin_type))
-        self.compile_context().error_throw(self.location(), "Type of builtin value is not a primitive type");
-      return TermResultInfo(self.builtin_type, term_mode_value, true);
-    }
-    
-    TermTypeInfo BuiltinValue::type_info_impl(const BuiltinValue&) {
-      TermTypeInfo rt;
-      rt.type_mode = type_mode_none;
-      return rt;
-    }
+    const FunctionalVtable NumberType::vtable = PSI_COMPILER_FUNCTIONAL(NumberType, "psi.compiler.NumberType", Type);
 
-    const FunctionalVtable BuiltinValue::vtable = PSI_COMPILER_FUNCTIONAL(BuiltinValue, "psi.compiler.BuiltinValue", Constant);
-
-    IntegerValue::IntegerValue(const TreePtr<Term>& type, int value_, const SourceLocation& location)
+    IntegerConstant::IntegerConstant(NumberType::ScalarType number_type_, uint64_t value_)
     : Constant(&vtable),
-    integer_type(TermBuilder::to_functional(type, location)),
+    number_type(number_type_),
     value(value_) {
     }
     
     template<typename V>
-    void IntegerValue::visit(V& v) {
+    void IntegerConstant::visit(V& v) {
       visit_base<Constant>(v);
-      v("integer_type", &IntegerValue::integer_type)
-      ("value", &IntegerValue::value);
+      v("number_type", &IntegerConstant::number_type)
+      ("value", &IntegerConstant::value);
     }
     
-    TermResultInfo IntegerValue::check_type_impl(const IntegerValue& self) {
-      return TermResultInfo(self.integer_type, term_mode_value, true);
+    TermResultInfo IntegerConstant::check_type_impl(const IntegerConstant& self) {
+      if (!NumberType::is_integer(self.number_type) && (self.number_type != NumberType::n_bool))
+        self.compile_context().error_throw(self.location(), boost::format("Number type %d is not an integer type") % self.number_type);
+
+      return TermResultInfo(TermBuilder::number_type(self.compile_context(), (NumberType::ScalarType)self.number_type), term_mode_value, true);
     }
     
-    TermTypeInfo IntegerValue::type_info_impl(const IntegerValue&) {
+    TermTypeInfo IntegerConstant::type_info_impl(const IntegerConstant&) {
       TermTypeInfo rt;
       rt.type_mode = type_mode_none;
       return rt;
     }
     
-    const FunctionalVtable IntegerValue::vtable = PSI_COMPILER_FUNCTIONAL(IntegerValue, "psi.compiler.IntegerValue", Constant);
+    const FunctionalVtable IntegerConstant::vtable = PSI_COMPILER_FUNCTIONAL(IntegerConstant, "psi.compiler.IntegerConstant", Constant);
 
     StringValue::StringValue(const String& value_)
     : Constant(&vtable),

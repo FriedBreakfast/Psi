@@ -947,52 +947,65 @@ namespace Psi {
      * This saves having to create a separate tree for each one, at least until later in the compilation process
      * so that a uniform syntax may be used by the user.
      */
-    class PrimitiveType : public Type {
+    class NumberType : public Type {
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
       
-      PrimitiveType(const String& name);
-      template<typename Visitor> static void visit(Visitor& v);
-      static TermResultInfo check_type_impl(const PrimitiveType& self);
-      static TermTypeInfo type_info_impl(const PrimitiveType& self);
+      enum ScalarType {
+        n_bool, ///< Boolean
+        n_i8, ///< 8-bit signed integer
+        n_i16, ///< 16-bit signed integer
+        n_i32, ///< 32-bit signed integer
+        n_i64, ///< 64-bit signed integer
+        n_iptr, ///< Pointer sized signed integer
+        n_u8, ///< 8-bit unsigned integer
+        n_u16, ///< 16-bit unsigned integer
+        n_u32, ///< 32-bit unsigned integer
+        n_u64, ///< 64-bit unsigned integer
+        n_uptr, ///< Pointer sized unsigned integer
+        n_f32, ///< 32-bit float
+        n_f64 ///< 64-bit float
+      };
 
-      String name;
-    };
-    
-    /**
-     * \brief Tree for built in values.
-     */
-    class BuiltinValue : public Constant {
-    public:
-      PSI_COMPILER_EXPORT static const VtableType vtable;
+      static bool is_number(unsigned key);
+      static bool is_integer(unsigned key);
+      static bool is_signed(unsigned key);
       
-      BuiltinValue(const String& constructor, const String& data, const TreePtr<Term>& type);
+      NumberType(ScalarType scalar_type, unsigned vector_size=0);
       template<typename Visitor> static void visit(Visitor& v);
-      static TermResultInfo check_type_impl(const BuiltinValue& self);
-      static TermTypeInfo type_info_impl(const BuiltinValue& self);
-      
-      TreePtr<Term> builtin_type;
-      String constructor;
-      String data;
+      static TermResultInfo check_type_impl(const NumberType& self);
+      static TermTypeInfo type_info_impl(const NumberType& self);
+
+      /// \brief Scalar type.
+      unsigned scalar_type;
+      /**
+       * \brief Number of elements of this type if it is a vector.
+       * 
+       * Zero implies a scalar.
+       */
+      unsigned vector_size;
     };
     
     /**
-     * \brief Class for small integer values.
-     * 
-     * Holds a 32 bit signed integer value.
-     * Note that it is a requirement to use this type of constant to index
-     * structures and unions.
+     * \brief Tree for constant integers.
      */
-    class IntegerValue : public Constant {
+    class IntegerConstant : public Constant {
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
-      IntegerValue(const TreePtr<Term>& type, int value, const SourceLocation& location);
-      template<typename V> static void visit(V& v);
-      static TermResultInfo check_type_impl(const IntegerValue& self);
-      static TermTypeInfo type_info_impl(const IntegerValue& self);
       
-      TreePtr<Term> integer_type;
-      int value;
+      IntegerConstant(NumberType::ScalarType type, uint64_t bits);
+      template<typename Visitor> static void visit(Visitor& v);
+      static TermResultInfo check_type_impl(const IntegerConstant& self);
+      static TermTypeInfo type_info_impl(const IntegerConstant& self);
+      
+      /// \brief Number type (see NumberType::ScalarType)
+      unsigned number_type;
+      /**
+       * \brief Value.
+       * 
+       * Bits not beyong those expected for the type are not defined, except for boolean, where zero is false and any other value is true.
+       */
+      uint64_t value;
     };
     
     /**

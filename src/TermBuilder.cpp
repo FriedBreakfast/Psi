@@ -33,12 +33,25 @@ TreePtr<Term> TermBuilder::upref_type(CompileContext& compile_context) {
 }
 
 TreePtr<Term> TermBuilder::size_type(CompileContext& compile_context) {
-  return compile_context.builtins().size_type;
+  return compile_context.builtins().uptr_type;
 }
 
 /// \brief Get a primitive type
-TreePtr<Term> TermBuilder::primitive_type(CompileContext& compile_context, const String& name, const SourceLocation& location) {
-  return compile_context.get_functional(PrimitiveType(name), location);
+TreePtr<Term> TermBuilder::number_type(CompileContext& compile_context, NumberType::ScalarType type) {
+  const BuiltinTypes& b = compile_context.builtins();
+  switch (type) {
+  case NumberType::n_bool: return b.boolean_type;
+  case NumberType::n_i8: return b.i8_type;
+  case NumberType::n_i16: return b.i16_type;
+  case NumberType::n_i32: return b.i32_type;
+  case NumberType::n_i64: return b.i64_type;
+  case NumberType::n_iptr: return b.iptr_type;
+  case NumberType::n_u8: return b.u8_type;
+  case NumberType::n_u16: return b.u16_type;
+  case NumberType::n_u32: return b.u32_type;
+  case NumberType::n_u64: return b.u64_type;
+  case NumberType::n_uptr: return b.uptr_type;
+  }
 }
 
 /// \brief Get a pointer type
@@ -125,8 +138,8 @@ TreePtr<Term> TermBuilder::default_value(const TreePtr<Term>& type, const Source
 }
 
 /// \brief Create a value using a builtin constructor
-TreePtr<Term> TermBuilder::builtin_value(const String& constructor, const String& data, const TreePtr<Term>& type, const SourceLocation& location) {
-  return type.compile_context().get_functional(BuiltinValue(constructor, data, type), location);
+TreePtr<Term> TermBuilder::integer_value(CompileContext& context, NumberType::ScalarType type, uint64_t value, const SourceLocation& location) {
+  return context.get_functional(IntegerConstant(type, value), location);
 }
 
 /// \brief Get an upward reference
@@ -161,7 +174,7 @@ TreePtr<Term> TermBuilder::introduce_exists_upref(const TreePtr<Term>& pointer, 
  * \brief Create an index term from an integer.
  */
 TreePtr<Term> TermBuilder::size_value(unsigned index, CompileContext& compile_context, const SourceLocation& location) {
-  return compile_context.get_functional(IntegerValue(size_type(compile_context), index, location), location);
+  return compile_context.get_functional(IntegerConstant(NumberType::n_uptr, index), location);
 }
 
 /**
@@ -170,7 +183,7 @@ TreePtr<Term> TermBuilder::size_value(unsigned index, CompileContext& compile_co
  * \param location Location for error reporting.
  */
 unsigned TermBuilder::size_from(const TreePtr<Term>& value, const SourceLocation& location) {
-  TreePtr<IntegerValue> inner = term_unwrap_dyn_cast<IntegerValue>(value);
+  TreePtr<IntegerConstant> inner = term_unwrap_dyn_cast<IntegerConstant>(value);
   if (!inner)
     value.compile_context().error_throw(location, "Expected a constant integer value");
   return inner->value;
@@ -180,7 +193,7 @@ unsigned TermBuilder::size_from(const TreePtr<Term>& value, const SourceLocation
  * \brief Compare a constant index to an integer.
  */
 bool TermBuilder::size_equals(const TreePtr<Term>& value, std::size_t n) {
-  TreePtr<IntegerValue> inner = term_unwrap_dyn_cast<IntegerValue>(value);
+  TreePtr<IntegerConstant> inner = term_unwrap_dyn_cast<IntegerConstant>(value);
   return inner && (int(n) == inner->value);
 }
 
