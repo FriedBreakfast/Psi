@@ -11,9 +11,6 @@ TVM
    instructions
    glossary
 
-Introduction
-------------
-
 TVM is the *typed virtual machine*.
 It is a low level language which has a structure similar to :abbr:`SSA (Single static assignment)` form
 (see `here <http://en.wikipedia.org/wiki/Static_single_assignment_form>`_).

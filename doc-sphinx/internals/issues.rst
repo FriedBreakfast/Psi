@@ -1,6 +1,34 @@
 Issues
 ======
 
+Symbol naming
+-------------
+
+The symbol naming mechanism works, but is currently fragile.
+
+Symbols basically break into two categories: global and non-global.
+Global symbols must have a predictable name since they may be linked between modules.
+Non-global symbols can have their names modified to make them unique.
+
+Global symbols fall into several categories:
+
+* Functions. In particular this requires naming interface implementation members
+  systematically.
+* Function specializations. Optimizations will eventually generate functions with certain
+  parameters fixed; systematically naming these symbols will help merge them during linking.
+* Interface implementation instantiations may be global; it would be convenient for debugging
+  purposes if a naming scheme were developed which allowed the interface parameters to be
+  inferred.
+  
+Non-global symbols include local data, closures (not yet implemented).
+The current naming scheme is more or less acceptable here.
+
+I therefore need to create a new :psi:`Psi::LogicalSourceLocation` class.
+I don't think I need referential uniqueness here since I can enforce uniqueness during TVM
+module generation; however each instance will carry a flag indicating whether the name is global or not
+(note that a global node cannot be the child of a non-global node).
+
+
 Constant folding
 ----------------
 
@@ -63,10 +91,6 @@ I think this whole system needs a rethink.
 TVM improvements
 ----------------
 
-* Need to ensure any missing ``freea`` instructions are inserted during
-  aggregate lowering so that further backends need not worry about whether
-  each ``alloca`` instruction has an associated ``freea``.
-
 * Constant folding should not be performed by the FunctionalBuilder class.
   Instead it should be performed by each class itself, which will mean:
   
@@ -95,8 +119,6 @@ C backend
 * Handle ``load`` instructions better: currently they are always assigned to local variables
   if the result is used. However if the result is only used once and a ``store`` instruction
   does not occur between the ``load`` instruction an this use, no local variable is required.
-
-* libtcc implementation.
 
 Compiling and linking
 ---------------------

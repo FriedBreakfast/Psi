@@ -45,7 +45,7 @@ namespace Psi {
           phys.first_line = phys.first_column = 1;
           phys.last_line = phys.last_column = 0;
   
-          LogicalSourceLocationPtr log = LogicalSourceLocation::new_root_location();
+          LogicalSourceLocationPtr log = LogicalSourceLocation::new_root();
           return SourceLocation(phys, log);
         }
       }

@@ -120,21 +120,21 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
    * \brief Create a global function.
    */
   template<typename T>
-  static TreePtr<Global> function(const TreePtr<Module>& module, const TreePtr<FunctionType>& type, Linkage linkage,
-                                  const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
-                                  const TreePtr<JumpTarget>& return_target, const SourceLocation& location, const T& body_callback) {
-    TreePtr<Global> f = tree_from(::new Function(module, type, linkage, arguments, return_target, location, body_callback));
-    return f;
+  static TreePtr<ModuleGlobal> function(const TreePtr<Module>& module, const TreePtr<FunctionType>& type, Linkage linkage,
+                                        const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
+                                        const TreePtr<JumpTarget>& return_target, const SourceLocation& location,
+                                        const T& body_callback, const String& symbol_name=String()) {
+    return tree_from(::new Function(module, symbol_name, type, linkage, arguments, return_target, location, body_callback));
   }
   
   /**
    * \brief Create a global variable.
    */
   template<typename T>
-  static TreePtr<Global> global_variable(const TreePtr<Module>& module, const TreePtr<Term>& type, Linkage linkage, bool constant, bool merge, const SourceLocation& location,
-                                         const T& value_callback) {
-    TreePtr<Global> g = tree_from(::new GlobalVariable(module, type, linkage, constant, merge, location, value_callback));
-    return g;
+  static TreePtr<ModuleGlobal> global_variable(const TreePtr<Module>& module, const TreePtr<Term>& type, Linkage linkage,
+                                               bool constant, bool merge, const SourceLocation& location,
+                                               const T& value_callback, const String& symbol_name=String()) {
+    return tree_from(::new GlobalVariable(module, symbol_name, type, linkage, constant, merge, location, value_callback));
   }
 
   static TreePtr<Global> global_variable(const TreePtr<Module>& module, Linkage linkage, bool constant, bool merge, const SourceLocation& location, const TreePtr<Term>& value);

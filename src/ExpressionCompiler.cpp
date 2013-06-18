@@ -41,7 +41,7 @@ namespace Psi {
       switch (expression->expression_type) {
       case Parser::expression_evaluate: {
         const Parser::EvaluateExpression& macro_expression = checked_cast<Parser::EvaluateExpression&>(*expression);
-        TreePtr<Term> first = compile_expression(macro_expression.object, evaluate_context, source->new_anonymous_child());
+        TreePtr<Term> first = compile_expression(macro_expression.object, evaluate_context, source);
         return expression_macro(evaluate_context, first, location)->evaluate(first, macro_expression.parameters, evaluate_context, location);
       }
 
@@ -200,9 +200,9 @@ namespace Psi {
             if (named_expr.name) {
               String expr_name(named_expr.name->begin, named_expr.name->end);
               m_names.insert(std::make_pair(expr_name, index));
-              logical_location = location.logical->named_child(expr_name);
+              logical_location = location.logical->new_child(expr_name);
             } else {
-              logical_location = location.logical->new_anonymous_child();
+              logical_location = location.logical;
             }
             SourceLocation statement_location(named_expr.location.location, logical_location);
             m_statements.push_back(StatementValueType(compile_context(), statement_location,
@@ -335,7 +335,7 @@ namespace Psi {
             PSI_ASSERT(named_expr.expression && named_expr.name && (named_expr.mode != statement_mode_destroy));
             
             String expr_name(named_expr.name->begin, named_expr.name->end);
-            LogicalSourceLocationPtr logical_location = location.logical->named_child(expr_name);
+            LogicalSourceLocationPtr logical_location = location.logical->new_child(expr_name);
             SourceLocation entry_location(named_expr.location.location, logical_location);
             m_entries.insert(std::make_pair(expr_name, EntryType(compile_context(), entry_location,
                                                                  NamespaceEntry(named_expr.expression, (StatementMode)named_expr.mode, entry_location))));

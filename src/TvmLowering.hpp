@@ -2,6 +2,8 @@
 #define HPP_PSI_TVMLOWERING
 
 #include <boost/optional.hpp>
+#include <boost/intrusive/list.hpp>
+#include <boost/intrusive/unordered_set.hpp>
 
 #include "Tree.hpp"
 #include "SharedMap.hpp"
@@ -171,14 +173,70 @@ namespace Psi {
       explicit TvmGlobalStatus(const Tvm::ValuePtr<Tvm::Global>& lowered_) : status(global_ready), lowered(lowered_), priority(0) {}
     };
     
+    class SymbolNameSet {
+      boost::unordered_map<std::string, unsigned> m_unique_names;
+      boost::unordered_map<TreePtr<Global>, std::string> m_symbol_names;
+      
+    public:
+      std::string unique_name(const std::string& base);
+      const std::string& symbol_name(const TreePtr<ModuleGlobal>& name);
+    };
+    
+    class SymbolNameBuilder : public NonCopyable {
+      struct Node;
+      struct NodeDisposer;
+
+      typedef boost::intrusive::unordered_set<Node> NodeSet;
+      typedef boost::intrusive::list<Node> NodeList;
+      
+      struct Node : boost::intrusive::list_base_hook<>, boost::intrusive::unordered_set_base_hook<> {
+        Node();
+        ~Node();
+        void clear();
+        bool operator == (const Node& other) const;
+        std::size_t hash() const;
+        
+        bool index_first;
+        unsigned index;
+        Node *parent;
+        std::string name;
+        NodeList children;
+        
+        friend std::size_t hash_value(const Node& node) {
+          return node.hash();
+        }
+      };
+      
+      static bool equals(const Node& lhs, const Node& rhs);
+      
+      static const unsigned initial_buckets = 16;
+      UniqueArray<NodeSet::bucket_type> m_buckets;
+      Node m_root;
+      Node *m_current;
+      NodeSet m_nodes;
+      unsigned m_node_index;
+      
+    public:
+      SymbolNameBuilder();
+      ~SymbolNameBuilder();
+      
+      void enter();
+      void exit();
+      void emit(const std::string& name);
+      void emit(const LogicalSourceLocationPtr& location);
+      std::string name();
+    };
+    
+    std::string symbol_implementation_name(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters);
+    
     class TvmObjectCompilerBase {
       TvmJitCompiler *m_jit_compiler;
       TvmTargetScope *m_target;
       TvmScopePtr m_scope;
       TreePtr<Module> m_module;
       Tvm::Module *m_tvm_module;
-      std::size_t m_n_constructors;
       TvmGeneratedImplementationSet m_implementations;
+      SymbolNameSet m_symbol_names;
       
       /** Notify a global with a matching name to one that has been requested already exists.
        * The derived class should check this matches the global used to create the symbol. */
@@ -206,8 +264,6 @@ namespace Psi {
       void run_module_global(const TreePtr<ModuleGlobal>& global, TvmGlobalStatus& status);
       Tvm::Module *tvm_module() {return m_tvm_module;}
       void reset_tvm_module(Tvm::Module *module);
-      
-      static std::string mangle_name(const LogicalSourceLocationPtr& location);
     };
 
     class TvmObjectCompiler : public TvmObjectCompilerBase {

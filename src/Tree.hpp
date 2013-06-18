@@ -102,7 +102,8 @@ namespace Psi {
     class ModuleGlobal : public Global {
     public:
       PSI_COMPILER_EXPORT static const SIVtable vtable;
-      PSI_COMPILER_EXPORT ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module, const TreePtr<Term>& type, Linkage linkage, const SourceLocation& location);
+      PSI_COMPILER_EXPORT ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module, const String& symbol_name,
+                                       const TreePtr<Term>& type, Linkage linkage, const SourceLocation& location);
       ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module, const TermResultInfo& type, Linkage linkage, const SourceLocation& location);
       
       template<typename V> static void visit(V& v);
@@ -111,6 +112,8 @@ namespace Psi {
       TreePtr<Module> module;
       /// \brief If set, this variable does not have a symbol name.
       Linkage linkage;
+      /// \brief If non-empty, use this instead of the normally generated symbol name.
+      String symbol_name;
     };
     
     /**
@@ -121,7 +124,7 @@ namespace Psi {
     class ExternalGlobal : public ModuleGlobal {
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
-      ExternalGlobal(const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location);
+      ExternalGlobal(const TreePtr<Module>& module, const String& symbol_name, const TreePtr<Term>& type, const SourceLocation& location);
       template<typename V> static void visit(V& v);
     };
     
@@ -152,9 +155,10 @@ namespace Psi {
       static const VtableType vtable;
 
       template<typename ValueCallback>
-      GlobalVariable(const TreePtr<Module>& module, const TreePtr<Term>& type, Linkage linkage, bool constant_, bool merge_,
+      GlobalVariable(const TreePtr<Module>& module, const String& symbol_name,
+                     const TreePtr<Term>& type, Linkage linkage, bool constant_, bool merge_,
                      const SourceLocation& location, const ValueCallback& value)
-      : ModuleGlobal(&vtable, module, type, linkage, location),
+      : ModuleGlobal(&vtable, module, symbol_name, type, linkage, location),
       m_value(module.compile_context(), location, value),
       constant(constant_),
       merge(merge_) {
@@ -720,13 +724,14 @@ namespace Psi {
       
       template<typename BodyCallback>
       Function(const TreePtr<Module>& module,
+               const String& symbol_name,
                const TreePtr<FunctionType>& type,
                Linkage linkage,
                const PSI_STD::vector<TreePtr<Anonymous> >& arguments_,
                const TreePtr<JumpTarget>& return_target_,
                const SourceLocation& location,
                const BodyCallback& body_callback)
-      : ModuleGlobal(&vtable, module, type, linkage, location),
+      : ModuleGlobal(&vtable, module, symbol_name, type, linkage, location),
       m_body(module.compile_context(), location, body_callback),
       arguments(arguments_),
       return_target(return_target_) {

@@ -1,6 +1,8 @@
 #ifndef HPP_PSI_CPP_COMPILER
 #define HPP_PSI_CPP_COMPILER
 
+#include <cstddef>
+
 namespace Psi {
 #if defined(__GNUC__)
 #define PSI_STD std
@@ -41,6 +43,11 @@ namespace Psi {
 #else
 #define PSI_UNREACHABLE() void()
 #endif
+  
+  typedef std::size_t AtomicCount;
+  inline std::size_t atomic_increment(std::size_t& x) {return __sync_add_and_fetch(&x, 1);}
+  inline std::size_t atomic_decrement(std::size_t& x) {return __sync_sub_and_fetch(&x, 1);}
+  
 #elif defined(_MSC_VER)
 #define PSI_STD std
 #define PSI_STDINC ""
@@ -69,6 +76,13 @@ namespace Psi {
   };
 
 #define PSI_DEBUG_LOCATION() ::Psi::DebugLocation(__FILE__, __LINE__, __FUNCTION__)
+  
+  typedef std::ptrdiff_t AtomicCount;
+  inline long atomic_increment(long& x) {return _InterlockedIncrement(&x);}
+  inline long atomic_decrement(long& x) {return _InterlockedDecrement(&x);}
+  inline __int64 atomic_increment(__int64& x) {return _InterlockedIncrement64(&x);}
+  inline __int64 atomic_decrement(__int64& x) {return _InterlockedDecrement64(&x);}
+  
 #else
 #error Unsupported compiler!
 #define PSI_STD std
@@ -98,6 +112,9 @@ namespace Psi {
       : file(file_), line(line_) {}
   };
 #define PSI_DEBUG_LOCATION() DebugLocation(__FILE__, __LINE__)
+  
+  /// \brief Increment a value atomically, and return the new value.
+  std::size_t atomic_increment(std::size_t& x);
 #endif
 
 #ifdef PSI_DOXYGEN

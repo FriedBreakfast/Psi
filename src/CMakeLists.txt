@@ -160,6 +160,7 @@ add_library(psi-compiler SHARED
   TvmInstructionLowering.cpp
   TvmLifecycle.cpp
   TvmLowering.cpp TvmLowering.hpp
+  TvmSymbolNaming.cpp
   Visitor.hpp
   ${PSI_COMPILER_SOURCES}
 )

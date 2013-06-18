@@ -6,93 +6,33 @@
 #endif
 
 namespace Psi {
-  bool LogicalSourceLocation::Key::operator < (const Key& other) const {
-    if (index) {
-      if (other.index)
-        return index < other.index;
-      else
-        return false;
-    } else {
-      if (other.index)
-        return true;
-      else
-        return name < other.name;
-    }
-  } 
-
-  bool LogicalSourceLocation::Compare::operator () (const LogicalSourceLocation& lhs, const LogicalSourceLocation& rhs) const {
-    return lhs.m_key < rhs.m_key;
-  }
-
-  struct LogicalSourceLocation::KeyCompare {
-    bool operator () (const Key& key, const LogicalSourceLocation& node) const {
-      return key < node.m_key;
-    }
-
-    bool operator () (const LogicalSourceLocation& node, const Key& key) const {
-      return node.m_key < key;
-    }
-  };
-
-  LogicalSourceLocation::LogicalSourceLocation(const Key& key, const LogicalSourceLocationPtr& parent)
-    : m_reference_count(0), m_key(key), m_parent(parent) {
+  LogicalSourceLocation::LogicalSourceLocation(const String& name, const LogicalSourceLocation *parent)
+  : m_name(name), m_parent(parent) {
   }
 
   LogicalSourceLocation::~LogicalSourceLocation() {
-    if (m_parent)
-      m_parent->m_children.erase(m_parent->m_children.iterator_to(*this));
   }
 
   /**
     * \brief Create a location with no parent. This should only be used by CompileContext.
     */
-  LogicalSourceLocationPtr LogicalSourceLocation::new_root_location() {
-    Key key;
-    key.index = 0;
-    return LogicalSourceLocationPtr(new LogicalSourceLocation(key, LogicalSourceLocationPtr()));
+  LogicalSourceLocationPtr LogicalSourceLocation::new_root() {
+    return LogicalSourceLocationPtr(new LogicalSourceLocation("", NULL));
   }
 
   /**
     * \brief Create a new named child of this location.
     */
-  LogicalSourceLocationPtr LogicalSourceLocation::named_child(const String& name) {
-    Key key;
-    key.index = 0;
-    key.name = name;
-    ChildMapType::insert_commit_data commit_data;
-    std::pair<ChildMapType::iterator, bool> result = m_children.insert_check(key, KeyCompare(), commit_data);
-
-    if (!result.second)
-      return LogicalSourceLocationPtr(&*result.first);
-
-    LogicalSourceLocationPtr node(new LogicalSourceLocation(key, LogicalSourceLocationPtr(this)));
-    m_children.insert_commit(*node, commit_data);
-    return node;
-  }
-
-  LogicalSourceLocationPtr LogicalSourceLocation::new_anonymous_child() {
-    unsigned index = 1;
-    ChildMapType::iterator end = m_children.end();
-    if (!m_children.empty()) {
-            ChildMapType::iterator last = end;
-            --last;
-            if (last->anonymous())
-              index = last->index() + 1;
-    }
-
-    Key key;
-    key.index = index;
-    LogicalSourceLocationPtr node(new LogicalSourceLocation(key, LogicalSourceLocationPtr(this)));
-    m_children.insert(end, *node);
-    return node;
+  LogicalSourceLocationPtr LogicalSourceLocation::new_child(const String& name) const {
+    return LogicalSourceLocationPtr(new LogicalSourceLocation(name, this));
   }
 
   /**
-    * \brief Count the number of parent nodes between this location and the root node.
-    */
-  unsigned LogicalSourceLocation::depth() {
+   * \brief Count the number of parent nodes between this location and the root node.
+   */
+  unsigned LogicalSourceLocation::depth() const {
     unsigned d = 0;
-    for (LogicalSourceLocation *l = this->parent().get(); l; l = l->parent().get())
+    for (const LogicalSourceLocation *l = this->parent().get(); l; l = l->parent().get())
       ++d;
     return d;
   } 
@@ -101,8 +41,8 @@ namespace Psi {
     * \brief Get the ancestor of this location which is a certain
     * number of parent nodes away.
     */
-  LogicalSourceLocationPtr LogicalSourceLocation::ancestor(unsigned depth) {
-    LogicalSourceLocation *ptr = this;
+  LogicalSourceLocationPtr LogicalSourceLocation::ancestor(unsigned depth) const {
+    const LogicalSourceLocation *ptr = this;
     for (unsigned i = 0; i != depth; ++i)
       ptr = ptr->parent().get();
     return LogicalSourceLocationPtr(ptr);
@@ -117,7 +57,7 @@ namespace Psi {
     * \param ignore_anonymous_tail Do not include anonymous nodes at
     * the bottom of the tree.
     */
-  String LogicalSourceLocation::error_name(const LogicalSourceLocationPtr& relative_to, bool ignore_anonymous, bool null_root) {
+  String LogicalSourceLocation::error_name(const LogicalSourceLocationPtr& relative_to, bool null_root) const {
     unsigned print_depth = depth();
     if (relative_to) {
       // Find the common ancestor of this and relative_to.
@@ -125,8 +65,8 @@ namespace Psi {
       unsigned relative_to_depth = relative_to->depth();
       unsigned min_depth = std::min(this_depth, relative_to_depth);
       print_depth = this_depth - min_depth;
-      LogicalSourceLocation *this_ancestor = ancestor(print_depth).get();
-      LogicalSourceLocation *relative_to_ancestor = relative_to->ancestor(relative_to_depth - min_depth).get();
+      const LogicalSourceLocation *this_ancestor = ancestor(print_depth).get();
+      const LogicalSourceLocation *relative_to_ancestor = relative_to->ancestor(relative_to_depth - min_depth).get();
 
       while (this_ancestor != relative_to_ancestor) {
         ++print_depth;
@@ -137,18 +77,9 @@ namespace Psi {
 
     print_depth = std::max(print_depth, 1u);
 
-    std::vector<LogicalSourceLocation*> nodes;
-    bool last_anonymous = false;
-    for (LogicalSourceLocation *l = this; print_depth; l = l->parent().get(), --print_depth) {
-      if (!l->anonymous()) {
-        nodes.push_back(l);
-        last_anonymous = false;
-      } else {
-        if (!last_anonymous)
-          nodes.push_back(l);
-        last_anonymous = true;
-      }
-    }
+    std::vector<const LogicalSourceLocation*> nodes;
+    for (const LogicalSourceLocation *l = this; print_depth; l = l->parent().get(), --print_depth)
+      nodes.push_back(l);
 
     if (!nodes.back()->parent()) {
       nodes.pop_back();
@@ -162,18 +93,13 @@ namespace Psi {
 
     std::stringstream ss;
     bool first = true;
-    for (std::vector<LogicalSourceLocation*>::reverse_iterator ii = nodes.rbegin(), ie = nodes.rend(); ii != ie; ++ii) {
-      if ((*ii)->anonymous() && ignore_anonymous)
-        continue;
-      
+    for (std::vector<const LogicalSourceLocation*>::reverse_iterator ii = nodes.rbegin(), ie = nodes.rend(); ii != ie; ++ii) {
       if (!first)
         ss << '.';
-      first = false;
-      
-      if ((*ii)->anonymous())
-        ss << "(anonymous)";
       else
-        ss << (*ii)->name();
+        first = false;
+      
+      ss << (*ii)->name();
     }
 
     const std::string& sss = ss.str();
@@ -186,7 +112,7 @@ namespace Psi {
     *
     * Only available if \c PSI_DEBUG is not zero.
     */
-  void LogicalSourceLocation::dump_error_name() {
+  void LogicalSourceLocation::dump_error_name() const {
     std::cerr << error_name(LogicalSourceLocationPtr()) << std::endl;
   }
 #endif
@@ -197,6 +123,6 @@ namespace Psi {
     phys.file->url = url;
     phys.first_line = phys.first_column = 1;
     phys.last_line = phys.last_column = 0;
-    return SourceLocation(phys, LogicalSourceLocation::new_root_location());
+    return SourceLocation(phys, LogicalSourceLocation::new_root());
   }
 }

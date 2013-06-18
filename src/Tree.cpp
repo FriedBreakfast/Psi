@@ -173,10 +173,11 @@ namespace Psi {
 
     const SIVtable Global::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Global", Term);
 
-    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const TreePtr<Term>& type, Linkage linkage_, const SourceLocation& location)
+    ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const String& symbol_name_, const TreePtr<Term>& type, Linkage linkage_, const SourceLocation& location)
     : Global(vptr, type, location),
     module(module_),
-    linkage(linkage_) {
+    linkage(linkage_),
+    symbol_name(symbol_name_) {
     }
 
     ModuleGlobal::ModuleGlobal(const VtableType *vptr, const TreePtr<Module>& module_, const TermResultInfo& type, Linkage linkage_, const SourceLocation& location)
@@ -194,8 +195,8 @@ namespace Psi {
 
     const SIVtable ModuleGlobal::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.ModuleGlobal", Global);
 
-    ExternalGlobal::ExternalGlobal(const TreePtr<Module>& module, const TreePtr<Term>& type, const SourceLocation& location)
-    : ModuleGlobal(&vtable, module, type, link_public, location) {
+    ExternalGlobal::ExternalGlobal(const TreePtr<Module>& module, const String& symbol_name, const TreePtr<Term>& type, const SourceLocation& location)
+    : ModuleGlobal(&vtable, module, symbol_name, type, link_public, location) {
     }
     
     template<typename V>

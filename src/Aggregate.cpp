@@ -149,9 +149,9 @@ void AggregateMacroCommon::parse_arguments(const TreePtr<EvaluateContext>& evalu
     LogicalSourceLocationPtr argument_logical_location;
     if (argument_expr.name) {
       expr_name = String(argument_expr.name->begin, argument_expr.name->end);
-      argument_logical_location = location.logical->named_child(expr_name);
+      argument_logical_location = location.logical->new_child(expr_name);
     } else {
-      argument_logical_location = location.logical->new_anonymous_child();
+      argument_logical_location = location.logical;
     }
     SourceLocation argument_location(argument_expr.location.location, argument_logical_location);
 
@@ -184,9 +184,9 @@ void AggregateMacroCommon::parse_members(const SourceLocation& location) {
       LogicalSourceLocationPtr member_logical_location;
       if (stmt.name) {
         member_name = String(stmt.name->begin, stmt.name->end);
-        member_logical_location = location.logical->named_child(member_name);
+        member_logical_location = location.logical->new_child(member_name);
       } else {
-        member_logical_location = location.logical->new_anonymous_child();
+        member_logical_location = location.logical;
       }
       SourceLocation stmt_location(stmt.location.location, member_logical_location);
 

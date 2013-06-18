@@ -206,7 +206,7 @@ int main(int argc, const char **argv) {
     
     // Create main function
     TreePtr<FunctionType> main_type = TermBuilder::function_type(result_mode_functional, compile_context.builtins().empty_type, default_, default_, init_location);
-    TreePtr<Global> main_function = TermBuilder::function(my_module, main_type, link_public, default_, default_, init_location, init_tree);
+    TreePtr<ModuleGlobal> main_function = TermBuilder::function(my_module, main_type, link_public, default_, default_, init_location, init_tree, "_Y_jit_entry");
     
     void (*main_ptr) ();
     *reinterpret_cast<void**>(&main_ptr) = compile_context.jit_compile(main_function);

@@ -118,7 +118,7 @@ namespace Psi {
         return boost::make_shared<TermName>(global->name(), ValuePtr<Function>(), false);
       }
       
-      std::string name = term->location().logical->error_name(function ? function->location().logical : LogicalSourceLocationPtr(), true, true);
+      std::string name = term->location().logical->error_name(function ? function->location().logical : LogicalSourceLocationPtr(), true);
       return boost::make_shared<TermName>(name, function, true);
     }
     

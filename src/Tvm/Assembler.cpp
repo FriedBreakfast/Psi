@@ -274,7 +274,7 @@ namespace Psi {
           } else {
             dominator = entry;
           }
-          LogicalSourceLocationPtr block_location_logical = logical_location->named_child(it->name->text);
+          LogicalSourceLocationPtr block_location_logical = logical_location->new_child(it->name->text);
           ValuePtr<Block> bl = function->new_block(SourceLocation(it->location, block_location_logical), dominator);
           my_context.put(it->name->text, bl);
           function->add_term_name(bl, it->name->text);
@@ -289,11 +289,8 @@ namespace Psi {
           InstructionBuilder builder(*bt);
           for (UniqueList<Parser::NamedExpression>::const_iterator jt = it->statements.begin();
                jt != it->statements.end(); ++jt) {
-            LogicalSourceLocationPtr value_location;
-            if (jt->name)
-              value_location = logical_location->named_child(jt->name->text);
-            else
-              value_location = logical_location->new_anonymous_child();
+            LogicalSourceLocationPtr value_location =
+              jt->name ? logical_location->new_child(jt->name->text) : logical_location;
             ValuePtr<> value = build_instruction(my_context, phi_nodes, builder, *jt->expression, value_location);
             if (jt->name) {
               my_context.put(jt->name->text, value);
@@ -337,7 +334,7 @@ namespace Psi {
 
       for (UniqueList<Parser::NamedGlobalElement>::const_iterator it = globals.begin();
            it != globals.end(); ++it) {
-        LogicalSourceLocationPtr location = module.location().logical->named_child(it->name->text);
+        LogicalSourceLocationPtr location = module.location().logical->new_child(it->name->text);
         if (it->value->global_type == Parser::global_function) {
           const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
           ValuePtr<FunctionType> function_type = Assembler::build_function_type(asmct, *def.type, location);

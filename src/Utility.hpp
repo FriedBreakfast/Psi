@@ -142,6 +142,18 @@ namespace Psi {
     }
   };
   
+  /**
+   * Thread safe reference count.
+   */
+  class ReferenceCount {
+    AtomicCount m_count;
+    
+  public:
+    ReferenceCount() : m_count(0) {}
+    void acquire() {atomic_increment(m_count);}
+    bool release() {return atomic_decrement(m_count) == 0;}
+  };
+  
   template<typename T>
   class UniquePtr : public PointerBase<T> {
     void clear() {

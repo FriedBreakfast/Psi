@@ -83,7 +83,7 @@ namespace Psi {
     m_running_completion_stack(NULL),
     m_functional_term_buckets(initial_functional_term_buckets),
     m_functional_term_set(FunctionalTermSetType::bucket_traits(m_functional_term_buckets.get(), m_functional_term_buckets.size())),
-    m_root_location(PhysicalSourceLocation(), LogicalSourceLocation::new_root_location()) {
+    m_root_location(PhysicalSourceLocation(), LogicalSourceLocation::new_root()) {
       PSI_ASSERT(error_context);
       
 #if PSI_DEBUG && defined(__GNUC__) && defined(__ELF__)

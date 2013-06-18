@@ -107,9 +107,9 @@ namespace Psi {
         LogicalSourceLocationPtr logical_location;
         if (argument_expr.name) {
           expr_name = String(argument_expr.name->begin, argument_expr.name->end);
-          logical_location = location.logical->named_child(expr_name);
+          logical_location = location.logical->new_child(expr_name);
         } else {
-          logical_location = location.logical->new_anonymous_child();
+          logical_location = location.logical;
         }
         SourceLocation argument_location(argument_expr.location.location, logical_location);
 
@@ -134,9 +134,9 @@ namespace Psi {
         LogicalSourceLocationPtr logical_location;
         if (argument_expr.name) {
           expr_name = String(argument_expr.name->begin, argument_expr.name->end);
-          logical_location = location.logical->named_child(expr_name);
+          logical_location = location.logical->new_child(expr_name);
         } else {
-          logical_location = location.logical->new_anonymous_child();
+          logical_location = location.logical;
         }
         SourceLocation argument_location(argument_expr.location.location, logical_location);
 
@@ -162,7 +162,7 @@ namespace Psi {
       ResultMode result_mode;
       if (parsed_explicit_arguments.return_type) {
         const Parser::FunctionArgument& argument_expr = *parsed_explicit_arguments.return_type;
-        SourceLocation argument_location(argument_expr.location.location, location.logical->new_anonymous_child());
+        SourceLocation argument_location(argument_expr.location.location, location.logical);
         result_type = compile_expression(argument_expr.type, final_argument_context, location.logical);
         result_mode = (ResultMode)argument_expr.mode;
       } else {

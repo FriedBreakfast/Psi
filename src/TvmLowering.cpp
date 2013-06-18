@@ -192,19 +192,6 @@ TvmFunctionalBuilder::TvmFunctionalBuilder(CompileContext& compile_context, Tvm:
 m_tvm_context(&tvm_context) {
 }
 
-std::string TvmObjectCompilerBase::mangle_name(const LogicalSourceLocationPtr& location) {
-  std::ostringstream ss;
-  ss << "_Y";
-  std::vector<LogicalSourceLocationPtr> ancestors;
-  for (LogicalSourceLocationPtr ptr = location; ptr->parent(); ptr = ptr->parent())
-    ancestors.push_back(ptr);
-  for (std::vector<LogicalSourceLocationPtr>::reverse_iterator ii = ancestors.rbegin(), ie = ancestors.rend(); ii != ie; ++ii) {
-    const String& name = (*ii)->name();
-    ss << name.length() << '_' << name;
-  }
-  return ss.str();
-}
-
 /**
  * \brief Lower a generic type.
  */
@@ -377,7 +364,6 @@ const TvmTargetSymbol& TvmTargetScope::library_symbol(const TreePtr<LibrarySymbo
 TvmObjectCompilerBase::TvmObjectCompilerBase(TvmJitCompiler *jit_compiler, TvmTargetScope *target, const TreePtr<Module>& module, Tvm::Module *tvm_module)
 : m_jit_compiler(jit_compiler), m_target(target), m_module(module), m_tvm_module(tvm_module) {
   m_scope = TvmScope::new_(m_target->scope());
-  m_n_constructors = 0;
 }
 
 void TvmObjectCompilerBase::reset_tvm_module(Tvm::Module *module) {
@@ -412,14 +398,13 @@ namespace {
  * of the correct name, type and linkage with no body.
  */
 Tvm::ValuePtr<Tvm::Global> TvmObjectCompilerBase::get_global_bare(const TreePtr<Global>& global) {
-  // Get mangled name
-  std::string symbol_name = mangle_name(global->location().logical);
-  if (Tvm::ValuePtr<Tvm::Global> existing = m_tvm_module->get_member(symbol_name)) {
-    notify_existing_global(global, existing);
-    return existing;
-  }
-  
   if (TreePtr<ModuleGlobal> mod_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
+    const std::string& symbol_name = m_symbol_names.symbol_name(mod_global);
+    if (Tvm::ValuePtr<Tvm::Global> existing = m_tvm_module->get_member(symbol_name)) {
+      notify_existing_global(global, existing);
+      return existing;
+    }
+    
     if (TreePtr<GlobalStatement> stmt = dyn_treeptr_cast<GlobalStatement>(mod_global))
       if (stmt->mode != statement_mode_value)
         compile_context().error_throw(stmt.location(), "Global statements which are not of value-type do not translate directly to TVM, use build_global_statement");
@@ -547,6 +532,34 @@ public:
   }
 };
 
+void symbol_type_name(SymbolNameBuilder& builder, const TreePtr<Term>& term) {
+  if (TreePtr<TypeInstance> inst = term_unwrap_dyn_cast<TypeInstance>(term)) {
+    if (inst->parameters.empty()) {
+      builder.emit(inst->generic->location().logical);
+    } else {
+      builder.enter();
+      builder.emit(inst->generic->location().logical);
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = inst->parameters.begin(), ie = inst->parameters.end(); ii != ie; ++ii)
+        symbol_type_name(builder, *ii);
+      builder.exit();
+    }
+  } else if (TreePtr<BuiltinValue> value = term_unwrap_dyn_cast<BuiltinValue>(term)) {
+    PSI_NOT_IMPLEMENTED();
+  } else if (TreePtr<PrimitiveType> type = term_unwrap_dyn_cast<PrimitiveType>(term)) {
+    PSI_NOT_IMPLEMENTED();
+  } else {
+    builder.emit(term->location().logical);
+  }
+}
+
+std::string symbol_implementation_name(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters) {
+  SymbolNameBuilder builder;
+  builder.emit(interface->location().logical);
+  for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = parameters.begin(), ie = parameters.end(); ii != ie; ++ii)
+    symbol_type_name(builder, *ii);
+  return builder.name();
+}
+
 /**
  * \brief Get an implementation in a global variable.
  */
@@ -564,8 +577,9 @@ TvmResult TvmObjectCompilerBase::get_implementation(const TreePtr<Interface>& in
   PSI_ASSERT(value->is_functional());
   std::set<TreePtr<ModuleGlobal> > my_dependencies;
   TvmResult tvm_value = TvmGlobalBuilder(this, my_dependencies).build(value);
-  Tvm::ValuePtr<Tvm::GlobalVariable> gvar = m_tvm_module->new_global_variable_set(mangle_name(implementation->location().logical), tvm_value.value, location);
-  gvar->set_linkage(Tvm::link_local);
+  std::string symbol_name = symbol_implementation_name(interface, parameters);
+  Tvm::ValuePtr<Tvm::GlobalVariable> gvar = m_tvm_module->new_global_variable_set(symbol_name, tvm_value.value, location);
+  gvar->set_linkage(Tvm::link_one_definition);
   gvar->set_constant(true);
   gvar->set_merge(true);
   
@@ -608,15 +622,14 @@ void TvmObjectCompilerBase::run_module_global(const TreePtr<ModuleGlobal>& globa
       tvm_gvar->set_merge(global_var->merge);
     } catch (TvmNotGlobalException&) {
       tvm_gvar->set_value(Tvm::FunctionalBuilder::undef(tvm_gvar->value_type(), global_var->location()));
-      unsigned ctor_idx = m_n_constructors++;
-      std::string ctor_name = boost::str(boost::format("_Y_ctor%d") % ctor_idx);
+      std::string ctor_name = m_symbol_names.unique_name("_Y_ctor");
       Tvm::ValuePtr<Tvm::Function> constructor = m_tvm_module->new_constructor(ctor_name, global_var->location());
       TreePtr<Term> ctor_tree = TermBuilder::initialize_value(global_var, global_var->value(), TermBuilder::empty_value(compile_context()), global_var->location());
       tvm_lower_init(*this, global_var->module, ctor_tree, constructor, status.dependencies);
       status.init = constructor;
       
       if (global_var->type && (global_var->type->type_info().type_mode == type_mode_complex)) {
-        std::string dtor_name = str(boost::format("_Y_dtor%d") % ctor_idx);
+        std::string dtor_name = m_symbol_names.unique_name("_Y_dtor");
         Tvm::ValuePtr<Tvm::Function> destructor = m_tvm_module->new_constructor(dtor_name, global_var->location());
         TreePtr<Term> dtor_body = TermBuilder::finalize_value(global_var, global_var->location());
         tvm_lower_init(*this, global_var->module, dtor_body, destructor, status.dependencies);
@@ -633,15 +646,14 @@ void TvmObjectCompilerBase::run_module_global(const TreePtr<ModuleGlobal>& globa
       tvm_gvar->set_value(value.value);
     } catch (TvmNotGlobalException&) {
       tvm_gvar->set_value(Tvm::FunctionalBuilder::undef(tvm_gvar->value_type(), global_stmt->location()));
-      unsigned ctor_idx = m_n_constructors++;
-      std::string ctor_name = boost::str(boost::format("_Y_ctor%d") % ctor_idx);
+      std::string ctor_name = m_symbol_names.unique_name("_Y_ctor");
       Tvm::ValuePtr<Tvm::Function> constructor = m_tvm_module->new_constructor(ctor_name, global_stmt->location());
       TreePtr<Term> ctor_tree = TermBuilder::initialize_value(global_stmt, global_stmt->value, TermBuilder::empty_value(compile_context()), global_stmt->location());
       tvm_lower_init(*this, global_stmt->module, ctor_tree, constructor, status.dependencies);
       status.init = constructor;
       
       if (global_stmt->type && (global_stmt->type->type_info().type_mode == type_mode_complex)) {
-        std::string dtor_name = boost::str(boost::format("_Y_dtor%d") % ctor_idx);
+        std::string dtor_name = m_symbol_names.unique_name("_Y_dtor");
         Tvm::ValuePtr<Tvm::Function> destructor = m_tvm_module->new_constructor(dtor_name, global_stmt->location());
         TreePtr<Term> dtor_body = TermBuilder::finalize_value(global_stmt, global_stmt->location());
         tvm_lower_init(*this, global_stmt->module, dtor_body, destructor, status.dependencies);
