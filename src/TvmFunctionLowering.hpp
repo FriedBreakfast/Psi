@@ -134,6 +134,7 @@ public:
   virtual TvmResult build_global_evaluate(const TreePtr<GlobalEvaluate>& global);
   virtual TvmResult build_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
                                          const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation=TreePtr<Implementation>());
+  virtual TvmResult load(const Tvm::ValuePtr<>& ptr, const SourceLocation& location);
 
   /**
    * \brief Get the instruction builder for this function.

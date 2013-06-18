@@ -248,7 +248,15 @@ struct TvmFunctionalLowererMap {
   }
   
   static TvmResult build_pointer_target(TvmFunctionalBuilder& builder, const TreePtr<PointerTarget>& ptr_target) {
-    return builder.build(ptr_target->value);
+    TvmResult child = builder.build(ptr_target->value);
+    switch (ptr_target->value->mode) {
+    case term_mode_lref:
+    case term_mode_rref:
+      return builder.load(child.value, ptr_target->location());
+      
+    default:
+      return child;
+    }
   }
   
   static TvmResult build_pointer_to(TvmFunctionalBuilder& builder, const TreePtr<PointerTo>& ptr_to) {

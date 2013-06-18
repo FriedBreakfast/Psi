@@ -380,14 +380,22 @@ public:
     return helper.function_finish(f, m_common->evaluate_context->module(), init);
   }
   
-  TreePtr<Term> build_fini(const TreePtr<Term>&, ImplementationHelper& helper, const SourceLocation& base_location) {
+  TreePtr<Term> build_fini(const TreePtr<Term>&, ImplementationHelper& helper, const SourceLocation& base_location, const TreePtr<Term>& clear_func_ptr) {
     SourceLocation location = base_location.named_child("fini");
     ImplementationHelper::FunctionSetup f = helper.member_function_setup(interface_movable_fini, location,
                                                                          !m_common->lc_fini.body ? default_ :
                                                                          vector_of(parameter_location(location, m_common->lc_fini.dest_name)));
-    TreePtr<Term> extra = build_body(location, m_common->lc_fini, f.parameters[1]);
+    
     TreePtr<Term> cleanup = TermBuilder::finalize_value(TermBuilder::element_value(f.parameters[1], 0, location), location);
-    return helper.function_finish(f, m_common->evaluate_context->module(), combine_body(extra, cleanup, location));
+    TreePtr<Term> body;
+    if (m_common->lc_fini.body) {
+      TreePtr<Term> clear_func = TermBuilder::ptr_target(clear_func_ptr, location);
+      TreePtr<Term> clear = TermBuilder::function_call(clear_func, vector_of<TreePtr<Term> >(f.parameters[0], f.parameters[1]), location);
+      body = combine_body(clear, cleanup, location);
+    } else {
+      body = cleanup;
+    }
+    return helper.function_finish(f, m_common->evaluate_context->module(), body);
   }
   
   TreePtr<Term> build_clear(const TreePtr<Term>& instance, ImplementationHelper& helper, const SourceLocation& base_location) {
@@ -401,17 +409,18 @@ public:
     return helper.function_finish(f, m_common->evaluate_context->module(), combine_body(extra, cleanup, location));
   }
   
-  TreePtr<Term> build_move_init(const TreePtr<Term>& instance, ImplementationHelper& helper, const SourceLocation& base_location) {
+  TreePtr<Term> build_move_init(const TreePtr<Term>& instance, ImplementationHelper& helper, const SourceLocation& base_location, const TreePtr<Term>& move_func_ptr) {
     SourceLocation location = base_location.named_child("move_init");
     ImplementationHelper::FunctionSetup f = helper.member_function_setup(interface_movable_move_init, location,
                                                                          !m_common->lc_move.body ? default_ :
                                                                          vector_of(parameter_location(location, m_common->lc_move.dest_name),
                                                                                    parameter_location(location, m_common->lc_move.src_name)));
 
-    TreePtr<Term> body, custom = build_body(location, m_common->lc_move, f.parameters[1], f.parameters[2]);
-    TreePtr<Term> dest = TermBuilder::element_value(f.parameters[1], 0, location);
-    if (custom) {
-      body = TermBuilder::initialize_value(dest, TermBuilder::default_value(dest->type, location), custom, location);
+    TreePtr<Term> body, dest = TermBuilder::element_value(f.parameters[1], 0, location);
+    if (m_common->lc_move.body) {
+      TreePtr<Term> move_func = TermBuilder::ptr_target(move_func_ptr, location);
+      TreePtr<Term> move_call = TermBuilder::function_call(move_func, vector_of<TreePtr<Term> >(f.parameters[0], f.parameters[1], f.parameters[2]), location);
+      body = TermBuilder::initialize_value(dest, TermBuilder::default_value(dest->type, location), move_call, location);
     } else {
       TreePtr<Term> move_value = TermBuilder::movable(TermBuilder::element_value(f.parameters[2], 0, location), location);
       body = TermBuilder::initialize_value(dest, move_value, TermBuilder::empty_value(instance.compile_context()), location);
@@ -441,23 +450,25 @@ public:
     
     PSI_STD::vector<TreePtr<Term> > members(5);
     members[interface_movable_init] = build_init(instance, helper, location);
-    members[interface_movable_fini] = build_fini(instance, helper, location);
     members[interface_movable_clear] = build_clear(instance, helper, location);
-    members[interface_movable_move_init] = build_move_init(instance, helper, location);
+    members[interface_movable_fini] = build_fini(instance, helper, location, members[interface_movable_clear]);
     members[interface_movable_move] = build_move(instance, helper, location);
+    members[interface_movable_move_init] = build_move_init(instance, helper, location, members[interface_movable_move]);
     return helper.finish(TermBuilder::struct_value(generic.compile_context(), members, location));
   }
 
-  TreePtr<Term> build_copy_init(const TreePtr<Term>& instance, ImplementationHelper& helper, const SourceLocation& base_location) {
+  TreePtr<Term> build_copy_init(const TreePtr<Term>& instance, ImplementationHelper& helper, const SourceLocation& base_location, const TreePtr<Term>& copy_func_ptr) {
     SourceLocation location = base_location.named_child("copy_init");
     ImplementationHelper::FunctionSetup f = helper.member_function_setup(interface_copyable_copy_init, location,
                                                                          !m_common->lc_copy.body ? default_ :
                                                                          vector_of(parameter_location(location, m_common->lc_copy.dest_name),
                                                                                    parameter_location(location, m_common->lc_copy.src_name)));
-    TreePtr<Term> body, custom = build_body(location, m_common->lc_copy, f.parameters[1], f.parameters[2]);
-    TreePtr<Term> dest = TermBuilder::element_value(f.parameters[1], 0, location);
-    if (custom) {
-      body = TermBuilder::initialize_value(dest, TermBuilder::default_value(dest->type, location), custom, location);
+
+    TreePtr<Term> body, dest = TermBuilder::element_value(f.parameters[1], 0, location);
+    if (m_common->lc_copy.body) {
+      TreePtr<Term> copy_func = TermBuilder::ptr_target(copy_func_ptr, location);
+      TreePtr<Term> copy_call = TermBuilder::function_call(copy_func, vector_of<TreePtr<Term> >(f.parameters[0], f.parameters[1], f.parameters[2]), location);
+      body = TermBuilder::initialize_value(dest, TermBuilder::default_value(dest->type, location), copy_call, location);
     } else {
       body = TermBuilder::initialize_value(dest, TermBuilder::element_value(f.parameters[2], 0, location),
                                            TermBuilder::empty_value(instance.compile_context()), location);
@@ -488,7 +499,7 @@ public:
     PSI_STD::vector<TreePtr<Term> > members(3);
     members[interface_copyable_movable] = TermBuilder::interface_value(generic.compile_context().builtins().movable_interface, vector_of(instance), default_, location);
     members[interface_copyable_copy] = build_copy(instance, helper, location);
-    members[interface_copyable_copy_init] = build_copy_init(instance, helper, location);
+    members[interface_copyable_copy_init] = build_copy_init(instance, helper, location, members[interface_copyable_copy]);
     return helper.finish(TermBuilder::struct_value(generic.compile_context(), members, location));
   }
   

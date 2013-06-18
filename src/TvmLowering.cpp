@@ -309,8 +309,12 @@ public:
     throw TvmNotGlobalException();
   }
   
-  virtual TvmResult build_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
-                                         const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation) {
+  virtual TvmResult build_implementation(const TreePtr<Interface>& PSI_UNUSED(interface), const PSI_STD::vector<TreePtr<Term> >& PSI_UNUSED(parameters),
+                                         const SourceLocation& PSI_UNUSED(location), const TreePtr<Implementation>& PSI_UNUSED(maybe_implementation)) {
+    throw TvmNotGlobalException();
+  }
+  
+  virtual TvmResult load(const Tvm::ValuePtr<>& PSI_UNUSED(ptr), const SourceLocation& PSI_UNUSED(location)) {
     throw TvmNotGlobalException();
   }
 };
@@ -529,6 +533,10 @@ public:
   virtual TvmResult build_implementation(const TreePtr<Interface>& interface, const std::vector<TreePtr<Term> >& parameters,
                                          const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation) {
     return m_self->get_implementation(interface, parameters, *m_dependencies, location, maybe_implementation);
+  }
+  
+  virtual TvmResult load(const Tvm::ValuePtr<>& PSI_UNUSED(ptr), const SourceLocation& PSI_UNUSED(location)) {
+    throw TvmNotGlobalException();
   }
 };
 

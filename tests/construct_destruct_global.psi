@@ -8,6 +8,8 @@ test_type : struct () [
   y : int;
 ] (
   init (self) [puts({Construct});];
+  move (self,src) [puts({Move construct});];
+  copy (self,src) [puts({Copy construct});];
   fini (self) [puts({Destroy});];
 );
 

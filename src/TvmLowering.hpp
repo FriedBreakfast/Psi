@@ -305,6 +305,8 @@ namespace Psi {
       virtual TvmResult build_global_evaluate(const TreePtr<GlobalEvaluate>& global) = 0;
       virtual TvmResult build_implementation(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters,
                                              const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation=TreePtr<Implementation>()) = 0;
+      /// Load a value from memory
+      virtual TvmResult load(const Tvm::ValuePtr<>& ptr, const SourceLocation& location) = 0;
     };
     
     void tvm_lower_function(TvmObjectCompilerBase& tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output, std::set<TreePtr<ModuleGlobal> >& dependencies);

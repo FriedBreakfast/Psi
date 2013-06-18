@@ -409,5 +409,10 @@ TvmResult TvmFunctionBuilder::build_implementation(const TreePtr<Interface>& int
   
   return result;
 }
+
+TvmResult TvmFunctionBuilder::load(const Tvm::ValuePtr<>& ptr, const SourceLocation& location) {
+  Tvm::ValuePtr<> val = builder().load(ptr, location);
+  return TvmResult(m_state.scope, val);
+}
 }
 }
