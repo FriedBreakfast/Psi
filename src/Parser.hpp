@@ -92,7 +92,9 @@ namespace Psi {
     struct FunctionArgument : Element {
       FunctionArgument(const ParserLocation& source_, const boost::optional<ParserLocation>& name_,
                        ParameterMode mode_, const SharedPtr<Expression>& type_);
+      FunctionArgument(const ParserLocation& source_, const SharedPtr<Expression>& interface_);
 
+      bool is_interface;
       boost::optional<ParserLocation> name;
       ParameterMode mode;
       SharedPtr<Expression> type;
@@ -118,18 +120,14 @@ namespace Psi {
     PSI_COMPILER_EXPORT SharedPtr<Expression> parse_expression(const ParserLocation& text);
     PSI_COMPILER_EXPORT PSI_STD::vector<TokenExpression> parse_identifier_list(const ParserLocation&);
 
-    struct ImplicitArgumentDeclarations {
-      PSI_STD::vector<SharedPtr<FunctionArgument> > arguments;
-      PSI_STD::vector<SharedPtr<Expression> > interfaces;
-    };
-    
     struct ArgumentDeclarations {
+      PSI_STD::vector<SharedPtr<FunctionArgument> > implicit;
       PSI_STD::vector<SharedPtr<FunctionArgument> > arguments;
       SharedPtr<FunctionArgument> return_type;
     };
 
-    PSI_COMPILER_EXPORT ArgumentDeclarations parse_function_argument_declarations(const ParserLocation&);
-    PSI_COMPILER_EXPORT ImplicitArgumentDeclarations parse_function_argument_implicit_declarations(const ParserLocation& text);
+    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<FunctionArgument> > parse_type_argument_declarations(const ParserLocation& text);
+    PSI_COMPILER_EXPORT ArgumentDeclarations parse_function_argument_declarations(const ParserLocation& text);
     PSI_COMPILER_EXPORT SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpressionType type);
   }
 }

@@ -138,10 +138,10 @@ void AggregateMacroCommon::parse_arguments(const TreePtr<EvaluateContext>& evalu
                                            const SourceLocation& location) {
   std::map<String, TreePtr<Term> > argument_names;
 
-  Parser::ImplicitArgumentDeclarations generic_parameters_parsed =
-    Parser::parse_function_argument_implicit_declarations(generic_parameters_expr->text);
+  PSI_STD::vector<SharedPtr<Parser::FunctionArgument> > generic_parameters_parsed =
+    Parser::parse_type_argument_declarations(generic_parameters_expr->text);
     
-  for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = generic_parameters_parsed.arguments.begin(), ie = generic_parameters_parsed.arguments.end(); ii != ie; ++ii) {
+  for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = generic_parameters_parsed.begin(), ie = generic_parameters_parsed.end(); ii != ie; ++ii) {
     PSI_ASSERT(*ii && (*ii)->type);
     const Parser::FunctionArgument& argument_expr = **ii;
     

@@ -125,6 +125,7 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   global_names["builtin_function"] = builtin_function_macro(compile_context, psi_location.named_child("builtin_function"));
   global_names["number_value"] = number_value_macro(compile_context, psi_location.named_child("number_value"));
   
+  global_names["type"] = compile_context.builtins().metatype;
   global_names["pointer"] = pointer_macro(compile_context, psi_location.named_child("pointer"));
   global_names["struct"] = struct_macro(compile_context, psi_location.named_child("struct"));
 

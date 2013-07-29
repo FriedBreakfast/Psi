@@ -86,7 +86,6 @@ namespace {
     PSI_STD::vector<SharedPtr<Implementation> > result_implementations;
     PSI_STD::vector<SharedPtr<Lifecycle> > result_lifecycle;
     ArgumentDeclarations result_argument_declarations;
-    ImplicitArgumentDeclarations result_argument_implicit;
 
     int mode_token;
     bool bracket_literal;
@@ -184,6 +183,7 @@ namespace {
 %token COMPARE_GREATER_EQUAL ">="
 
 %token OPERATOR_ARROW "->"
+%token OPERATOR_DOUBLE_ARROW "=>"
 %token OPERATOR_DASH_COLON "-:"
 %token OPERATOR_DASH_AMP "-&"
 %token OPERATOR_DASH_AMP_AMP "-&&"
@@ -200,7 +200,7 @@ namespace {
 %token MODE_POSITIONAL_LIST
 %token MODE_NAMESPACE
 %token MODE_FUNCTION_ARGUMENT_DECLARE
-%token MODE_FUNCTION_ARGUMENT_IMPLICIT
+%token MODE_TYPE_ARGUMENT_DECLARE
 %token MODE_EXPRESSION
 %token MODE_IMPLEMENTATION_LIST
 %token MODE_LIFECYCLE
@@ -211,7 +211,7 @@ namespace {
 %type <token_expression> BLOCK
 %type <expression> expression or_expression and_expression xor_expression product_expression add_expression
 %type <expression> unary_expression compare_expression macro_expression token_expression
-%type <expression_list> compare_expression_build expression_list expression_list_nonempty token_list interface_list_declare interface_list_declare_nonempty
+%type <expression_list> compare_expression_build expression_list expression_list_nonempty token_list
 %type <statement> statement namespace_entry
 %type <statement_list> statement_list namespace_list
 %type <function_argument> argument_declare return_type_declare
@@ -243,8 +243,11 @@ root: MODE_STATEMENT_LIST statement_list {arguments.result_statements = $2;}
 | MODE_POSITIONAL_LIST expression_list {arguments.result_expressions = $2;}
 | MODE_NAMESPACE namespace_list {arguments.result_statements = $2;}
 | MODE_EXPRESSION expression {arguments.result_expressions.assign(1, $2);}
-| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare {arguments.result_argument_declarations.arguments = $2; arguments.result_argument_declarations.return_type = $3;}
-| MODE_FUNCTION_ARGUMENT_IMPLICIT argument_list_declare interface_list_declare {arguments.result_argument_implicit.arguments = $2; arguments.result_argument_implicit.interfaces = $3;}
+| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare return_type_declare
+{arguments.result_argument_declarations.implicit.clear(); arguments.result_argument_declarations.arguments = $2; arguments.result_argument_declarations.return_type = $3;}
+| MODE_FUNCTION_ARGUMENT_DECLARE argument_list_declare_nonempty OPERATOR_DOUBLE_ARROW argument_list_declare return_type_declare
+{arguments.result_argument_declarations.implicit = $2; arguments.result_argument_declarations.arguments = $4; arguments.result_argument_declarations.return_type = $5;}
+| MODE_TYPE_ARGUMENT_DECLARE argument_list_declare {arguments.result_argument_declarations.arguments = $2;}
 | MODE_IMPLEMENTATION_LIST implementation_list {arguments.result_implementations = $2;}
 | MODE_LIFECYCLE lifecycle_list {arguments.result_lifecycle = $2;}
 ;
@@ -275,21 +278,13 @@ argument_list_declare: /* blank */ {$$.clear();}
 argument_list_declare_nonempty:
 argument_declare {$$.assign(1, $1);}
 | argument_list_declare_nonempty ',' argument_declare {$$ = $1; $$.push_back($3);}
+| argument_list_declare_nonempty '@' expression {SharedPtr<FunctionArgument> p(new FunctionArgument(@$, $3)); $$ = $1; $$.push_back(p);} /* Interface declaration */
 ;
 
 argument_declare:
 expression {$$.reset(new FunctionArgument(@$, boost::none, Psi::Compiler::parameter_mode_input, $1));}
 | IDENTIFIER argument_mode expression {$$.reset(new FunctionArgument(@$, $1, (ParameterMode)$2, $3));}
 | argument_mode expression {$$.reset(new FunctionArgument(@$, boost::none, (ParameterMode)$1, $2));}
-;
-
-interface_list_declare: /* blank */ {$$.clear();}
-| interface_list_declare_nonempty
-;
-
-interface_list_declare_nonempty:
-OPERATOR_ARROW expression {$$.assign(1, $2);}
-| interface_list_declare_nonempty ',' expression {$$ = $1; $$.push_back($3);}
 ;
 
 lifecycle_list:
@@ -535,7 +530,7 @@ namespace {
       }
       SCANNER_RETURN(IDENTIFIER);
     } else if (std::strchr("<>=!", c)) {
-      /* Multi-char comparison operators and arrow operator */
+      /* Multi-char comparison operators and the double arrow operator */
       SCANNER_ACCEPT();
       if (self.current != self.end) {
         switch (*self.current) {
@@ -545,6 +540,12 @@ namespace {
           case '<': SCANNER_ACCEPT(); SCANNER_RETURN(COMPARE_LESS_EQUAL);
           case '=': SCANNER_ACCEPT(); SCANNER_RETURN(COMPARE_EQUAL);
           case '!': SCANNER_ACCEPT(); SCANNER_RETURN(COMPARE_UNEQUAL);
+          default: break;
+          }
+          
+        case '>':
+          switch(c) {
+          case '=': SCANNER_ACCEPT(); SCANNER_RETURN(OPERATOR_DOUBLE_ARROW);
           default: break;
           }
 
@@ -733,7 +734,11 @@ namespace Psi {
 
     FunctionArgument::FunctionArgument(const ParserLocation& source_, const boost::optional<ParserLocation>& name_,
                                        ParameterMode mode_, const SharedPtr<Expression>& type_)
-    : Element(source_), name(name_), mode(mode_), type(type_) {
+    : Element(source_), is_interface(false), name(name_), mode(mode_), type(type_) {
+    }
+    
+    FunctionArgument::FunctionArgument(const ParserLocation& source_, const SharedPtr<Expression>& interface_)
+    : Element(source_), is_interface(true), type(interface_) {
     }
     
     ParseError::ParseError(const PhysicalSourceLocation& location, const std::string& reason)
@@ -841,15 +846,15 @@ namespace Psi {
       return args.result_argument_declarations;
     }
 
-    /** \brief parse a function argument declaration.
+    /** \brief parse a type argument list.
      * \details This is a list of argument declarations possibly
      * followed by a return type Expression.
      * \param text Text to parse.
      */
-    ImplicitArgumentDeclarations parse_function_argument_implicit_declarations(const ParserLocation& text) {
-      ParserInternalArguments args(MODE_FUNCTION_ARGUMENT_IMPLICIT, text);
+    PSI_STD::vector<SharedPtr<FunctionArgument> > parse_type_argument_declarations(const ParserLocation& text) {
+      ParserInternalArguments args(MODE_TYPE_ARGUMENT_DECLARE, text);
       parse_helper(args);
-      return args.result_argument_implicit;
+      return args.result_argument_declarations.arguments;
     }
 
     SharedPtr<Parser::TokenExpression> expression_as_token_type(const SharedPtr<Parser::Expression>& expr, Parser::TokenExpressionType type) {

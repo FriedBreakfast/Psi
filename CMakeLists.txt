@@ -118,6 +118,8 @@ if(SPHINX_BUILD)
   configure_file(doc-sphinx/conf.py conf.py)
   add_custom_target(doc-sphinx ${SPHINX_BUILD} -c . ${CMAKE_CURRENT_SOURCE_DIR}/doc-sphinx doc-sphinx)
   add_dependencies(doc doc-sphinx)
+  add_custom_target(doc-sphinx-epub ${SPHINX_BUILD} -b epub -c . ${CMAKE_CURRENT_SOURCE_DIR}/doc-sphinx doc-sphinx-epub)
+  add_dependencies(doc doc-sphinx-epub)
   
   if(DOXYGEN_FOUND)
     add_dependencies(doc-sphinx doc-doxygen)

@@ -12,4 +12,5 @@ Internals
    trees
    tvm_lowering
    setup
+   safe_mode
    issues

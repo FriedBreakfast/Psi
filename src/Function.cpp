@@ -75,111 +75,81 @@ namespace Psi {
      * Figures out the C-level function type and details of how to generate function
      * arguments from what the user writes.
      */
-    FunctionInfo compile_function_common(const SharedPtr<Parser::Expression>& implicit_arguments,
-                                         const SharedPtr<Parser::Expression>& explicit_arguments,
+    FunctionInfo compile_function_common(const SharedPtr<Parser::Expression>& function_arguments,
                                          CompileContext& compile_context,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
       FunctionInfo result;
 
-      SharedPtr<Parser::TokenExpression> implicit_arguments_expr, explicit_arguments_expr;
-      if (implicit_arguments && !(implicit_arguments_expr = expression_as_token_type(implicit_arguments, Parser::token_bracket)))
-        compile_context.error_throw(location, "Implicit function arguments not enclosed in (...)");
-
-      if (!(explicit_arguments_expr = expression_as_token_type(explicit_arguments, Parser::token_bracket)))
-        compile_context.error_throw(location, "Explicit function arguments not enclosed in (...)");
-
-      Parser::ImplicitArgumentDeclarations parsed_implicit_arguments;
-      if (implicit_arguments_expr)
-        parsed_implicit_arguments = Parser::parse_function_argument_implicit_declarations(implicit_arguments_expr->text);
+      SharedPtr<Parser::TokenExpression> function_arguments_expr, funtion_interfaces_expr;
+      if (!(function_arguments_expr = expression_as_token_type(function_arguments, Parser::token_bracket)))
+        compile_context.error_throw(location, "Function arguments not enclosed in (...)");
       
-      Parser::ArgumentDeclarations parsed_explicit_arguments = Parser::parse_function_argument_declarations(explicit_arguments_expr->text);
+      Parser::ArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(function_arguments_expr->text);
       std::map<String, TreePtr<Term> > argument_map;
       PSI_STD::vector<TreePtr<Anonymous> > argument_list;
       PSI_STD::vector<ParameterMode> argument_modes;
+      PSI_STD::vector<TreePtr<InterfaceValue> > interfaces;
       
-      // Handle implicit arguments
-      for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = parsed_implicit_arguments.arguments.begin(), ie = parsed_implicit_arguments.arguments.end(); ii != ie; ++ii) {
-        const Parser::FunctionArgument& argument_expr = **ii;
-        PSI_ASSERT(argument_expr.type);
+      // Handle implicit arguments for which=0, explicit arguments for which=1
+      for (unsigned which = 0; which < 2; ++which) {
+        bool is_implicit = (which == 0);
+        const PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >& decl = is_implicit ? parsed_arguments.implicit : parsed_arguments.arguments;
+        
+        for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = decl.begin(), ie = decl.end(); ii != ie; ++ii) {
+          const Parser::FunctionArgument& argument_expr = **ii;
+          PSI_ASSERT(argument_expr.type);
 
-        String expr_name;
-        LogicalSourceLocationPtr logical_location;
-        if (argument_expr.name) {
-          expr_name = String(argument_expr.name->begin, argument_expr.name->end);
-          logical_location = location.logical->new_child(expr_name);
-        } else {
-          logical_location = location.logical;
-        }
-        SourceLocation argument_location(argument_expr.location.location, logical_location);
+          String expr_name;
+          LogicalSourceLocationPtr logical_location;
+          if (argument_expr.name) {
+            expr_name = String(argument_expr.name->begin, argument_expr.name->end);
+            logical_location = location.logical->new_child(expr_name);
+          } else {
+            logical_location = location.logical;
+          }
+          SourceLocation argument_location(argument_expr.location.location, logical_location);
+          TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
+          
+          if (!argument_expr.is_interface) {
+            // A parameter
+            TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
+            TermMode argument_mode = is_implicit ? term_mode_value : parameter_to_term_mode(argument_expr.mode);
+            TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, argument_mode, argument_location);
+            argument_list.push_back(argument);
+            argument_modes.push_back(is_implicit ? parameter_mode_functional : argument_expr.mode);
 
-        TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
-        TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
-        TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, term_mode_value, argument_location);
-        argument_list.push_back(argument);
-        argument_modes.push_back(parameter_mode_functional);
-
-        if (argument_expr.name) {
-          argument_map[expr_name] = argument;
-          result.names[expr_name] = argument_list.size();
-        }
-      }
-      
-      // Handle explicit arguments
-      for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = parsed_explicit_arguments.arguments.begin(), ie = parsed_explicit_arguments.arguments.end(); ii != ie; ++ii) {
-        const Parser::FunctionArgument& argument_expr = **ii;
-        PSI_ASSERT(argument_expr.type);
-
-        String expr_name;
-        LogicalSourceLocationPtr logical_location;
-        if (argument_expr.name) {
-          expr_name = String(argument_expr.name->begin, argument_expr.name->end);
-          logical_location = location.logical->new_child(expr_name);
-        } else {
-          logical_location = location.logical;
-        }
-        SourceLocation argument_location(argument_expr.location.location, logical_location);
-
-        TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
-        TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
-        TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, parameter_to_term_mode(argument_expr.mode), argument_location);
-        argument_list.push_back(argument);
-        argument_modes.push_back(argument_expr.mode);
-
-        if (argument_expr.name) {
-          argument_map[expr_name] = argument;
-          result.names[expr_name] = argument_list.size();
+            if (argument_expr.name) {
+              argument_map[expr_name] = argument;
+              result.names[expr_name] = argument_list.size();
+            }
+          } else {
+            // An interface specification
+            TreePtr<Term> interface = compile_expression(argument_expr.type, argument_context, location.logical);
+            TreePtr<InterfaceValue> interface_cast = term_unwrap_dyn_cast<InterfaceValue>(interface);
+            if (!interface_cast) {
+              SourceLocation interface_location(argument_expr.location.location, location.logical);
+              compile_context.error_throw(interface_location, "Interface description did not evaluate to an interface");
+            }
+            interfaces.push_back(interface_cast);
+          }
         }
       }
       
       PSI_ASSERT(argument_list.size() == argument_modes.size());
       
-      // Context used for result type and interfaces
-      TreePtr<EvaluateContext> final_argument_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_map, evaluate_context);
-      
       // Handle return type
+      TreePtr<EvaluateContext> result_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_map, evaluate_context);
       TreePtr<Term> result_type;
       ResultMode result_mode;
-      if (parsed_explicit_arguments.return_type) {
-        const Parser::FunctionArgument& argument_expr = *parsed_explicit_arguments.return_type;
+      if (parsed_arguments.return_type) {
+        const Parser::FunctionArgument& argument_expr = *parsed_arguments.return_type;
         SourceLocation argument_location(argument_expr.location.location, location.logical);
-        result_type = compile_expression(argument_expr.type, final_argument_context, location.logical);
+        result_type = compile_expression(argument_expr.type, result_context, location.logical);
         result_mode = (ResultMode)argument_expr.mode;
       } else {
         result_type = compile_context.builtins().empty_type;
         result_mode = result_mode_by_value;
-      }
-      
-      // Handle interfaces
-      PSI_STD::vector<TreePtr<InterfaceValue> > interfaces;
-      for (PSI_STD::vector<SharedPtr<Parser::Expression> >::const_iterator ii = parsed_implicit_arguments.interfaces.begin(), ie = parsed_implicit_arguments.interfaces.end(); ii != ie; ++ii) {
-        TreePtr<Term> interface = compile_expression(*ii, final_argument_context, location.logical);
-        TreePtr<InterfaceValue> interface_cast = term_unwrap_dyn_cast<InterfaceValue>(interface);
-        if (!interface_cast) {
-          SourceLocation interface_location((*ii)->location.location, location.logical);
-          compile_context.error_throw(interface_location, "Interface description did not evaluate to an interface");
-        }
-        interfaces.push_back(interface_cast);
       }
       
       // Generate function type - parameterize parameters!
@@ -314,21 +284,18 @@ namespace Psi {
                                               const SourceLocation& location) {
       CompileContext& compile_context = evaluate_context.compile_context();
 
-      SharedPtr<Parser::Expression> type_arg_1, type_arg_2;
+      SharedPtr<Parser::Expression> type_arg;
       if (arguments.size() == 2) {
-        type_arg_2 = arguments[0];
-      } else if (arguments.size() == 3) {
-        type_arg_1 = arguments[0];
-        type_arg_2 = arguments[1];
+        type_arg = arguments[0];
       } else {
-        compile_context.error_throw(location, boost::format("function macro expects 2 or 3 arguments, got %s") % arguments.size());
+        compile_context.error_throw(location, boost::format("function macro expects 2 arguments, got %s") % arguments.size());
       }
 
       SharedPtr<Parser::TokenExpression> body;
-      if (!(body = expression_as_token_type(arguments[arguments.size()-1], Parser::token_square_bracket)))
+      if (!(body = expression_as_token_type(arguments[1], Parser::token_square_bracket)))
         compile_context.error_throw(location, "Last (body) parameter to function definition is not a [...]");
 
-      FunctionInfo common = compile_function_common(type_arg_1, type_arg_2, compile_context, evaluate_context, location);
+      FunctionInfo common = compile_function_common(type_arg, compile_context, evaluate_context, location);
 
       PSI_STD::vector<TreePtr<Term> > parameter_trees_term; // This exists because C++ won't convert vector<derived> to vector<base>
       PSI_STD::vector<TreePtr<Anonymous> > parameter_trees;
@@ -396,17 +363,14 @@ namespace Psi {
                                         const SourceLocation& location) {
       CompileContext& compile_context = evaluate_context.compile_context();
 
-      SharedPtr<Parser::Expression> type_arg_1, type_arg_2;
+      SharedPtr<Parser::Expression> type_arg;
       if (arguments.size() == 1) {
-        type_arg_2 = arguments[0];
-      } else if (arguments.size() == 2) {
-        type_arg_1 = arguments[0];
-        type_arg_2 = arguments[1];
+        type_arg = arguments[0];
       } else {
-        compile_context.error_throw(location, boost::format("function_type macro expects 1 or 2 arguments, got %s") % arguments.size());
+        compile_context.error_throw(location, boost::format("function_type macro expects 1 argument, got %s") % arguments.size());
       }
 
-      return compile_function_common(type_arg_1, type_arg_2, compile_context, evaluate_context, location).type;
+      return compile_function_common(type_arg, compile_context, evaluate_context, location).type;
     }
 
     class FunctionTypeCallback : public MacroMemberCallback {
