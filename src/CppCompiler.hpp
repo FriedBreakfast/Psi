@@ -44,9 +44,17 @@ namespace Psi {
 #define PSI_UNREACHABLE() void()
 #endif
   
+#if defined(__MINGW32__) && !defined(__MINGW64__)
+  typedef long AtomicCount;
+  extern "C" __stdcall long InterlockedIncrement(long volatile*);
+  extern "C" __stdcall long InterlockedDecrement(long volatile*);
+  inline long atomic_increment(long& x) {return InterlockedIncrement(&x);}
+  inline long atomic_decrement(long& x) {return InterlockedDecrement(&x);}
+#else
   typedef std::size_t AtomicCount;
   inline std::size_t atomic_increment(std::size_t& x) {return __sync_add_and_fetch(&x, 1);}
   inline std::size_t atomic_decrement(std::size_t& x) {return __sync_sub_and_fetch(&x, 1);}
+#endif
   
 #elif defined(_MSC_VER)
 #define PSI_STD std

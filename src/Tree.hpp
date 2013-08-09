@@ -715,8 +715,8 @@ namespace Psi {
 
     class Function : public ModuleGlobal {
       DelayedValue<TreePtr<Term>, TreePtr<Function> > m_body;
+      PSI_COMPILER_EXPORT TreePtr<Function> get_ptr() const;
       PSI_COMPILER_EXPORT void check_type();
-      PSI_COMPILER_EXPORT TreePtr<Function> get_ptr() const {return tree_from(this);}
       PSI_COMPILER_EXPORT void body_check_type(TreePtr<Term>& body) const;
       
     public:

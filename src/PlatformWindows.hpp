@@ -2,6 +2,11 @@
 #define HPP_PSI_PLATFORM_WINDOWS
 
 #define WIN32_LEAN_AND_MEAN
+
+// Need to set these to pick up full Windows XP API in MinGW. See w32api.h for values
+#define WINVER 0x0500 // Windows 2000
+#define _WIN32_WINNT 0x0500 // Windows 2000
+#define _WIN32_IE 0x0500 // IE5
 #include <Windows.h>
 
 #include <string>
@@ -87,7 +92,7 @@ namespace Psi {
       PSI_COMPILER_COMMON_EXPORT std::string last_error_string();
       PSI_COMPILER_COMMON_EXPORT PSI_ATTRIBUTE((PSI_NORETURN)) void throw_last_error();
 
-      class LibraryWindows : public PlatformLibrary {
+      class PSI_COMPILER_COMMON_EXPORT LibraryWindows : public PlatformLibrary {
         std::vector<HMODULE> m_handles;
 
       public:

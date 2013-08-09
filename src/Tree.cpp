@@ -358,6 +358,14 @@ namespace Psi {
     Function::~Function() {
     }
     
+    /**
+     * This isn't in the header like in GlobalVariable because in Win32 it needs to be marked dllimport
+     * sometimes, which means it cannot have an inline body.
+     */
+    TreePtr<Function> Function::get_ptr() const {
+      return tree_from(this);
+    }
+    
     void Function::check_type() {
       TreePtr<FunctionType> ftype = treeptr_cast<FunctionType>(type);
       

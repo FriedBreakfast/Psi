@@ -1,5 +1,3 @@
-#define BOOST_TEST_MAIN
-#include <boost/test/unit_test.hpp>
 #include <iostream>
 
 #include "Test.hpp"
@@ -10,9 +8,6 @@
 #include "../PropertyValue.hpp"
 
 #include <stdlib.h>
-#ifdef __linux__
-#include <signal.h>
-#endif
 
 namespace {
   struct JitLoader {
@@ -57,14 +52,6 @@ namespace Psi {
       context(&error_context),
       module(&context, "test_module", location),
       m_jit(jit_loader.jit_factory->create_jit()) {
-        // Some versions of Boost.Test (I'm using 1.46) treat child processes exiting
-        // with a nonzero status as a test failure. Ignoring SIGCHLD works around this.
-        // Note that even though SIGCHLD is ignored by default SIG_DFL is distinct from
-        // SIG_IGN here, because SIG_IGN causes child processes to be orphaned on creation
-        // and thus the exit status is not available.
-#ifdef __linux__
-        signal(SIGCHLD, SIG_DFL);
-#endif
       }
 
       ContextFixture::~ContextFixture() {
@@ -76,7 +63,7 @@ namespace Psi {
       void* ContextFixture::jit_single(const char *name, const char *src) {
         AssemblerResult r = parse_and_build(module, src);
         AssemblerResult::iterator it = r.find(name);
-        BOOST_REQUIRE(it != r.end());
+        PSI_TEST_REQUIRE(it != r.end());
         m_jit->add_module(&module);
         void *result = m_jit->get_symbol(value_cast<Global>(it->second));
         return result;

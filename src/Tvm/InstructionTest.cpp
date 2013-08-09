@@ -11,19 +11,19 @@
 
 namespace Psi {
   namespace Tvm {
-    BOOST_FIXTURE_TEST_SUITE(InstructionTest, Test::ContextFixture)
+    PSI_TEST_SUITE_FIXTURE(InstructionTest, Test::ContextFixture)
 
-    BOOST_AUTO_TEST_CASE(ReturnIntConst) {
+    PSI_TEST_CASE(ReturnIntConst) {
       const char *src =
         "%f = export function () > i32 {\n"
         "  return #i19;\n"
         "};\n";
 
       Jit::Int32 (*f)() = reinterpret_cast<Jit::Int32(*)()>(jit_single("f", src));
-      BOOST_CHECK_EQUAL(f(), 19);
+      PSI_TEST_CHECK_EQUAL(f(), 19);
     }
 
-    BOOST_AUTO_TEST_CASE(ReturnIntParameter) {
+    PSI_TEST_CASE(ReturnIntParameter) {
       const char *src =
         "%f = export function (%x:i32) > i32 {\n"
         "  return %x;\n"
@@ -33,10 +33,10 @@ namespace Psi {
       CallbackType f = reinterpret_cast<CallbackType>(jit_single("f", src));
 
       const Jit::Int32 c = 143096367;
-      BOOST_CHECK_EQUAL(f(c), c);
+      PSI_TEST_CHECK_EQUAL(f(c), c);
     }
 
-    BOOST_AUTO_TEST_CASE(UnconditionalBranchTest) {
+    PSI_TEST_CASE(UnconditionalBranchTest) {
       const char *src =
         "%f = export function () > i32 {\n"
         "  br %label;\n"
@@ -47,10 +47,10 @@ namespace Psi {
       typedef Jit::Int32 (*CallbackType) ();
       CallbackType f = reinterpret_cast<CallbackType>(jit_single("f", src));
 
-      BOOST_CHECK_EQUAL(f(), 42389789);
+      PSI_TEST_CHECK_EQUAL(f(), 42389789);
     }
 
-    BOOST_AUTO_TEST_CASE(ConditionalBranchTest) {
+    PSI_TEST_CASE(ConditionalBranchTest) {
       const char *src =
         "%f = export function (%a:bool) > i32 {\n"
         "  cond_br %a %iftrue %iffalse;\n"
@@ -63,11 +63,11 @@ namespace Psi {
       typedef Jit::Int32 (*CallbackType) (Jit::Boolean);
       CallbackType f = reinterpret_cast<CallbackType>(jit_single("f", src));
 
-      BOOST_CHECK_EQUAL(f(true), 344);
-      BOOST_CHECK_EQUAL(f(false), -102);
+      PSI_TEST_CHECK_EQUAL(f(true), 344);
+      PSI_TEST_CHECK_EQUAL(f(false), -102);
     }
 
-    BOOST_AUTO_TEST_CASE(RecursiveCall) {
+    PSI_TEST_CASE(RecursiveCall) {
       const char *src =
         "%inner = function () > i32 {\n"
         "  return #i40859;\n"
@@ -81,10 +81,10 @@ namespace Psi {
       typedef Jit::Int32 (*CallbackType) ();
       CallbackType f = reinterpret_cast<CallbackType>(jit_single("outer", src));
 
-      BOOST_CHECK_EQUAL(f(), 40859);
+      PSI_TEST_CHECK_EQUAL(f(), 40859);
     }
 
-    BOOST_AUTO_TEST_CASE(RecursiveCallParameter) {
+    PSI_TEST_CASE(RecursiveCallParameter) {
       const char *src =
         "%inner = function (%a: i32) > i32 {\n"
         "  return %a;\n"
@@ -98,11 +98,11 @@ namespace Psi {
       typedef Jit::Int32 (*CallbackType) (Jit::Int32);
       CallbackType f = reinterpret_cast<CallbackType>(jit_single("outer", src));
 
-      BOOST_CHECK_EQUAL(f(439), 439);
-      BOOST_CHECK_EQUAL(f(-34), -34);
+      PSI_TEST_CHECK_EQUAL(f(439), 439);
+      PSI_TEST_CHECK_EQUAL(f(-34), -34);
     }
 
-    BOOST_AUTO_TEST_CASE(Recursion) {
+    PSI_TEST_CASE(Recursion) {
       const char *src =
         "%x = function (%a:i32,%b:i32) > i32 {\n"
         "  return (add %a %b);"
@@ -115,10 +115,10 @@ namespace Psi {
 
       Jit::Int32 (*f)() = reinterpret_cast<Jit::Int32(*)()>(jit_single("main", src));
       Jit::Int32 result = f();
-      BOOST_CHECK_EQUAL(result, 27);
+      PSI_TEST_CHECK_EQUAL(result, 27);
     }
 
-    BOOST_AUTO_TEST_CASE(ConditionalBranch) {
+    PSI_TEST_CASE(ConditionalBranch) {
       const char *src =
         "%fn = export function (%a:bool,%b:i32,%c:i32) > i32 {\n"
         "  cond_br %a %if_true %if_false;\n"
@@ -132,13 +132,13 @@ namespace Psi {
 
       typedef Jit::Int32 (*FuncType) (Jit::Boolean,Jit::Int32,Jit::Int32);
       FuncType f = reinterpret_cast<FuncType>(jit_single("fn", src));
-      BOOST_CHECK_EQUAL(f(true, 10, 25), 35);
-      BOOST_CHECK_EQUAL(f(false, 10, 25), -15);
-      BOOST_CHECK_EQUAL(f(true, 15, 30), 45);
-      BOOST_CHECK_EQUAL(f(false, 15, 30), -15);
+      PSI_TEST_CHECK_EQUAL(f(true, 10, 25), 35);
+      PSI_TEST_CHECK_EQUAL(f(false, 10, 25), -15);
+      PSI_TEST_CHECK_EQUAL(f(true, 15, 30), 45);
+      PSI_TEST_CHECK_EQUAL(f(false, 15, 30), -15);
     }
 
-    BOOST_AUTO_TEST_CASE(FunctionPointer) {
+    PSI_TEST_CASE(FunctionPointer) {
       const char *src =
         "%pi16 = define pointer i16;\n"
         "%pi32 = define pointer i32;\n"
@@ -178,9 +178,9 @@ namespace Psi {
       Jit::Int32 i32;
       Jit::Int16 i16;
       FuncType f = reinterpret_cast<FuncType>(jit_single("test", src));
-      BOOST_CHECK_EQUAL(f(&i32, &i16), true);
-      BOOST_CHECK_EQUAL(i32, 42);
-      BOOST_CHECK_EQUAL(i16, 49);
+      PSI_TEST_CHECK_EQUAL(f(&i32, &i16), true);
+      PSI_TEST_CHECK_EQUAL(i32, 42);
+      PSI_TEST_CHECK_EQUAL(i16, 49);
     }
 
     /*
@@ -190,7 +190,7 @@ namespace Psi {
      * incorrectly, one branch will not be able to see the resulting
      * value hence LLVM should fail to compile.
      */
-    BOOST_AUTO_TEST_CASE(FunctionalOperationDominatorGenerate) {
+    PSI_TEST_CASE(FunctionalOperationDominatorGenerate) {
       const char *src =
         "%f = export function (%a: bool, %b: i32, %c: i32) > i32 {\n"
         "  %t = add %b %c;\n"
@@ -203,11 +203,11 @@ namespace Psi {
 
       typedef Jit::Int32 (*FuncType) (Jit::Boolean,Jit::Int32,Jit::Int32);
       FuncType f = reinterpret_cast<FuncType>(jit_single("f", src));
-      BOOST_CHECK_EQUAL(f(true, 1, 2), 4);
-      BOOST_CHECK_EQUAL(f(false, 5, 7), 14);
+      PSI_TEST_CHECK_EQUAL(f(true, 1, 2), 4);
+      PSI_TEST_CHECK_EQUAL(f(false, 5, 7), 14);
     }
 
-    BOOST_AUTO_TEST_CASE(LoadTest) {
+    PSI_TEST_CASE(LoadTest) {
       const char *src =
         "%f = export function (%p : (pointer i32)) > i32 {\n"
         "  %x = load %p;\n"
@@ -218,10 +218,10 @@ namespace Psi {
       func_type f = reinterpret_cast<func_type>(jit_single("f", src));
 
       Jit::Int32 value = 2359;
-      BOOST_CHECK_EQUAL(f(&value), 2359);
+      PSI_TEST_CHECK_EQUAL(f(&value), 2359);
     }
 
-    BOOST_AUTO_TEST_CASE(StoreTest) {
+    PSI_TEST_CASE(StoreTest) {
       const char *src =
         "%f = export function (%x : i32, %p : (pointer i32)) > bool {\n"
         "  store %x %p;\n"
@@ -233,10 +233,10 @@ namespace Psi {
 
       Jit::Int32 value = 0;
       f(6817, &value);
-      BOOST_CHECK_EQUAL(value, 6817);
+      PSI_TEST_CHECK_EQUAL(value, 6817);
     }
     
-    BOOST_AUTO_TEST_CASE(LoadStoreOrderTest) {
+    PSI_TEST_CASE(LoadStoreOrderTest) {
       const char *src =
         "%f = export function (%x : i32, %y : (pointer i32)) > i32 {\n"
         "  %a = load %y;\n"
@@ -249,8 +249,8 @@ namespace Psi {
       const Jit::Int32 a = 32, b = 54;
       Jit::Int32 dat[1] = {b};
       Jit::Int32 r = f(a, dat);
-      BOOST_CHECK_EQUAL(dat[0], a);
-      BOOST_CHECK_EQUAL(r, b);
+      PSI_TEST_CHECK_EQUAL(dat[0], a);
+      PSI_TEST_CHECK_EQUAL(r, b);
     }
 
     namespace {
@@ -260,7 +260,7 @@ namespace Psi {
       }
     }
 
-    BOOST_AUTO_TEST_CASE(AllocaTest) {
+    PSI_TEST_CASE(AllocaTest) {
       const char *src =
         "%f = export function (%cb : (pointer (function cc_c ((pointer i32))>i32))) > i32 {\n"
         "  %s = alloca i32 #up1 #up1;\n"
@@ -272,10 +272,10 @@ namespace Psi {
       typedef Jit::Int32 (*func_type) (Jit::Int32(*)(Jit::Int32*));
       func_type f = reinterpret_cast<func_type>(jit_single("f", src));
 
-      BOOST_CHECK_EQUAL(f(alloca_test_cb), 576);
+      PSI_TEST_CHECK_EQUAL(f(alloca_test_cb), 576);
     }
     
-    BOOST_AUTO_TEST_CASE(SolidifyTest) {
+    PSI_TEST_CASE(SolidifyTest) {
       const char *src = 
         "%f = export function(%a : i32 | %x : (constant %a)) > i32 {\n"
         "  solidify %x;\n"
@@ -286,10 +286,10 @@ namespace Psi {
       func_type f = reinterpret_cast<func_type>(jit_single("f", src));
 
       Jit::Int32 v = 42350898;
-      BOOST_CHECK_EQUAL(f(v), v);
+      PSI_TEST_CHECK_EQUAL(f(v), v);
     }
     
-    BOOST_AUTO_TEST_CASE(ConstantTypeZeroTest) {
+    PSI_TEST_CASE(ConstantTypeZeroTest) {
       const char *src = 
         "%f = export function(%a : i32, %p : pointer (constant %a)) > (constant %a) {\n"
         "  %z = zero (constant %a);\n"
@@ -303,14 +303,14 @@ namespace Psi {
       Jit::Int32 v = -1985092;
       Jit::Int32 a, b;
       a = f(v, &b);
-      BOOST_CHECK_EQUAL(a, v);
-      BOOST_CHECK_EQUAL(b, v);
+      PSI_TEST_CHECK_EQUAL(a, v);
+      PSI_TEST_CHECK_EQUAL(b, v);
     }
     
     /*
      * Check that alloca() in a loop reuses memory from previous iterations.
      */
-    BOOST_AUTO_TEST_CASE(StackAllocLoopTest) {
+    PSI_TEST_CASE(StackAllocLoopTest) {
       const char *src =
         "%f = export function(%c : uiptr, %n : uiptr, %r : pointer (array (pointer i8) %n)) > empty {\n"
         "  br %entry;\n"
@@ -334,10 +334,10 @@ namespace Psi {
       Jit::IntPtr alloc_size = 1000;
       
       f(alloc_size, loop_count, pointers);
-      BOOST_CHECK(std::abs(static_cast<std::ptrdiff_t>(pointers[loop_count - 1] - pointers[0])) < alloc_size);
+      PSI_TEST_CHECK(std::abs(static_cast<std::ptrdiff_t>(pointers[loop_count - 1] - pointers[0])) < alloc_size);
     }
     
-    BOOST_AUTO_TEST_CASE(EvaluateTest1) {
+    PSI_TEST_CASE(EvaluateTest1) {
       const char *src =
         "%f = export function(%cond : bool, %denom : ui32) > ui32 {\n"
         "  %ex = (div #ui1 %denom);\n"
@@ -387,7 +387,7 @@ namespace Psi {
 #endif
     }
     
-    BOOST_AUTO_TEST_CASE(EvaluateTest2) {
+    PSI_TEST_CASE(EvaluateTest2) {
       const char *src =
         "%f = export function(%cond : bool, %denom : ui32) > ui32 {\n"
         "  %ex = (div #ui1 %denom);\n"
@@ -403,10 +403,10 @@ namespace Psi {
       func_type f = reinterpret_cast<func_type>(jit_single("f", src));
       
 #ifdef UNIX_LIKE
-      BOOST_CHECK(EvaluateTest2Help::wrapper(f));
+      PSI_TEST_CHECK(EvaluateTest2Help::wrapper(f));
 #endif
     }
 
-    BOOST_AUTO_TEST_SUITE_END()    
+    PSI_TEST_SUITE_END()    
   }
 }

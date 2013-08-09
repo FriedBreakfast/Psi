@@ -6,6 +6,7 @@
 
 #include <fstream>
 #include <cctype>
+#include <cstring>
 
 #include <process.h>
 #include <Shlwapi.h>
@@ -35,7 +36,7 @@ std::wstring utf8_to_wchar(const char *s, std::size_t n) {
   if (retval <= (int)data.size())
     return std::wstring(data.get(), data.get() + retval);
 
-  unsigned length = retval;
+  int length = retval;
   boost::scoped_array<WCHAR> data_alloc(new WCHAR[length]);
   retval = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, n, data_alloc.get(), length);
   if (retval == 0)
@@ -49,7 +50,7 @@ std::wstring utf8_to_wchar(const char *s, std::size_t n) {
 std::wstring utf8_to_wchar(const std::string& s) {
   if (s.empty())
     return std::wstring();
-  return utf8_to_wchar(s.c_str(), s.empty());
+  return utf8_to_wchar(s.c_str(), s.size());
 }
 
 /**
@@ -62,24 +63,30 @@ std::string wchar_to_utf8(const WCHAR *begin, std::size_t n) {
   const unsigned data_length = 128;
   SmallArray<char, data_length> data;
   data.resize(data_length);
-  int retval = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, begin, n, data.get(), data.size(), NULL, NULL);
+  int retval = WideCharToMultiByte(CP_UTF8, 0, begin, n, data.get(), data.size(), NULL, NULL);
   if (retval == 0)
     throw_last_error();
 
   if (retval > (int)data.size()) {
     data.resize(retval);
-    retval = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, begin, n, data.get(), data.size(), NULL, NULL);
+    retval = WideCharToMultiByte(CP_UTF8, 0, begin, n, data.get(), data.size(), NULL, NULL);
     if (retval == 0)
       throw_last_error();
-    else if (retval != data.size())
+    else if (unsigned(retval) != data.size())
       throw PlatformError("Error converting UTF-16 string to UTF-8: could not determine number of bytes required");
   }
 
-  return std::string(data.get(), data.get()+data.size());
+  return std::string(data.get(), data.get()+retval);
 }
 
 std::string wchar_to_utf8(const WCHAR *str) {
   return wchar_to_utf8(str, wcslen(str));
+}
+
+std::string wchar_to_utf8(const std::wstring& str) {
+  if (str.empty())
+    return std::string();
+  return wchar_to_utf8(str.c_str(), str.size());
 }
 
 LibraryHandle::LibraryHandle() : m_handle(NULL) {
@@ -109,7 +116,7 @@ std::string error_string(DWORD error) {
   if (!result)
     return "Unknown error";
 
-  return wchar_to_utf8(message.ptr);
+  return wchar_to_utf8(message.ptr, result);
 }
 
 /**
@@ -198,14 +205,14 @@ void argument_convert_char(std::vector<WCHAR>& output, std::string::const_iterat
     output.push_back(value);
   } else if (value < 0x20000) {
     unsigned subtracted = value - 0x10000;
-    output.push_back(0xD800 | ((value >> 10) & 0x3F));
-    output.push_back(0xDC00 | (value & 0x3F));
+    output.push_back(0xD800 | ((subtracted >> 10) & 0x3F));
+    output.push_back(0xDC00 | (subtracted & 0x3F));
   } else {
     throw PlatformError("Cannot encode Unicode code point above 0x20000 to UTF-16");
   }
 }
 
-void argument_convert_char(std::vector<WCHAR>& output, std::wstring::const_iterator ii, std::wstring::const_iterator ie) {
+void argument_convert_char(std::vector<WCHAR>& output, std::wstring::const_iterator ii, std::wstring::const_iterator PSI_UNUSED(ie)) {
   output.push_back(*ii);
   ++ii;
 }
@@ -430,6 +437,9 @@ Path::Path() {
 Path::Path(const std::string& pth) : m_data(Windows::utf8_to_wchar(pth)) {
 }
 
+Path::Path(const char *pth) : m_data(Windows::utf8_to_wchar(pth, std::strlen(pth))) {
+}
+
 Path::Path(const PathData& data) : m_data(data) {
 }
 
@@ -467,6 +477,10 @@ Path Path::filename() const {
   WCHAR buffer[MAX_PATH+1];
   PathStripPathW(buffer);
   return Path(std::wstring(buffer));
+}
+
+std::ostream& operator << (std::ostream& os, const Path& pth) {
+  return os << Windows::wchar_to_utf8(pth.data());
 }
 
 Path getcwd() {
@@ -518,8 +532,8 @@ LibraryWindows::~LibraryWindows() {
 
 boost::optional<void*> LibraryWindows::symbol(const std::string& symbol) {
   for (std::vector<HMODULE>::const_reverse_iterator ii = m_handles.rbegin(), ie = m_handles.rend(); ii != ie; ++ii) {
-    if (void *ptr = GetProcAddress(*ii, symbol.c_str()))
-      return ptr;
+    if (FARPROC ptr = GetProcAddress(*ii, symbol.c_str()))
+      return reinterpret_cast<void*>(ptr);
   }
   
   return boost::none;
@@ -567,7 +581,7 @@ std::vector<char> load_file(HANDLE hfile) {
 
 void read_configuration_files(PropertyValue& pv, const std::string& name) {
   const unsigned n_folders = 3;
-  int folders_idxs[n_folders] = {
+  int folder_idxs[n_folders] = {
     CSIDL_COMMON_APPDATA,
     CSIDL_APPDATA,
     CSIDL_LOCAL_APPDATA
@@ -577,7 +591,7 @@ void read_configuration_files(PropertyValue& pv, const std::string& name) {
 
   WCHAR data[MAX_PATH+1];
   for (unsigned i = 0; i < n_folders; ++i) {
-    HRESULT res = SHGetFolderPathW(NULL, 0, NULL, SHGFP_TYPE_CURRENT, data);
+    HRESULT res = SHGetFolderPathW(NULL, folder_idxs[i], NULL, SHGFP_TYPE_CURRENT, data);
     if (res == E_FAIL)
       continue;
     else if (res != S_OK)

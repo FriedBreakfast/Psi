@@ -1,5 +1,3 @@
-#include <boost/test/unit_test.hpp>
-
 #include "Core.hpp"
 #include "Function.hpp"
 #include "Functional.hpp"
@@ -11,9 +9,9 @@
 
 namespace Psi {
   namespace Tvm {
-    BOOST_FIXTURE_TEST_SUITE(FunctionTest, Test::ContextFixture)
+    PSI_TEST_SUITE_FIXTURE(FunctionTest, Test::ContextFixture)
 
-    BOOST_AUTO_TEST_CASE(PhantomParameterTest) {
+    PSI_TEST_CASE(PhantomParameterTest) {
       const char *src =
         "%f = export function (%a:type|%b:bool,%c:(pointer %a),%d:(pointer %a)) > (pointer %a) {\n"
         " cond_br %b %tc %td;\n"
@@ -27,8 +25,8 @@ namespace Psi {
       FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
 
       int x, y;
-      BOOST_CHECK_EQUAL(f(true, &x, &y), &x);
-      BOOST_CHECK_EQUAL(f(false, &x, &y), &y);
+      PSI_TEST_CHECK_EQUAL(f(true, &x, &y), &x);
+      PSI_TEST_CHECK_EQUAL(f(false, &x, &y), &y);
     }
 
     namespace {
@@ -36,7 +34,7 @@ namespace Psi {
       void* return_2(void*,void*x) {return x;}
     }
 
-    BOOST_AUTO_TEST_CASE(PhantomCallbackTest) {
+    PSI_TEST_CASE(PhantomCallbackTest) {
       const char *src =
         "%f = export function (%a:type|%b:(pointer(function cc_c ((pointer %a),(pointer %a))>(pointer %a))),%c:(pointer %a),%d:(pointer %a)) > (pointer %a) {\n"
         "  %r = call %b %c %d;\n"
@@ -47,11 +45,11 @@ namespace Psi {
       FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
 
       int x, y;
-      BOOST_CHECK_EQUAL(f(return_1,&x,&y), &x);
-      BOOST_CHECK_EQUAL(f(return_2,&x,&y), &y);
+      PSI_TEST_CHECK_EQUAL(f(return_1,&x,&y), &x);
+      PSI_TEST_CHECK_EQUAL(f(return_2,&x,&y), &y);
     }
 
-    BOOST_AUTO_TEST_CASE(PhiTest) {
+    PSI_TEST_CASE(PhiTest) {
       const char *src =
         "%f = export function (%a: bool, %b: i32, %c: i32) > i32 {\n"
         "  cond_br %a %tb %tc;\n"
@@ -66,11 +64,11 @@ namespace Psi {
 
       typedef Jit::Int32 (*FuncType) (Jit::Boolean,Jit::Int32,Jit::Int32);
       FuncType f = reinterpret_cast<FuncType>(jit_single("f", src));
-      BOOST_CHECK_EQUAL(f(true, 10, 25), 10);
-      BOOST_CHECK_EQUAL(f(false, 15, 30), 30);
+      PSI_TEST_CHECK_EQUAL(f(true, 10, 25), 10);
+      PSI_TEST_CHECK_EQUAL(f(false, 15, 30), 30);
     }
     
-    BOOST_AUTO_TEST_CASE(PhiEdgeTest) {
+    PSI_TEST_CASE(PhiEdgeTest) {
       const char *src =
         "%f = export function (%a: bool, %b: i32, %c: i32) > i32 {\n"
         "  br %entry;\n"
@@ -87,10 +85,10 @@ namespace Psi {
 
       typedef Jit::Int32 (*FuncType) (Jit::Boolean,Jit::Int32,Jit::Int32);
       FuncType f = reinterpret_cast<FuncType>(jit_single("f", src));
-      BOOST_CHECK_EQUAL(f(true, 10, 25), 10);
-      BOOST_CHECK_EQUAL(f(false, 15, 30), 30);
+      PSI_TEST_CHECK_EQUAL(f(true, 10, 25), 10);
+      PSI_TEST_CHECK_EQUAL(f(false, 15, 30), 30);
     }
 
-    BOOST_AUTO_TEST_SUITE_END()
+    PSI_TEST_SUITE_END()
  }
 }

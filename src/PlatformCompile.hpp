@@ -13,14 +13,6 @@ namespace Psi {
      * \brief Perform any platform-specific initialization.
      */
     void platform_initialize();
-    
-    /**
-     * \brief Convert the address of a function or global into a symbol name.
-     * 
-     * \param base If non-NULL, the actual base address of the symbol
-     * is stored here.
-     */
-    String address_to_symbol(void *addr, void **base);
 
     boost::shared_ptr<PlatformLibrary> load_module(const PropertyValue& description);
     

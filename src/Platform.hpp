@@ -2,6 +2,7 @@
 #define HPP_PSI_PLATFORM
 
 #include <boost/optional.hpp>
+#include <iosfwd>
 
 #include "Runtime.hpp"
 #include "PropertyValue.hpp"
@@ -14,14 +15,6 @@
 
 namespace Psi {
 namespace Platform {
-/**
- * \brief Convert the address of a function or global into a symbol name.
- * 
- * \param base If non-NULL, the actual base address of the symbol
- * is stored here.
- */
-PSI_COMPILER_COMMON_EXPORT String address_to_symbol(void *addr, void **base);
-
 class PSI_COMPILER_COMMON_EXPORT PlatformError : public std::exception {
   std::string m_message;
 public:
@@ -92,6 +85,9 @@ public:
    */
   Path filename() const;
 };
+
+/// \brief Print a path to an output stream
+PSI_COMPILER_COMMON_EXPORT std::ostream& operator << (std::ostream& os, const Path& pth);
 
 /// \brief Get the current working directory
 PSI_COMPILER_COMMON_EXPORT Path getcwd();

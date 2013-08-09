@@ -2,11 +2,11 @@
 #define HPP_PSI_TVM_TEST
 
 #include "../ErrorContext.hpp"
+#include "../Test.hpp"
 #include "Core.hpp"
 #include "Jit.hpp"
 
 #include <boost/shared_ptr.hpp>
-#include <boost/test/unit_test.hpp>
 
 namespace Psi {
   namespace Tvm {

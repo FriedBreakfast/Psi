@@ -27,9 +27,7 @@ namespace Psi {
       PSI_ASSERT(key->module() == source_module());
       PSI_ASSERT(value->module() == target_module());
       
-      std::pair<GlobalMapType::iterator, bool> result =
-        m_global_map.insert(std::make_pair(key, value));
-      PSI_ASSERT(result.second);
+      PSI_CHECK(m_global_map.insert(std::make_pair(key, value)).second);
     }
     
     /**

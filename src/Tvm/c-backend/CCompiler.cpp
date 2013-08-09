@@ -35,7 +35,7 @@ boost::shared_ptr<Platform::PlatformLibrary> CCompiler::compile_load_library(con
   try {
     result->library = Platform::load_library(result->path.path());
   } catch (Platform::PlatformError& ex) {
-    err_loc.error_throw(ex.what());
+    err_loc.error_throw(boost::format("Failed to load compiled library at %s: %s") % result->path.path() % ex.what());
   }
   return boost::shared_ptr<Platform::PlatformLibrary>(result, result->library.get());
 }
@@ -317,7 +317,7 @@ public:
     try {
       Platform::exec_communicate_check(path, command);
     } catch (Platform::PlatformError& ex) {
-      err_loc.error_throw(ex.what());
+      err_loc.error_throw(boost::format("MSVC compilation error: %s") % ex.what());
     }
   }
   
@@ -376,7 +376,7 @@ public:
     try {
       Platform::exec_communicate_check(program_path.path(), "", &program_output);
     } catch (Platform::PlatformError& ex) {
-      err_loc.error_throw(ex.what());
+      err_loc.error_throw(boost::format("Failed to execute MSVC version detection program: %s") % ex.what());
     }
     
     std::istringstream program_ss;
@@ -472,7 +472,7 @@ public:
     try {
       Platform::exec_communicate_check(path, command, source);
     } catch (Platform::PlatformError& ex) {
-      err_loc.error_throw(ex.what());
+      err_loc.error_throw(boost::format("GCC compilation failed: %s") % ex.what());
     }
   }
   
@@ -559,7 +559,7 @@ public:
     try {
       Platform::exec_communicate_check(program_path.path(), "", &program_output);
     } catch (Platform::PlatformError& ex) {
-      err_loc.error_throw(ex.what());
+      err_loc.error_throw(boost::format("Failed to execute GCC version detection: %s") % ex.what());
     }
     
     std::istringstream program_ss;
@@ -625,7 +625,7 @@ public:
     try {
       Platform::exec_communicate_check(program_path.path(), "", &program_output);
     } catch (Platform::PlatformError& ex) {
-      err_loc.error_throw(ex.what());
+      err_loc.error_throw(boost::format("Failed to execute clang version detection: %s") % ex.what());
     }
     
     std::istringstream program_ss;
@@ -721,7 +721,7 @@ public:
     try {
       Platform::exec_communicate_check(path, tcc_args, "", &program_output);
     } catch (Platform::PlatformError& ex) {
-      err_loc.error_throw(ex.what());
+      err_loc.error_throw(boost::format("Failed to execute TCC version detection: %s") % ex.what());
     }
     
     std::istringstream program_ss;
@@ -882,7 +882,7 @@ public:
       ctx.compile_string(source);
       ctx.output_file(output_file.str());
     } catch (TCCError& ex) {
-      err_loc.error_throw(ex.what());
+      err_loc.error_throw(boost::format("tcclib program compilation failed: %s") % ex.what());
     }
   }
   
@@ -892,7 +892,7 @@ public:
       ctx.compile_string(source);
       ctx.output_file(output_file.str());
     } catch (TCCError& ex) {
-      err_loc.error_throw(ex.what());
+      err_loc.error_throw(boost::format("tcclib library compilation failed: %s") % ex.what());
     }
   }
 
@@ -903,7 +903,7 @@ public:
       pl->context().relocate();
       return pl;
     } catch (TCCError& ex) {
-      err_loc.error_throw(ex.what());
+      err_loc.error_throw(boost::format("tcclib dynamic compilation failed: %s") % ex.what());
     }
   }
 
@@ -937,23 +937,23 @@ public:
 
       StdioTempFile tf;
       if (!tf.fp())
-        err_loc.error_throw("Failed to create temporary file for libtcc autodetection");
+        err_loc.error_throw("Failed to create temporary file for tcclib autodetection");
       fptr(tf.fp());
       
       long length = ftell(tf.fp());
       if (length < 0)
-        err_loc.error_throw("Could not determine length of libtcc detection result file");
+        err_loc.error_throw("Could not determine length of tcclib detection result file");
 
       output.resize(length);
       if (length > 0) {
         if (fseek(tf.fp(), 0, SEEK_SET) != 0)
-          err_loc.error_throw("Could not seek to start of libtcc detection result file");
+          err_loc.error_throw("Could not seek to start of tcclib detection result file");
 
         if (fread(&output[0], 1, length, tf.fp()) != static_cast<unsigned long>(length))
-          err_loc.error_throw("Could not read libtcc detection result file");
+          err_loc.error_throw("Could not read tcclib detection result file");
       }
     } catch (TCCError& ex) {
-      err_loc.error_throw(ex.what());
+      err_loc.error_throw(boost::format("Failed to execute tcclib version detection: %s") % ex.what());
     }
 
     std::istringstream program_ss;

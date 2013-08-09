@@ -233,6 +233,10 @@ Path Path::absolute() const {
   return getcwd().join(*this).normalize();
 }
 
+std::ostream& operator << (std::ostream& os, const Path& pth) {
+  return os << pth.data().path;
+}
+
 Path getcwd() {
   const std::size_t path_max = 256;
   SmallArray<char, path_max> data;

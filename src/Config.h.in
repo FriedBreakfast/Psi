@@ -32,6 +32,5 @@
 /// Path to auxiliary files for TCC
 #define PSI_TVM_CC_TCC_INCLUDE "${PSI_TVM_CC_TCC_INCLUDE}"
 #define PSI_TVM_CC_TCC_PATH "${PSI_TVM_CC_TCC_PATH}"
-#cmakedefine01 PSI_TVM_CC_SYSTEM_OVER_TCCLIB
 
 #endif

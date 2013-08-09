@@ -7,7 +7,7 @@
 
 namespace Psi {
 namespace Platform {
-boost::shared_ptr<PlatformLibrary> load_library(const PropertyValue& args) {
+boost::shared_ptr<PlatformLibrary> load_module(const PropertyValue& args) {
   std::vector<std::string> libs, dirs;
   if (args.has_key("libs"))
     libs = args.get("libs").str_list();

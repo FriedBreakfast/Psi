@@ -80,6 +80,8 @@ namespace Psi {
   PSI_VISIT_SIMPLE(long)
   PSI_VISIT_SIMPLE(unsigned)
   PSI_VISIT_SIMPLE(unsigned long)
+  PSI_VISIT_SIMPLE(long long)
+  PSI_VISIT_SIMPLE(unsigned long long)
   PSI_VISIT_SIMPLE(std::string)
 
   template<typename V, typename T, typename A, typename D>

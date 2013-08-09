@@ -552,7 +552,8 @@ namespace Psi {
         case llvm::Triple::x86:
           switch (parsed_triple.getOS()) {
           case llvm::Triple::Linux: return create_target_fixes_linux_x86(context, target_machine);
-          case llvm::Triple::Win32: return create_target_fixes_win32(context, target_machine);
+          case llvm::Triple::Win32:
+          case llvm::Triple::MinGW32: return create_target_fixes_win32(context, target_machine);
           default: break;
           }
           break;

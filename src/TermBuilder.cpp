@@ -51,6 +51,9 @@ TreePtr<Term> TermBuilder::number_type(CompileContext& compile_context, NumberTy
   case NumberType::n_u32: return b.u32_type;
   case NumberType::n_u64: return b.u64_type;
   case NumberType::n_uptr: return b.uptr_type;
+  case NumberType::n_f32:
+  case NumberType::n_f64: PSI_FAIL("Floating point types not yet implemented");
+  default: PSI_FAIL("Unknown number type key");
   }
 }
 
@@ -194,7 +197,7 @@ unsigned TermBuilder::size_from(const TreePtr<Term>& value, const SourceLocation
  */
 bool TermBuilder::size_equals(const TreePtr<Term>& value, std::size_t n) {
   TreePtr<IntegerConstant> inner = term_unwrap_dyn_cast<IntegerConstant>(value);
-  return inner && (int(n) == inner->value);
+  return inner && (n == inner->value);
 }
 
 /// \brief Value for StructType types.

@@ -11,7 +11,7 @@ namespace Psi {
       
     public:
       WindowsJitFactory(const CompileErrorPair& error_handler, const std::string& soname, Platform::Windows::LibraryHandle& handle, const PropertyValue& config)
-      : JitFactoryCommon(error_handler, m_config) {
+      : JitFactoryCommon(error_handler, config) {
         m_handle.swap(handle);
         
         m_callback = reinterpret_cast<JitFactoryCallback>(GetProcAddress(m_handle.get(), "tvm_jit_new"));
@@ -20,7 +20,7 @@ namespace Psi {
       }
       
       static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const PropertyValue& config) {
-        boost::optional<std::string> sobase = config.get("kind");
+        boost::optional<std::string> sobase = config.path_str("kind");
         if (!sobase)
           error_handler.error_throw("JIT 'kind' key missing from configuration");
         std::string soname = "psi-tvm-" + *sobase + ".dll";
@@ -34,7 +34,7 @@ namespace Psi {
     };
 
     boost::shared_ptr<JitFactory> JitFactory::get_specific(const CompileErrorPair& error_handler, const PropertyValue& config) {
-      return WindowsJitFactory::get(error_handler, name, config);
+      return WindowsJitFactory::get(error_handler, config);
     }
   }
 }

@@ -7,8 +7,13 @@ configure_file(Config.h.in Config.h)
 
 if(PSI_DEBUG)
 add_library(psi-assert SHARED Assert.cpp Assert.hpp)
+shared_library_setup(psi-assert)
 set(PSI_ASSERT_LIB psi-assert)
 endif()
+
+add_library(psi-test SHARED Test.cpp Test.hpp OptionParser.cpp OptionParser.hpp)
+target_link_libraries(psi-test ${PSI_ASSERT_LIB})
+shared_library_setup(psi-test)
 
 bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated)
 set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
@@ -37,6 +42,7 @@ add_library(psi-compiler-common SHARED
   Platform.cpp Platform.hpp
   ${PSI_COMPILER_COMMON_SOURCES}
 )
+shared_library_setup(psi-compiler-common)
 
 target_link_libraries(psi-compiler-common ${PSI_ASSERT_LIB} ${PSI_COMPILER_COMMON_LIBS})
 
@@ -65,6 +71,7 @@ add_library(psi-tvm SHARED
   Tvm/ValueList.hpp
   ${PSI_TVM_SOURCES}
 )
+shared_library_setup(psi-tvm)
 
 target_link_libraries(psi-tvm psi-compiler-common ${PSI_ASSERT_LIB})
 if(UNIX)
@@ -73,6 +80,7 @@ endif()
 
 if(BUILD_TESTING)
   add_executable(psi-tvm-test
+    TestMain.cpp
     Tvm/Test.cpp Tvm/Test.hpp
     Tvm/AggregateTest.cpp
     Tvm/InstructionTest.cpp
@@ -83,10 +91,7 @@ if(BUILD_TESTING)
     Tvm/ParserTest.cpp
   )
 
-  if(NOT WIN32)
-    set_target_properties(psi-tvm-test PROPERTIES COMPILE_DEFINITIONS "BOOST_TEST_DYN_LINK")
-  endif()
-  target_link_libraries(psi-tvm-test ${Boost_UNIT_TEST_FRAMEWORK_LIBRARY} psi-tvm ${PSI_ASSERT_LIB})
+  target_link_libraries(psi-tvm-test psi-tvm psi-test ${PSI_ASSERT_LIB})
   if(PSI_TVM_JIT STREQUAL "llvm")
     add_dependencies(psi-tvm-test psi-tvm-llvm)
   elseif(PSI_TVM_JIT STREQUAL "c")
@@ -116,6 +121,7 @@ if(PSI_TVM_LLVM)
     Tvm/llvm/Target_Win32.cpp
     Tvm/llvm/Type.cpp
   )
+  shared_library_setup(psi-tvm-llvm)
 
   set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}")
   target_link_libraries(psi-tvm-llvm psi-tvm ${LLVM_LIBS} ${LLVM_LDFLAGS} ${PSI_ASSERT_LIB})
@@ -130,6 +136,7 @@ add_library(psi-tvm-c MODULE
   Tvm/c-backend/TypeBuilder.cpp
   ${PSI_TVM_CC_SOURCES}
 )
+shared_library_setup(psi-tvm-c)
 
 add_tvm_test(cc "tvm.jit=\"cc\"")
 
@@ -174,6 +181,7 @@ add_library(psi-compiler SHARED
   Visitor.hpp
   ${PSI_COMPILER_SOURCES}
 )
+shared_library_setup(psi-compiler)
 
 target_link_libraries(psi-compiler psi-compiler-common psi-tvm ${PSI_ASSERT_LIB})
 if (UNIX)
