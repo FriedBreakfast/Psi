@@ -8,7 +8,7 @@ namespace Psi {
     BOOST_FIXTURE_TEST_SUITE(AggregateTest, Test::ContextFixture)
 
     BOOST_AUTO_TEST_CASE(EmptyStructTest) {
-      const char *src = "%es = global const type struct;\n";
+      const char *src = "%es = global const export type struct;\n";
 
       Jit::Metatype *mt = static_cast<Jit::Metatype*>(jit_single("es", src));
       BOOST_CHECK_EQUAL(mt->size, 0);
@@ -18,7 +18,7 @@ namespace Psi {
     BOOST_AUTO_TEST_CASE(DownUpRefTest) {
       const char *src =
         "%s = define struct i32 i32;\n"
-        "%f = function (%a:pointer %s) > (pointer %s) {\n"
+        "%f = export function (%a:pointer %s) > (pointer %s) {\n"
         " return (outer_ptr (gep %a #up1));\n"
         "};\n";
 
@@ -33,7 +33,7 @@ namespace Psi {
       const char *src =
         "%tt = recursive () > (struct i32 i32);\n"
         "%ty = define apply %tt;\n"
-        "%f = function (%a:i32, %b:i32) > %ty {\n"
+        "%f = export function (%a:i32, %b:i32) > %ty {\n"
         "  return (apply_v %ty (struct_v %a %b));\n"
         "};\n";
 
@@ -72,7 +72,7 @@ namespace Psi {
         "  (pointer (apply %vtable %tag))\n"
         ");\n"
         "\n"
-        "%func = function (%obj_wrapped : exists (%tag : upref_type) > (pointer (apply %base %tag) %tag)) > i32 {\n"
+        "%func = export function (%obj_wrapped : exists (%tag : upref_type) > (pointer (apply %base %tag) %tag)) > i32 {\n"
         "  %obj = unwrap %obj_wrapped;\n"
         "  %vptr = load (gep (gep %obj #up0) #up0);\n"
         "  %callback = load (gep (gep %vptr #up0) #up0);\n"
@@ -127,7 +127,7 @@ namespace Psi {
         "  i32\n"
         ");\n"
         "\n"
-        "%func = function (%obj_wrapped : exists (%vtag : upref_type, %tag : upref_type) > (pointer (apply %derived %vtag %tag) %tag)) > i32 {\n"
+        "%func = export function (%obj_wrapped : exists (%vtag : upref_type, %tag : upref_type) > (pointer (apply %derived %vtag %tag) %tag)) > i32 {\n"
         "  %obj = unwrap %obj_wrapped;\n"
         "  %vptr_base = load (gep %obj #up0 #up0 #up0 #up0);\n"
         "  %vptr = outer_ptr (outer_ptr %vptr_base);\n"

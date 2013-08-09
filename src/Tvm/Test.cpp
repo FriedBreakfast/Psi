@@ -24,6 +24,7 @@ namespace {
       Psi::PropertyValue config;
       Psi::configuration_builtin(config);
       Psi::configuration_read_files(config);
+      Psi::configuration_environment(config);
       if (const char *s = std::getenv("PSI_TEST_CONFIG"))
         config.parse_file(s);
       config.get("tvm");

@@ -288,6 +288,8 @@ public:
   virtual void emit_function_attributes(CModuleEmitter& emitter, CFunction *function) {
     AttributeWriter aw(emitter, "__declspec(", ")");
     emit_global_attributes(aw, function);
+    if ((function->constructor_priority != 0) || (function->destructor_priority != 0))
+      PSI_FAIL("Constructors not supported in MSVC");
     aw.done();
   }
   
@@ -418,21 +420,21 @@ public:
       break;
       
     case link_private:
-      if (has_attribute_visibility) aw.next() << "visibility(hidden)";
+      if (has_attribute_visibility) aw.next() << "visibility(\"hidden\")";
       break;
       
     case link_one_definition:
       aw.next() << "weak";
-      if (has_attribute_visibility) aw.next() << "visibility(protected)";
+      if (has_attribute_visibility) aw.next() << "visibility(\"protected\")";
       break;
       
     case link_export:
-      if (has_attribute_visibility) aw.next() << "visibility(protected)";
+      if (has_attribute_visibility) aw.next() << "visibility(\"protected\")";
       if (windows()) aw.next() << "dllexport";
       break;
 
     case link_import:
-      if (has_attribute_visibility) aw.next() << "visibility(protected)";
+      if (has_attribute_visibility) aw.next() << "visibility(\"default\")";
       if (windows()) aw.next() << "dllimport";
       break;
 
@@ -444,6 +446,10 @@ public:
   virtual void emit_function_attributes(CModuleEmitter& emitter, CFunction *function) {
     AttributeWriter aw(emitter, "__attribute__((", "))");
     emit_global_attributes(aw, function);
+    if (function->constructor_priority >= 0)
+      aw.next() << "constructor(" << function->constructor_priority << ")";
+    else if (function->destructor_priority >= 0)
+      aw.next() << "destructor(" << function->destructor_priority << ")";
     aw.done();
   }
   
@@ -974,20 +980,17 @@ public:
  * Try to locate a C compiler on the system.
  */
 boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc, const PropertyValue& configuration) {
-  String key = configuration.get("cc").str();
-  const PropertyValue& cc_config = configuration.get(key);
-
-  boost::optional<std::string> kind = cc_config.path_str("kind");
+  boost::optional<std::string> kind = configuration.path_str("cckind");
   if (!kind)
     err_loc.error_throw("C compiler kind not specified (property 'kind' missing): should be one of 'gcc', 'clang', 'tcc' or 'tcclib'");
 
 #if PSI_TVM_CC_TCCLIB
-  if (kind == "tcclib")
-    return CCompilerTCCLib::detect(err_loc, cc_config);
+  if (*kind == "tcclib")
+    return CCompilerTCCLib::detect(err_loc, configuration);
 #endif
   
   // Try to identify the compiler by its executable name
-  boost::optional<std::string> str_path = cc_config.path_str("path");
+  boost::optional<std::string> str_path = configuration.path_str("path");
   if (!str_path)
     err_loc.error_throw("C compiler path not specified (property 'path' missing)");
   boost::optional<Platform::Path> cc_full_path = Platform::find_in_path(*str_path);
@@ -995,11 +998,11 @@ boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc, 
     err_loc.error_throw(boost::format("C compiler not found: %s") % *str_path);
 
   if (*kind == "gcc") {
-    return CCompilerGCC::detect(err_loc, *cc_full_path, cc_config);
+    return CCompilerGCC::detect(err_loc, *cc_full_path, configuration);
   } else if (*kind == "clang") {
-    return CCompilerClang::detect(err_loc, *cc_full_path, cc_config);
+    return CCompilerClang::detect(err_loc, *cc_full_path, configuration);
   } else if (*kind == "tcc") {
-    return CCompilerTCC::detect(err_loc, *cc_full_path, cc_config);
+    return CCompilerTCC::detect(err_loc, *cc_full_path, configuration);
   } else {
     err_loc.error_throw(boost::format("Could not identify C compiler: %s") % cc_full_path->str());
   }

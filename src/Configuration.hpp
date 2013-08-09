@@ -6,6 +6,7 @@
 
 namespace Psi {
 PSI_COMPILER_COMMON_EXPORT void configuration_builtin(PropertyValue& pv);
+PSI_COMPILER_COMMON_EXPORT void configuration_environment(PropertyValue& pv);
 PSI_COMPILER_COMMON_EXPORT void configuration_read_files(PropertyValue& pv);
 }
 

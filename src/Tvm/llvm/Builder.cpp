@@ -301,6 +301,7 @@ namespace Psi {
             PSI_FAIL("unexpected global term type");
           }
 
+          apply_linkage(term->linkage(), result);
           if (term->alignment())
             result->setAlignment(build_constant_integer(term->alignment()).getZExtValue());
           

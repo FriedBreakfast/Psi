@@ -110,6 +110,9 @@ std::string CModuleBuilder::run() {
   aggregate_lowering_pass.remove_unions = false;
   aggregate_lowering_pass.memcpy_to_bytes = true;
   aggregate_lowering_pass.update();
+  
+  std::map<ValuePtr<Global>, unsigned> constructor_priorities(m_module->constructors().begin(), m_module->constructors().end());
+  std::map<ValuePtr<Global>, unsigned> destructor_priorities(m_module->destructors().begin(), m_module->destructors().end());
 
   std::vector<std::pair<ValuePtr<GlobalVariable>, CGlobalVariable*> > global_variables;
   std::vector<std::pair<ValuePtr<Function>, CFunction*> > functions;
@@ -132,6 +135,15 @@ std::string CModuleBuilder::run() {
     case term_function: {
       ValuePtr<Function> func = value_cast<Function>(rewritten_term);
       CFunction *c_func = m_c_module.new_function(&term->location(), type, name);
+
+      std::map<ValuePtr<Global>, unsigned>::const_iterator jt = constructor_priorities.find(term);
+      if (jt != constructor_priorities.end())
+        c_func->constructor_priority = jt->second;
+
+      jt = destructor_priorities.find(term);
+      if (jt != destructor_priorities.end())
+        c_func->destructor_priority = jt->second;
+      
       functions.push_back(std::make_pair(func, c_func));
       m_global_value_builder.put(func, c_func);
       break;

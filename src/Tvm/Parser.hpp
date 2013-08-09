@@ -149,11 +149,14 @@ namespace Psi {
 
       struct Function : GlobalElement {
         Function(const PhysicalSourceLocation& location_,
+                 Linkage linkage_,
                  UniquePtr<FunctionTypeExpression>& type_);
         Function(const PhysicalSourceLocation& location_,
+                 Linkage linkage_,
                  UniquePtr<FunctionTypeExpression>& type_,
                  UniqueList<Block>& blocks_);
 
+        Linkage linkage;
         UniquePtr<FunctionTypeExpression> type;
         UniqueList<Block> blocks;
       };
@@ -172,13 +175,16 @@ namespace Psi {
       struct GlobalVariable : GlobalElement {
         GlobalVariable(const PhysicalSourceLocation& location_,
                        bool constant_,
+                       Linkage linkage_,
                        UniquePtr<Expression>& type_);
         GlobalVariable(const PhysicalSourceLocation& location_,
                        bool constant_,
+                       Linkage linkage_,
                        UniquePtr<Expression>& type_,
                        UniquePtr<Expression>& value_);
 
         bool constant;
+        Linkage linkage;
         UniquePtr<Expression> type;
         UniquePtr<Expression> value;
       };

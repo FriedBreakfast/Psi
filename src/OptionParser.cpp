@@ -162,7 +162,7 @@ OptionValue OptionParser::next() {
   if ((s.size() >= 2) && (s[0] == '-') && (s[1] == '-')) {
     // Long option
     std::size_t assign_pos = s.find('=', 2);
-    value.long_name = s.substr(2, assign_pos);
+    value.long_name = s.substr(2, assign_pos == std::string::npos ? std::string::npos : assign_pos-2);
     LongOptionMap::const_iterator ii = m_long_options.find(value.long_name);
     if (value.long_name.empty())
       throw OptionParseError("Empty long option name");
@@ -189,11 +189,11 @@ OptionValue OptionParser::next() {
   } else if ((s.size() >= 1) && (s[0] == '-')) {
     // Short option (or set thereof)
     std::size_t assign_pos = s.find('=', 1);
-    m_short_option_set = s.substr(1, assign_pos);
+    m_short_option_set = s.substr(1, assign_pos == std::string::npos ? std::string::npos : assign_pos-1);
     if (m_short_option_set.empty())
       throw OptionParseError("Empty short option set");
     if (assign_pos != std::string::npos) {
-      m_short_option_set = true;
+      m_short_option_value_set = true;
       m_short_option_value = s.substr(assign_pos+1);
     } else {
       m_short_option_value_set = false;
@@ -227,7 +227,7 @@ OptionValue OptionParser::short_option_next() {
     value.key = ii->second.key;
   } else {
     if (!m_allow_unknown)
-      throw OptionParseError(boost::str(boost::format("Unknown option '--%s'") % value.short_name));
+      throw OptionParseError(boost::str(boost::format("Unknown option '-%s'") % value.short_name));
     value.key = OptionValue::unknown;
   }
   

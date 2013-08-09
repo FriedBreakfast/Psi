@@ -472,10 +472,13 @@ void CModuleEmitter::emit_declaration(CGlobal& global, bool no_extern) {
   else if (!no_extern)
     output() << "extern ";
 
-  if (global.alignment) c_compiler().emit_alignment(*this, global.alignment);
   if (global.op == c_op_global_variable) {
     global_var = checked_cast<CGlobalVariable*>(&global);
+    c_compiler().emit_global_variable_attributes(*this, global_var);
     if (global_var->is_const) output() << "const ";
+  } else {
+    PSI_ASSERT(global.op == c_op_function);
+    c_compiler().emit_function_attributes(*this, checked_cast<CFunction*>(&global));
   }
   
   emit_type_prolog(global.type, true, global.op == c_op_function);
@@ -905,6 +908,8 @@ CFunction *CModule::new_function(const SourceLocation *location, CType *type, co
   CFunction *f = m_pool.alloc<CFunction>();
   f->op = c_op_function;
   f->is_external = true;
+  f->constructor_priority = -1;
+  f->destructor_priority = -1;
   add_global(f, location, type, name);
   return f;
 }

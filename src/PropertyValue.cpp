@@ -1,10 +1,15 @@
 #include "PropertyValue.hpp"
+#include "Platform.hpp"
 
 #include <locale>
 #include <sstream>
 #include <fstream>
 #include <stdio.h>
 #include <boost/format.hpp>
+
+#if PSI_DEBUG
+#include <iostream>
+#endif
 
 namespace Psi {
 /**
@@ -360,42 +365,6 @@ std::string json_parse_string(ParseHelper& tokener) {
   while (true) {
     if (tokener.end()) {
       tokener.throw_error("Unexpected end of JSON data");
-    } else if (tokener.accept('\\')) {
-      if (tokener.end()) {
-        tokener.throw_error("Unexpected end of JSON data after '\\'");
-      } else if (tokener.peek() == 'u') {
-        char digits[5];
-        for (unsigned i = 0; i != 4; ++i) {
-          if (tokener.end())
-            tokener.throw_error("Unexpected end of data in '\\u': expected 4 digits");
-          char c = tokener.peek();
-          digits[i] = tokener.peek();
-          if ((c >= '0') && (c <= '9')) {
-            digits[i] = c;
-            tokener.accept();
-          } else {
-            tokener.throw_error(boost::format("Expected 4 digits after '\\u' but got a '%c'") % tokener.peek());
-          }
-        }
-        digits[5] = '\0'; 
-        unicode_encode(s, atoi(digits));
-      } else {
-        char esc;
-        switch (tokener.peek()) {
-        default: tokener.throw_error(boost::format("Unknown escape character '%c'") % tokener.peek());
-        case '\"': esc = '\"'; break;
-        case '\\': esc = '\\'; break;
-        case '/': esc = '/'; break;
-        case 'b': esc = '\b'; break;
-        case 'f': esc = '\f'; break;
-        case 'n': esc = '\n'; break;
-        case 'r': esc = '\r'; break;
-        case 't': esc = '\t'; break;
-        case '0': esc = '\0'; break;
-        }
-        s.push_back(esc);
-        tokener.accept();
-      }
     } else if (tokener.accept('\"')) {
       break;
     } else {
@@ -404,6 +373,7 @@ std::string json_parse_string(ParseHelper& tokener) {
     }
   }
   tokener.set_skip_whitespace(true);
+  s = string_unescape(s);
   return std::string(s.begin(), s.end());
 }
 
@@ -411,7 +381,7 @@ std::string json_parse_keyword(ParseHelper& tokener) {
   std::string s;
   const std::locale& c_locale = std::locale::classic();
   tokener.set_skip_whitespace(false);
-  while (std::isalnum(tokener.peek(), c_locale) || std::strchr("!$%^&*@~?<>/_", tokener.peek())) {
+  while (!tokener.end() && (std::isalnum(tokener.peek(), c_locale) || std::strchr("!$%^&*@~?<>/_", tokener.peek()))) {
     s.push_back(tokener.peek());
     tokener.accept();
   }
@@ -437,7 +407,7 @@ PropertyValue json_parse_number(ParseHelper& tokener) {
   bool real = false;
   std::string digits;
   tokener.set_skip_whitespace(false);
-  while (true) {
+  while (!tokener.end()) {
     char c = tokener.peek();
     if (std::isspace(c, c_locale))
       break;
@@ -560,11 +530,11 @@ void PropertyValue::parse_configuration(const char *s) {
 /**
  * \brief Read data from a file and parse it into this map.
  */
-void PropertyValue::parse_file(const std::string& filename) {
+void PropertyValue::parse_file(const Platform::Path& filename) {
   std::vector<char> data;
-  std::filebuf in;;
-  if (!in.open(filename.c_str(), std::ios::in))
-    throw PropertyValueParseError(0, 0, "Could not open: " + filename);
+  std::filebuf in;
+  if (!in.open(filename.str().c_str(), std::ios::in))
+    throw PropertyValueParseError(0, 0, "Could not open: " + filename.str());
   std::copy(std::istreambuf_iterator<char>(&in), std::istreambuf_iterator<char>(), std::back_inserter(data));
   in.close();
   if (!data.empty()) {
@@ -572,4 +542,125 @@ void PropertyValue::parse_file(const std::string& filename) {
     parse_configuration(ptr, ptr + data.size());
   }
 }
+
+#if PSI_DEBUG
+namespace {
+  const unsigned indent_tab = 2;
+  
+  /**
+   * Converts a double to a string.
+   * 
+   * I use this in preference to manipulating the output stream directly to avoid any
+   * possible issues with locale and flags.
+   */
+  std::string double_to_string(double d) {
+    std::ostringstream ss;
+    ss.imbue(std::locale::classic());
+    ss.precision(19);
+    ss << d;
+    return ss.str();
+  }
+  
+  bool string_is_token(const String& str) {
+    const std::locale& c_locale = std::locale::classic();
+    const char *ptr = str.c_str();
+    for (std::size_t ii = 0, ie = str.length(); ii != ie; ++ii) {
+      char c = ptr[ii];
+      bool good = std::isalnum(c, c_locale) || std::strchr("!$%^&*@~?<>/_", c);
+      if (!good)
+        return false;
+    }
+    return true;
+  }
+  
+  void token_print(std::ostream& os, const String& str) {
+    if (str.empty()) {
+      os << "\"\"";
+    } else if (string_is_token(str)) {
+      os.write(str.c_str(), str.length());
+    } else {
+      os << '\"' << string_escape(str) << '\"';
+    }
+  }
+  
+  struct Indent {
+    unsigned n;
+    Indent(unsigned n_) : n(n_) {}
+  };
+  
+  std::ostream& operator << (std::ostream& os, Indent ind) {
+    std::fill_n(std::ostreambuf_iterator<char>(os.rdbuf()), ind.n, ' ');
+    return os;
+  }
+}
+
+void PropertyValue::print(std::ostream& os, int indent) const {
+  switch (m_type) {
+  case t_null: os << "null"; break;
+  case t_boolean: os << (m_value.integer ? "true" : "false"); break;
+  case t_integer: os << m_value.integer; break;
+  case t_real: os << double_to_string(m_value.real); break;
+  case t_str: os << '\"' << string_escape(*m_value.str.ptr()) << '\"'; break;
+  
+  case t_map: {
+    const PropertyMap& m = *m_value.map.ptr();
+    if (m.empty()) {
+      os << "{}";
+    } else if (m.size() == 1) {
+      os << "{";
+      token_print(os, m.begin()->first);
+      os << " : ";
+      m.begin()->second.print(os, indent);
+      os << "}";
+    } else {
+      os << "{\n";
+      bool first = true;
+      for (PropertyMap::const_iterator ii = m.begin(), ie = m.end(); ii != ie; ++ii) {
+        if (!first)
+          os << ",\n";
+        else
+          first = false;
+        os << Indent(indent + indent_tab);
+        token_print(os, ii->first);
+        os << " : ";
+        ii->second.print(os, indent + indent_tab);
+      }
+      os << "\n" << Indent(indent) << "}";
+    }
+    break;
+  }
+  
+  case t_list: {
+    const PropertyList& l = *m_value.list.ptr();
+    if (l.empty()) {
+      os << "[]";
+    } else if (l.size() == 1) {
+      os << '[';
+      l.front().print(os, indent);
+      os << ']';
+    } else {
+      os << "[\n";
+      bool first = true;
+      for (PropertyList::const_iterator ii = l.begin(), ie = l.end(); ii != ie; ++ii) {
+        if (!first)
+          os << ",\n";
+        else
+          first = false;
+        os << Indent(indent + indent_tab);
+        ii->print(os, indent + indent_tab);
+      }
+      os << "\n" << Indent(indent) << "]";
+      break;
+    }
+  }
+  
+  default: PSI_FAIL("unknown value type");
+  }
+}
+
+void PropertyValue::dump() const {
+  print(std::cerr, 0);
+  std::cerr << std::endl;
+}
+#endif
 }

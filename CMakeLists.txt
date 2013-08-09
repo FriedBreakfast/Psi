@@ -42,6 +42,13 @@ else()
 endif()
 
 # Find TCC
+if(CMAKE_CXX_COMPILER_IS_GCC)
+  set(PSI_TVM_CC_SYSTEM_KIND_DEFAULT "gcc")
+endif()
+
+set(PSI_TVM_CC_SYSTEM_PATH ${CMAKE_C_COMPILER} CACHE FILEPATH "Path to system C compiler")
+set(PSI_TVM_CC_SYSTEM_KIND ${PSI_TVM_CC_SYSTEM_KIND_DEFAULT} CACHE STRING "Kind of C compiler at PSI_TVM_CC_SYSTEM_PATH, should be 'gcc', 'clang' or 'tcc'")
+
 find_library(TCC_LIB tcc)
 find_path(TCC_INCLUDE libtcc.h)
 find_path(TCC_PATH libtcc1.a)
@@ -49,23 +56,18 @@ find_path(TCC_CC_INCLUDE stdio.h)
 if(TCC_LIB AND TCC_INCLUDE AND TCC_PATH AND TCC_CC_INCLUDE)
   # Whether TCC has been compiled in to the C backend
   set(PSI_TVM_CC_TCCLIB 1)
-  set(PSI_TVM_CC_KIND tcclib)
   set(PSI_TVM_CC_TCC_INCLUDE ${TCC_CC_INCLUDE})
   set(PSI_TVM_CC_TCC_PATH ${TCC_PATH})
 else()
-  # Whether TCC has been compiled in to the C backend
   set(PSI_TVM_CC_TCCLIB 0)
-  set(PSI_TVM_CC_PATH_DEFAULT ${CMAKE_C_COMPILER})
-  if (CMAKE_CXX_COMPILER_IS_GCC)
-    set(PSI_TVM_CC_KIND_DEFAULT "gcc")
-  endif()
 endif()
 
-set(PSI_TVM_CC_PATH ${PSI_TVM_CC_PATH_DEFAULT} CACHE FILEPATH "Default path to search for C compiler")
-set(PSI_TVM_CC_KIND ${PSI_TVM_CC_KIND_DEFAULT} CACHE FILEPATH "Kind of C compiler at PSI_TVM_CC_PATH")
-
 if(WIN32 OR NOT PSI_TVM_LLVM)
-  set(PSI_TVM_JIT_DEFAULT "c")
+  if (PSI_TVM_CC_TCCLIB)
+    set(PSI_TVM_JIT_DEFAULT "tcclib")
+  else()
+    set(PSI_TVM_JIT_DEFAULT "c")
+  endif()
 else()
   set(PSI_TVM_JIT_DEFAULT "llvm")
 endif()

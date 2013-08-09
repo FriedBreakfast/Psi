@@ -28,7 +28,9 @@ PlatformLibrary::~PlatformLibrary() {
 void exec_communicate_check(const Path& command, const std::vector<std::string>& args, const std::string& input, std::string *output_out, std::string *output_err) {
 #if PSI_DEBUG
   // In debug output capture error output whether the user requests it or not
-  std::string local_output_err;
+  std::string local_output_out, local_output_err;
+  if (!output_out)
+    output_out = &local_output_out;
   if (!output_err)
     output_err = &local_output_err;
 #endif

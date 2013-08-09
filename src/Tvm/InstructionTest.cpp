@@ -15,7 +15,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(ReturnIntConst) {
       const char *src =
-        "%f = function () > i32 {\n"
+        "%f = export function () > i32 {\n"
         "  return #i19;\n"
         "};\n";
 
@@ -25,7 +25,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(ReturnIntParameter) {
       const char *src =
-        "%f = function (%x:i32) > i32 {\n"
+        "%f = export function (%x:i32) > i32 {\n"
         "  return %x;\n"
         "};\n";
       
@@ -38,7 +38,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(UnconditionalBranchTest) {
       const char *src =
-        "%f = function () > i32 {\n"
+        "%f = export function () > i32 {\n"
         "  br %label;\n"
         "block %label:\n"
         "  return #i42389789;\n"
@@ -52,7 +52,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(ConditionalBranchTest) {
       const char *src =
-        "%f = function (%a:bool) > i32 {\n"
+        "%f = export function (%a:bool) > i32 {\n"
         "  cond_br %a %iftrue %iffalse;\n"
         "block %iftrue:\n"
         "  return #i344;\n"
@@ -73,7 +73,7 @@ namespace Psi {
         "  return #i40859;\n"
         "};\n"
         "\n"
-        "%outer = function () > i32 {\n"
+        "%outer = export function () > i32 {\n"
         "  %x = call %inner;\n"
         "  return %x;\n"
         "};\n";
@@ -90,7 +90,7 @@ namespace Psi {
         "  return %a;\n"
         "};\n"
         "\n"
-        "%outer = function (%a: i32) > i32 {\n"
+        "%outer = export function (%a: i32) > i32 {\n"
         "  %x = call %inner %a;\n"
         "  return %x;\n"
         "};\n";
@@ -108,7 +108,7 @@ namespace Psi {
         "  return (add %a %b);"
         "};\n"
         "\n"
-        "%main = function () > i32 {\n"
+        "%main = export function () > i32 {\n"
         "  %n = call %x #i19 #i8;\n"
         "  return %n;\n"
         "};\n";
@@ -120,7 +120,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(ConditionalBranch) {
       const char *src =
-        "%fn = function (%a:bool,%b:i32,%c:i32) > i32 {\n"
+        "%fn = export function (%a:bool,%b:i32,%c:i32) > i32 {\n"
         "  cond_br %a %if_true %if_false;\n"
         "  %sum = add %b %c;\n"
         "  %dif = sub %b %c;\n"
@@ -162,7 +162,7 @@ namespace Psi {
         "  return empty_v;\n"
         "};\n"
         "\n"
-        "%test = function (%m : %pi32, %n : %pi16) > bool {\n"
+        "%test = export function (%m : %pi32, %n : %pi16) > bool {\n"
         "  %x = alloca i32 #up2 #up1;\n"
         "  store #i25 %x;\n"
         "  store #i17 (pointer_offset %x #p1);\n"
@@ -192,7 +192,7 @@ namespace Psi {
      */
     BOOST_AUTO_TEST_CASE(FunctionalOperationDominatorGenerate) {
       const char *src =
-        "%f = function (%a: bool, %b: i32, %c: i32) > i32 {\n"
+        "%f = export function (%a: bool, %b: i32, %c: i32) > i32 {\n"
         "  %t = add %b %c;\n"
         "  cond_br %a %tc %fc;\n"
         "block %tc:\n"
@@ -209,7 +209,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(LoadTest) {
       const char *src =
-        "%f = function (%p : (pointer i32)) > i32 {\n"
+        "%f = export function (%p : (pointer i32)) > i32 {\n"
         "  %x = load %p;\n"
         "  return %x;\n"
         "};\n";
@@ -223,7 +223,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(StoreTest) {
       const char *src =
-        "%f = function (%x : i32, %p : (pointer i32)) > bool {\n"
+        "%f = export function (%x : i32, %p : (pointer i32)) > bool {\n"
         "  store %x %p;\n"
         "  return true;\n"
         "};\n";
@@ -238,7 +238,7 @@ namespace Psi {
     
     BOOST_AUTO_TEST_CASE(LoadStoreOrderTest) {
       const char *src =
-        "%f = function (%x : i32, %y : (pointer i32)) > i32 {\n"
+        "%f = export function (%x : i32, %y : (pointer i32)) > i32 {\n"
         "  %a = load %y;\n"
         "  store %x %y;\n"
         "  return %a;\n"
@@ -262,7 +262,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(AllocaTest) {
       const char *src =
-        "%f = function (%cb : (pointer (function cc_c ((pointer i32))>i32))) > i32 {\n"
+        "%f = export function (%cb : (pointer (function cc_c ((pointer i32))>i32))) > i32 {\n"
         "  %s = alloca i32 #up1 #up1;\n"
         "  call %cb %s;\n"
         "  %x = load %s;\n"
@@ -277,7 +277,7 @@ namespace Psi {
     
     BOOST_AUTO_TEST_CASE(SolidifyTest) {
       const char *src = 
-        "%f = function(%a : i32 | %x : (constant %a)) > i32 {\n"
+        "%f = export function(%a : i32 | %x : (constant %a)) > i32 {\n"
         "  solidify %x;\n"
         "  return %a;\n"
         "};\n";
@@ -291,7 +291,7 @@ namespace Psi {
     
     BOOST_AUTO_TEST_CASE(ConstantTypeZeroTest) {
       const char *src = 
-        "%f = function(%a : i32, %p : pointer (constant %a)) > (constant %a) {\n"
+        "%f = export function(%a : i32, %p : pointer (constant %a)) > (constant %a) {\n"
         "  %z = zero (constant %a);\n"
         "  store %z %p;\n"
         "  return %z;\n"
@@ -312,7 +312,7 @@ namespace Psi {
      */
     BOOST_AUTO_TEST_CASE(StackAllocLoopTest) {
       const char *src =
-        "%f = function(%c : uiptr, %n : uiptr, %r : pointer (array (pointer i8) %n)) > empty {\n"
+        "%f = export function(%c : uiptr, %n : uiptr, %r : pointer (array (pointer i8) %n)) > empty {\n"
         "  br %entry;\n"
         "block %entry:\n"
         "  %idx = phi uiptr: > #up0, %body > (add %idx #up1);\n"
@@ -339,7 +339,7 @@ namespace Psi {
     
     BOOST_AUTO_TEST_CASE(EvaluateTest1) {
       const char *src =
-        "%f = function(%cond : bool, %denom : ui32) > ui32 {\n"
+        "%f = export function(%cond : bool, %denom : ui32) > ui32 {\n"
         "  %ex = (div #ui1 %denom);\n"
         "  cond_br %cond %b1 %b2;\n"
         "block %b1:\n"
@@ -389,7 +389,7 @@ namespace Psi {
     
     BOOST_AUTO_TEST_CASE(EvaluateTest2) {
       const char *src =
-        "%f = function(%cond : bool, %denom : ui32) > ui32 {\n"
+        "%f = export function(%cond : bool, %denom : ui32) > ui32 {\n"
         "  %ex = (div #ui1 %denom);\n"
         "  eval %ex;\n"
         "  cond_br %cond %b1 %b2;\n"

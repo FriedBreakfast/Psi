@@ -25,12 +25,13 @@
 
 /// Default TVM JIT library to use
 #define PSI_TVM_JIT "${PSI_TVM_JIT}"
-/// Type of C compiler
-#define PSI_TVM_CC_KIND "${PSI_TVM_CC_KIND}"
-/// Path to C compiler for the C backend to use
-#define PSI_TVM_CC_PATH "${PSI_TVM_CC_PATH}"
+/// Type of system C compiler
+#define PSI_TVM_CC_SYSTEM_KIND "${PSI_TVM_CC_SYSTEM_KIND}"
+/// Path to system C compiler
+#define PSI_TVM_CC_SYSTEM_PATH "${PSI_TVM_CC_SYSTEM_PATH}"
 /// Path to auxiliary files for TCC
 #define PSI_TVM_CC_TCC_INCLUDE "${PSI_TVM_CC_TCC_INCLUDE}"
 #define PSI_TVM_CC_TCC_PATH "${PSI_TVM_CC_TCC_PATH}"
+#cmakedefine01 PSI_TVM_CC_SYSTEM_OVER_TCCLIB
 
 #endif

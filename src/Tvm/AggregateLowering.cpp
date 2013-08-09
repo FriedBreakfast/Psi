@@ -829,6 +829,8 @@ namespace Psi {
           ValuePtr<Function> old_function = value_cast<Function>(term);
           boost::shared_ptr<FunctionRunner> runner(new FunctionRunner(this, old_function));
           ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(runner->new_function(), byte_type, term->location());
+          runner->new_function()->set_linkage(old_function->linkage());
+          runner->new_function()->set_alignment(old_function->alignment());
           global_rewriter().m_value_map.insert(std::make_pair(old_function, LoweredValue::register_(pointer_type(), true, cast_ptr)));
           rewrite_functions.push_back(std::make_pair(old_function, runner));
         }

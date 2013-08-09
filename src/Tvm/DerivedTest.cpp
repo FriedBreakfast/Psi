@@ -10,7 +10,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(GlobalConstArray) {
       const char *src =
-        "%ar = global const (array i32 #up5)\n"
+        "%ar = global const export (array i32 #up5)\n"
         " (array_v i32 #i1 #i5 #i17 #i9 #i2);\n";
 
       const Jit::Int32 expected[] = {1, 5, 17, 9, 2};
@@ -20,7 +20,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(FunctionReturnByteArray) {
       const char *src =
-        "%f = function (%a:i8,%b:i8,%c:i8,%d:i8,%e:i8,%f:i8,%g:i8,%h:i8) > (array i8 #up8) {\n"
+        "%f = export function (%a:i8,%b:i8,%c:i8,%d:i8,%e:i8,%f:i8,%g:i8,%h:i8) > (array i8 #up8) {\n"
         "  return (array_v i8 %a %b %c %d %e %f %g %h);\n"
         "};\n";
 
@@ -52,7 +52,7 @@ namespace Psi {
 
     BOOST_AUTO_TEST_CASE(GlobalConstStruct) {
       const char *src =
-        "%ar = global const (struct i32 i64 i16 i32 i8)\n"
+        "%ar = global const export (struct i32 i64 i16 i32 i8)\n"
         "(struct_v #i134 #l654 #s129 #i43 #b7);\n";
 
       TestStructType expected = {134, 654, 129, 43, 7};
@@ -63,7 +63,7 @@ namespace Psi {
     BOOST_AUTO_TEST_CASE(FunctionReturnStruct) {
       const char *src =
         "%at = define (struct i32 i64 i16 i32 i8);\n"
-        "%f = function () > %at {\n"
+        "%f = export function () > %at {\n"
         "  return (struct_v #i541 #l3590 #s1 #i155 #b99);\n"
         "};\n";
 
@@ -83,7 +83,7 @@ namespace Psi {
     BOOST_AUTO_TEST_CASE(GlobalConstUnion) {
       const char *src =
         "%u = define (union i64 (array i32 #up2));\n"
-        "%ar = global const (array %u #up2)\n"
+        "%ar = global const export (array %u #up2)\n"
         " (array_v %u (union_v %u #l43256) (union_v %u (array_v i32 #i14361 #i15)));\n";
 
       const TestUnionType *ptr = static_cast<TestUnionType*>(jit_single("ar", src));
@@ -95,7 +95,7 @@ namespace Psi {
     BOOST_AUTO_TEST_CASE(FunctionReturnUnion) {
       const char *src =
         "%u = define (union i64 (array i32 #up2));\n"
-        "%f = function (%a:i64, %b:i32) > (array %u #up2) {\n"
+        "%f = export function (%a:i64, %b:i32) > (array %u #up2) {\n"
         "  return (array_v %u (union_v %u %a) (union_v %u (array_v i32 %b %b)));\n"
         "};\n";
 
@@ -114,7 +114,7 @@ namespace Psi {
     BOOST_AUTO_TEST_CASE(FunctionParameterUnion) {
       const char *src =
         "%u = define (union i64 (array i32 #up2));\n"
-        "%f = function (%a:%u) > %u {\n"
+        "%f = export function (%a:%u) > %u {\n"
         "  return %a;\n"
         "};\n";
 

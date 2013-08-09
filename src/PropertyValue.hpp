@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <iosfwd>
 #include <boost/optional.hpp>
 
 #include "Export.hpp"
@@ -12,6 +13,9 @@
 
 namespace Psi {
 class PropertyValue;
+namespace Platform {
+class Path;
+}
 
 class PSI_COMPILER_COMMON_EXPORT PropertyValueParseError : public std::exception {
   unsigned m_line, m_column;
@@ -130,7 +134,12 @@ public:
   static PropertyValue parse(const char *s);
   void parse_configuration(const char *begin, const char *end, unsigned first_line=1, unsigned first_column=1);
   void parse_configuration(const char *s);
-  void parse_file(const std::string& filename);
+  void parse_file(const Platform::Path& filename);
+  
+#if PSI_DEBUG
+  void print(std::ostream& os, int indent) const;
+  void dump() const;
+#endif
 };
 
 PSI_COMPILER_COMMON_EXPORT bool operator == (const PropertyValue& lhs, const PropertyValue& rhs);

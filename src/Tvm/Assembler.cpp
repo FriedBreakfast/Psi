@@ -339,6 +339,7 @@ namespace Psi {
           const Parser::Function& def = checked_cast<const Parser::Function&>(*it->value);
           ValuePtr<FunctionType> function_type = Assembler::build_function_type(asmct, *def.type, location);
           ValuePtr<Function> function = module.new_function(it->name->text, function_type, SourceLocation(def.location, location));
+          function->set_linkage(def.linkage);
           asmct.put(it->name->text, function);
           result[it->name->text] = function;
         } else if (it->value->global_type == Parser::global_variable) {
@@ -346,6 +347,7 @@ namespace Psi {
           ValuePtr<> global_type = Assembler::build_expression(asmct, *var.type, location);
           ValuePtr<GlobalVariable> global_var = module.new_global_variable(it->name->text, global_type, SourceLocation(var.location, location));
           global_var->set_constant(var.constant);
+          global_var->set_linkage(var.linkage);
           asmct.put(it->name->text, global_var);
           result[it->name->text] = global_var;
         } else if (it->value->global_type == Parser::global_recursive) {

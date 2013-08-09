@@ -877,6 +877,7 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_library_symbol(const TreePtr<Li
       m_target->compile_context().error_throw(lib_sym->location(), "Conflicting types for external global");
   } else {
     result = m_library_module->new_member(sym.name, sym.type, lib_sym->location());
+    result->set_linkage(sym.linkage);
   }
   
   m_library_symbols.insert(std::make_pair(lib_sym, result));

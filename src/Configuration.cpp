@@ -2,6 +2,9 @@
 #include "Config.h"
 #include "Platform.hpp"
 
+#include <cstdlib>
+#include <fstream>
+
 namespace Psi {
 namespace {
   bool str_nonempty(const char *s) {
@@ -14,20 +17,20 @@ namespace {
  */
 void configuration_builtin(PropertyValue& config) {
   config["tvm"]["jit"] = PSI_TVM_JIT;
-  if (str_nonempty(PSI_TVM_CC_KIND)) {
-    config["tvm"]["c"]["kind"] = "c";
-    config["tvm"]["c"]["cc"] = PSI_TVM_CC_KIND;
-    config["tvm"]["c"][PSI_TVM_CC_KIND]["kind"] = PSI_TVM_CC_KIND;
-    if (str_nonempty(PSI_TVM_CC_PATH))
-      config["tvm"]["c"][PSI_TVM_CC_KIND]["path"] = PSI_TVM_CC_PATH;
+  
+  if (str_nonempty(PSI_TVM_CC_SYSTEM_PATH)) {
+    config["tvm"]["cc"]["kind"] = "c";
+    config["tvm"]["cc"]["cckind"] = PSI_TVM_CC_SYSTEM_KIND;
+    config["tvm"]["cc"]["path"] = PSI_TVM_CC_SYSTEM_PATH;
   }
 
 #if PSI_TVM_CC_TCCLIB
-  config["tvm"]["c"]["tcclib"]["kind"] = "tcclib";
+  config["tvm"]["tcclib"]["kind"] = "c";
+  config["tvm"]["tcclib"]["cckind"] = "tcclib";
   if (str_nonempty(PSI_TVM_CC_TCC_INCLUDE))
-    config["tvm"]["c"]["tcclib"]["include"] = PSI_TVM_CC_TCC_INCLUDE;
+    config["tvm"]["tcclib"]["include"] = PSI_TVM_CC_TCC_INCLUDE;
   if (str_nonempty(PSI_TVM_CC_TCC_PATH))
-    config["tvm"]["c"]["tcclib"]["path"] = PSI_TVM_CC_TCC_PATH;
+    config["tvm"]["tcclib"]["path"] = PSI_TVM_CC_TCC_PATH;
 #endif
     
 #if PSI_TVM_LLVM
@@ -42,6 +45,17 @@ void configuration_builtin(PropertyValue& config) {
   host_config["cpu_version"] = PSI_HOST_CPU_VERSION;
   host_config["os"] = PSI_HOST_OS;
   host_config["abi"] = PSI_HOST_ABI;
+}
+
+/**
+ * Set up configuration implied by environment variables.
+ */
+void configuration_environment(PropertyValue& pv) {
+  if (const char *env_file = std::getenv("PSI_CONFIG_FILE"))
+    pv.parse_file(env_file);
+  
+  if (const char *env_extra = std::getenv("PSI_CONFIG_EXTRA"))
+    pv.parse_configuration(env_extra);
 }
 
 /**

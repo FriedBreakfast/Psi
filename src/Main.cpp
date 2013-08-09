@@ -18,6 +18,7 @@
 #include "Tree.hpp"
 #include "Macros.hpp"
 #include "TermBuilder.hpp"
+#include "Platform.hpp"
 
 #include "Configuration.hpp"
 #include "OptionParser.hpp"
@@ -102,10 +103,13 @@ namespace {
     Psi::configuration_builtin(options.configuration);
     if (read_default)
       Psi::configuration_read_files(options.configuration);
+    // Read configuration implied by environment variables
+    Psi::configuration_environment(options.configuration);
+
     for (std::vector<std::string>::const_iterator ii = config_files.begin(), ie = config_files.end(); ii != ie; ++ii)
       options.configuration.parse_file(*ii);
     for (std::vector<std::string>::const_iterator ii = extra_config.begin(), ie = extra_config.end(); ii != ie; ++ii)
-      options.configuration.parse(ii->c_str());
+      options.configuration.parse_configuration(ii->c_str());
     
     return true;
   }

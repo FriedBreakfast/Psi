@@ -292,6 +292,10 @@ struct CGlobal : CExpression {
 
 struct CFunction : CGlobal {
   bool is_external;
+  /// If >= 0, this is a constructor with given priority
+  int constructor_priority;
+  /// If >= 0, this is a constructor with given priority
+  int destructor_priority;
   SinglyLinkedList<CExpression> parameters;
   SinglyLinkedList<CExpression> instructions;
 };

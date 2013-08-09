@@ -8,11 +8,11 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/select.h>
 #include <sys/wait.h>
 
 namespace Psi {
@@ -285,7 +285,7 @@ public:
 
 void cmd_pipe(FileDescriptor& read, FileDescriptor& write) {
   int p[2];
-  if (::pipe(p) != 0) {
+  if (pipe2(p, O_CLOEXEC) != 0) {
     int errcode = errno;
     throw PlatformError(boost::str(boost::format("Failed to create pipe for interprocess communication: %s") % Linux::error_string(errcode)));
   }
@@ -339,6 +339,42 @@ bool cmd_write_by_buffer(FileDescriptor& fd, const char*& ptr, const char *end) 
 }
 }
 
+namespace {
+/**
+ * This is written in C because vfork() on Linux actually does the sensible thing and can be used *provided*
+ * that we take care not to overwrite memory in the parent process. The vfork() child and parent do not
+ * share a file descriptor table so the dup2() will work. The following code is therefore not POSIX
+ * compliant since POSIX doesn't guarantee an system calls other than execvp and _exit.
+ * 
+ * Note that this assumes stdin_fd, stdout_fd and stderr_fd have the close-on-exec flag set unless they
+ * are < 3. Also note that swapping stdout_fd and stderr_fd will not work.
+ */
+pid_t fork_exec(int stdin_fd, int stdout_fd, int stderr_fd, char *const*args_ptr) {
+  // Just in case somebody copies this code for *BSD, the way vfork() works must be checked
+#if defined(__linux__)
+  pid_t child_pid = vfork();
+#else
+  pid_t child_pid = fork();
+#endif
+  if (child_pid == 0) {
+    // In the child
+    int fds3[3] = {stdin_fd, stdout_fd, stderr_fd};
+    for (int i = 0; i < 3; ++i) {
+      if (fds3[i] != i) {
+        // Note dup2 does not clone the close-on-exec flag
+        if (dup2(fds3[i], i) < 0)
+          _exit(1);
+      }
+    }
+
+    execvp(args_ptr[0], args_ptr);
+    _exit(1);
+  } else {
+    return child_pid;
+  }
+}
+}
+
 int exec_communicate(const Path& command, const std::vector<std::string>& args, const std::string& input, std::string *output_out, std::string *output_err) {
   // Read/write direction refers to the parent process
   FileDescriptor stdin_read, stdin_write, stdout_read, stdout_write, stderr_read, stderr_write;
@@ -352,24 +388,7 @@ int exec_communicate(const Path& command, const std::vector<std::string>& args, 
     c_args[ii+1] = CStringArray::checked_strdup(args[ii]);
   c_args[args.size()+1] = NULL;
   
-  pid_t child_pid = fork();
-  if (child_pid == 0) {
-    // Child process
-    if (dup2(stdin_read.fd(), 0) < 0) _exit(1);
-    if (dup2(stdout_write.fd(), 1) < 0) _exit(1);
-    if (dup2(stderr_write.fd(), 2) < 0) _exit(1);
-    
-    stdin_read.close();
-    stdin_write.close();
-    stdout_read.close();
-    stdout_write.close();
-    stderr_read.close();
-    stderr_write.close();
-    
-    char *const* args_ptr = c_args.data();
-    execvp(args_ptr[0], args_ptr);
-    _exit(1);
-  }
+  pid_t child_pid = fork_exec(stdin_read.fd(), stdout_write.fd(), stderr_write.fd(), c_args.data());
   
   // Parent process
   stdin_read.close();
@@ -380,65 +399,84 @@ int exec_communicate(const Path& command, const std::vector<std::string>& args, 
   cmd_set_nonblock(stdout_read.fd());
   cmd_set_nonblock(stderr_read.fd());
   
-  fd_set readfds, writefds;
-  FD_ZERO(&readfds);
-  FD_ZERO(&writefds);
-  FD_SET(stdin_write.fd(), &writefds);
-  FD_SET(stdout_read.fd(), &readfds);
-  FD_SET(stderr_read.fd(), &readfds);
-  
   std::vector<char> buffer(1024);
   std::vector<char> stdout_data, stderr_data;
   std::vector<char> stdin_data(input.begin(), input.end());
   const char *write_ptr = vector_begin_ptr(stdin_data), *write_end = vector_end_ptr(stdin_data);
 
-  while (true) {
-    int nfds = -1;
+  class PollHandler {
+    int n_poll_fds;
+    struct pollfd poll_fds[3];
     
-    if (stdin_write.is_open() && FD_ISSET(stdin_write.fd(), &writefds)) {
-      if (cmd_write_by_buffer(stdin_write, write_ptr, write_end)) {
-        nfds = std::max(stdin_write.fd(), nfds);
-        FD_SET(stdin_write.fd(), &writefds);
-      } else {
-        FD_CLR(stdin_write.fd(), &writefds);
-        stdin_write.close();
-      }
+  public:
+    PollHandler() : n_poll_fds(0) {}
+    
+    int operator [] (int offset) const {
+      PSI_ASSERT((offset >= 0) && (offset < 3));
+      return poll_fds[offset].revents;
     }
-    
-    if (stdout_read.is_open() && FD_ISSET(stdout_read.fd(), &readfds)) {
-      if (cmd_read_by_buffer(stdout_read, buffer, stdout_data)) {
-        nfds = std::max(stdout_read.fd(), nfds);
-        FD_SET(stdout_read.fd(), &readfds);
-      } else {
-        FD_CLR(stdout_read.fd(), &readfds);
-        stdout_read.close();
-      }
-    }
-    
-    if (stderr_read.is_open() && FD_ISSET(stderr_read.fd(), &readfds)) {
-      if (cmd_read_by_buffer(stderr_read, buffer, stderr_data)) {
-        nfds = std::max(stderr_read.fd(), nfds);
-        FD_SET(stderr_read.fd(), &readfds);
-      } else {
-        FD_CLR(stderr_read.fd(), &readfds);
-        stderr_read.close();
-      }
-    }
-    
-    if (nfds < 0)
-      break;
 
-    int err = select(nfds+1, &readfds, &writefds, NULL, NULL);
-    if (err < 0) {
-      int errcode = errno;
-      throw PlatformError(boost::str(boost::format("Failure during interprocess communication in select(): %s") % Linux::error_string(errcode)));
+    int enqueue_if(FileDescriptor& fd, int events, bool keep_open) {
+      PSI_ASSERT(n_poll_fds < 3);
+      PSI_ASSERT(fd.is_open());
+      
+      if (keep_open) {
+        int idx = n_poll_fds++;
+        poll_fds[idx].fd = fd.fd();
+        poll_fds[idx].events = events;
+        return idx;
+      } else {
+        fd.close();
+        return -1;
+      }
     }
+    
+    bool empty() const {
+      return n_poll_fds == 0;
+    }
+    
+    int do_poll() {
+      int err = poll(poll_fds, n_poll_fds, -1);
+      n_poll_fds = 0;
+      return err;
+    }
+  };
+  
+  PollHandler poll_handler;
+  int stdin_idx = poll_handler.enqueue_if(stdin_write, POLLOUT, true);
+  int stdout_idx = poll_handler.enqueue_if(stdout_read, POLLIN, true);
+  int stderr_idx = poll_handler.enqueue_if(stderr_read, POLLIN, true);
+  
+  while (true) {
+    if (poll_handler.empty())
+      break;
+    
+    if (poll_handler.do_poll() < 0) {
+      int errcode = errno;
+      throw PlatformError(boost::str(boost::format("Failure during interprocess communication in poll(): %s") % Linux::error_string(errcode)));
+    }
+    
+    if (stdin_write.is_open())
+      stdin_idx = poll_handler.enqueue_if(stdin_write, POLLOUT, poll_handler[stdin_idx] ? cmd_write_by_buffer(stdin_write, write_ptr, write_end) : true);
+    
+    if (stdout_read.is_open())
+      stdout_idx = poll_handler.enqueue_if(stdout_read, POLLIN, poll_handler[stdout_idx] ? cmd_read_by_buffer(stdout_read, buffer, stdout_data) : true);
+    
+    if (stderr_read.is_open())
+      stderr_idx = poll_handler.enqueue_if(stderr_read, POLLIN, poll_handler[stderr_idx] ? cmd_read_by_buffer(stderr_read, buffer, stderr_data) : true);
   }
   
   int child_status;
   if (waitpid(child_pid, &child_status, 0) == -1) {
     int errcode = errno;
     throw PlatformError(boost::str(boost::format("Could not get child process exit status: %s") % Linux::error_string(errcode)));
+  }
+  
+  if (WIFEXITED(child_status)) {
+    child_status = WEXITSTATUS(child_status);
+  } else {
+    // Unknown failure status
+    child_status = -1;
   }
   
   if (output_out)

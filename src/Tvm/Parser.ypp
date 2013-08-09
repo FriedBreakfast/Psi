@@ -44,11 +44,13 @@ using namespace Psi::Tvm::ParserUtility;
 using Psi::checked_cast;
 using Psi::BisonHelper;
 using Psi::UniquePtr;
+using Psi::Tvm::Linkage;
 using Psi::Tvm::CallingConvention;
 using Psi::Tvm::UniqueList;
 
 namespace {
   struct ParserValue {
+    Linkage linkage;
     CallingConvention calling_convention;
     boost::shared_ptr<UniqueList<Token> > tokens;
     boost::shared_ptr<UniqueList<Expression> > expressions;
@@ -113,6 +115,12 @@ namespace {
 %token CC_C "cc_c"
 %token SRET "sret"
 
+%token LOCAL "local"
+%token PRIVATE "private"
+%token ODR "odr"
+%token EXPORT "export"
+%token IMPORT "import"
+
 %parse-param {ParserInternalArguments& arguments}
 %lex-param {ParserInternalArguments& arguments}
 
@@ -139,6 +147,7 @@ namespace {
 %type<phi_nodes> phi_node phi_node_list
 %type<calling_convention> calling_convention
 %type<bool_value> sret block_type
+%type<linkage> linkage
 
 %%
 
@@ -155,36 +164,39 @@ global_def
 | global_list_nonempty global_def {$$ = list_append($1, $2);}
 ;
 
-global_def: ID '=' linkage global ';' {
+global_def: ID '=' global ';' {
   UniquePtr<Token> name(list_to_ptr($1));
-  UniquePtr<GlobalElement> value(list_to_ptr($4));
+  UniquePtr<GlobalElement> value(list_to_ptr($3));
   $$ = list_one<NamedGlobalElement>(new NamedGlobalElement(@$, name, value));
 };
 
-linkage:
-| EXTERN
+linkage: {$$=Psi::Tvm::link_private;}
+| PRIVATE {$$=Psi::Tvm::link_private;}
+| ODR {$$=Psi::Tvm::link_one_definition;}
+| EXPORT {$$=Psi::Tvm::link_export;}
+| IMPORT {$$=Psi::Tvm::link_import;}
 ;
 
 global: function | constant | global_variable | recursive;
 
 global_variable:
-GLOBAL expression {
-  UniquePtr<Expression> type(list_to_ptr($2));
-  $$ = list_one<GlobalElement>(new GlobalVariable(@$, false, type));
-}
-| GLOBAL expression expression {
-  UniquePtr<Expression> type(list_to_ptr($2));
-  UniquePtr<Expression> value(list_to_ptr($3));
-  $$ = list_one<GlobalElement>(new GlobalVariable(@$, false, type, value));
-}
-| GLOBAL CONST expression {
+GLOBAL linkage expression {
   UniquePtr<Expression> type(list_to_ptr($3));
-  $$ = list_one<GlobalElement>(new GlobalVariable(@$, true, type));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, false, $2, type));
 }
-| GLOBAL CONST expression expression {
+| GLOBAL linkage expression expression {
   UniquePtr<Expression> type(list_to_ptr($3));
   UniquePtr<Expression> value(list_to_ptr($4));
-  $$ = list_one<GlobalElement>(new GlobalVariable(@$, true, type, value));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, false, $2, type, value));
+}
+| GLOBAL CONST linkage expression {
+  UniquePtr<Expression> type(list_to_ptr($4));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, true, $3, type));
+}
+| GLOBAL CONST linkage expression expression {
+  UniquePtr<Expression> type(list_to_ptr($4));
+  UniquePtr<Expression> value(list_to_ptr($5));
+  $$ = list_one<GlobalElement>(new GlobalVariable(@$, true, $3, type, value));
 }
 ;
 
@@ -206,16 +218,16 @@ RECURSIVE '(' parameter_list ')' '>' expression {
 ;
 
 function:
-function_type {
-  UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($1)));
-  $$ = list_one<GlobalElement>(new Function(@$, ft));
+linkage function_type {
+  UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($2)));
+  $$ = list_one<GlobalElement>(new Function(@$, $1, ft));
 }
-| function_type '{' statement_list block_list '}' {
-  UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($1)));
+| linkage function_type '{' statement_list block_list '}' {
+  UniquePtr<FunctionTypeExpression> ft(checked_cast<FunctionTypeExpression*>(list_to_ptr($2)));
   UniqueList<Block> blocks;
-  blocks.push_back(*new Block(@3, false, *$3));
-  blocks.splice(blocks.end(), *$4);
-  $$ = list_one<GlobalElement>(new Function(@$, ft, blocks));
+  blocks.push_back(*new Block(@4, false, *$4));
+  blocks.splice(blocks.end(), *$5);
+  $$ = list_one<GlobalElement>(new Function(@$, $1, ft, blocks));
 }
 ;
 
@@ -372,7 +384,12 @@ namespace {
     ("recursive", RECURSIVE)
     ("exists", EXISTS)
     ("sret", SRET)
-    ("cc_c", CC_C);
+    ("cc_c", CC_C)
+    ("local", LOCAL)
+    ("private", PRIVATE)
+    ("odr", ODR)
+    ("export", EXPORT)
+    ("import", IMPORT);
 
   const boost::unordered_map<char, LiteralType> signed_literals =
     boost::assign::map_list_of<char, LiteralType>
@@ -623,33 +640,41 @@ namespace Psi {
       }
 
       Function::Function(const PhysicalSourceLocation& location_,
+                         Linkage linkage_,
                          UniquePtr<FunctionTypeExpression>& type_)
-        : GlobalElement(location_, global_function) {
+        : GlobalElement(location_, global_function),
+        linkage(linkage_) {
         type.swap(type_);
       }
 
       Function::Function(const PhysicalSourceLocation& location_,
+                         Linkage linkage_,
                          UniquePtr<FunctionTypeExpression>& type_,
                          UniqueList<Block>& blocks_)
-        : GlobalElement(location_, global_function) {
+        : GlobalElement(location_, global_function),
+        linkage(linkage_) {
         type.swap(type_);
         blocks.swap(blocks_);
       }
 
       GlobalVariable::GlobalVariable(const PhysicalSourceLocation& location_,
                                      bool constant_,
+                                     Linkage linkage_,
                                      UniquePtr<Expression>& type_)
         : GlobalElement(location_, global_variable),
-          constant(constant_) {
+          constant(constant_),
+          linkage(linkage_) {
         type.swap(type_);
       }
 
       GlobalVariable::GlobalVariable(const PhysicalSourceLocation& location_,
                                      bool constant_,
+                                     Linkage linkage_,
                                      UniquePtr<Expression>& type_,
                                      UniquePtr<Expression>& value_)
         : GlobalElement(location_, global_variable),
-          constant(constant_) {
+          constant(constant_),
+          linkage(linkage_) {
         type.swap(type_);
         value.swap(value_);
       }

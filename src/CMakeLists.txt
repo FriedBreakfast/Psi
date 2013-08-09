@@ -92,8 +92,14 @@ if(BUILD_TESTING)
   elseif(PSI_TVM_JIT STREQUAL "c")
     add_dependencies(psi-tvm-test psi-tvm-c)
   endif()
-
-  add_test(psi-tvm-test psi-tvm-test)
+  
+  macro(add_tvm_test name config)
+    add_test(NAME psi-tvm-test-${name} COMMAND psi-tvm-test)
+    set_property(TEST psi-tvm-test-${name} PROPERTY ENVIRONMENT "PSI_CONFIG_EXTRA=${config}")
+  endmacro()
+else()
+  macro(add_tvm_test name config)
+  endmacro()
 endif()
 
 if(PSI_TVM_LLVM)
@@ -113,6 +119,7 @@ if(PSI_TVM_LLVM)
 
   set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}")
   target_link_libraries(psi-tvm-llvm psi-tvm ${LLVM_LIBS} ${LLVM_LDFLAGS} ${PSI_ASSERT_LIB})
+  add_tvm_test(llvm "tvm.jit=\"llvm\"")
 endif()
 
 add_library(psi-tvm-c MODULE
@@ -124,9 +131,12 @@ add_library(psi-tvm-c MODULE
   ${PSI_TVM_CC_SOURCES}
 )
 
+add_tvm_test(cc "tvm.jit=\"cc\"")
+
 target_link_libraries(psi-tvm-c psi-tvm ${PSI_ASSERT_LIB})
 if(PSI_TVM_CC_TCCLIB)
   target_link_libraries(psi-tvm-c ${TCC_LIB})
+  add_tvm_test(tcc "tvm.jit=\"tcclib\"")
 endif()
 
 add_library(psi-runtime SHARED

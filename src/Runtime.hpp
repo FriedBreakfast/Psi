@@ -413,6 +413,7 @@ namespace Psi {
   }
 
   PSI_COMPILER_COMMON_EXPORT void unicode_encode(std::vector<char>& output, unsigned value);
+  PSI_COMPILER_COMMON_EXPORT std::string string_escape(const std::string& s);
   PSI_COMPILER_COMMON_EXPORT std::vector<char> string_unescape(const std::vector<char>& s);
 }
 
