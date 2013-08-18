@@ -91,9 +91,9 @@ namespace Psi {
      * 
      * The user must have already resolved dependent parameters.
      */
-    ValuePtr<FunctionType> FunctionalBuilder::function_type(CallingConvention calling_convention, const ValuePtr<>& result_type,
-                                                            const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom, bool sret, const SourceLocation& location) {
-      return result_type->context().get_functional(FunctionType(calling_convention, result_type, parameter_types, n_phantom, sret, location));
+    ValuePtr<FunctionType> FunctionalBuilder::function_type(CallingConvention calling_convention, const ParameterType& result_type,
+                                                            const std::vector<ParameterType>& parameter_types, unsigned n_phantom, bool sret, const SourceLocation& location) {
+      return result_type.value->context().get_functional(FunctionType(calling_convention, result_type, parameter_types, n_phantom, sret, location));
     }
     
     /**

@@ -126,7 +126,7 @@ struct TvmFunctionalLowererMap {
   static TvmResult build_function_type(TvmFunctionalBuilder& builder, const TreePtr<FunctionType>& function_ty) {
     TvmResultScope scope;
     unsigned n_phantom = 0;
-    std::vector<Tvm::ValuePtr<> > parameter_types;
+    std::vector<Tvm::ParameterType> parameter_types;
     for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = function_ty->parameter_types.begin(), ie = function_ty->parameter_types.end(); ii != ie; ++ii) {
       TvmResult parameter = builder.build(ii->type);
       scope = TvmScope::join(scope, parameter.scope);

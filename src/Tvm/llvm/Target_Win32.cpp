@@ -20,12 +20,12 @@ namespace Psi {
           TargetFixes_Win32_AggregateLowering *self;
           FunctionCallCommonCallback(TargetFixes_Win32_AggregateLowering *self_) : self(self_) {}
 
-          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ValuePtr<>& type) const {
-            return TargetCommon::parameter_handler_simple(rewriter, type);
+          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ParameterType& type) const {
+            return TargetCommon::parameter_handler_simple(rewriter, type.value);
           }
 
-          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ValuePtr<>& type) const {
-            return TargetCommon::return_handler_simple(rewriter, type);
+          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ParameterType& type) const {
+            return TargetCommon::return_handler_simple(rewriter, type.value);
           }
 
           /**

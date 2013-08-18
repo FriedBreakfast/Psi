@@ -33,10 +33,10 @@ namespace Psi {
     
     PSI_TVM_HASHABLE_IMPL(ResolvedParameter, HashableValue, resolved_parameter)
 
-    FunctionType::FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
-                               const std::vector<ValuePtr<> >& parameter_types,
+    FunctionType::FunctionType(CallingConvention calling_convention, const ParameterType& result_type,
+                               const std::vector<ParameterType>& parameter_types,
                                unsigned n_phantom, bool sret, const SourceLocation& location)
-    : HashableValue(result_type->context(), term_function_type, location),
+    : HashableValue(result_type.value->context(), term_function_type, location),
     m_calling_convention(calling_convention),
     m_parameter_types(parameter_types),
     m_n_phantom(n_phantom),
@@ -111,24 +111,25 @@ namespace Psi {
      * \param parameters Ordinary function parameters.
      */
     ValuePtr<FunctionType> Context::get_function_type(CallingConvention calling_convention,
-                                                      const ValuePtr<>& result_type,
-                                                      const std::vector<ValuePtr<ParameterPlaceholder> >& parameters,
+                                                      const ParameterType& result_type,
+                                                      const std::vector<ParameterPlaceholderType>& parameters,
                                                       unsigned n_phantom,
                                                       bool sret,
                                                       const SourceLocation& location) {
       PSI_ASSERT(n_phantom <= parameters.size());
 
       std::vector<ValuePtr<ParameterPlaceholder> > previous_parameters;
-      std::vector<ValuePtr<> > resolved_parameter_types;
+      std::vector<ParameterType> resolved_parameter_types;
       for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
-        resolved_parameter_types.push_back(ParameterResolverRewriter(*this, previous_parameters).rewrite(parameters[ii]->type()));
-        previous_parameters.push_back(parameters[ii]);
+        previous_parameters.push_back(parameters[ii].value);
+        ValuePtr<> resolved = ParameterResolverRewriter(*this, previous_parameters).rewrite(parameters[ii].value->type());
+        resolved_parameter_types.push_back(ParameterType(resolved, parameters[ii].attributes));
       }
 
-      ValuePtr<> resolved_result_type = ParameterResolverRewriter(*this, previous_parameters).rewrite(result_type);
+      ParameterType resolved_result_type(ParameterResolverRewriter(*this, previous_parameters).rewrite(result_type.value), result_type.attributes);
       
-      return get_functional(FunctionType(calling_convention, resolved_result_type, resolved_parameter_types,
-                                         n_phantom, sret, location));
+      return get_functional(FunctionType(calling_convention, resolved_result_type,
+                                         resolved_parameter_types, n_phantom, sret, location));
     }
 
     namespace {
@@ -170,7 +171,7 @@ namespace Psi {
     ValuePtr<> FunctionType::parameter_type_after(const SourceLocation& location, const std::vector<ValuePtr<> >& previous) {
       if (previous.size() >= parameter_types().size())
         error_context().error_throw(location, "too many parameters specified");
-      return ParameterTypeRewriter(context(), previous).rewrite(parameter_types()[previous.size()]);
+      return ParameterTypeRewriter(context(), previous).rewrite(parameter_types()[previous.size()].value);
     }
 
     /**
@@ -180,7 +181,7 @@ namespace Psi {
     ValuePtr<> FunctionType::result_type_after(const SourceLocation& location, const std::vector<ValuePtr<> >& parameters) {
       if (parameters.size() != parameter_types().size())
         error_context().error_throw(location, "incorrect number of parameters");
-      return ParameterTypeRewriter(context(), parameters).rewrite(result_type());
+      return ParameterTypeRewriter(context(), parameters).rewrite(result_type().value);
     }
 
     template<typename V>
@@ -193,15 +194,15 @@ namespace Psi {
     }
     
     ValuePtr<> FunctionType::check_type() const {
-      for (std::vector<ValuePtr<> >::const_iterator ii = m_parameter_types.begin(), ie = m_parameter_types.end(); ii != ie; ++ii)
-        if (!(*ii)->is_type())
+      for (std::vector<ParameterType>::const_iterator ii = m_parameter_types.begin(), ie = m_parameter_types.end(); ii != ie; ++ii)
+        if (!ii->value->is_type())
           error_context().error_throw(location(), "Function argument type is not a type");
         
       if (m_sret) {
-        if (!isa<EmptyType>(m_result_type))
+        if (!isa<EmptyType>(m_result_type.value))
           error_context().error_throw(location(), "Function types with sret set must return void");
       } else {
-        if (!m_result_type->is_type())
+        if (!m_result_type.value->is_type())
           error_context().error_throw(location(), "Function result type is not a type");
       }
         

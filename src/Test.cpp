@@ -286,8 +286,10 @@ int run_main(int argc, const char** argv) {
   for (std::map<std::string, const TestCaseBase*>::const_iterator ii = test_cases.begin(), ie = test_cases.end(); ii != ie; ++ii) {
     if (verbose)
       std::cerr << "Starting test " << ii->first << '\n';
-    if (!run_test_case(ii->second, verbose ? log_level_all : log_level_fail))
+    if (!run_test_case(ii->second, verbose ? log_level_all : log_level_fail)) {
+      std::cerr << "Test failed: " << ii->first << '\n';
       failures++;
+    }
   }
   
   std::cerr << test_cases.size() << " tests run, " << failures << " failures\n";

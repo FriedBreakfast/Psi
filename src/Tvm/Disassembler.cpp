@@ -75,6 +75,7 @@ namespace Psi {
       void print_recursive(const ValuePtr<RecursiveType>& recursive);
       void print_definitions(const TermDefinitionList&, const char* ="", bool=false);
       void print_block(const ValuePtr<Block>&, const TermDefinitionList&);
+      void print_parameter_attributes(const ParameterAttributes& attr);
 
     public:
       DisassemblerContext(std::ostream *output, CompileErrorContext *error_context);
@@ -448,10 +449,10 @@ namespace Psi {
         
       case term_function_type: {
         ValuePtr<FunctionType> cast_term = value_cast<FunctionType>(term);
-        const std::vector<ValuePtr<> >& parameter_types = cast_term->parameter_types();
-        for (std::vector<ValuePtr<> >::const_iterator ii = parameter_types.begin(), ie = parameter_types.end(); ii != ie; ++ii)
-          setup_term(*ii);
-        setup_term(cast_term->result_type());
+        const std::vector<ParameterType>& parameter_types = cast_term->parameter_types();
+        for (std::vector<ParameterType>::const_iterator ii = parameter_types.begin(), ie = parameter_types.end(); ii != ie; ++ii)
+          setup_term(ii->value);
+        setup_term(cast_term->result_type().value);
         break;
       }
       
@@ -640,15 +641,19 @@ namespace Psi {
           *m_output << name_formatter % (parameter_name_base + ii);
         }
         
-        *m_output << " : ";
-        print_term(term->parameter_types()[ii], false);
+        const ParameterType& ty = term->parameter_types()[ii];
+        *m_output << " :";
+        print_parameter_attributes(ty.attributes);
+        *m_output << ' ';
+        print_term(ty.value, false);
         
         name_list.push_back(name);
       }
       
-      *m_output << ") > ";
-      
-      print_term(term->result_type(), true);
+      *m_output << ") >";
+      print_parameter_attributes(term->result_type().attributes);
+      *m_output << ' ';
+      print_term(term->result_type().value, true);
       
       m_parameter_names.pop_back();
       m_parameter_name_index = parameter_name_base;
@@ -888,6 +893,11 @@ namespace Psi {
         print_term_definition(*ii);
       }
       print_definitions(definitions, "  ");
+    }
+    
+    void DisassemblerContext::print_parameter_attributes(const ParameterAttributes& attr) {
+      if (attr.flags & ParameterAttributes::llvm_byval) *m_output << " llvm_byval";
+      if (attr.flags & ParameterAttributes::llvm_inreg) *m_output << " llvm_inreg";
     }
     
     void DisassemblerContext::print_definitions(const TermDefinitionList& definitions, const char *line_prefix, bool global) {

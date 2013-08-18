@@ -185,9 +185,9 @@ CType* TypeBuilder::build_function_type(const ValuePtr<FunctionType>& ftype) {
   SmallArray<CTypeFunctionArgument, 8> arguments;
   arguments.resize(ftype->parameter_types().size());
   for (std::size_t ii = 0, ie = arguments.size(); ii != ie; ++ii) {
-    arguments[ii].type = build(ftype->parameter_types()[ii]);
+    arguments[ii].type = build(ftype->parameter_types()[ii].value);
   }
-  CType *result_type = build(ftype->result_type());
+  CType *result_type = build(ftype->result_type().value);
   return c_builder().function_type(&ftype->location(), result_type, arguments.size(), arguments.get());
 }
 

@@ -110,8 +110,12 @@ namespace Psi {
       ValuePtr<> build_exists(AssemblerContext& context, const Parser::ExistsExpression& expression, const LogicalSourceLocationPtr& logical_location) {
         AssemblerContext my_context(&context);
 
-        std::vector<ValuePtr<ParameterPlaceholder> > parameters =
-          build_parameters(my_context, expression.parameters, logical_location);
+        std::vector<ParameterPlaceholderType> parameters_with_attributes =
+          build_parameters(my_context, false, expression.parameters, logical_location);
+          
+        std::vector<ValuePtr<ParameterPlaceholder> > parameters;
+        for (std::vector<ParameterPlaceholderType>::const_iterator ii = parameters_with_attributes.begin(), ie = parameters_with_attributes.end(); ii != ie; ++ii)
+          parameters.push_back(ii->value);
           
         ValuePtr<> result = build_expression(my_context, *expression.result, logical_location);
 
@@ -140,16 +144,18 @@ namespace Psi {
         }
       }
 
-      std::vector<ValuePtr<ParameterPlaceholder> > build_parameters(AssemblerContext& context,
-                                                                    const UniqueList<Parser::NamedExpression>& parameters,
-                                                                    const LogicalSourceLocationPtr& logical_location) {
-        std::vector<ValuePtr<ParameterPlaceholder> > result;
-        for (UniqueList<Parser::NamedExpression>::const_iterator it = parameters.begin(); it != parameters.end(); ++it) {
+      std::vector<ParameterPlaceholderType> build_parameters(AssemblerContext& context, bool allow_attributes,
+                                                             const UniqueList<Parser::ParameterExpression>& parameters,
+                                                             const LogicalSourceLocationPtr& logical_location) {
+        std::vector<ParameterPlaceholderType> result;
+        for (UniqueList<Parser::ParameterExpression>::const_iterator it = parameters.begin(); it != parameters.end(); ++it) {
           ValuePtr<> param_type = build_expression(context, *it->expression, logical_location);
           ValuePtr<ParameterPlaceholder> param = context.context().new_placeholder_parameter(param_type, SourceLocation(it->location, logical_location));
           if (it->name)
             context.put(it->name->text, param);
-          result.push_back(param);
+          if (!allow_attributes && it->attributes.flags)
+            throw AssemblerError("attributes found in parameter list where they are not allowed");
+          result.push_back(ParameterPlaceholderType(param, it->attributes));
         }
         return result;
       }
@@ -157,25 +163,25 @@ namespace Psi {
       ValuePtr<FunctionType> build_function_type(AssemblerContext& context, const Parser::FunctionTypeExpression& function_type, const LogicalSourceLocationPtr& logical_location) {
         AssemblerContext my_context(&context);
 
-        std::vector<ValuePtr<ParameterPlaceholder> > phantom_parameters =
-          build_parameters(my_context, function_type.phantom_parameters, logical_location);
+        std::vector<ParameterPlaceholderType> phantom_parameters =
+          build_parameters(my_context, false, function_type.phantom_parameters, logical_location);
           
         unsigned n_phantom = phantom_parameters.size();
 
-        std::vector<ValuePtr<ParameterPlaceholder> > parameters =
-          build_parameters(my_context, function_type.parameters, logical_location);
+        std::vector<ParameterPlaceholderType> parameters =
+          build_parameters(my_context, true, function_type.parameters, logical_location);
           
         parameters.insert(parameters.begin(), phantom_parameters.begin(), phantom_parameters.end());
 
-        ValuePtr<> result_type = build_expression(my_context, *function_type.result_type, logical_location);
+        ParameterType result_type(build_expression(my_context, *function_type.result_type, logical_location), function_type.result_attributes);
 
         return context.context().get_function_type(function_type.calling_convention, result_type, parameters, n_phantom, function_type.sret,
                                                    SourceLocation(function_type.location, logical_location));
       }
       
       void build_recursive_parameters(AssemblerContext& context, RecursiveType::ParameterList& output, bool phantom,
-                                      const UniqueList<Parser::NamedExpression>& parameters, const LogicalSourceLocationPtr& logical_location) {
-        for (UniqueList<Parser::NamedExpression>::const_iterator it = parameters.begin(), ie = parameters.end(); it != ie; ++it) {
+                                      const UniqueList<Parser::ParameterExpression>& parameters, const LogicalSourceLocationPtr& logical_location) {
+        for (UniqueList<Parser::ParameterExpression>::const_iterator it = parameters.begin(), ie = parameters.end(); it != ie; ++it) {
           ValuePtr<> param_type = build_expression(context, *it->expression, logical_location);
           ValuePtr<RecursiveParameter> param = RecursiveParameter::create(param_type, phantom, SourceLocation(it->location, logical_location));
           if (it->name)
@@ -247,7 +253,7 @@ namespace Psi {
         blocks.push_back(entry);
 
         Function::ParameterList::const_iterator param = function->parameters().begin();
-        for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->phantom_parameters.begin();
+        for (UniqueList<Parser::ParameterExpression>::const_iterator it = function_def.type->phantom_parameters.begin();
              it != function_def.type->phantom_parameters.end(); ++it, ++param) {
           if (it->name) {
             my_context.put(it->name->text, *param);
@@ -255,7 +261,7 @@ namespace Psi {
           }
         }
 
-        for (UniqueList<Parser::NamedExpression>::const_iterator it = function_def.type->parameters.begin();
+        for (UniqueList<Parser::ParameterExpression>::const_iterator it = function_def.type->parameters.begin();
              it != function_def.type->parameters.end(); ++it, ++param) {
           if (it->name) {
             my_context.put(it->name->text, *param);
@@ -387,7 +393,7 @@ namespace Psi {
           const Parser::RecursiveType& rec = checked_cast<const Parser::RecursiveType&>(*it->value);
           Assembler::AssemblerContext rct(&asmct);
           RecursiveType::ParameterList::const_iterator ii = rec_ptr->parameters().begin(), ie = rec_ptr->parameters().end();
-          UniqueList<Parser::NamedExpression>::const_iterator ji = rec.phantom_parameters.begin(), je = rec.phantom_parameters.end();
+          UniqueList<Parser::ParameterExpression>::const_iterator ji = rec.phantom_parameters.begin(), je = rec.phantom_parameters.end();
           for (; ii != ie; ++ii, ++ji) {
             if (ji == je) {
               PSI_ASSERT(je == rec.phantom_parameters.end());

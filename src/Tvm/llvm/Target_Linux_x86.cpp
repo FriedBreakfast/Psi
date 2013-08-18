@@ -31,16 +31,16 @@ namespace Psi {
            *
            * </ul>
            */
-          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ValuePtr<>& type) const {
-            return TargetCommon::parameter_handler_simple(rewriter, type);
+          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ParameterType& type) const {
+            return TargetCommon::parameter_handler_simple(rewriter, type.value);
           }
 
-          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ValuePtr<>& type) const {
-            ValuePtr<> simple_type = rewriter.simplify_argument_type(type);
+          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ParameterType& type) const {
+            ValuePtr<> simple_type = rewriter.simplify_argument_type(type.value);
             if (isa<StructType>(simple_type) || isa<UnionType>(simple_type) || isa<ArrayType>(simple_type)) {
-              return TargetCommon::return_handler_force_ptr(rewriter, type);
+              return TargetCommon::return_handler_force_ptr(rewriter, type.value);
             } else {
-              return TargetCommon::return_handler_simple(rewriter, type);
+              return TargetCommon::return_handler_simple(rewriter, type.value);
             }
           }
 

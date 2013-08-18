@@ -151,10 +151,10 @@ namespace Psi {
          */
         struct Callback {
           /// \brief Return information about how to pass this parameter.
-          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, const ValuePtr<>& type) const = 0;
+          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, const ParameterType& type) const = 0;
 
           /// \brief Return information about how to return this type.
-          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, const ValuePtr<>& type) const = 0;
+          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention cconv, const ParameterType& type) const = 0;
 
           /// \brief Checks whether a given calling convention actually
           /// makes sense for a given platform.

@@ -699,16 +699,16 @@ namespace Psi {
         error_context().error_throw(location(), "Too many parameters given to specialize");
 
       std::vector<ValuePtr<> > apply_parameters(m_parameters);
-      std::vector<ValuePtr<ParameterPlaceholder> > new_parameters;
+      std::vector<ParameterPlaceholderType> new_parameters;
       while (apply_parameters.size() < function_type->parameter_types().size()) {
         ValuePtr<> previous_type = function_type->parameter_type_after(location(), apply_parameters);
         ValuePtr<ParameterPlaceholder> param =
           function_type->context().new_placeholder_parameter(previous_type, previous_type->location());
+        new_parameters.push_back(ParameterPlaceholderType(param, function_type->parameter_attributes(apply_parameters.size())));
         apply_parameters.push_back(param);
-        new_parameters.push_back(param);
       }
 
-      ValuePtr<> result_type = function_type->result_type_after(location(), apply_parameters);
+      ParameterType result_type(function_type->result_type_after(location(), apply_parameters), function_type->result_attributes());
 
       return m_function->context().get_function_type
         (function_type->calling_convention(),

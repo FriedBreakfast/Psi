@@ -427,11 +427,11 @@ namespace Psi {
           PSI_ASSERT(function_type->n_phantom() == 0);
           int sret = function_type->sret() ? 1 : 0;
           if (sret)
-            params.push_back(build_type(function_type->parameter_types().back()));
+            params.push_back(build_type(function_type->parameter_types().back().value));
           for (std::size_t i = 0, e = function_type->parameter_types().size() - sret; i != e; ++i)
-            params.push_back(build_type(function_type->parameter_types()[i]));
-          llvm::Type *result = isa<EmptyType>(function_type->result_type()) ?
-            llvm::Type::getVoidTy(*m_llvm_context) : build_type(function_type->result_type());
+            params.push_back(build_type(function_type->parameter_types()[i].value));
+          llvm::Type *result = isa<EmptyType>(function_type->result_type().value) ?
+            llvm::Type::getVoidTy(*m_llvm_context) : build_type(function_type->result_type().value);
           t = llvm::FunctionType::get(result, params, false);
           break;
         }

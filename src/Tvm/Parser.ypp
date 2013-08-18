@@ -47,6 +47,7 @@ using Psi::UniquePtr;
 using Psi::Tvm::Linkage;
 using Psi::Tvm::CallingConvention;
 using Psi::Tvm::UniqueList;
+using Psi::Tvm::ParameterAttributes;
 
 namespace {
   struct ParserValue {
@@ -56,10 +57,12 @@ namespace {
     boost::shared_ptr<UniqueList<Expression> > expressions;
     boost::shared_ptr<UniqueList<Block> > blocks;
     boost::shared_ptr<UniqueList<NamedExpression> > named_expressions;
+    boost::shared_ptr<UniqueList<ParameterExpression> > parameter_expressions;
     boost::shared_ptr<UniqueList<GlobalElement> > globals;
     boost::shared_ptr<UniqueList<NamedGlobalElement> > named_globals;
     boost::shared_ptr<UniqueList<PhiNode> > phi_nodes;
     bool bool_value;
+    ParameterAttributes attributes;
   };
 
   class ParserInternalArguments : public BisonHelper<YYTYPE_INT16, YYSTYPE, YYLTYPE> {
@@ -114,6 +117,8 @@ namespace {
 %token CONST "const"
 %token CC_C "cc_c"
 %token SRET "sret"
+%token LLVM_BYVAL "llvm_byval"
+%token LLVM_INREG "llvm_inreg"
 
 %token LOCAL "local"
 %token PRIVATE "private"
@@ -141,13 +146,15 @@ namespace {
 %type<tokens> ID OP
 %type<expressions> NUMBER expression root_expression id_expression op_expression term_list term_list_nonempty function_type statement_expression exists_expression
 %type<blocks> block_list block_list_nonempty block
-%type<named_expressions> statement_list statement parameter_list parameter_list_nonempty parameter
+%type<named_expressions> statement_list statement 
+%type<parameter_expressions> parameter_list parameter_list_nonempty parameter
 %type<globals> root global function constant recursive global_variable
 %type<named_globals> global_list global_list_nonempty global_def
 %type<phi_nodes> phi_node phi_node_list
 %type<calling_convention> calling_convention
 %type<bool_value> sret block_type
 %type<linkage> linkage
+%type<attributes> attribute attribute_list
 
 %%
 
@@ -207,7 +214,7 @@ constant: DEFINE root_expression {
 
 recursive:
 RECURSIVE '(' parameter_list ')' '>' expression {
-  UniqueList<NamedExpression> phantom_parameters;
+  UniqueList<ParameterExpression> phantom_parameters;
   UniquePtr<Expression> result(list_to_ptr($6));
   $$ = list_one<GlobalElement>(new RecursiveType(@$, phantom_parameters, *$3, result));
 }
@@ -232,34 +239,45 @@ linkage function_type {
 ;
 
 function_type:
-FUNCTION calling_convention sret '(' parameter_list ')' '>' expression {
-  UniquePtr<Expression> result(list_to_ptr($8));
-  UniqueList<NamedExpression> phantom_parameters;
-  $$ = list_one<Expression>(new FunctionTypeExpression(@$, $2, $3, phantom_parameters, *$5, result));
+FUNCTION calling_convention sret '(' parameter_list ')' '>' attribute_list expression {
+  UniquePtr<Expression> result(list_to_ptr($9));
+  UniqueList<ParameterExpression> phantom_parameters;
+  $$ = list_one<Expression>(new FunctionTypeExpression(@$, $2, $3, phantom_parameters, *$5, $8, result));
 }
-| FUNCTION calling_convention sret '(' parameter_list '|' parameter_list ')' '>' expression {
-  UniquePtr<Expression> result(list_to_ptr($10));
-  $$ = list_one<Expression>(new FunctionTypeExpression(@$, $2, $3, *$5, *$7, result));
+| FUNCTION calling_convention sret '(' parameter_list '|' parameter_list ')' '>' attribute_list expression {
+  UniquePtr<Expression> result(list_to_ptr($11));
+  $$ = list_one<Expression>(new FunctionTypeExpression(@$, $2, $3, *$5, *$7, $10, result));
 };
 
 calling_convention: {$$=Psi::Tvm::cconv_c;} | CC_C {$$=Psi::Tvm::cconv_c;};
 sret: {$$=false;} | SRET {$$=true;}
 
-parameter_list: {$$ = list_empty<NamedExpression>();} | parameter_list_nonempty
+attribute_list:
+{$$ = ParameterAttributes();}
+| attribute_list attribute {$$ = combine_attributes($1, $2);}
+;
+
+attribute:
+LLVM_BYVAL {$$ = ParameterAttributes(); $$.flags = ParameterAttributes::llvm_byval;}
+| LLVM_INREG {$$ = ParameterAttributes(); $$.flags = ParameterAttributes::llvm_inreg;}
+;
+
+parameter_list: {$$ = list_empty<ParameterExpression>();} | parameter_list_nonempty
 
 parameter_list_nonempty:
 parameter
 | parameter_list ',' parameter {$$ = list_append($1, $3);}
 ;
 
-parameter: ID ':' root_expression {
+parameter: ID ':' attribute_list root_expression {
   UniquePtr<Token> name(list_to_ptr($1));
-  UniquePtr<Expression> type(list_to_ptr($3));
-  $$ = list_one<NamedExpression>(new NamedExpression(@$, name, type));
+  UniquePtr<Expression> type(list_to_ptr($4));
+  $$ = list_one<ParameterExpression>(new ParameterExpression(@$, name, $3, type));
 }
-| root_expression {
-  UniquePtr<Expression> type(list_to_ptr($1));
-  $$ = list_one<NamedExpression>(new NamedExpression(@$, type));
+| attribute_list root_expression {
+  UniquePtr<Token> name;
+  UniquePtr<Expression> type(list_to_ptr($2));
+  $$ = list_one<ParameterExpression>(new ParameterExpression(@$, name, $1, type));
 };
 
 block_list: {$$ = list_empty<Block>();} | block_list_nonempty
@@ -291,8 +309,9 @@ statement
 
 statement:
 statement_expression ';' {
+  UniquePtr<Token> name;
   UniquePtr<Expression> value(list_to_ptr($1));
-  $$ = list_one<NamedExpression>(new NamedExpression(@$, value));
+  $$ = list_one<NamedExpression>(new NamedExpression(@$, name, value));
 }
 | ID '=' statement_expression ';' {
   UniquePtr<Token> name(list_to_ptr($1));
@@ -384,6 +403,8 @@ namespace {
     ("recursive", RECURSIVE)
     ("exists", EXISTS)
     ("sret", SRET)
+    ("llvm_byval", LLVM_BYVAL)
+    ("llvm_inreg", LLVM_INREG)
     ("cc_c", CC_C)
     ("local", LOCAL)
     ("private", PRIVATE)
@@ -579,19 +600,21 @@ namespace Psi {
       FunctionTypeExpression::FunctionTypeExpression(const PhysicalSourceLocation& location_,
                                                      CallingConvention calling_convention_,
                                                      bool sret_,
-                                                     UniqueList<NamedExpression>& phantom_parameters_,
-                                                     UniqueList<NamedExpression>& parameters_,
+                                                     UniqueList<ParameterExpression>& phantom_parameters_,
+                                                     UniqueList<ParameterExpression>& parameters_,
+                                                     ParameterAttributes result_attributes_,
                                                      UniquePtr<Expression>& result_type_)
         : Expression(location_, expression_function_type),
           calling_convention(calling_convention_),
-          sret(sret_) {
+          sret(sret_),
+          result_attributes(result_attributes_) {
         phantom_parameters.swap(phantom_parameters_);
         parameters.swap(parameters_);
         result_type.swap(result_type_);
       }
       
       ExistsExpression::ExistsExpression(const PhysicalSourceLocation& location_,
-                                         UniqueList<NamedExpression>& parameters_,
+                                         UniqueList<ParameterExpression>& parameters_,
                                          UniquePtr<Expression>& result_)
       : Expression(location_, expression_exists) {
         parameters.swap(parameters_);
@@ -609,10 +632,10 @@ namespace Psi {
         name.swap(name_);
         expression.swap(expression_);
       }
-
-      NamedExpression::NamedExpression(const PhysicalSourceLocation& location_, UniquePtr<Expression>& expression_)
-        : Element(location_) {
-        expression.swap(expression_);
+      
+      ParameterExpression::ParameterExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_,
+                                               ParameterAttributes attributes_, UniquePtr<Expression>& expression_)
+        : NamedExpression(location_, name_, expression_), attributes(attributes_) {
       }
 
       Block::Block(const PhysicalSourceLocation& location_, bool landing_pad_, UniquePtr<Token>& name_,
@@ -686,8 +709,8 @@ namespace Psi {
       }
       
       RecursiveType::RecursiveType(const PhysicalSourceLocation& location_,
-                                   UniqueList<NamedExpression>& phantom_parameters_,
-                                   UniqueList<NamedExpression>& parameters_,
+                                   UniqueList<ParameterExpression>& phantom_parameters_,
+                                   UniqueList<ParameterExpression>& parameters_,
                                    UniquePtr<Expression>& result_)
       : GlobalElement(location_, global_recursive) {
         phantom_parameters.swap(phantom_parameters_);

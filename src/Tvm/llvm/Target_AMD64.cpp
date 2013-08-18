@@ -253,38 +253,38 @@ namespace Psi {
            *
            * </ul>
            */
-          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ValuePtr<>& type) const {
-            ElementTypeInfo info = self->get_parameter_info(rewriter, type);
+          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ParameterType& type) const {
+            ElementTypeInfo info = self->get_parameter_info(rewriter, type.value);
             switch (info.category) {
             case TargetParameterCategory::simple:
-              return TargetCommon::parameter_handler_simple(rewriter, type);
+              return TargetCommon::parameter_handler_simple(rewriter, type.value);
 
             case TargetParameterCategory::altered: {
-              ValuePtr<> lowered_type = self->type_from_amd64_class_and_size(rewriter, info.amd64_class, info.size, type->location());
-              return TargetCommon::parameter_handler_change_type_by_memory(rewriter, type, lowered_type);
+              ValuePtr<> lowered_type = self->type_from_amd64_class_and_size(rewriter, info.amd64_class, info.size, type.value->location());
+              return TargetCommon::parameter_handler_change_type_by_memory(rewriter, type.value, lowered_type);
             }
 
             case TargetParameterCategory::force_ptr:
-              return TargetCommon::parameter_handler_force_ptr(rewriter, type);
+              return TargetCommon::parameter_handler_force_ptr(rewriter, type.value);
 
             default:
               PSI_FAIL("unknown parameter category");
             }
           }
           
-          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ValuePtr<>& type) const {
-            ElementTypeInfo info = self->get_parameter_info(rewriter, type);
+          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ParameterType& type) const {
+            ElementTypeInfo info = self->get_parameter_info(rewriter, type.value);
             switch (info.category) {
             case TargetParameterCategory::simple:
-              return TargetCommon::return_handler_simple(rewriter, type);
+              return TargetCommon::return_handler_simple(rewriter, type.value);
 
             case TargetParameterCategory::altered: {
-              ValuePtr<> lowered_type = self->type_from_amd64_class_and_size(rewriter, info.amd64_class, info.size, type->location());
-              return TargetCommon::return_handler_change_type_by_memory(rewriter, type, lowered_type);
+              ValuePtr<> lowered_type = self->type_from_amd64_class_and_size(rewriter, info.amd64_class, info.size, type.value->location());
+              return TargetCommon::return_handler_change_type_by_memory(rewriter, type.value, lowered_type);
             }
 
             case TargetParameterCategory::force_ptr:
-              return TargetCommon::return_handler_force_ptr(rewriter, type);
+              return TargetCommon::return_handler_force_ptr(rewriter, type.value);
 
             default:
               PSI_FAIL("unknown parameter category");

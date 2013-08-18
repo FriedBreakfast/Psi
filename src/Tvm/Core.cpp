@@ -192,7 +192,11 @@ namespace Psi {
         }
         
         for (std::size_t ii = 0, ie = this_ft.parameter_types().size(); ii != ie; ++ii) {
-          if (!this_ft.parameter_types()[ii]->match(child_ft.parameter_types()[ii], wildcards, depth+1, upref_mode))
+          const ParameterType& this_param_ty = this_ft.parameter_types()[ii];
+          const ParameterType& child_param_ty = child_ft.parameter_types()[ii];
+          if (this_param_ty.attributes != child_param_ty.attributes)
+            return false;
+          if (!this_param_ty.value->match(child_param_ty.value, wildcards, depth+1, upref_mode))
             return false;
         }
         
@@ -204,7 +208,9 @@ namespace Psi {
         default: PSI_FAIL("Unrecognised enumeration value");
         }
         
-        if (!this_ft.result_type()->match(child_ft.result_type(), wildcards, depth+1, reverse_mode))
+        if (this_ft.result_type().attributes != child_ft.result_type().attributes)
+          return false;
+        if (!this_ft.result_type().value->match(child_ft.result_type().value, wildcards, depth+1, reverse_mode))
           return false;
         
         return true;
@@ -515,6 +521,17 @@ namespace Psi {
       default:
         return false;
       }
+    }
+    
+    /**
+     * \brief Combine two sets of parameter attributes.
+     * 
+     * Currently this doesn't do any sort of error checking that the result is consistent.
+     */
+    ParameterAttributes combine_attributes(const ParameterAttributes& lhs, const ParameterAttributes& rhs) {
+      ParameterAttributes result;
+      result.flags = lhs.flags | rhs.flags;
+      return result;
     }
   }
 }

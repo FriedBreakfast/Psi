@@ -379,6 +379,32 @@ namespace Psi {
       /// function.
       unsigned index() const {return m_index;}
     };
+    
+    template<typename T>
+    struct ParameterTemplateType {
+      ValuePtr<T> value;
+      ParameterAttributes attributes;
+      
+      ParameterTemplateType() {}
+      ParameterTemplateType(const ValuePtr<T>& value_) : value(value_) {}
+      ParameterTemplateType(const ValuePtr<T>& value_, ParameterAttributes attributes_) : value(value_), attributes(attributes_) {}
+      
+      template<typename V>
+      static void visit(V& v) {
+        v("value", &ParameterTemplateType::value)
+        ("attributes", &ParameterTemplateType::attributes);
+      }
+      
+      friend std::size_t hash_value(const ParameterTemplateType<T>& self) {
+        std::size_t h = 0;
+        boost::hash_combine(h, self.value);
+        boost::hash_combine(h, self.attributes);
+        return h;
+      }
+    };
+    
+    template<typename T> bool operator == (const ParameterTemplateType<T>& lhs, const ParameterTemplateType<T>& rhs) {return (lhs.value==rhs.value) && (lhs.attributes==rhs.attributes);}
+    template<typename T> bool operator != (const ParameterTemplateType<T>& lhs, const ParameterTemplateType<T>& rhs) {return !(lhs == rhs);}
 
     /**
      * \brief Type of functions.
@@ -393,12 +419,12 @@ namespace Psi {
       friend class Context;
 
     public:
-      FunctionType(CallingConvention calling_convention, const ValuePtr<>& result_type,
-                   const std::vector<ValuePtr<> >& parameter_types, unsigned n_phantom,
+      FunctionType(CallingConvention calling_convention, const ParameterType& result_type,
+                   const std::vector<ParameterType>& parameter_types, unsigned n_phantom,
                    bool sret, const SourceLocation& location);
 
       CallingConvention calling_convention() const {return m_calling_convention;}
-      const ValuePtr<>& result_type() const {return m_result_type;}
+      const ParameterType& result_type() const {return m_result_type;}
       /// \brief Get the number of phantom parameters.
       unsigned n_phantom() const {return m_n_phantom;}
       /**
@@ -410,19 +436,24 @@ namespace Psi {
        */
       bool sret() const {return m_sret;}
       /// \brief Get the vector parameter types.
-      const std::vector<ValuePtr<> >& parameter_types() const {return m_parameter_types;}
+      const std::vector<ParameterType>& parameter_types() const {return m_parameter_types;}
 
       ValuePtr<> parameter_type_after(const SourceLocation& location, const std::vector<ValuePtr<> >& previous);
       ValuePtr<> result_type_after(const SourceLocation& location, const std::vector<ValuePtr<> >& parameters);
+      
+      /// \brief Get the attributes of the nth parameter
+      const ParameterAttributes& parameter_attributes(std::size_t n) const {return m_parameter_types[n].attributes;}
+      /// \brief Get the return attributes
+      const ParameterAttributes& result_attributes() const {return m_result_type.attributes;}
       
       static bool isa_impl(const Value& ptr) {return ptr.term_type() == term_function_type;}
 
     private:
       CallingConvention m_calling_convention;
-      std::vector<ValuePtr<> > m_parameter_types;
+      std::vector<ParameterType> m_parameter_types;
       unsigned m_n_phantom;
       bool m_sret;
-      ValuePtr<> m_result_type;
+      ParameterType m_result_type;
     };
     
     /**

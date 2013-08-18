@@ -26,10 +26,14 @@ namespace Psi {
 
       struct NamedExpression : Element, boost::intrusive::list_base_hook<> {
         NamedExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, UniquePtr<Expression>& expression_);
-        NamedExpression(const PhysicalSourceLocation& location_, UniquePtr<Expression>& expression_);
 
         UniquePtr<Token> name;
         UniquePtr<Expression> expression;
+      };
+      
+      struct ParameterExpression : NamedExpression {
+        ParameterExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, ParameterAttributes attributes_, UniquePtr<Expression>& expression_);
+        ParameterAttributes attributes;
       };
 
       enum ExpressionType {
@@ -80,23 +84,25 @@ namespace Psi {
         FunctionTypeExpression(const PhysicalSourceLocation& location_,
                                CallingConvention calling_convention_,
                                bool sret_,
-                               UniqueList<NamedExpression>& phantom_parameters_,
-                               UniqueList<NamedExpression>& parameters_,
+                               UniqueList<ParameterExpression>& phantom_parameters_,
+                               UniqueList<ParameterExpression>& parameters_,
+                               ParameterAttributes result_attributes_,
                                UniquePtr<Expression>& result_type_);
 
         CallingConvention calling_convention;
         bool sret;
-        UniqueList<NamedExpression> phantom_parameters;
-        UniqueList<NamedExpression> parameters;
+        UniqueList<ParameterExpression> phantom_parameters;
+        UniqueList<ParameterExpression> parameters;
+        ParameterAttributes result_attributes;
         UniquePtr<Expression> result_type;
       };
       
       struct ExistsExpression : Expression {
         ExistsExpression(const PhysicalSourceLocation& location_,
-                         UniqueList<NamedExpression>& parameters_,
+                         UniqueList<ParameterExpression>& parameters_,
                          UniquePtr<Expression>& result_);
         
-        UniqueList<NamedExpression> parameters;
+        UniqueList<ParameterExpression> parameters;
         UniquePtr<Expression> result;
       };
       
@@ -163,12 +169,12 @@ namespace Psi {
 
       struct RecursiveType : GlobalElement {
         RecursiveType(const PhysicalSourceLocation& location_,
-                      UniqueList<NamedExpression>& phantom_parameters_,
-                      UniqueList<NamedExpression>& parameters_,
+                      UniqueList<ParameterExpression>& phantom_parameters_,
+                      UniqueList<ParameterExpression>& parameters_,
                       UniquePtr<Expression>& result_);
 
-        UniqueList<NamedExpression> phantom_parameters;
-        UniqueList<NamedExpression> parameters;
+        UniqueList<ParameterExpression> phantom_parameters;
+        UniqueList<ParameterExpression> parameters;
         UniquePtr<Expression> result;
       };
 

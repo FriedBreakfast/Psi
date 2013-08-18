@@ -62,7 +62,7 @@ namespace Psi {
           llvm::Value *call = builder.irbuilder().CreateCall(cast_target, parameters);
           if (function_type->sret()) {
             return NULL;
-          } else if (isa<EmptyType>(function_type->result_type())) {
+          } else if (isa<EmptyType>(function_type->result_type().value)) {
             return llvm::ConstantStruct::getAnon(builder.llvm_context(), llvm::ArrayRef<llvm::Constant*>());
           } else {
             return call;

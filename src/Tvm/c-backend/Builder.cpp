@@ -22,10 +22,10 @@ public:
   
   ValuePtr<FunctionType> lower_function_type(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& ftype) {
     unsigned n_phantom = ftype->n_phantom();
-    std::vector<ValuePtr<> > parameter_types;
+    std::vector<ParameterType> parameter_types;
     for (std::size_t ii = 0, ie = ftype->parameter_types().size() - n_phantom; ii != ie; ++ii)
-      parameter_types.push_back(rewriter.rewrite_type(ftype->parameter_types()[ii + n_phantom]).register_type());
-    ValuePtr<> result_type = rewriter.rewrite_type(ftype->result_type()).register_type();
+      parameter_types.push_back(rewriter.rewrite_type(ftype->parameter_types()[ii + n_phantom].value).register_type());
+    ValuePtr<> result_type = rewriter.rewrite_type(ftype->result_type().value).register_type();
     return FunctionalBuilder::function_type(ftype->calling_convention(), result_type, parameter_types, 0, ftype->sret(), ftype->location());
   }
   

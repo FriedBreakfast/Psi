@@ -47,7 +47,7 @@ namespace Psi {
           throw BuildError("Calling convention is not supported on this platform");
         
         LowerFunctionHelperResult result;
-        std::vector<ValuePtr<> > parameter_types;
+        std::vector<ParameterType> parameter_types;
 
         result.return_handler =
           m_callback->return_type_info(rewriter, function_type->calling_convention(), function_type->result_type());
@@ -56,7 +56,7 @@ namespace Psi {
           boost::shared_ptr<ParameterHandler> handler = m_callback->parameter_type_info
             (rewriter, function_type->calling_convention(), function_type->parameter_types()[ii]);
           result.parameter_handlers.push_back(handler);
-          parameter_types.push_back(handler->lowered_type());
+          parameter_types.push_back(ParameterType(handler->lowered_type()));
         }
 
         bool sret = false;
@@ -64,7 +64,7 @@ namespace Psi {
         if (!function_type->sret()) {
           sret = result.return_handler->return_by_sret();
           if (sret)
-            parameter_types.push_back(FunctionalBuilder::byte_pointer_type(rewriter.context(), function_type->location()));
+            parameter_types.push_back(ParameterType(FunctionalBuilder::byte_pointer_type(rewriter.context(), function_type->location())));
           else
             return_type = result.return_handler->lowered_type();
         } else {
@@ -483,12 +483,12 @@ namespace Psi {
       class TargetDefault : public TargetCommon {
       private:
         struct Callback : TargetCommon::Callback {
-          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ValuePtr<>& type) const {
-            return TargetCommon::parameter_handler_simple(rewriter, type);
+          virtual boost::shared_ptr<ParameterHandler> parameter_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ParameterType& type) const {
+            return TargetCommon::parameter_handler_simple(rewriter, type.value);
           }
 
-          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ValuePtr<>& type) const {
-            return TargetCommon::return_handler_simple(rewriter, type);
+          virtual boost::shared_ptr<ReturnHandler> return_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, CallingConvention, const ParameterType& type) const {
+            return TargetCommon::return_handler_simple(rewriter, type.value);
           }
 
           virtual bool convention_supported(CallingConvention) const {

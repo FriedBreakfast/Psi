@@ -706,6 +706,39 @@ namespace Psi {
       ValuePtr<Function> new_function(const std::string& name, const ValuePtr<FunctionType>& type, const SourceLocation& location);
       ValuePtr<Function> new_constructor(const std::string& name, const SourceLocation& location);
     };
+    
+    /**
+     * \brief Carries all information about a function parameter except its type.
+     */
+    struct ParameterAttributes {
+      enum Flags {
+        llvm_byval=0x1,
+        llvm_inreg=0x2
+      };
+      
+      unsigned flags;
+      
+      ParameterAttributes() : flags(0) {}
+      
+      friend std::size_t hash_value(const ParameterAttributes& self) {
+        std::size_t h = 0;
+        boost::hash_combine(h, self.flags);
+        return h;
+      }
+      
+      template<typename V>
+      static void visit(V& v) {
+        v("flags", &ParameterAttributes::flags);
+      }
+    };
+    
+    inline bool operator == (const ParameterAttributes& lhs, const ParameterAttributes& rhs) {return lhs.flags == rhs.flags;}
+    inline bool operator != (const ParameterAttributes& lhs, const ParameterAttributes& rhs) {return !(lhs == rhs);}
+    ParameterAttributes combine_attributes(const ParameterAttributes& lhs, const ParameterAttributes& rhs);
+
+    template<typename T> struct ParameterTemplateType;
+    typedef ParameterTemplateType<Value> ParameterType;
+    typedef ParameterTemplateType<ParameterPlaceholder> ParameterPlaceholderType;
 
     /**
      * \brief Tvm context class.
@@ -768,8 +801,8 @@ namespace Psi {
       ValuePtr<HashableValue> get_hash_term(const HashableValue& value);
       
       ValuePtr<FunctionType> get_function_type(CallingConvention calling_convention,
-                                               const ValuePtr<>& result,
-                                               const std::vector<ValuePtr<ParameterPlaceholder> >& parameters,
+                                               const ParameterType& result,
+                                               const std::vector<ParameterPlaceholderType>& parameters,
                                                unsigned n_phantom,
                                                bool sret,
                                                const SourceLocation& location);
