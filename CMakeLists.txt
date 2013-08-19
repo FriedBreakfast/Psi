@@ -17,26 +17,20 @@ mark_as_advanced(PSI_OBJECT_PTR_DEBUG)
 
 # Locate LLVM
 set(PSI_LLVM_MODULES engine ipo)
-if(LLVM_PATH)
-  find_path(LLVM_PATH share/llvm/cmake/LLVMConfig.cmake)
-  if(LLVM_PATH)
+find_program(LLVM_CONFIG NAMES llvm-config)
+if(LLVM_CONFIG)
+  set(PSI_TVM_LLVM 1)
+  execute_process(COMMAND ${LLVM_CONFIG} --cxxflags OUTPUT_VARIABLE LLVM_CXX_FLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
+  execute_process(COMMAND ${LLVM_CONFIG} --ldflags OUTPUT_VARIABLE LLVM_LDFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
+  execute_process(COMMAND ${LLVM_CONFIG} --libs ${PSI_LLVM_MODULES} OUTPUT_VARIABLE LLVM_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
+else()
+  find_package(LLVM)
+  if(LLVM_VERSION)
     set(PSI_TVM_LLVM 1)
-    set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${LLVM_PATH}/share/llvm/cmake")
-    include(LLVMConfig)
     set(LLVM_CXX_FLAGS -I${LLVM_INCLUDE_DIRS} ${LLVM_DEFINITIONS})
     string(REPLACE ";" " " LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
     set(LLVM_LDFLAGS -L${LLVM_LIBRARY_DIRS})
     llvm_map_components_to_libraries(LLVM_LIBS ${PSI_LLVM_MODULES})
-  else()
-    set(PSI_TVM_LLVM 0)
-  endif()
-else()
-  find_program(LLVM_CONFIG NAMES llvm-config)
-  if(LLVM_CONFIG)
-    set(PSI_TVM_LLVM 1)
-    execute_process(COMMAND ${LLVM_CONFIG} --cxxflags OUTPUT_VARIABLE LLVM_CXX_FLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
-    execute_process(COMMAND ${LLVM_CONFIG} --ldflags OUTPUT_VARIABLE LLVM_LDFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE)
-    execute_process(COMMAND ${LLVM_CONFIG} --libs ${PSI_LLVM_MODULES} OUTPUT_VARIABLE LLVM_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE)
   else()
     set(PSI_TVM_LLVM 0)
   endif()
@@ -96,7 +90,23 @@ endif()
 
 # Locate Boost
 find_package(Boost 1.36.0)
-find_package(BISON REQUIRED)
+
+# Locate Bison
+find_program(BISON_EXECUTABLE NAMES bison PATHS C:/MinGW/msys/1.0/bin)
+if(NOT BISON_EXECUTABLE)
+  message(SEND_ERROR "bison not found")
+endif()
+macro(run_bison bison_src)
+  string(REGEX REPLACE "\\.ypp$" ".cpp" bison_dest "${bison_src}")
+  string(REGEX REPLACE "\\.ypp$" ".output" bison_report "${bison_src}")
+  add_custom_command(
+    OUTPUT "${bison_dest}" "${bison_report}"
+    COMMAND ${BISON_EXECUTABLE} -v --output="${bison_dest}" --report-file="${bison_report}" "${CMAKE_CURRENT_SOURCE_DIR}/${bison_src}"
+    MAIN_DEPENDENCY ${bison_src}
+  )
+  get_filename_component(bison_path "${bison_src}" PATH)
+  set_source_files_properties("${bison_dest}" PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/${bison_path}")
+endmacro()
 
 add_custom_target(doc)
 

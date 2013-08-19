@@ -274,10 +274,15 @@ parameter: ID ':' attribute_list root_expression {
   UniquePtr<Expression> type(list_to_ptr($4));
   $$ = list_one<ParameterExpression>(new ParameterExpression(@$, name, $3, type));
 }
-| attribute_list root_expression {
+| ':' attribute_list root_expression {
   UniquePtr<Token> name;
-  UniquePtr<Expression> type(list_to_ptr($2));
-  $$ = list_one<ParameterExpression>(new ParameterExpression(@$, name, $1, type));
+  UniquePtr<Expression> type(list_to_ptr($3));
+  $$ = list_one<ParameterExpression>(new ParameterExpression(@$, name, $2, type));
+}
+| root_expression {
+  UniquePtr<Token> name;
+  UniquePtr<Expression> type(list_to_ptr($1));
+  $$ = list_one<ParameterExpression>(new ParameterExpression(@$, name, ParameterAttributes(), type));
 };
 
 block_list: {$$ = list_empty<Block>();} | block_list_nonempty

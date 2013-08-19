@@ -43,9 +43,7 @@ The following targets exist:
 
 You will need the following tools:
 
-* CMake_. There appear to be some problems using CMake with the Ninja_ build system
-  right now, so I recommend using the makefile generator on Linux, and either the
-  MinGW makefile or Visual Studio generator on Windows.
+* CMake_
 * C++ compiler: you must use `GNU G++`_ on Linux. On Windows either MinGW_ or `Visual C++`_
   can be used.
 * LLVM_: must be version |llvm version| in order to work correctly. Earlier and later
@@ -64,16 +62,13 @@ On Ubuntu the required dependencies except for LLVM can be downloaded with::
 
 The important CMake variables for configuring the project are:
 
-* ``LLVM_CONFIG`` and ``LLVM_PATH``: location of LLVM.
-  This depends on how LLVM was built. If the ``configure`` script was used,
-  then set ``LLVM_CONFIG`` to the path of the ``llvm-config`` program in the installation.
-  If LLVM was built with CMake, then set ``LLVM_PATH`` to the root directory of the LLVM installation,
-  specifically the configure script looks for the file ``share/llvm/cmake/LLVMConfig.cmake``
-  under the specified directory. Usually I think it's easiest to build LLVM with CMake on Windows
-  and to use the configure script on Linux. The other OS/build method combinations have not been
-  tested.
+* ``LLVM_CONFIG`` and ``LLVM_DIR``: ``LLVM_CONFIG`` is the location of the ``llvm-config``
+  program if LLVM was not built using CMake. If LLVM was built using CMake, ``LLVM_DIR``
+  is the directory containing ``LLVMConfig.cmake``.
   
 * ``Boost_INCLUDE_DIR``: location of Boost headers.
+
+* ``BISON_EXECUTABLE``: Location of GNU Bison.
 
 * ``PSI_DEBUG``: enable debug assertions.
 

@@ -15,9 +15,6 @@ add_library(psi-test SHARED Test.cpp Test.hpp OptionParser.cpp OptionParser.hpp)
 target_link_libraries(psi-test ${PSI_ASSERT_LIB})
 shared_library_setup(psi-test)
 
-bison_target(TvmParser Tvm/Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/TvmParserGenerated)
-set_source_files_properties(${BISON_TvmParser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/Tvm")
-
 if(WIN32)
 set(PSI_COMPILER_COMMON_SOURCES PlatformWindows.cpp PlatformWindows.hpp PlatformImplWindows.hpp)
 set(PSI_COMPILER_COMMON_LIBS Shlwapi)
@@ -46,6 +43,9 @@ shared_library_setup(psi-compiler-common)
 
 target_link_libraries(psi-compiler-common ${PSI_ASSERT_LIB} ${PSI_COMPILER_COMMON_LIBS})
 
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Tvm)
+run_bison(Tvm/Parser.ypp)
+
 add_library(psi-tvm SHARED
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
   Tvm/AggregateLowering.cpp Tvm/AggregateLowering.hpp
@@ -64,7 +64,7 @@ add_library(psi-tvm SHARED
   Tvm/InstructionBuilder.cpp Tvm/InstructionBuilder.hpp
   Tvm/ModuleRewriter.cpp Tvm/ModuleRewriter.hpp
   Tvm/Number.cpp Tvm/Number.hpp
-  ${BISON_TvmParser_OUTPUTS} Tvm/Parser.hpp
+  Tvm/Parser.cpp Tvm/Parser.hpp
   Tvm/Recursive.cpp Tvm/Recursive.hpp
   Tvm/TermOperationMap.hpp
   Tvm/Utility.hpp
@@ -151,8 +151,7 @@ Runtime/StackAlloc.c
 ${PSI_RUNTIME_SOURCES}
 )
 
-bison_target(Parser Parser.ypp ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated.cpp VERBOSE ${CMAKE_CURRENT_BINARY_DIR}/ParserGenerated)
-set_source_files_properties(${BISON_Parser_OUTPUTS} PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}")
+run_bison(Parser.ypp)
 
 add_library(psi-compiler SHARED
   Aggregate.cpp
@@ -164,7 +163,7 @@ add_library(psi-compiler SHARED
   Interface.cpp
   GarbageCollection.hpp
   Macros.cpp Macros.hpp
-  ${BISON_Parser_OUTPUTS} Parser.hpp
+  Parser.cpp Parser.hpp
   PlatformCompile.cpp PlatformCompile.hpp
   StaticDispatch.cpp StaticDispatch.hpp
   Term.cpp Term.hpp
