@@ -17,7 +17,7 @@ mark_as_advanced(PSI_OBJECT_PTR_DEBUG)
 
 # Locate LLVM
 set(PSI_LLVM_MODULES engine ipo)
-if(WIN32)
+if(LLVM_PATH)
   find_path(LLVM_PATH share/llvm/cmake/LLVMConfig.cmake)
   if(LLVM_PATH)
     set(PSI_TVM_LLVM 1)
@@ -75,7 +75,10 @@ else()
   set(PSI_TVM_JIT_DEFAULT "llvm")
 endif()
 
-set(PSI_TVM_JIT ${PSI_TVM_JIT_DEFAULT} CACHE STRING "Default JIT compiler to use")
+set(PSI_TVM_JIT "llvm" CACHE STRING "Default JIT compiler to use")
+if(NOT PSI_TVM_LLVM)
+  message(SEND_ERROR "LLVM not found, please configure LLVM location or select another JIT backend")
+endif()
 
 # Set up useful GCC flags
 if(CMAKE_COMPILER_IS_GNUCXX)
@@ -87,7 +90,7 @@ if(CMAKE_COMPILER_IS_GNUCXX)
 endif()
 
 # Have to ensure _GLIBCXX_DEBUG is consistently defined everywhere otherwise the binary inteface may break
-if (LLVM_CXX_FLAGS MATCHES "-D_GLIBCXX_DEBUG")
+if (LLVM_CXX_FLAGS MATCHES "_GLIBCXX_DEBUG")
   message(SEND_ERROR "Please compile LLVM without _GLIBCXX_DEBUG defined")
 endif()
 
@@ -113,6 +116,12 @@ if(DOXYGEN_FOUND)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
   add_custom_target(doc-doxygen DEPENDS doxygen-tags.tag)
   add_dependencies(doc doc-doxygen)
+endif()
+
+find_program(RST2HTML NAMES rst2html)
+if(RST2HTML)
+  add_custom_target(readme ${RST2HTML} ${CMAKE_CURRENT_SOURCE_DIR}/README.rst ${CMAKE_CURRENT_BINARY_DIR}/README.html)
+  add_dependencies(doc readme)
 endif()
 
 find_program(SPHINX_BUILD NAMES sphinx-build)
