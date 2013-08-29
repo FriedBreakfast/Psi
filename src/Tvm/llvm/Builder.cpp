@@ -9,8 +9,8 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/make_shared.hpp>
 
-#include <llvm/DerivedTypes.h>
-#include <llvm/Module.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/Support/Host.h>
 #include <llvm/Support/TargetRegistry.h>
@@ -36,18 +36,14 @@ namespace Psi {
      * IR. The generated code will be machine-specific.
      */
     namespace LLVM {
-      BuildError::BuildError(const std::string& msg) {
-        m_message = "LLVM IR generation error: ";
-        m_message += msg;
-        m_str = m_message.c_str();
+#if PSI_DEBUG
+      /**
+       * For some reason GDB doesn't pick up llvm::Value::dump a lot.
+       */
+      void dump_llvm_value(void *p) {
+        static_cast<llvm::Value*>(p)->dump();
       }
-
-      BuildError::~BuildError() throw () {
-      }
-
-      const char* BuildError::what() const throw() {
-        return m_str;
-      }
+#endif
 
       /**
        * \brief Return the constant integer specified by the given term.
@@ -209,9 +205,11 @@ namespace Psi {
         }
       }
 
-      ModuleBuilder::ModuleBuilder(llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module,
+      ModuleBuilder::ModuleBuilder(CompileErrorContext *error_context,
+                                   llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module,
                                    llvm::FunctionPassManager *llvm_function_pass, TargetCallback *target_callback)
-        : m_llvm_context(llvm_context), m_llvm_triple(target_machine->getTargetTriple()), m_llvm_target_machine(target_machine),
+        : m_error_context(error_context), m_llvm_context(llvm_context),
+        m_llvm_triple(target_machine->getTargetTriple()), m_llvm_target_machine(target_machine),
         m_llvm_function_pass(llvm_function_pass), m_llvm_module(llvm_module), m_target_callback(target_callback) {
         m_llvm_memcpy = intrinsic_memcpy(*llvm_module, target_machine);
         m_llvm_memset = intrinsic_memset(*llvm_module, target_machine);
@@ -256,7 +254,7 @@ namespace Psi {
         }
         value->setVisibility(visibility);
       }
-
+      
       ModuleMapping ModuleBuilder::run(Module *module) {
         ModuleMapping module_result;
         module_result.module = m_llvm_module;
@@ -292,8 +290,11 @@ namespace Psi {
             ValuePtr<FunctionType> func_type = value_cast<FunctionType>(type->target_type());
             llvm::Type *llvm_type = build_type(func_type);
             PSI_ASSERT_MSG(llvm_type, "could not create function because its LLVM type is not known");
-            result = llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_type),
-                                            linkage, func->name(), m_llvm_module);
+            llvm::Function *llvm_func = llvm::Function::Create(llvm::cast<llvm::FunctionType>(llvm_type),
+                                                               linkage, func->name(), m_llvm_module);
+            llvm_func->setAttributes(function_type_attributes(llvm_context(), func_type));
+            llvm_func->setCallingConv(function_call_convention(error_context().bind(func->location()), func_type->calling_convention()));
+            result = llvm_func;
             break;
           }
 
@@ -343,7 +344,7 @@ namespace Psi {
       llvm::GlobalValue* ModuleBuilder::build_global(const ValuePtr<Global>& term) {
         boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator it = m_global_terms.find(term);
         if (it == m_global_terms.end())
-          throw BuildError("Cannot find global term");
+          error_context().error_throw(term->location(), "Cannot find global term");
         return it->second;
       }
 
@@ -357,7 +358,7 @@ namespace Psi {
           m_constant_terms.insert(std::make_pair(term, static_cast<llvm::Constant*>(NULL)));
         if (!itp.second) {
           if (!itp.first->second)
-            throw BuildError("Cyclical term found");
+            error_context().error_throw(term->location(), "Cyclical term found");
           return itp.first->second;
         }
 
@@ -385,7 +386,7 @@ namespace Psi {
         
         if (!r) {
           m_constant_terms.erase(itp.first);
-          throw BuildError("LLVM term building failed");
+          error_context().error_throw(term->location(), "LLVM term building failed");
         }
         
         itp.first->second = r;
@@ -404,7 +405,7 @@ namespace Psi {
           m_type_terms.insert(std::make_pair(term, static_cast<llvm::Type*>(NULL)));
         if (!itp.second) {
           if (!itp.first->second)
-            throw BuildError("Cyclical term found");
+            error_context().error_throw(term->location(), "Cyclical term found");
           return itp.first->second;
         }
 
@@ -453,7 +454,7 @@ namespace Psi {
         
         if (!t) {
           m_type_terms.erase(itp.first);
-          throw BuildError("LLVM type building failed");
+          error_context().error_throw(term->location(), "LLVM type building failed");
         }
         
         itp.first->second = t;
@@ -509,21 +510,32 @@ namespace Psi {
         }
       }
 
-      LLVMJit::LLVMJit(const std::string& host_triple,
+      LLVMJit::LLVMJit(const CompileErrorPair& error_loc,
+                       const std::string& host_triple,
                        const boost::shared_ptr<llvm::TargetMachine>& host_machine)
-        : m_target_fixes(create_target_fixes(&m_llvm_context, host_machine, host_triple)),
+        : m_error_context(&error_loc.context()),
+          m_target_callback(error_loc, &m_llvm_context, host_machine, host_triple),
           m_target_machine(host_machine),
           m_load_priority_max(0) {
         init_llvm_passes();
       }
+      
+      /**
+       * This virtual destructor really isn't necessary since it should only be called from LLVMJit::destroy(),
+       * but it keeps GCCs warnings quiet.
+       */
+      LLVMJit::~LLVMJit() {
+      }
 
       void LLVMJit::destroy() {
         // Run module destructor functions
-        std::map<std::size_t, llvm::Module*> load_order;
-        for (boost::unordered_map<Module*, LLVMJitModule>::const_iterator ii = m_modules.begin(), ie = m_modules.end(); ii != ie; ++ii)
-          load_order.insert(std::make_pair(ii->second.load_priority, ii->second.mapping.module));
-        for (std::map<std::size_t, llvm::Module*>::reverse_iterator ii = load_order.rbegin(), ie = load_order.rend(); ii != ie; ++ii)
-          m_llvm_engine->runStaticConstructorsDestructors(ii->second, true);
+        if (m_llvm_engine) {
+          std::map<std::size_t, llvm::Module*> load_order;
+          for (boost::unordered_map<Module*, LLVMJitModule>::const_iterator ii = m_modules.begin(), ie = m_modules.end(); ii != ie; ++ii)
+            load_order.insert(std::make_pair(ii->second.load_priority, ii->second.mapping.module));
+          for (std::map<std::size_t, llvm::Module*>::reverse_iterator ii = load_order.rbegin(), ie = load_order.rend(); ii != ie; ++ii)
+            m_llvm_engine->runStaticConstructorsDestructors(ii->second, true);
+        }
         
         delete this;
       }
@@ -550,7 +562,7 @@ namespace Psi {
       void LLVMJit::add_module(Module *module) {
         LLVMJitModule& mapping = m_modules[module];
         if (mapping.mapping.module)
-          throw BuildError("module already exists in this JIT");
+          error_context().error_throw(module->location(), "module already exists in this JIT");
 
         std::auto_ptr<llvm::Module> llvm_module_auto(new llvm::Module(module->name(), m_llvm_context));
         llvm::Module *llvm_module = llvm_module_auto.get();
@@ -561,7 +573,7 @@ namespace Psi {
         llvm::FunctionPassManager fpm(llvm_module);
         m_llvm_pass_builder.populateFunctionPassManager(fpm);
 
-        ModuleBuilder builder(&m_llvm_context, m_target_machine.get(), llvm_module, &fpm, m_target_fixes.get());
+        ModuleBuilder builder(&error_context(), &m_llvm_context, m_target_machine.get(), llvm_module, &fpm, &m_target_callback);
         ModuleMapping new_mapping = builder.run(module);
         
         m_llvm_module_pass.run(*llvm_module);
@@ -590,7 +602,7 @@ namespace Psi {
       void LLVMJit::remove_module(Module *module) {
         boost::unordered_map<Module*, LLVMJitModule>::iterator it = m_modules.find(module);
         if (it == m_modules.end())
-          throw BuildError("module not present");
+          error_context().error_throw(module->location(), "module not present");
         m_llvm_engine->runStaticConstructorsDestructors(it->second.mapping.module, true);
         m_llvm_engine->removeModule(it->second.mapping.module);
         delete it->second.mapping.module;
@@ -601,7 +613,7 @@ namespace Psi {
         Module *module = global->module();
         boost::unordered_map<Module*, LLVMJitModule>::iterator it = m_modules.find(module);
         if (it == m_modules.end())
-          throw BuildError("Module does not appear to be available in this JIT");
+          error_context().error_throw(global->location(), "Module does not appear to be available in this JIT");
         
         boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator jt = it->second.mapping.globals.find(global);
         PSI_ASSERT(jt != it->second.mapping.globals.end());
@@ -627,11 +639,11 @@ extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) Psi::Tvm::Jit* tvm_jit_new(const Psi::Com
   std::string error_msg;
   const llvm::Target *target = llvm::TargetRegistry::lookupTarget(host, error_msg);
   if (!target)
-    throw Psi::Tvm::LLVM::BuildError("Could not get LLVM target: " + error_msg);
+    error_handler.error_throw("Could not get LLVM target: " + error_msg);
 
   boost::shared_ptr<llvm::TargetMachine> tm(target->createTargetMachine(host, "", "", llvm::TargetOptions()));
   if (!tm)
-    throw Psi::Tvm::LLVM::BuildError("Failed to create target machine");
+    error_handler.error_throw("Failed to create target machine");
   
-  return new Psi::Tvm::LLVM::LLVMJit(host, tm);
+  return new Psi::Tvm::LLVM::LLVMJit(error_handler, host, tm);
 }

@@ -7,7 +7,13 @@
 #include <vector>
 
 #ifdef __linux__
+#include <errno.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/wait.h>
+#include <ucontext.h>
 #include <unistd.h>
 #endif
 
@@ -114,12 +120,20 @@ bool glob(const std::string& s, const std::string& pattern) {
   return glob_partial(s, pattern, 0, 0, char_count);
 }
 
+struct TestRunOptions {
+  bool verbose;
+  bool fork;
+  bool catch_signals;
+  unsigned backtrace_depth;
+};
+
 enum OptionKeys {
   opt_key_help,
   opt_key_suite_list,
   opt_key_test_list,
   opt_key_run_tests,
-  opt_key_verbose
+  opt_key_verbose,
+  opt_key_no_fork
 };
 
 /**
@@ -127,7 +141,7 @@ enum OptionKeys {
   * 
   * Note that if a print option was requested, this funtion calls exit() rather than returning.
   */
-void run_main_parse_args(int argc, const char **argv, std::vector<std::string>& test_patterns, bool& verbose) {
+void run_main_parse_args(int argc, const char **argv, std::vector<std::string>& test_patterns, TestRunOptions& options) {
   OptionsDescription desc;
   desc.allow_unknown = false;
   desc.allow_positional = false;
@@ -136,6 +150,7 @@ void run_main_parse_args(int argc, const char **argv, std::vector<std::string>& 
   desc.opts.push_back(option_description(opt_key_test_list, true, 't', "", "List test cases in this test program matching a pattern"));
   desc.opts.push_back(option_description(opt_key_run_tests, true, 'r', "", "Run tests matching a pattern"));
   desc.opts.push_back(option_description(opt_key_verbose, false, 'v', "", "Print all log messages"));
+  desc.opts.push_back(option_description(opt_key_no_fork, false, '\0', "no-fork", "Do not run tests in a subprocess"));
   
   Psi::OptionParser parser(desc, argc, argv);
   while (!parser.empty()) {
@@ -183,7 +198,11 @@ void run_main_parse_args(int argc, const char **argv, std::vector<std::string>& 
       break;
     
     case opt_key_verbose:
-      verbose = true;
+      options.verbose = true;
+      break;
+      
+    case opt_key_no_fork:
+      options.fork = false;
       break;
       
     default: PSI_FAIL("Unexpected option key");
@@ -196,18 +215,23 @@ class StreamLogger : public TestLogger {
   std::string name;
   unsigned error_count;
   LogLevel print_level;
+  TestLocation last_location;
   
 public:
   StreamLogger(std::ostream *os_, const std::string& name_, LogLevel print_level_)
-  : os(os_), name(name_), error_count(0), print_level(print_level_) {}
+  : os(os_), name(name_), error_count(0), print_level(print_level_), last_location(NULL, 0) {
+  }
   
   virtual bool passed() {return !error_count;}
   
   virtual void message(const TestLocation& loc, const std::string& str) {
-    *os << loc.file << ':' << loc.line << ": " << str << '\n';
+    last_location = loc;
+    *os << loc.file << ':' << loc.line << ": " << str << std::endl;
   }
   
   virtual void check(const TestLocation& loc, Level, bool passed, const std::string& cond_str, const std::string& cond_fmt) {
+    last_location = loc;
+    
     bool print = false;
     const char *state = "";
     if (!passed) {
@@ -223,44 +247,146 @@ public:
       *os << loc.file << ':' << loc.line << ": check " << state << ": " << cond_str;
       if (!cond_fmt.empty())
         *os << " [" << cond_fmt << ']';
-      *os << '\n';
+      *os << std::endl;
     }
+  }
+  
+  virtual void except(const std::string& what) {
+    ++error_count;
+    *os << "Exception occurred: " << what << '\n';
+    if (last_location.file)
+      *os << "Last location was: " << last_location.file << ':' << last_location.line << '\n';
+    else
+      *os << "No checks have been performed so no previous location is available\n";
+    *os << std::flush;
   }
 };
 
-#if __linux__
-bool run_test_case(const TestCaseBase *tc, LogLevel level) {
+bool run_test_case_common(const TestCaseBase *tc, const TestRunOptions& options) {
   std::string name = test_case_name(tc);
-  
-  std::cout.flush();
-  std::cerr.flush();
-  pid_t child_pid = fork();
-  if (child_pid == 0) {
-    StreamLogger logger(&std::cerr, name, level);
-    current_logger = &logger;
+
+  StreamLogger logger(&std::cerr, name, options.verbose ? log_level_all : log_level_fail);
+  current_logger = &logger;
+  try {
     tc->run();
-    _exit(logger.passed() ? EXIT_SUCCESS : EXIT_FAILURE);
+  } catch (std::exception& ex) {
+    logger.except(ex.what());
+  } catch (...) {
+    logger.except("Unknown exception raised");
+  }
+  
+  return logger.passed();
+}
+
+#if __linux__
+namespace {
+bool signal_exiting;
+ucontext_t signal_exit_context;
+
+void signal_handler(int signum, siginfo_t *info, void *ptr) {
+  void *backtrace_buffer[10];
+  int n = backtrace(backtrace_buffer, 10);
+  backtrace_symbols_fd(backtrace_buffer, n, 2);
+  
+  signal_exiting = true;
+  if (setcontext(&signal_exit_context) != 0) {
+    perror("Failed to jump out of signal handler");
+    _exit(EXIT_FAILURE);
+  }
+}
+}
+
+bool run_test_case_signals(const TestCaseBase *tc, const TestRunOptions& options) {
+  if (options.catch_signals) {
+    signal_exiting = false;
+    if (getcontext(&signal_exit_context) != 0) {
+      perror("Failed to save signal handler exit context");
+      return false;
+    }
+    
+    if (signal_exiting) {
+      return false;
+    }
+    
+    stack_t signal_stack, old_signal_stack;
+    signal_stack.ss_flags = 0;
+    signal_stack.ss_size = SIGSTKSZ;
+    signal_stack.ss_sp = std::malloc(signal_stack.ss_size);
+    if (sigaltstack(&signal_stack, &old_signal_stack) != 0) {
+      perror("Failed to establish signal stack");
+      return false;
+    }
+    
+    const unsigned n_signals = 7;
+    int caught_signals[n_signals] = {SIGFPE, SIGSEGV, SIGTERM, SIGILL, SIGSYS, SIGBUS, SIGABRT};
+    struct sigaction old_actions[n_signals];
+    struct sigaction new_action;
+    new_action.sa_sigaction = signal_handler;
+    sigemptyset(&new_action.sa_mask);
+    new_action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    for (unsigned i = 0; i != n_signals; ++i) {
+      if (sigaction(caught_signals[i], &new_action, &old_actions[i]) != 0) {
+        perror("Failed to set signal handler");
+        return false;
+      }
+    }
+    
+    bool success = run_test_case_common(tc, options);
+    
+    for (unsigned i = 0; i != n_signals; ++i) {
+      sigaction(caught_signals[i], &old_actions[i], NULL);
+    }
+    
+    sigaltstack(&old_signal_stack, NULL);
+    
+    return success;
   } else {
-    int child_status;
-    waitpid(child_pid, &child_status, 0);
-    return WIFEXITED(child_status) && (WEXITSTATUS(child_status) == EXIT_SUCCESS);
+    return run_test_case_common(tc, options);
+  }
+}
+
+bool run_test_case(const TestCaseBase *tc, const TestRunOptions& options) {
+  if (options.fork) {
+    std::cout.flush();
+    std::cerr.flush();
+    pid_t child_pid = fork();
+    if (child_pid == 0) {
+      bool good = run_test_case_signals(tc, options);
+      std::cout.flush();
+      std::cerr.flush();
+      _exit(good ? EXIT_SUCCESS : EXIT_FAILURE);
+    } else {
+      int child_status;
+      waitpid(child_pid, &child_status, 0);
+      if (WIFEXITED(child_status)) {
+        return WEXITSTATUS(child_status) == EXIT_SUCCESS;
+      } else if (WIFSIGNALED(child_status)) {
+        std::cerr << "Child exited with due to signal: " << strsignal(WTERMSIG(child_status)) << std::endl;
+        return false;
+      } else {
+        std::cerr << "Child exited for unknown reason" << std::endl;
+        return false;
+      }
+    }
+  } else {
+    return run_test_case_signals(tc, options);
   }
 }
 #else
-bool run_test_case(const TestCaseBase *tc, LogLevel level) {
-  std::string name = test_case_name(tc);
-  
-  StreamLogger logger(&std::cerr, name, level);
-  current_logger = &logger;
-  tc->run();
-  return logger.passed();
+bool run_test_case(const TestCaseBase *tc, const TestRunOptions& options) {
+  return run_test_case_common(tc, options);
 }
 #endif
     
 int run_main(int argc, const char** argv) {
-  bool verbose = false;
+  TestRunOptions options;
+  options.verbose = false;
+  options.fork = true;
+  options.catch_signals = true;
+  options.backtrace_depth = 5;
+  
   std::vector<std::string> test_patterns;
-  run_main_parse_args(argc, argv, test_patterns, verbose);
+  run_main_parse_args(argc, argv, test_patterns, options);
   
   std::map<std::string, const TestCaseBase*> test_cases;
 
@@ -284,9 +410,10 @@ int run_main(int argc, const char** argv) {
   
   unsigned failures = 0;
   for (std::map<std::string, const TestCaseBase*>::const_iterator ii = test_cases.begin(), ie = test_cases.end(); ii != ie; ++ii) {
-    if (verbose)
+    if (options.verbose)
       std::cerr << "Starting test " << ii->first << '\n';
-    if (!run_test_case(ii->second, verbose ? log_level_all : log_level_fail)) {
+    
+    if (!run_test_case(ii->second, options)) {
       std::cerr << "Test failed: " << ii->first << '\n';
       failures++;
     }

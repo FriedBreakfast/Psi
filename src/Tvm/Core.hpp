@@ -69,6 +69,8 @@ namespace Psi {
 
     PSI_VISIT_SIMPLE(CallingConvention);
     
+    PSI_TVM_EXPORT const char* cconv_name(CallingConvention cc);
+    
     template<typename T=Value>
     class ValuePtr : public boost::intrusive_ptr<T> {
       typedef boost::intrusive_ptr<T> BaseType;
@@ -717,8 +719,10 @@ namespace Psi {
       };
       
       unsigned flags;
+      unsigned alignment;
       
-      ParameterAttributes() : flags(0) {}
+      ParameterAttributes() : flags(0), alignment(0) {}
+      explicit ParameterAttributes(unsigned flags_) : flags(flags_), alignment(0) {}
       
       friend std::size_t hash_value(const ParameterAttributes& self) {
         std::size_t h = 0;
@@ -728,7 +732,8 @@ namespace Psi {
       
       template<typename V>
       static void visit(V& v) {
-        v("flags", &ParameterAttributes::flags);
+        v("flags", &ParameterAttributes::flags)
+        ("alignment", &ParameterAttributes::alignment);
       }
     };
     

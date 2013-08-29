@@ -1,4 +1,4 @@
-.. |llvm version| replace:: 3.2
+.. |llvm version| replace:: 3.3
 
 Psi
 ===

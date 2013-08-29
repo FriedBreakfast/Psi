@@ -7,16 +7,17 @@
 #include <boost/unordered_map.hpp>
 
 #include "LLVMPushWarnings.hpp"
-#include <llvm/LLVMContext.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/GlobalValue.h>
-#include <llvm/IRBuilder.h>
 #include <llvm/ADT/Triple.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/IR/Attributes.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/GlobalValue.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Value.h>
 #include <llvm/PassManager.h>
 #include <llvm/Support/TargetFolder.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
-#include <llvm/Value.h>
 
 #if PSI_DEBUG
 #include <llvm/ExecutionEngine/JITEventListener.h>
@@ -36,51 +37,37 @@ namespace Psi {
   namespace Tvm {
     namespace LLVM {
       typedef llvm::IRBuilder<true, llvm::TargetFolder, llvm::IRBuilderDefaultInserter<true> > IRBuilder;
-
-      /**
-       * Thrown when an error occurs during LLVM construction: many of
-       * these use PSI_ASSERT, but this can also be used when the error
-       * condition has not been tested well enough.
-       */
-      class BuildError : public std::exception {
-      public:
-        explicit BuildError(const std::string& message);
-        virtual ~BuildError() throw ();
-        virtual const char* what() const throw();
-
-      private:
-        const char *m_str;
-        std::string m_message;
-      };
       
       struct ModuleMapping {
         llvm::Module *module;
         boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*> globals;
         ModuleMapping() : module(NULL) {}
       };
-
+      
       class TargetCallback {
+        llvm::Triple m_triple;
+        UniquePtr<AggregateLoweringPass::TargetCallback> m_aggregate_lowering_callback;
+        
       public:
+        TargetCallback(const CompileErrorPair& error_loc, llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine, const std::string& triple);
+        
         /**
          * Get a callback class for use by the aggregate lowering pass.
          */
-        virtual AggregateLoweringPass::TargetCallback* aggregate_lowering_callback() = 0;
+        AggregateLoweringPass::TargetCallback* aggregate_lowering_callback() {
+          return m_aggregate_lowering_callback.get();
+        }
         
-        /**
-         * \brief Set up or get the exception personality routine with the specified name.
-         * 
-         * \param module Module to set up the handler for.
-         * 
-         * \param basename Name of the personality to use. Interpretation of this name is
-         * platform specific.
-         */
-        virtual llvm::Function* exception_personality_routine(llvm::Module *module, const std::string& basename) = 0;
+        llvm::Function* exception_personality_routine(llvm::Module *module, const std::string& basename);
       };
 
       class ModuleBuilder {
       public:
-        ModuleBuilder(llvm::LLVMContext*, llvm::TargetMachine*, llvm::Module*, llvm::FunctionPassManager*, TargetCallback*);
+        ModuleBuilder(CompileErrorContext *error_context, llvm::LLVMContext*, llvm::TargetMachine*, llvm::Module*, llvm::FunctionPassManager*, TargetCallback*);
         ~ModuleBuilder();
+        
+        /// \brief Get the context to use for error reporting
+        CompileErrorContext& error_context() {return *m_error_context;}
 
         /// \brief Get the LLVM context used to create IR.
         llvm::LLVMContext& llvm_context() {return *m_llvm_context;}
@@ -113,6 +100,7 @@ namespace Psi {
         llvm::Function* llvm_eh_typeid_for() {return m_llvm_eh_typeid_for;}
 
       private:
+        CompileErrorContext *m_error_context;
         llvm::LLVMContext *m_llvm_context;
         llvm::Triple m_llvm_triple;
         llvm::TargetMachine *m_llvm_target_machine;
@@ -147,6 +135,8 @@ namespace Psi {
       public:
         ~FunctionBuilder();
         
+        /// \brief Get the context to use for error reporting
+        CompileErrorContext& error_context() {return module_builder()->error_context();}
         ModuleBuilder *module_builder() {return m_module_builder;}
 
         const ValuePtr<Function>& function() {return m_function;}
@@ -196,8 +186,6 @@ namespace Psi {
 
       llvm::TargetMachine* host_machine();
 
-      boost::shared_ptr<TargetCallback> create_target_fixes(llvm::LLVMContext*, const boost::shared_ptr<llvm::TargetMachine>&, const std::string&);
-      
       struct LLVMJitModule {
         ModuleMapping mapping;
         std::size_t load_priority;
@@ -205,19 +193,22 @@ namespace Psi {
 
       class LLVMJit : public Jit {
       public:
-        LLVMJit(const std::string&, const boost::shared_ptr<llvm::TargetMachine>&);
+        LLVMJit(const CompileErrorPair& error_loc, const std::string&, const boost::shared_ptr<llvm::TargetMachine>&);
+        virtual ~LLVMJit();
         virtual void destroy();
 
+        CompileErrorContext& error_context() {return *m_error_context;}
         virtual void add_module(Module*);
         virtual void remove_module(Module*);
         virtual void* get_symbol(const ValuePtr<Global>&);
 
       private:
+        CompileErrorContext *m_error_context;
         llvm::LLVMContext m_llvm_context;
         llvm::PassManagerBuilder m_llvm_pass_builder;
         llvm::PassManager m_llvm_module_pass;
         llvm::CodeGenOpt::Level m_llvm_opt;
-        boost::shared_ptr<TargetCallback> m_target_fixes;
+        TargetCallback m_target_callback;
         llvm::Triple m_target_triple;
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
         std::size_t m_load_priority_max;
@@ -230,6 +221,9 @@ namespace Psi {
         void init_llvm_passes();
         void init_llvm_engine(llvm::Module*);
       };
+      
+      llvm::CallingConv::ID function_call_convention(const CompileErrorPair& error_loc, CallingConvention cc);
+      llvm::AttributeSet function_type_attributes(llvm::LLVMContext& ctx, const ValuePtr<FunctionType>& ftype);
     }
   }
 }

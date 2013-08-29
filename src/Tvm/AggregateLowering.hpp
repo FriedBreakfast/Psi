@@ -183,6 +183,32 @@ namespace Psi {
     };
     
     /**
+     * Layout information for structs, arrays and unions which have fixed
+     * layout on a given platform.
+     * 
+     * Note that fields can be overlapping in the presence of unions.
+     */
+    struct AggregateLayout {
+      /// Total size of this aggregate.
+      std::size_t size;
+      /// Alignment of this aggregate
+      std::size_t alignment;
+      /// Type of layout entries. Note that entries may overlap.
+      struct Member {
+        /// Offset of this entry
+        std::size_t offset;
+        /// Size of this entry
+        std::size_t size;
+        /// Alignment usually expected of this type. If the structure is packed offset may not be a multiple of alignment.
+        std::size_t alignment;
+        /// Type of this entry, which will be primitive.
+        ValuePtr<> type;
+      };
+      /// (Offset, type) pairs of aggregate members. The types are primitive.
+      std::vector<Member> members;
+    };
+    
+    /**
      * A function pass which removes aggregate operations by rewriting
      * them in terms of pointer offsets, so that later stages need not
      * handle them.
@@ -290,6 +316,8 @@ namespace Psi {
         
         ValuePtr<> simplify_argument_type(const ValuePtr<>& type);
         ValuePtr<> unwrap_exists(const ValuePtr<Exists>& exists);
+        
+        AggregateLayout aggregate_layout(const ValuePtr<>& type, const SourceLocation& location, bool with_members=true);
       };
 
       /**
@@ -370,7 +398,9 @@ namespace Psi {
        * removing aggregates from the IR. This is necessarily target
        * specific, so must be done by callbacks.
        */
-      struct TargetCallback {
+      struct PSI_TVM_EXPORT TargetCallback {
+        virtual ~TargetCallback();
+        
         /**
          * Cast the type of function being called and adjust the
          * parameters to remove aggregates.
@@ -440,7 +470,7 @@ namespace Psi {
          * 
          * \param type A primitive type.
          */
-        virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>& type) = 0;
+        virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>& type, const SourceLocation& location) = 0;
         
         /**
          * \brief Shift a primitive value by a number of bytes.

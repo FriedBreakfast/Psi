@@ -14,6 +14,9 @@
 
 namespace Psi {
   namespace Tvm {
+    AggregateLoweringPass::TargetCallback::~TargetCallback() {
+    }
+
     /**
      * \brief Return a type with identical lowered representation but a different origin.
      */
@@ -139,9 +142,9 @@ namespace Psi {
       } else if (ValuePtr<EmptyType> empty = dyn_cast<EmptyType>(type)) {
         return FunctionalBuilder::struct_type(type->context(), default_, type->location());
       } else if (ValuePtr<ConstantType> constant = dyn_cast<ConstantType>(type)) {
-        return constant->value()->type();
+        return simplify_argument_type(constant->value()->type());
       } else if (ValuePtr<ApplyType> apply = dyn_cast<ApplyType>(type)) {
-        return apply->unpack();
+        return simplify_argument_type(apply->unpack());
       } else if (isa<Metatype>(type)) {
         std::vector<ValuePtr<> > members(2, FunctionalBuilder::size_type(type->context(), type->location()));
         return FunctionalBuilder::struct_type(type->context(), members, type->location());
@@ -161,6 +164,78 @@ namespace Psi {
         parameters.push_back(exists->context().new_placeholder_parameter(ty, exists->location()));
       }
       return exists->result_after(parameters);
+    }
+    
+    namespace {
+      AggregateLayout aggregate_layout_base() {
+        AggregateLayout layout;
+        layout.size = 0;
+        layout.alignment = 1;
+        return layout;
+      }
+      
+      void aggregate_layout_merge(AggregateLayout& out, std::size_t offset, const AggregateLayout& in) {
+        out.size = std::max(out.size, in.size + offset);
+        out.alignment = std::max(out.alignment, in.alignment);
+        
+        for (std::vector<AggregateLayout::Member>::const_iterator ii = in.members.begin(), ie = in.members.end(); ii != ie; ++ii) {
+          AggregateLayout::Member m = *ii;
+          m.offset += offset;
+          out.members.push_back(m);
+        }
+      }
+    }
+    
+    /**
+     * Generate layout information for an aggregate class, which must only contain
+     * fields of fixed type and size.
+     * 
+     * \param with_members If false, do not return information on members.
+     */
+    AggregateLayout AggregateLoweringPass::AggregateLoweringRewriter::aggregate_layout(const ValuePtr<>& type, const SourceLocation& location, bool with_members) {
+      ValuePtr<> simple_type = simplify_argument_type(type);
+      
+      if (ValuePtr<StructType> struct_ty = dyn_cast<StructType>(simple_type)) {
+        AggregateLayout layout = aggregate_layout_base();
+        for (unsigned ii = 0, ie = struct_ty->n_members(); ii != ie; ++ii)
+          aggregate_layout_merge(layout, layout.size, aggregate_layout(struct_ty->member_type(ii), location, with_members));
+        layout.size = align_to(layout.size, layout.alignment);
+        return layout;
+      } else if (ValuePtr<ArrayType> array_ty = dyn_cast<ArrayType>(simple_type)) {
+        ValuePtr<IntegerValue> length_val = dyn_cast<IntegerValue>(array_ty->length());
+        if (!length_val)
+          error_context().error_throw(location, "Array length not constant in aggregate layout generation");
+        std::size_t array_length = length_val->value().unsigned_value_checked(error_context().bind(location));
+        
+        AggregateLayout element_layout = aggregate_layout(array_ty->element_type(), location, with_members);
+        AggregateLayout layout;
+        layout.size = element_layout.size * array_length;
+        layout.alignment = element_layout.alignment;
+        for (std::size_t ii = 0; ii != array_length; ++ii)
+          aggregate_layout_merge(layout, ii * element_layout.size, element_layout);
+        PSI_ASSERT(layout.size % layout.alignment == 0);
+        return layout;
+      } else if (ValuePtr<UnionType> union_ty = dyn_cast<UnionType>(simple_type)) {
+        AggregateLayout layout = aggregate_layout_base();
+        for (unsigned ii = 0, ie = union_ty->n_members(); ii != ie; ++ii)
+          aggregate_layout_merge(layout, 0, aggregate_layout(union_ty->member_type(ii), location, with_members));
+        layout.size = align_to(layout.size, layout.alignment);
+        return layout;
+      } else {
+        TypeSizeAlignment szal = m_pass->target_callback->type_size_alignment(simple_type, location);
+        AggregateLayout layout;
+        layout.size = szal.size;
+        layout.alignment = szal.alignment;
+        if (with_members) {
+          AggregateLayout::Member member;
+          member.offset = 0;
+          member.size = szal.size;
+          member.alignment = szal.alignment;
+          member.type = simple_type;
+          layout.members.push_back(member);
+        }
+        return layout;
+      }
     }
     
     AggregateLoweringPass::FunctionRunner::FunctionRunner(AggregateLoweringPass* pass, const ValuePtr<Function>& old_function)
@@ -246,10 +321,6 @@ namespace Psi {
 
     /**
      * \brief Store a value to a pointer.
-     * 
-     * Overload for building functions. As well as implementing the store_value operation
-     * inherited from AggregateLoweringRewriter, this is also used to implement the actual
-     * store instruction.
      * 
      * \param value Value to store. This should be a value from the original,
      * not rewritten module.
@@ -706,7 +777,7 @@ namespace Psi {
       } else if (isa<EmptyType>(type)) {
         return 1;
       } else {
-        return target_callback->type_size_alignment(type).alignment;
+        return target_callback->type_size_alignment(type, type->location()).alignment;
       }
     }
     

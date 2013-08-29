@@ -7,7 +7,7 @@
 #include <boost/assign.hpp>
 #include <boost/make_shared.hpp>
 
-#include <llvm/Function.h>
+#include <llvm/IR/Function.h>
 
 namespace Psi {
   namespace Tvm {
@@ -39,8 +39,7 @@ namespace Psi {
 
         static llvm::Value* function_call_callback(FunctionBuilder& builder, const ValuePtr<Call>& insn) {
           // Prepare target pointer
-          ValuePtr<FunctionType> function_type = value_cast<FunctionType>
-            (value_cast<PointerType>(insn->target->type())->target_type());
+          ValuePtr<FunctionType> function_type = insn->target_function_type();
           llvm::Type *llvm_function_type = builder.module_builder()->build_type(function_type)->getPointerTo();
           llvm::Value *target = builder.build_value(insn->target);
           llvm::Value *cast_target = builder.irbuilder().CreatePointerCast(target, llvm_function_type);
@@ -59,7 +58,10 @@ namespace Psi {
           for (std::size_t ii = 0, ie = insn->parameters.size() - sret; ii != ie; ++ii)
             parameters.push_back(builder.build_value(insn->parameters[ii]));
           
-          llvm::Value *call = builder.irbuilder().CreateCall(cast_target, parameters);
+          llvm::CallInst *call = builder.irbuilder().CreateCall(cast_target, parameters);
+          call->setAttributes(function_type_attributes(builder.llvm_context(), function_type));
+          call->setCallingConv(function_call_convention(builder.error_context().bind(insn->location()), function_type->calling_convention()));
+          
           if (function_type->sret()) {
             return NULL;
           } else if (isa<EmptyType>(function_type->result_type().value)) {

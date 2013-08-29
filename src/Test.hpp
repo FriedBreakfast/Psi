@@ -36,6 +36,7 @@ namespace Psi {
       virtual bool passed() = 0;
       virtual void message(const TestLocation& loc, const std::string& str) = 0;
       virtual void check(const TestLocation& loc, Level level, bool passed, const std::string& cond_str, const std::string& cond_fmt) = 0;
+      virtual void except(const std::string& what) = 0;
     };
     
     class TestCaseBase;

@@ -96,6 +96,24 @@ namespace Psi {
       default: PSI_FAIL("unexpected integer width");
       }
     }
+
+    /**
+     * Get the number of 8-bit bytes required to hold the given integer width.
+     * 
+     * This returns 8 for intptr as the maximum currently expected,
+     * but the true value is machine dependent.
+     */
+    unsigned IntegerType::value_bytes(IntegerType::Width width) {
+      switch (width) {
+      case IntegerType::i8: return 1;
+      case IntegerType::i16: return 2;
+      case IntegerType::i32: return 4;
+      case IntegerType::i64: return 8;
+      case IntegerType::i128: return 16;
+      case IntegerType::iptr: return 8;
+      default: PSI_FAIL("unexpected integer width");
+      }
+    }
     
     /**
      * \brief Get the smallest integer type which can hold the specified number of bits

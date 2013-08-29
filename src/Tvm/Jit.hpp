@@ -49,7 +49,7 @@ namespace Psi {
         UIntPtr size;
         UIntPtr align;
       };
-
+      
       /**
        * Add a module to this JIT.
        */

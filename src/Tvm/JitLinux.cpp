@@ -53,10 +53,10 @@ namespace Psi {
          * C++ due to vague linkage (this can break cross-library exception handling,
          * for example). See the GCC FAQ.
          */
-        LibHandle handle(dlopen(soname.c_str(), RTLD_LAZY | RTLD_GLOBAL));
+        LibHandle handle(dlopen(soname.c_str(), RTLD_NOW | RTLD_GLOBAL));
         
         if (!handle.get())
-          error_handler.error_throw("Cannot load JIT named from " + soname + ": " + dlerror());
+          error_handler.error_throw("Cannot load JIT from " + soname + ": " + dlerror());
         
         return boost::make_shared<LinuxJitFactory>(error_handler, soname, boost::ref(handle), boost::cref(config));
       }

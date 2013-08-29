@@ -22,7 +22,7 @@ boost::shared_ptr<PlatformLibrary> load_module(const PropertyValue& args) {
   * If no libraries are listed, use default-linked stuff, i.e. libc.
   */
   if (libs.empty()) {
-    void *handle = dlopen(NULL, RTLD_LAZY);
+    void *handle = dlopen(NULL, RTLD_NOW);
     if (!handle)
       throw PlatformError("Failed get handle to main executable");
     lib->add_handle(handle);
@@ -38,7 +38,7 @@ boost::shared_ptr<PlatformLibrary> load_module(const PropertyValue& args) {
       ss << *ji << '/' << "lib" << *ii << ".so";
       const std::string& ss_str = ss.str();
       
-      if (void *handle = dlopen(ss_str.c_str(), RTLD_LAZY|RTLD_GLOBAL)) {
+      if (void *handle = dlopen(ss_str.c_str(), RTLD_NOW|RTLD_GLOBAL)) {
         lib->add_handle(handle);
         found = true;
         break;
@@ -51,7 +51,7 @@ boost::shared_ptr<PlatformLibrary> load_module(const PropertyValue& args) {
       ss.clear();
       ss << "lib" << *ii << ".so";
       const std::string& ss_str = ss.str();
-      if (void *handle = dlopen(ss_str.c_str(), RTLD_LAZY|RTLD_GLOBAL)) {
+      if (void *handle = dlopen(ss_str.c_str(), RTLD_NOW|RTLD_GLOBAL)) {
         lib->add_handle(handle);
       } else {
         throw PlatformError("Shared object not found: " + *ii);

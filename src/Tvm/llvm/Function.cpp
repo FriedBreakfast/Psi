@@ -4,17 +4,58 @@
 #include "../Recursive.hpp"
 #include "../FunctionalBuilder.hpp"
 
+#include <boost/format.hpp>
 #include <boost/next_prior.hpp>
 #include <boost/unordered_set.hpp>
 
 #include "LLVMPushWarnings.hpp"
-#include <llvm/Function.h>
-#include <llvm/Module.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Module.h>
 #include "LLVMPopWarnings.hpp"
 
 namespace Psi {
   namespace Tvm {
     namespace LLVM {
+      llvm::CallingConv::ID function_call_convention(const CompileErrorPair& error_loc, CallingConvention cc) {
+        switch (cc) {
+        case cconv_c: return llvm::CallingConv::C;
+        case cconv_x86_stdcall: return llvm::CallingConv::X86_StdCall;
+        case cconv_x86_thiscall: return llvm::CallingConv::X86_ThisCall;
+        case cconv_x86_fastcall: return llvm::CallingConv::X86_FastCall;
+        default:
+          error_loc.error_throw(boost::format("Unsupported calling convention in LLVM backend: %s") % cconv_name(cc));
+        }
+      }
+      
+      /**
+       * \brief Get the attribute set associated with a funtion type.
+       */
+      llvm::AttributeSet function_type_attributes(llvm::LLVMContext& ctx, const ValuePtr<FunctionType>& ftype) {
+        llvm::AttributeSet att;
+        
+        for (std::size_t ii = 0, ie = ftype->parameter_types().size(); ii != ie; ++ii) {
+          llvm::AttrBuilder builder;
+
+          unsigned idx = ii + 1;
+          if (ftype->sret()) {
+            ++idx;
+            if (ii+1 == ie) {
+              builder.addAttribute(llvm::Attribute::StructRet);
+              idx = 1;
+            }
+          }
+          
+          ParameterAttributes attrs = ftype->parameter_types()[ii].attributes;
+          if (attrs.flags & ParameterAttributes::llvm_byval) builder.addAttribute(llvm::Attribute::ByVal);
+          if (attrs.flags & ParameterAttributes::llvm_inreg) builder.addAttribute(llvm::Attribute::InReg);
+          if (attrs.alignment) builder.addAlignmentAttr(attrs.alignment);
+          
+          att = att.addAttributes(ctx, idx, llvm::AttributeSet::get(ctx, idx, builder));
+        }
+        
+        return att;
+      }
+      
       FunctionBuilder::FunctionBuilder(ModuleBuilder *global_builder,
                                        const ValuePtr<Function>& function,
                                        llvm::Function *llvm_function)
@@ -51,7 +92,7 @@ namespace Psi {
         case term_functional: {
           if (llvm::Value *const* lookup = m_value_terms.lookup(term)) {
             if (!*lookup)
-              throw BuildError("Circular term found");
+              error_context().error_throw(term->location(), "Circular term found");
             return *lookup;
           }
           m_value_terms.put(term, NULL);
@@ -106,7 +147,6 @@ namespace Psi {
             ValuePtr<FunctionParameter> param = m_function->parameters().back();
             llvm::Argument *value = &*ii;
             value->setName(term_name(param));
-            value->addAttr(llvm::Attributes::get(module_builder()->llvm_context(), llvm::Attributes::StructRet));
             m_value_terms.insert(std::make_pair(param, value));
             ++ii;
           }
@@ -190,7 +230,7 @@ namespace Psi {
           }
 
           if (!it->second->getTerminator())
-            throw BuildError("LLVM block was not terminated during function building");
+            error_context().error_throw(it->first->location(), "LLVM block was not terminated during function building");
         }
 
         // Set up LLVM phi node incoming edges
@@ -201,6 +241,8 @@ namespace Psi {
             llvm::BasicBlock *incoming_block = llvm::cast<llvm::BasicBlock>(*m_value_terms.lookup(edge.block));
             PSI_ASSERT(incoming_block);
             switch_to_block(edge.block);
+            PSI_ASSERT(incoming_block->getTerminator());
+            m_irbuilder.SetInsertPoint(incoming_block->getTerminator());
             llvm::Value* incoming_value = build_value(edge.value);
             it->second->addIncoming(incoming_value, incoming_block);
           }

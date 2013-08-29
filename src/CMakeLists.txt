@@ -110,15 +110,13 @@ endif()
 if(PSI_TVM_LLVM)
   add_library(psi-tvm-llvm MODULE
     Tvm/llvm/Builder.cpp Tvm/llvm/Builder.hpp
+    Tvm/llvm/CallingConventions.cpp Tvm/llvm/CallingConventions.hpp
     Tvm/llvm/Function.cpp
     Tvm/llvm/FunctionalConstant.cpp
     Tvm/llvm/FunctionalInstruction.cpp
     Tvm/llvm/Instructions.cpp
     Tvm/llvm/LLVMPushWarnings.hpp Tvm/llvm/LLVMPopWarnings.hpp
-    Tvm/llvm/Target.cpp Tvm/llvm/Target.hpp
-    Tvm/llvm/Target_Linux_x86.cpp
-    Tvm/llvm/Target_AMD64.cpp
-    Tvm/llvm/Target_Win32.cpp
+    Tvm/llvm/Target.cpp
     Tvm/llvm/Type.cpp
   )
   shared_library_setup(psi-tvm-llvm)

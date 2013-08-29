@@ -466,6 +466,15 @@ namespace Psi {
     char*& operator [] (std::size_t n) {return m_strings[n];}
     static char* checked_strdup(const std::string& s);
   };
+  
+  /**
+   * Return the smallest value greater than \c size which is a
+   * multiple of \c align, which must be a power of two.
+   */
+  inline std::size_t align_to(std::size_t size, std::size_t align) {
+    PSI_ASSERT(align && !(align & (align - 1)));
+    return (size + align - 1) & ~(align - 1);
+  }
 }
 
 #endif

@@ -533,5 +533,18 @@ namespace Psi {
       result.flags = lhs.flags | rhs.flags;
       return result;
     }
+    
+    /**
+     * \brief Get a string representation of a calling convention, for error message purposes.
+     */
+    const char* cconv_name(CallingConvention cc) {
+      switch (cc) {
+      case cconv_c: return "c";
+      case cconv_x86_stdcall: return "x86_stdcall";
+      case cconv_x86_thiscall: return "x86_thiscall";
+      case cconv_x86_fastcall: return "x86_fastcall";
+      default: return "??";
+      }
+    }
   }
 }

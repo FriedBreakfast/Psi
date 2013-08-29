@@ -69,7 +69,7 @@ public:
     PSI_NOT_IMPLEMENTED();
   }
   
-  virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>& type) {
+  virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>& type, const SourceLocation& location) {
     const PrimitiveType *pt;
     if (ValuePtr<IntegerType> int_type = dyn_cast<IntegerType>(type)) {
       pt = &m_c_compiler->primitive_types.int_types[int_type->width()];

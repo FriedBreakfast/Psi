@@ -123,7 +123,7 @@ namespace Psi {
       
       static LoweredType simple_type_helper(AggregateLoweringRewriter& rewriter, const ValuePtr<>& origin, const ValuePtr<>& rewritten_type, const SourceLocation& location) {
         ValuePtr<> size, alignment;
-        TypeSizeAlignment size_align = rewriter.pass().target_callback->type_size_alignment(rewritten_type);
+        TypeSizeAlignment size_align = rewriter.pass().target_callback->type_size_alignment(rewritten_type, location);
         size = FunctionalBuilder::size_value(rewriter.context(), size_align.size, location);
         alignment = FunctionalBuilder::size_value(rewriter.context(), size_align.alignment, location);
         return LoweredType::register_(origin, size, alignment, rewritten_type);

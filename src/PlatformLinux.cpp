@@ -516,7 +516,7 @@ void TemporaryPath::delete_() {
 boost::shared_ptr<PlatformLibrary> load_library(const Path& path) {
   boost::shared_ptr<Linux::LibraryLinux> lib = boost::make_shared<Linux::LibraryLinux>(1);
   dlerror();
-  void *handle = dlopen(path.data().path.c_str(), RTLD_LAZY|RTLD_GLOBAL);
+  void *handle = dlopen(path.data().path.c_str(), RTLD_NOW|RTLD_GLOBAL);
   if (!handle)
     throw PlatformError(boost::str(boost::format("Could not open library: %s: %s\n") % path.str() % dlerror()));
   lib->add_handle(handle);
