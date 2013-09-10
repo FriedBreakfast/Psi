@@ -227,16 +227,17 @@ namespace Psi {
     struct AggregateLoweringPass::FunctionalTermRewriter {
       static LoweredValue type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<>& term) {
         LoweredType ty = rewriter.rewrite_type(term);
+        LoweredType meta_ty = rewriter.rewrite_type(term->type());
         if (!rewriter.pass().split_structs) {
           std::vector<ValuePtr<> > members;
           members.push_back(ty.size());
           members.push_back(ty.alignment());
-          return LoweredValue::register_(ty, ty.global(), FunctionalBuilder::struct_value(rewriter.context(), members, term->location()));
+          return LoweredValue::register_(meta_ty, ty.global(), FunctionalBuilder::struct_value(rewriter.context(), members, term->location()));
         } else {
           LoweredValue::EntryVector members;
           members.push_back(LoweredValue::register_(rewriter.pass().size_type(), ty.global(), ty.size()));
           members.push_back(LoweredValue::register_(rewriter.pass().size_type(), ty.global(), ty.alignment()));
-          return LoweredValue::split(ty, members);
+          return LoweredValue::split(meta_ty, members);
         }
       }
 

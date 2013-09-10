@@ -111,8 +111,9 @@ public:
         ValuePtr<> ptr = runner.alloca_(value.type(), term->location());
         alloca_stack.push_back(ptr);
         runner.store_value(value, ptr, term->location());
-        parameters.push_back(ptr);
-        parameter_types.push_back(ParameterType(ptr->type(), make_attributes(pi, pt.attributes, false)));
+        ValuePtr<> cast_ptr = FunctionalBuilder::pointer_cast(ptr, value.type().register_type(), term->location());
+        parameters.push_back(cast_ptr);
+        parameter_types.push_back(ParameterType(cast_ptr->type(), make_attributes(pi, pt.attributes, false)));
       } else if (pi.coerce_type) {
         // Coerce to type
         ValuePtr<> ptr = runner.builder().alloca_(pi.coerce_type, term->location());
