@@ -36,19 +36,23 @@ namespace Psi {
        * sized data members.
        */
       template<typename T, typename Len, Len T::*LenPtr, unsigned static_length=256>
-      class DynamicLengthBuffer : public boost::noncopyable {
-        PSI_ATTRIBUTE((PSI_ALIGNED_MAX)) char m_static[sizeof(T) + static_length];
+      class DynamicLengthBuffer : public NonCopyable {
+        AlignedStorage<sizeof(T) + static_length, PSI_ALIGNOF(T)> m_static;
         Len m_length;
         T *m_ptr;
         
+        T *static_ptr() {
+          return static_cast<T*>(m_static.address());
+        }
+        
         void clear() {
-          if (m_ptr != reinterpret_cast<T*>(m_static))
+          if (m_ptr != static_ptr())
             checked_free(sizeof(T) + m_length, m_ptr);
         }
         
       public:
         DynamicLengthBuffer() {
-          m_ptr = reinterpret_cast<T*>(m_static);
+          m_ptr = static_ptr();
           m_length = static_length;
           m_ptr->*LenPtr = m_length;
         }

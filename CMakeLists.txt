@@ -120,7 +120,7 @@ if(DOXYGEN_FOUND)
   configure_file(Doxyfile.in Doxyfile)
   # This glob is a hack to prevent Doxygen rebuilding all the time
   # It should be mostly okay because when any source files are added some CMakeLists.txt must be updated
-  file(GLOB_RECURSE DOXYGEN_INPUTS ${CMAKE_CURRENT_SOURCE_DIR}/src *.[ch]pp)
+  file(GLOB_RECURSE DOXYGEN_INPUTS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.[ch]pp)
   add_custom_command(OUTPUT doxygen-tags.tag
     COMMAND mkdir -p doc-sphinx
     COMMAND rm -rf doc-sphinx/doxygen

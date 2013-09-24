@@ -9,8 +9,6 @@ namespace Psi {
 #define PSI_STDINC ""
 #define PSI_ALIGNOF(x) __alignof__(x)
 #define PSI_ATTRIBUTE(x) __attribute__(x)
-#define PSI_ALIGNED(x) aligned(x)
-#define PSI_ALIGNED_MAX aligned(__BIGGEST_ALIGNMENT__)
 #define PSI_NORETURN noreturn
 #define PSI_UNUSED_ATTR unused
 #define PSI_SMALL_ENUM(name) enum __attribute__((packed)) name
@@ -63,8 +61,6 @@ namespace Psi {
 #define PSI_ATTRIBUTE(x) __declspec x
 #define PSI_NORETURN noreturn
 #define PSI_UNUSED_ATTR
-#define PSI_ALIGNED(x) align(x)
-#define PSI_ALIGNED_MAX align(16)
 #define PSI_UNREACHABLE() __assume(false)
 #define PSI_ASSUME(x) __assume(x)
 #define PSI_THREAD_LOCAL __declspec(thread)

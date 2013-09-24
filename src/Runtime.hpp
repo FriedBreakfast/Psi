@@ -28,28 +28,6 @@ namespace Psi {
   PSI_COMPILER_COMMON_EXPORT void* checked_alloc(std::size_t n);
   PSI_COMPILER_COMMON_EXPORT void checked_free(std::size_t n, void *ptr);
 
-  template<std::size_t N>
-  class StackBuffer : boost::noncopyable {
-    PSI_ATTRIBUTE((PSI_ALIGNED_MAX)) char m_buffer[N];
-    void *m_ptr;
-    std::size_t m_size;
-
-  public:
-    StackBuffer(std::size_t m) : m_size(m) {
-      if (m <= N)
-        m_ptr = &m_buffer;
-      else
-        m_ptr = checked_alloc(m);
-    }
-
-    ~StackBuffer() {
-      if (m_size > N)
-        checked_free(m_size, m_ptr);
-    }
-
-    void* get() {return m_ptr;}
-  };
-
   typedef char PsiBool;
   typedef std::size_t PsiSize;
 
@@ -260,73 +238,7 @@ namespace Psi {
   
   PSI_VISIT_SIMPLE(String)
 
-  PSI_COMPILER_COMMON_EXPORT std::ostream& operator << (std::ostream&, const String&);
-  
-  template<typename T>
-  struct Maybe_C {
-    PsiBool full;
-    AlignedStorageFor<T> data;
-  };
-  
-  template<typename T>
-  class Maybe {
-    Maybe_C<T> m_c;
-    
-    T* unchecked_get() {return m_c.data.ptr();}
-    const T* unchecked_get() const {return m_c.data.ptr();}
-    
-  public:
-    Maybe() {
-      m_c.full = psi_false;
-    }
-    
-    Maybe(const T& value) {
-      m_c.full = psi_true;
-      new (m_c.data) T (value);
-    }
-    
-    Maybe(const Maybe<T>& other) {
-      if (other) {
-        m_c.full = psi_true;
-        new (m_c.data) T (*other);
-      } else {
-        m_c.full = psi_false;
-      }
-    }
-    
-    ~Maybe() {
-      if (m_c.full)
-        get()->~T();
-    }
-    
-    bool empty() const {return !m_c.full;}
-    T* get() {return m_c.full ? unchecked_get() : 0;}
-    const T* get() const {return m_c.full ? unchecked_get() : 0;}
-    
-    T* operator -> () {PSI_ASSERT(!empty()); return unchecked_get();}
-    const T* operator -> () const {PSI_ASSERT(!empty()); return unchecked_get();}
-    T& operator * () {PSI_ASSERT(!empty()); return *unchecked_get();}
-    const T& operator * () const {PSI_ASSERT(!empty()); return *unchecked_get();}
-
-    void clear() {
-      if (m_c.full) {
-        delete unchecked_get()->~T();
-        m_c.full = psi_false;
-      }
-    }
-    
-    Maybe& operator = (const Maybe<T>& other) {
-      if (other)
-        operator = (*other);
-    }
-    
-    Maybe& operator = (const T& src) {
-      if (m_c.m_full)
-        *unchecked_get() = src;
-      else
-        new (m_c.data) T (src);
-    }
-  };
+  PSI_COMPILER_COMMON_EXPORT std::ostream& operator << (std::ostream&, const String&);  
   
   enum LookupResultType {
     lookup_result_type_match, ///< \brief Match found

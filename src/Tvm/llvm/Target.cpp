@@ -175,9 +175,10 @@ namespace Psi {
           
         case llvm::Triple::x86:
           switch (m_triple.getOS()) {
-          case llvm::Triple::Linux: accept = true; break;
-          case llvm::Triple::Win32:
-          case llvm::Triple::MinGW32: accept = true; break;
+          case llvm::Triple::FreeBSD:
+          case llvm::Triple::Linux:
+          case llvm::Triple::MinGW32:
+          case llvm::Triple::Win32: accept = true; break;
           default: break;
           }
           break;
@@ -185,7 +186,7 @@ namespace Psi {
         default:
           break;
         }
-
+        
         if (!accept)
           error_loc.error_throw("Target " + triple + " not supported");
         

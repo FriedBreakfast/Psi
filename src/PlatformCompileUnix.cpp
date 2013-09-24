@@ -4,7 +4,7 @@
 #include <boost/make_shared.hpp>
 
 #include "PlatformCompile.hpp"
-#include "PlatformLinux.hpp"
+#include "PlatformUnix.hpp"
 #include "Runtime.hpp"
 
 namespace Psi {
@@ -16,7 +16,7 @@ boost::shared_ptr<PlatformLibrary> load_module(const PropertyValue& args) {
   if (args.has_key("dirs"))
     dirs = args.get("dirs").str_list();
 
-  boost::shared_ptr<Linux::LibraryLinux> lib = boost::make_shared<Linux::LibraryLinux>(std::max<std::size_t>(1, libs.size()));
+  boost::shared_ptr<Unix::LibraryUnix> lib = boost::make_shared<Unix::LibraryUnix>(std::max<std::size_t>(1, libs.size()));
   
   /*
   * If no libraries are listed, use default-linked stuff, i.e. libc.

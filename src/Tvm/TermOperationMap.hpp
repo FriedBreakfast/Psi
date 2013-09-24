@@ -51,7 +51,7 @@ namespace Psi {
         }
       };
       
-      static ResultType default_throw_callback(UserParameter&, const ValuePtr<TermType>& term) {
+      static ResultType default_throw_callback(UserParameter, const ValuePtr<TermType>& term) {
         term->error_context().error_throw(term->location(), boost::format("term type not supported: %s") % term->operation_name());
       }
 

@@ -354,7 +354,7 @@ namespace Psi {
         * \pre <tt>!term->phantom() && term->global()</tt>
         */
       llvm::Constant* ModuleBuilder::build_constant(const ValuePtr<>& term) {
-        std::pair<typename ConstantTermMap::iterator, bool> itp =
+        std::pair<ConstantTermMap::iterator, bool> itp =
           m_constant_terms.insert(std::make_pair(term, static_cast<llvm::Constant*>(NULL)));
         if (!itp.second) {
           if (!itp.first->second)
@@ -401,7 +401,7 @@ namespace Psi {
        * is this term.
        */
       llvm::Type* ModuleBuilder::build_type(const ValuePtr<>& term) {
-        std::pair<typename TypeTermMap::iterator, bool> itp =
+        std::pair<TypeTermMap::iterator, bool> itp =
           m_type_terms.insert(std::make_pair(term, static_cast<llvm::Type*>(NULL)));
         if (!itp.second) {
           if (!itp.first->second)

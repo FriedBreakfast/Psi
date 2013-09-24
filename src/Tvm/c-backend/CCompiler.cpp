@@ -542,10 +542,12 @@ public:
     std::ostringstream src;
     src.imbue(std::locale::classic());
     src << "#include <stdio.h>\n"
-        << "#include <limits.h>\n";
+        << "#include <limits.h>\n"
+        << "#include <stdint.h>\n";
     windows_detection_code(src);
     src << "int main() {\n"
-        << "  int big_endian = (__BYTE_ORDER__==__ORDER_BIG_ENDIAN__), little_endian = (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__);\n"
+        << "  union {uint8_t a[4]; uint32_t b;} endian_test = {1, 2, 3, 4};\n"
+        << "  int big_endian = (endian_test.b == 0x01020304), little_endian = (endian_test.b == 0x04030201);\n"
         << "  printf(\"%d %d %d\\n\", __GNUC__, __GNUC_MINOR__, big_endian||little_endian);\n"
         << "  printf(\"%d %d %d %d %d\\n\", PSI_C_WINDOWS, big_endian, CHAR_BIT, (int)sizeof(void*), (int)__alignof__(void*));\n";
     gcc_type_detection_code(src);

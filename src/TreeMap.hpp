@@ -50,7 +50,7 @@ class TreeOperationMap {
     }
   };
   
-  static ResultType default_throw_callback(UserParameter&, const TreePtr<TreeType>& term) {
+  static ResultType default_throw_callback(UserParameter, const TreePtr<TreeType>& term) {
     term.compile_context().error_throw(term.location(), boost::format("Term lowering not implemented for %s") % si_vptr(term.get())->classname, CompileError::error_internal);
   }
 

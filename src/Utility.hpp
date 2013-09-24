@@ -48,14 +48,26 @@ namespace Psi {
 
   namespace {
     PSI_ATTRIBUTE((PSI_UNUSED_ATTR)) DefaultConstructor default_ = {};
+  }
+  
+  template<std::size_t size, std::size_t align>
+  struct AlignedStorage {
+    typedef typename boost::aligned_storage<size, align>::type type;
+    type data;
+    void *address() {return &data;}
+    const void* address() const {return &data;}
   };
   
+  /**
+   * Aligned storage for a specific type.
+   * 
+   * Note that unlike boost::aligned_storage, this is a POD type.
+   */
   template<typename T>
   struct AlignedStorageFor {
-    typedef typename boost::aligned_storage<sizeof(T), boost::alignment_of<T>::value>::type type;
-    type data;
-    T *ptr() {return static_cast<T*>(static_cast<void*>(&data));}
-    const T *ptr() const {return static_cast<const T*>(static_cast<const void*>(&data));}
+    AlignedStorage<sizeof(T), PSI_ALIGNOF(T)> data;
+    T *ptr() {return static_cast<T*>(data.address());}
+    const T *ptr() const {return static_cast<const T*>(data.address());}
   };
 
   /**

@@ -5,7 +5,7 @@
 
 namespace Psi {
 namespace Tvm {
-namespace LLVM {
+namespace LLVM {      
 CallingConventionHandler::~CallingConventionHandler() {
 }
 
@@ -598,44 +598,8 @@ class CallingConventionHandler_x86_64_SystemV : public CallingConventionSimple {
 };
 
 class CallingConventionHandler_x86_cdecl : public CallingConventionSimple {
-  virtual FunctionTypeInfo parameter_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& function_type, const SourceLocation& location) {
-    FunctionTypeInfo fti;
-    fti.left_to_right = false;
-    for (std::size_t ii = function_type->n_phantom(), ie = function_type->parameter_types().size(); ii != ie; ++ii) {
-      ValuePtr<> simple_type = rewriter.simplify_argument_type(function_type->parameter_types()[ii].value);
-      if (isa<StructType>(simple_type) || isa<UnionType>(simple_type) || isa<ArrayType>(simple_type)) {
-        AggregateLayout layout = rewriter.aggregate_layout(simple_type, location, false);
-        if (layout.size > 0)
-          fti.parameters.push_back(parameter_by_value(std::max(unsigned(layout.alignment), 4u)));
-        else
-          fti.parameters.push_back(parameter_ignore());
-      } else {
-        fti.parameters.push_back(parameter_default());
-      }
-    }
-    
-    fti.result = return_info(rewriter, function_type, location);
-    return fti;
-  }
-
-  virtual ParameterInfo return_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& function_type, const SourceLocation& location) {
-    if (function_type->sret())
-      return parameter_ignore();
-    
-    ValuePtr<> simple_type = rewriter.simplify_argument_type(function_type->result_type().value);
-    if (isa<StructType>(simple_type) || isa<UnionType>(simple_type) || isa<ArrayType>(simple_type)) {
-      AggregateLayout layout = rewriter.aggregate_layout(simple_type, location, false);
-      if (layout.size > 0)
-        return parameter_by_value(std::max(unsigned(layout.alignment), 4u));
-      else
-        return parameter_ignore();
-    } else {
-      return parameter_default();
-    }
-  }
-};
-
-class CallingConventionHandler_x86_win32_cdecl : public CallingConventionSimple {
+  bool register_return;
+  
   ValuePtr<> coercion_type(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, unsigned size, const ValuePtr<>& orig_type, const SourceLocation& location) {
     PSI_ASSERT((1 <= size) && (size <= 8));
     unsigned short_size = 1 + (size - 1) % 4;
@@ -686,11 +650,10 @@ class CallingConventionHandler_x86_win32_cdecl : public CallingConventionSimple 
     
     ValuePtr<> simple_type = rewriter.simplify_argument_type(function_type->result_type().value);
     if (isa<StructType>(simple_type) || isa<UnionType>(simple_type) || isa<ArrayType>(simple_type)) {
-      // This is a total guess
       AggregateLayout layout = rewriter.aggregate_layout(simple_type, location, false);
       if (layout.size == 0)
         return parameter_ignore();
-      else if (layout.size > 8)
+      else if (!register_return || (layout.size > 8))
         return parameter_by_value(std::max(unsigned(layout.alignment), 4u));
       else
         return parameter_default(coercion_type(rewriter, layout.size, simple_type, location));
@@ -698,6 +661,9 @@ class CallingConventionHandler_x86_win32_cdecl : public CallingConventionSimple 
       return parameter_default();
     }
   }
+  
+public:
+  CallingConventionHandler_x86_cdecl(bool register_return_) : register_return(register_return_) {}
 };
 
 void calling_convention_handler(const CompileErrorPair& error_loc, llvm::Triple triple, CallingConvention cc, UniquePtr<CallingConventionHandler>& result) {
@@ -706,7 +672,6 @@ void calling_convention_handler(const CompileErrorPair& error_loc, llvm::Triple 
     switch (triple.getArch()) {
     case llvm::Triple::x86_64:
       switch (triple.getOS()) {
-      case llvm::Triple::MacOSX:
       case llvm::Triple::Linux: result.reset(new CallingConventionHandler_x86_64_SystemV()); return;
       default: break;
       }
@@ -714,9 +679,10 @@ void calling_convention_handler(const CompileErrorPair& error_loc, llvm::Triple 
       
     case llvm::Triple::x86:
       switch (triple.getOS()) {
-      case llvm::Triple::Linux: result.reset(new CallingConventionHandler_x86_cdecl()); return;
-      case llvm::Triple::Win32:
-      case llvm::Triple::MinGW32: result.reset(new CallingConventionHandler_x86_win32_cdecl()); return;
+      case llvm::Triple::Linux: result.reset(new CallingConventionHandler_x86_cdecl(false)); return;
+      case llvm::Triple::FreeBSD:
+      case llvm::Triple::MinGW32:
+      case llvm::Triple::Win32: result.reset(new CallingConventionHandler_x86_cdecl(true)); return;
       default: break;
       }
       break;

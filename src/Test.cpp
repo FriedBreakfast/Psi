@@ -6,15 +6,18 @@
 #include <map>
 #include <vector>
 
-#ifdef __linux__
+#ifdef __unix__
 #include <errno.h>
-#include <execinfo.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <ucontext.h>
 #include <unistd.h>
+
+#ifdef __linux__
+#include <execinfo.h>
+#endif
 #endif
 
 namespace Psi {
@@ -278,7 +281,8 @@ bool run_test_case_common(const TestCaseBase *tc, const TestRunOptions& options)
   return logger.passed();
 }
 
-#if __linux__
+#ifdef __unix__
+#ifdef __linux__
 namespace {
 bool signal_exiting;
 ucontext_t signal_exit_context;
@@ -295,8 +299,10 @@ void signal_handler(int signum, siginfo_t *info, void *ptr) {
   }
 }
 }
+#endif
 
 bool run_test_case_signals(const TestCaseBase *tc, const TestRunOptions& options) {
+#ifdef __linux__
   if (options.catch_signals) {
     signal_exiting = false;
     if (getcontext(&signal_exit_context) != 0) {
@@ -340,9 +346,10 @@ bool run_test_case_signals(const TestCaseBase *tc, const TestRunOptions& options
     sigaltstack(&old_signal_stack, NULL);
     
     return success;
-  } else {
-    return run_test_case_common(tc, options);
   }
+#endif
+
+  return run_test_case_common(tc, options);
 }
 
 bool run_test_case(const TestCaseBase *tc, const TestRunOptions& options) {

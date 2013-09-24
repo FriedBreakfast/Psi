@@ -9,8 +9,10 @@
 
 #if defined(_WIN32)
 #include "PlatformImplWindows.hpp"
-#elif defined(__linux__)
-#include "PlatformImplLinux.hpp"
+#elif defined(__unix__)
+#include "PlatformImplUnix.hpp"
+#else
+#error Unsupported platform
 #endif
 
 namespace Psi {

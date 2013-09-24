@@ -21,8 +21,14 @@ set(PSI_COMPILER_COMMON_LIBS Shlwapi)
 set(PSI_COMPILER_SOURCES PlatformCompileWindows.cpp)
 set(PSI_TVM_SOURCES Tvm/JitWindows.cpp)
 elseif(UNIX)
-set(PSI_COMPILER_COMMON_SOURCES PlatformLinux.cpp PlatformLinux.hpp PlatformImplLinux.hpp)
-set(PSI_COMPILER_SOURCES PlatformCompileLinux.cpp)
+if (CMAKE_SYSTEM MATCHES "Linux")
+set(PSI_COMPILER_COMMON_UNIX_EXTRA PlatformLinux.cpp)
+else(CMAKE_SYSTEM MATCHES "BSD")
+set(PSI_COMPILER_COMMON_UNIX_EXTRA PlatformBSD.cpp)
+endif()
+
+set(PSI_COMPILER_COMMON_SOURCES PlatformUnix.cpp PlatformUnix.hpp PlatformImplUnix.hpp ${PSI_COMPILER_COMMON_UNIX_EXTRA})
+set(PSI_COMPILER_SOURCES PlatformCompileUnix.cpp)
 set(PSI_TVM_SOURCES Tvm/JitLinux.cpp)
 set(PSI_RUNTIME_SOURCES Runtime/ExceptionLinux.c Runtime/ExceptionLinuxABI.h)
 endif()
@@ -73,10 +79,7 @@ add_library(psi-tvm SHARED
 )
 shared_library_setup(psi-tvm)
 
-target_link_libraries(psi-tvm psi-compiler-common ${PSI_ASSERT_LIB})
-if(UNIX)
-  target_link_libraries(psi-tvm -ldl)
-endif()
+target_link_libraries(psi-tvm psi-compiler-common ${PSI_ASSERT_LIB} ${CMAKE_DL_LIBS})
 
 if(BUILD_TESTING)
   add_executable(psi-tvm-test
@@ -180,12 +183,9 @@ add_library(psi-compiler SHARED
 )
 shared_library_setup(psi-compiler)
 
-target_link_libraries(psi-compiler psi-compiler-common psi-tvm ${PSI_ASSERT_LIB})
-if (UNIX)
-  target_link_libraries(psi-compiler -ldl)
-endif()
+target_link_libraries(psi-compiler psi-compiler-common psi-tvm ${PSI_ASSERT_LIB} ${CMAKE_DL_LIBS})
 
-if (UNIX)
+if (CMAKE_SYSTEM MATCHES "Linux")
   add_library(psi-compiler-gcchecker SHARED GCChecker.c)
 endif()
 

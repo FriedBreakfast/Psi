@@ -103,7 +103,7 @@ namespace Psi {
       typedef TestReturnType (*FunctionType) (Jit::Int64,Jit::Int32);
       FunctionType f = reinterpret_cast<FunctionType>(jit_single("f", src));
 
-      Jit::Int64 a = 5468768922;
+      Jit::Int64 a = 5468768922LL;
       Jit::Int32 b = 4989;
       TestReturnType r = f(a, b);
       PSI_TEST_CHECK_EQUAL(r.u[0].a, a);
