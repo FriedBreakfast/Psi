@@ -9,8 +9,8 @@
 #include <cstring>
 
 #include <process.h>
-#include <Shlwapi.h>
-#include <ShlObj.h>
+#include <shlwapi.h>
+#include <shlobj.h>
 
 #include <boost/format.hpp>
 #include <boost/make_shared.hpp>

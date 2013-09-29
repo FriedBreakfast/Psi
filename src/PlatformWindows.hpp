@@ -7,7 +7,7 @@
 #define WINVER 0x0500 // Windows 2000
 #define _WIN32_WINNT 0x0500 // Windows 2000
 #define _WIN32_IE 0x0500 // IE5
-#include <Windows.h>
+#include <windows.h>
 
 #include <string>
 #include <boost/noncopyable.hpp>

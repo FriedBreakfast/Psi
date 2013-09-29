@@ -17,7 +17,7 @@ shared_library_setup(psi-test)
 
 if(WIN32)
 set(PSI_COMPILER_COMMON_SOURCES PlatformWindows.cpp PlatformWindows.hpp PlatformImplWindows.hpp)
-set(PSI_COMPILER_COMMON_LIBS Shlwapi)
+set(PSI_COMPILER_COMMON_LIBS shlwapi)
 set(PSI_COMPILER_SOURCES PlatformCompileWindows.cpp)
 set(PSI_TVM_SOURCES Tvm/JitWindows.cpp)
 elseif(UNIX)

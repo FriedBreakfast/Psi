@@ -37,7 +37,7 @@ else()
   endif()
 endif()
 
-if(NOT LLVM_VERSION VERSION_EQUAL "3.3")
+if(PSI_TVM_LLVM AND NOT LLVM_VERSION VERSION_EQUAL "3.3")
   message(SEND_ERROR "LLVM must be version 3.3, you have ${LLVM_VERSION}")
 endif()
 
