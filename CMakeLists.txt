@@ -81,7 +81,7 @@ endif()
 
 # Set up useful GCC flags
 if(CMAKE_COMPILER_IS_GNUCXX)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -std=c++98")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
   # Try to eliminate LLVM compilation flags which we don't need
@@ -94,7 +94,7 @@ if (LLVM_CXX_FLAGS MATCHES "_GLIBCXX_DEBUG")
 endif()
 
 # Locate Boost
-find_package(Boost 1.36.0)
+find_package(Boost 1.36.0 REQUIRED)
 
 # Locate Bison
 find_program(BISON_EXECUTABLE NAMES bison PATHS C:/MinGW/msys/1.0/bin)

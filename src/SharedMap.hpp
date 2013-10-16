@@ -126,15 +126,9 @@ namespace Psi {
           merge_from(src.m_root);
       }
     }
-
-    /**
-     * Swap the contents of this tree with another.
-     */
-    void swap(SharedRbTree& src) {
-      std::swap(m_size, src.m_size);
-      std::swap(m_comparator, src.m_comparator);
-      std::swap(m_key_function, src.m_key_function);
-      m_root.swap(src.m_root);
+    
+    friend void swap(SharedRbTree& a, SharedRbTree& b) {
+      a.swap(b);
     }
 
   private:
@@ -311,6 +305,16 @@ namespace Psi {
         merge_from(node->left);
       if (node->right)
         merge_from(node->right);
+    }
+
+    /**
+     * Swap the contents of this tree with another.
+     */
+    void swap(SharedRbTree& src) {
+      std::swap(m_size, src.m_size);
+      std::swap(m_comparator, src.m_comparator);
+      std::swap(m_key_function, src.m_key_function);
+      m_root.swap(src.m_root);
     }
   };
 

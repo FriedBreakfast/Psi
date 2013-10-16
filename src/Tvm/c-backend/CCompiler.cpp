@@ -1006,7 +1006,7 @@ boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc, 
   } else if (*kind == "tcc") {
     return CCompilerTCC::detect(err_loc, *cc_full_path, configuration);
   } else {
-    err_loc.error_throw(boost::format("Could not identify C compiler: %s") % cc_full_path->str());
+    err_loc.error_throw(boost::format("Unknown C compiler kind: %s") % kind);
   }
 }
 }

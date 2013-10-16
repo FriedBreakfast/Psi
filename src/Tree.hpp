@@ -2,8 +2,6 @@
 #define HPP_PSI_TREE
 
 #include <vector>
-#include <boost/function.hpp>
-#include <boost/shared_ptr.hpp>
 
 #include "Compiler.hpp"
 #include "StaticDispatch.hpp"

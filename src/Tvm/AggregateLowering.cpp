@@ -88,6 +88,9 @@ namespace Psi {
       m_byte_ptr_type = FunctionalBuilder::byte_pointer_type(pass->source_module()->context(), pass->source_module()->location());
     }
 
+    AggregateLoweringPass::AggregateLoweringRewriter::~AggregateLoweringRewriter() {
+    }
+
     /**
      * Check whether a type has been lowered and if so return it, otherwise
      * return NULL.

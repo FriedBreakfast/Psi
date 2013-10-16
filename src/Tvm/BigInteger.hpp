@@ -53,6 +53,7 @@ namespace Psi {
        */
       const uint64_t* words() const {return m_words.get();}
       
+      void parse(const CompileErrorPair& error_handler, const char *start, const char *end, bool=false, unsigned=10);
       void parse(const CompileErrorPair& error_handler, const std::string&, bool=false, unsigned=10);
       void print(const CompileErrorPair& error_handler, std::ostream&, bool=false, unsigned=10) const;
       std::size_t print(const CompileErrorPair& error_handler, char *out, std::size_t length, bool=false, unsigned=10) const ;

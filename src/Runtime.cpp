@@ -90,6 +90,10 @@ namespace Psi {
     std::swap(m_c, other.m_c);
   }
 
+  void swap(String& a, String& b) {
+    a.swap(b);
+  }
+
   bool String::operator == (const String& rhs) const {
     if (m_c.length != rhs.m_c.length)
       return false;

@@ -4,6 +4,12 @@
 #include <cstddef>
 
 namespace Psi {
+#if __cplusplus >= 201103L
+#define PSI_USE_RVALUE_REF 1
+#else
+#define PSI_USE_RVALUE_REF 0
+#endif
+
 #if defined(__GNUC__)
 #define PSI_STD std
 #define PSI_STDINC ""

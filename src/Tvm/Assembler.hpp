@@ -53,7 +53,7 @@ namespace Psi {
       void build_function(AssemblerContext& context, const ValuePtr<Function>& function, const Parser::Function& function_def);
       ValuePtr<> build_call_expression(AssemblerContext& context, const Parser::Expression& expression, const LogicalSourceLocationPtr& location);
       std::vector<ParameterPlaceholderType> build_parameters(AssemblerContext& context, bool allow_attributes,
-                                                             const UniqueList<Parser::ParameterExpression>& parameters,
+                                                             const PSI_STD::vector<Parser::ParameterExpression>& parameters,
                                                              const LogicalSourceLocationPtr& logical_location);
 
       typedef boost::function<ValuePtr<>(const std::string&,AssemblerContext&,const Parser::CallExpression&,const LogicalSourceLocationPtr&)> FunctionalTermCallback;
@@ -65,9 +65,9 @@ namespace Psi {
 
     typedef boost::unordered_map<std::string, ValuePtr<> > AssemblerResult;
 
-    PSI_TVM_EXPORT AssemblerResult build(Module&, const boost::intrusive::list<Parser::NamedGlobalElement>&);
-    PSI_TVM_EXPORT AssemblerResult parse_and_build(Module&, const char*, const char*);
-    PSI_TVM_EXPORT AssemblerResult parse_and_build(Module&, const char*);
+    PSI_TVM_EXPORT AssemblerResult build(Module&, const PSI_STD::vector<Parser::NamedGlobalElement>&);
+    PSI_TVM_EXPORT AssemblerResult parse_and_build(Module& module, const PhysicalSourceLocation& loc, const char *begin, const char *end);
+    PSI_TVM_EXPORT AssemblerResult parse_and_build(Module& module, const PhysicalSourceLocation& loc, const char *s);
   }
 }
 

@@ -88,6 +88,10 @@ namespace Psi {
     typedef void (SharedPtr::*safe_bool_type) () const;
     void safe_bool_true() const {}
 
+    void swap(SharedPtr& other) {
+      std::swap(m_c, other.m_c);
+    }
+
   public:
     template<typename> friend class SharedPtr;
     typedef T value_type;
@@ -152,10 +156,6 @@ namespace Psi {
       return *this;
     }
 
-    void swap(SharedPtr& other) {
-      std::swap(m_c, other.m_c);
-    }
-
     template<typename U>
     void reset(U *ptr) {
       SharedPtr<T>(ptr).swap(*this);
@@ -167,6 +167,10 @@ namespace Psi {
 
     bool operator ! () const {return !get();}
     operator safe_bool_type () const {return get() ? &SharedPtr::safe_bool_true : 0;}
+    
+    friend void swap(SharedPtr<T>& a, SharedPtr<T>& b) {
+      a.swap(b);
+    }
   };
 
   template<typename T, typename U>
@@ -199,6 +203,7 @@ namespace Psi {
     String_C m_c;
 
     void init(const char*, PsiSize);
+    void swap(String&);
     
   public:
     String();
@@ -221,7 +226,6 @@ namespace Psi {
     std::size_t length() const {return m_c.length;}
     const char *c_str() const {return m_c.data;}
     bool empty() const {return !m_c.length;}
-    void swap(String&);
     char operator [] (std::size_t idx) const {return m_c.data[idx];}
     
     friend std::size_t hash_value(const String& s) {
@@ -229,6 +233,8 @@ namespace Psi {
         return 0;
       return boost::hash_range(s.c_str(), s.c_str() + s.length());
     }
+    
+    friend void swap(String& a, String& b);
   };
   
   PSI_COMPILER_COMMON_EXPORT bool operator == (const String& lhs, const char *rhs);

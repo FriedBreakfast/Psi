@@ -37,9 +37,9 @@ namespace Psi {
       std::copy(*yyvp, *yyvp + yyvsize / sizeof(**yyvp), new_yyv.get());
       std::copy(*yylp, *yylp + yylsize / sizeof(**yylp), new_yyl.get());
 
-      m_yys.swap(new_yys);
-      m_yyv.swap(new_yyv);
-      m_yyl.swap(new_yyl);
+      swap(m_yys, new_yys);
+      swap(m_yyv, new_yyv);
+      swap(m_yyl, new_yyl);
       m_stack_size = new_stack_size;
 
       *yysp = m_yys.get();

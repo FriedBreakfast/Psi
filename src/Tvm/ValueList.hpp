@@ -15,6 +15,8 @@ namespace Psi {
 
       mutable BaseList m_base;
 
+      void swap(ValueList& other) {m_base.swap(other.m_base);}
+      
     public:
       class iterator
       : public boost::iterator_facade<iterator, const ValuePtr<T>, boost::bidirectional_traversal_tag> {
@@ -61,7 +63,6 @@ namespace Psi {
       const_iterator end() const {return const_iterator(m_base.end(), m_base.end());}
       const_iterator iterator_to(const ValuePtr<T>& x) const {return const_iterator(m_base.iterator_to(*x), m_base.end());}
       std::size_t size() const {return m_base.size();}
-      void swap(ValueList& other) {m_base.swap(other.m_base);}
       
       ValuePtr<T> at(std::size_t n) const {
         typename BaseList::iterator it = m_base.begin();
@@ -108,6 +109,10 @@ namespace Psi {
             return true;
         }
         PSI_FAIL("Unreachable");
+      }
+      
+      friend void swap(ValueList& a, ValueList& b) {
+        a.swap(b);
       }
       
     private:

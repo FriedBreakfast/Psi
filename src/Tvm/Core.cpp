@@ -449,7 +449,7 @@ namespace Psi {
       if (m_hash_value_set.size() >= m_hash_value_set.bucket_count()) {
         UniqueArray<HashTermSetType::bucket_type> new_buckets(m_hash_value_set.bucket_count() * 2);
         m_hash_value_set.rehash(HashTermSetType::bucket_traits(new_buckets.get(), new_buckets.size()));
-        new_buckets.swap(m_hash_term_buckets);
+        swap(new_buckets, m_hash_term_buckets);
       }
       
       return result;

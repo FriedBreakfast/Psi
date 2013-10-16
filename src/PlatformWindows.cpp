@@ -100,8 +100,8 @@ LibraryHandle::~LibraryHandle() {
     FreeLibrary(m_handle);
 }
 
-void LibraryHandle::swap(LibraryHandle& other) {
-  std::swap(m_handle, other.m_handle);
+void swap(LibraryHandle& a, LibraryHandle& b) {
+  std::swap(a.m_handle, b.m_handle);
 }
 
 /**

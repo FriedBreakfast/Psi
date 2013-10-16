@@ -411,7 +411,7 @@ namespace Psi {
       if (m_functional_term_set.size() >= m_functional_term_set.bucket_count()) {
         UniqueArray<FunctionalTermSetType::bucket_type> new_buckets(m_functional_term_set.bucket_count() * 2);
         m_functional_term_set.rehash(FunctionalTermSetType::bucket_traits(new_buckets.get(), new_buckets.size()));
-        new_buckets.swap(m_functional_term_buckets);
+        swap(new_buckets, m_functional_term_buckets);
       }
       
       return result;

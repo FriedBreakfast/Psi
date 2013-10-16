@@ -39,7 +39,7 @@ namespace Psi {
 
     RecursiveType::RecursiveType(Context& context, ParameterList& parameters, const SourceLocation& location)
     : Value(context, term_recursive, ValuePtr<>(), location) {
-      m_parameters.swap(parameters);
+      swap(m_parameters, parameters);
     }
 
     /**
@@ -90,7 +90,7 @@ namespace Psi {
     }
 #endif
 
-    void RecursiveType::check_source_hook(CheckSourceParameter& parameter) {
+    void RecursiveType::check_source_hook(CheckSourceParameter& PSI_UNUSED(parameter)) {
       PSI_FAIL("RecursiveType check_source_hook should never be called");
     }
     

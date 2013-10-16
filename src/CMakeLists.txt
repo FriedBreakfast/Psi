@@ -49,9 +49,6 @@ shared_library_setup(psi-compiler-common)
 
 target_link_libraries(psi-compiler-common ${PSI_ASSERT_LIB} ${PSI_COMPILER_COMMON_LIBS})
 
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Tvm)
-run_bison(Tvm/Parser.ypp)
-
 add_library(psi-tvm SHARED
   Tvm/Aggregate.cpp Tvm/Aggregate.hpp
   Tvm/AggregateLowering.cpp Tvm/AggregateLowering.hpp

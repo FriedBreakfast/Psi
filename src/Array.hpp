@@ -149,9 +149,9 @@ namespace Psi {
       return ptr;
     }
 
-    void swap(UniqueArray& o) {
-      std::swap(this->m_ptr, o.m_ptr);
-      std::swap(this->m_size, o.m_size);
+    friend void swap(UniqueArray& a, UniqueArray& b) {
+      std::swap(a.m_ptr, b.m_ptr);
+      std::swap(a.m_size, b.m_size);
     }
   };
 

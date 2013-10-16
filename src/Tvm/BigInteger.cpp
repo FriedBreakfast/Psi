@@ -19,6 +19,11 @@ namespace Psi {
       assign(value);
     }
 
+    void BigInteger::parse(const CompileErrorPair& error_handler, const std::string& value, bool negative, unsigned base) {
+      const char *s = value.c_str();
+      parse(error_handler, s, s+value.size(), negative, base);
+    }
+    
     /**
      * Parse an integer and convert it to the internal byte array
      * format. Note that this function does not parse minus signs or
@@ -30,7 +35,7 @@ namespace Psi {
      * i.e. numbers which are too large to represent in the number of
      * bytes a number currently uses.
      */
-    void BigInteger::parse(const CompileErrorPair& error_handler, const std::string& value, bool negative, unsigned base) {
+    void BigInteger::parse(const CompileErrorPair& error_handler, const char *start, const char *end, bool negative, unsigned base) {
       std::fill(m_words.get(), m_words.get()+m_words.size(), 0);
 
       if ((base < 2) || (base > 35))
@@ -38,8 +43,8 @@ namespace Psi {
       
       const unsigned half_word_bits = std::numeric_limits<WordType>::digits / 2;
 
-      for (std::size_t pos = 0; pos < value.size(); ++pos) {
-        if (pos > 0) {
+      for (const char *pos = start; pos != end; ++pos) {
+        if (pos != start) {
           // multiply current value by the base - base is known to be
           // a small number so a simple algorithm can be used.
           WordType carry = 0;
@@ -50,7 +55,7 @@ namespace Psi {
           }
         }
 
-        unsigned char digit = value[pos], digit_value;
+        unsigned char digit = *pos, digit_value;
         if ((digit >= '0') && (digit <= '9'))
           digit_value = digit - '0';
         else if ((digit >= 'a') && (digit <= 'z'))

@@ -21,8 +21,8 @@ namespace Psi {
 
       std::vector<ValuePtr<> > default_parameter_setup(AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
         std::vector<ValuePtr<> > parameters;
-        for (UniqueList<Parser::Expression>::const_iterator it = expression.terms.begin(); it != expression.terms.end(); ++it)
-          parameters.push_back(build_expression(context, *it, location));
+        for (PSI_STD::vector<Parser::ExpressionRef>::const_iterator it = expression.terms.begin(); it != expression.terms.end(); ++it)
+          parameters.push_back(build_expression(context, **it, location));
         return parameters;
       }
       
@@ -42,7 +42,7 @@ namespace Psi {
         UnaryOpCallback(GetterType getter_) : getter(getter_) {}
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           check_n_terms(name, context, 1, expression, location);
-          return getter(build_expression(context, expression.terms.front(), location), SourceLocation(expression.location, location));
+          return getter(build_expression(context, *expression.terms.front(), location), SourceLocation(expression.location, location));
         }
       };
 
@@ -110,14 +110,14 @@ namespace Psi {
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
           check_n_terms(name, context, 2, expression, location);
           
-          ValuePtr<> aggregate = build_expression(context, expression.terms.front(), location);
-          const Parser::Expression& index = expression.terms.back();
+          ValuePtr<> aggregate = build_expression(context, *expression.terms.front(), location);
+          const Parser::Expression& index = *expression.terms.back();
           
           if (index.expression_type != Parser::expression_literal)
             throw AssemblerError("Second parameter to struct_el is not an integer literal");
 
-          const Parser::LiteralExpression& index_literal = checked_cast<const Parser::LiteralExpression&>(index);
-          unsigned index_int = boost::lexical_cast<unsigned>(index_literal.value->text);
+          const Parser::IntegerLiteralExpression& index_literal = checked_cast<const Parser::IntegerLiteralExpression&>(index);
+          unsigned index_int = index_literal.value.unsigned_value_checked(CompileErrorPair(context.error_context(), SourceLocation(expression.location, location)), false);
           
           return getter(aggregate, index_int, SourceLocation(expression.location, location));
         }
@@ -128,9 +128,9 @@ namespace Psi {
           if (expression.terms.empty())
             throw AssemblerError(name + " requires at least one argument");
           
-          UniqueList<Parser::Expression>::const_iterator ii = expression.terms.begin(), ie = expression.terms.end();
+          PSI_STD::vector<Parser::ExpressionRef>::const_iterator ii = expression.terms.begin(), ie = expression.terms.end();
           
-          ValuePtr<> upref = build_expression(context, *ii, location);
+          ValuePtr<> upref = build_expression(context, **ii, location);
           ValuePtr<> type;
           if (!isa<UpwardReferenceType>(upref->type())) {
             type = upref;
@@ -140,7 +140,7 @@ namespace Psi {
           SourceLocation source_location(expression.location, location);
           ++ii;
           for (; ii != ie; ++ii) {
-            ValuePtr<> cur = build_expression(context, *ii, location);
+            ValuePtr<> cur = build_expression(context, **ii, location);
             if (cur->is_type()) {
               if (type)
                 throw AssemblerError("types cannot appear next to each other in " + name + " operation");
@@ -195,16 +195,16 @@ namespace Psi {
         FoldRightCallback(GetterType getter_) : getter(getter_) {}
         
         ValuePtr<> operator () (const std::string& name, AssemblerContext& context, const Parser::CallExpression& expression, const LogicalSourceLocationPtr& location) {
-          UniqueList<Parser::Expression>::const_iterator ii = expression.terms.begin(), ie = expression.terms.end();
+          PSI_STD::vector<Parser::ExpressionRef>::const_iterator ii = expression.terms.begin(), ie = expression.terms.end();
           if (ii == ie)
             context.error_context().error_throw(SourceLocation(expression.location, location),
                                                 boost::format("%s operation requires at least one argument") % name);
           
           SourceLocation source_location(expression.location, location);
-          ValuePtr<> value = build_expression(context, *ii, location);
+          ValuePtr<> value = build_expression(context, **ii, location);
           ++ii;
           for (; ii != ie; ++ii)
-            value = getter(value, build_expression(context, *ii, location), source_location);
+            value = getter(value, build_expression(context, **ii, location), source_location);
           return value;
         }
       };

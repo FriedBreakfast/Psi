@@ -368,7 +368,7 @@ bool run_test_case(const TestCaseBase *tc, const TestRunOptions& options) {
       if (WIFEXITED(child_status)) {
         return WEXITSTATUS(child_status) == EXIT_SUCCESS;
       } else if (WIFSIGNALED(child_status)) {
-        std::cerr << "Child exited with due to signal: " << strsignal(WTERMSIG(child_status)) << std::endl;
+        std::cerr << "Child exited due to signal: " << strsignal(WTERMSIG(child_status)) << std::endl;
         return false;
       } else {
         std::cerr << "Child exited for unknown reason" << std::endl;

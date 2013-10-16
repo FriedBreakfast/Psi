@@ -273,6 +273,7 @@ namespace Psi {
         
       public:
         AggregateLoweringRewriter(AggregateLoweringPass*);
+        virtual ~AggregateLoweringRewriter();
         
         /// \brief Get the pass object this belongs to
         AggregateLoweringPass& pass() {return *m_pass;}

@@ -4,18 +4,21 @@
 #include <cstddef>
 #include <string>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #include <boost/aligned_storage.hpp>
 #include <boost/functional/hash.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/noncopyable.hpp>
+#include <boost/utility/swap.hpp>
 
 #include "Assert.hpp"
 #include "CppCompiler.hpp"
 
 namespace Psi {
   template<bool v> struct static_bool {static const bool value = v;};
+  using boost::swap;
   
   /**
    * \brief Base class for types which should never be constructed.
@@ -35,6 +38,59 @@ namespace Psi {
   public:
     NonCopyable() {}
   };
+  
+  using boost::swap;
+  
+#if PSI_USE_RVALUE_REF
+  using std::move;
+  using std::forward;
+
+#define PSI_MOVE_REF(p) p&&
+  
+  template<typename T> T& move_value(T& x) {return x;}
+  template<typename T, typename U> T& move_value_base(U& x) {return x;}
+#else
+  template<typename T>
+  struct MoveRefBox {
+    T *ptr;
+    explicit MoveRefBox(T *t) : ptr(t) {}
+  };
+  
+  template<typename T>
+  class MoveRef : public NonCopyable {
+    T *ptr;
+    
+    template<typename> friend class MoveRef;
+    template<typename U> friend MoveRef<U> move(U&);
+    template<typename U> friend U& move_value(const MoveRef<U>&);
+    
+    explicit MoveRef(T *t) : NonCopyable(), ptr(t) {}
+    MoveRef(const MoveRef<T>& src) : NonCopyable(), ptr(src.ptr) {}
+    
+  public:
+    T& operator * () const {return *ptr;}
+    
+    // Exploit NRVO to achieve a similar effect to move semantics.
+    // Requires classes have default constructor.
+    operator T () const {
+      T copy;
+      swap(copy, *ptr);
+      return copy;
+    }
+    
+    template<typename U> operator MoveRef<U> () const {
+      return MoveRef<U>(ptr);
+    }
+  };
+  
+  template<typename T> T& move_value(const MoveRef<T>& x) {return *x.ptr;}
+  template<typename T, typename U> T& move_value_base(const MoveRef<U>& x) {return move_value(x);}
+  template<typename T> MoveRef<T> move(T& t) {return MoveRef<T>(&t);}
+  template<typename T> const MoveRef<T>& move(const MoveRef<T>& x) {return x;}
+  template<typename T> const MoveRef<T>& forward(const MoveRef<T>& x) {return x;}
+  
+#define PSI_MOVE_REF(p) const MoveRef<p>&
+#endif
 
   /**
    * \brief Allows easy access to default constructors without writing
@@ -83,6 +139,89 @@ namespace Psi {
     ~ResultStorage() {if (m_constructed) m_data.ptr()->~T();}
     T *ptr() {return m_data.ptr();}
     T& done() {m_constructed = true; return *m_data.ptr();}
+  };
+  
+  template<typename T>
+  class Maybe {
+    AlignedStorageFor<T> m_storage;
+    bool m_full;
+
+    typedef void (Maybe::*safe_bool_type) () const;
+    void safe_bool_true() const {}
+    
+  public:
+    Maybe() : m_full(false) {}
+    template<typename U> Maybe(const U& value) : m_full(true) {new (m_storage.ptr()) T (value);}
+    Maybe(const Maybe<T>& src) : m_full(src) {if (m_full) new (m_storage.ptr()) T (*src);}
+    template<typename U> Maybe(const Maybe<U>& src) : m_full(src) {if (m_full) new (m_storage.ptr()) T (*src);}
+    ~Maybe() {clear();}
+
+    operator safe_bool_type () const {return m_full ? &Maybe::safe_bool_true : 0;}
+    bool operator ! () const {return !m_full;}
+    
+    T* get() {PSI_ASSERT(m_full); return m_storage.ptr();}
+    const T* get() const {PSI_ASSERT(m_full); return m_storage.ptr();}
+    
+    T& operator * () {return *get();}
+    const T& operator * () const {return *get();}
+    T* operator -> () {return get();}
+    const T* operator -> () const {return get();}
+    
+    template<typename U>
+    Maybe<T>& operator = (const U& value) {
+      if (m_full) {
+        *m_storage.ptr() = value;
+      } else {
+        new (m_storage.ptr()) T (value);
+        m_full = true;
+      }
+      return *this;
+    }
+    
+    void clear() {
+      if (m_full) {
+        m_storage.ptr()->~T();
+        m_full = false;
+      }
+    }
+    
+    Maybe<T>& operator = (const Maybe<T>& value) {
+      if (value)
+        *this = *value;
+      else
+        clear();
+      return *this;
+    }
+    
+    template<typename U>
+    Maybe<T>& operator = (const Maybe<U>& value) {
+      if (value)
+        *this = *value;
+      else
+        clear();
+      return *this;
+    }
+    
+    Maybe(PSI_MOVE_REF(Maybe<T>) src) : m_full(*src) {if (m_full) new (m_storage.ptr()) T (move(*move_value(src))); move_value(src).clear();}
+    template<typename U> Maybe(PSI_MOVE_REF(Maybe<U>) src) : m_full(*src) {if (m_full) new (m_storage.ptr()) T (move(*move_value(src))); move_value(src).clear();}
+    
+    template<typename U>
+    Maybe<T>& operator = (PSI_MOVE_REF(U) src) {
+      if (m_full)
+        *m_storage.ptr() = forward<U>(src);
+      else
+        new (m_storage.ptr()) T (forward<U>(src));
+    }
+    
+    template<typename U>
+    Maybe<T>& operator = (PSI_MOVE_REF(Maybe<U>) src) {
+      if (*src) {
+        *this = move(*src);
+        move_value(src).clear();
+      } else
+        clear();
+      return *this;
+    }
   };
 
   template<typename T>
@@ -173,6 +312,10 @@ namespace Psi {
         delete this->m_ptr;
     }
 
+    void swap(UniquePtr<T>& src) {
+      std::swap(this->m_ptr, src.m_ptr);
+    }
+
   public:
     template<typename> friend class UniquePtr;
 
@@ -190,10 +333,63 @@ namespace Psi {
       this->m_ptr = 0;
       return p;
     }
+    
+    friend void swap(UniquePtr<T>& a, UniquePtr<T>& b) {
+    }
+  };
+  
+  /**
+   * Pointer which copies by cloning the target object.
+   */
+  template<typename T>
+  class ClonePtr : public UniquePtr<T> {
+    template<typename U>
+    static T* clone_ptr(U *ptr) {
+      return ptr ? clone(*ptr) : static_cast<T*>(0);
+    }
 
-    void swap(UniquePtr<T>& src) {
+    void swap(ClonePtr<T>& src) {
       std::swap(this->m_ptr, src.m_ptr);
     }
+
+  public:
+    template<typename> friend class UniquePtr;
+
+    ClonePtr() {}
+    explicit ClonePtr(T *ptr) : UniquePtr<T>(ptr) {}
+    ClonePtr(const ClonePtr<T>& src) : UniquePtr<T>(clone_ptr(src.get())) {}
+    template<typename U> ClonePtr(const UniquePtr<U>& src) : UniquePtr<T>() {}
+    
+    ClonePtr<T>& operator = (const ClonePtr<T>& src) {
+      ClonePtr<T>(src).swap(*this);
+      return *this;
+    }
+    
+    template<typename U>
+    ClonePtr<T>& operator = (const UniquePtr<U>& src) {
+      ClonePtr<T>(src).swap(*this);
+      return *this;
+    }
+
+    friend void swap(ClonePtr<T>& a, ClonePtr<T>& b) {
+      a.swap(b);
+    }
+
+#if PSI_USE_RVALUE_REF
+    ClonePtr(ClonePtr<T>&& src) {this->m_ptr = src.m_ptr; src.m_ptr = NULL;}
+    template<typename U> ClonePtr(const UniquePtr<U>&& src) {this->m_ptr = src.m_ptr; src.m_ptr = NULL;}
+    
+    ClonePtr<T>& operator = (ClonePtr<T>&& src) {
+      ClonePtr<T>(move(src)).swap(*this);
+      return *this;
+    }
+    
+    template<typename U>
+    ClonePtr<T>& operator = (UniquePtr<U>&& src) {
+      ClonePtr<T>(move(src)).swap(*this);
+      return *this;
+    }
+#endif
   };
   
   /**

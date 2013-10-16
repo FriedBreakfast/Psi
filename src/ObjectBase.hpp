@@ -98,17 +98,6 @@ namespace Psi {
 #endif
         }
       }
-
-    public:
-      ~ObjectPtr();
-      ObjectPtr() : m_ptr(NULL) {}
-      explicit ObjectPtr(T *ptr) {initialize(ptr);}
-      ObjectPtr(const ObjectPtr& src) {initialize(src.m_ptr);}
-      template<typename U> ObjectPtr(const ObjectPtr<U>& src) {initialize(src.get());}
-      ObjectPtr& operator = (const ObjectPtr& src) {ObjectPtr(src).swap(*this); return *this;}
-      template<typename U> ObjectPtr& operator = (const ObjectPtr<U>& src) {ObjectPtr<T>(src).swap(*this); return *this;}
-
-      T* get() const {return m_ptr;}
       
       void swap(ObjectPtr& other) {
 #if PSI_OBJECT_PTR_DEBUG
@@ -128,6 +117,17 @@ namespace Psi {
         std::swap(m_ptr, other.m_ptr);
 #endif
       }
+
+    public:
+      ~ObjectPtr();
+      ObjectPtr() : m_ptr(NULL) {}
+      explicit ObjectPtr(T *ptr) {initialize(ptr);}
+      ObjectPtr(const ObjectPtr& src) {initialize(src.m_ptr);}
+      template<typename U> ObjectPtr(const ObjectPtr<U>& src) {initialize(src.get());}
+      ObjectPtr& operator = (const ObjectPtr& src) {ObjectPtr(src).swap(*this); return *this;}
+      template<typename U> ObjectPtr& operator = (const ObjectPtr<U>& src) {ObjectPtr<T>(src).swap(*this); return *this;}
+
+      T* get() const {return m_ptr;}
       
       void reset() {ObjectPtr<T>().swap(*this);}
       void reset(T *ptr) {ObjectPtr<T>(ptr).swap(*this);}
@@ -146,6 +146,8 @@ namespace Psi {
         PSI_ASSERT(m_ptr);
         return m_ptr->compile_context();
       }
+      
+      friend void swap(ObjectPtr<T>& a, ObjectPtr<T>& b) {a.swap(b);}
     };
     
     /// \see Object

@@ -4,38 +4,41 @@
 #include <string>
 
 #include "Core.hpp"
-#include "ParserUtility.hpp"
+#include "BigInteger.hpp"
 #include "../SourceLocation.hpp"
 
 namespace Psi {
   namespace Tvm {
     namespace Parser {
       struct Element {
+        Element(PSI_MOVE_REF(Element) src);
         Element(const PhysicalSourceLocation& location_);
 
         PhysicalSourceLocation location;
       };
 
-      struct Token : Element, boost::intrusive::list_base_hook<> {
-        Token(const PhysicalSourceLocation& location_, const std::string& text_);
+      struct Token : Element {
+        Token(PSI_MOVE_REF(Token) src);
+        Token(const PhysicalSourceLocation& location_, std::string text_);
 
         std::string text;
       };
 
       struct Expression;
+      typedef ClonePtr<Expression> ExpressionRef;
 
-      struct NamedExpression : Element, boost::intrusive::list_base_hook<> {
-        NamedExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, UniquePtr<Expression>& expression_);
+      struct NamedExpression : Element {
+        NamedExpression(const PhysicalSourceLocation& location_, Maybe<Token> name_, ExpressionRef expression_);
 
-        UniquePtr<Token> name;
-        UniquePtr<Expression> expression;
+        Maybe<Token> name;
+        ExpressionRef expression;
       };
       
       struct ParameterExpression : NamedExpression {
-        ParameterExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, ParameterAttributes attributes_, UniquePtr<Expression>& expression_);
+        ParameterExpression(const PhysicalSourceLocation& location_, Maybe<Token> name_, ParameterAttributes attributes_, ExpressionRef expression_);
         ParameterAttributes attributes;
       };
-
+      
       enum ExpressionType {
         expression_phi,
         expression_call,
@@ -44,66 +47,77 @@ namespace Psi {
         expression_exists,
         expression_literal
       };
-
-      struct Expression : Element, boost::intrusive::list_base_hook<> {
+      
+      struct Expression : Element {
+        Expression(PSI_MOVE_REF(Expression) src);
         Expression(const PhysicalSourceLocation& location_, ExpressionType expression_type_);
         virtual ~Expression();
+        virtual Expression* clone() const = 0;
+        
+        friend Expression* clone(const Expression& expr) {
+          return expr.clone();
+        }
 
         ExpressionType expression_type;
       };
 
       struct NameExpression : Expression {
-        NameExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& name);
+        NameExpression(const PhysicalSourceLocation& location_, Token name);
+        virtual Expression* clone() const;
 
-        UniquePtr<Token> name;
+        Token name;
       };
 
-      struct PhiNode : Element, boost::intrusive::list_base_hook<> {
-        PhiNode(const PhysicalSourceLocation& location_, UniquePtr<Token>& label_, UniquePtr<Expression>& expression_);
+      struct PhiNode : Element {
+        PhiNode(const PhysicalSourceLocation& location_, Maybe<Token> label_, ExpressionRef expression_);
 
-        UniquePtr<Token> label;
-        UniquePtr<Expression> expression;
+        Maybe<Token> label;
+        ExpressionRef expression;
       };
 
       struct PhiExpression : Expression {
-        PhiExpression(const PhysicalSourceLocation& location_, UniquePtr<Expression>& type_, UniqueList<PhiNode>& nodes);
+        PhiExpression(const PhysicalSourceLocation& location_, ExpressionRef type_, PSI_STD::vector<PhiNode> nodes_);
+        virtual Expression* clone() const;
 
-        UniquePtr<Expression> type;
-        UniqueList<PhiNode> nodes;
+        ExpressionRef type;
+        PSI_STD::vector<PhiNode> nodes;
       };
 
       struct CallExpression : Expression {
-        CallExpression(const PhysicalSourceLocation& location_, UniquePtr<Token>& target_,
-                       UniqueList<Expression>& terms_);
+        CallExpression(const PhysicalSourceLocation& location_, Token target_, PSI_STD::vector<ExpressionRef> terms_);
+        virtual Expression* clone() const;
 
-        UniquePtr<Token> target;
-        UniqueList<Expression> terms;
+        Token target;
+        PSI_STD::vector<ExpressionRef> terms;
       };
 
       struct FunctionTypeExpression : Expression {
+        FunctionTypeExpression(PSI_MOVE_REF(FunctionTypeExpression) src);
         FunctionTypeExpression(const PhysicalSourceLocation& location_,
                                CallingConvention calling_convention_,
                                bool sret_,
-                               UniqueList<ParameterExpression>& phantom_parameters_,
-                               UniqueList<ParameterExpression>& parameters_,
+                               PSI_STD::vector<ParameterExpression> phantom_parameters_,
+                               PSI_STD::vector<ParameterExpression> parameters_,
                                ParameterAttributes result_attributes_,
-                               UniquePtr<Expression>& result_type_);
+                               ExpressionRef result_type_);
+        virtual Expression* clone() const;
 
         CallingConvention calling_convention;
         bool sret;
-        UniqueList<ParameterExpression> phantom_parameters;
-        UniqueList<ParameterExpression> parameters;
+        PSI_STD::vector<ParameterExpression> phantom_parameters;
+        PSI_STD::vector<ParameterExpression> parameters;
         ParameterAttributes result_attributes;
-        UniquePtr<Expression> result_type;
+        ExpressionRef result_type;
       };
       
       struct ExistsExpression : Expression {
         ExistsExpression(const PhysicalSourceLocation& location_,
-                         UniqueList<ParameterExpression>& parameters_,
-                         UniquePtr<Expression>& result_);
-        
-        UniqueList<ParameterExpression> parameters;
-        UniquePtr<Expression> result;
+                         PSI_STD::vector<ParameterExpression> parameters_,
+                         ExpressionRef result_);
+        virtual Expression* clone() const;
+
+        PSI_STD::vector<ParameterExpression> parameters;
+        ExpressionRef result;
       };
       
       enum LiteralType {
@@ -121,22 +135,21 @@ namespace Psi {
         literal_uintptr
       };
 
-      struct LiteralExpression : Expression {
-        LiteralExpression(const PhysicalSourceLocation& location_, LiteralType literal_type_, UniquePtr<Token>& value_);
+      struct IntegerLiteralExpression : Expression {
+        IntegerLiteralExpression(const PhysicalSourceLocation& location_, LiteralType literal_type_, BigInteger value_);
+        virtual Expression* clone() const;
 
         LiteralType literal_type;
-        UniquePtr<Token> value;
+        BigInteger value;
       };
 
-      struct Block : Element, boost::intrusive::list_base_hook<> {
-        Block(const PhysicalSourceLocation& location_, bool landing_pad_, UniqueList<NamedExpression>& statements_);
-        Block(const PhysicalSourceLocation& location_, bool landing_pad_, UniquePtr<Token>& name_, UniquePtr<Token>& dominator_name_,
-              UniqueList<NamedExpression>& statements_);
+      struct Block : Element {
+        Block(const PhysicalSourceLocation& location_, bool landing_pad_, Maybe<Token> name_, Maybe<Token> dominator_name_, PSI_STD::vector<NamedExpression> statements_);
 
-        UniquePtr<Token> name;
-        UniquePtr<Token> dominator_name;
-        UniqueList<NamedExpression> statements;
         bool landing_pad;
+        Maybe<Token> name;
+        Maybe<Token> dominator_name;
+        PSI_STD::vector<NamedExpression> statements;
       };
 
       enum GlobalType {
@@ -145,68 +158,79 @@ namespace Psi {
         global_variable,
         global_recursive
       };
+      
+      struct GlobalElement;
+      typedef ClonePtr<GlobalElement> GlobalElementRef;
 
-      struct GlobalElement : Element, boost::intrusive::list_base_hook<> {
+      struct GlobalElement : Element {
         GlobalElement(const PhysicalSourceLocation& location_, GlobalType global_type_);
         virtual ~GlobalElement();
+        virtual GlobalElement* clone() const = 0;
+        
+        friend GlobalElement* clone(GlobalElement& el) {
+          return el.clone();
+        }
 
         GlobalType global_type;
       };
-
+      
       struct Function : GlobalElement {
         Function(const PhysicalSourceLocation& location_,
                  Linkage linkage_,
-                 UniquePtr<FunctionTypeExpression>& type_);
+                 FunctionTypeExpression type_);
         Function(const PhysicalSourceLocation& location_,
                  Linkage linkage_,
-                 UniquePtr<FunctionTypeExpression>& type_,
-                 UniqueList<Block>& blocks_);
+                 FunctionTypeExpression type_,
+                 PSI_STD::vector<Block> blocks_);
+        virtual GlobalElement* clone() const;
 
         Linkage linkage;
-        UniquePtr<FunctionTypeExpression> type;
-        UniqueList<Block> blocks;
+        FunctionTypeExpression type;
+        PSI_STD::vector<Block> blocks;
       };
 
       struct RecursiveType : GlobalElement {
         RecursiveType(const PhysicalSourceLocation& location_,
-                      UniqueList<ParameterExpression>& phantom_parameters_,
-                      UniqueList<ParameterExpression>& parameters_,
-                      UniquePtr<Expression>& result_);
+                      PSI_STD::vector<ParameterExpression> phantom_parameters_,
+                      PSI_STD::vector<ParameterExpression> parameters_,
+                      ExpressionRef result_);
+        virtual GlobalElement* clone() const;
 
-        UniqueList<ParameterExpression> phantom_parameters;
-        UniqueList<ParameterExpression> parameters;
-        UniquePtr<Expression> result;
+        PSI_STD::vector<ParameterExpression> phantom_parameters;
+        PSI_STD::vector<ParameterExpression> parameters;
+        ExpressionRef result;
       };
 
       struct GlobalVariable : GlobalElement {
         GlobalVariable(const PhysicalSourceLocation& location_,
                        bool constant_,
                        Linkage linkage_,
-                       UniquePtr<Expression>& type_);
+                       ExpressionRef type_);
         GlobalVariable(const PhysicalSourceLocation& location_,
                        bool constant_,
                        Linkage linkage_,
-                       UniquePtr<Expression>& type_,
-                       UniquePtr<Expression>& value_);
+                       ExpressionRef type_,
+                       ExpressionRef value_);
+        virtual GlobalElement* clone() const;
 
         bool constant;
         Linkage linkage;
-        UniquePtr<Expression> type;
-        UniquePtr<Expression> value;
+        ExpressionRef type;
+        ExpressionRef value;
       };
 
       struct GlobalDefine : GlobalElement {
-        GlobalDefine(const PhysicalSourceLocation& location_,
-                     UniquePtr<Expression>& value_);
+        GlobalDefine(const PhysicalSourceLocation& location_, ExpressionRef value_);
+        virtual GlobalElement* clone() const;
 
-        UniquePtr<Expression> value;
+        ExpressionRef value;
       };
 
-      struct NamedGlobalElement : Element, boost::intrusive::list_base_hook<> {
-        NamedGlobalElement(const PhysicalSourceLocation& location_, UniquePtr<Token>& name_, UniquePtr<GlobalElement>& value_);
+      struct NamedGlobalElement : Element {
+        NamedGlobalElement(const PhysicalSourceLocation& location_, Token name_, GlobalElementRef value_);
 
-        UniquePtr<Token> name;
-        UniquePtr<GlobalElement> value;
+        Token name;
+        GlobalElementRef value;
       };
 
       /**
@@ -225,8 +249,9 @@ namespace Psi {
       }
     }
 
-    PSI_TVM_EXPORT void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin, const char *end);
-    PSI_TVM_EXPORT void parse(UniqueList<Parser::NamedGlobalElement>& result, const char *begin);
+    // Exported for the parser test suite
+    PSI_TVM_EXPORT PSI_STD::vector<Parser::NamedGlobalElement> parse(CompileErrorContext& error_context, const SourceLocation& loc, const char *begin, const char *end);
+    PSI_TVM_EXPORT PSI_STD::vector<Parser::NamedGlobalElement> parse(CompileErrorContext& error_context, const SourceLocation& loc, const char *begin);
   }
 }
 

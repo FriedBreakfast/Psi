@@ -61,7 +61,7 @@ namespace Psi {
        * JIT compile some assembler code and return the value of a single symbol.
        */
       void* ContextFixture::jit_single(const char *name, const char *src) {
-        AssemblerResult r = parse_and_build(module, src);
+        AssemblerResult r = parse_and_build(module, location.physical, src);
         AssemblerResult::iterator it = r.find(name);
         PSI_TEST_REQUIRE(it != r.end());
         m_jit->add_module(&module);

@@ -89,7 +89,8 @@ namespace Psi {
         LibraryHandle(HMODULE handle);
         ~LibraryHandle();
         HMODULE get() {return m_handle;}
-        void swap(LibraryHandle& other);
+
+        friend void swap(LibraryHandle& a, LibraryHandle& b);
       };
 
       PSI_COMPILER_COMMON_EXPORT std::string error_string(DWORD error);
