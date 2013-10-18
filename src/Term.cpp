@@ -24,7 +24,7 @@ namespace Psi {
     }
 
     Term::Term(const TermVtable *vptr, const TermResultInfo& ri, const SourceLocation& location)
-    : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), ri.type.compile_context(), location),
+    : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), ri.type->compile_context(), location),
     type(ri.type), mode(ri.mode), pure(ri.pure),
     m_type_info_computed(false) {
     }
@@ -101,7 +101,7 @@ namespace Psi {
         if (TreePtr<Parameter> param = dyn_treeptr_cast<Parameter>(term)) {
           if (param->depth == self.m_depth) {
             if (param->index >= self.m_elements->size())
-              term.compile_context().error_throw(*self.m_location, "Parameter index out of range");
+              term->compile_context().error_throw(*self.m_location, "Parameter index out of range");
             return (*self.m_elements)[param->index];
           } else {
             return param;

@@ -21,9 +21,6 @@ namespace Psi {
       TreePtr() {}
       explicit TreePtr(const T *ptr) : ObjectPtr<const T>(ptr) {}
       template<typename U> TreePtr(const TreePtr<U>& src) : ObjectPtr<const T>(src) {}
-
-      /// \brief Get the location of this tree
-      const SourceLocation& location() const {return this->get()->location();}
     };
     
     template<typename T> std::size_t hash_value(const TreePtr<T>& ptr) {return boost::hash_value(ptr.get());}

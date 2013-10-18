@@ -165,6 +165,7 @@ class CJit : public Jit {
   
 public:
   CJit(CompileErrorContext& error_conext, const boost::shared_ptr<CCompiler>& compiler, const Psi::PropertyValue& configuration);
+  virtual ~CJit();
   virtual void destroy();
 
   virtual void add_module(Module *module);

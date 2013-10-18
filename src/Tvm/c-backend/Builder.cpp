@@ -298,6 +298,9 @@ CJit::CJit(CompileErrorContext& error_context, const boost::shared_ptr<CCompiler
   m_dump_code = configuration.path_bool("jit_dump");
 }
 
+CJit::~CJit() {
+}
+
 void CJit::destroy() {
   delete this;
 }

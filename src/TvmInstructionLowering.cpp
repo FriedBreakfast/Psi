@@ -135,7 +135,7 @@ struct TvmFunctionBuilder::InstructionLowering {
     std::vector<Tvm::ValuePtr<> > parameter_types;
     for (PSI_STD::vector<TreePtr<JumpTarget> >::const_iterator ii = jump_group->entries.begin(), ie = jump_group->entries.end(); ii != ie; ++ii) {
       TvmJumpData jd;
-      jd.block = builder.builder().new_block(ii->location());
+      jd.block = builder.builder().new_block((*ii)->location());
       if ((*ii)->argument) {
         TvmResult type = builder.build((*ii)->argument->type);
         if ((*ii)->argument_mode == result_mode_by_value) {
@@ -367,20 +367,20 @@ struct TvmFunctionBuilder::InstructionLowering {
   
   static TvmResult run_initialize(TvmFunctionBuilder& builder, const TreePtr<InitializeValue>& initialize) {
     TvmResult dest_ptr = builder.build(initialize->target_ref);
-    builder.object_construct_term(construct_initialize, dest_ptr.value, initialize->assign_value, initialize.location());
+    builder.object_construct_term(construct_initialize, dest_ptr.value, initialize->assign_value, initialize->location());
     return builder.build(initialize->inner);
   }
 
   static TvmResult run_assign(TvmFunctionBuilder& builder, const TreePtr<AssignValue>& assign) {
     TvmResult dest_ptr = builder.build(assign->target_ref);
-    builder.object_construct_term(construct_assign, dest_ptr.value, assign->assign_value, assign.location());
-    return TvmResult(builder.m_state.scope, Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), assign.location()));
+    builder.object_construct_term(construct_assign, dest_ptr.value, assign->assign_value, assign->location());
+    return TvmResult(builder.m_state.scope, Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), assign->location()));
   }
 
   static TvmResult run_finalize(TvmFunctionBuilder& builder, const TreePtr<FinalizeValue>& finalize) {
     TvmResult dest_ptr = builder.build(finalize->target_ref);
-    builder.object_destroy(dest_ptr.value, finalize->target_ref->type, finalize.location());
-    return TvmResult(builder.m_state.scope, Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), finalize.location()));
+    builder.object_destroy(dest_ptr.value, finalize->target_ref->type, finalize->location());
+    return TvmResult(builder.m_state.scope, Tvm::FunctionalBuilder::empty_value(builder.tvm_context(), finalize->location()));
   }
 
   typedef TreeOperationMap<Term, TvmResult, TvmFunctionBuilder&> CallbackMap;

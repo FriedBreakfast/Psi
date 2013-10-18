@@ -35,14 +35,15 @@ endif()
 
 add_library(psi-compiler-common SHARED
   Configuration.cpp Configuration.hpp
-  Runtime.cpp Runtime.hpp
-  PropertyValue.cpp PropertyValue.hpp
-  SourceLocation.cpp SourceLocation.hpp
-  Utility.cpp Utility.hpp
+  CppCompiler.hpp
   ErrorContext.cpp ErrorContext.hpp
   Export.hpp
-  CppCompiler.hpp
+  Lexer.cpp Lexer.hpp
   Platform.cpp Platform.hpp
+  PropertyValue.cpp PropertyValue.hpp
+  Runtime.cpp Runtime.hpp
+  SourceLocation.cpp SourceLocation.hpp
+  Utility.cpp Utility.hpp
   ${PSI_COMPILER_COMMON_SOURCES}
 )
 shared_library_setup(psi-compiler-common)
@@ -148,8 +149,6 @@ add_library(psi-runtime SHARED
 Runtime/StackAlloc.c
 ${PSI_RUNTIME_SOURCES}
 )
-
-run_bison(Parser.ypp)
 
 add_library(psi-compiler SHARED
   Aggregate.cpp

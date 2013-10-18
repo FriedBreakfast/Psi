@@ -433,7 +433,7 @@ namespace Psi {
     const TermVtable TryFinally::vtable = PSI_COMPILER_TERM(TryFinally, "psi.compiler.TryFinally", Term);
 
     Statement::Statement(const TreePtr<Term>& value_, StatementMode mode_, const SourceLocation& location)
-    : Term(&vtable, value_.compile_context(),
+    : Term(&vtable, value_->compile_context(),
            TermResultInfo(value_->type,
                           mode_ == statement_mode_functional ? term_mode_value
                           : mode_ == statement_mode_destroy ? term_mode_bottom
@@ -448,7 +448,7 @@ namespace Psi {
         
       case statement_mode_functional:
         if (type && !type->is_register_type()) {
-          CompileError err(value.compile_context().error_context(), location);
+          CompileError err(value->compile_context().error_context(), location);
           err.info(location, "Only primitive types can be used as functional values");
           err.info(type->location(), "Type is not primitive");
           err.end();
@@ -458,7 +458,7 @@ namespace Psi {
         
       case statement_mode_ref: {
         if ((value->mode != term_mode_lref) && (value->mode != term_mode_rref))
-          value.compile_context().error_throw(location, "Cannot bind temporary to reference");
+          value->compile_context().error_throw(location, "Cannot bind temporary to reference");
         break;
       }
         
@@ -729,7 +729,7 @@ namespace Psi {
      * \brief Get the type of an aggregate element.
      */
     TreePtr<Term> ElementValue::element_type(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location) {
-      CompileContext& compile_context = aggregate.compile_context();
+      CompileContext& compile_context = aggregate->compile_context();
       
       TreePtr<Term> unwrapped = term_unwrap(aggregate);
       if (TreePtr<StructType> st = dyn_treeptr_cast<StructType>(unwrapped)) {
@@ -752,7 +752,7 @@ namespace Psi {
       } else {
         CompileError err(compile_context.error_context(), location);
         err.info("Element lookup argument is not an aggregate type");
-        err.info(unwrapped.location(), "Type of aggregate");
+        err.info(unwrapped->location(), "Type of aggregate");
         err.end();
         throw CompileException();
       }
@@ -1346,18 +1346,18 @@ namespace Psi {
     const TermVtable JumpGroup::vtable = PSI_COMPILER_TERM(JumpGroup, "psi.compiler.JumpGroup", Term);
     
     JumpTo::JumpTo(const TreePtr<JumpTarget>& target_, const TreePtr<Term>& argument_, const SourceLocation& location)
-    : Term(&vtable, term_result_bottom(target_.compile_context()), location),
+    : Term(&vtable, term_result_bottom(target_->compile_context()), location),
     target(target_),
     argument(argument_) {
       if (target->argument->type != argument->type)
-        target.compile_context().error_throw(location, "Jump argument has the wrong type");
+        target->compile_context().error_throw(location, "Jump argument has the wrong type");
       
       if (target->argument_mode == result_mode_lvalue) {
         if ((argument->mode != term_mode_lref) && (argument->mode != term_mode_rref))
-          target.compile_context().error_throw(location, "Cannot make reference to temporary in a jump");
+          target->compile_context().error_throw(location, "Cannot make reference to temporary in a jump");
       } else if (target->argument_mode == result_mode_rvalue) {
         if (argument->mode != term_mode_rref)
-          target.compile_context().error_throw(location, "Cannot make rvalue reference to temporary or lvalue in a jump");
+          target->compile_context().error_throw(location, "Cannot make rvalue reference to temporary or lvalue in a jump");
       }
     }
     
@@ -1382,13 +1382,13 @@ namespace Psi {
     TermResultInfo FunctionCall::get_result_type(const TreePtr<Term>& target, PSI_STD::vector<TreePtr<Term> >& arguments, const SourceLocation& location) {
       TreePtr<FunctionType> ft = term_unwrap_dyn_cast<FunctionType>(target->type);
       if (!ft)
-        target.compile_context().error_throw(location, "Target of function call does not have function type");
+        target->compile_context().error_throw(location, "Target of function call does not have function type");
       
       if (target->mode != term_mode_lref)
-        target.compile_context().error_throw(location, "Function call target is a function but not a reference", CompileError::error_internal);
+        target->compile_context().error_throw(location, "Function call target is a function but not a reference", CompileError::error_internal);
       
       if (ft->parameter_types.size() != arguments.size())
-        target.compile_context().error_throw(location, "Function call has the wrong number of parameters");
+        target->compile_context().error_throw(location, "Function call has the wrong number of parameters");
       
       for (std::size_t ii = 0, ie = arguments.size(); ii != ie; ++ii) {
         if ((ft->parameter_types[ii].mode == parameter_mode_functional) || (ft->parameter_types[ii].mode == parameter_mode_phantom))
@@ -1595,7 +1595,7 @@ namespace Psi {
     const TreeVtable Module::vtable = PSI_COMPILER_TREE(Module, "psi.compiler.Module", Tree);
     
     Library::Library(const TreePtr<TargetCallback>& callback_, const SourceLocation& location)
-    : Tree(&vtable, callback_.compile_context(), location),
+    : Tree(&vtable, callback_->compile_context(), location),
     callback(callback_) {
     }
     
@@ -1724,7 +1724,7 @@ namespace Psi {
     const TermVtable InitializeValue::vtable = PSI_COMPILER_TERM(InitializeValue, "psi.compiler.InitializeValue", Term);
     
     AssignValue::AssignValue(const TreePtr<Term>& target_ref_, const TreePtr<Term>& assign_value_, const SourceLocation& location)
-    : Term(&vtable, term_result_void(target_ref_.compile_context()), location),
+    : Term(&vtable, term_result_void(target_ref_->compile_context()), location),
     target_ref(target_ref_),
     assign_value(assign_value_) {
       if ((target_ref->mode != term_mode_lref) && (target_ref->mode != term_mode_rref))
@@ -1743,7 +1743,7 @@ namespace Psi {
     const TermVtable AssignValue::vtable = PSI_COMPILER_TERM(AssignValue, "psi.compiler.AssignValue", Term);
     
     FinalizeValue::FinalizeValue(const TreePtr<Term>& target_ref_, const SourceLocation& location)
-    : Term(&vtable, term_result_void(target_ref_.compile_context()), location),
+    : Term(&vtable, term_result_void(target_ref_->compile_context()), location),
     target_ref(target_ref_) {
       if ((target_ref->mode != term_mode_lref) && (target_ref->mode != term_mode_rref))
         compile_context().error_throw(location, "Finalize target is not a reference");

@@ -1,29 +1,45 @@
 #include "Parser.hpp"
+#include "../Lexer.hpp"
 
 #include <cstring>
 #include <boost/format.hpp>
 
+#if PSI_USE_RVALUE_REF
+#include <utility>
+namespace {
+  using std::move;
+}
+#else
+#include <boost/utility/enable_if.hpp>
+#include <boost/swap.hpp>
+namespace {
+  template<typename T> struct use_move : boost::true_type {};
+  template<> struct use_move<Psi::Tvm::Parser::Token> : boost::false_type {};
+  template<> struct use_move<Psi::Tvm::Parser::FunctionTypeExpression> : boost::false_type {};
+  
+  // Try to simulate by NRVO
+  template<typename T>
+  T move(T& t, typename boost::enable_if<use_move<T> >::type* = 0) {
+    T x;
+    boost::swap(x, t);
+    return x;
+  }
+
+  template<typename T>
+  const T& move(T& t, typename boost::disable_if<use_move<T> >::type* = 0) {
+    return t;
+  }
+}
+#endif
+
 namespace Psi {
 namespace Tvm {
 namespace Parser {
-Element::Element(PSI_MOVE_REF(Element) src)
-: location(move_value(src).location) {
-}
-
 Element::Element(const PhysicalSourceLocation& location_) : location(location_) {
-}
-
-Token::Token(PSI_MOVE_REF(Token) src)
-: Element(move<Element>(src)),
-text(move(move_value(src).text)) {
 }
 
 Token::Token(const PhysicalSourceLocation& location_, std::string text_)
 : Element(location_), text(move(text_)) {
-}
-
-Expression::Expression(PSI_MOVE_REF(Expression) src)
-: Element(move<Element>(src)), expression_type(move_value(src).expression_type) {
 }
 
 Expression::Expression(const PhysicalSourceLocation& location_, ExpressionType expression_type_)
@@ -59,16 +75,6 @@ CallExpression::CallExpression(const PhysicalSourceLocation& location_, Token ta
 
 Expression* CallExpression::clone() const {
   return new CallExpression(*this);
-}
-
-FunctionTypeExpression::FunctionTypeExpression(PSI_MOVE_REF(FunctionTypeExpression) src)
-: Expression(move<Expression>(src)),
-calling_convention(move_value(src).calling_convention),
-sret(move_value(src).sret),
-phantom_parameters(move(move_value(src).phantom_parameters)),
-parameters(move(move_value(src).parameters)),
-result_attributes(move(move_value(src).result_attributes)),
-result_type(move(move_value(src).result_type)) {
 }
 
 FunctionTypeExpression::FunctionTypeExpression(const PhysicalSourceLocation& location_,
@@ -251,6 +257,72 @@ enum LongToken {
   tok_import
 };
 
+class LexerImplValue {
+  int m_which;
+  
+  union Data {
+    AlignedStorageFor<ExpressionRef> expression;
+    AlignedStorageFor<Token> token;
+  };
+  
+  Data m_data;
+  
+  void initialize_expression(const ExpressionRef& src) {
+    new (m_data.expression.ptr()) ExpressionRef (src);
+    m_which = 1;
+  }
+  
+  void initialize_token(const Token& src) {
+    new (m_data.token.ptr()) Token (src);
+    m_which = 2;
+  }
+  
+  void initialize(const LexerImplValue& src) {
+    switch (src.m_which) {
+    case 0: m_which = 0; break;
+    case 1: initialize_expression(src.expression()); break;
+    case 2: initialize_token(src.token()); break;
+    default: PSI_FAIL("Unexpected enum value");
+    }
+  }
+  
+public:
+  LexerImplValue() : m_which(0) {}
+  LexerImplValue(const LexerImplValue& src) {initialize(src);}
+  LexerImplValue(const ExpressionRef& src) {initialize_expression(src);}
+  LexerImplValue(const Token& src) {initialize_token(src);}
+  
+  ~LexerImplValue() {clear();}
+  
+  void clear() {
+    switch (m_which) {
+    case 1: m_data.expression.ptr()->~ExpressionRef(); break;
+    case 2: m_data.token.ptr()->~Token(); break;
+    default: break;
+    }
+    m_which = 0;
+  }
+  
+  LexerImplValue& operator = (const LexerImplValue& src) {
+    if (m_which == src.m_which) {
+      switch (m_which) {
+      case 1: expression() = src.expression(); break;
+      case 2: token() = src.token(); break;
+      default: break;
+      }
+    } else if (this != &src) {
+      clear();
+      initialize(src);
+    }
+    return *this;
+  }
+  
+  ExpressionRef& expression() {PSI_ASSERT(m_which == 1); return *m_data.expression.ptr();}
+  const ExpressionRef& expression() const {PSI_ASSERT(m_which == 1); return *m_data.expression.ptr();}
+  Token& token() {PSI_ASSERT(m_which == 2); return *m_data.token.ptr();}
+  const Token& token() const {PSI_ASSERT(m_which == 2); return *m_data.token.ptr();}
+};
+
 class LexerImpl {
 public:
   struct KeywordTokenPair {
@@ -260,65 +332,19 @@ public:
   
   static const std::size_t n_keywords = 18;
   static const KeywordTokenPair keywords[n_keywords];
-
-  class LexerValue {
-    int m_id;
-    PhysicalSourceLocation m_location;
-    ExpressionRef m_expression;
-    Maybe<Token> m_token;
-    
-  public:
-    LexerValue();
-    LexerValue(PSI_MOVE_REF(LexerValue) src);
-    LexerValue(int id, PhysicalSourceLocation location);
-    LexerValue(int id, PhysicalSourceLocation location, ExpressionRef src);
-    LexerValue(int id, PhysicalSourceLocation location, Token src);
-    
-    int id() {return m_id;}
-    const PhysicalSourceLocation& location() {return m_location;}
-    ExpressionRef& expression() {return m_expression;}
-    Token& token() {return *m_token;}
-  };
-
-  LexerImpl(CompileErrorContext& error_context, const SourceLocation& loc, const char *start, const char *end);
-
-  CompileErrorPair error_loc(const PhysicalSourceLocation& loc);
-  PSI_ATTRIBUTE((PSI_NORETURN)) void error(const PhysicalSourceLocation& loc, const std::string& message);
-  template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error(const PhysicalSourceLocation& loc, const T& message) {error(loc, CompileError::to_str(message));}
-
-  LexerValue& peek();
-  bool reject(int t);
-  void accept();
-  bool accept(int t);
-  bool accept2(int a, int b);
-  void expect(int t);
-  void back();
-  PSI_ATTRIBUTE((PSI_NORETURN)) void unexpected();
   
-  LexerValue& value(unsigned n=0);
-  const PhysicalSourceLocation& loc_begin() {return peek().location();}
-  void loc_end(PhysicalSourceLocation& loc);
+  typedef LexerValue<int, LexerImplValue> ValueType;
+
+  ValueType lex(LexerPosition& pos);
+  std::string error_name(int tok);
+  std::string error_name(const ValueType& value);
 
 private:
-  CompileErrorContext *m_error_context;
-  LogicalSourceLocationPtr m_error_location;
-
-  PhysicalSourceLocation m_location;
-  const char *m_current, *m_end;
-
-  static const unsigned n_backtrack = 3;
-  LexerValue m_values[n_backtrack];
-  unsigned m_values_pos, m_values_begin, m_values_end;
-
-  std::string error_name(int tok);
-  std::string error_name(LexerValue& value);
   int keyword_to_token(const char *begin, const char *end);
-  LiteralType signed_literal_type(const PhysicalSourceLocation& loc, char c);
-  LiteralType unsigned_literal_type(const PhysicalSourceLocation& loc, char c);
-  LexerValue lex();
-  void lex_accept();
-  const char* lex_accept_token_chars();
-  BigInteger lex_integer(const PhysicalSourceLocation& loc, LiteralType type, const char *start, const char *end);
+  LiteralType signed_literal_type(LexerPosition& pos, const PhysicalSourceLocation& loc, char c);
+  LiteralType unsigned_literal_type(LexerPosition& pos, const PhysicalSourceLocation& loc, char c);
+  void accept_token_chars(LexerPosition& pos);
+  BigInteger lex_integer(LexerPosition& pos, const PhysicalSourceLocation& loc, LiteralType type, const char *start, const char *end);
 };
 
 // Must be maintained in lexicographical order
@@ -343,126 +369,6 @@ const LexerImpl::KeywordTokenPair LexerImpl::keywords[LexerImpl::n_keywords] = {
   {"sret", tok_sret},
 };
 
-LexerImpl::LexerValue::LexerValue() {
-}
-
-LexerImpl::LexerValue::LexerValue(PSI_MOVE_REF(LexerValue) src)
-: m_expression(move(move_value(src).m_expression)),
-m_token(move(move_value(src).m_token)) {
-}
-
-LexerImpl::LexerValue::LexerValue(int id, PhysicalSourceLocation loc)
-: m_id(id), m_location(loc) {
-}
-
-LexerImpl::LexerValue::LexerValue(int id, PhysicalSourceLocation loc, ExpressionRef src)
-: m_id(id), m_location(loc), m_expression(move(src)) {
-
-}
-
-LexerImpl::LexerValue::LexerValue(int id, PhysicalSourceLocation loc, Token src)
-: m_id(id), m_location(loc), m_token(move(src)) {
-}
-
-LexerImpl::LexerImpl(CompileErrorContext& error_context, const SourceLocation& loc, const char* start, const char* end)
-: m_error_context(&error_context), m_error_location(loc.logical),
-m_location(loc.physical), m_current(start), m_end(end) {
-  m_location.last_column = m_location.first_column;
-  m_location.last_line = m_location.first_line;
-  
-  // Grab first token
-  m_values[0] = lex();
-  m_values_begin = 0;
-  m_values_pos = 0;
-  m_values_end = 1;
-}
-
-CompileErrorPair LexerImpl::error_loc(const PhysicalSourceLocation& loc) {
-  return CompileErrorPair(*m_error_context, SourceLocation(loc, m_error_location));
-}
-
-void LexerImpl::error(const PhysicalSourceLocation& loc, const std::string& message) {
-  error_loc(loc).error_throw(message);
-}
-
-/**
- * \brief Lexer value \c n items back
- * 
- * This does not currently do proper error checking to see whether \c n is out
- * of bounds as defined by \c m_values_begin and \c m_values_end.
- */
-LexerImpl::LexerValue& LexerImpl::value(unsigned n) {
-  ++n;
-  PSI_ASSERT(n < n_backtrack);
-  
-  unsigned idx = m_values_pos;
-  if (idx >= n)
-    idx -= n;
-  else
-    idx += n_backtrack - n;
-  return m_values[idx];
-}
-
-/// \brief Peek at the next token
-LexerImpl::LexerValue& LexerImpl::peek() {
-  return m_values[m_values_pos];
-}
-
-/// \brief Accept the next token unconditionally
-void LexerImpl::accept() {
-  ++m_values_pos;
-  if (m_values_pos == n_backtrack)
-    m_values_pos = 0;
-  
-  if (m_values_pos == m_values_end) {
-    m_values[m_values_pos] = lex();
-    
-    if (m_values_pos == m_values_begin) {
-      ++m_values_begin;
-      if (m_values_begin == n_backtrack)
-        m_values_begin = 0;
-    }
-    
-    ++m_values_end;
-    if (m_values_end == n_backtrack)
-      m_values_end = 0;
-  }
-}
-
-void LexerImpl::back() {
-  PSI_ASSERT(m_values_pos != m_values_begin);
-  if (m_values_pos == 0)
-    m_values_pos = n_backtrack - 1;
-  else
-    --m_values_pos;
-}
-
-/// \brief Return true if the next token is not \c t
-bool LexerImpl::reject(int t) {
-  return peek().id() != t;
-}
-
-/// \brief Accept the next token if it is a \c t
-bool LexerImpl::accept(int t) {
-  if (peek().id() == t) {
-    accept();
-    return true;
-  }
-  
-  return false;
-}
-
-bool LexerImpl::accept2(int a, int b) {
-  if (accept(a)) {
-    if (accept(b))
-      return true;
-    else
-      back();
-  }
-  
-  return false;
-}
-
 std::string LexerImpl::error_name(int tok) {
   if (tok <= 256) {
     return boost::str(boost::format("'%c'") % char(tok));
@@ -485,23 +391,12 @@ std::string LexerImpl::error_name(int tok) {
   }
 }
 
-std::string LexerImpl::error_name(LexerValue& value) {
+std::string LexerImpl::error_name(const ValueType& value) {
   switch (value.id()) {
-  case tok_id: return boost::str(boost::format("identifier '%%%s'") % value.token().text);
-  case tok_op: return boost::str(boost::format("operator '%s'") % value.token().text);
+  case tok_id: return boost::str(boost::format("identifier '%%%s'") % value.value().token().text);
+  case tok_op: return boost::str(boost::format("operator '%s'") % value.value().token().text);
   default: return error_name(value.id());
   }
-}
-
-/// \brief Require the next token to be a \c t
-void LexerImpl::expect(int t) {
-  if (peek().id() != t)
-    error(peek().location(), boost::format("Unexpected token %s, expected %s") % error_name(peek()) % error_name(t));
-  accept();
-}
-
-void LexerImpl::unexpected() {
-  error(peek().location(), boost::format("Unexpected token %s") % error_name(peek()));
 }
 
 namespace {
@@ -544,7 +439,7 @@ int LexerImpl::keyword_to_token(const char *start, const char *end) {
 }
 
 /// Map char to signed literal type ID
-LiteralType LexerImpl::signed_literal_type(const PhysicalSourceLocation& loc, char c) {
+LiteralType LexerImpl::signed_literal_type(LexerPosition& pos, const PhysicalSourceLocation& loc, char c) {
   switch (c) {
   case 'b': return literal_byte;
   case 's': return literal_short;
@@ -552,12 +447,12 @@ LiteralType LexerImpl::signed_literal_type(const PhysicalSourceLocation& loc, ch
   case 'l': return literal_long;
   case 'q': return literal_quad;
   case 'p': return literal_intptr;
-  default: error(loc, boost::format("Unknown literal type '%c'") % c);
+  default: pos.error(loc, boost::format("Unknown literal type '%c'") % c);
   }
 }
 
 /// Map char to unsigned literal type ID
-LiteralType LexerImpl::unsigned_literal_type(const PhysicalSourceLocation& loc, char c) {
+LiteralType LexerImpl::unsigned_literal_type(LexerPosition& pos, const PhysicalSourceLocation& loc, char c) {
   switch (c) {
   case 'b': return literal_ubyte;
   case 's': return literal_ushort;
@@ -565,33 +460,27 @@ LiteralType LexerImpl::unsigned_literal_type(const PhysicalSourceLocation& loc, 
   case 'l': return literal_ulong;
   case 'q': return literal_uquad;
   case 'p': return literal_uintptr;
-  default: error(loc, boost::format("Unknown literal type '%c'") % c);
+  default: pos.error(loc, boost::format("Unknown literal type '%c'") % c);
   }
 }
 
-/// Accept one character
-void LexerImpl::lex_accept() {
-  ++m_current;
-  ++m_location.last_column;
-}
-
 /// Grab all token characters
-const char* LexerImpl::lex_accept_token_chars() {
-  const char *start = m_current;
-
-  // Grab all token characters
-  while ((m_current != m_end) && token_char(*m_current))
-    lex_accept();
+void LexerImpl::accept_token_chars(LexerPosition& pos) {
+  bool empty = true;
   
-  if (start == m_current)
-    error(m_location, "Zero length token found");
-
-  return start;
+  // Grab all token characters
+  while (!pos.end() && token_char(pos.current())) {
+    empty = false;
+    pos.accept();
+  }
+  
+  if (empty)
+    pos.error(pos.location(), "Zero length token found");
 }
 
-BigInteger LexerImpl::lex_integer(const PhysicalSourceLocation& loc, LiteralType type, const char *start, const char *end) {
+BigInteger LexerImpl::lex_integer(LexerPosition& pos, const PhysicalSourceLocation& loc, LiteralType type, const char *start, const char *end) {
   if (start == end)
-    error(loc, "Number literal is too short");
+    pos.error(loc, "Number literal is too short");
   
   unsigned bits;
   switch (type) {
@@ -619,85 +508,72 @@ BigInteger LexerImpl::lex_integer(const PhysicalSourceLocation& loc, LiteralType
   }
   
   if (start == end)
-    error(loc, "Number literal is too short");
+    pos.error(loc, "Number literal is too short");
 
-  bool negative;
+  bool negative = false;
   if (*start == '-') {
     negative = true;
     ++start;
   }
 
   if (start == end)
-    error(loc, "Number literal is too short");
+    pos.error(loc, "Number literal is too short");
 
-  value.parse(error_loc(loc), start, end, negative, base);
+  value.parse(pos.error_loc(loc), start, end, negative, base);
   
   return value;
 }
 
 /// Token parser
-LexerImpl::LexerValue LexerImpl::lex() {
-  // Skip whitespace
-  while(m_current != m_end) {
-    if (std::strchr(" \t\r\v", *m_current)) {
-      lex_accept();
-    } else if (*m_current == '\n') {
-      ++m_location.last_line;
-      m_location.last_column = 1;
-      lex_accept();
-    } else {
-      break;
-    }
-  }
+LexerImpl::ValueType LexerImpl::lex(LexerPosition& pos) {
+  pos.skip_whitespace();
 
-  if (m_current == m_end) {
-    // End-of-stream
-    return LexerValue(tok_eof, m_location);
-  }
-
-  m_location.first_line = m_location.last_line;
-  m_location.first_column = m_location.last_column;
+  if (pos.end())
+    return ValueType(tok_eof, pos.location());
 
   // Get token type
-  switch(*m_current) {
+  switch(pos.current()) {
   case '#': {
-    lex_accept();
-    const char *start = lex_accept_token_chars();
+    pos.accept();
+    const char *start = pos.token_end();
+    accept_token_chars(pos);
     
-    if (m_current - start < 2)
-      error(m_location, "Number literal is too short");
+    if (pos.token_length() < 2)
+      pos.error(pos.location(), "Number literal is too short");
 
     LiteralType number_type;
-    Psi::PhysicalSourceLocation literal_loc(m_location);
+    Psi::PhysicalSourceLocation literal_loc(pos.location());
     if (start[0] == 'u') {
-      number_type = unsigned_literal_type(m_location, start[1]);
+      number_type = unsigned_literal_type(pos, pos.location(), start[1]);
       literal_loc.first_column += 2;
       start += 2;
     } else {
-      number_type = signed_literal_type(m_location, start[0]);
+      number_type = signed_literal_type(pos, pos.location(), start[0]);
       literal_loc.first_column += 1;
       start += 1;
     }
     
-    ExpressionRef expr(new IntegerLiteralExpression(literal_loc, number_type, lex_integer(m_location, number_type, start, m_current)));
-    return LexerValue(tok_number, literal_loc, move(expr));
+    ExpressionRef expr(new IntegerLiteralExpression(literal_loc, number_type, lex_integer(pos, pos.location(), number_type, start, pos.token_end())));
+    return ValueType(tok_number, literal_loc, move(expr));
   }
 
   case '%': {
-    lex_accept();
-    const char *start = lex_accept_token_chars();
+    pos.accept();
+    const char *start = pos.token_end();
+    accept_token_chars(pos);
+    const char *end = pos.token_end();
 
     std::string text;
-    for (const char *p = start; p != m_current; ++p) {
+    for (const char *p = start; p != end; ++p) {
       if (*p != '%') {
         text.push_back(*p);
       } else {
         int c = 0;
         ++p;
-        if (p != m_current) {
+        if (p != end) {
           c = *p - '0';
           ++p;
-          if (p != m_current) {
+          if (p != end) {
             c <<= 8;
             c |= *p - '0';
           }
@@ -706,40 +582,36 @@ LexerImpl::LexerValue LexerImpl::lex() {
       }
     }
     
-    return LexerValue(tok_id, m_location, Token(m_location, move(text)));
+    return ValueType(tok_id, pos.location(), Token(pos.location(), move(text)));
   }
 
   default: {
-    PSI_ASSERT(*m_current != '%');
-    if (token_char(*m_current)) {
-      const char *start = lex_accept_token_chars();
-      int kw = keyword_to_token(start, m_current);
+    if (token_char(pos.current())) {
+      accept_token_chars(pos);
+      int kw = keyword_to_token(pos.token_start(), pos.token_end());
       if (kw >= 0) {
         // A keyword
-        return LexerValue(kw, m_location);
+        return ValueType(kw, pos.location());
       } else {
         // Not really a keyword, but an operator
-        return LexerValue(tok_op, m_location, Token(m_location, std::string(start, m_current)));
+        return ValueType(tok_op, pos.location(), Token(pos.location(), std::string(pos.token_start(), pos.token_end())));
       }
     } else {
-      int tok = *m_current;
-      lex_accept();
-      return LexerValue(tok, m_location);
+      int tok = pos.current();
+      pos.accept();
+      return ValueType(tok, pos.location());
     }
   }
   }
 }
 
-void LexerImpl::loc_end(PhysicalSourceLocation& loc) {
-  loc.last_line = m_location.last_line;
-  loc.last_column = m_location.last_column;
-}
-
 class ParserImpl {
 public:
-  ParserImpl(LexerImpl *lexer) : m_lexer(lexer) {}
+  typedef Lexer<2, int, LexerImplValue, LexerImpl> LexerType;
   
-  LexerImpl& lex() {return *m_lexer;}
+  ParserImpl(LexerType *lexer) : m_lexer(lexer) {}
+  
+  LexerType& lex() {return *m_lexer;}
 
   PSI_STD::vector<NamedGlobalElement> parse_globals();
   GlobalElementRef parse_global_element();
@@ -755,7 +627,7 @@ public:
   PSI_STD::vector<PhiNode> parse_phi_nodes();
   
 private:
-  LexerImpl *m_lexer;
+  LexerType *m_lexer;
 };
 
 PSI_STD::vector<NamedGlobalElement> ParserImpl::parse_globals() {
@@ -766,7 +638,7 @@ PSI_STD::vector<NamedGlobalElement> ParserImpl::parse_globals() {
     
     PhysicalSourceLocation loc = lex().loc_begin();
     lex().expect(tok_id);
-    Token name = lex().value().token();
+    Token name = lex().value().value().token();
     lex().expect('=');
     GlobalElementRef global = parse_global_element();
     lex().expect(';');
@@ -850,7 +722,7 @@ ParameterExpression ParserImpl::parse_parameter() {
   Maybe<Token> id;
   ParameterAttributes attrs;
   if (lex().accept2(tok_id, ':')) {
-    id = lex().value(1).token();
+    id = lex().value(1).value().token();
     attrs = parse_attribute_list();
   } else if (lex().accept(':')) {
     attrs = parse_attribute_list();
@@ -900,10 +772,10 @@ PSI_STD::vector<Block> ParserImpl::parse_function_body() {
       lex().unexpected();
     
     lex().expect(tok_id);
-    name = lex().value().token();
+    name = lex().value().value().token();
     if (lex().accept('(')) {
       lex().expect(tok_id);
-      dominator_name = lex().value().token();
+      dominator_name = lex().value().value().token();
       lex().expect(')');
     }
     lex().expect(':');
@@ -923,7 +795,7 @@ PSI_STD::vector<NamedExpression> ParserImpl::parse_statement_list() {
     
     Maybe<Token> name;
     if (lex().accept2(tok_id, '='))
-      name = lex().value(1).token();
+      name = lex().value(1).value().token();
     
     ExpressionRef expr;
     if (lex().accept(tok_phi)) {
@@ -950,7 +822,7 @@ PSI_STD::vector<PhiNode> ParserImpl::parse_phi_nodes() {
     
     Maybe<Token> name;
     if (lex().accept(tok_id))
-      name = lex().value().token();
+      name = lex().value().value().token();
     
     lex().expect('>');
     
@@ -966,7 +838,7 @@ PSI_STD::vector<PhiNode> ParserImpl::parse_phi_nodes() {
 ExpressionRef ParserImpl::parse_root_expression() {
   if (lex().accept(tok_op)) {
     PhysicalSourceLocation loc = lex().value().location();
-    Token name = move(lex().value().token());
+    Token name = move(lex().value().value().token());
     PSI_STD::vector<ExpressionRef> terms;
     while (true) {
       if (!lex().reject(';') || !lex().reject(',') || !lex().reject(')') || !lex().reject('|'))
@@ -997,11 +869,11 @@ ExpressionRef ParserImpl::parse_expression() {
     lex().expect(')');
     return expr;
   } else if (lex().accept(tok_number)) {
-    return lex().value().expression();
+    return lex().value().value().expression();
   } else if (lex().accept(tok_id)) {
-    return ExpressionRef(new NameExpression(lex().value().location(), lex().value().token()));
+    return ExpressionRef(new NameExpression(lex().value().location(), lex().value().value().token()));
   } else if (lex().accept(tok_op)) {
-    return ExpressionRef(new CallExpression(lex().value().location(), lex().value().token(), default_));
+    return ExpressionRef(new CallExpression(lex().value().location(), lex().value().value().token(), default_));
   } else {
     lex().unexpected();
   }
@@ -1037,9 +909,11 @@ FunctionTypeExpression ParserImpl::parse_function_type() {
 }
 
 PSI_STD::vector<Parser::NamedGlobalElement> parse(CompileErrorContext& error_context, const SourceLocation& loc, const char *begin, const char *end) {
-  Parser::LexerImpl lexer(error_context, loc, begin, end);
+  Parser::ParserImpl::LexerType lexer(error_context, loc, begin, end);
   Parser::ParserImpl parser(&lexer);
-  return parser.parse_globals();
+  PSI_STD::vector<Parser::NamedGlobalElement> result = parser.parse_globals();
+  lexer.expect(Parser::tok_eof);
+  return result;
 }
 
 PSI_STD::vector<Parser::NamedGlobalElement> parse(CompileErrorContext& error_context, const SourceLocation& loc, const char *begin) {

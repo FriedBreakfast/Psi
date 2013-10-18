@@ -216,12 +216,12 @@ TvmResult tvm_lower_generic(TvmScope& scope, TvmFunctionalBuilder& builder, cons
     anonymous_list.push_back(rewrite_anon);
     
     Tvm::ValuePtr<> tvm_type = builder.build(rewrite_type).value;
-    Tvm::ValuePtr<Tvm::RecursiveParameter> param = Tvm::RecursiveParameter::create(tvm_type, false, ii->location());
+    Tvm::ValuePtr<Tvm::RecursiveParameter> param = Tvm::RecursiveParameter::create(tvm_type, false, (*ii)->location());
     parameters.push_back(*param);
     scope.put(rewrite_anon, TvmResult(TvmResultScope(NULL, true), param));
   }
   
-  Tvm::ValuePtr<Tvm::RecursiveType> recursive = Tvm::RecursiveType::create(builder.tvm_context(), parameters, generic.location());
+  Tvm::ValuePtr<Tvm::RecursiveType> recursive = Tvm::RecursiveType::create(builder.tvm_context(), parameters, generic->location());
 
   // Insert generic into map before building it because it may recursively reference itself.
   TvmResult& generic_slot = scope.m_in_progress_generic_scope->generics[generic];
@@ -411,7 +411,7 @@ Tvm::ValuePtr<Tvm::Global> TvmObjectCompilerBase::get_global_bare(const TreePtr<
     
     if (TreePtr<GlobalStatement> stmt = dyn_treeptr_cast<GlobalStatement>(mod_global))
       if (stmt->mode != statement_mode_value)
-        compile_context().error_throw(stmt.location(), "Global statements which are not of value-type do not translate directly to TVM, use build_global_statement");
+        compile_context().error_throw(stmt->location(), "Global statements which are not of value-type do not translate directly to TVM, use build_global_statement");
     
     if (m_module == mod_global->module) {
       TvmResult type = target().build_type(global->type, mod_global->location());
@@ -420,7 +420,7 @@ Tvm::ValuePtr<Tvm::Global> TvmObjectCompilerBase::get_global_bare(const TreePtr<
       return lowered;
     } else {
       if (mod_global->linkage != link_public)
-        compile_context().error_throw(global.location(), "Module private global variable used in a different module");
+        compile_context().error_throw(global->location(), "Module private global variable used in a different module");
       
       TvmResult type = target().build_type(global->type, mod_global->location());
       Tvm::ValuePtr<Tvm::Global> lowered = m_tvm_module->new_member(symbol_name, type.value, global->location());
@@ -775,7 +775,7 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_module_global(const TreePtr<Mod
       break;
     
     case TvmGlobalStatus::global_in_progress:
-      compile_context.error_throw(current.location(), "Circular dependency amongst global variables");
+      compile_context.error_throw(current->location(), "Circular dependency amongst global variables");
       
     case TvmGlobalStatus::global_ready: {
       status.status = TvmGlobalStatus::global_in_progress;

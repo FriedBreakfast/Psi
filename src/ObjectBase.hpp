@@ -140,12 +140,6 @@ namespace Psi {
       template<typename U> bool operator == (const ObjectPtr<U>& other) const {return get() == other.get();};
       template<typename U> bool operator != (const ObjectPtr<U>& other) const {return get() != other.get();};
       template<typename U> bool operator < (const ObjectPtr<U>& other) const {return get() < other.get();};
-
-      /// \brief Get the compile context for this Object.
-      CompileContext& compile_context() const {
-        PSI_ASSERT(m_ptr);
-        return m_ptr->compile_context();
-      }
       
       friend void swap(ObjectPtr<T>& a, ObjectPtr<T>& b) {a.swap(b);}
     };

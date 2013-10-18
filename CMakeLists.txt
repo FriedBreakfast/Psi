@@ -96,23 +96,6 @@ endif()
 # Locate Boost
 find_package(Boost 1.36.0 REQUIRED)
 
-# Locate Bison
-find_program(BISON_EXECUTABLE NAMES bison PATHS C:/MinGW/msys/1.0/bin)
-if(NOT BISON_EXECUTABLE)
-  message(SEND_ERROR "bison not found")
-endif()
-macro(run_bison bison_src)
-  string(REGEX REPLACE "\\.ypp$" ".cpp" bison_dest "${bison_src}")
-  string(REGEX REPLACE "\\.ypp$" ".output" bison_report "${bison_src}")
-  add_custom_command(
-    OUTPUT "${bison_dest}" "${bison_report}"
-    COMMAND ${BISON_EXECUTABLE} -v --output="${bison_dest}" --report-file="${bison_report}" "${CMAKE_CURRENT_SOURCE_DIR}/${bison_src}"
-    MAIN_DEPENDENCY ${bison_src}
-  )
-  get_filename_component(bison_path "${bison_src}" PATH)
-  set_source_files_properties("${bison_dest}" PROPERTIES COMPILE_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/${bison_path}")
-endmacro()
-
 add_custom_target(doc)
 
 find_package(Doxygen)

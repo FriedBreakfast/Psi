@@ -3,9 +3,49 @@
 #include "Tree.hpp"
 #include "TermBuilder.hpp"
 #include "Macros.hpp"
+#include "Parser.hpp"
 
 namespace Psi {
   namespace Compiler {
+    /**
+     * Parse generic arguments to an aggregate type.
+     */
+    PatternArguments parse_pattern_arguments(const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location, const Parser::Text& text) {
+      PatternArguments result;
+
+      PSI_STD::vector<SharedPtr<Parser::FunctionArgument> > generic_parameters_parsed =
+        Parser::parse_type_argument_declarations(evaluate_context->compile_context().error_context(), location.logical, text);
+        
+      for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = generic_parameters_parsed.begin(), ie = generic_parameters_parsed.end(); ii != ie; ++ii) {
+        PSI_ASSERT(*ii && (*ii)->type);
+        const Parser::FunctionArgument& argument_expr = **ii;
+        
+        String expr_name;
+        LogicalSourceLocationPtr argument_logical_location;
+        if (argument_expr.name) {
+          expr_name = String(argument_expr.name->begin, argument_expr.name->end);
+          argument_logical_location = location.logical->new_child(expr_name);
+        } else {
+          argument_logical_location = location.logical;
+        }
+        SourceLocation argument_location(argument_expr.location, argument_logical_location);
+
+        if (argument_expr.mode != parameter_mode_input)
+          evaluate_context->compile_context().error_throw(argument_location, "Generic type parameters must be declared with ':'");
+
+        TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, result.names, evaluate_context);
+        TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
+        result.pattern.push_back(argument_type->parameterize(argument_location, result.list));
+        TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, term_mode_value, argument_location);
+        result.list.push_back(argument);
+
+        if (argument_expr.name)
+          result.names[expr_name] = argument;
+      }
+      
+      return result;
+    }
+    
     class MacroDefineMacro : public MacroMemberCallback {
     public:
       static const MacroMemberCallbackVtable vtable;
@@ -50,7 +90,19 @@ namespace Psi {
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
-        PSI_NOT_IMPLEMENTED();
+        if (parameters.size() != 2)
+          self.compile_context().error_throw(location, "Interface definition expects 2 parameters");
+
+        SharedPtr<Parser::TokenExpression> types_expr, members_expr;
+        if (!(types_expr = expression_as_token_type(parameters[0], Parser::token_bracket)))
+          self.compile_context().error_throw(location, "First (types) parameter to interface macro is not a (...)");
+        if (!(members_expr = expression_as_token_type(parameters[1], Parser::token_square_bracket)))
+          self.compile_context().error_throw(location, "Second (members) parameter to interface macro is not a [...]");
+
+        PatternArguments args = parse_pattern_arguments(evaluate_context, location, types_expr->text);
+        TreePtr<EvaluateContext> member_context = evaluate_context_dictionary(evaluate_context->module(), location, args.names, evaluate_context);	  
+
+        PSI_STD::vector<SharedPtr<Parser::Statement> > members = Parser::parse_statement_list(self.compile_context().error_context(), location.logical, members_expr->text);
       }
     };
 
@@ -113,13 +165,13 @@ namespace Psi {
       }
       
       TreePtr<Term> evaluate(const TreePtr<GenericType>& self) {
-        TreePtr<Term> instance = TermBuilder::instance(self, m_pattern_parameters, self.location());
-        TreePtr<Term> upref = TermBuilder::upref(instance, 0, TermBuilder::upref_null(self.compile_context()), self.location());
-        upref = TermBuilder::upref(default_, m_members.size(), upref, self.location());
+        TreePtr<Term> instance = TermBuilder::instance(self, m_pattern_parameters, self->location());
+        TreePtr<Term> upref = TermBuilder::upref(instance, 0, TermBuilder::upref_null(self->compile_context()), self->location());
+        upref = TermBuilder::upref(default_, m_members.size(), upref, self->location());
         m_inner_parameters.insert(m_inner_parameters.begin(), upref);
-        TreePtr<Term> inner_instance = TermBuilder::instance(m_inner_generic, m_inner_parameters, self.location());
+        TreePtr<Term> inner_instance = TermBuilder::instance(m_inner_generic, m_inner_parameters, self->location());
         m_members.push_back(inner_instance);
-        TreePtr<Term> wrapper_struct = TermBuilder::struct_type(self.compile_context(), m_members, self.location());
+        TreePtr<Term> wrapper_struct = TermBuilder::struct_type(self->compile_context(), m_members, self->location());
         return wrapper_struct;
       }
       
@@ -156,7 +208,7 @@ namespace Psi {
             m_generic = interface_inst->generic;
         
       if (!m_generic)
-        interface.compile_context().error_throw(location, "ImplementationHelper is only suitable for interfaces whose value is of the form Exists.PointerType.Instance", CompileError::error_internal);
+        interface->compile_context().error_throw(location, "ImplementationHelper is only suitable for interfaces whose value is of the form Exists.PointerType.Instance", CompileError::error_internal);
       
       PSI_STD::vector<TreePtr<Term> > member_types;
       for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = pattern_parameters.begin(), ie = pattern_parameters.end(); ii != ie; ++ii) {
@@ -176,13 +228,13 @@ namespace Psi {
       for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = generic_parameters.begin(), ie = generic_parameters.end(); ii != ie; ++ii)
         m_interface_parameters.push_back((*ii)->parameterize(location, pattern_parameters));
 
-      m_wrapper_generic = TermBuilder::generic(interface.compile_context(), type_pattern, GenericType::primitive_always, location,
+      m_wrapper_generic = TermBuilder::generic(interface->compile_context(), type_pattern, GenericType::primitive_always, location,
                                                ImplementationHelperWrapperGeneric(type_pattern, member_types, m_generic, m_interface_parameters));
       
       TreePtr<Term> wrapper_instance = TermBuilder::instance(m_wrapper_generic, type_pattern, location);
       
       // Need a double upward reference: one for the struct and one for the containing generic
-      TreePtr<Term> upref = TermBuilder::upref(wrapper_instance, 0, TermBuilder::upref_null(interface.compile_context()), location);
+      TreePtr<Term> upref = TermBuilder::upref(wrapper_instance, 0, TermBuilder::upref_null(interface->compile_context()), location);
       upref = TermBuilder::upref(default_, m_wrapper_member_values.size(), upref, location);
       
       m_generic_parameters.insert(m_generic_parameters.begin(), upref);
@@ -208,7 +260,7 @@ namespace Psi {
         result.parameters.push_back(param);
       }
       
-      result.implementation = TermBuilder::outer_pointer(result.parameters.front(), result.parameters.front().location());
+      result.implementation = TermBuilder::outer_pointer(result.parameters.front(), result.parameters.front()->location());
       
       return result;
     }
@@ -278,7 +330,7 @@ namespace Psi {
       for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = m_pattern_parameters.begin(), ie = m_pattern_parameters.end(); ii != ie; ++ii)
         type_pattern.push_back((*ii)->parameterize(m_location, m_pattern_parameters));
 
-      TreePtr<Term> struct_value = TermBuilder::struct_value(inner_value.compile_context(), m_wrapper_member_values, m_location);
+      TreePtr<Term> struct_value = TermBuilder::struct_value(inner_value->compile_context(), m_wrapper_member_values, m_location);
       TreePtr<TypeInstance> wrapper_instance = TermBuilder::instance(m_wrapper_generic, type_pattern, m_location);
       TreePtr<Term> value = TermBuilder::instance_value(wrapper_instance, struct_value, m_location);
       
@@ -289,15 +341,15 @@ namespace Psi {
     TreePtr<FunctionType> ImplementationHelper::member_function_type(int index, const SourceLocation& location) {
       TreePtr<StructType> st = term_unwrap_dyn_cast<StructType>(m_generic->member_type());
       if (!st)
-        m_generic.compile_context().error_throw(location, "ImplementationHelper::member_function_type used on generic which is not a struct", CompileError::error_internal);
+        m_generic->compile_context().error_throw(location, "ImplementationHelper::member_function_type used on generic which is not a struct", CompileError::error_internal);
       
       TreePtr<PointerType> pt = term_unwrap_dyn_cast<PointerType>(st->members[index]);
       if (!pt)
-        m_generic.compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a pointer", CompileError::error_internal);
+        m_generic->compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a pointer", CompileError::error_internal);
       
       TreePtr<FunctionType> ft = term_unwrap_dyn_cast<FunctionType>(pt->target_type);
       if (!ft)
-        m_generic.compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a function pointer", CompileError::error_internal);
+        m_generic->compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a function pointer", CompileError::error_internal);
       
       return treeptr_cast<FunctionType>(pt->target_type->specialize(location, m_generic_parameters));
     }

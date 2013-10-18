@@ -41,7 +41,7 @@ namespace Psi {
       }
 
       TreePtr<Term> evaluate(const TreePtr<Function>& self) {
-        return compile_from_bracket(m_body, m_body_context, self.location());
+        return compile_from_bracket(m_body, m_body_context, self->location());
       }
     };
 
@@ -85,7 +85,7 @@ namespace Psi {
       if (!(function_arguments_expr = expression_as_token_type(function_arguments, Parser::token_bracket)))
         compile_context.error_throw(location, "Function arguments not enclosed in (...)");
       
-      Parser::ArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(function_arguments_expr->text);
+      Parser::ArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(compile_context.error_context(), location.logical, function_arguments_expr->text);
       std::map<String, TreePtr<Term> > argument_map;
       PSI_STD::vector<TreePtr<Anonymous> > argument_list;
       PSI_STD::vector<ParameterMode> argument_modes;
@@ -108,7 +108,7 @@ namespace Psi {
           } else {
             logical_location = location.logical;
           }
-          SourceLocation argument_location(argument_expr.location.location, logical_location);
+          SourceLocation argument_location(argument_expr.location, logical_location);
           TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, argument_map, evaluate_context);
           
           if (!argument_expr.is_interface) {
@@ -128,7 +128,7 @@ namespace Psi {
             TreePtr<Term> interface = compile_expression(argument_expr.type, argument_context, location.logical);
             TreePtr<InterfaceValue> interface_cast = term_unwrap_dyn_cast<InterfaceValue>(interface);
             if (!interface_cast) {
-              SourceLocation interface_location(argument_expr.location.location, location.logical);
+              SourceLocation interface_location(argument_expr.location, location.logical);
               compile_context.error_throw(interface_location, "Interface description did not evaluate to an interface");
             }
             interfaces.push_back(interface_cast);
@@ -143,10 +143,8 @@ namespace Psi {
       TreePtr<Term> result_type;
       ResultMode result_mode;
       if (parsed_arguments.return_type) {
-        const Parser::FunctionArgument& argument_expr = *parsed_arguments.return_type;
-        SourceLocation argument_location(argument_expr.location.location, location.logical);
-        result_type = compile_expression(argument_expr.type, result_context, location.logical);
-        result_mode = (ResultMode)argument_expr.mode;
+        result_type = compile_expression(parsed_arguments.return_type, result_context, location.logical);
+        result_mode = parsed_arguments.return_mode;
       } else {
         result_type = compile_context.builtins().empty_type;
         result_mode = result_mode_by_value;
@@ -155,10 +153,10 @@ namespace Psi {
       // Generate function type - parameterize parameters!
       PSI_STD::vector<FunctionParameterType> argument_types;
       for (unsigned ii = 0, ie = argument_list.size(); ii != ie; ++ii)
-        argument_types.push_back(FunctionParameterType(argument_modes[ii], argument_list[ii]->type->parameterize(argument_list[ii].location(), argument_list)));
-      TreePtr<Term> result_type_param = result_type->parameterize(result_type.location(), argument_list);
+        argument_types.push_back(FunctionParameterType(argument_modes[ii], argument_list[ii]->type->parameterize(argument_list[ii]->location(), argument_list)));
+      TreePtr<Term> result_type_param = result_type->parameterize(result_type->location(), argument_list);
       for (PSI_STD::vector<TreePtr<InterfaceValue> >::iterator ii = interfaces.begin(), ie = interfaces.end(); ii != ie; ++ii)
-        *ii = treeptr_cast<InterfaceValue>((*ii)->parameterize(ii->location(), argument_list));
+        *ii = treeptr_cast<InterfaceValue>((*ii)->parameterize((*ii)->location(), argument_list));
       
       result.type = TermBuilder::function_type(result_mode, result_type_param, argument_types, interfaces, location);
 
@@ -175,7 +173,7 @@ namespace Psi {
      * \param explicit_arguments List of explicit arguments.
      */
     TreePtr<Term> function_call(const TreePtr<Term>& function, const PSI_STD::vector<TreePtr<Term> >& explicit_arguments, const SourceLocation& location) {
-      CompileContext& compile_context = function.compile_context();
+      CompileContext& compile_context = function->compile_context();
 
       TreePtr<FunctionType> ftype = term_unwrap_dyn_cast<FunctionType>(function->type);
       if (!ftype)
@@ -196,7 +194,7 @@ namespace Psi {
       
       for (unsigned ii = 0, ie = explicit_arguments.size(); ii != ie; ++ii) {
         if (!ftype->parameter_types[ii].type->match(explicit_arguments[ii]->type, all_arguments, 0, Term::upref_match_read))
-          function.compile_context().error_throw(explicit_arguments[ii].location(), "Incorrect argument type");
+          function->compile_context().error_throw(explicit_arguments[ii]->location(), "Incorrect argument type");
       }
 
       return TermBuilder::function_call(function, all_arguments, location);
@@ -212,7 +210,7 @@ namespace Psi {
                                               const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location) {
-      CompileContext& compile_context = evaluate_context.compile_context();
+      CompileContext& compile_context = evaluate_context->compile_context();
 
       if (arguments.size() != 1)
         compile_context.error_throw(location, boost::format("function incovation expects one macro arguments, got %s") % arguments.size());
@@ -221,7 +219,7 @@ namespace Psi {
       if (!(parameters_expr = expression_as_token_type(arguments[0], Parser::token_bracket)))
         compile_context.error_throw(location, "Parameters argument to function invocation is not a (...)");
 
-      PSI_STD::vector<SharedPtr<Parser::Expression> > parsed_arguments = Parser::parse_positional_list(parameters_expr->text);
+      PSI_STD::vector<SharedPtr<Parser::Expression> > parsed_arguments = Parser::parse_positional_list(compile_context.error_context(), location.logical, parameters_expr->text);
       
       PSI_STD::vector<TreePtr<Term> > explicit_arguments;
       for (PSI_STD::vector<SharedPtr<Parser::Expression> >::const_iterator ii = parsed_arguments.begin(), ie = parsed_arguments.end(); ii != ie; ++ii) {
@@ -237,7 +235,7 @@ namespace Psi {
       static const MacroMemberCallbackVtable vtable;
 
       FunctionInvokeCallback(const TreePtr<Term>& function_, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, function_.compile_context(), location),
+      : MacroMemberCallback(&vtable, function_->compile_context(), location),
       function(function_) {
       }
       
@@ -270,7 +268,7 @@ namespace Psi {
      */
     TreePtr<Term> function_invoke_macro(const TreePtr<Term>& func, const SourceLocation& location) {
       TreePtr<MacroMemberCallback> callback(::new FunctionInvokeCallback(func, location));
-      TreePtr<Macro> macro = make_macro(func.compile_context(), location, callback);
+      TreePtr<Macro> macro = make_macro(func->compile_context(), location, callback);
       return make_macro_term(macro, location);
     }
 
@@ -282,7 +280,7 @@ namespace Psi {
     TreePtr<Term> compile_function_definition(const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location) {
-      CompileContext& compile_context = evaluate_context.compile_context();
+      CompileContext& compile_context = evaluate_context->compile_context();
 
       SharedPtr<Parser::Expression> type_arg;
       if (arguments.size() == 2) {
@@ -300,7 +298,7 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Term> > parameter_trees_term; // This exists because C++ won't convert vector<derived> to vector<base>
       PSI_STD::vector<TreePtr<Anonymous> > parameter_trees;
       for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = common.type->parameter_types.begin(), ie = common.type->parameter_types.end(); ii != ie; ++ii) {
-        TreePtr<Anonymous> param = common.type->parameter_after(ii->type.location(), parameter_trees_term);
+        TreePtr<Anonymous> param = common.type->parameter_after(ii->type->location(), parameter_trees_term);
         parameter_trees.push_back(param);
         parameter_trees_term.push_back(param);
       }
@@ -361,7 +359,7 @@ namespace Psi {
     TreePtr<Term> compile_function_type(const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                         const TreePtr<EvaluateContext>& evaluate_context,
                                         const SourceLocation& location) {
-      CompileContext& compile_context = evaluate_context.compile_context();
+      CompileContext& compile_context = evaluate_context->compile_context();
 
       SharedPtr<Parser::Expression> type_arg;
       if (arguments.size() == 1) {

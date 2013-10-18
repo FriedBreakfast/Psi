@@ -59,39 +59,39 @@ TreePtr<Term> TermBuilder::number_type(CompileContext& compile_context, NumberTy
 
 /// \brief Get a pointer type
 TreePtr<Term> TermBuilder::pointer(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location) {
-  return type.compile_context().get_functional(PointerType(type, upref, location), location);
+  return type->compile_context().get_functional(PointerType(type, upref, location), location);
 }
 
 /// \brief Get a pointer type
 TreePtr<Term> TermBuilder::pointer(const TreePtr<Term>& type, const SourceLocation& location) {
-  return pointer(type, upref_null(type.compile_context()), location);
+  return pointer(type, upref_null(type->compile_context()), location);
 }
 
 /// \brief Get a type for <tt>exists x.f(x)</tt>
 TreePtr<Term> TermBuilder::exists(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& parameter_types, const SourceLocation& location) {
-  return result_type.compile_context().get_functional(Exists(result_type, parameter_types, location), location);
+  return result_type->compile_context().get_functional(Exists(result_type, parameter_types, location), location);
 }
 
 /// \brief Get a constant type for a value
 TreePtr<Term> TermBuilder::constant(const TreePtr<Term>& value, const SourceLocation& location) {
-  return value.compile_context().get_functional(ConstantType(value, location), location);
+  return value->compile_context().get_functional(ConstantType(value, location), location);
 }
 
 /// \brief Get a function type.
 TreePtr<FunctionType> TermBuilder::function_type(ResultMode result_mode, const TreePtr<Term>& result_type,
                                                  const PSI_STD::vector<FunctionParameterType>& parameter_types,
                                                  const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces, const SourceLocation& location) {
-  return result_type.compile_context().get_functional(FunctionType(result_mode, result_type, parameter_types, interfaces, location), location);
+  return result_type->compile_context().get_functional(FunctionType(result_mode, result_type, parameter_types, interfaces, location), location);
 }
 
 /// \brief Get an array type.
 TreePtr<ArrayType> TermBuilder::array_type(const TreePtr<Term>& element_type, const TreePtr<Term>& length, const SourceLocation& location) {
-  return element_type.compile_context().get_functional(ArrayType(element_type, length, location), location);
+  return element_type->compile_context().get_functional(ArrayType(element_type, length, location), location);
 }
 
 /// \copydoc TermBuilder::array_type
 TreePtr<ArrayType> TermBuilder::array_type(const TreePtr<Term>& element_type, unsigned length, const SourceLocation& location) {
-  return array_type(element_type, size_value(length, element_type.compile_context(), location), location);
+  return array_type(element_type, size_value(length, element_type->compile_context(), location), location);
 }
 
 /// \brief Get a struct type.
@@ -101,7 +101,7 @@ TreePtr<StructType> TermBuilder::struct_type(CompileContext& compile_context, co
 
 /// \brief Get a string type of fixed length.
 TreePtr<Term> TermBuilder::string_type(const TreePtr<Term>& length, const SourceLocation& location) {
-  return array_type(string_element_type(length.compile_context()), length, location);
+  return array_type(string_element_type(length->compile_context()), length, location);
 }
 
 /// \copydoc TermBuilder::string_type
@@ -113,7 +113,7 @@ TreePtr<Term> TermBuilder::string_type(unsigned length, CompileContext& compile_
  * \brief Create a new instance of a generic type.
  */
 TreePtr<TypeInstance> TermBuilder::instance(const TreePtr<GenericType>& generic, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location) {
-  return generic.compile_context().get_functional(TypeInstance(generic, parameters), location);
+  return generic->compile_context().get_functional(TypeInstance(generic, parameters), location);
 }
 
 /// \brief Get the value of the empty type.
@@ -130,14 +130,14 @@ TreePtr<Term> TermBuilder::empty_value(CompileContext& compile_context) {
  */
 TreePtr<Term> TermBuilder::movable(const TreePtr<Term>& value, const SourceLocation& location) {
   if (value->mode == term_mode_lref)
-    return value.compile_context().get_functional(MovableValue(value), location);
+    return value->compile_context().get_functional(MovableValue(value), location);
   else
     return value;
 }
 
 /// \brief Get the default value of a given type.
 TreePtr<Term> TermBuilder::default_value(const TreePtr<Term>& type, const SourceLocation& location) {
-  return type.compile_context().get_functional(DefaultValue(type, location), location);
+  return type->compile_context().get_functional(DefaultValue(type, location), location);
 }
 
 /// \brief Create a value using a builtin constructor
@@ -165,15 +165,6 @@ TreePtr<Term> TermBuilder::upref_null(CompileContext& compile_context) {
 }
 
 /**
- * \brief Wrap a pointer with an upward reference in an IntroduceExists term on the upward reference.
- * 
- * This is a utility function which is widely used to implement interfaces.
- */
-TreePtr<Term> TermBuilder::introduce_exists_upref(const TreePtr<Term>& pointer, const SourceLocation& location) {
-  PSI_NOT_IMPLEMENTED();
-}
-
-/**
  * \brief Create an index term from an integer.
  */
 TreePtr<Term> TermBuilder::size_value(unsigned index, CompileContext& compile_context, const SourceLocation& location) {
@@ -188,7 +179,7 @@ TreePtr<Term> TermBuilder::size_value(unsigned index, CompileContext& compile_co
 unsigned TermBuilder::size_from(const TreePtr<Term>& value, const SourceLocation& location) {
   TreePtr<IntegerConstant> inner = term_unwrap_dyn_cast<IntegerConstant>(value);
   if (!inner)
-    value.compile_context().error_throw(location, "Expected a constant integer value");
+    value->compile_context().error_throw(location, "Expected a constant integer value");
   return inner->value;
 }
 
@@ -202,7 +193,7 @@ bool TermBuilder::size_equals(const TreePtr<Term>& value, std::size_t n) {
 
 /// \brief Value for StructType types.
 TreePtr<Term> TermBuilder::struct_value(const TreePtr<StructType>& type, const PSI_STD::vector<TreePtr<Term> >& members, const SourceLocation& location) {
-  return type.compile_context().get_functional(StructValue(type, members), location);
+  return type->compile_context().get_functional(StructValue(type, members), location);
 }
 
 /// \brief Value for StructType types.
@@ -225,12 +216,12 @@ TreePtr<Term> TermBuilder::string_value(CompileContext& compile_context, const S
 
 /// \brief Value for TypeInstance, an instance of a GenericType
 TreePtr<Term> TermBuilder::instance_value(const TreePtr<TypeInstance>& instance, const TreePtr<Term>& member_value, const SourceLocation& location) {
-  return instance.compile_context().get_functional(TypeInstanceValue(instance, member_value), location);
+  return instance->compile_context().get_functional(TypeInstanceValue(instance, member_value), location);
 }
 
 /// \brief Get the value of an interface with given parameters
 TreePtr<Term> TermBuilder::interface_value(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const TreePtr<Implementation>& implementation, const SourceLocation& location) {
-  return interface.compile_context().get_functional(InterfaceValue(interface, parameters, implementation), location);
+  return interface->compile_context().get_functional(InterfaceValue(interface, parameters, implementation), location);
 }
 
 /// \brief Get the value of an interface with given parameters
@@ -240,43 +231,43 @@ TreePtr<Term> TermBuilder::interface_value(const TreePtr<Interface>& interface, 
 
 /// \brief Get the value of an aggregate member from an aggregate.
 TreePtr<Term> TermBuilder::element_value(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location) {
-  return aggregate.compile_context().get_functional(ElementValue(aggregate, index), location);
+  return aggregate->compile_context().get_functional(ElementValue(aggregate, index), location);
 }
 
 /// \copydoc TermBuilder::element_value
 TreePtr<Term> TermBuilder::element_value(const TreePtr<Term>& aggregate, unsigned index, const SourceLocation& location) {
-  return element_value(aggregate, size_value(index, aggregate.compile_context(), location), location);
+  return element_value(aggregate, size_value(index, aggregate->compile_context(), location), location);
 }
 
 /// \brief Get a pointer to an element of an aggreagte from a poiner to that aggregate
 TreePtr<Term> TermBuilder::element_pointer(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location) {
-  return aggregate.compile_context().get_functional(ElementPointer(aggregate, index), location);
+  return aggregate->compile_context().get_functional(ElementPointer(aggregate, index), location);
 }
 
 /// \copydoc TermBuilder::element_pointer
 TreePtr<Term> TermBuilder::element_pointer(const TreePtr<Term>& aggregate, unsigned index, const SourceLocation& location) {
-  return element_pointer(aggregate, size_value(index, aggregate.compile_context(), location), location);
+  return element_pointer(aggregate, size_value(index, aggregate->compile_context(), location), location);
 }
 
 /**
  * \brief Convert a pointer into a reference.
  */
 TreePtr<Term> TermBuilder::ptr_target(const TreePtr<Term>& pointer, const SourceLocation& location) {
-  return pointer.compile_context().get_functional(PointerTarget(pointer), location);
+  return pointer->compile_context().get_functional(PointerTarget(pointer), location);
 }
 
 /**
  * \brief Convert a reference into a pointer.
  */
 TreePtr<Term> TermBuilder::ptr_to(const TreePtr<Term>& value, const SourceLocation& location) {
-  return value.compile_context().get_functional(PointerTo(value), location);
+  return value->compile_context().get_functional(PointerTo(value), location);
 }
 
 /**
  * \brief Get a reference to an outer object from an object whose type is Pointer.
  */
 TreePtr<Term> TermBuilder::outer_pointer(const TreePtr<Term>& reference, const SourceLocation& location) {
-  return reference.compile_context().get_functional(OuterPointer(reference), location);
+  return reference->compile_context().get_functional(OuterPointer(reference), location);
 }
 
 /**
@@ -325,7 +316,7 @@ TreePtr<Term> TermBuilder::block(const SourceLocation& location, const PSI_STD::
     my_result = result;
   } else {
     PSI_ASSERT(!values.empty());
-    my_result = values.front().compile_context().builtins().empty_value;
+    my_result = values.front()->compile_context().builtins().empty_value;
   }
   return block(statements, my_result, location);
 }
@@ -362,7 +353,7 @@ TreePtr<JumpTarget> TermBuilder::jump_target(const TreePtr<Term>& value, Stateme
   case statement_mode_value: result_mode = result_mode_by_value; break;
   case statement_mode_functional: result_mode = result_mode_functional; break;
   case statement_mode_ref: result_mode = result_mode_lvalue; break;
-  case statement_mode_destroy: value.compile_context().error_throw(location, "Jump target argument mode may not be 'destroy'");
+  case statement_mode_destroy: value->compile_context().error_throw(location, "Jump target argument mode may not be 'destroy'");
   default: PSI_FAIL("Unrecognised statement mode");
   }
   return tree_from(::new JumpTarget(value, result_mode, argument, location));
@@ -499,7 +490,7 @@ TreePtr<Term> TermBuilder::library_symbol(const TreePtr<Library>& library, const
  * to be represented without cycles, so simple hashing can be used to compare them.
  */
 TreePtr<Term> TermBuilder::parameter(const TreePtr<Term>& type, unsigned depth, unsigned index, const SourceLocation& location) {
-  return type.compile_context().get_functional(Parameter(type, depth, index), location);
+  return type->compile_context().get_functional(Parameter(type, depth, index), location);
 }
 
 /**

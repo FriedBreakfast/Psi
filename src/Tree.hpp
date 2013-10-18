@@ -157,7 +157,7 @@ namespace Psi {
                      const TreePtr<Term>& type, Linkage linkage, bool constant_, bool merge_,
                      const SourceLocation& location, const ValueCallback& value)
       : ModuleGlobal(&vtable, module, symbol_name, type, linkage, location),
-      m_value(module.compile_context(), location, value),
+      m_value(module->compile_context(), location, value),
       constant(constant_),
       merge(merge_) {
       }
@@ -730,7 +730,7 @@ namespace Psi {
                const SourceLocation& location,
                const BodyCallback& body_callback)
       : ModuleGlobal(&vtable, module, symbol_name, type, linkage, location),
-      m_body(module.compile_context(), location, body_callback),
+      m_body(module->compile_context(), location, body_callback),
       arguments(arguments_),
       return_target(return_target_) {
         check_type();

@@ -12,7 +12,7 @@ namespace Psi {
      * Get the Macro tree associated with an expression.
      */
     TreePtr<Macro> expression_macro(const TreePtr<EvaluateContext>& context, const TreePtr<Term>& expr, const SourceLocation& location) {
-      return metadata_lookup_as<Macro>(expr.compile_context().builtins().macro_tag, context, expr, location);
+      return metadata_lookup_as<Macro>(expr->compile_context().builtins().macro_tag, context, expr, location);
     }
     
     std::pair<const char*, const char*> bracket_token_strings(Parser::TokenExpressionType type) {
@@ -35,8 +35,8 @@ namespace Psi {
                                      const TreePtr<EvaluateContext>& evaluate_context,
                                      const LogicalSourceLocationPtr& source) {
 
-      CompileContext& compile_context = evaluate_context.compile_context();
-      SourceLocation location(expression->location.location, source);
+      CompileContext& compile_context = evaluate_context->compile_context();
+      SourceLocation location(expression->location, source);
 
       switch (expression->expression_type) {
       case Parser::expression_evaluate: {
@@ -77,7 +77,7 @@ namespace Psi {
         }
 
         case Parser::token_identifier: {
-          String name = token_expression.text.to_string();
+          String name = token_expression.text.str();
           LookupResult<TreePtr<Term> > result = evaluate_context->lookup(name, location);
 
           switch (result.type()) {
@@ -141,8 +141,8 @@ namespace Psi {
         case result_mode_rvalue:
           return statement_mode_ref;
           
-        case result_mode_by_value: value.compile_context().error_throw(location, "Cannot create reference to temporary");
-        case result_mode_functional: value.compile_context().error_throw(location, "Cannot create reference to functional value");
+        case result_mode_by_value: value->compile_context().error_throw(location, "Cannot create reference to temporary");
+        case result_mode_functional: value->compile_context().error_throw(location, "Cannot create reference to functional value");
         default: PSI_FAIL("unexpected enum value");
         }
         
@@ -204,7 +204,7 @@ namespace Psi {
             } else {
               logical_location = location.logical;
             }
-            SourceLocation statement_location(named_expr.location.location, logical_location);
+            SourceLocation statement_location(named_expr.location, logical_location);
             m_statements.push_back(StatementValueType(compile_context(), statement_location,
                                                       BlockEntryCallback(statement_location, named_expr.expression, (StatementMode)named_expr.mode)));
             m_has_last = true;
@@ -266,7 +266,7 @@ namespace Psi {
       if (block_context->has_last())
         result = block_statements.back();
       else
-        result = TermBuilder::empty_value(evaluate_context.compile_context());
+        result = TermBuilder::empty_value(evaluate_context->compile_context());
       return TermBuilder::block(block_statements, result, location);
     }
 
@@ -276,14 +276,8 @@ namespace Psi {
     TreePtr<Term> compile_from_bracket(const SharedPtr<Parser::TokenExpression>& expr,
                                        const TreePtr<EvaluateContext>& evaluate_context,
                                        const SourceLocation& location) {
-      PSI_STD::vector<SharedPtr<Parser::Statement> > statements;
-      try {
-        statements = Parser::parse_statement_list(expr->text);
-      } catch (Parser::ParseError& ex) {
-        SourceLocation error_loc = location.relocate(ex.location());
-        evaluate_context.compile_context().error_throw(error_loc, ex.what());
-      }
-      return compile_block(statements, evaluate_context, location);
+      return compile_block(Parser::parse_statement_list(evaluate_context->compile_context().error_context(), location.logical, expr->text),
+                           evaluate_context, location);
     }
 
     class NamespaceEntry {
@@ -336,7 +330,7 @@ namespace Psi {
             
             String expr_name(named_expr.name->begin, named_expr.name->end);
             LogicalSourceLocationPtr logical_location = location.logical->new_child(expr_name);
-            SourceLocation entry_location(named_expr.location.location, logical_location);
+            SourceLocation entry_location(named_expr.location, logical_location);
             m_entries.insert(std::make_pair(expr_name, EntryType(compile_context(), entry_location,
                                                                  NamespaceEntry(named_expr.expression, (StatementMode)named_expr.mode, entry_location))));
           }
@@ -384,7 +378,7 @@ namespace Psi {
 
     TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location) {
       TreePtr<NamespaceContext> nsc(::new NamespaceContext(statements, evaluate_context, location));
-      return Namespace::new_(evaluate_context.compile_context(), nsc->names(), location);
+      return Namespace::new_(evaluate_context->compile_context(), nsc->names(), location);
     }
   }
 }

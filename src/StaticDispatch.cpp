@@ -38,7 +38,7 @@ namespace Psi {
                          const PSI_STD::vector<TreePtr<Implementation> >& values,
                          const std::vector<TreePtr<Term> >& derived_pattern_,
                          const SourceLocation& location)
-    : OverloadType(&vtable, type_.compile_context(), n_implicit, pattern, PSI_STD::vector<TreePtr<OverloadValue> >(values.begin(), values.end()), location),
+    : OverloadType(&vtable, type_->compile_context(), n_implicit, pattern, PSI_STD::vector<TreePtr<OverloadValue> >(values.begin(), values.end()), location),
     derived_pattern(derived_pattern_),
     type(type_),
     bases(bases_) {
@@ -86,7 +86,7 @@ namespace Psi {
     TreePtr<Implementation> Implementation::new_(const PSI_STD::vector<TreePtr<Term> >& dependent, const TreePtr<Term>& value, const TreePtr<Interface>& interface,
                                                  unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, bool dynamic, const PSI_STD::vector<int>& path,
                                                  const SourceLocation& location) {
-      return tree_from(::new Implementation(value.compile_context(), dependent, value, interface, n_wildcards, pattern, dynamic, path, location));
+      return tree_from(::new Implementation(value->compile_context(), dependent, value, interface, n_wildcards, pattern, dynamic, path, location));
     }
     
     template<typename V>
@@ -127,7 +127,7 @@ namespace Psi {
     const TreeVtable MetadataType::vtable = PSI_COMPILER_TREE(MetadataType, "psi.compiler.MetadataType", OverloadType);
     
     Metadata::Metadata(const TreePtr<>& value_, const TreePtr<MetadataType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location)
-    : OverloadValue(&vtable, value_.compile_context(), type, n_wildcards, pattern, location),
+    : OverloadValue(&vtable, value_->compile_context(), type, n_wildcards, pattern, location),
     value(value_) {
       if (type && !type->type.isa(value.get()))
         compile_context().error_throw(location, "Metadata tree has incorrect type");
@@ -296,7 +296,7 @@ namespace Psi {
       ambiguous_match:
         CompileError err(type->compile_context().error_context(), location);
         for (unsigned ii = 0, ie = results.size(); ii != ie; ++ii)
-          err.info(results[ii].second.location(), "Ambiguous overload candidate");
+          err.info(results[ii].second->location(), "Ambiguous overload candidate");
         err.end();
         throw CompileException();
       }
@@ -328,7 +328,7 @@ namespace Psi {
       context->overload_list(metadata_type, context_list);
       TreePtr<Metadata> md = treeptr_cast<Metadata>(overload_lookup(metadata_type, parameters, location, context_list));
       if (!metadata_type->type.isa(md->value.get()))
-        metadata_type.compile_context().error_throw(location, boost::format("Value of metadata does not have the expected type: %s") % metadata_type->type->classname);
+        metadata_type->compile_context().error_throw(location, boost::format("Value of metadata does not have the expected type: %s") % metadata_type->type->classname);
       return md->value;
     }
   }

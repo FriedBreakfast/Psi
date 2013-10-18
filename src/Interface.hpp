@@ -3,6 +3,7 @@
 
 #include "Compiler.hpp"
 #include "Tree.hpp"
+#include "Parser.hpp"
 
 /**
  * \file
@@ -49,6 +50,22 @@ public:
   
   TreePtr<Implementation> finish(const TreePtr<Term>& inner_value);
 };
+
+struct PatternArguments {
+  PSI_STD::vector<TreePtr<Anonymous> > list;
+  PSI_STD::map<String, TreePtr<Term> > names;
+  /// Generic argument pattern. This has been parameterized, i.e. uses Parameter rather than Anonymous.
+  PSI_STD::vector<TreePtr<Term> > pattern;
+  
+  template<typename V>
+  static void visit(V& v) {
+    v("list", &PatternArguments::list)
+    ("names", &PatternArguments::names)
+    ("pattern", &PatternArguments::pattern);
+  }
+};
+
+PatternArguments parse_pattern_arguments(const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location, const Parser::Text& text);
 }
 }
 

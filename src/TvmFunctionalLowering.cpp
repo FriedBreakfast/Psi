@@ -199,7 +199,7 @@ struct TvmFunctionalLowererMap {
   }
   
   static TvmResult build_bottom_type(TvmFunctionalBuilder& builder, const TreePtr<BottomType>& type) {
-    builder.compile_context().error_throw(type.location(), "Bottom type cannot be lowered to TVM");
+    builder.compile_context().error_throw(type->location(), "Bottom type cannot be lowered to TVM");
   }
   
   static TvmResult build_type_instance(TvmFunctionalBuilder& builder, const TreePtr<TypeInstance>& type_instance) {
@@ -330,7 +330,7 @@ struct TvmFunctionalLowererMap {
   }
   
   static TvmResult build_upward_reference_null(TvmFunctionalBuilder& builder, const TreePtr<UpwardReferenceNull>& upref_null) {
-    return TvmResult(TvmResultScope(), Tvm::FunctionalBuilder::upref_null(builder.tvm_context(), upref_null.location()));
+    return TvmResult(TvmResultScope(), Tvm::FunctionalBuilder::upref_null(builder.tvm_context(), upref_null->location()));
   }
   
   static TvmResult build_global_statement(TvmFunctionalBuilder& builder, const TreePtr<GlobalStatement>& stmt) {

@@ -11,14 +11,12 @@ namespace Psi {
   namespace Tvm {
     namespace Parser {
       struct Element {
-        Element(PSI_MOVE_REF(Element) src);
         Element(const PhysicalSourceLocation& location_);
 
         PhysicalSourceLocation location;
       };
 
       struct Token : Element {
-        Token(PSI_MOVE_REF(Token) src);
         Token(const PhysicalSourceLocation& location_, std::string text_);
 
         std::string text;
@@ -49,7 +47,6 @@ namespace Psi {
       };
       
       struct Expression : Element {
-        Expression(PSI_MOVE_REF(Expression) src);
         Expression(const PhysicalSourceLocation& location_, ExpressionType expression_type_);
         virtual ~Expression();
         virtual Expression* clone() const = 0;
@@ -92,7 +89,6 @@ namespace Psi {
       };
 
       struct FunctionTypeExpression : Expression {
-        FunctionTypeExpression(PSI_MOVE_REF(FunctionTypeExpression) src);
         FunctionTypeExpression(const PhysicalSourceLocation& location_,
                                CallingConvention calling_convention_,
                                bool sret_,

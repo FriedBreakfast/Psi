@@ -15,12 +15,12 @@ namespace Psi {
         PSI_STD::vector<TreePtr<Term> > pattern(1, wildcard);
         PSI_STD::vector<TreePtr<Metadata> > values;
         if (default_value) {
-          TreePtr<Term> impl_wildcard_1 = TermBuilder::parameter(wildcard_type.compile_context().builtins().metatype, 0, 0, location);
+          TreePtr<Term> impl_wildcard_1 = TermBuilder::parameter(wildcard_type->compile_context().builtins().metatype, 0, 0, location);
           TreePtr<Term> impl_wildcard_2 = TermBuilder::parameter(impl_wildcard_1, 0, 1, location);
           PSI_STD::vector<TreePtr<Term> > impl_pattern(1, impl_wildcard_2);
           values.push_back(Metadata::new_(default_value, default_, 2, impl_pattern, location));
         }
-        return MetadataType::new_(wildcard_type.compile_context(), 0, pattern, values, reinterpret_cast<const SIVtable*>(&TreeType::vtable), location);
+        return MetadataType::new_(wildcard_type->compile_context(), 0, pattern, values, reinterpret_cast<const SIVtable*>(&TreeType::vtable), location);
       }
       
       class MovableCopyableGenericMaker {
@@ -32,25 +32,25 @@ namespace Psi {
         MovableCopyableGenericMaker(bool movable) : m_movable(movable) {}
         
         TreePtr<Term> evaluate(const TreePtr<GenericType>& self) {
-          const BuiltinTypes& builtins = self.compile_context().builtins();
-          CompileContext& compile_context = builtins.metatype.compile_context();
-          TreePtr<Anonymous> upref = TermBuilder::anonymous(builtins.upref_type, term_mode_value, self.location().named_child("x0"));
-          TreePtr<Anonymous> param = TermBuilder::anonymous(builtins.metatype, term_mode_value, self.location().named_child("x1"));
+          const BuiltinTypes& builtins = self->compile_context().builtins();
+          CompileContext& compile_context = builtins.metatype->compile_context();
+          TreePtr<Anonymous> upref = TermBuilder::anonymous(builtins.upref_type, term_mode_value, self->location().named_child("x0"));
+          TreePtr<Anonymous> param = TermBuilder::anonymous(builtins.metatype, term_mode_value, self->location().named_child("x1"));
           PSI_STD::vector<TreePtr<Term> > members;
           
-          TreePtr<Term> self_instance = TermBuilder::instance(self, vector_of<TreePtr<Term> >(upref, param), self.location());
-          TreePtr<Term> self_pointer = TermBuilder::pointer(self_instance, upref, self.location());
+          TreePtr<Term> self_instance = TermBuilder::instance(self, vector_of<TreePtr<Term> >(upref, param), self->location());
+          TreePtr<Term> self_pointer = TermBuilder::pointer(self_instance, upref, self->location());
           
           FunctionParameterType self_derived_p(parameter_mode_functional, self_pointer);
           FunctionParameterType out_param_p(parameter_mode_output, param);
           FunctionParameterType in_param_p(parameter_mode_input, param);
           
-          TreePtr<Term> binary_type = TermBuilder::function_type(result_mode_functional, builtins.empty_type, vector_of(self_derived_p, out_param_p, in_param_p), default_, self.location().named_child("BinaryType"));
-          TreePtr<Term> binary_ptr_type = TermBuilder::pointer(binary_type, self.location().named_child("BinaryTypePtr"));
+          TreePtr<Term> binary_type = TermBuilder::function_type(result_mode_functional, builtins.empty_type, vector_of(self_derived_p, out_param_p, in_param_p), default_, self->location().named_child("BinaryType"));
+          TreePtr<Term> binary_ptr_type = TermBuilder::pointer(binary_type, self->location().named_child("BinaryTypePtr"));
 
           if (m_movable) {
-            TreePtr<Term> unary_type = TermBuilder::function_type(result_mode_functional, builtins.empty_type, vector_of(self_derived_p, out_param_p), default_, self.location().named_child("UnaryType"));
-            TreePtr<Term> unary_ptr_type = TermBuilder::pointer(unary_type, self.location().named_child("UnaryTypePtr"));
+            TreePtr<Term> unary_type = TermBuilder::function_type(result_mode_functional, builtins.empty_type, vector_of(self_derived_p, out_param_p), default_, self->location().named_child("UnaryType"));
+            TreePtr<Term> unary_ptr_type = TermBuilder::pointer(unary_type, self->location().named_child("UnaryTypePtr"));
             
             members.resize(5);
             members[interface_movable_init] = unary_ptr_type;
@@ -60,19 +60,19 @@ namespace Psi {
             members[interface_movable_move_init] = binary_ptr_type;
           } else {
             members.resize(3);
-            members[interface_copyable_movable] = self.compile_context().builtins().movable_interface->type_after(vector_of<TreePtr<Term> >(param), self.location().named_child("MovableBasePointer"));
+            members[interface_copyable_movable] = self->compile_context().builtins().movable_interface->type_after(vector_of<TreePtr<Term> >(param), self->location().named_child("MovableBasePointer"));
             members[interface_copyable_copy] = binary_ptr_type;
             members[interface_copyable_copy_init] = binary_ptr_type;
           }
           
-          return TermBuilder::struct_type(compile_context, members, self.location())->parameterize(self.location(), vector_of(upref, param));
+          return TermBuilder::struct_type(compile_context, members, self->location())->parameterize(self->location(), vector_of(upref, param));
         }
         
         template<typename V> static void visit(V&) {}
       };
       
       TreePtr<Interface> make_movable_copyable_interface(const BuiltinTypes& builtins, bool movable, const SourceLocation& location) {
-        TreePtr<GenericType> generic = TermBuilder::generic(builtins.metatype.compile_context(), vector_of<TreePtr<Term> >(builtins.upref_type, builtins.metatype),
+        TreePtr<GenericType> generic = TermBuilder::generic(builtins.metatype->compile_context(), vector_of<TreePtr<Term> >(builtins.upref_type, builtins.metatype),
                                                             GenericType::primitive_always, location, MovableCopyableGenericMaker(movable));
         TreePtr<Term> upref = TermBuilder::parameter(builtins.upref_type, 0, 0, location.named_child("y0"));
         TreePtr<Term> param = TermBuilder::parameter(builtins.metatype, 1, 0, location.named_child("y1"));

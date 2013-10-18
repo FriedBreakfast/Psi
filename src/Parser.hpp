@@ -6,44 +6,45 @@
 #include <boost/optional.hpp>
 #include <boost/shared_ptr.hpp>
 
+#include "ErrorContext.hpp"
 #include "SourceLocation.hpp"
 #include "Runtime.hpp"
 #include "Enums.hpp"
 
 namespace Psi {
   namespace Parser {
-    using Compiler::ParameterMode;
-    
-    struct ParserLocation {
+    struct PSI_COMPILER_EXPORT Text {
+      Text();
+      Text(const PhysicalSourceLocation& location, const char *begin, const char *end);
+      String str() const;
+
       PhysicalSourceLocation location;
       const char *begin, *end;
-      
-      String to_string() const {return String(begin, end);}
     };
 
     struct Element {
-      Element(const ParserLocation& location_);
+      Element(const PhysicalSourceLocation& location_);
 
-      ParserLocation location;
+      PhysicalSourceLocation location;
     };
-
+    
     struct Expression : Element {
-      Expression(const ParserLocation& location_, ExpressionType expression_type_);
+      Expression(const PhysicalSourceLocation& location_, ExpressionType expression_type_);
       virtual ~Expression();
 
       ExpressionType expression_type;
     };
 
     struct TokenExpression : Expression {
-      TokenExpression(const ParserLocation& location_, TokenExpressionType token_type_, const ParserLocation& text_);
+      TokenExpression(const PhysicalSourceLocation& location_, TokenExpressionType token_type_, const Text& text);
       virtual ~TokenExpression();
 
       TokenExpressionType token_type;
-      ParserLocation text;
+      Text text;
     };
 
     struct EvaluateExpression : Expression {
-      EvaluateExpression(const ParserLocation& location_, const SharedPtr<Expression>& object_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_);
+      EvaluateExpression(const PhysicalSourceLocation& location_, const SharedPtr<Expression>& object_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_);
       virtual ~EvaluateExpression();
 
       SharedPtr<Expression> object;
@@ -51,7 +52,7 @@ namespace Psi {
     };
     
     struct DotExpression : Expression {
-      DotExpression(const ParserLocation& source_, const SharedPtr<Expression>& obj_, const SharedPtr<Expression>& member_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_);
+      DotExpression(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& obj_, const SharedPtr<Expression>& member_, const PSI_STD::vector<SharedPtr<Expression> >& parameters_);
       virtual ~DotExpression();
       
       SharedPtr<Expression> object;
@@ -60,16 +61,16 @@ namespace Psi {
     };
     
     struct Statement : Element {
-      Statement(const ParserLocation& source_, const SharedPtr<Expression>& expression_, const boost::optional<ParserLocation>& name_, int mode_);
+      Statement(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& expression_, const Maybe<Text>& name_, int mode_);
       ~Statement();
 
-      boost::optional<ParserLocation> name;
+      Maybe<Text> name;
       int mode;
       SharedPtr<Expression> expression;
     };
     
     struct Implementation : Element {
-      Implementation(const ParserLocation& source_, bool constructor_, const SharedPtr<Expression>& interface_, const SharedPtr<Expression>& arguments_, const SharedPtr<Expression>& value_);
+      Implementation(const PhysicalSourceLocation& source_, bool constructor_, const SharedPtr<Expression>& interface_, const SharedPtr<Expression>& arguments_, const SharedPtr<Expression>& value_);
       ~Implementation();
       
       bool constructor;
@@ -79,55 +80,44 @@ namespace Psi {
     };
     
     struct Lifecycle : Element {
-      Lifecycle(const ParserLocation& source_, const ParserLocation& function_name_, const ParserLocation& dest_name_,
-                const boost::optional<ParserLocation>& src_name_, const SharedPtr<TokenExpression>& body_);
+      Lifecycle(const PhysicalSourceLocation& source_, const Text& function_name_, const Text& dest_name_,
+                const Maybe<Text>& src_name_, const SharedPtr<TokenExpression>& body_);
       ~Lifecycle();
       
-      ParserLocation function_name;
-      ParserLocation dest_name;
-      boost::optional<ParserLocation> src_name;
+      Text function_name;
+      Text dest_name;
+      Maybe<Text> src_name;
       SharedPtr<TokenExpression> body;
     };
     
     struct FunctionArgument : Element {
-      FunctionArgument(const ParserLocation& source_, const boost::optional<ParserLocation>& name_,
-                       ParameterMode mode_, const SharedPtr<Expression>& type_);
-      FunctionArgument(const ParserLocation& source_, const SharedPtr<Expression>& interface_);
+      FunctionArgument(const PhysicalSourceLocation& source_, const Maybe<Text>& name_,
+                       Compiler::ParameterMode mode_, const SharedPtr<Expression>& type_);
+      FunctionArgument(const PhysicalSourceLocation& source_, const SharedPtr<Expression>& interface_);
 
       bool is_interface;
-      boost::optional<ParserLocation> name;
-      ParameterMode mode;
+      Maybe<Text> name;
+      Compiler::ParameterMode mode;
       SharedPtr<Expression> type;
     };
 
-    class ParseError : public std::runtime_error {
-      PhysicalSourceLocation m_location;
-      std::string m_reason;
-      
-    public:
-      ParseError(const PhysicalSourceLocation& location, const std::string& reason);
-      virtual ~ParseError() throw();
-      
-      const PhysicalSourceLocation& location() const {return m_location;}
-      const std::string& reason() const {return m_reason;}
-    };
-
-    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Statement> > parse_statement_list(const ParserLocation&);
-    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Implementation> > parse_implementation_list(const ParserLocation&);
-    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Lifecycle> > parse_lifecycle_list(const ParserLocation&);
-    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Statement> > parse_namespace(const ParserLocation&);
-    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(const ParserLocation&);
-    PSI_COMPILER_EXPORT SharedPtr<Expression> parse_expression(const ParserLocation& text);
-    PSI_COMPILER_EXPORT PSI_STD::vector<TokenExpression> parse_identifier_list(const ParserLocation&);
+    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Statement> > parse_statement_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
+    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Statement> > parse_namespace(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
+    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
+    PSI_COMPILER_EXPORT SharedPtr<Expression> parse_expression(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
+    PSI_COMPILER_EXPORT PSI_STD::vector<TokenExpression> parse_identifier_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
 
     struct ArgumentDeclarations {
       PSI_STD::vector<SharedPtr<FunctionArgument> > implicit;
       PSI_STD::vector<SharedPtr<FunctionArgument> > arguments;
-      SharedPtr<FunctionArgument> return_type;
+      
+      Compiler::ResultMode return_mode;
+      SharedPtr<Expression> return_type;
     };
 
-    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<FunctionArgument> > parse_type_argument_declarations(const ParserLocation& text);
-    PSI_COMPILER_EXPORT ArgumentDeclarations parse_function_argument_declarations(const ParserLocation& text);
+    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<FunctionArgument> > parse_type_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
+    PSI_COMPILER_EXPORT ArgumentDeclarations parse_function_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
+    
     PSI_COMPILER_EXPORT SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpressionType type);
   }
 }

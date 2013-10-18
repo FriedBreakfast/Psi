@@ -52,13 +52,10 @@ You will need the following tools:
   to get it from a Linux package manager.
 * Boost_: only header files are used; not compiled libraries so just unpacking the
   Boost distribution is enough.
-* `GNU Bison`_: Required to build the parser.
-  It is available for Windows from `GNU Bison for Windows`_, or can be downloaded as
-  an MSYS_ package.
 
 On Ubuntu the required dependencies except for LLVM can be downloaded with::
 
-  sudo apt-get install g++ cmake bison libboost-dev
+  sudo apt-get install g++ cmake libboost-dev
 
 The important CMake variables for configuring the project are:
 
@@ -68,15 +65,11 @@ The important CMake variables for configuring the project are:
   
 * ``Boost_INCLUDE_DIR``: location of Boost headers.
 
-* ``BISON_EXECUTABLE``: Location of GNU Bison.
-
 * ``PSI_DEBUG``: enable debug assertions.
 
 .. _CMake: http://cmake.org/
 .. _LLVM: http://llvm.org/
 .. _Boost: http://www.boost.org/
-.. _GNU Bison: http://www.gnu.org/software/bison/
-.. _GNU Bison for Windows: http://gnuwin32.sourceforge.net/packages/bison.htm
 .. _GNU G++: http://gcc.gnu.org/
 .. _MinGW: http://www.mingw.org/
 .. _MSYS: http://www.mingw.org/wiki/MSYS

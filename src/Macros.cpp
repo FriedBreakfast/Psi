@@ -33,7 +33,7 @@ namespace Psi {
         if (tree_isa<FunctionType>(value->type)) {
           return compile_function_invocation(value, parameters, evaluate_context, location);
         } else {
-          self.compile_context().error_throw(location, boost::format("Cannot evaluate object of type %s") % value->type.location().logical->error_name(location.logical));
+          self.compile_context().error_throw(location, boost::format("Cannot evaluate object of type %s") % value->type->location().logical->error_name(location.logical));
         }
       }
 
@@ -105,7 +105,7 @@ namespace Psi {
           self.compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % self.location().logical->error_name(location.logical));
 
         const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*member);
-        String member_name = token_expression.text.to_string();
+        String member_name = token_expression.text.str();
         NameMapType::const_iterator it = self.m_members.find(member_name);
 
         if (it == self.m_members.end())
@@ -157,13 +157,13 @@ namespace Psi {
         : m_metadata(metadata) {}
         
         PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const TreePtr<GenericType>& self) const {
-          TreePtr<Term> inst = TermBuilder::instance(self, default_, self.location());
-          TreePtr<Term> param = TermBuilder::parameter(inst, 0, 0, self.location());
+          TreePtr<Term> inst = TermBuilder::instance(self, default_, self->location());
+          TreePtr<Term> param = TermBuilder::parameter(inst, 0, 0, self->location());
           PSI_STD::vector<TreePtr<Term> > pattern(1, param);
 
           PSI_STD::vector<TreePtr<OverloadValue> > overloads;
           for (MetadataListType::const_iterator ii = m_metadata.begin(), ie = m_metadata.end(); ii != ie; ++ii)
-            overloads.push_back(Metadata::new_(ii->second, ii->first, 1, pattern, self.location()));
+            overloads.push_back(Metadata::new_(ii->second, ii->first, 1, pattern, self->location()));
 
           return overloads;
         }
@@ -179,7 +179,7 @@ namespace Psi {
      * \brief Create a Term which carries multiple metadata annotations.
      */
     TreePtr<Term> make_annotated_value(const TreePtr<Term>& value, const MetadataListType& metadata, const SourceLocation& location) {
-      TreePtr<GenericType> generic = TermBuilder::generic(value.compile_context(), default_, GenericType::primitive_recurse,
+      TreePtr<GenericType> generic = TermBuilder::generic(value->compile_context(), default_, GenericType::primitive_recurse,
                                                           location, value->type, MakeMetadataCallback(metadata));
       return TermBuilder::instance_value(TermBuilder::instance(generic, default_, location), value, location);
     }
@@ -199,7 +199,7 @@ namespace Psi {
      * This term has no value of its own.
      */
     TreePtr<Term> make_metadata_term(const TreePtr<>& value, const TreePtr<MetadataType>& key, const SourceLocation& location) {
-      CompileContext& compile_context = key.compile_context();
+      CompileContext& compile_context = key->compile_context();
       MetadataListType ml(1, std::make_pair(key, value));
       return make_annotated_value(compile_context, ml, location);
     }
@@ -208,7 +208,7 @@ namespace Psi {
      * \brief Create a Term which uses a given macro.
      */
     TreePtr<Term> make_macro_term(const TreePtr<Macro>& macro, const SourceLocation& location) {
-      return make_metadata_term(macro, macro.compile_context().builtins().macro_tag, location);
+      return make_metadata_term(macro, macro->compile_context().builtins().macro_tag, location);
     }
     
     class PointerMacro : public MacroMemberCallback {
@@ -231,7 +231,7 @@ namespace Psi {
         if (!(name = expression_as_token_type(parameters[0], Parser::token_bracket)))
           self.compile_context().error_throw(location, "Parameter to pointer macro is not a (...)");
         
-        SharedPtr<Parser::Expression> target_expr = Parser::parse_expression(name->text);
+        SharedPtr<Parser::Expression> target_expr = Parser::parse_expression(self.compile_context().error_context(), location.logical, name->text);
         TreePtr<Term> target_type = compile_expression(target_expr, evaluate_context, location.logical);
         
         return TermBuilder::pointer(target_type, location);
@@ -274,7 +274,7 @@ namespace Psi {
         if (!(name = expression_as_token_type(member, Parser::token_identifier)))
           self.compile_context().error_throw(location, "Namespace member argument is not an identifier");
         
-        String member_name = name->text.to_string();
+        String member_name = name->text.str();
         TreePtr<Namespace> ns = metadata_lookup_as<Namespace>(self.compile_context().builtins().namespace_tag, evaluate_context, value, location);
         PSI_STD::map<String, TreePtr<Term> >::const_iterator ns_it = ns->members.find(member_name);
         if (ns_it == ns->members.end())
@@ -311,7 +311,7 @@ namespace Psi {
         if (!(name = expression_as_token_type(parameters[0], Parser::token_square_bracket)))
           self.compile_context().error_throw(location, "Parameter to namespace macro is not a [...]");
         
-        PSI_STD::vector<SharedPtr<Parser::Statement> > statements = Parser::parse_namespace(name->text);
+        PSI_STD::vector<SharedPtr<Parser::Statement> > statements = Parser::parse_namespace(self.compile_context().error_context(), location.logical, name->text);
 
         TreePtr<Namespace> ns = compile_namespace(statements, evaluate_context, location);
 
@@ -358,7 +358,7 @@ namespace Psi {
         if (!(name = expression_as_token_type(parameters[0], Parser::token_brace)))
           self.compile_context().error_throw(location, "Parameter to builtin type macro is not a {...}");
         
-        std::string name_s = name->text.to_string();
+        std::string name_s = name->text.str();
         std::map<std::string, NumberType::ScalarType>::const_iterator it = number_type_names.find(name_s);
         if (it == number_type_names.end())
           self.compile_context().error_throw(location, boost::format("Unknown builtin type '%s'") % name_s);
@@ -400,7 +400,7 @@ namespace Psi {
           self.compile_context().error_throw(location, "Second parameter to builtin function macro is not a (...)");
         
         PSI_STD::vector<TreePtr<Term> > argument_types;
-        PSI_STD::vector<SharedPtr<Parser::Expression> > argument_expressions = Parser::parse_positional_list(arguments->text);
+        PSI_STD::vector<SharedPtr<Parser::Expression> > argument_expressions = Parser::parse_positional_list(self.compile_context().error_context(), location.logical, arguments->text);
         for (PSI_STD::vector<SharedPtr<Parser::Expression> >::iterator ii = argument_expressions.begin(), ie = argument_expressions.end(); ii != ie; ++ii)
           argument_types.push_back(compile_expression(*ii, evaluate_context, location.logical));
         
@@ -410,7 +410,7 @@ namespace Psi {
         TreePtr<Term> result_type = argument_types.back();
         argument_types.pop_back();
        
-        String name_s = name->text.to_string();
+        String name_s = name->text.str();
         PSI_NOT_IMPLEMENTED();
       }
       
@@ -451,7 +451,7 @@ namespace Psi {
         if (!(data = expression_as_token_type(parameters[1], Parser::token_brace)))
           self.compile_context().error_throw(location, "Second parameter to builtin number constant macro is not a {...}");
         
-        TreePtr<Term> type = compile_expression(Parser::parse_expression(type_expr->text), evaluate_context, location.logical);
+        TreePtr<Term> type = compile_expression(Parser::parse_expression(self.compile_context().error_context(), location.logical, type_expr->text), evaluate_context, location.logical);
         TreePtr<NumberType> number_type = term_unwrap_dyn_cast<NumberType>(type);
         if (!number_type)
           self.compile_context().error_throw(location, "First parameter to builtin number constant macro is not a primitive numerical type");
@@ -460,7 +460,7 @@ namespace Psi {
         if (!NumberType::is_integer(number_type->scalar_type))
           self.compile_context().error_throw(location, "Non-integer numerical constants of are not supported");
 
-        std::string data_s = data->text.to_string();
+        std::string data_s = data->text.str();
         uint64_t value;
         if (NumberType::is_signed(number_type->scalar_type)) {
           try {
@@ -549,11 +549,11 @@ namespace Psi {
 
       std::map<String, TreePtr<Term> > parameter_dict;
       
-      PSI_STD::vector<Parser::TokenExpression> parameter_names = parse_identifier_list(parameter_names_cast->text);
+      PSI_STD::vector<Parser::TokenExpression> parameter_names = Parser::parse_identifier_list(compile_context.error_context(), location.logical, parameter_names_cast->text);
       switch (parameter_names.size()) {
       default: compile_context.error_throw(location, "Expected zero, one or two argument names specified for library macro");
-      case 2: parameter_dict.insert(std::make_pair(parameter_names[1].text.to_string(), TreePtr<Term>()));
-      case 1: parameter_dict.insert(std::make_pair(parameter_names[0].text.to_string(), TreePtr<Term>()));
+      case 2: parameter_dict.insert(std::make_pair(parameter_names[1].text.str(), TreePtr<Term>()));
+      case 1: parameter_dict.insert(std::make_pair(parameter_names[0].text.str(), TreePtr<Term>()));
       case 0: break;
       }
       
@@ -594,7 +594,7 @@ namespace Psi {
         if (!(type_text = expression_as_token_type(parameters[0], Parser::token_bracket)))
           self.compile_context().error_throw(location, "First argument to library symbol macro is not a (...)");
         
-        SharedPtr<Parser::Expression> type_expr = Parser::parse_expression(type_text->text);
+        SharedPtr<Parser::Expression> type_expr = Parser::parse_expression(self.compile_context().error_context(), location.logical, type_text->text);
         TreePtr<Term> type = compile_expression(type_expr, evaluate_context, location.logical);
         TreePtr<Library> library = metadata_lookup_as<Library>(self.compile_context().builtins().library_tag, evaluate_context, value, location);
 

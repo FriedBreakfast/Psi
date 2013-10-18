@@ -64,7 +64,6 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
   static TreePtr<Term> upref(const TreePtr<Term>& outer_type, const TreePtr<Term>& outer_index, const TreePtr<Term>& next, const SourceLocation& location);
   static TreePtr<Term> upref(const TreePtr<Term>& outer_type, unsigned outer_index, const TreePtr<Term>& next, const SourceLocation& location);
   static TreePtr<Term> upref_null(CompileContext& compile_context);
-  static TreePtr<Term> introduce_exists_upref(const TreePtr<Term>& pointer, const SourceLocation& location);
   
   static TreePtr<Term> size_value(unsigned index, CompileContext& compile_context, const SourceLocation& location);
   static unsigned size_from(const TreePtr<Term>& value, const SourceLocation& location);
