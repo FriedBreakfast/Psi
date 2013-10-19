@@ -6,6 +6,7 @@ Internals
 
    basic_types
    lifecycle
+   context
    tvm_mapping
    storage_specifiers
    overloading

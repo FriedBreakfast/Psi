@@ -140,7 +140,7 @@ void AggregateMacroCommon::parse_arguments(const TreePtr<EvaluateContext>& evalu
  */
 void AggregateMacroCommon::parse_members(const SourceLocation& location) {
   // Handle members
-  PSI_STD::vector<SharedPtr<Parser::Statement> > members_parsed = Parser::parse_namespace(compile_context().error_context(), location.logical, members_expr->text);
+  PSI_STD::vector<SharedPtr<Parser::Statement> > members_parsed = Parser::parse_statement_list(compile_context().error_context(), location.logical, members_expr->text);
   for (PSI_STD::vector<SharedPtr<Parser::Statement> >::const_iterator ii = members_parsed.begin(), ie = members_parsed.end(); ii != ie; ++ii) {
     if (*ii && (*ii)->expression) {
       const Parser::Statement& stmt = **ii;
@@ -161,7 +161,7 @@ void AggregateMacroCommon::parse_members(const SourceLocation& location) {
         PSI_ASSERT(stmt.mode == statement_mode_destroy);
       }
       
-      TreePtr<Term> member_type = compile_expression(stmt.expression, member_context, stmt_location.logical);
+      TreePtr<Term> member_type = compile_term(stmt.expression, member_context, stmt_location.logical);
       member_type = member_type->parameterize(stmt_location, arguments.list);
       member_types.push_back(member_type);
 

@@ -34,7 +34,7 @@ namespace Psi {
           evaluate_context->compile_context().error_throw(argument_location, "Generic type parameters must be declared with ':'");
 
         TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, result.names, evaluate_context);
-        TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
+        TreePtr<Term> argument_type = compile_term(argument_expr.type, argument_context, argument_location.logical);
         result.pattern.push_back(argument_type->parameterize(argument_location, result.list));
         TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, term_mode_value, argument_location);
         result.list.push_back(argument);
@@ -44,34 +44,6 @@ namespace Psi {
       }
       
       return result;
-    }
-    
-    class MacroDefineMacro : public MacroMemberCallback {
-    public:
-      static const MacroMemberCallbackVtable vtable;
-
-      MacroDefineMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
-      }
-
-      static TreePtr<Term> evaluate_impl(const MacroDefineMacro& self,
-                                         const TreePtr<Term>& value,
-                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                         const SourceLocation& location) {
-        PSI_NOT_IMPLEMENTED();
-      }
-    };
-
-    const MacroMemberCallbackVtable MacroDefineMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(MacroDefineMacro, "psi.compiler.MacroDefineMacro", MacroMemberCallback);
-    
-    /**
-     * Return a term which is a macro for defining new macros.
-     */
-    TreePtr<Term> macro_define_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new MacroDefineMacro(compile_context, location));
-      TreePtr<Macro> m = make_macro(compile_context, location, callback);
-      return make_macro_term(m, location);
     }
     
     /**
@@ -103,6 +75,8 @@ namespace Psi {
         TreePtr<EvaluateContext> member_context = evaluate_context_dictionary(evaluate_context->module(), location, args.names, evaluate_context);	  
 
         PSI_STD::vector<SharedPtr<Parser::Statement> > members = Parser::parse_statement_list(self.compile_context().error_context(), location.logical, members_expr->text);
+        
+        PSI_NOT_IMPLEMENTED();
       }
     };
 

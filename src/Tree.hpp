@@ -1078,7 +1078,7 @@ namespace Psi {
       }
     };
     
-#define PSI_COMPILER_TARGET_CALLBACK_VTABLE(derived,name,super) { \
+#define PSI_COMPILER_TARGET_CALLBACK(derived,name,super) { \
     PSI_COMPILER_TREE(derived,name,super), \
     &::Psi::Compiler::TargetCallbackWrapper<derived>::evaluate \
   }
@@ -1136,7 +1136,7 @@ namespace Psi {
 
       static TreePtr<Namespace> new_(CompileContext& compile_context, const NameMapType& members, const SourceLocation& location);
     };
-    
+
     /**
      * \brief Get the value associated with an interface for particular parameters.
      */

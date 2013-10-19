@@ -9,18 +9,36 @@ namespace Psi {
     }
     
     namespace {
-      template<typename TreeType>
-      TreePtr<MetadataType> make_tag(const TreePtr<Term>& wildcard_type, const SourceLocation& location, const TreePtr<>& default_value=TreePtr<>()) {
-        TreePtr<Term> wildcard = TermBuilder::parameter(wildcard_type, 0, 0, location);
-        PSI_STD::vector<TreePtr<Term> > pattern(1, wildcard);
+      TreePtr<MetadataType>
+      make_tag_n(CompileContext& compile_context, const SIVtable *vptr, const PSI_STD::vector<TreePtr<Term> >& wildcard_types,
+                 const SourceLocation& location, const TreePtr<>& default_value=TreePtr<>()) {
+        PSI_STD::vector<TreePtr<Term> > pattern(wildcard_types.size());
+        for (unsigned ii = 0, ie = wildcard_types.size(); ii != ie; ++ii)
+          pattern[ii] = TermBuilder::parameter(wildcard_types[ii], 0, ii, location);
+        
         PSI_STD::vector<TreePtr<Metadata> > values;
         if (default_value) {
-          TreePtr<Term> impl_wildcard_1 = TermBuilder::parameter(wildcard_type->compile_context().builtins().metatype, 0, 0, location);
-          TreePtr<Term> impl_wildcard_2 = TermBuilder::parameter(impl_wildcard_1, 0, 1, location);
-          PSI_STD::vector<TreePtr<Term> > impl_pattern(1, impl_wildcard_2);
-          values.push_back(Metadata::new_(default_value, default_, 2, impl_pattern, location));
+          PSI_STD::vector<TreePtr<Term> > impl_pattern;
+          for (unsigned ii = 0, ie = pattern.size(); ii != ie; ++ii)
+            impl_pattern.push_back(TermBuilder::parameter(pattern[ii], 0, ii+ie, location));
+          values.push_back(Metadata::new_(default_value, default_, pattern.size() * 2, impl_pattern, location));
         }
-        return MetadataType::new_(wildcard_type->compile_context(), 0, pattern, values, reinterpret_cast<const SIVtable*>(&TreeType::vtable), location);
+        
+        return MetadataType::new_(compile_context, 0, pattern, values, vptr, location);
+      }
+      
+      template<typename TreeType>
+      TreePtr<MetadataType> make_tag(const TreePtr<Term>& wildcard_type, const SourceLocation& location, const TreePtr<>& default_value=TreePtr<>()) {
+        PSI_STD::vector<TreePtr<Term> > wildcard_types(1, wildcard_type);
+        return make_tag_n(wildcard_type->compile_context(), reinterpret_cast<const SIVtable*>(&TreeType::vtable), wildcard_types, location, default_value);
+      }
+
+      template<typename TreeType>
+      TreePtr<MetadataType> make_tag_2(const TreePtr<Term>& wildcard_type_1, const TreePtr<Term>& wildcard_type_2, const SourceLocation& location, const TreePtr<>& default_value=TreePtr<>()) {
+        PSI_STD::vector<TreePtr<Term> > wildcard_types(2);
+        wildcard_types[0] = wildcard_type_1;
+        wildcard_types[1] = wildcard_type_2;
+        return make_tag_n(wildcard_type_1->compile_context(), reinterpret_cast<const SIVtable*>(&TreeType::vtable), wildcard_types, location, default_value);
       }
       
       class MovableCopyableGenericMaker {
@@ -116,13 +134,14 @@ namespace Psi {
       string_element_type = u8_type;
       
       SourceLocation macro_location = psi_compiler_location.named_child("Macro");
-      macro_tag = make_tag<Macro>(metatype, macro_location, default_macro_impl(compile_context, macro_location));
+      macro_tag = make_tag_2<Macro>(metatype, metatype, macro_location, default_macro_impl(compile_context, macro_location));
       library_tag = make_tag<Library>(metatype, psi_compiler_location.named_child("Library"));
       namespace_tag = make_tag<Namespace>(metatype, psi_compiler_location.named_child("Namespace"));
       
       /// \todo Need to add default implementations of Movable and Copyable for builtin types
       movable_interface = make_movable_copyable_interface(*this, true, psi_compiler_location.named_child("Movable"));
       copyable_interface = make_movable_copyable_interface(*this, false, psi_compiler_location.named_child("Copyable"));
+
     }
   }
 }

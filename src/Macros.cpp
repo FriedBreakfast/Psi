@@ -29,6 +29,8 @@ namespace Psi {
                                          const TreePtr<Term>& value,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const TreePtr<Term>& PSI_UNUSED(argument_type),
+                                         const char& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         if (tree_isa<FunctionType>(value->type)) {
           return compile_function_invocation(value, parameters, evaluate_context, location);
@@ -42,12 +44,23 @@ namespace Psi {
                                     const SharedPtr<Parser::Expression>& member,
                                     const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                     const TreePtr<EvaluateContext>& evaluate_context,
+                                    const TreePtr<Term>& PSI_UNUSED(argument_type),
+                                    const char& PSI_UNUSED(argument),
                                     const SourceLocation& location) {
         PSI_NOT_IMPLEMENTED();
       }
+      
+      static TreePtr<Term> cast_impl(const DefaultMacro& PSI_UNUSED(self),
+                                     const TreePtr<Term>& value,
+                                     const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
+                                     const TreePtr<Term>& PSI_UNUSED(argument_type),
+                                     const char& PSI_UNUSED(argument),
+                                     const SourceLocation& PSI_UNUSED(location)) {
+        return value;
+      }
     };
 
-    const MacroVtable DefaultMacro::vtable = PSI_COMPILER_MACRO(DefaultMacro, "psi.compiler.DefaultMacro", Macro);
+    const MacroVtable DefaultMacro::vtable = PSI_COMPILER_MACRO(DefaultMacro, "psi.compiler.DefaultMacro", Macro, TreePtr<Term>, const char);
 
     /**
      * \brief Generate the default implementation of Macro.
@@ -87,6 +100,8 @@ namespace Psi {
                                          const TreePtr<Term>& value,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const TreePtr<Term>& PSI_UNUSED(argument_type),
+                                         const char& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         if (self.m_evaluate) {
           return self.m_evaluate->evaluate(value, parameters, evaluate_context, location);
@@ -100,6 +115,8 @@ namespace Psi {
                                     const SharedPtr<Parser::Expression>& member,
                                     const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                     const TreePtr<EvaluateContext>& evaluate_context,
+                                    const TreePtr<Term>& PSI_UNUSED(argument_type),
+                                    const char& PSI_UNUSED(argument),
                                     const SourceLocation& location) {
         if (member->expression_type != Parser::expression_token)
           self.compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % self.location().logical->error_name(location.logical));
@@ -113,10 +130,19 @@ namespace Psi {
 
         return it->second->evaluate(value, parameters, evaluate_context, location);
       }
+      
+      static TreePtr<Term> cast_impl(const NamedMemberMacro& PSI_UNUSED(self),
+                                     const TreePtr<Term>& value,
+                                     const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
+                                     const TreePtr<Term>& PSI_UNUSED(argument_type),
+                                     const char& PSI_UNUSED(argument),
+                                     const SourceLocation& PSI_UNUSED(location)) {
+        return value;
+      }
     };
 
     const MacroVtable NamedMemberMacro::vtable =
-    PSI_COMPILER_MACRO(NamedMemberMacro, "psi.compiler.NamedMemberMacro", Macro);
+    PSI_COMPILER_MACRO(NamedMemberMacro, "psi.compiler.NamedMemberMacro", Macro, TreePtr<Term>, const char);
 
     /**
      * \brief Create an interface macro.
@@ -228,11 +254,11 @@ namespace Psi {
           self.compile_context().error_throw(location, "Pointer macro expects 1 parameter");
         
         SharedPtr<Parser::TokenExpression> name;
-        if (!(name = expression_as_token_type(parameters[0], Parser::token_bracket)))
+        if (!(name = Parser::expression_as_token_type(parameters[0], Parser::token_bracket)))
           self.compile_context().error_throw(location, "Parameter to pointer macro is not a (...)");
         
         SharedPtr<Parser::Expression> target_expr = Parser::parse_expression(self.compile_context().error_context(), location.logical, name->text);
-        TreePtr<Term> target_type = compile_expression(target_expr, evaluate_context, location.logical);
+        TreePtr<Term> target_type = compile_term(target_expr, evaluate_context, location.logical);
         
         return TermBuilder::pointer(target_type, location);
       }
@@ -256,22 +282,28 @@ namespace Psi {
       : Macro(&vtable, compile_context, location) {
       }
 
-      static TreePtr<Term> evaluate_impl(const NamespaceMemberMacro& self,
-                                         const TreePtr<Term>&,
-                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >&,
-                                         const TreePtr<EvaluateContext>&,
-                                         const SourceLocation& location) {
+      static void evaluate_impl(void*,
+                                const NamespaceMemberMacro& self,
+                                const TreePtr<Term>&,
+                                const PSI_STD::vector<SharedPtr<Parser::Expression> >&,
+                                const TreePtr<EvaluateContext>&,
+                                const TreePtr<Term>&,
+                                const void*,
+                                const SourceLocation& location) {
         self.compile_context().error_throw(location, "Cannot evaluate a namespace");
       }
 
-      static TreePtr<Term> dot_impl(const NamespaceMemberMacro& self,
-                                    const TreePtr<Term>& value,
-                                    const SharedPtr<Parser::Expression>& member,
-                                    const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                    const TreePtr<EvaluateContext>& evaluate_context,
-                                    const SourceLocation& location) {
+      static void dot_impl(void *result,
+                           const NamespaceMemberMacro& self,
+                           const TreePtr<Term>& value,
+                           const SharedPtr<Parser::Expression>& member,
+                           const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                           const TreePtr<EvaluateContext>& evaluate_context,
+                           const TreePtr<Term>& argument_type,
+                           const void *argument,
+                           const SourceLocation& location) {
         SharedPtr<Parser::TokenExpression> name;
-        if (!(name = expression_as_token_type(member, Parser::token_identifier)))
+        if (!(name = Parser::expression_as_token_type(member, Parser::token_identifier)))
           self.compile_context().error_throw(location, "Namespace member argument is not an identifier");
         
         String member_name = name->text.str();
@@ -282,14 +314,29 @@ namespace Psi {
         
         TreePtr<Term> member_value = ns_it->second;
         if (parameters.empty())
-          return member_value;
+          PSI_NOT_IMPLEMENTED();
+          //return member_value;
         
         TreePtr<Macro> member_value_macro = metadata_lookup_as<Macro>(self.compile_context().builtins().macro_tag, evaluate_context, member_value, location);
-        return member_value_macro->evaluate(member_value, parameters, evaluate_context, location);
+        member_value_macro->evaluate_raw(result, member_value, parameters, evaluate_context, argument_type, argument, location);
+      }
+      
+      static void cast_impl(void *result,
+                            const NamespaceMemberMacro& self,
+                            const TreePtr<Term>& value,
+                            const TreePtr<EvaluateContext>& evaluate_context,
+                            const TreePtr<Term>& argument_type,
+                            const void *argument,
+                            const SourceLocation& location) {
+        PSI_NOT_IMPLEMENTED();
+        if (false) // Need to do this if argument_type indicates normal evaluation
+          new (result) TreePtr<Term> (value);
+        else
+          self.compile_context().error_throw(location, "Can't cast namespace to required data type.");
       }
     };
     
-    const MacroVtable NamespaceMemberMacro::vtable = PSI_COMPILER_MACRO(NamespaceMemberMacro, "psi.compiler.NamespaceMemberMacro", Macro);
+    const MacroVtable NamespaceMemberMacro::vtable = PSI_COMPILER_MACRO_RAW(NamespaceMemberMacro, "psi.compiler.NamespaceMemberMacro", Macro);
 
     class NamespaceMacro : public MacroMemberCallback {
     public:
@@ -308,7 +355,7 @@ namespace Psi {
           self.compile_context().error_throw(location, "Namespace macro expects 1 parameter");
         
         SharedPtr<Parser::TokenExpression> name;
-        if (!(name = expression_as_token_type(parameters[0], Parser::token_square_bracket)))
+        if (!(name = Parser::expression_as_token_type(parameters[0], Parser::token_square_bracket)))
           self.compile_context().error_throw(location, "Parameter to namespace macro is not a [...]");
         
         PSI_STD::vector<SharedPtr<Parser::Statement> > statements = Parser::parse_namespace(self.compile_context().error_context(), location.logical, name->text);
@@ -355,7 +402,7 @@ namespace Psi {
           self.compile_context().error_throw(location, "Wrong number of parameters to builtin type macro");
         
         SharedPtr<Parser::TokenExpression> name;
-        if (!(name = expression_as_token_type(parameters[0], Parser::token_brace)))
+        if (!(name = Parser::expression_as_token_type(parameters[0], Parser::token_brace)))
           self.compile_context().error_throw(location, "Parameter to builtin type macro is not a {...}");
         
         std::string name_s = name->text.str();
@@ -393,16 +440,16 @@ namespace Psi {
           self.compile_context().error_throw(location, "Wrong number of parameters to builtin function macro (expected 2)");
         
         SharedPtr<Parser::TokenExpression> name, arguments;
-        if (!(name = expression_as_token_type(parameters[0], Parser::token_brace)))
+        if (!(name = Parser::expression_as_token_type(parameters[0], Parser::token_brace)))
           self.compile_context().error_throw(location, "First parameter to builtin function macro is not a {...}");
         
-        if (!(arguments = expression_as_token_type(parameters[1], Parser::token_bracket)))
+        if (!(arguments = Parser::expression_as_token_type(parameters[1], Parser::token_bracket)))
           self.compile_context().error_throw(location, "Second parameter to builtin function macro is not a (...)");
         
         PSI_STD::vector<TreePtr<Term> > argument_types;
         PSI_STD::vector<SharedPtr<Parser::Expression> > argument_expressions = Parser::parse_positional_list(self.compile_context().error_context(), location.logical, arguments->text);
         for (PSI_STD::vector<SharedPtr<Parser::Expression> >::iterator ii = argument_expressions.begin(), ie = argument_expressions.end(); ii != ie; ++ii)
-          argument_types.push_back(compile_expression(*ii, evaluate_context, location.logical));
+          argument_types.push_back(compile_term(*ii, evaluate_context, location.logical));
         
         if (argument_types.empty())
           self.compile_context().error_throw(location, "Builtin function macro types argument must contain at least one entry (the return type, which should be last)");
@@ -445,13 +492,13 @@ namespace Psi {
           self.compile_context().error_throw(location, "Wrong number of parameters to builtin value macro (expected 3)");
         
         SharedPtr<Parser::TokenExpression> data, type_expr;
-        if (!(type_expr = expression_as_token_type(parameters[0], Parser::token_bracket)))
+        if (!(type_expr = Parser::expression_as_token_type(parameters[0], Parser::token_bracket)))
           self.compile_context().error_throw(location, "First parameter to builtin number constant macro is not a {...}");
 
-        if (!(data = expression_as_token_type(parameters[1], Parser::token_brace)))
+        if (!(data = Parser::expression_as_token_type(parameters[1], Parser::token_brace)))
           self.compile_context().error_throw(location, "Second parameter to builtin number constant macro is not a {...}");
         
-        TreePtr<Term> type = compile_expression(Parser::parse_expression(self.compile_context().error_context(), location.logical, type_expr->text), evaluate_context, location.logical);
+        TreePtr<Term> type = compile_term(Parser::parse_expression(self.compile_context().error_context(), location.logical, type_expr->text), evaluate_context, location.logical);
         TreePtr<NumberType> number_type = term_unwrap_dyn_cast<NumberType>(type);
         if (!number_type)
           self.compile_context().error_throw(location, "First parameter to builtin number constant macro is not a primitive numerical type");
@@ -510,13 +557,13 @@ namespace Psi {
       }
     };
     
-    const TargetCallbackVtable TargetCallbackConst::vtable = PSI_COMPILER_TARGET_CALLBACK_VTABLE(TargetCallbackConst, "psi.compiler.TargetCallbackConst", TargetCallback);
+    const TargetCallbackVtable TargetCallbackConst::vtable = PSI_COMPILER_TARGET_CALLBACK(TargetCallbackConst, "psi.compiler.TargetCallbackConst", TargetCallback);
     
     TreePtr<TargetCallback> make_target_callback_const(CompileContext& compile_context,
                                                        const SourceLocation& location,
                                                        const SharedPtr<Parser::Expression>& value) {
       SharedPtr<Parser::TokenExpression> value_cast;
-      if (!(value_cast = expression_as_token_type(value, Parser::token_brace)))
+      if (!(value_cast = Parser::expression_as_token_type(value, Parser::token_brace)))
         compile_context.error_throw(location, "First parameter to library macro is not a {...}");
       
       PropertyValue pv;
@@ -541,10 +588,10 @@ namespace Psi {
                                                  const TreePtr<EvaluateContext>& evaluate_context) {
       
       SharedPtr<Parser::TokenExpression> parameter_names_cast, body_cast;
-      if (!(parameter_names_cast = expression_as_token_type(parameter_names_expr, Parser::token_bracket)))
+      if (!(parameter_names_cast = Parser::expression_as_token_type(parameter_names_expr, Parser::token_bracket)))
         compile_context.error_throw(location, "First parameter to library macro is not a (...)");
 
-      if (!(body_cast = expression_as_token_type(body_expr, Parser::token_square_bracket)))
+      if (!(body_cast = Parser::expression_as_token_type(body_expr, Parser::token_square_bracket)))
         compile_context.error_throw(location, "Second parameter to library macro is not a [...]");
 
       std::map<String, TreePtr<Term> > parameter_dict;
@@ -591,11 +638,11 @@ namespace Psi {
         }
         
         SharedPtr<Parser::TokenExpression> type_text;
-        if (!(type_text = expression_as_token_type(parameters[0], Parser::token_bracket)))
+        if (!(type_text = Parser::expression_as_token_type(parameters[0], Parser::token_bracket)))
           self.compile_context().error_throw(location, "First argument to library symbol macro is not a (...)");
         
         SharedPtr<Parser::Expression> type_expr = Parser::parse_expression(self.compile_context().error_context(), location.logical, type_text->text);
-        TreePtr<Term> type = compile_expression(type_expr, evaluate_context, location.logical);
+        TreePtr<Term> type = compile_term(type_expr, evaluate_context, location.logical);
         TreePtr<Library> library = metadata_lookup_as<Library>(self.compile_context().builtins().library_tag, evaluate_context, value, location);
 
         return TermBuilder::library_symbol(library, callback, type, location);
@@ -660,7 +707,7 @@ namespace Psi {
           self.compile_context().error_throw(location, "String macro expects one argument");
         
         SharedPtr<Parser::TokenExpression> value_text;
-        if (!(value_text = expression_as_token_type(parameters[0], Parser::token_brace)))
+        if (!(value_text = Parser::expression_as_token_type(parameters[0], Parser::token_brace)))
           self.compile_context().error_throw(location, "Argument to string macro is not a {...}");
         
         std::vector<char> utf8_data(value_text->text.begin, value_text->text.end);
@@ -702,7 +749,7 @@ namespace Psi {
         if (parameters.size() != 1)
           self.compile_context().error_throw(location, "new macro expects one argument");
         
-        TreePtr<Term> type = compile_expression(parameters[0], evaluate_context, location.logical);
+        TreePtr<Term> type = compile_term(parameters[0], evaluate_context, location.logical);
         return TermBuilder::default_value(type, location);
       }
     };
@@ -714,6 +761,92 @@ namespace Psi {
      */
     TreePtr<Term> new_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<MacroMemberCallback> callback(::new NewMacro(compile_context, location));
+      return make_macro_term(make_macro(compile_context, location, callback), location);
+    }
+    
+#if 0
+    class MacroDefineMacroCallback : public RewriteCallback {
+    public:
+      static const VtableType vtable;
+      
+      MacroDefineMacroCallback(CompileContext& compile_context, const TreePtr<EvaluateContext>& evaluate_context_,
+                               const PSI_STD::vector<String>& arguments_, const String& text, const SourceLocation& location)
+      : RewriteCallback(&vtable, compile_context, text, location),
+      evaluate_context(evaluate_context_),
+      arguments(arguments_) {
+      }
+      
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<RewriteCallback>(v);
+        v("evaluate_context", &MacroDefineMacroCallback::evaluate_context)
+        ("arguments", &MacroDefineMacroCallback::arguments);
+      }
+      
+      TreePtr<EvaluateContext> evaluate_context;
+      PSI_STD::vector<String> arguments;
+      
+      static TreePtr<EvaluateContext> rewrite_impl(const MacroDefineMacroCallback& self,
+                                                   const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                                   const TreePtr<EvaluateContext>& evaluate_context,
+                                                   const SourceLocation& location) {
+        PSI_NOT_IMPLEMENTED();
+      }
+    };
+    
+    const RewriteCallbackVtable MacroDefineMacroCallback::vtable = PSI_COMPILER_REWRITE_CALLBACK(MacroDefineMacroCallback, "psi.compiler.MacroDefineMacroCallback", RewriteCallback);
+#endif
+
+    class MacroDefineMacro : public MacroMemberCallback {
+    public:
+      static const VtableType vtable;
+
+      MacroDefineMacro(CompileContext& compile_context, const SourceLocation& location)
+      : MacroMemberCallback(&vtable, compile_context, location) {
+      }
+
+      static TreePtr<Term> evaluate_impl(const MacroDefineMacro& self,
+                                         const TreePtr<Term>&,
+                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
+        if (parameters.size() != 2)
+          self.compile_context().error_throw(location, "macro macro expects two arguments");
+        
+        SharedPtr<Parser::TokenExpression> args, replace;
+        if (!(args = Parser::expression_as_token_type(parameters[0], Parser::token_bracket)))
+          self.compile_context().error_throw(location, "First parameter to macro macro is not a (...)");
+        if (!(replace = Parser::expression_as_token_type(parameters[1], Parser::token_square_bracket)))
+          self.compile_context().error_throw(location, "Second parameter to macro macro is not a [...]");
+
+        PSI_STD::vector<String> arg_names;
+        PSI_STD::vector<Parser::TokenExpression> arg_tokens = Parser::parse_identifier_list(self.compile_context().error_context(), location.logical, args->text);
+        for (PSI_STD::vector<Parser::TokenExpression>::const_iterator ii = arg_tokens.begin(), ie = arg_tokens.end(); ii != ie; ++ii) {
+          if (ii->token_type != Parser::token_identifier)
+            self.compile_context().error_throw(location.relocate(ii->location), "Arguments to macro define macro must be identifiers");
+          arg_names.push_back(ii->text.str());
+        }
+
+#if 0
+        String replace_text = replace->text.str();
+        TreePtr<RewriteCallback> rewrite(::new MacroDefineMacroCallback(self.compile_context(), evaluate_context, arg_names, replace_text, location));
+        
+        MetadataListType metadata;
+        metadata.push_back(std::make_pair(self.compile_context().builtins().rewrite_tag, rewrite));
+#else
+        MetadataListType metadata;
+#endif
+        return make_annotated_value(self.compile_context(), metadata, location);
+      }
+    };
+
+    const MacroMemberCallbackVtable MacroDefineMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(MacroDefineMacro, "psi.compiler.MacroDefineMacro", MacroMemberCallback);
+    
+    /**
+     * Return a term which is a macro for defining new macros.
+     */
+    TreePtr<Term> macro_define_macro(CompileContext& compile_context, const SourceLocation& location) {
+      TreePtr<MacroMemberCallback> callback(::new MacroDefineMacro(compile_context, location));
       return make_macro_term(make_macro(compile_context, location, callback), location);
     }
   }

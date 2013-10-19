@@ -6,12 +6,12 @@ puts : libc.symbol (function_type (::pointer(char) -: int)) {"type":"c","name":"
 test_type : struct () [
   x : int;
   y : int;
-] (
-  init (self) [puts({Construct});];
-  move (self,src) [puts({Move construct});];
-  copy (self,src) [puts({Copy construct});];
-  fini (self) [puts({Destroy});];
-);
+  
+  __init__(self) [puts({Construct});];
+  __move__(self,src) [puts({Move construct});];
+  __copy__(self,src) [puts({Copy construct});];
+  __fini__(self) [puts({Destroy});];
+];
 
 t : new test_type;
 

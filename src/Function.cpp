@@ -113,7 +113,7 @@ namespace Psi {
           
           if (!argument_expr.is_interface) {
             // A parameter
-            TreePtr<Term> argument_type = compile_expression(argument_expr.type, argument_context, argument_location.logical);
+            TreePtr<Term> argument_type = compile_term(argument_expr.type, argument_context, argument_location.logical);
             TermMode argument_mode = is_implicit ? term_mode_value : parameter_to_term_mode(argument_expr.mode);
             TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, argument_mode, argument_location);
             argument_list.push_back(argument);
@@ -125,7 +125,7 @@ namespace Psi {
             }
           } else {
             // An interface specification
-            TreePtr<Term> interface = compile_expression(argument_expr.type, argument_context, location.logical);
+            TreePtr<Term> interface = compile_term(argument_expr.type, argument_context, location.logical);
             TreePtr<InterfaceValue> interface_cast = term_unwrap_dyn_cast<InterfaceValue>(interface);
             if (!interface_cast) {
               SourceLocation interface_location(argument_expr.location, location.logical);
@@ -143,7 +143,7 @@ namespace Psi {
       TreePtr<Term> result_type;
       ResultMode result_mode;
       if (parsed_arguments.return_type) {
-        result_type = compile_expression(parsed_arguments.return_type, result_context, location.logical);
+        result_type = compile_term(parsed_arguments.return_type, result_context, location.logical);
         result_mode = parsed_arguments.return_mode;
       } else {
         result_type = compile_context.builtins().empty_type;
@@ -223,7 +223,7 @@ namespace Psi {
       
       PSI_STD::vector<TreePtr<Term> > explicit_arguments;
       for (PSI_STD::vector<SharedPtr<Parser::Expression> >::const_iterator ii = parsed_arguments.begin(), ie = parsed_arguments.end(); ii != ie; ++ii) {
-        TreePtr<Term> value = compile_expression(*ii, evaluate_context, location.logical);
+        TreePtr<Term> value = compile_term(*ii, evaluate_context, location.logical);
         explicit_arguments.push_back(value);
       }
       

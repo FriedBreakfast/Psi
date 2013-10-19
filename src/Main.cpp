@@ -205,7 +205,7 @@ int main(int argc, const char **argv) {
     // Create only statement in main function
     SharedPtr<Parser::Expression> init_expr = Parser::parse_expression(error_context, compile_context.root_location().logical, init_text);
     TreePtr<EvaluateContext> init_evaluate_context = evaluate_context_dictionary(my_module, init_location, ns->members);
-    TreePtr<Term> init_tree = compile_expression(init_expr, init_evaluate_context, root_location);
+    TreePtr<Term> init_tree = compile_term(init_expr, init_evaluate_context, root_location);
     init_tree->complete();
     
     // Create main function

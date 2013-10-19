@@ -444,7 +444,7 @@ const TermRewriterVtable GlobalEvaluateRewriter::vtable = PSI_COMPILER_TERM_REWR
  * 
  * This replaces any instances of FunctionalEvaluate with GlobalEvaluate.
  */
-TreePtr<Term> TermBuilder::to_global_functional(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& location) {
+TreePtr<Term> TermBuilder::to_global_functional(const TreePtr<Module>& module, const TreePtr<Term>& value, const SourceLocation& PSI_UNUSED(location)) {
   return GlobalEvaluateRewriter(&module).rewrite(value);
 }
 
