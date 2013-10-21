@@ -9,6 +9,11 @@ namespace Psi {
     }
     
     namespace {
+      TreePtr<Term> make_generic_type(const TreePtr<Term>& type, const SourceLocation& location) {
+        TreePtr<GenericType> generic = TermBuilder::generic(type->compile_context(), default_, GenericType::primitive_always, location, type);
+        return TermBuilder::instance(generic, default_, location);
+      }
+      
       TreePtr<MetadataType>
       make_tag_n(CompileContext& compile_context, const SIVtable *vptr, const PSI_STD::vector<TreePtr<Term> >& wildcard_types,
                  const SourceLocation& location, const TreePtr<>& default_value=TreePtr<>()) {
@@ -17,12 +22,8 @@ namespace Psi {
           pattern[ii] = TermBuilder::parameter(wildcard_types[ii], 0, ii, location);
         
         PSI_STD::vector<TreePtr<Metadata> > values;
-        if (default_value) {
-          PSI_STD::vector<TreePtr<Term> > impl_pattern;
-          for (unsigned ii = 0, ie = pattern.size(); ii != ie; ++ii)
-            impl_pattern.push_back(TermBuilder::parameter(pattern[ii], 0, ii+ie, location));
-          values.push_back(Metadata::new_(default_value, default_, pattern.size() * 2, impl_pattern, location));
-        }
+        if (default_value)
+          values.push_back(Metadata::new_(default_value, default_, pattern.size(), pattern, location));
         
         return MetadataType::new_(compile_context, 0, pattern, values, vptr, location);
       }
@@ -135,6 +136,8 @@ namespace Psi {
       
       SourceLocation macro_location = psi_compiler_location.named_child("Macro");
       macro_tag = make_tag_2<Macro>(metatype, metatype, macro_location, default_macro_impl(compile_context, macro_location));
+      SourceLocation type_macro_location = psi_compiler_location.named_child("TypeMacro");
+      type_macro_tag = make_tag_2<Macro>(metatype, metatype, macro_location, default_type_macro_impl(compile_context, type_macro_location));
       library_tag = make_tag<Library>(metatype, psi_compiler_location.named_child("Library"));
       namespace_tag = make_tag<Namespace>(metatype, psi_compiler_location.named_child("Namespace"));
       
@@ -142,6 +145,7 @@ namespace Psi {
       movable_interface = make_movable_copyable_interface(*this, true, psi_compiler_location.named_child("Movable"));
       copyable_interface = make_movable_copyable_interface(*this, false, psi_compiler_location.named_child("Copyable"));
 
+      term_compile_argument = make_generic_type(empty_type, psi_compiler_location.named_child("TermCompileArgument"));
     }
   }
 }

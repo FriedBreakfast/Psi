@@ -29,7 +29,6 @@ namespace Psi {
                                          const TreePtr<Term>& value,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
-                                         const TreePtr<Term>& PSI_UNUSED(argument_type),
                                          const char& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         if (tree_isa<FunctionType>(value->type)) {
@@ -44,7 +43,6 @@ namespace Psi {
                                     const SharedPtr<Parser::Expression>& member,
                                     const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                     const TreePtr<EvaluateContext>& evaluate_context,
-                                    const TreePtr<Term>& PSI_UNUSED(argument_type),
                                     const char& PSI_UNUSED(argument),
                                     const SourceLocation& location) {
         PSI_NOT_IMPLEMENTED();
@@ -53,7 +51,6 @@ namespace Psi {
       static TreePtr<Term> cast_impl(const DefaultMacro& PSI_UNUSED(self),
                                      const TreePtr<Term>& value,
                                      const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
-                                     const TreePtr<Term>& PSI_UNUSED(argument_type),
                                      const char& PSI_UNUSED(argument),
                                      const SourceLocation& PSI_UNUSED(location)) {
         return value;
@@ -69,6 +66,13 @@ namespace Psi {
      * error reporting on failure and processing function calls.
      */
     TreePtr<> default_macro_impl(CompileContext& compile_context, const SourceLocation& location) {
+      return tree_from(::new DefaultMacro(compile_context, location));
+    }
+    
+    /**
+     * \brief Generate the default implementation of Macro for types.
+     */
+    TreePtr<> default_type_macro_impl(CompileContext& compile_context, const SourceLocation& location) {
       return tree_from(::new DefaultMacro(compile_context, location));
     }
     
@@ -100,7 +104,6 @@ namespace Psi {
                                          const TreePtr<Term>& value,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
-                                         const TreePtr<Term>& PSI_UNUSED(argument_type),
                                          const char& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         if (self.m_evaluate) {
@@ -115,7 +118,6 @@ namespace Psi {
                                     const SharedPtr<Parser::Expression>& member,
                                     const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                     const TreePtr<EvaluateContext>& evaluate_context,
-                                    const TreePtr<Term>& PSI_UNUSED(argument_type),
                                     const char& PSI_UNUSED(argument),
                                     const SourceLocation& location) {
         if (member->expression_type != Parser::expression_token)
@@ -134,7 +136,6 @@ namespace Psi {
       static TreePtr<Term> cast_impl(const NamedMemberMacro& PSI_UNUSED(self),
                                      const TreePtr<Term>& value,
                                      const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
-                                     const TreePtr<Term>& PSI_UNUSED(argument_type),
                                      const char& PSI_UNUSED(argument),
                                      const SourceLocation& PSI_UNUSED(location)) {
         return value;
@@ -172,24 +173,39 @@ namespace Psi {
       return make_macro(compile_context, location, TreePtr<MacroMemberCallback>(), members);
     }
     
-    typedef std::vector<std::pair<TreePtr<MetadataType>, TreePtr<> > > MetadataListType;
+    struct ConstantMetadataSetup {
+      TreePtr<MetadataType> type;
+      TreePtr<> value;
+      unsigned n_wildcards;
+      /// Extra pattern variables
+      PSI_STD::vector<TreePtr<Term> > pattern;
+      
+      template<typename V>
+      static void visit(V& v) {
+        v("type", &ConstantMetadataSetup::type)
+        ("value", &ConstantMetadataSetup::value)
+        ("n_wildcards", &ConstantMetadataSetup::n_wildcards)
+        ("pattern", &ConstantMetadataSetup::pattern);
+      }
+    };
     
     namespace {
       class MakeMetadataCallback {
-        MetadataListType m_metadata;
+        std::vector<ConstantMetadataSetup> m_metadata;
         
       public:
-        MakeMetadataCallback(const MetadataListType& metadata)
+        MakeMetadataCallback(const std::vector<ConstantMetadataSetup>& metadata)
         : m_metadata(metadata) {}
         
         PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const TreePtr<GenericType>& self) const {
           TreePtr<Term> inst = TermBuilder::instance(self, default_, self->location());
-          TreePtr<Term> param = TermBuilder::parameter(inst, 0, 0, self->location());
-          PSI_STD::vector<TreePtr<Term> > pattern(1, param);
 
           PSI_STD::vector<TreePtr<OverloadValue> > overloads;
-          for (MetadataListType::const_iterator ii = m_metadata.begin(), ie = m_metadata.end(); ii != ie; ++ii)
-            overloads.push_back(Metadata::new_(ii->second, ii->first, 1, pattern, self->location()));
+          for (std::vector<ConstantMetadataSetup>::const_iterator ii = m_metadata.begin(), ie = m_metadata.end(); ii != ie; ++ii) {
+            PSI_STD::vector<TreePtr<Term> > pattern = ii->pattern;
+            pattern.insert(pattern.begin(), inst);
+            overloads.push_back(Metadata::new_(ii->value, ii->type, ii->n_wildcards, pattern, self->location()));
+          }
 
           return overloads;
         }
@@ -204,7 +220,7 @@ namespace Psi {
     /**
      * \brief Create a Term which carries multiple metadata annotations.
      */
-    TreePtr<Term> make_annotated_value(const TreePtr<Term>& value, const MetadataListType& metadata, const SourceLocation& location) {
+    TreePtr<Term> make_annotated_value(const TreePtr<Term>& value, const std::vector<ConstantMetadataSetup>& metadata, const SourceLocation& location) {
       TreePtr<GenericType> generic = TermBuilder::generic(value->compile_context(), default_, GenericType::primitive_recurse,
                                                           location, value->type, MakeMetadataCallback(metadata));
       return TermBuilder::instance_value(TermBuilder::instance(generic, default_, location), value, location);
@@ -213,28 +229,23 @@ namespace Psi {
     /**
      * \brief Create a Term which carries multiple metadata annotations and has an empty value.
      */
-    TreePtr<Term> make_annotated_value(CompileContext& compile_context, const MetadataListType& metadata, const SourceLocation& location) {
+    TreePtr<Term> make_annotated_type(CompileContext& compile_context, const std::vector<ConstantMetadataSetup>& metadata, const SourceLocation& location) {
       TreePtr<GenericType> generic = TermBuilder::generic(compile_context, default_, GenericType::primitive_never,
                                                           location, TermBuilder::empty_type(compile_context), MakeMetadataCallback(metadata));
-      return TermBuilder::default_value(TermBuilder::instance(generic, default_, location), location);
-    }
-    
-    /**
-     * \brief Create a Term which carries a single metadata annotation.
-     * 
-     * This term has no value of its own.
-     */
-    TreePtr<Term> make_metadata_term(const TreePtr<>& value, const TreePtr<MetadataType>& key, const SourceLocation& location) {
-      CompileContext& compile_context = key->compile_context();
-      MetadataListType ml(1, std::make_pair(key, value));
-      return make_annotated_value(compile_context, ml, location);
+      return TermBuilder::instance(generic, default_, location);
     }
 
     /**
      * \brief Create a Term which uses a given macro.
      */
     TreePtr<Term> make_macro_term(const TreePtr<Macro>& macro, const SourceLocation& location) {
-      return make_metadata_term(macro, macro->compile_context().builtins().macro_tag, location);
+      CompileContext& compile_context = macro->compile_context();
+      ConstantMetadataSetup meta;
+      meta.type = compile_context.builtins().type_macro_tag;
+      meta.value = macro;
+      meta.n_wildcards = 0;
+      meta.pattern.push_back(compile_context.builtins().term_compile_argument);
+      return make_annotated_type(compile_context, vector_of(meta), location);
     }
     
     class PointerMacro : public MacroMemberCallback {
@@ -275,11 +286,20 @@ namespace Psi {
     }
     
     class NamespaceMemberMacro : public Macro {
+      TreePtr<Term> m_arg_type;
+      
     public:
       static const MacroVtable vtable;
 
-      NamespaceMemberMacro(CompileContext& compile_context, const SourceLocation& location)
-      : Macro(&vtable, compile_context, location) {
+      NamespaceMemberMacro(const TreePtr<Term>& arg_type, const SourceLocation& location)
+      : Macro(&vtable, arg_type->compile_context(), location),
+      m_arg_type(arg_type) {
+      }
+      
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<Macro>(v);
+        v("arg_type", &NamespaceMemberMacro::m_arg_type);
       }
 
       static void evaluate_impl(void*,
@@ -287,7 +307,6 @@ namespace Psi {
                                 const TreePtr<Term>&,
                                 const PSI_STD::vector<SharedPtr<Parser::Expression> >&,
                                 const TreePtr<EvaluateContext>&,
-                                const TreePtr<Term>&,
                                 const void*,
                                 const SourceLocation& location) {
         self.compile_context().error_throw(location, "Cannot evaluate a namespace");
@@ -299,7 +318,6 @@ namespace Psi {
                            const SharedPtr<Parser::Expression>& member,
                            const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                            const TreePtr<EvaluateContext>& evaluate_context,
-                           const TreePtr<Term>& argument_type,
                            const void *argument,
                            const SourceLocation& location) {
         SharedPtr<Parser::TokenExpression> name;
@@ -313,23 +331,20 @@ namespace Psi {
           self.compile_context().error_throw(location, boost::format("Namespace '%s' has no member '%s'") % value->location().logical->error_name(location.logical) % member_name);
         
         TreePtr<Term> member_value = ns_it->second;
+        TreePtr<Macro> member_value_macro = expression_macro(evaluate_context, member_value, self.m_arg_type, location);
         if (parameters.empty())
-          PSI_NOT_IMPLEMENTED();
-          //return member_value;
-        
-        TreePtr<Macro> member_value_macro = metadata_lookup_as<Macro>(self.compile_context().builtins().macro_tag, evaluate_context, member_value, location);
-        member_value_macro->evaluate_raw(result, member_value, parameters, evaluate_context, argument_type, argument, location);
+          member_value_macro->cast_raw(result, member_value, evaluate_context, argument, location);
+        else
+          member_value_macro->evaluate_raw(result, member_value, parameters, evaluate_context, argument, location);
       }
       
       static void cast_impl(void *result,
                             const NamespaceMemberMacro& self,
                             const TreePtr<Term>& value,
-                            const TreePtr<EvaluateContext>& evaluate_context,
-                            const TreePtr<Term>& argument_type,
-                            const void *argument,
+                            const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
+                            const void *PSI_UNUSED(argument),
                             const SourceLocation& location) {
-        PSI_NOT_IMPLEMENTED();
-        if (false) // Need to do this if argument_type indicates normal evaluation
+        if (self.m_arg_type->convert_match(self.compile_context().builtins().term_compile_argument))
           new (result) TreePtr<Term> (value);
         else
           self.compile_context().error_throw(location, "Can't cast namespace to required data type.");
@@ -337,6 +352,53 @@ namespace Psi {
     };
     
     const MacroVtable NamespaceMemberMacro::vtable = PSI_COMPILER_MACRO_RAW(NamespaceMemberMacro, "psi.compiler.NamespaceMemberMacro", Macro);
+    
+    class NamespaceMacroMetadata : public Metadata {
+      static PSI_STD::vector<TreePtr<Term> > make_pattern(CompileContext& compile_context, const SourceLocation& location) {
+        PSI_STD::vector<TreePtr<Term> > result;
+        result.push_back(TermBuilder::parameter(compile_context.builtins().metatype, 0, 0, location));
+        return result;
+      }
+      
+    public:
+      static const VtableType vtable;
+      
+      NamespaceMacroMetadata(CompileContext& compile_context, const SourceLocation& location)
+      : Metadata(&vtable, compile_context, compile_context.builtins().macro_tag,
+                 1, make_pattern(compile_context, location), location) {
+      }
+      
+      static TreePtr<> get_impl(const NamespaceMacroMetadata& PSI_UNUSED(self), const PSI_STD::vector<TreePtr<Term> >& wildcards, const SourceLocation& location) {
+        return TreePtr<>(::new NamespaceMemberMacro(wildcards[0], location));
+      }
+    };
+    
+    const MetadataVtable NamespaceMacroMetadata::vtable = PSI_COMPILER_METADATA(NamespaceMacroMetadata, "psi.compiler.NamespaceMacroMetadata", Metadata);
+
+    namespace {
+      class NamespaceMetadataCallback {
+        TreePtr<Namespace> m_namespace;
+        
+      public:
+        NamespaceMetadataCallback(const TreePtr<Namespace>& namespace_)
+        : m_namespace(namespace_) {}
+        
+        PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const TreePtr<GenericType>& self) const {
+          TreePtr<Term> inst = TermBuilder::instance(self, default_, self->location());
+
+          PSI_STD::vector<TreePtr<OverloadValue> > overloads;
+          overloads.push_back(Metadata::new_(m_namespace, self->compile_context().builtins().namespace_tag, 0, PSI_STD::vector<TreePtr<Term> >(1, inst), self->location()));
+          overloads.push_back(TreePtr<OverloadValue>(::new NamespaceMacroMetadata(self->compile_context(), self->location())));
+
+          return overloads;
+        }
+        
+        template<typename V>
+        static void visit(V& v) {
+          v("namespace", &NamespaceMetadataCallback::m_namespace);
+        }
+      };
+    }
 
     class NamespaceMacro : public MacroMemberCallback {
     public:
@@ -362,11 +424,9 @@ namespace Psi {
 
         TreePtr<Namespace> ns = compile_namespace(statements, evaluate_context, location);
 
-        MetadataListType ml;
-        ml.push_back(std::make_pair(self.compile_context().builtins().namespace_tag, ns));
-        TreePtr<Macro> ns_macro(::new NamespaceMemberMacro(self.compile_context(), location));
-        ml.push_back(std::make_pair(self.compile_context().builtins().macro_tag, ns_macro));
-        return make_annotated_value(self.compile_context(), ml, location);
+        TreePtr<GenericType> generic = TermBuilder::generic(self.compile_context(), default_, GenericType::primitive_never,
+                                                            location, TermBuilder::empty_type(self.compile_context()), NamespaceMetadataCallback(ns));
+        return TermBuilder::instance(generic, default_, location);
       }
     };
 
@@ -676,10 +736,22 @@ namespace Psi {
         PSI_STD::map<String, TreePtr<MacroMemberCallback> > macro_members;
         macro_members["symbol"] = LibrarySymbolMacro::get(self.compile_context(), location);
 
-        MetadataListType ml;
-        ml.push_back(std::make_pair(self.compile_context().builtins().library_tag, lib));
-        ml.push_back(std::make_pair(self.compile_context().builtins().macro_tag, make_macro(self.compile_context(), location, macro_members)));
-        return make_annotated_value(self.compile_context(), ml, location);
+        std::vector<ConstantMetadataSetup> ml;
+
+        ConstantMetadataSetup md_macro;
+        md_macro.type = self.compile_context().builtins().type_macro_tag;
+        md_macro.value = make_macro(self.compile_context(), location, macro_members);
+        md_macro.n_wildcards = 0;
+        md_macro.pattern.push_back(self.compile_context().builtins().term_compile_argument);
+        ml.push_back(md_macro);
+
+        ConstantMetadataSetup md_lib;
+        md_lib.type = self.compile_context().builtins().library_tag;
+        md_lib.value = lib;
+        md_lib.n_wildcards = 0;
+        ml.push_back(md_lib);
+
+        return make_annotated_type(self.compile_context(), ml, location);
       }
     };
 
@@ -831,12 +903,12 @@ namespace Psi {
         String replace_text = replace->text.str();
         TreePtr<RewriteCallback> rewrite(::new MacroDefineMacroCallback(self.compile_context(), evaluate_context, arg_names, replace_text, location));
         
-        MetadataListType metadata;
-        metadata.push_back(std::make_pair(self.compile_context().builtins().rewrite_tag, rewrite));
+        std::vector<ConstantMetadataSetup> ml;
+        ml.push_back(std::make_pair(self.compile_context().builtins().rewrite_tag, rewrite));
 #else
-        MetadataListType metadata;
+        std::vector<ConstantMetadataSetup> ml;
 #endif
-        return make_annotated_value(self.compile_context(), metadata, location);
+        return make_annotated_type(self.compile_context(), ml, location);
       }
     };
 

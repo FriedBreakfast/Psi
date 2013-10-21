@@ -8,6 +8,7 @@
 namespace Psi {
   namespace Compiler {
     PSI_COMPILER_EXPORT TreePtr<> default_macro_impl(CompileContext& compile_context, const SourceLocation& location);
+    PSI_COMPILER_EXPORT TreePtr<> default_type_macro_impl(CompileContext& compile_context, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<Term> new_macro(CompileContext& compile_context, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<Term> namespace_macro(CompileContext& compile_context, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<Term> number_type_macro(CompileContext& compile_context, const SourceLocation& location);

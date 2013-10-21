@@ -198,21 +198,49 @@ namespace Psi {
       }
     };
     
+    class Metadata;
+    
+    struct MetadataVtable {
+      TreeVtable base;
+      void (*get) (TreePtr<> *result, const Metadata *self, const PSI_STD::vector<TreePtr<Term> > *wildcards, const SourceLocation *location);
+    };
+    
     /**
      * \brief Class for values associated with MetadataType.
      */
     class Metadata : public OverloadValue {
-      Metadata(const TreePtr<>& value, const TreePtr<MetadataType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
-
     public:
-      static const TreeVtable vtable;
-      template<typename V> static void visit(V& v);
+      typedef MetadataVtable VtableType;
+      static const SIVtable vtable;
+
+      Metadata(const MetadataVtable *vptr, CompileContext& compile_context, const TreePtr<MetadataType>& type,
+               unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
       
-      /// \brief The value of this metadata
-      TreePtr<> value;
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<OverloadValue>(v);
+      }
+      
+      TreePtr<> get(const PSI_STD::vector<TreePtr<Term> >& wildcards, const SourceLocation& location) const {
+        ResultStorage<TreePtr<> > rs;
+        derived_vptr(this)->get(rs.ptr(), this, &wildcards, &location);
+        return rs.done();
+      }
       
       static TreePtr<Metadata> new_(const TreePtr<>& value, const TreePtr<MetadataType>& type, unsigned n_wildcards, const PSI_STD::vector<TreePtr<Term> >& pattern, const SourceLocation& location);
     };
+    
+    template<typename Derived, typename Impl=Derived>
+    struct MetadataWrapper {
+      static void get (TreePtr<> *result, const Metadata *self, const PSI_STD::vector<TreePtr<Term> > *wildcards, const SourceLocation *location) {
+        new (result) TreePtr<> (Impl::get_impl(*static_cast<const Derived*>(self), *wildcards, *location));
+      }
+    };
+    
+#define PSI_COMPILER_METADATA(derived,name,super) { \
+    PSI_COMPILER_TREE(derived,name,super), \
+    &MetadataWrapper<derived>::get \
+  }
     
     /**
      * \brief Class for values associated with Interface.
@@ -260,8 +288,20 @@ namespace Psi {
                                           const SourceLocation& location);
     };
     
-    TreePtr<OverloadValue> overload_lookup(const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& parameters,
-                                           const SourceLocation& location, const PSI_STD::vector<TreePtr<OverloadValue> >& extra);
+    PSI_STD::vector<TreePtr<Term> > overload_match(const TreePtr<OverloadValue>& overload, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);
+    
+    /// \brief Result of overload_lookup function
+    struct OverloadLookupResult {
+      OverloadLookupResult();
+      OverloadLookupResult(const TreePtr<OverloadValue>& value_, const PSI_STD::vector<TreePtr<Term> >& wildcards_)
+      : value(value_), wildcards(wildcards_) {}
+      
+      TreePtr<OverloadValue> value;
+      PSI_STD::vector<TreePtr<Term> > wildcards;
+    };
+    
+    OverloadLookupResult overload_lookup(const TreePtr<OverloadType>& type, const PSI_STD::vector<TreePtr<Term> >& parameters,
+                                         const SourceLocation& location, const PSI_STD::vector<TreePtr<OverloadValue> >& extra);
     
     TreePtr<> metadata_lookup(const TreePtr<MetadataType>& interface, const TreePtr<EvaluateContext>& context,
                               const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);

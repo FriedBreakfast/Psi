@@ -13,9 +13,11 @@ namespace Psi {
      */
     TreePtr<Macro> expression_macro(const TreePtr<EvaluateContext>& context, const TreePtr<Term>& expr, const TreePtr<Term>& arg_type, const SourceLocation& location) {
       PSI_STD::vector<TreePtr<Term> > args(2);
-      args[0] = expr;
+      args[0] = expr->is_type() ? expr : expr->type;
       args[1] = arg_type;
-      return metadata_lookup_as<Macro>(expr->compile_context().builtins().macro_tag, context, args, location);
+      const TreePtr<MetadataType>& md_type = expr->is_type() ? expr->compile_context().builtins().type_macro_tag
+        : expr->compile_context().builtins().macro_tag;
+      return metadata_lookup_as<Macro>(md_type, context, args, location);
     }
     
     std::pair<const char*, const char*> bracket_token_strings(Parser::TokenExpressionType type) {
@@ -50,14 +52,14 @@ namespace Psi {
       case Parser::expression_evaluate: {
         const Parser::EvaluateExpression& macro_expression = checked_cast<Parser::EvaluateExpression&>(*expression);
         TreePtr<Term> first = compile_term(macro_expression.object, evaluate_context, source);
-        expression_macro(evaluate_context, first, arg_type, location)->evaluate_raw(result, first, macro_expression.parameters, evaluate_context, arg_type, arg, location);
+        expression_macro(evaluate_context, first, arg_type, location)->evaluate_raw(result, first, macro_expression.parameters, evaluate_context, arg, location);
         return;
       }
 
       case Parser::expression_dot: {
         const Parser::DotExpression& dot_expression = checked_cast<Parser::DotExpression&>(*expression);
         TreePtr<Term> obj = compile_term(dot_expression.object, evaluate_context, source);
-        expression_macro(evaluate_context, obj, arg_type, location)->dot_raw(result, obj, dot_expression.member, dot_expression.parameters, evaluate_context, arg_type, arg, location);
+        expression_macro(evaluate_context, obj, arg_type, location)->dot_raw(result, obj, dot_expression.member, dot_expression.parameters, evaluate_context, arg, location);
         return;
       }
 
@@ -83,7 +85,7 @@ namespace Psi {
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: successful lookup of '%s' returned NULL value") % bracket_type.second % bracket_type.first, CompileError::error_internal);
 
           PSI_STD::vector<SharedPtr<Parser::Expression> > expression_list(1, expression);
-          expression_macro(evaluate_context, first.value(), arg_type, location)->evaluate_raw(result, first.value(), expression_list, evaluate_context, arg_type, arg, location);
+          expression_macro(evaluate_context, first.value(), arg_type, location)->evaluate_raw(result, first.value(), expression_list, evaluate_context, arg, location);
           return;
         }
 
@@ -100,7 +102,8 @@ namespace Psi {
           if (!id.value())
             compile_context.error_throw(location, boost::format("Successful lookup of '%s' returned NULL value") % name, CompileError::error_internal);
 
-          expression_macro(evaluate_context, id.value(), arg_type, location)->cast_raw(result, id.value(), evaluate_context, arg_type, arg, location);
+          expression_macro(evaluate_context, id.value(), arg_type, location)->cast_raw(result, id.value(), evaluate_context, arg, location);
+          return;
         }
         
         case Parser::token_number: {
@@ -117,7 +120,7 @@ namespace Psi {
             compile_context.error_throw(location, "Cannot evaluate number: successful lookup of '__number__' returned NULL value", CompileError::error_internal);
 
           PSI_STD::vector<SharedPtr<Parser::Expression> > expression_list(1, expression);
-          expression_macro(evaluate_context, first.value(), arg_type, location)->evaluate_raw(result, first.value(), expression_list, evaluate_context, arg_type, arg, location);
+          expression_macro(evaluate_context, first.value(), arg_type, location)->evaluate_raw(result, first.value(), expression_list, evaluate_context, arg, location);
           return;
         }
 
@@ -141,9 +144,10 @@ namespace Psi {
     TreePtr<Term> compile_term(const SharedPtr<Parser::Expression>& expression,
                                const TreePtr<EvaluateContext>& evaluate_context,
                                const LogicalSourceLocationPtr& source) {
-      PSI_NOT_IMPLEMENTED(); // Need to add evaluation datatype.
       ResultStorage<TreePtr<Term> > rs;
-      compile_expression(rs.ptr(), expression, evaluate_context, TreePtr<Term>(), NULL, source);
+      compile_expression(rs.ptr(), expression, evaluate_context,
+                         evaluate_context->compile_context().builtins().term_compile_argument,
+                         NULL, source);
       return rs.done();
     }
     

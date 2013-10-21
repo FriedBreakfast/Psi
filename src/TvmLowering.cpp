@@ -547,13 +547,18 @@ TvmResult TvmObjectCompilerBase::get_implementation(const TreePtr<Interface>& in
                                                     std::set<TreePtr<ModuleGlobal> >& dependencies, const SourceLocation& location,
                                                     const TreePtr<Implementation>& maybe_implementation) {
   TreePtr<Implementation> implementation;
-  if (!maybe_implementation)
-    implementation = treeptr_cast<Implementation>(overload_lookup(interface, parameters, location, default_));
-  else
+  PSI_STD::vector<TreePtr<Term> > wildcards;
+  if (!maybe_implementation) {
+    OverloadLookupResult lookup = overload_lookup(interface, parameters, location, default_);
+    implementation = treeptr_cast<Implementation>(lookup.value);
+    wildcards.swap(lookup.wildcards);
+  } else {
     implementation = maybe_implementation;
+    wildcards = overload_match(maybe_implementation, parameters, location);
+  }
   
   PSI_ASSERT(!implementation->dynamic);
-  TreePtr<Term> value = implementation->value->specialize(location, parameters);
+  TreePtr<Term> value = implementation->value->specialize(location, wildcards);
   PSI_ASSERT(value->is_functional());
   std::set<TreePtr<ModuleGlobal> > my_dependencies;
   TvmResult tvm_value = TvmGlobalBuilder(this, my_dependencies).build(value);

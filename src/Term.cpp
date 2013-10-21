@@ -242,6 +242,11 @@ namespace Psi {
       static bool compare_impl(MatchComparator& self, const TreePtr<Term>& lhs, const TreePtr<Term>& rhs) {
         TreePtr<Term> lhs_unwrapped = term_unwrap(lhs), rhs_unwrapped = term_unwrap(rhs);
         
+        if (!lhs_unwrapped)
+          return !rhs_unwrapped;
+        else if (!rhs_unwrapped)
+          return false;
+        
         if (TreePtr<Parameter> parameter = dyn_treeptr_cast<Parameter>(lhs_unwrapped)) {
           if (parameter->depth == self.m_depth) {
             // Check type also matches

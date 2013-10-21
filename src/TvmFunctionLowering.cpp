@@ -367,6 +367,7 @@ TvmResult TvmFunctionBuilder::build_implementation(const TreePtr<Interface>& int
     return result;
   
   TreePtr<Implementation> implementation;
+  PSI_STD::vector<TreePtr<Term> > wildcards;
   if (!maybe_implementation) {
     PSI_STD::vector<TreePtr<OverloadValue> > scope_extra;
     for (TvmFunctionState::LocalImplementationList::const_iterator ii = m_state.implementation_list.begin(), ie = m_state.implementation_list.end(); ii != ie; ++ii) {
@@ -375,19 +376,22 @@ TvmResult TvmFunctionBuilder::build_implementation(const TreePtr<Interface>& int
           scope_extra.push_back(*ji);
       }
     }
-    implementation = treeptr_cast<Implementation>(overload_lookup(interface, parameters, location, scope_extra));
+    OverloadLookupResult lookup = overload_lookup(interface, parameters, location, scope_extra);
+    implementation = treeptr_cast<Implementation>(lookup.value);
+    wildcards.swap(lookup.wildcards);
   } else {
     implementation = maybe_implementation;
+    wildcards = overload_match(maybe_implementation, parameters, location);
   }
   
   if (implementation->dynamic) {
     result = build(implementation->value);
   } else {
-    TreePtr<Term> value = implementation->value->specialize(location, parameters);
+    TreePtr<Term> value = implementation->value->specialize(location, wildcards);
     PSI_ASSERT(value->is_functional());
     TvmResult tvm_value = build(value);
     if (tvm_value.scope.scope->depth() <= TvmScope::depth_global) {
-      return m_tvm_compiler->get_implementation(interface, parameters, *m_dependencies, location, maybe_implementation);
+      return m_tvm_compiler->get_implementation(interface, parameters, *m_dependencies, location, implementation);
     } else {
       Tvm::ValuePtr<> ptr = builder().alloca_const(tvm_value.value, location);
       push_cleanup(boost::make_shared<StackFreeCleanup>(ptr, location));
