@@ -43,6 +43,9 @@ public:
     PSI_STD::vector<TreePtr<Anonymous> > parameters;
   };
   
+  /// \brief Get the location used to construct this helper.
+  const SourceLocation& location() const {return m_location;}
+  
   FunctionSetup member_function_setup(int index, const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations);
   TreePtr<FunctionType> member_function_type(int index, const SourceLocation& location);
   FunctionSetup function_setup(const TreePtr<FunctionType>& type, const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations);

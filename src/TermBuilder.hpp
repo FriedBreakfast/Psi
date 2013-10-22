@@ -35,21 +35,19 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
   /**
    * \brief Create a new generic type
    */
-  template<typename T, typename U>
+  template<typename T, typename U, typename V>
   static TreePtr<GenericType> generic(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& pattern,
-                                      GenericType::GenericTypePrimitive primitive_mode, const SourceLocation& location,
-                                      const T& member_callback, const U& overloads_callback) {
-    return tree_from(::new GenericType(compile_context, pattern, member_callback, overloads_callback, primitive_mode, location));
+                                      const T& primitive_mode, const SourceLocation& location, const U& member_callback, const V& overloads_callback) {
+    return tree_from(::new GenericType(compile_context, pattern, primitive_mode, member_callback, overloads_callback, location));
   }
 
   /**
    * \brief Create a new generic type
    */
-  template<typename T>
+  template<typename T, typename U>
   static TreePtr<GenericType> generic(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& pattern,
-                                      GenericType::GenericTypePrimitive primitive_mode, const SourceLocation& location,
-                                      const T& member_callback) {
-    return tree_from(::new GenericType(compile_context, pattern, member_callback, default_, primitive_mode, location));
+                                      const T& primitive_mode, const SourceLocation& location, const U& member_callback) {
+    return tree_from(::new GenericType(compile_context, pattern, primitive_mode, member_callback, default_, location));
   }
   
   static TreePtr<TypeInstance> instance(const TreePtr<GenericType>& generic, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);

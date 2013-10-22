@@ -34,15 +34,15 @@ namespace Psi {
      *
      * \param expression Expression, usually as produced by the parser.
      * \param evaluate_context Context in which to lookup names.
-     * \param arg_type Type information for auxiliary data. This also implies the result type.
+     * \param mode_tag Tag type which identifies the sort of result expected and the argument type passed.
      * \param arg Auxiliary data.
      * \param source Logical (i.e. namespace etc.) location of the expression, for symbol naming and debugging.
      */
     void compile_expression(void *result,
                             const SharedPtr<Parser::Expression>& expression,
                             const TreePtr<EvaluateContext>& evaluate_context,
-                            const TreePtr<Term>& arg_type,
-                            void *arg,
+                            const TreePtr<Term>& mode_tag,
+                            const void *arg,
                             const LogicalSourceLocationPtr& source) {
 
       CompileContext& compile_context = evaluate_context->compile_context();
@@ -52,14 +52,14 @@ namespace Psi {
       case Parser::expression_evaluate: {
         const Parser::EvaluateExpression& macro_expression = checked_cast<Parser::EvaluateExpression&>(*expression);
         TreePtr<Term> first = compile_term(macro_expression.object, evaluate_context, source);
-        expression_macro(evaluate_context, first, arg_type, location)->evaluate_raw(result, first, macro_expression.parameters, evaluate_context, arg, location);
+        expression_macro(evaluate_context, first, mode_tag, location)->evaluate_raw(result, first, macro_expression.parameters, evaluate_context, arg, location);
         return;
       }
 
       case Parser::expression_dot: {
         const Parser::DotExpression& dot_expression = checked_cast<Parser::DotExpression&>(*expression);
         TreePtr<Term> obj = compile_term(dot_expression.object, evaluate_context, source);
-        expression_macro(evaluate_context, obj, arg_type, location)->dot_raw(result, obj, dot_expression.member, dot_expression.parameters, evaluate_context, arg, location);
+        expression_macro(evaluate_context, obj, mode_tag, location)->dot_raw(result, obj, dot_expression.member, dot_expression.parameters, evaluate_context, arg, location);
         return;
       }
 
@@ -85,7 +85,7 @@ namespace Psi {
             compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: successful lookup of '%s' returned NULL value") % bracket_type.second % bracket_type.first, CompileError::error_internal);
 
           PSI_STD::vector<SharedPtr<Parser::Expression> > expression_list(1, expression);
-          expression_macro(evaluate_context, first.value(), arg_type, location)->evaluate_raw(result, first.value(), expression_list, evaluate_context, arg, location);
+          expression_macro(evaluate_context, first.value(), mode_tag, location)->evaluate_raw(result, first.value(), expression_list, evaluate_context, arg, location);
           return;
         }
 
@@ -102,7 +102,7 @@ namespace Psi {
           if (!id.value())
             compile_context.error_throw(location, boost::format("Successful lookup of '%s' returned NULL value") % name, CompileError::error_internal);
 
-          expression_macro(evaluate_context, id.value(), arg_type, location)->cast_raw(result, id.value(), evaluate_context, arg, location);
+          expression_macro(evaluate_context, id.value(), mode_tag, location)->cast_raw(result, id.value(), evaluate_context, arg, location);
           return;
         }
         
@@ -120,7 +120,7 @@ namespace Psi {
             compile_context.error_throw(location, "Cannot evaluate number: successful lookup of '__number__' returned NULL value", CompileError::error_internal);
 
           PSI_STD::vector<SharedPtr<Parser::Expression> > expression_list(1, expression);
-          expression_macro(evaluate_context, first.value(), arg_type, location)->evaluate_raw(result, first.value(), expression_list, evaluate_context, arg, location);
+          expression_macro(evaluate_context, first.value(), mode_tag, location)->evaluate_raw(result, first.value(), expression_list, evaluate_context, arg, location);
           return;
         }
 
@@ -144,11 +144,7 @@ namespace Psi {
     TreePtr<Term> compile_term(const SharedPtr<Parser::Expression>& expression,
                                const TreePtr<EvaluateContext>& evaluate_context,
                                const LogicalSourceLocationPtr& source) {
-      ResultStorage<TreePtr<Term> > rs;
-      compile_expression(rs.ptr(), expression, evaluate_context,
-                         evaluate_context->compile_context().builtins().term_compile_argument,
-                         NULL, source);
-      return rs.done();
+      return compile_expression<TreePtr<Term> >(expression, evaluate_context, evaluate_context->compile_context().builtins().macro_term_tag, Empty(), source);
     }
     
     StatementMode statement_mode(StatementMode base_mode, const TreePtr<Term>& value, const SourceLocation& location) {
@@ -252,7 +248,7 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Statement> > statements() const {
         PSI_STD::vector<TreePtr<Statement> > result;
         for (PSI_STD::vector<StatementValueType>::const_iterator ii = m_statements.begin(), ie = m_statements.end(); ii != ie; ++ii)
-          result.push_back(ii->get(this, &BlockContext::get_ptr));
+          result.push_back(ii->get(*this, &BlockContext::get_ptr));
         return result;
       }
 
@@ -267,7 +263,7 @@ namespace Psi {
       static LookupResult<TreePtr<Term> > lookup_impl(const BlockContext& self, const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) {
         NameMapType::const_iterator it = self.m_names.find(name);
         if (it != self.m_names.end()) {
-          return lookup_result_match(self.m_statements[it->second].get(&self, &BlockContext::get_ptr));
+          return lookup_result_match(self.m_statements[it->second].get(self, &BlockContext::get_ptr));
         } else if (self.m_next) {
           return self.m_next->lookup(name, location, evaluate_context);
         } else {
@@ -283,7 +279,7 @@ namespace Psi {
 
       static void local_complete_impl(const BlockContext& self) {
         for (PSI_STD::vector<StatementValueType>::const_iterator ii = self.m_statements.begin(), ie = self.m_statements.end(); ii != ie; ++ii)
-          ii->get(&self, &BlockContext::get_ptr);
+          ii->get(self, &BlockContext::get_ptr);
       }
     };
 
@@ -372,7 +368,7 @@ namespace Psi {
       Namespace::NameMapType names() const {
         Namespace::NameMapType result;
         for (NameMapType::const_iterator ii = m_entries.begin(), ie = m_entries.end(); ii != ie; ++ii)
-          result.insert(std::make_pair(ii->first, ii->second.get(this, &NamespaceContext::get_ptr)));
+          result.insert(std::make_pair(ii->first, ii->second.get(*this, &NamespaceContext::get_ptr)));
         return result;
       }
 
@@ -386,7 +382,7 @@ namespace Psi {
       static LookupResult<TreePtr<Term> > lookup_impl(const NamespaceContext& self, const String& name, const SourceLocation& location, const TreePtr<EvaluateContext>& evaluate_context) {
         NameMapType::const_iterator it = self.m_entries.find(name);
         if (it != self.m_entries.end()) {
-          return lookup_result_match(it->second.get(&self, &NamespaceContext::get_ptr));
+          return lookup_result_match(it->second.get(self, &NamespaceContext::get_ptr));
         } else if (self.m_next) {
           return self.m_next->lookup(name, location, evaluate_context);
         } else {
@@ -402,7 +398,7 @@ namespace Psi {
 
       static void local_complete_impl(const NamespaceContext& self) {
         for (NameMapType::const_iterator ii = self.m_entries.begin(), ie = self.m_entries.end(); ii != ie; ++ii)
-          ii->second.get(&self, &NamespaceContext::get_ptr);
+          ii->second.get(self, &NamespaceContext::get_ptr);
       }
     };
 

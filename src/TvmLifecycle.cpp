@@ -44,7 +44,7 @@ bool TvmFunctionBuilder::object_construct_default(ConstructMode mode, const Tvm:
     PSI_NOT_IMPLEMENTED();
   } else {
     if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(unwrapped_type))
-      if (inst_type->generic->primitive_mode == GenericType::primitive_recurse)
+      if (inst_type->generic->primitive_mode() == GenericType::primitive_recurse)
         return object_construct_default(mode, dest, inst_type->unwrap(), location);
 
     TvmResult exists_movable = build_implementation(compile_context().builtins().movable_interface, vector_of(unwrapped_type), location);
@@ -151,7 +151,7 @@ bool TvmFunctionBuilder::object_construct_move_copy(ConstructMode mode, bool mov
     return true;
   } else {
     if (TreePtr<TypeInstance> inst_type = dyn_treeptr_cast<TypeInstance>(unwrapped_type))
-      if (inst_type->generic->primitive_mode == GenericType::primitive_recurse)
+      if (inst_type->generic->primitive_mode() == GenericType::primitive_recurse)
         return object_construct_move_copy(mode, move, dest, src, inst_type->unwrap(), location);
 
     if (move) {

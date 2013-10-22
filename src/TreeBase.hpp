@@ -335,16 +335,25 @@ namespace Psi {
       }
       
       template<typename X, typename Y>
-      const T& get(const X *self, Y (X::*getter) () const, void (X::*checker) (T&) const = NULL) const {
+      const T& get(const X& self, Y (X::*getter) () const, void (X::*checker) (T&) const = NULL) const {
         if (m_callback) {
-          m_value = m_callback->evaluate((self->*getter)());
+          m_value = m_callback->evaluate((self.*getter)());
           m_callback.reset();
           if (checker)
-            (self->*checker)(m_value);
+            (self.*checker)(m_value);
         }
         return m_value;
       }
       
+      template<typename X>
+      const T& get(const X& self) const {
+        if (m_callback) {
+          m_value = m_callback->evaluate(self);
+          m_callback.reset();
+        }
+        return m_value;
+      }
+
       /// \brief Get the value if it has already been built
       T* get_maybe() {
         return m_callback ? NULL : &m_value;
@@ -365,6 +374,63 @@ namespace Psi {
       static void visit(V& v) {
         v("value", &DelayedValue::m_value)
         ("callback", &DelayedValue::m_callback);
+      }
+    };
+    
+    template<typename Args>
+    struct SharedDelayedValueObject : public Object {
+      typedef typename Args::DataType DataType;
+      typedef typename Args::ArgumentType ArgumentType;
+
+      static const VtableType vtable;
+      
+      DelayedValue<DataType, ArgumentType> value;
+
+      template<typename U>
+      SharedDelayedValueObject(CompileContext& compile_context, const SourceLocation& location, const U& callback_or_value)
+      : Object(&vtable, compile_context), value(compile_context, location, callback_or_value) {
+      }
+      
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<Object>(v);
+        v("value", &SharedDelayedValueObject::value);
+      }
+    };
+
+    template<typename T>
+    const ObjectVtable SharedDelayedValueObject<T>::vtable = PSI_COMPILER_OBJECT(SharedDelayedValueObject<T>, "SharedDelayedValueObject", Object);
+    
+    template<typename T, typename Arg>
+    class SharedDelayedValue {
+      ObjectPtr<SharedDelayedValueObject<DelayedEvaluationArgs<T, Arg> > > m_ptr;
+      
+    public:
+      template<typename U>
+      SharedDelayedValue(CompileContext& compile_context, const SourceLocation& location, const U& callback_or_value)
+      : m_ptr(::new SharedDelayedValueObject<DelayedEvaluationArgs<T, Arg> >(compile_context, location, callback_or_value)) {
+      }
+      
+      template<typename X, typename Y>
+      const T& get(const X& self, Y (X::*getter) () const = NULL, void (X::*checker) (T&) const = NULL) const {
+        return m_ptr->value.get<X,Y>(self, getter, checker);
+      }
+
+      template<typename X>
+      const T& get(const X& self) {
+        return m_ptr->value.get<X>(self);
+      }
+      
+      /// \brief Get the value if it has already been built
+      T* get_maybe() {return m_ptr->value.get_maybe();}
+      /// \brief Get a value which must have already been computed
+      const T& get_checked() const {return m_ptr->value.get_checked();}
+      /// \brief True if the callback is currently executing
+      bool running() const {return m_ptr->value.running();}
+      
+      template<typename V>
+      static void visit(V& v) {
+        v("ptr", &SharedDelayedValue::m_ptr);
       }
     };
   }

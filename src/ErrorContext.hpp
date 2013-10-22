@@ -49,6 +49,7 @@ public:
   void info(const std::string& message);
   void info(const SourceLocation& location, const std::string& message);
   void end();
+  PSI_ATTRIBUTE((PSI_NORETURN)) void end_throw();
 
   const SourceLocation& location() {return m_location;}
 

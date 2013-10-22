@@ -413,7 +413,7 @@ namespace Psi {
     Anonymous::Anonymous(const TreePtr<Term>& type, TermMode mode_, const SourceLocation& location)
     : Term(&vtable, TermResultInfo(type, mode_, true), location),
     mode(mode_) {
-      if (type->type_info().type_mode == type_mode_none)
+      if (!type->is_type())
         compile_context().error_throw(location, "Type of anonymous term is not a type");
     }
     

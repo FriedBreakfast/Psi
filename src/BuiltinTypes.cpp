@@ -145,7 +145,8 @@ namespace Psi {
       movable_interface = make_movable_copyable_interface(*this, true, psi_compiler_location.named_child("Movable"));
       copyable_interface = make_movable_copyable_interface(*this, false, psi_compiler_location.named_child("Copyable"));
 
-      term_compile_argument = make_generic_type(empty_type, psi_compiler_location.named_child("TermCompileArgument"));
+      macro_term_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroTermTag"));
+      macro_member_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroMemberTag"));
     }
   }
 }

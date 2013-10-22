@@ -244,7 +244,7 @@ namespace Psi {
       meta.type = compile_context.builtins().type_macro_tag;
       meta.value = macro;
       meta.n_wildcards = 0;
-      meta.pattern.push_back(compile_context.builtins().term_compile_argument);
+      meta.pattern.push_back(compile_context.builtins().macro_term_tag);
       return make_annotated_type(compile_context, vector_of(meta), location);
     }
     
@@ -344,7 +344,7 @@ namespace Psi {
                             const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
                             const void *PSI_UNUSED(argument),
                             const SourceLocation& location) {
-        if (self.m_arg_type->convert_match(self.compile_context().builtins().term_compile_argument))
+        if (self.m_arg_type->convert_match(self.compile_context().builtins().macro_term_tag))
           new (result) TreePtr<Term> (value);
         else
           self.compile_context().error_throw(location, "Can't cast namespace to required data type.");
@@ -742,7 +742,7 @@ namespace Psi {
         md_macro.type = self.compile_context().builtins().type_macro_tag;
         md_macro.value = make_macro(self.compile_context(), location, macro_members);
         md_macro.n_wildcards = 0;
-        md_macro.pattern.push_back(self.compile_context().builtins().term_compile_argument);
+        md_macro.pattern.push_back(self.compile_context().builtins().macro_term_tag);
         ml.push_back(md_macro);
 
         ConstantMetadataSetup md_lib;

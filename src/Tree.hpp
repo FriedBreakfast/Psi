@@ -171,7 +171,7 @@ namespace Psi {
       
       /// \brief Global variable value.
       const TreePtr<Term>& value() const {
-        return m_value.get(this, &GlobalVariable::get_ptr);
+        return m_value.get(*this, &GlobalVariable::get_ptr);
       }
       
       template<typename V> static void visit(V& v);
@@ -226,6 +226,7 @@ namespace Psi {
     class GenericType : public Tree {
       DelayedValue<TreePtr<Term>, TreePtr<GenericType> > m_member;
       DelayedValue<PSI_STD::vector<TreePtr<OverloadValue> >, TreePtr<GenericType> > m_overloads;
+      DelayedValue<int, TreePtr<GenericType> > m_primitive_mode;
       TreePtr<GenericType> get_ptr() const {return tree_from(this);}
 
     public:
@@ -237,15 +238,14 @@ namespace Psi {
         primitive_always=2, ///< Always primitive
       };
 
-      template<typename T, typename U>
+      template<typename T, typename U, typename V>
       GenericType(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& pattern_,
-                  const T& member_callback, const U& overloads_callback,
-                  GenericTypePrimitive primitive_mode_, const SourceLocation& location)
+                  const T& primitive_mode, const U& member_callback, const V& overloads_callback, const SourceLocation& location)
       : Tree(&vtable, compile_context, location),
       m_member(compile_context, location, member_callback),
       m_overloads(compile_context, location, overloads_callback),
-      pattern(pattern_),
-      primitive_mode(primitive_mode_) {
+      m_primitive_mode(compile_context, location, primitive_mode),
+      pattern(pattern_) {
       }
 
       template<typename Visitor> static void visit(Visitor& v);
@@ -253,12 +253,15 @@ namespace Psi {
 
       /// \brief Parameters pattern.
       PSI_STD::vector<TreePtr<Term> > pattern;
+
       /// \brief Primitive mode: whether or not this type is primitive
-      int primitive_mode;
+      GenericTypePrimitive primitive_mode() const {
+        return static_cast<GenericTypePrimitive>(m_primitive_mode.get(*this, &GenericType::get_ptr));
+      }
       
       /// \brief Single member of this type.
       const TreePtr<Term>& member_type() const {
-        return m_member.get(this, &GenericType::get_ptr);
+        return m_member.get(*this, &GenericType::get_ptr);
       }
       
       /// \brief If the member type is currently being built.
@@ -268,9 +271,11 @@ namespace Psi {
       
       /// \brief Overloads carried by this type.
       const PSI_STD::vector<TreePtr<OverloadValue> >& overloads() const {
-        return m_overloads.get(this, &GenericType::get_ptr);
+        return m_overloads.get(*this, &GenericType::get_ptr);
       }
     };
+    
+    PSI_VISIT_SIMPLE(GenericType::GenericTypePrimitive);
 
     /**
      * \brief Instance of GenericType.
@@ -748,7 +753,7 @@ namespace Psi {
       TreePtr<JumpTarget> return_target;
       
       /// \brief Function body.
-      const TreePtr<Term>& body() const {return m_body.get(this, &Function::get_ptr, &Function::body_check_type);}
+      const TreePtr<Term>& body() const {return m_body.get(*this, &Function::get_ptr, &Function::body_check_type);}
 
       template<typename Visitor> static void visit(Visitor& v);
       static void local_complete_impl(const Function& self);

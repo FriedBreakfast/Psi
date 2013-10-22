@@ -67,6 +67,11 @@ void CompileError::info(const SourceLocation& location, const std::string& messa
 void CompileError::end() {
 }
 
+void CompileError::end_throw() {
+  end();
+  throw CompileException();
+}
+
 CompileErrorPair::CompileErrorPair(CompileErrorContext& context, const SourceLocation& location)
 : m_context(&context), m_location(location) {
 }

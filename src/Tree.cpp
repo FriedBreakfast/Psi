@@ -1181,7 +1181,7 @@ namespace Psi {
       v("pattern", &GenericType::pattern)
       ("member", &GenericType::m_member)
       ("overloads", &GenericType::m_overloads)
-      ("primitive_mode", &GenericType::primitive_mode);
+      ("primitive_mode", &GenericType::m_primitive_mode);
     }
 
     void GenericType::local_complete_impl(const GenericType& self) {
@@ -1227,7 +1227,7 @@ namespace Psi {
     
     TermTypeInfo TypeInstance::type_info_impl(const TypeInstance& self) {
       TermTypeInfo ti = self.unwrap()->type_info();
-      if (self.generic->primitive_mode == GenericType::primitive_never)
+      if (self.generic->primitive_mode() == GenericType::primitive_never)
         ti.type_mode = type_mode_complex;
       return ti;
     }
@@ -1248,7 +1248,7 @@ namespace Psi {
     }
     
     TermResultInfo TypeInstanceValue::check_type_impl(const TypeInstanceValue& self) {
-      if (self.type_instance->generic->primitive_mode == GenericType::primitive_never)
+      if (self.type_instance->generic->primitive_mode() == GenericType::primitive_never)
         self.compile_context().error_throw(self.location(), "Cannot construct complex generic type with non-default value");
       
       if (!self.type_instance->unwrap()->convert_match(self.member_value->type))

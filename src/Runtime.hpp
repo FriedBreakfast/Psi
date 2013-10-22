@@ -35,6 +35,15 @@ namespace Psi {
     psi_false = 0,
     psi_true = 1
   };
+  
+  /**
+   * \brief Empty struct.
+   * 
+   * Note that this does not have the correct semantics because C++ will give it a
+   * size of one rather than zero bytes, however it is useful to mark places where
+   * a value is expected but carries no data.
+   */
+  struct Empty {};
 
   struct SharedPtrOwner;
   
