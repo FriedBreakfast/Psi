@@ -10,6 +10,46 @@
 namespace Psi {
   namespace Compiler {
     const SIVtable Macro::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.Macro", Tree);
+    
+    void Macro::evaluate_impl(const void *PSI_UNUSED(result),
+                              const Macro& self,
+                              const TreePtr<Term>& PSI_UNUSED(value),
+                              const PSI_STD::vector<SharedPtr<Parser::Expression> >& PSI_UNUSED(parameters),
+                              const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
+                              const void *PSI_UNUSED(argument),
+                              const SourceLocation& location) {
+      CompileError err(self.compile_context().error_context(), location);
+      err.info("Evaluate operation not supported");
+      err.info(self.location(), boost::format("on %s") % self.location().logical->error_name(location.logical));
+      err.end_throw();
+    }
+
+    void Macro::dot_impl(const void *PSI_UNUSED(result),
+                         const Macro& self,
+                         const TreePtr<Term>& PSI_UNUSED(value),
+                         const SharedPtr<Parser::Expression>& PSI_UNUSED(member),
+                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& PSI_UNUSED(parameters),
+                         const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
+                         const void *PSI_UNUSED(argument),
+                         const SourceLocation& location) {
+      CompileError err(self.compile_context().error_context(), location);
+      err.info("Dot operation not supported");
+      err.info(self.location(), boost::format("on %s") % self.location().logical->error_name(location.logical));
+      err.end_throw();
+    }
+    
+    void Macro::cast_impl(const void *PSI_UNUSED(result),
+                          const Macro& self,
+                          const TreePtr<Term>& PSI_UNUSED(value),
+                          const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
+                          const void *PSI_UNUSED(argument),
+                          const SourceLocation& location) {
+      CompileError err(self.compile_context().error_context(), location);
+      err.info("Cast operation not supported");
+      err.info(self.location(), boost::format("on %s") % self.location().logical->error_name(location.logical));
+      err.end_throw();
+    }
+    
     const SIVtable MacroMemberCallback::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.MacroMemberCallback", Tree);
     
     class DefaultMacro : public Macro {
@@ -29,35 +69,17 @@ namespace Psi {
                                          const TreePtr<Term>& value,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
-                                         const char& PSI_UNUSED(argument),
+                                         const MacroTermArgument& argument,
                                          const SourceLocation& location) {
         if (tree_isa<FunctionType>(value->type)) {
           return compile_function_invocation(value, parameters, evaluate_context, location);
         } else {
-          self.compile_context().error_throw(location, boost::format("Cannot evaluate object of type %s") % value->type->location().logical->error_name(location.logical));
+          return Macro::evaluate_impl(self, value, parameters, evaluate_context, argument, location);
         }
-      }
-
-      static TreePtr<Term> dot_impl(const DefaultMacro& self,
-                                    const TreePtr<Term>& value,
-                                    const SharedPtr<Parser::Expression>& member,
-                                    const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                    const TreePtr<EvaluateContext>& evaluate_context,
-                                    const char& PSI_UNUSED(argument),
-                                    const SourceLocation& location) {
-        PSI_NOT_IMPLEMENTED();
-      }
-      
-      static TreePtr<Term> cast_impl(const DefaultMacro& PSI_UNUSED(self),
-                                     const TreePtr<Term>& value,
-                                     const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
-                                     const char& PSI_UNUSED(argument),
-                                     const SourceLocation& PSI_UNUSED(location)) {
-        return value;
       }
     };
 
-    const MacroVtable DefaultMacro::vtable = PSI_COMPILER_MACRO(DefaultMacro, "psi.compiler.DefaultMacro", Macro, TreePtr<Term>, const char);
+    const MacroVtable DefaultMacro::vtable = PSI_COMPILER_MACRO(DefaultMacro, "psi.compiler.DefaultMacro", Macro, TreePtr<Term>, MacroTermArgument);
 
     /**
      * \brief Generate the default implementation of Macro.
@@ -65,14 +87,14 @@ namespace Psi {
      * This is responsible for default behaviour of types, in particular more useful
      * error reporting on failure and processing function calls.
      */
-    TreePtr<> default_macro_impl(CompileContext& compile_context, const SourceLocation& location) {
+    TreePtr<> default_macro_term(CompileContext& compile_context, const SourceLocation& location) {
       return tree_from(::new DefaultMacro(compile_context, location));
     }
     
     /**
      * \brief Generate the default implementation of Macro for types.
      */
-    TreePtr<> default_type_macro_impl(CompileContext& compile_context, const SourceLocation& location) {
+    TreePtr<> default_type_macro_term(CompileContext& compile_context, const SourceLocation& location) {
       return tree_from(::new DefaultMacro(compile_context, location));
     }
     
@@ -104,12 +126,12 @@ namespace Psi {
                                          const TreePtr<Term>& value,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
-                                         const char& PSI_UNUSED(argument),
+                                         const MacroTermArgument& argument,
                                          const SourceLocation& location) {
         if (self.m_evaluate) {
           return self.m_evaluate->evaluate(value, parameters, evaluate_context, location);
         } else {
-          self.compile_context().error_throw(location, boost::format("Macro '%s' does not support evaluation") % self.location().logical->error_name(location.logical));
+          return Macro::evaluate_impl(self, value, parameters, evaluate_context, argument, location);
         }
       }
 
@@ -118,7 +140,7 @@ namespace Psi {
                                     const SharedPtr<Parser::Expression>& member,
                                     const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                     const TreePtr<EvaluateContext>& evaluate_context,
-                                    const char& PSI_UNUSED(argument),
+                                    const MacroTermArgument& PSI_UNUSED(argument),
                                     const SourceLocation& location) {
         if (member->expression_type != Parser::expression_token)
           self.compile_context().error_throw(location, boost::format("Token following dot on '%s' is not a name") % self.location().logical->error_name(location.logical));
@@ -132,18 +154,10 @@ namespace Psi {
 
         return it->second->evaluate(value, parameters, evaluate_context, location);
       }
-      
-      static TreePtr<Term> cast_impl(const NamedMemberMacro& PSI_UNUSED(self),
-                                     const TreePtr<Term>& value,
-                                     const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
-                                     const char& PSI_UNUSED(argument),
-                                     const SourceLocation& PSI_UNUSED(location)) {
-        return value;
-      }
     };
 
     const MacroVtable NamedMemberMacro::vtable =
-    PSI_COMPILER_MACRO(NamedMemberMacro, "psi.compiler.NamedMemberMacro", Macro, TreePtr<Term>, const char);
+    PSI_COMPILER_MACRO(NamedMemberMacro, "psi.compiler.NamedMemberMacro", Macro, TreePtr<Term>, MacroTermArgument);
 
     /**
      * \brief Create an interface macro.
@@ -236,16 +250,25 @@ namespace Psi {
     }
 
     /**
-     * \brief Create a Term which uses a given macro.
+     * \brief Create a Term which uses a given macro for a particular kind of evaluation.
+     * 
+     * \param tag Kind of evaluation the macro will be used for.
      */
-    TreePtr<Term> make_macro_term(const TreePtr<Macro>& macro, const SourceLocation& location) {
+    TreePtr<Term> make_macro_tag_term(const TreePtr<Macro>& macro, const TreePtr<Term>& tag, const SourceLocation& location) {
       CompileContext& compile_context = macro->compile_context();
       ConstantMetadataSetup meta;
-      meta.type = compile_context.builtins().type_macro_tag;
+      meta.type = compile_context.builtins().type_macro;
       meta.value = macro;
       meta.n_wildcards = 0;
-      meta.pattern.push_back(compile_context.builtins().macro_term_tag);
+      meta.pattern.push_back(tag);
       return make_annotated_type(compile_context, vector_of(meta), location);
+    }
+
+    /**
+     * \brief Create a Term which uses a given macro when evaluated as a term.
+     */
+    TreePtr<Term> make_macro_term(const TreePtr<Macro>& macro, const SourceLocation& location) {
+      return make_macro_tag_term(macro, macro->compile_context().builtins().macro_term_tag, location);
     }
     
     class PointerMacro : public MacroMemberCallback {
@@ -364,7 +387,7 @@ namespace Psi {
       static const VtableType vtable;
       
       NamespaceMacroMetadata(CompileContext& compile_context, const SourceLocation& location)
-      : Metadata(&vtable, compile_context, compile_context.builtins().macro_tag,
+      : Metadata(&vtable, compile_context, compile_context.builtins().macro,
                  1, make_pattern(compile_context, location), location) {
       }
       
@@ -739,7 +762,7 @@ namespace Psi {
         std::vector<ConstantMetadataSetup> ml;
 
         ConstantMetadataSetup md_macro;
-        md_macro.type = self.compile_context().builtins().type_macro_tag;
+        md_macro.type = self.compile_context().builtins().type_macro;
         md_macro.value = make_macro(self.compile_context(), location, macro_members);
         md_macro.n_wildcards = 0;
         md_macro.pattern.push_back(self.compile_context().builtins().macro_term_tag);

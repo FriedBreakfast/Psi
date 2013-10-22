@@ -11,12 +11,12 @@ namespace Psi {
     /**
      * Get the Macro tree associated with an expression.
      */
-    TreePtr<Macro> expression_macro(const TreePtr<EvaluateContext>& context, const TreePtr<Term>& expr, const TreePtr<Term>& arg_type, const SourceLocation& location) {
+    TreePtr<Macro> expression_macro(const TreePtr<EvaluateContext>& context, const TreePtr<Term>& expr, const TreePtr<Term>& tag_type, const SourceLocation& location) {
       PSI_STD::vector<TreePtr<Term> > args(2);
       args[0] = expr->is_type() ? expr : expr->type;
-      args[1] = arg_type;
-      const TreePtr<MetadataType>& md_type = expr->is_type() ? expr->compile_context().builtins().type_macro_tag
-        : expr->compile_context().builtins().macro_tag;
+      args[1] = tag_type;
+      const TreePtr<MetadataType>& md_type = expr->is_type() ? expr->compile_context().builtins().type_macro
+        : expr->compile_context().builtins().macro;
       return metadata_lookup_as<Macro>(md_type, context, args, location);
     }
     

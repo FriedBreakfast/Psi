@@ -132,6 +132,13 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   global_names["type"] = compile_context.builtins().metatype;
   global_names["pointer"] = pointer_macro(compile_context, psi_location.named_child("pointer"));
   global_names["struct"] = struct_macro(compile_context, psi_location.named_child("struct"));
+  
+  global_names["__init__"] = lifecycle_init_macro(compile_context, psi_location.named_child("__init__"));
+  global_names["__fini__"] = lifecycle_fini_macro(compile_context, psi_location.named_child("__fini__"));
+  global_names["__move__"] = lifecycle_move_macro(compile_context, psi_location.named_child("__move__"));
+  global_names["__copy__"] = lifecycle_copy_macro(compile_context, psi_location.named_child("__copy__"));
+  global_names["__no_move__"] = lifecycle_no_move_macro(compile_context, psi_location.named_child("__no_move__"));
+  global_names["__no_copy__"] = lifecycle_no_copy_macro(compile_context, psi_location.named_child("__no_copy__"));
 
   global_names["new"] = new_macro(compile_context, psi_location.named_child("new"));
   global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));

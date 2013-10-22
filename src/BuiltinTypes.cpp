@@ -14,32 +14,44 @@ namespace Psi {
         return TermBuilder::instance(generic, default_, location);
       }
       
-      TreePtr<MetadataType>
-      make_tag_n(CompileContext& compile_context, const SIVtable *vptr, const PSI_STD::vector<TreePtr<Term> >& wildcard_types,
-                 const SourceLocation& location, const TreePtr<>& default_value=TreePtr<>()) {
-        PSI_STD::vector<TreePtr<Term> > pattern(wildcard_types.size());
-        for (unsigned ii = 0, ie = wildcard_types.size(); ii != ie; ++ii)
-          pattern[ii] = TermBuilder::parameter(wildcard_types[ii], 0, ii, location);
+      template<typename TreeType>
+      TreePtr<MetadataType> make_tag(const TreePtr<Term>& wildcard_type, const SourceLocation& location, const TreePtr<>& default_value=TreePtr<>()) {
+        PSI_STD::vector<TreePtr<Term> > pattern(1, TermBuilder::parameter(wildcard_type, 0, 0, location));
         
         PSI_STD::vector<TreePtr<Metadata> > values;
         if (default_value)
           values.push_back(Metadata::new_(default_value, default_, pattern.size(), pattern, location));
         
-        return MetadataType::new_(compile_context, 0, pattern, values, vptr, location);
+        return MetadataType::new_(wildcard_type->compile_context(), 0, pattern, values, reinterpret_cast<const SIVtable*>(&TreeType::vtable), location);
       }
       
-      template<typename TreeType>
-      TreePtr<MetadataType> make_tag(const TreePtr<Term>& wildcard_type, const SourceLocation& location, const TreePtr<>& default_value=TreePtr<>()) {
-        PSI_STD::vector<TreePtr<Term> > wildcard_types(1, wildcard_type);
-        return make_tag_n(wildcard_type->compile_context(), reinterpret_cast<const SIVtable*>(&TreeType::vtable), wildcard_types, location, default_value);
+      TreePtr<Metadata> make_default_macro(const TreePtr<Term>& tag, const TreePtr<>& value) {
+        PSI_STD::vector<TreePtr<Term> > pattern;
+        pattern.push_back(TermBuilder::parameter(tag->compile_context().builtins().metatype, 0, 0, value->location()));
+        pattern.push_back(tag);
+        return Metadata::new_(value, default_, 1, pattern, value->location());
       }
-
-      template<typename TreeType>
-      TreePtr<MetadataType> make_tag_2(const TreePtr<Term>& wildcard_type_1, const TreePtr<Term>& wildcard_type_2, const SourceLocation& location, const TreePtr<>& default_value=TreePtr<>()) {
-        PSI_STD::vector<TreePtr<Term> > wildcard_types(2);
-        wildcard_types[0] = wildcard_type_1;
-        wildcard_types[1] = wildcard_type_2;
-        return make_tag_n(wildcard_type_1->compile_context(), reinterpret_cast<const SIVtable*>(&TreeType::vtable), wildcard_types, location, default_value);
+      
+      TreePtr<MetadataType> make_metadata_macro(CompileContext& compile_context, const SourceLocation& location) {
+        PSI_STD::vector<TreePtr<Term> > pattern;
+        pattern.push_back(TermBuilder::parameter(compile_context.builtins().metatype, 0, 0, location));
+        pattern.push_back(TermBuilder::parameter(compile_context.builtins().metatype, 0, 1, location));
+        
+        PSI_STD::vector<TreePtr<Metadata> > values;
+        values.push_back(make_default_macro(compile_context.builtins().macro_term_tag, default_macro_term(compile_context, location.named_child("TermDefault"))));
+        values.push_back(make_default_macro(compile_context.builtins().macro_member_tag, default_macro_member(compile_context, location.named_child("AggregateMemberDefault"))));
+        return MetadataType::new_(compile_context, 0, pattern, values, reinterpret_cast<const SIVtable*>(&Macro::vtable), location);
+      }
+      
+      TreePtr<MetadataType> make_metadata_type_macro(CompileContext& compile_context, const SourceLocation& location) {
+        PSI_STD::vector<TreePtr<Term> > pattern;
+        pattern.push_back(TermBuilder::parameter(compile_context.builtins().metatype, 0, 0, location));
+        pattern.push_back(TermBuilder::parameter(compile_context.builtins().metatype, 0, 1, location));
+        
+        PSI_STD::vector<TreePtr<Metadata> > values;
+        values.push_back(make_default_macro(compile_context.builtins().macro_term_tag, default_type_macro_term(compile_context, location.named_child("TermDefault"))));
+        values.push_back(make_default_macro(compile_context.builtins().macro_member_tag, default_type_macro_member(compile_context, location.named_child("AggregateMemberDefault"))));
+        return MetadataType::new_(compile_context, 0, pattern, values, reinterpret_cast<const SIVtable*>(&Macro::vtable), location);
       }
       
       class MovableCopyableGenericMaker {
@@ -134,19 +146,17 @@ namespace Psi {
 
       string_element_type = u8_type;
       
-      SourceLocation macro_location = psi_compiler_location.named_child("Macro");
-      macro_tag = make_tag_2<Macro>(metatype, metatype, macro_location, default_macro_impl(compile_context, macro_location));
-      SourceLocation type_macro_location = psi_compiler_location.named_child("TypeMacro");
-      type_macro_tag = make_tag_2<Macro>(metatype, metatype, macro_location, default_type_macro_impl(compile_context, type_macro_location));
+      macro_term_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroTermTag"));
+      macro_member_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroMemberTag"));
+      macro = make_metadata_macro(compile_context, psi_compiler_location.named_child("Macro"));
+      type_macro = make_metadata_type_macro(compile_context, psi_compiler_location.named_child("TypeMacro"));
+
       library_tag = make_tag<Library>(metatype, psi_compiler_location.named_child("Library"));
       namespace_tag = make_tag<Namespace>(metatype, psi_compiler_location.named_child("Namespace"));
       
       /// \todo Need to add default implementations of Movable and Copyable for builtin types
       movable_interface = make_movable_copyable_interface(*this, true, psi_compiler_location.named_child("Movable"));
       copyable_interface = make_movable_copyable_interface(*this, false, psi_compiler_location.named_child("Copyable"));
-
-      macro_term_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroTermTag"));
-      macro_member_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroMemberTag"));
     }
   }
 }

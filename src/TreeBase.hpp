@@ -19,6 +19,7 @@ namespace Psi {
     class TreePtr : public ObjectPtr<const T> {
     public:
       TreePtr() {}
+      explicit TreePtr(const DefaultConstructor&) {}
       explicit TreePtr(const T *ptr) : ObjectPtr<const T>(ptr) {}
       template<typename U> TreePtr(const TreePtr<U>& src) : ObjectPtr<const T>(src) {}
     };

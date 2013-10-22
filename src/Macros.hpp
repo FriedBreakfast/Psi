@@ -7,8 +7,18 @@
 
 namespace Psi {
   namespace Compiler {
-    PSI_COMPILER_EXPORT TreePtr<> default_macro_impl(CompileContext& compile_context, const SourceLocation& location);
-    PSI_COMPILER_EXPORT TreePtr<> default_type_macro_impl(CompileContext& compile_context, const SourceLocation& location);
+    TreePtr<> default_macro_term(CompileContext& compile_context, const SourceLocation& location);
+    TreePtr<> default_type_macro_term(CompileContext& compile_context, const SourceLocation& location);
+    TreePtr<> default_macro_member(CompileContext& compile_context, const SourceLocation& location);
+    TreePtr<> default_type_macro_member(CompileContext& compile_context, const SourceLocation& location);
+    
+    PSI_COMPILER_EXPORT TreePtr<Term> lifecycle_init_macro(CompileContext& compile_context, const SourceLocation& location);
+    PSI_COMPILER_EXPORT TreePtr<Term> lifecycle_fini_macro(CompileContext& compile_context, const SourceLocation& location);
+    PSI_COMPILER_EXPORT TreePtr<Term> lifecycle_move_macro(CompileContext& compile_context, const SourceLocation& location);
+    PSI_COMPILER_EXPORT TreePtr<Term> lifecycle_copy_macro(CompileContext& compile_context, const SourceLocation& location);
+    PSI_COMPILER_EXPORT TreePtr<Term> lifecycle_no_move_macro(CompileContext& compile_context, const SourceLocation& location);
+    PSI_COMPILER_EXPORT TreePtr<Term> lifecycle_no_copy_macro(CompileContext& compile_context, const SourceLocation& location);
+    
     PSI_COMPILER_EXPORT TreePtr<Term> new_macro(CompileContext& compile_context, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<Term> namespace_macro(CompileContext& compile_context, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<Term> number_type_macro(CompileContext& compile_context, const SourceLocation& location);

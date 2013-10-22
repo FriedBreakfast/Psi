@@ -315,61 +315,6 @@ public:
 
 typedef SharedDelayedValue<AggregateBodyResult, TreePtr<GenericType> > AggregateBodyDelayedValue;
 
-#if 0
-/**
- * Parse move-construct-destroy implementation.
- * This will have up to 5 function bodies: Construct, destroy, move, copy, assign
- */
-void AggregateMacroCommon::parse_constructors(const SourceLocation& location) {
-  for (PSI_STD::vector<SharedPtr<Parser::Lifecycle> >::const_iterator ii = lifecycle_exprs.begin(), ie = lifecycle_exprs.end(); ii != ie; ++ii) {
-    const Parser::Lifecycle& lc = **ii;
-    AggregateLifecycleImpl *lc_impl;
-    bool binary = true, nullable = false;
-    String function_name = lc.function_name.str();
-    if (function_name == "init") {
-      binary = false;
-      lc_impl = &lc_init;
-    } else if (function_name == "fini") {
-      binary = false;
-      lc_impl = &lc_fini;
-    } else if (function_name == "move") {
-      lc_impl = &lc_move;
-    } else if (function_name == "copy") {
-      nullable = true;
-      lc_impl = &lc_copy;
-    } else {
-      member_context->compile_context().error_throw(location, boost::format("Unknown lifecycle function: %s") % function_name);
-    }
-    
-    if (lc_impl->mode != AggregateLifecycleImpl::mode_default)
-      member_context->compile_context().error_throw(location, boost::format("Duplicate lifecycle function: %s") % function_name);
-    
-    if (!lc.body) {
-      if (!nullable)
-        member_context->compile_context().error_throw(location, boost::format("Lifecycle function cannot be deleted: %s") % function_name);
-    } else {
-      if (lc.body->token_type != Parser::token_square_bracket)
-        member_context->compile_context().error_throw(location, boost::format("Lifecycle function definition is not a [...]") % function_name);
-    }
-
-    if (binary) {
-      if (!lc.src_name)
-        member_context->compile_context().error_throw(location, boost::format("Lifecycle function %s requires two arguments") % function_name);
-      lc_impl->src_name = *lc.src_name;
-    } else {
-      if (lc.src_name)
-        member_context->compile_context().error_throw(location, boost::format("Lifecycle function %s only takes one argument") % function_name);
-    }
-
-    lc_impl->mode = lc.body ? AggregateLifecycleImpl::mode_impl : AggregateLifecycleImpl::mode_delete;
-    lc_impl->binary = binary;
-    lc_impl->body = lc.body;
-    lc_impl->dest_name = lc.dest_name;
-    lc_impl->physical_location = lc.location;
-  }
-}
-#endif
-
 class StructCallbackBase {
 protected:
   AggregateBodyDelayedValue m_common;
@@ -410,18 +355,19 @@ struct StructOverloadsCallback : StructCallbackBase {
   }
 };
 
-class StructMacroCallback : public MacroMemberCallback {
+class StructMacro : public Macro {
 public:
-  static const MacroMemberCallbackVtable vtable;
+  static const MacroVtable vtable;
   
-  StructMacroCallback(CompileContext& compile_context, const SourceLocation& location)
-  : MacroMemberCallback(&vtable, compile_context, location) {
+  StructMacro(CompileContext& compile_context, const SourceLocation& location)
+  : Macro(&vtable, compile_context, location) {
   }
 
-  static TreePtr<Term> evaluate_impl(const StructMacroCallback& self,
-                                     const TreePtr<Term>&,
+  static TreePtr<Term> evaluate_impl(const StructMacro& self,
+                                     const TreePtr<Term>& PSI_UNUSED(value),
                                      const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                      const TreePtr<EvaluateContext>& evaluate_context,
+                                     const MacroTermArgument& PSI_UNUSED(argument),
                                      const SourceLocation& location) {
     
     SharedPtr<Parser::TokenExpression> generic_parameters_expr, members_expr;
@@ -458,11 +404,250 @@ public:
   }
 };
 
-const MacroMemberCallbackVtable StructMacroCallback::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(StructMacroCallback, "psi.compiler.StructMacroCallback", MacroMemberCallback);
+const MacroVtable StructMacro::vtable = PSI_COMPILER_MACRO(StructMacro, "psi.compiler.StructMacro", Macro, TreePtr<Term>, MacroTermArgument);
 
 TreePtr<Term> struct_macro(CompileContext& compile_context, const SourceLocation& location) {
-  TreePtr<MacroMemberCallback> callback(::new StructMacroCallback(compile_context, location));
-  return make_macro_term(make_macro(compile_context, location, callback), location);
+  TreePtr<Macro> callback(::new StructMacro(compile_context, location));
+  return make_macro_term(callback, location);
+}
+
+class DefaultMemberMacroCommon : public Macro {
+public:
+  static const SIVtable vtable;
+  
+  DefaultMemberMacroCommon(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location)
+  : Macro(vptr, compile_context, location) {}
+
+  static AggregateMemberResult evaluate_impl(const DefaultMemberMacroCommon& self,
+                                             const TreePtr<Term>& value,
+                                             const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                             const TreePtr<EvaluateContext>& evaluate_context,
+                                             const AggregateMemberParameter& argument,
+                                             const SourceLocation& location) {
+    TreePtr<Term> expanded = expression_macro(evaluate_context, value, self.compile_context().builtins().macro_term_tag, location)
+      ->evaluate<TreePtr<Term> >(value, parameters, evaluate_context, EmptyType(), location);
+    return expression_macro(evaluate_context, expanded, self.compile_context().builtins().macro_member_tag, location)->cast<AggregateMemberResult>
+      (expanded, evaluate_context, argument, location);
+  }
+  
+  static AggregateMemberResult dot_impl(const DefaultMemberMacroCommon& self,
+                                        const TreePtr<Term>& value,
+                                        const SharedPtr<Parser::Expression>& member,
+                                        const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                        const TreePtr<EvaluateContext>& evaluate_context,
+                                        const AggregateMemberParameter& argument,
+                                        const SourceLocation& location) {
+    TreePtr<Term> expanded = expression_macro(evaluate_context, value, self.compile_context().builtins().macro_term_tag, location)
+      ->dot<TreePtr<Term> >(value, member, parameters, evaluate_context, EmptyType(), location);
+    return expression_macro(evaluate_context, expanded, self.compile_context().builtins().macro_member_tag, location)->cast<AggregateMemberResult>
+      (expanded, evaluate_context, argument, location);
+  }
+};
+
+const SIVtable DefaultMemberMacroCommon::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.DefaultMemberMacroCommon", Macro);
+
+class DefaultMemberMacro : public DefaultMemberMacroCommon {
+public:
+  static const VtableType vtable;
+  
+  DefaultMemberMacro(CompileContext& compile_context, const SourceLocation& location)
+  : DefaultMemberMacroCommon(&vtable, compile_context, location) {}
+
+  static AggregateMemberResult cast_impl(const DefaultMemberMacro& self,
+                                         const TreePtr<Term>& PSI_UNUSED(value),
+                                         const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
+                                         const AggregateMemberParameter& PSI_UNUSED(argument),
+                                         const SourceLocation& location) {
+    self.compile_context().error_throw(location, "Aggregate member is not a type");
+  }
+};
+
+const MacroVtable DefaultMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultMemberMacro, "psi.compiler.DefaultMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, AggregateMemberParameter);
+
+/**
+ * Generate the default macro implementation for aggregate members.
+ */
+TreePtr<> default_macro_member(CompileContext& compile_context, const SourceLocation& location) {
+  return TreePtr<>(::new DefaultMemberMacro(compile_context, location));
+}
+
+class DefaultTypeMemberMacro : public DefaultMemberMacroCommon {
+public:
+  static const VtableType vtable;
+  
+  DefaultTypeMemberMacro(CompileContext& compile_context, const SourceLocation& location)
+  : DefaultMemberMacroCommon(&vtable, compile_context, location) {}
+
+  static AggregateMemberResult cast_impl(const DefaultTypeMemberMacro& PSI_UNUSED(self),
+                                         const TreePtr<Term>& value,
+                                         const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
+                                         const AggregateMemberParameter& PSI_UNUSED(argument),
+                                         const SourceLocation& PSI_UNUSED(location)) {
+    AggregateMemberResult result;
+    result.member_type = value;
+    return result;
+  }
+};
+
+const MacroVtable DefaultTypeMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultTypeMemberMacro, "psi.compiler.DefaultTypeMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, AggregateMemberParameter);
+
+/**
+ * Generate the default macro implementation for aggregate members which are types.
+ */
+TreePtr<> default_type_macro_member(CompileContext& compile_context, const SourceLocation& location) {
+  return TreePtr<>(::new DefaultTypeMemberMacro(compile_context, location));
+}
+
+class LifecycleMacro : public Macro {
+  int m_which;
+  
+public:
+  static const VtableType vtable;
+  
+  enum Which {
+    which_init,
+    which_fini,
+    which_move,
+    which_copy
+  };
+
+  LifecycleMacro(Which which, CompileContext& compile_context, const SourceLocation& location)
+  : Macro(&vtable, compile_context, location), m_which(which) {}
+  
+  template<typename V>
+  static void visit(V& v) {
+    visit_base<Macro>(v);
+    v("which", &LifecycleMacro::m_which);
+  }
+  
+  static AggregateMemberResult evaluate_impl(const LifecycleMacro& self,
+                                             const TreePtr<Term>& PSI_UNUSED(value),
+                                             const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                             const TreePtr<EvaluateContext>& evaluate_context,
+                                             const AggregateMemberParameter& argument,
+                                             const SourceLocation& location) {
+    if (parameters.size() != 2)
+      self.compile_context().error_throw(location, "Lifecycle macro expects two arguments");
+    
+    SharedPtr<Parser::TokenExpression> args_expr, body_expr;
+    if (!(args_expr = Parser::expression_as_token_type(parameters[0], Parser::token_bracket)))
+      self.compile_context().error_throw(location, "First argument to lifecycle macro is not a (...)");
+    if (!(body_expr = Parser::expression_as_token_type(parameters[1], Parser::token_square_bracket)))
+      self.compile_context().error_throw(location, "Second argument to lifecycle macro is not a [...]");
+    
+    TreePtr<Term> AggregateMemberResult::*member;
+    
+    PSI_STD::map<String, TreePtr<Term> > body_variables;
+    PSI_STD::vector<Parser::TokenExpression> args = Parser::parse_identifier_list(self.compile_context().error_context(), location.logical, args_expr->text);
+    switch (self.m_which) {
+    case which_init:
+      member = &AggregateMemberResult::lc_init;
+      if (args.size() != 1)
+        self.compile_context().error_throw(location, "Initialization function expects a single argument");
+      body_variables.insert(std::make_pair(args[0].text.str(), argument.lc_init.dest));
+      break;
+
+    case which_fini:
+      member = &AggregateMemberResult::lc_fini;
+      if (args.size() != 1)
+        self.compile_context().error_throw(location, "Finalization function expects a single argument");
+      body_variables.insert(std::make_pair(args[0].text.str(), argument.lc_fini.dest));
+      break;
+      
+    case which_move:
+      member = &AggregateMemberResult::lc_move;
+      if (args.size() != 2)
+        self.compile_context().error_throw(location, "Move function expects two arguments");
+      body_variables.insert(std::make_pair(args[0].text.str(), argument.lc_move.dest));
+      body_variables.insert(std::make_pair(args[1].text.str(), argument.lc_move.src));
+      break;
+      
+    case which_copy:
+      member = &AggregateMemberResult::lc_copy;
+      if (args.size() != 2)
+        self.compile_context().error_throw(location, "Copy function expects two arguments");
+      body_variables.insert(std::make_pair(args[0].text.str(), argument.lc_copy.dest));
+      body_variables.insert(std::make_pair(args[1].text.str(), argument.lc_copy.src));
+      break;
+      
+    default: PSI_FAIL("Unknown lifecycle 'which'");
+    }
+    
+    TreePtr<EvaluateContext> body_context =
+      evaluate_context_dictionary(evaluate_context->module(), location, body_variables, evaluate_context);
+        
+    AggregateMemberResult result;
+    result.*member = compile_from_bracket(body_expr, body_context, location);
+    return result;
+  }
+};
+
+const MacroVtable LifecycleMacro::vtable = PSI_COMPILER_MACRO(LifecycleMacro, "psi.compiler.LifecycleMacro", Macro, AggregateMemberResult, AggregateMemberParameter);
+
+/// \brief Create the \c __init__ macro
+TreePtr<Term> lifecycle_init_macro(CompileContext& compile_context, const SourceLocation& location) {
+  TreePtr<Macro> macro(::new LifecycleMacro(LifecycleMacro::which_init, compile_context, location));
+  return make_macro_tag_term(macro, compile_context.builtins().macro_member_tag, location);
+}
+
+/// \brief Create the \c __fini__ macro
+TreePtr<Term> lifecycle_fini_macro(CompileContext& compile_context, const SourceLocation& location) {
+  TreePtr<Macro> macro(::new LifecycleMacro(LifecycleMacro::which_fini, compile_context, location));
+  return make_macro_tag_term(macro, compile_context.builtins().macro_member_tag, location);
+}
+
+/// \brief Create the \c __move__ macro
+TreePtr<Term> lifecycle_move_macro(CompileContext& compile_context, const SourceLocation& location) {
+  TreePtr<Macro> macro(::new LifecycleMacro(LifecycleMacro::which_move, compile_context, location));
+  return make_macro_tag_term(macro, compile_context.builtins().macro_member_tag, location);
+}
+
+/// \brief Create the \c __copy__ macro
+TreePtr<Term> lifecycle_copy_macro(CompileContext& compile_context, const SourceLocation& location) {
+  TreePtr<Macro> macro(::new LifecycleMacro(LifecycleMacro::which_copy, compile_context, location));
+  return make_macro_tag_term(macro, compile_context.builtins().macro_member_tag, location);
+}
+
+class LifecycleDisableMacro : public Macro {
+  PsiBool m_is_copy;
+  
+public:
+  static const VtableType vtable;
+
+  LifecycleDisableMacro(bool is_copy, CompileContext& compile_context, const SourceLocation& location)
+  : Macro(&vtable, compile_context, location), m_is_copy(is_copy) {}
+  
+  template<typename V>
+  static void visit(V& v) {
+    visit_base<Macro>(v);
+    v("is_copy", &LifecycleDisableMacro::m_is_copy);
+  }
+  
+  static AggregateMemberResult cast_impl(const LifecycleDisableMacro& self,
+                                         const TreePtr<Term>& PSI_UNUSED(value),
+                                         const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
+                                         const AggregateMemberParameter& PSI_UNUSED(argument),
+                                         const SourceLocation& PSI_UNUSED(location)) {
+    AggregateMemberResult result;
+    result.no_move = true;
+    if (self.m_is_copy)
+      result.no_copy = true;
+    return result;
+  }
+};
+
+const MacroVtable LifecycleDisableMacro::vtable = PSI_COMPILER_MACRO(LifecycleDisableMacro, "psi.compiler.LifecycleDisableMacro", Macro, AggregateMemberResult, AggregateMemberParameter);
+
+/// \brief Create the \c __no_move__ macro
+TreePtr<Term> lifecycle_no_move_macro(CompileContext& compile_context, const SourceLocation& location) {
+  TreePtr<Macro> macro(::new LifecycleDisableMacro(false, compile_context, location));
+  return make_macro_tag_term(macro, compile_context.builtins().macro_member_tag, location);
+}
+
+/// \brief Create the \c __no_copy__ macro
+TreePtr<Term> lifecycle_no_copy_macro(CompileContext& compile_context, const SourceLocation& location) {
+  TreePtr<Macro> macro(::new LifecycleDisableMacro(true, compile_context, location));
+  return make_macro_tag_term(macro, compile_context.builtins().macro_member_tag, location);
 }
 }
 }

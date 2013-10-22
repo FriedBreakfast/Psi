@@ -725,15 +725,17 @@ SharedPtr<Expression> parse_expression(CompileErrorContext& error_context, const
 
 PSI_STD::vector<TokenExpression> ParserImpl::parse_identifier_list() {
   PSI_STD::vector<TokenExpression> result;
+  if (!lex().reject(tok_eof))
+    return result;
 
   while (true) {
-    if (lex().accept(tok_id)) {
-      result.push_back(*lex().value().value());
-    } else if (!lex().reject(tok_eof)) {
+    lex().expect(tok_id);
+    result.push_back(*lex().value().value());
+    
+    if (!lex().reject(tok_eof))
       return result;
-    } else {
-      lex().unexpected();
-    }
+    
+    lex().expect(',');
   }
 }
 
