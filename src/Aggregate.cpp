@@ -21,23 +21,49 @@ struct AggregateLifecycleParameters {
   TreePtr<Term> src;
 };
 
-/**
- * \brief Parameter passed to aggregate member macros.
- */
-struct AggregateMemberParameter {
+struct AggregateMovableParameter {
   /// \brief Containing generic type
   TreePtr<GenericType> generic;
-
   /// \brief Initialization parameters
   AggregateLifecycleParameters lc_init;
   /// \brief Move parameters
   AggregateLifecycleParameters lc_move;
-  /// \brief Copy parameters
-  AggregateLifecycleParameters lc_copy;
   /// \brief Finalization parameters
   AggregateLifecycleParameters lc_fini;
 };
 
+struct AggregateMovableResult {
+  /// \brief Initialization code
+  TreePtr<Term> lc_init;
+  /// \brief Move code
+  TreePtr<Term> lc_move;
+  /// \brief Finalization code
+  TreePtr<Term> lc_fini;
+  
+  template<typename V>
+  static void visit(V& v) {
+    v("lc_init", &AggregateMovableResult::lc_init)
+    ("lc_move", &AggregateMovableResult::lc_move)
+    ("lc_fini", &AggregateMovableResult::lc_fini);
+  }
+};
+
+struct AggregateCopyableParameter {
+  /// \brief Containing generic type
+  TreePtr<GenericType> generic;
+  /// \brief Copy parameters
+  AggregateLifecycleParameters lc_copy;
+};
+
+struct AggregateCopyableResult {
+  /// \brief Copy code
+  TreePtr<Term> lc_copy;
+  
+  template<typename V>
+  static void visit(V& v) {
+    v("lc_copy", &AggregateCopyableResult::lc_copy);
+  }
+};
 
 /**
  * \brief Result returned from aggregate member macros.
@@ -53,16 +79,12 @@ struct AggregateMemberResult {
   /// \brief Do not generate copyable interface
   PsiBool no_copy;
   
-  /// \brief Initialization code
-  TreePtr<Term> lc_init;
-  /// \brief Move code
-  TreePtr<Term> lc_move;
-  /// \brief Copy code
-  TreePtr<Term> lc_copy;
-  /// \brief Finalization code
-  TreePtr<Term> lc_fini;
-  
-  PSI_STD::vector<TreePtr<OverloadValue> > overloads;
+  /// \brief Callback to generate movable interface functions
+  SharedDelayedValue<AggregateMovableResult, AggregateMovableParameter> movable_callback;
+  /// \brief Callback to generate copyable interface functions
+  SharedDelayedValue<AggregateCopyableResult, AggregateCopyableParameter> copyable_callback;
+  /// \brief Callback to generate interface overloads
+  SharedDelayedValue<PSI_STD::vector<TreePtr<OverloadValue> >, TreePtr<GenericType> > overloads_callback;
 };
 
 /**
@@ -73,17 +95,31 @@ struct AggregateBodyResult {
   PSI_STD::vector<TreePtr<Term> > members;
   /// \brief Member names
   PSI_STD::map<String, unsigned> names;
-  /// \brief Overloads
-  PSI_STD::vector<TreePtr<OverloadValue> > overloads;
   
   GenericType::GenericTypePrimitive primitive_mode;
+
+  /// \brief Do not generate movable interface
+  PsiBool no_move;
+  /// \brief Do not generate copyable interface
+  PsiBool no_copy;
+
+  /// \brief Callback to generate movable interface functions
+  PSI_STD::vector<SharedDelayedValue<AggregateMovableResult, AggregateMovableParameter> > movable_callbacks;
+  /// \brief Callback to generate copyable interface functions
+  PSI_STD::vector<SharedDelayedValue<AggregateCopyableResult, AggregateCopyableParameter> > copyable_callbacks;
+  /// \brief Callback to generate interface overloads
+  PSI_STD::vector<SharedDelayedValue<PSI_STD::vector<TreePtr<OverloadValue> >, TreePtr<GenericType> > > overload_callbacks;
   
   template<typename V>
   static void visit(V& v) {
     v("members", &AggregateBodyResult::members)
     ("names", &AggregateBodyResult::names)
-    ("overloads", &AggregateBodyResult::overloads)
-    ("primitive_mode", &AggregateBodyResult::primitive_mode);
+    ("primitive_mode", &AggregateBodyResult::primitive_mode)
+    ("no_move", &AggregateBodyResult::no_move)
+    ("no_copy", &AggregateBodyResult::no_copy)
+    ("movable_callbacks", &AggregateBodyResult::movable_callbacks)
+    ("copyable_callbacks", &AggregateBodyResult::copyable_callbacks)
+    ("overload_callbacks", &AggregateBodyResult::overload_callbacks);
   }
 };
 
@@ -97,50 +133,14 @@ public:
   : m_arguments(arguments), m_body(body), m_evaluate_context(evaluate_context) {
   }
   
-  ImplementationHelper::FunctionSetup lc_setup(ImplementationHelper& helper, int index, const char *name) {
-    return helper.member_function_setup(index, helper.location().named_child(name), default_);
-  }
-
-  ImplementationHelper::FunctionSetup lc_setup(ImplementationHelper& helper, int index, const char *name, AggregateLifecycleParameters& parameters) {
-    ImplementationHelper::FunctionSetup result = lc_setup(helper, index, name);
-    parameters.dest = result.parameters[1];
-    if (result.parameters.size() > 2)
-      parameters.src = result.parameters[2];
-    return result;
-  }
-  
-  void list_constructor_body(CompileError& err, const PSI_STD::vector<TreePtr<Term> >& bodies) {
-    for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = bodies.begin(), ie = bodies.end(); ii != ie; ++ii)
-      err.info((*ii)->location(), "Constructor body defined here.");
-  }
-  
   AggregateBodyResult evaluate(const TreePtr<GenericType>& generic) {
     TreePtr<EvaluateContext> member_context = evaluate_context_dictionary(m_evaluate_context->module(), generic->location(), m_arguments.names, m_evaluate_context);
     
     AggregateBodyResult result;
+    result.no_move = false;
+    result.no_copy = false;
     
-    AggregateMemberParameter parameter;
-    parameter.generic = generic;
-
-    TreePtr<Term> instance = TermBuilder::instance(generic, vector_from<TreePtr<Term> >(m_arguments.list), generic->location());
-    
-    ImplementationHelper movable_helper(generic->location().named_child("Movable"), generic->compile_context().builtins().movable_interface,
-                                        m_arguments.list, vector_of(instance), default_);
-    ImplementationHelper::FunctionSetup
-      lc_init      = lc_setup(movable_helper, interface_movable_init, "init", parameter.lc_init),
-      lc_fini      = lc_setup(movable_helper, interface_movable_fini, "fini", parameter.lc_fini),
-      lc_clear     = lc_setup(movable_helper, interface_movable_clear, "clear"),
-      lc_move_init = lc_setup(movable_helper, interface_movable_move_init, "move_init"),
-      lc_move      = lc_setup(movable_helper, interface_movable_move, "move", parameter.lc_move);
-      
-    ImplementationHelper copyable_helper(generic->location().named_child("Copyable"), generic->compile_context().builtins().copyable_interface,
-                                         m_arguments.list, vector_of(instance), default_);
-    ImplementationHelper::FunctionSetup
-      lc_copy_init = lc_setup(copyable_helper, interface_copyable_copy_init, "copy_init"),
-      lc_copy      = lc_setup(copyable_helper, interface_copyable_copy, "copy", parameter.lc_copy);
-      
-    bool no_move = false, no_copy = false;
-    PSI_STD::vector<TreePtr<Term> > init_body, fini_body, move_body, copy_body;
+    PSI_STD::vector<SourceLocation> movable_locations, copyable_locations;
     
     // Handle members
     PSI_STD::vector<SharedPtr<Parser::Statement> > members_parsed = Parser::parse_statement_list(generic->compile_context().error_context(), generic->location().logical, m_body);
@@ -165,7 +165,7 @@ public:
         }
         
         AggregateMemberResult member_result = compile_expression<AggregateMemberResult>
-          (stmt.expression, member_context, generic->compile_context().builtins().macro_member_tag, parameter, stmt_location.logical);
+          (stmt.expression, member_context, generic->compile_context().builtins().macro_member_tag, generic, stmt_location.logical);
         
         if (member_result.member_type) {
           result.members.push_back(member_result.member_type->parameterize(stmt_location, m_arguments.list));
@@ -173,56 +173,45 @@ public:
             result.names[member_name] = result.members.size();
         }
         
-        no_move = no_move || member_result.no_move;
-        no_copy = no_copy || member_result.no_copy;
+        result.no_move = result.no_move || member_result.no_move;
+        result.no_copy = result.no_copy || member_result.no_copy;
         
-        if (member_result.lc_init) init_body.push_back(member_result.lc_init);
-        if (member_result.lc_fini) fini_body.push_back(member_result.lc_fini);
-        if (member_result.lc_move) move_body.push_back(member_result.lc_move);
-        if (member_result.lc_copy) copy_body.push_back(member_result.lc_copy);
+        if (!member_result.movable_callback.empty()) {
+          movable_locations.push_back(stmt_location);
+          result.movable_callbacks.push_back(member_result.movable_callback);
+        }
         
-        result.overloads.insert(result.overloads.end(), member_result.overloads.begin(), member_result.overloads.end());
+        if (!member_result.copyable_callback.empty()) {
+          if (member_result.movable_callback.empty())
+            movable_locations.push_back(stmt_location);
+          copyable_locations.push_back(stmt_location);
+          result.copyable_callbacks.push_back(member_result.copyable_callback);
+        }
+        
+        if (!member_result.overloads_callback.empty())
+          result.overload_callbacks.push_back(member_result.overloads_callback);
       }
     }
     
-    if (no_move && (!init_body.empty() || !fini_body.empty() || !move_body.empty() || !copy_body.empty())) {
+    if (result.no_move && (!result.movable_callbacks.empty() || !result.copyable_callbacks.empty())) {
       CompileError err(generic->compile_context().error_context(), generic->location());
       err.info("Move or copy constructor bodies supplied for a class where the move interface is disabled.");
-      list_constructor_body(err, init_body);
-      list_constructor_body(err, fini_body);
-      list_constructor_body(err, move_body);
-      list_constructor_body(err, copy_body);
+      for (PSI_STD::vector<SourceLocation>::const_iterator ii = movable_locations.begin(), ie = movable_locations.end(); ii != ie; ++ii)
+        err.info(*ii, "Constructor body defined here.");
       err.end_throw();
     }
     
-    if (no_copy && !copy_body.empty()) {
+    if (result.no_copy && !result.copyable_callbacks.empty()) {
       CompileError err(generic->compile_context().error_context(), generic->location());
       err.info("Copy constructor bodies supplied for a class where the copy interface is disabled.");
-      list_constructor_body(err, copy_body);
+      for (PSI_STD::vector<SourceLocation>::const_iterator ii = copyable_locations.begin(), ie = copyable_locations.end(); ii != ie; ++ii)
+        err.info(*ii, "Constructor body defined here.");
       err.end_throw();
     }
     
     result.primitive_mode = GenericType::primitive_recurse;
-    if (no_move || no_copy || !init_body.empty() || !fini_body.empty() || !move_body.empty() || !copy_body.empty())
+    if (result.no_move || result.no_copy || !result.movable_callbacks.empty() || !result.copyable_callbacks.empty())
       result.primitive_mode = GenericType::primitive_never;
-    
-    if (!no_move) {
-      PSI_STD::vector<TreePtr<Term> > movable_members(5);
-      movable_members[interface_movable_init] = build_init(movable_helper, lc_init, init_body);
-      movable_members[interface_movable_clear] = build_clear(movable_helper, lc_clear, fini_body);
-      movable_members[interface_movable_fini] = build_fini(movable_helper, lc_fini, fini_body.empty() ? default_ : movable_members[interface_movable_clear]);
-      movable_members[interface_movable_move] = build_move(movable_helper, lc_move, move_body);
-      movable_members[interface_movable_move_init] = build_move_init(movable_helper, lc_move_init, move_body.empty() ? default_ : movable_members[interface_movable_move]);
-      result.overloads.push_back(movable_helper.finish(TermBuilder::struct_value(generic->compile_context(), movable_members, movable_helper.location())));
-      
-      if (!no_copy) {
-        PSI_STD::vector<TreePtr<Term> > copyable_members(3);
-        copyable_members[interface_copyable_movable] = TermBuilder::interface_value(generic->compile_context().builtins().movable_interface, vector_of(instance), default_, copyable_helper.location());
-        copyable_members[interface_copyable_copy] = build_copy(copyable_helper, lc_copy, copy_body);
-        copyable_members[interface_copyable_copy_init] = build_copy_init(copyable_helper, lc_copy_init, copy_body.empty() ? default_ : copyable_members[interface_copyable_copy]);
-        result.overloads.push_back(copyable_helper.finish(TermBuilder::struct_value(generic->compile_context(), copyable_members, copyable_helper.location())));
-      }
-    }
 
     return result;
   }
@@ -233,7 +222,96 @@ public:
     v("arguments", &AggregateBodyCallback::m_arguments)
     ("evaluate_context", &AggregateBodyCallback::m_evaluate_context);
   }
+};
 
+typedef SharedDelayedValue<AggregateBodyResult, TreePtr<GenericType> > AggregateBodyDelayedValue;
+
+class AggregateOverloadsCallback {
+  PatternArguments m_arguments;
+  TreePtr<EvaluateContext> m_evaluate_context;
+  AggregateBodyDelayedValue m_body;
+  
+public:
+  AggregateOverloadsCallback(const PatternArguments& arguments, const TreePtr<EvaluateContext>& evaluate_context, const AggregateBodyDelayedValue& body)
+  : m_arguments(arguments), m_evaluate_context(evaluate_context), m_body(body) {}
+
+  ImplementationHelper::FunctionSetup lc_setup(ImplementationHelper& helper, int index, const char *name) {
+    return helper.member_function_setup(index, helper.location().named_child(name), default_);
+  }
+
+  ImplementationHelper::FunctionSetup lc_setup(ImplementationHelper& helper, int index, const char *name, AggregateLifecycleParameters& parameters) {
+    ImplementationHelper::FunctionSetup result = lc_setup(helper, index, name);
+    parameters.dest = result.parameters[1];
+    if (result.parameters.size() > 2)
+      parameters.src = result.parameters[2];
+    return result;
+  }
+  
+  PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const TreePtr<GenericType>& generic) {
+    const AggregateBodyResult& body = m_body.get(generic);
+
+    PSI_STD::vector<TreePtr<OverloadValue> > overloads;
+    for (PSI_STD::vector<SharedDelayedValue<PSI_STD::vector<TreePtr<OverloadValue> >, TreePtr<GenericType> > >::const_iterator ii = body.overload_callbacks.begin(), ie = body.overload_callbacks.end(); ii != ie; ++ii) {
+      const PSI_STD::vector<TreePtr<OverloadValue> >& member_overloads = ii->get(generic);
+      overloads.insert(overloads.end(), member_overloads.begin(), member_overloads.end());
+    }
+    
+    PSI_STD::vector<TreePtr<Term> > init_body, fini_body, move_body, copy_body;
+
+    TreePtr<Term> instance = TermBuilder::instance(generic, vector_from<TreePtr<Term> >(m_arguments.list), generic->location());
+
+    AggregateMovableParameter movable_parameter;
+    movable_parameter.generic = generic;
+    ImplementationHelper movable_helper(generic->location().named_child("Movable"), generic->compile_context().builtins().movable_interface,
+                                        m_arguments.list, vector_of(instance), default_);
+    ImplementationHelper::FunctionSetup
+      lc_init      = lc_setup(movable_helper, interface_movable_init, "init", movable_parameter.lc_init),
+      lc_fini      = lc_setup(movable_helper, interface_movable_fini, "fini", movable_parameter.lc_fini),
+      lc_clear     = lc_setup(movable_helper, interface_movable_clear, "clear"),
+      lc_move_init = lc_setup(movable_helper, interface_movable_move_init, "move_init"),
+      lc_move      = lc_setup(movable_helper, interface_movable_move, "move", movable_parameter.lc_move);
+      
+    for (PSI_STD::vector<SharedDelayedValue<AggregateMovableResult, AggregateMovableParameter> >::const_iterator ii = body.movable_callbacks.begin(), ie = body.movable_callbacks.end(); ii != ie; ++ii) {
+      const AggregateMovableResult& result = ii->get(movable_parameter);
+      if (result.lc_init) init_body.push_back(result.lc_init);
+      if (result.lc_fini) fini_body.push_back(result.lc_fini);
+      if (result.lc_move) move_body.push_back(result.lc_move);
+    }
+
+    AggregateCopyableParameter copyable_parameter;
+    copyable_parameter.generic = generic;
+    ImplementationHelper copyable_helper(generic->location().named_child("Copyable"), generic->compile_context().builtins().copyable_interface,
+                                         m_arguments.list, vector_of(instance), default_);
+    ImplementationHelper::FunctionSetup
+      lc_copy_init = lc_setup(copyable_helper, interface_copyable_copy_init, "copy_init"),
+      lc_copy      = lc_setup(copyable_helper, interface_copyable_copy, "copy", copyable_parameter.lc_copy);
+
+    for (PSI_STD::vector<SharedDelayedValue<AggregateCopyableResult, AggregateCopyableParameter> >::const_iterator ii = body.copyable_callbacks.begin(), ie = body.copyable_callbacks.end(); ii != ie; ++ii) {
+      const AggregateCopyableResult& result = ii->get(copyable_parameter);
+      if (result.lc_copy) copy_body.push_back(result.lc_copy);
+    }
+    
+    if (!body.no_move) {
+      PSI_STD::vector<TreePtr<Term> > movable_members(5);
+      movable_members[interface_movable_init] = build_init(movable_helper, lc_init, init_body);
+      movable_members[interface_movable_clear] = build_clear(movable_helper, lc_clear, fini_body);
+      movable_members[interface_movable_fini] = build_fini(movable_helper, lc_fini, fini_body.empty() ? default_ : movable_members[interface_movable_clear]);
+      movable_members[interface_movable_move] = build_move(movable_helper, lc_move, move_body);
+      movable_members[interface_movable_move_init] = build_move_init(movable_helper, lc_move_init, move_body.empty() ? default_ : movable_members[interface_movable_move]);
+      overloads.push_back(movable_helper.finish(TermBuilder::struct_value(generic->compile_context(), movable_members, movable_helper.location())));
+      
+      if (!body.no_copy) {
+        PSI_STD::vector<TreePtr<Term> > copyable_members(3);
+        copyable_members[interface_copyable_movable] = TermBuilder::interface_value(generic->compile_context().builtins().movable_interface, vector_of(instance), default_, copyable_helper.location());
+        copyable_members[interface_copyable_copy] = build_copy(copyable_helper, lc_copy, copy_body);
+        copyable_members[interface_copyable_copy_init] = build_copy_init(copyable_helper, lc_copy_init, copy_body.empty() ? default_ : copyable_members[interface_copyable_copy]);
+        overloads.push_back(copyable_helper.finish(TermBuilder::struct_value(generic->compile_context(), copyable_members, copyable_helper.location())));
+      }
+    }
+    
+    return overloads;
+  }
+  
   TreePtr<Term> make_body(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& parts) {
     if (parts.empty()) {
       return TermBuilder::empty_value(m_evaluate_context->compile_context());
@@ -311,9 +389,14 @@ public:
     }
     return helper.function_finish(f, m_evaluate_context->module(), body);
   }
-};
 
-typedef SharedDelayedValue<AggregateBodyResult, TreePtr<GenericType> > AggregateBodyDelayedValue;
+  template<typename V>
+  static void visit(V& v) {
+    v("arguments", &AggregateOverloadsCallback::m_arguments)
+    ("evaluate_context", &AggregateOverloadsCallback::m_evaluate_context)
+    ("body", &AggregateOverloadsCallback::m_body);
+  }
+};
 
 class StructCallbackBase {
 protected:
@@ -343,15 +426,6 @@ struct StructTypeCallback : StructCallbackBase {
   
   TreePtr<Term> evaluate(const TreePtr<GenericType>& self) {
     return TermBuilder::struct_type(self->compile_context(), m_common.get(self).members, self->location());
-  }
-};
-
-struct StructOverloadsCallback : StructCallbackBase {
-  StructOverloadsCallback(const AggregateBodyDelayedValue& common) : StructCallbackBase(common) {}
-  template<typename V> static void visit(V& v) {visit_base<StructCallbackBase>(v);}
-
-  PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const TreePtr<GenericType>& self) {
-    return m_common.get(self).overloads;
   }
 };
 
@@ -393,8 +467,10 @@ public:
     AggregateBodyDelayedValue shared_callback(self.compile_context(), location,
                                               AggregateBodyCallback(arguments, members_expr->text, evaluate_context));
     
+    
+    
     TreePtr<GenericType> generic = TermBuilder::generic(self.compile_context(), arguments.pattern, StructPrimitiveModeCallback(shared_callback), location,
-                                                        StructTypeCallback(shared_callback), StructOverloadsCallback(shared_callback));
+                                                        StructTypeCallback(shared_callback), AggregateOverloadsCallback(arguments, evaluate_context, shared_callback));
 
     if (generic->pattern.empty()) {
       return TermBuilder::instance(generic, default_, location);
@@ -422,7 +498,7 @@ public:
                                              const TreePtr<Term>& value,
                                              const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                              const TreePtr<EvaluateContext>& evaluate_context,
-                                             const AggregateMemberParameter& argument,
+                                             const TreePtr<GenericType>& argument,
                                              const SourceLocation& location) {
     TreePtr<Term> expanded = expression_macro(evaluate_context, value, self.compile_context().builtins().macro_term_tag, location)
       ->evaluate<TreePtr<Term> >(value, parameters, evaluate_context, EmptyType(), location);
@@ -435,7 +511,7 @@ public:
                                         const SharedPtr<Parser::Expression>& member,
                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                        const AggregateMemberParameter& argument,
+                                        const TreePtr<GenericType>& argument,
                                         const SourceLocation& location) {
     TreePtr<Term> expanded = expression_macro(evaluate_context, value, self.compile_context().builtins().macro_term_tag, location)
       ->dot<TreePtr<Term> >(value, member, parameters, evaluate_context, EmptyType(), location);
@@ -456,13 +532,13 @@ public:
   static AggregateMemberResult cast_impl(const DefaultMemberMacro& self,
                                          const TreePtr<Term>& PSI_UNUSED(value),
                                          const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
-                                         const AggregateMemberParameter& PSI_UNUSED(argument),
+                                         const TreePtr<GenericType>& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
     self.compile_context().error_throw(location, "Aggregate member is not a type");
   }
 };
 
-const MacroVtable DefaultMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultMemberMacro, "psi.compiler.DefaultMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, AggregateMemberParameter);
+const MacroVtable DefaultMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultMemberMacro, "psi.compiler.DefaultMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, TreePtr<GenericType>);
 
 /**
  * Generate the default macro implementation for aggregate members.
@@ -481,7 +557,7 @@ public:
   static AggregateMemberResult cast_impl(const DefaultTypeMemberMacro& PSI_UNUSED(self),
                                          const TreePtr<Term>& value,
                                          const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
-                                         const AggregateMemberParameter& PSI_UNUSED(argument),
+                                         const TreePtr<GenericType>& PSI_UNUSED(argument),
                                          const SourceLocation& PSI_UNUSED(location)) {
     AggregateMemberResult result;
     result.member_type = value;
@@ -489,7 +565,7 @@ public:
   }
 };
 
-const MacroVtable DefaultTypeMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultTypeMemberMacro, "psi.compiler.DefaultTypeMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, AggregateMemberParameter);
+const MacroVtable DefaultTypeMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultTypeMemberMacro, "psi.compiler.DefaultTypeMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, TreePtr<GenericType>);
 
 /**
  * Generate the default macro implementation for aggregate members which are types.
@@ -497,6 +573,48 @@ const MacroVtable DefaultTypeMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultTyp
 TreePtr<> default_type_macro_member(CompileContext& compile_context, const SourceLocation& location) {
   return TreePtr<>(::new DefaultTypeMemberMacro(compile_context, location));
 }
+
+template<typename Result, typename Parameter>
+class LifecycleMacroCallback {
+  TreePtr<Term> Result::*m_result_member;
+  AggregateLifecycleParameters Parameter::*m_parameter_member;
+  TreePtr<EvaluateContext> m_evaluate_context;
+  SourceLocation m_location;
+  Parser::TokenExpression m_dest;
+  Maybe<Parser::TokenExpression> m_source;
+  SharedPtr<Parser::TokenExpression> m_body;
+  
+public:
+  LifecycleMacroCallback(TreePtr<Term> Result::*result_member, AggregateLifecycleParameters Parameter::*parameter_member,
+                         const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location,
+                         const Parser::TokenExpression& dest, const Maybe<Parser::TokenExpression>& source, const SharedPtr<Parser::TokenExpression>& body)
+  : m_result_member(result_member), m_parameter_member(parameter_member),
+  m_evaluate_context(evaluate_context), m_location(location),
+  m_dest(dest), m_source(source), m_body(body) {
+  }
+  
+  Result evaluate(const Parameter& parameter) {
+    const AggregateLifecycleParameters& lc_func = parameter.*m_parameter_member;
+    
+    PSI_STD::map<String, TreePtr<Term> > body_variables;
+    body_variables[m_dest.text.str()] = lc_func.dest;
+    if (m_source)
+      body_variables[m_source->text.str()] = lc_func.src;
+    TreePtr<EvaluateContext> body_context =
+      evaluate_context_dictionary(m_evaluate_context->module(), m_location, body_variables, m_evaluate_context);
+        
+    Result result;
+    result.*m_result_member = compile_from_bracket(m_body, body_context, m_location);
+    return result;
+  }
+  
+  template<typename V>
+  static void visit(V& v) {
+    // Only this things which require GC
+    v("evaluate_context", &LifecycleMacroCallback::m_evaluate_context)
+    ("location", &LifecycleMacroCallback::m_location);
+  }
+};
 
 class LifecycleMacro : public Macro {
   int m_which;
@@ -520,11 +638,21 @@ public:
     v("which", &LifecycleMacro::m_which);
   }
   
+  
+  template<typename Result, typename Parameter>
+  static SharedDelayedValue<Result,Parameter> callback(TreePtr<Term> Result::*result_member, AggregateLifecycleParameters Parameter::*parameter_member,
+                                                       const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location,
+                                                       const Parser::TokenExpression& dest, const Maybe<Parser::TokenExpression>& source,
+                                                       const SharedPtr<Parser::TokenExpression>& body) {
+    return SharedDelayedValue<Result,Parameter>(evaluate_context->compile_context(), location,
+                                                LifecycleMacroCallback<Result, Parameter>(result_member, parameter_member, evaluate_context, location, dest, source, body));
+  }
+  
   static AggregateMemberResult evaluate_impl(const LifecycleMacro& self,
                                              const TreePtr<Term>& PSI_UNUSED(value),
                                              const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                              const TreePtr<EvaluateContext>& evaluate_context,
-                                             const AggregateMemberParameter& argument,
+                                             const TreePtr<GenericType>& PSI_UNUSED(argument),
                                              const SourceLocation& location) {
     if (parameters.size() != 2)
       self.compile_context().error_throw(location, "Lifecycle macro expects two arguments");
@@ -535,54 +663,42 @@ public:
     if (!(body_expr = Parser::expression_as_token_type(parameters[1], Parser::token_square_bracket)))
       self.compile_context().error_throw(location, "Second argument to lifecycle macro is not a [...]");
     
-    TreePtr<Term> AggregateMemberResult::*member;
+    AggregateMemberResult result;
     
-    PSI_STD::map<String, TreePtr<Term> > body_variables;
     PSI_STD::vector<Parser::TokenExpression> args = Parser::parse_identifier_list(self.compile_context().error_context(), location.logical, args_expr->text);
     switch (self.m_which) {
     case which_init:
-      member = &AggregateMemberResult::lc_init;
       if (args.size() != 1)
         self.compile_context().error_throw(location, "Initialization function expects a single argument");
-      body_variables.insert(std::make_pair(args[0].text.str(), argument.lc_init.dest));
+      result.movable_callback = callback(&AggregateMovableResult::lc_init, &AggregateMovableParameter::lc_init, evaluate_context, location, args[0], default_, body_expr);
       break;
 
     case which_fini:
-      member = &AggregateMemberResult::lc_fini;
       if (args.size() != 1)
         self.compile_context().error_throw(location, "Finalization function expects a single argument");
-      body_variables.insert(std::make_pair(args[0].text.str(), argument.lc_fini.dest));
+      result.movable_callback = callback(&AggregateMovableResult::lc_fini, &AggregateMovableParameter::lc_fini, evaluate_context, location, args[0], default_, body_expr);
       break;
       
     case which_move:
-      member = &AggregateMemberResult::lc_move;
       if (args.size() != 2)
         self.compile_context().error_throw(location, "Move function expects two arguments");
-      body_variables.insert(std::make_pair(args[0].text.str(), argument.lc_move.dest));
-      body_variables.insert(std::make_pair(args[1].text.str(), argument.lc_move.src));
+      result.movable_callback = callback(&AggregateMovableResult::lc_move, &AggregateMovableParameter::lc_move, evaluate_context, location, args[0], args[1], body_expr);
       break;
       
     case which_copy:
-      member = &AggregateMemberResult::lc_copy;
       if (args.size() != 2)
         self.compile_context().error_throw(location, "Copy function expects two arguments");
-      body_variables.insert(std::make_pair(args[0].text.str(), argument.lc_copy.dest));
-      body_variables.insert(std::make_pair(args[1].text.str(), argument.lc_copy.src));
+      result.copyable_callback = callback(&AggregateCopyableResult::lc_copy, &AggregateCopyableParameter::lc_copy, evaluate_context, location, args[0], args[1], body_expr);
       break;
       
     default: PSI_FAIL("Unknown lifecycle 'which'");
     }
     
-    TreePtr<EvaluateContext> body_context =
-      evaluate_context_dictionary(evaluate_context->module(), location, body_variables, evaluate_context);
-        
-    AggregateMemberResult result;
-    result.*member = compile_from_bracket(body_expr, body_context, location);
     return result;
   }
 };
 
-const MacroVtable LifecycleMacro::vtable = PSI_COMPILER_MACRO(LifecycleMacro, "psi.compiler.LifecycleMacro", Macro, AggregateMemberResult, AggregateMemberParameter);
+const MacroVtable LifecycleMacro::vtable = PSI_COMPILER_MACRO(LifecycleMacro, "psi.compiler.LifecycleMacro", Macro, AggregateMemberResult, TreePtr<GenericType>);
 
 /// \brief Create the \c __init__ macro
 TreePtr<Term> lifecycle_init_macro(CompileContext& compile_context, const SourceLocation& location) {
@@ -626,7 +742,7 @@ public:
   static AggregateMemberResult cast_impl(const LifecycleDisableMacro& self,
                                          const TreePtr<Term>& PSI_UNUSED(value),
                                          const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
-                                         const AggregateMemberParameter& PSI_UNUSED(argument),
+                                         const TreePtr<GenericType>& PSI_UNUSED(argument),
                                          const SourceLocation& PSI_UNUSED(location)) {
     AggregateMemberResult result;
     result.no_move = true;
@@ -636,7 +752,7 @@ public:
   }
 };
 
-const MacroVtable LifecycleDisableMacro::vtable = PSI_COMPILER_MACRO(LifecycleDisableMacro, "psi.compiler.LifecycleDisableMacro", Macro, AggregateMemberResult, AggregateMemberParameter);
+const MacroVtable LifecycleDisableMacro::vtable = PSI_COMPILER_MACRO(LifecycleDisableMacro, "psi.compiler.LifecycleDisableMacro", Macro, AggregateMemberResult, TreePtr<GenericType>);
 
 /// \brief Create the \c __no_move__ macro
 TreePtr<Term> lifecycle_no_move_macro(CompileContext& compile_context, const SourceLocation& location) {

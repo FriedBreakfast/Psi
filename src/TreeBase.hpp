@@ -407,9 +407,20 @@ namespace Psi {
       ObjectPtr<SharedDelayedValueObject<DelayedEvaluationArgs<T, Arg> > > m_ptr;
       
     public:
+      SharedDelayedValue() {}
+      
       template<typename U>
-      SharedDelayedValue(CompileContext& compile_context, const SourceLocation& location, const U& callback_or_value)
-      : m_ptr(::new SharedDelayedValueObject<DelayedEvaluationArgs<T, Arg> >(compile_context, location, callback_or_value)) {
+      SharedDelayedValue(CompileContext& compile_context, const SourceLocation& location, const U& callback_or_value) {
+        reset(compile_context, location, callback_or_value);
+      }
+      
+      template<typename U>
+      void reset(CompileContext& compile_context, const SourceLocation& location, const U& callback_or_value) {
+        m_ptr.reset(::new SharedDelayedValueObject<DelayedEvaluationArgs<T, Arg> >(compile_context, location, callback_or_value));
+      }
+      
+      bool empty() const {
+        return !m_ptr;
       }
       
       template<typename X, typename Y>
@@ -418,12 +429,12 @@ namespace Psi {
       }
 
       template<typename X>
-      const T& get(const X& self) {
+      const T& get(const X& self) const {
         return m_ptr->value.get<X>(self);
       }
       
       /// \brief Get the value if it has already been built
-      T* get_maybe() {return m_ptr->value.get_maybe();}
+      T* get_maybe() const {return m_ptr->value.get_maybe();}
       /// \brief Get a value which must have already been computed
       const T& get_checked() const {return m_ptr->value.get_checked();}
       /// \brief True if the callback is currently executing

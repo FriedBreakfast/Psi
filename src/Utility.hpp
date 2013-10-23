@@ -98,6 +98,7 @@ namespace Psi {
     
   public:
     Maybe() : m_full(false) {}
+    Maybe(const DefaultConstructor&) : m_full(false) {}
     template<typename U> Maybe(const U& value) : m_full(true) {new (m_storage.ptr()) T (value);}
     Maybe(const Maybe<T>& src) : m_full(src) {if (m_full) new (m_storage.ptr()) T (*src);}
     template<typename U> Maybe(const Maybe<U>& src) : m_full(src) {if (m_full) new (m_storage.ptr()) T (*src);}

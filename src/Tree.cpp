@@ -1186,6 +1186,7 @@ namespace Psi {
 
     void GenericType::local_complete_impl(const GenericType& self) {
       self.member_type();
+      self.primitive_mode();
       self.overloads();
     }
 
