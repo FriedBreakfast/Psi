@@ -11,7 +11,6 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
 //@{
   static TreePtr<Term> metatype(CompileContext& compile_context);
   static TreePtr<Term> size_type(CompileContext& compile_context);
-  static TreePtr<Term> string_element_type(CompileContext& compile_context);
   static TreePtr<Term> bottom_type(CompileContext& compile_context);
   static TreePtr<Term> empty_type(CompileContext& compile_context);
   static TreePtr<Term> boolean_type(CompileContext& compile_context);

@@ -21,7 +21,6 @@ namespace Psi {
     
     PSI_COMPILER_EXPORT TreePtr<Term> new_macro(CompileContext& compile_context, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<Term> namespace_macro(CompileContext& compile_context, const SourceLocation& location);
-    PSI_COMPILER_EXPORT TreePtr<Term> number_type_macro(CompileContext& compile_context, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<Term> builtin_function_macro(CompileContext& compile_context, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<Term> number_value_macro(CompileContext& compile_context, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<Term> pointer_macro(CompileContext& compile_context, const SourceLocation& location);

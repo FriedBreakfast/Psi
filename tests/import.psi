@@ -1,7 +1,5 @@
-char : number_type {u8};
-int : number_type {i32}; 
 libc : library {};
-puts : libc.symbol (function_type (::pointer(char) -: int)) {"type":"c","name":"puts"};
+puts : libc.symbol (function_type (::pointer(ubyte) -: int)) {"type":"c","name":"puts"};
 
 main : function () [puts({Hello World!});];
 

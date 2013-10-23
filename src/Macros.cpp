@@ -461,51 +461,6 @@ namespace Psi {
       return make_macro_term(m, location);
     }
     
-    namespace {
-      static const std::map<std::string, NumberType::ScalarType> number_type_names =
-      boost::assign::map_list_of("bool", NumberType::n_bool)
-      ("i8", NumberType::n_i8)("i16", NumberType::n_i16)("i32", NumberType::n_i32)("i64", NumberType::n_i64)("iptr", NumberType::n_iptr)
-      ("u8", NumberType::n_u8)("u16", NumberType::n_u16)("u32", NumberType::n_u32)("u64", NumberType::n_u64)("uptr", NumberType::n_uptr);
-    }
-    
-    class NumberTypeMacro : public MacroMemberCallback {
-    public:
-      static const MacroMemberCallbackVtable vtable;
-
-      NumberTypeMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
-      }
-
-      static TreePtr<Term> evaluate_impl(const NumberTypeMacro& self,
-                                         const TreePtr<Term>&,
-                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                         const TreePtr<EvaluateContext>&,
-                                         const SourceLocation& location) {
-        if (parameters.size() != 1)
-          self.compile_context().error_throw(location, "Wrong number of parameters to builtin type macro");
-        
-        SharedPtr<Parser::TokenExpression> name;
-        if (!(name = Parser::expression_as_token_type(parameters[0], Parser::token_brace)))
-          self.compile_context().error_throw(location, "Parameter to builtin type macro is not a {...}");
-        
-        std::string name_s = name->text.str();
-        std::map<std::string, NumberType::ScalarType>::const_iterator it = number_type_names.find(name_s);
-        if (it == number_type_names.end())
-          self.compile_context().error_throw(location, boost::format("Unknown builtin type '%s'") % name_s);
-        
-        
-        return TermBuilder::number_type(self.compile_context(), it->second);
-      }
-    };
-    
-    const MacroMemberCallbackVtable NumberTypeMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(NumberTypeMacro, "psi.compiler.NumberTypeMacro", MacroMemberCallback);
-    
-    TreePtr<Term> number_type_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new NumberTypeMacro(compile_context, location));
-      TreePtr<Macro> m = make_macro(compile_context, location, callback);
-      return make_macro_term(m, location);
-    }
-    
     class BuiltinFunctionMacro : public MacroMemberCallback {
     public:
       static const MacroMemberCallbackVtable vtable;

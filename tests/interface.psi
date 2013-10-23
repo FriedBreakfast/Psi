@@ -1,7 +1,5 @@
-char : number_type {u8};
-int : number_type {i32}; 
 libc : library {};
-str : pointer(char);
+str : pointer(ubyte);
 puts : libc.symbol (function_type (::str -: int)) {"type":"c","name":"puts"};
 
 ti : interface (X:type) [
@@ -12,7 +10,7 @@ invoke_puts : function (X:type @ ti(X) => a:X) [
   puts(ti.invoke(a));
 ];
 
-type1 : struct [] [
+type1 : struct [
   ti [
     invoke : (a) [
       {test1}
@@ -20,7 +18,7 @@ type1 : struct [] [
   ];
 ];
 
-type2 : struct [] [
+type2 : struct [
   ti [
     invoke : (a) [
       {test2}

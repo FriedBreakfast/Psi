@@ -7,11 +7,6 @@ TreePtr<Term> TermBuilder::metatype(CompileContext& compile_context) {
   return compile_context.builtins().metatype;
 }
 
-/// \brief Get the type of string elements.
-TreePtr<Term> TermBuilder::string_element_type(CompileContext& compile_context) {
-  return compile_context.builtins().string_element_type;
-}
-
 /// \brief Get the type of expressions which cannot exit normally
 TreePtr<Term> TermBuilder::bottom_type(CompileContext& compile_context) {
   return compile_context.builtins().bottom_type;
@@ -101,7 +96,7 @@ TreePtr<StructType> TermBuilder::struct_type(CompileContext& compile_context, co
 
 /// \brief Get a string type of fixed length.
 TreePtr<Term> TermBuilder::string_type(const TreePtr<Term>& length, const SourceLocation& location) {
-  return array_type(string_element_type(length->compile_context()), length, location);
+  return array_type(length->compile_context().builtins().u8_type, length, location);
 }
 
 /// \copydoc TermBuilder::string_type

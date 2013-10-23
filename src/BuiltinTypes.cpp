@@ -132,19 +132,17 @@ namespace Psi {
       
       boolean_type = compile_context.get_functional(NumberType(NumberType::n_bool), psi_location.named_child("Bool"));
 
-      i8_type = compile_context.get_functional(NumberType(NumberType::n_i8), psi_location.named_child("Int8"));
-      i16_type = compile_context.get_functional(NumberType(NumberType::n_i16), psi_location.named_child("Int16"));
-      i32_type = compile_context.get_functional(NumberType(NumberType::n_i32), psi_location.named_child("Int32"));
-      i64_type = compile_context.get_functional(NumberType(NumberType::n_i64), psi_location.named_child("Int64"));
-      iptr_type = compile_context.get_functional(NumberType(NumberType::n_iptr), psi_location.named_child("IntPtr"));
+      i8_type = compile_context.get_functional(NumberType(NumberType::n_i8), psi_location.named_child("byte"));
+      i16_type = compile_context.get_functional(NumberType(NumberType::n_i16), psi_location.named_child("short"));
+      i32_type = compile_context.get_functional(NumberType(NumberType::n_i32), psi_location.named_child("int"));
+      i64_type = compile_context.get_functional(NumberType(NumberType::n_i64), psi_location.named_child("long"));
+      iptr_type = compile_context.get_functional(NumberType(NumberType::n_iptr), psi_location.named_child("size"));
 
-      u8_type = compile_context.get_functional(NumberType(NumberType::n_u8), psi_location.named_child("UInt8"));
-      u16_type = compile_context.get_functional(NumberType(NumberType::n_u16), psi_location.named_child("UInt16"));
-      u32_type = compile_context.get_functional(NumberType(NumberType::n_u32), psi_location.named_child("UInt32"));
-      u64_type = compile_context.get_functional(NumberType(NumberType::n_u64), psi_location.named_child("UInt64"));
-      uptr_type = compile_context.get_functional(NumberType(NumberType::n_uptr), psi_location.named_child("UIntPtr"));
-
-      string_element_type = u8_type;
+      u8_type = compile_context.get_functional(NumberType(NumberType::n_u8), psi_location.named_child("ubyte"));
+      u16_type = compile_context.get_functional(NumberType(NumberType::n_u16), psi_location.named_child("ushort"));
+      u32_type = compile_context.get_functional(NumberType(NumberType::n_u32), psi_location.named_child("uint"));
+      u64_type = compile_context.get_functional(NumberType(NumberType::n_u64), psi_location.named_child("ulong"));
+      uptr_type = compile_context.get_functional(NumberType(NumberType::n_uptr), psi_location.named_child("usize"));
       
       macro_term_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroTermTag"));
       macro_member_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroMemberTag"));

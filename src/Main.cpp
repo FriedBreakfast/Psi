@@ -125,13 +125,26 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
   //global_names["__number__"] = TreePtr<Term>();
   global_names["__brace__"] = string_macro(compile_context, psi_location.named_child("cstring"));
-  global_names["number_type"] = number_type_macro(compile_context, psi_location.named_child("number_type"));
   global_names["builtin_function"] = builtin_function_macro(compile_context, psi_location.named_child("builtin_function"));
   global_names["number_value"] = number_value_macro(compile_context, psi_location.named_child("number_value"));
   
   global_names["type"] = compile_context.builtins().metatype;
   global_names["pointer"] = pointer_macro(compile_context, psi_location.named_child("pointer"));
   global_names["struct"] = struct_macro(compile_context, psi_location.named_child("struct"));
+  
+  global_names["bool"] = TermBuilder::boolean_type(compile_context);
+  
+  global_names["byte"] = TermBuilder::number_type(compile_context, NumberType::n_i8);
+  global_names["short"] = TermBuilder::number_type(compile_context, NumberType::n_i16);
+  global_names["int"] = TermBuilder::number_type(compile_context, NumberType::n_i32);
+  global_names["long"] = TermBuilder::number_type(compile_context, NumberType::n_i64);
+  global_names["size"] = TermBuilder::number_type(compile_context, NumberType::n_iptr);
+
+  global_names["ubyte"] = TermBuilder::number_type(compile_context, NumberType::n_u8);
+  global_names["ushort"] = TermBuilder::number_type(compile_context, NumberType::n_u16);
+  global_names["uint"] = TermBuilder::number_type(compile_context, NumberType::n_u32);
+  global_names["ulong"] = TermBuilder::number_type(compile_context, NumberType::n_u64);
+  global_names["usize"] = TermBuilder::number_type(compile_context, NumberType::n_uptr);
   
   global_names["__init__"] = lifecycle_init_macro(compile_context, psi_location.named_child("__init__"));
   global_names["__fini__"] = lifecycle_fini_macro(compile_context, psi_location.named_child("__fini__"));
