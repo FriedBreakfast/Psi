@@ -14,4 +14,4 @@ Makefile
 /*.anjuta
 /.anjuta/
 /.anjuta_sym_db.db
-
+*.pyc

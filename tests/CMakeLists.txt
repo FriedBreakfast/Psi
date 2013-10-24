@@ -1,3 +1,5 @@
+add_subdirectory(interactive)
+
 find_package(PythonInterp REQUIRED)
 
 macro(add_psi_test name)

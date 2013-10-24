@@ -35,7 +35,8 @@ namespace {
     opt_key_help,
     opt_key_config,
     opt_key_set,
-    opt_key_nodefault
+    opt_key_nodefault,
+    opt_key_testprompt
   };
   
   struct OptionSet {
@@ -43,10 +44,12 @@ namespace {
     Psi::PropertyValue configuration;
     boost::optional<std::string> filename;
     std::vector<std::string> arguments;
+    bool test_prompt;
   };
   
   bool parse_options(int argc, const char **argv, OptionSet& options) {
     options.program_name = Psi::find_program_name(argv[0]);
+    options.test_prompt = false;
     
     std::string help_extra = " [file] [args] ...";
     Psi::OptionsDescription desc;
@@ -56,6 +59,7 @@ namespace {
     desc.opts.push_back(Psi::option_description(opt_key_config, true, 'c', "config", "Read a configuration file"));
     desc.opts.push_back(Psi::option_description(opt_key_set, true, 's', "set", "Set a configuration property"));
     desc.opts.push_back(Psi::option_description(opt_key_nodefault, false, '\0', "nodefault", "Disable loading of default configuration files"));
+    desc.opts.push_back(Psi::option_description(opt_key_testprompt, false, '\0', "testprompt", "Disable interpreter prompt and print a null character to separate error logs. Used for automated testing."));
     
     bool read_default = true;
     std::vector<std::string> config_files;
@@ -93,6 +97,10 @@ namespace {
         
       case opt_key_set:
         extra_config.push_back(val.value);
+        break;
+        
+      case opt_key_testprompt:
+        options.test_prompt = true;
         break;
         
       default: PSI_FAIL("Unexpected option key");
@@ -263,27 +271,30 @@ namespace {
   };
 #endif
   
-  boost::optional<std::string> interpreter_read_line(const char *prompt) {
+  boost::optional<std::string> interpreter_read_line(bool test_mode, const char *prompt) {
 #if PSI_ENABLE_READLINE
-    ScopedMallocPtr<char> line(readline(prompt));
-    if (line.get()) {
-      if (*line.get())
-        add_history(line.get());
-      return std::string(line.get());
-    } else {
-      std::cout << std::endl;
-      return boost::none;
+    if (!test_mode) {
+      ScopedMallocPtr<char> line(readline(prompt));
+      if (line.get()) {
+        if (*line.get())
+          add_history(line.get());
+        return std::string(line.get());
+      } else {
+        std::cout << std::endl;
+        return boost::none;
+      }
     }
-#else
+#endif
+
     if (!std::cin.good()) {
       std::cout << std::endl;
       return boost::none;
     }
-    std::cout << prompt;
+    if (!test_mode)
+      std::cout << prompt;
     std::string result;
     std::getline(std::cin, result);
     return result;
-#endif
   }
 
   /**
@@ -381,7 +392,7 @@ int psi_interpreter_repl(const OptionSet& opts) {
   
   while (true) {
     unsigned start_line = ++line_no;
-    boost::optional<std::string> maybe_input = interpreter_read_line(">>> ");
+    boost::optional<std::string> maybe_input = interpreter_read_line(opts.test_prompt, ">>> ");
     if (!maybe_input)
       return EXIT_SUCCESS;
     std::string input = *maybe_input;
@@ -389,7 +400,7 @@ int psi_interpreter_repl(const OptionSet& opts) {
     while (!input_finished(input)) {
       input += '\n';
       ++line_no;
-      boost::optional<std::string> continuation = interpreter_read_line("... ");
+      boost::optional<std::string> continuation = interpreter_read_line(opts.test_prompt, "... ");
       if (!continuation)
         return EXIT_FAILURE; // Quit mid-command
       input += *continuation;
@@ -421,6 +432,11 @@ int psi_interpreter_repl(const OptionSet& opts) {
         names[ii->first] = ii->second;
     } catch (CompileException&) {
       // Error details should already have been printed, so ignore error
+    }
+    
+    if (opts.test_prompt) {
+      std::cout << '\0' << std::flush;
+      std::cerr << '\0' << std::flush;
     }
   }
   
