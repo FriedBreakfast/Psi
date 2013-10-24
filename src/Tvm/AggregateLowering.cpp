@@ -930,6 +930,9 @@ namespace Psi {
       TypeSizeAlignment tsa = type.size_alignment_const();
       offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
       PSI_ASSERT((tsa.alignment != 0) && ((tsa.alignment & (tsa.alignment - 1)) == 0)); // Power of 2 check
+      
+      if (tsa.size == 0)
+        return;
 
       switch (type.mode()) {
       case LoweredType::mode_register: {
@@ -955,12 +958,13 @@ namespace Psi {
       offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
       PSI_ASSERT((tsa.alignment != 0) && ((tsa.alignment & (tsa.alignment - 1)) == 0)); // Power of 2 check
 
+      if (tsa.size == 0)
+        return;
+
       if (!expand_aggregates || isa<IntegerType>(value->type()) || isa<PointerType>(value->type()) || isa<FloatType>(value->type())) {
-        if (tsa.size != 0) {
-          ExplodeEntry entry = {offset, tsa, value};
-          entries.push_back(entry);
-          offset += tsa.size;
-        }
+        ExplodeEntry entry = {offset, tsa, value};
+        entries.push_back(entry);
+        offset += tsa.size;
       } else if (ValuePtr<StructValue> struct_val = dyn_cast<StructValue>(value)) {
         for (unsigned ii = 0, ie = struct_val->n_members(); ii != ie; ++ii)
           explode_constant_value(struct_val->member_value(ii), entries, offset, location, expand_aggregates);
@@ -1036,6 +1040,9 @@ namespace Psi {
       TypeSizeAlignment tsa = value.type().size_alignment_const();
       PSI_ASSERT((tsa.alignment != 0) && ((tsa.alignment & (tsa.alignment - 1)) == 0)); // Power of 2 check
       offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
+      
+      if (tsa.size == 0)
+        return;
       
       switch (value.mode()) {
       case LoweredValue::mode_register:

@@ -81,6 +81,11 @@ Non-essential dependencies
 
 Several pieces of software are useful but not required for building Psi.
 
+* A readline-style library, used for line editing in the command-line interpreter.
+  There are several compatible libraries, the most widely used being `GNU Readline`_
+  but NetBSD libedit and MinGWEditLine_ also work.
+  The version of CMake on older Ubuntu, and presumably Debian, versions does not have proper
+  multi-arch support so the CMake variable ``READLINE_LIB`` may have to be set manually.
 * Python_: Test wrapper scripts are written in Python, so most tests are
   dependent on a Python install being available.
 * Sphinx_: Required to build HTML and ePub documentation.
@@ -89,6 +94,8 @@ Several pieces of software are useful but not required for building Psi.
 * Docutils_: Used to generate the HTML version of this readme file. It should be installed
   as part of Sphinx if you have that.
 
+.. _GNU Readline: http://www.gnu.org/s/readline/
+.. _MinGWEditLine: http://mingweditline.sourceforge.net/
 .. _Python: http://python.org/
 .. _Sphinx: http://sphinx-doc.org/
 .. _Doxygen: http://www.doxygen.org/

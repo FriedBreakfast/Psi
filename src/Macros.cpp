@@ -71,7 +71,7 @@ namespace Psi {
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const MacroTermArgument& argument,
                                          const SourceLocation& location) {
-        if (tree_isa<FunctionType>(value->type)) {
+        if (term_unwrap_isa<FunctionType>(value->type)) {
           return compile_function_invocation(value, parameters, evaluate_context, location);
         } else {
           return Macro::evaluate_impl(self, value, parameters, evaluate_context, argument, location);

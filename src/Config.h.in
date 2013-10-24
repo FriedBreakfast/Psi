@@ -33,4 +33,7 @@
 #define PSI_TVM_CC_TCC_INCLUDE "${PSI_TVM_CC_TCC_INCLUDE}"
 #define PSI_TVM_CC_TCC_PATH "${PSI_TVM_CC_TCC_PATH}"
 
+/// Whether to enable readline support in the command line interface
+#cmakedefine01 PSI_ENABLE_READLINE
+
 #endif

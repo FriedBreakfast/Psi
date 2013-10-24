@@ -211,7 +211,7 @@ namespace Psi {
   }
   
   namespace {
-    const char *escape_src = "abfnrtv\'\"";
+    const char *escape_src = "abfnrtv\'\"\\";
     const char *escape_dest = "\a\b\f\n\r\t\v\'\"\\";
   }
   
@@ -255,6 +255,9 @@ namespace Psi {
           char data[4];
           grab_digits_up_to(data, 3, ii, ie, c_isodigit);
           unicode_encode(r, strtol(data, NULL, 8));
+        } else if (*ii == '\n') {
+          // Eat newline after backslash
+          ++ii;
         }
       } else {
         unsigned char uc = *ii;

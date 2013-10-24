@@ -132,8 +132,8 @@ namespace Psi {
       void reset() {ObjectPtr<T>().swap(*this);}
       void reset(T *ptr) {ObjectPtr<T>(ptr).swap(*this);}
 
-      T& operator * () const {return *get();}
-      T* operator -> () const {return get();}
+      T& operator * () const {T *ptr = get(); PSI_ASSERT(ptr); return *ptr;}
+      T* operator -> () const {T *ptr = get(); PSI_ASSERT(ptr); return ptr;}
 
       operator safe_bool_type () const {return get() ? &ObjectPtr::safe_bool_true : 0;}
       bool operator ! () const {return !get();}

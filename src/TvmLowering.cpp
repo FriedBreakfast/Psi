@@ -620,6 +620,10 @@ void TvmObjectCompilerBase::run_module_global(const TreePtr<ModuleGlobal>& globa
         tvm_lower_init(*this, global_var->module, dtor_body, destructor, status.dependencies);
         status.fini = destructor;
       }
+
+      // The initialization and finalization functions will always depend on the global,
+      // but this is not a genuine circular dependency
+      status.dependencies.erase(global_var);
     }
   } else if (TreePtr<GlobalStatement> global_stmt = dyn_treeptr_cast<GlobalStatement>(global)) {
     // Only global variable-like statements are built here
@@ -644,6 +648,10 @@ void TvmObjectCompilerBase::run_module_global(const TreePtr<ModuleGlobal>& globa
         tvm_lower_init(*this, global_stmt->module, dtor_body, destructor, status.dependencies);
         status.fini = destructor;
       }
+
+      // The initialization and finalization functions will always depend on the global,
+      // but this is not a genuine circular dependency
+      status.dependencies.erase(global_var);
     }
   } else {
     PSI_FAIL("Unknown module global type");
@@ -818,7 +826,7 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_module_global(const TreePtr<Mod
   
   try {
     topological_sort(sorted.begin(), sorted.end(), dependencies);
-  } catch (std::logic_error&) {
+  } catch (std::runtime_error&) {
     compile_context.error_throw(global->location(), "Circular dependency found in dependents of global");
   }
   

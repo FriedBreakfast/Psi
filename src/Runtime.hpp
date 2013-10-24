@@ -103,6 +103,7 @@ namespace Psi {
 
   public:
     template<typename> friend class SharedPtr;
+    friend class SharedPtrHandle;
     typedef T value_type;
 
     SharedPtr() {
@@ -202,6 +203,60 @@ namespace Psi {
     PSI_ASSERT(dynamic_cast<T*>(src.get()) == src.get());
     return SharedPtr<T>(src, static_cast<T*>(src.get()));
   }
+  
+  /**
+   * Similar to SharedPtr, but does not actually contain a pointer, only carries ownership.
+   */
+  class SharedPtrHandle {
+    SharedPtrOwner *m_owner;
+    
+    void init(SharedPtrOwner *owner) {
+      m_owner = owner;
+      if (owner)
+        ++m_owner->use_count;
+    }
+
+    void swap(SharedPtrHandle& other) {
+      std::swap(m_owner, other.m_owner);
+    }
+
+    typedef void (SharedPtrHandle::*safe_bool_type) () const;
+    void safe_bool_true() const {}
+    
+  public:
+    SharedPtrHandle() : m_owner(0) {}
+    SharedPtrHandle(const SharedPtrHandle& ptr) {init(ptr.m_owner);}
+    template<typename T> SharedPtrHandle(const SharedPtr<T>& ptr) {init(ptr.m_c.owner);}
+
+    ~SharedPtrHandle() {
+      if (m_owner) {
+        if (--m_owner->use_count == 0)
+          m_owner->vptr->destroy(m_owner);
+      }
+    }
+
+    SharedPtrHandle& operator = (const SharedPtrHandle& src) {
+      SharedPtrHandle(src).swap(*this);
+      return *this;
+    }
+    
+    template<typename T>
+    SharedPtrHandle& operator = (const SharedPtr<T>& src) {
+      SharedPtrHandle(src).swap(*this);
+      return *this;
+    }
+
+    void reset() {
+      SharedPtrHandle().swap(*this);
+    }
+
+    bool operator ! () const {return !m_owner;}
+    operator safe_bool_type () const {return m_owner ? &SharedPtrHandle::safe_bool_true : 0;}
+    
+    friend void swap(SharedPtrHandle& a, SharedPtrHandle& b) {
+      a.swap(b);
+    }
+  };
 
   struct String_C {
     PsiSize length;

@@ -9,8 +9,8 @@ Text::Text()
 : begin(NULL), end(NULL) {
 }
 
-Text::Text(const PhysicalSourceLocation& location_, const char *begin_, const char *end_)
-: location(location_), begin(begin_), end(end_) {
+Text::Text(const PhysicalSourceLocation& location_, const Psi::SharedPtrHandle& data_handle_, const char *begin_, const char *end_)
+: location(location_), data_handle(data_handle_), begin(begin_), end(end_) {
 }
 
 String Text::str() const {
@@ -110,13 +110,20 @@ enum LongToken {
 };
 
 class LexerImpl {
+  SharedPtrHandle m_data_handle;
+  
 public:
   typedef LexerValue<int, SharedPtr<TokenExpression> > ValueType;
 
+  explicit LexerImpl(const SharedPtrHandle& data_handle);
   ValueType lex(LexerPosition& pos);
   std::string error_name(int tok);
   std::string error_name(const ValueType& value);
 };
+
+LexerImpl::LexerImpl(const SharedPtrHandle& data_handle)
+: m_data_handle(data_handle) {
+}
 
 std::string LexerImpl::error_name(int tok) {
   switch (tok) {
@@ -194,7 +201,7 @@ LexerImpl::ValueType LexerImpl::lex(LexerPosition& pos) {
     }
 
     SharedPtr<TokenExpression> expr(new TokenExpression(pos.location(), token_number,
-                                                        Text(pos.location(), pos.token_start(), pos.token_end())));
+                                                        Text(pos.location(), m_data_handle, pos.token_start(), pos.token_end())));
 
     return ValueType(tok_number, pos.location(), expr);
   } else if (c_isalpha(pos.current()) || (pos.current() == '_')) {
@@ -207,7 +214,7 @@ LexerImpl::ValueType LexerImpl::lex(LexerPosition& pos) {
     }
     
     SharedPtr<TokenExpression> expr(new TokenExpression(pos.location(), token_identifier,
-                                                        Text(pos.location(), pos.token_start(), pos.token_end())));
+                                                        Text(pos.location(), m_data_handle, pos.token_start(), pos.token_end())));
     
     return ValueType(tok_id, pos.location(), expr);
   } else if (std::strchr("<>=!", pos.current())) {
@@ -331,7 +338,7 @@ LexerImpl::ValueType LexerImpl::lex(LexerPosition& pos) {
         --text_location.last_column;
 
         SharedPtr<TokenExpression> expr(new TokenExpression(pos.location(), block_type,
-                                                            Text(text_location, pos.token_start() + 1, pos.token_end() - 1)));
+                                                            Text(text_location, m_data_handle, pos.token_start() + 1, pos.token_end() - 1)));
 
         return ValueType(token_type, pos.location(), expr);
       } else if (pos.end()) {
@@ -474,7 +481,7 @@ SharedPtr<Statement> ParserImpl::parse_statement() {
  * \param text Text to parse.
  */
 PSI_STD::vector<SharedPtr<Statement> > parse_statement_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
-  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end);
+  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end, LexerImpl(text.data_handle));
   PSI_STD::vector<SharedPtr<Statement> > result = ParserImpl(&lexer).parse_statement_list();
   lexer.expect(tok_eof);
   return result;
@@ -519,7 +526,7 @@ SharedPtr<Statement> ParserImpl::parse_namespace_entry() {
  * \param text Text to parse.
  */
 PSI_STD::vector<SharedPtr<Statement> > parse_namespace(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
-  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end);
+  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end, LexerImpl(text.data_handle));
   PSI_STD::vector<SharedPtr<Statement> > result = ParserImpl(&lexer).parse_namespace();
   lexer.expect(tok_eof);
   return result;
@@ -543,7 +550,7 @@ PSI_STD::vector<SharedPtr<Expression> > ParserImpl::parse_positional_list() {
  * \param text Text to parse.
  */
 PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
-  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end);
+  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end, LexerImpl(text.data_handle));
   PSI_STD::vector<SharedPtr<Expression> > result = ParserImpl(&lexer).parse_positional_list();
   lexer.expect(tok_eof);
   return result;
@@ -717,7 +724,7 @@ PSI_STD::vector<SharedPtr<Expression> > ParserImpl::parse_token_list() {
  * \brief Parse a single expression.
  */
 SharedPtr<Expression> parse_expression(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
-  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end);
+  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end, LexerImpl(text.data_handle));
   SharedPtr<Expression> result = ParserImpl(&lexer).parse_expression();
   lexer.expect(tok_eof);
   return result;
@@ -745,7 +752,7 @@ PSI_STD::vector<TokenExpression> ParserImpl::parse_identifier_list() {
  * A trailing comma is accepted.
  */
 PSI_STD::vector<TokenExpression> parse_identifier_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
-  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end);
+  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end, LexerImpl(text.data_handle));
   PSI_STD::vector<TokenExpression> result = ParserImpl(&lexer).parse_identifier_list();
   lexer.expect(tok_eof);
   return result;
@@ -850,7 +857,7 @@ ArgumentDeclarations ParserImpl::parse_function_argument_declarations() {
  * \param text Text to parse.
  */
 ArgumentDeclarations parse_function_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
-  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end);
+  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end, LexerImpl(text.data_handle));
   ArgumentDeclarations result = ParserImpl(&lexer).parse_function_argument_declarations();
   lexer.expect(tok_eof);
   return result;
@@ -863,7 +870,7 @@ ArgumentDeclarations parse_function_argument_declarations(CompileErrorContext& e
  * \param text Text to parse.
  */
 PSI_STD::vector<SharedPtr<FunctionArgument> > parse_type_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
-  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end);
+  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end, LexerImpl(text.data_handle));
   PSI_STD::vector<SharedPtr<FunctionArgument> > result = ParserImpl(&lexer).parse_argument_list_declare();
   lexer.expect(tok_eof);
   return result;

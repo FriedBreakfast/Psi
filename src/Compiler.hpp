@@ -536,6 +536,47 @@ namespace Psi {
 
     PSI_COMPILER_EXPORT TreePtr<Term> compile_function_invocation(const TreePtr<Term>& function, const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                                                   const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
+
+    /**
+     * \brief Callback which compile_script calls on each statement.
+     */
+    class CompileScriptCallback {
+    public:
+      /**
+       * \brief Called for each statement in the list.
+       */
+      virtual TreePtr<Term> run(unsigned index, const TreePtr<Term>& value, const SourceLocation& location) const = 0;
+    };
+    
+    struct CompileScriptResult {
+      PSI_STD::map<String, TreePtr<Term> > names;
+      PSI_STD::vector<TreePtr<Global> > globals;
+    };
+    
+    PSI_COMPILER_EXPORT CompileScriptResult compile_script(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements,
+                                                           const TreePtr<EvaluateContext>& evaluate_context, const CompileScriptCallback& callback,
+                                                           const SourceLocation& location);
+
+    template<typename T>
+    class CompileScriptCallbackImpl : public CompileScriptCallback {
+      const T *m_cb;
+      
+    public:
+      CompileScriptCallbackImpl(const T& cb) : m_cb(&cb) {}
+
+      virtual TreePtr<Term> run(unsigned index, const TreePtr<Term>& value, const SourceLocation& location) const {
+        return (*m_cb)(index, value, location);
+      }
+    };
+    
+    /// \copydoc compile_script
+    template<typename T>
+    CompileScriptResult compile_script(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements,
+                                       const TreePtr<EvaluateContext>& evaluate_context, const T& callback,
+                                       const SourceLocation& location) {
+      CompileScriptCallbackImpl<T> impl(callback);
+      return compile_script(statements, evaluate_context, static_cast<const CompileScriptCallback&>(impl), location);
+    }
   }
 }
 

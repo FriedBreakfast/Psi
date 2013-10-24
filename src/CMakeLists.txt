@@ -2,6 +2,9 @@ include_directories(${Boost_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
 if(TCC_INCLUDE)
   include_directories(${TCC_INCLUDE})
 endif()
+if(PSI_ENABLE_READLINE)
+  include_directories(${READLINE_INCLUDE})
+endif()
 
 configure_file(Config.h.in Config.h)
 
@@ -190,6 +193,9 @@ Main.cpp
 OptionParser.cpp OptionParser.hpp
 )
 target_link_libraries(psi psi-compiler)
+if(PSI_ENABLE_READLINE)
+  target_link_libraries(psi ${READLINE_LIB})
+endif()
 
 #install(TARGETS psi
 #  LIBRARY DESTINATION lib

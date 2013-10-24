@@ -96,6 +96,13 @@ endif()
 # Locate Boost
 find_package(Boost 1.36.0 REQUIRED)
 
+# Locate readline or libedit
+find_path(READLINE_INCLUDE readline.h PATHS /usr/include/readline /usr/include/editline)
+find_library(READLINE_LIB NAMES readline edit)
+if(READLINE_INCLUDE AND READLINE_LIB)
+  set(PSI_ENABLE_READLINE 1)
+endif()
+
 add_custom_target(doc)
 
 find_package(Doxygen)
