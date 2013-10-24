@@ -27,7 +27,7 @@ namespace CBackend {
 struct ValueBuilderCallbacks {
   static const unsigned small_array_size = 8;
     
-  static CExpression* empty_value_callback(ValueBuilder& builder, const ValuePtr<EmptyValue>& term) {
+  static CExpression* empty_value_callback(ValueBuilder& PSI_UNUSED(builder), const ValuePtr<EmptyValue>& PSI_UNUSED(term)) {
     return NULL;
   }
   
@@ -45,7 +45,8 @@ struct ValueBuilderCallbacks {
     char buf[buf_size];
     std::size_t n = term->value().print(CompileErrorPair(builder.error_context(), term->location()),
                                         buf, buf_size, term->is_signed(), 10);
-    std::strcat(buf, suffix->c_str());
+    PSI_ASSERT(buf_size > n + suffix->size());
+    std::strcpy(buf + n, suffix->c_str());
     CType *ty = builder.build_type(term->type());
     CExpression *expr = builder.c_builder().literal(&term->location(), ty, builder.c_builder().strdup(buf));
     if (term->is_signed() && term->value().sign_bit())

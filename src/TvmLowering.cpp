@@ -884,8 +884,8 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_library_symbol(const TreePtr<Li
   if (!m_library_module)
     m_library_module = boost::make_shared<Tvm::Module>(&m_target->tvm_context(), "(lib)", lib_sym->location());
   
-  Tvm::ValuePtr<Tvm::Global> result;
-  if (result = m_library_module->get_member(sym.name)) {
+  Tvm::ValuePtr<Tvm::Global> result = m_library_module->get_member(sym.name);
+  if (result) {
     if (result->type() != sym.type)
       m_target->compile_context().error_throw(lib_sym->location(), "Conflicting types for external global");
   } else {

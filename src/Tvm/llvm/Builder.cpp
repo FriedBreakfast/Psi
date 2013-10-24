@@ -9,6 +9,7 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/make_shared.hpp>
 
+#include "LLVMPushWarnings.hpp"
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/raw_os_ostream.h>
@@ -16,6 +17,7 @@
 #include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetLibraryInfo.h>
+#include "LLVMPopWarnings.hpp"
 
 #if PSI_DEBUG
 #include <iostream>

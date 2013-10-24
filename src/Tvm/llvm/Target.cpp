@@ -8,10 +8,12 @@
 #include <boost/optional.hpp>
 #include <boost/ref.hpp>
 
+#include "LLVMPushWarnings.hpp"
 #include <llvm/ADT/Triple.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/TargetRegistry.h>
+#include "LLVMPopWarnings.hpp"
 
 namespace Psi {
   namespace Tvm {

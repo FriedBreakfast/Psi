@@ -425,12 +425,12 @@ namespace Psi {
       
       template<typename X, typename Y>
       const T& get(const X& self, Y (X::*getter) () const = NULL, void (X::*checker) (T&) const = NULL) const {
-        return m_ptr->value.get<X,Y>(self, getter, checker);
+        return m_ptr->value.template get<X,Y>(self, getter, checker);
       }
 
       template<typename X>
       const T& get(const X& self) const {
-        return m_ptr->value.get<X>(self);
+        return m_ptr->value.template get<X>(self);
       }
       
       /// \brief Get the value if it has already been built

@@ -5,7 +5,7 @@
 namespace Psi {
   namespace Tvm {
     namespace {
-      PSI_ATTRIBUTE((PSI_NORETURN)) Value* common_source_fail();
+      PSI_ATTRIBUTE((PSI_NORETURN)) Value* common_source_fail(const CompileErrorPair& error_pair);
       
       Value* common_source_fail(const CompileErrorPair& error_pair) {
         error_pair.error_throw("cannot find common term source");

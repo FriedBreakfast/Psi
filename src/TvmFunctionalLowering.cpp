@@ -10,24 +10,6 @@
 
 namespace Psi {
 namespace Compiler {
-namespace {
-  std::vector<std::string> string_split(const std::string& s, char c) {
-    std::vector<std::string> parts;
-    std::string::size_type pos = 0;
-    while (true) {
-      std::string::size_type next = s.find(c, pos);
-      if (next == std::string::npos) {
-        parts.push_back(s.substr(pos));
-        break;
-      } else {
-        parts.push_back(s.substr(pos, next-pos));
-        pos = next + 1;
-      }
-    }
-    return parts;
-  }
-}
-
 struct TvmFunctionalLowererMap {
   static TvmResult build_array_type(TvmFunctionalBuilder& builder, const TreePtr<ArrayType>& array_ty) {
     TvmResult element = builder.build(array_ty->element_type);

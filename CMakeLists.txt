@@ -15,6 +15,11 @@ set(PSI_ENABLE_VALGRIND 0 CACHE BOOL "Enable Valgrind support")
 set(PSI_OBJECT_PTR_DEBUG 0 CACHE BOOL "Enable object pointer debug checks (very expensive)")
 mark_as_advanced(PSI_OBJECT_PTR_DEBUG)
 
+# Set up useful compiler flags
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER MATCHES "clang")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -std=c++98")
+endif()
+
 # Locate LLVM
 set(PSI_LLVM_MODULES engine ipo)
 find_program(LLVM_CONFIG NAMES llvm-config)
@@ -39,6 +44,14 @@ endif()
 
 if(PSI_TVM_LLVM AND NOT LLVM_VERSION VERSION_EQUAL "3.3")
   message(SEND_ERROR "LLVM must be version 3.3, you have ${LLVM_VERSION}")
+endif()
+
+# Try to eliminate LLVM compilation flags which we don't need
+string(REGEX REPLACE "-[WOfg][^ ]*" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
+
+# Have to ensure _GLIBCXX_DEBUG is consistently defined everywhere otherwise the binary inteface may break
+if (LLVM_CXX_FLAGS MATCHES "_GLIBCXX_DEBUG")
+  message(SEND_ERROR "Please compile LLVM without _GLIBCXX_DEBUG defined")
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCC)
@@ -77,20 +90,6 @@ endif()
 set(PSI_TVM_JIT "llvm" CACHE STRING "Default JIT compiler to use")
 if(NOT PSI_TVM_LLVM)
   message(SEND_ERROR "LLVM not found, please configure LLVM location or select another JIT backend")
-endif()
-
-# Set up useful GCC flags
-if(CMAKE_COMPILER_IS_GNUCXX)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -std=c++98")
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
-
-  # Try to eliminate LLVM compilation flags which we don't need
-  string(REGEX REPLACE "-[WOfg][^ ]*" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
-endif()
-
-# Have to ensure _GLIBCXX_DEBUG is consistently defined everywhere otherwise the binary inteface may break
-if (LLVM_CXX_FLAGS MATCHES "_GLIBCXX_DEBUG")
-  message(SEND_ERROR "Please compile LLVM without _GLIBCXX_DEBUG defined")
 endif()
 
 # Locate Boost

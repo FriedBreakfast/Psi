@@ -36,7 +36,6 @@ namespace Psi {
       };
       
       bool m_in_function_mode;
-      bool m_function_body;
       std::ostream *m_output;
       CompileErrorContext *m_error_context;
       
@@ -103,7 +102,7 @@ namespace Psi {
     }
     
     DisassemblerContext::DisassemblerContext(std::ostream *output, CompileErrorContext *error_context)
-    : m_in_function_mode(false), m_function_body(false), m_output(output), m_error_context(error_context), m_parameter_name_index(0) {
+    : m_in_function_mode(false), m_output(output), m_error_context(error_context), m_parameter_name_index(0) {
     }
     
     DisassemblerContext::~DisassemblerContext() {

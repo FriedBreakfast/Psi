@@ -287,7 +287,7 @@ namespace {
 bool signal_exiting;
 ucontext_t signal_exit_context;
 
-void signal_handler(int signum, siginfo_t *info, void *ptr) {
+void signal_handler(int PSI_UNUSED(signum), siginfo_t *PSI_UNUSED(info), void *PSI_UNUSED(ptr)) {
   void *backtrace_buffer[10];
   int n = backtrace(backtrace_buffer, 10);
   backtrace_symbols_fd(backtrace_buffer, n, 2);

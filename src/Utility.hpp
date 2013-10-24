@@ -262,6 +262,7 @@ namespace Psi {
     }
     
     friend void swap(UniquePtr<T>& a, UniquePtr<T>& b) {
+      a.swap(b);
     }
   };
   
@@ -285,7 +286,7 @@ namespace Psi {
     ClonePtr() {}
     explicit ClonePtr(T *ptr) : UniquePtr<T>(ptr) {}
     ClonePtr(const ClonePtr<T>& src) : UniquePtr<T>(clone_ptr(src.get())) {}
-    template<typename U> ClonePtr(const UniquePtr<U>& src) : UniquePtr<T>() {}
+    template<typename U> ClonePtr(const UniquePtr<U>& src) : UniquePtr<T>(clone_ptr(src.get())) {}
     
     ClonePtr<T>& operator = (const ClonePtr<T>& src) {
       ClonePtr<T>(src).swap(*this);
@@ -307,13 +308,13 @@ namespace Psi {
     template<typename U> ClonePtr(const UniquePtr<U>&& src) {this->m_ptr = src.m_ptr; src.m_ptr = NULL;}
     
     ClonePtr<T>& operator = (ClonePtr<T>&& src) {
-      ClonePtr<T>(move(src)).swap(*this);
+      ClonePtr<T>(std::move(src)).swap(*this);
       return *this;
     }
     
     template<typename U>
     ClonePtr<T>& operator = (UniquePtr<U>&& src) {
-      ClonePtr<T>(move(src)).swap(*this);
+      ClonePtr<T>(std::move(src)).swap(*this);
       return *this;
     }
 #endif
