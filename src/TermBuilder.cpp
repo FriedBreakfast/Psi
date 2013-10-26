@@ -111,6 +111,13 @@ TreePtr<TypeInstance> TermBuilder::instance(const TreePtr<GenericType>& generic,
   return generic->compile_context().get_functional(TypeInstance(generic, parameters), location);
 }
 
+/**
+ * \brief Create a new instance of a generic type which takes no parameters.
+ */
+TreePtr<TypeInstance> TermBuilder::instance(const TreePtr<GenericType>& generic, const SourceLocation& location) {
+  return instance(generic, PSI_STD::vector<TreePtr<Term> >(), location);
+}
+
 /// \brief Get the value of the empty type.
 TreePtr<Term> TermBuilder::empty_value(CompileContext& compile_context) {
   return compile_context.builtins().empty_value;

@@ -799,7 +799,13 @@ namespace Psi {
 
       /// Type of this parameter
       TreePtr<Term> parameter_type;
-      /// Parameter depth (number of enclosing parameter scopes between this parameter and its own scope).
+      /**
+       * Parameter depth (number of enclosing parameter scopes between this parameter and its own scope).
+       * 
+       * Note that any parameters appearing in \c parameter_type have depths given relative to this depth,
+       * so that the type of a parameter whose value is another parameter is the same as the type of the
+       * outer parameter, regardless of any further quantifiers between the two.
+       */
       unsigned depth;
       /// Index of this parameter in its scope.
       unsigned index;

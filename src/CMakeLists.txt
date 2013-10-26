@@ -154,13 +154,14 @@ ${PSI_RUNTIME_SOURCES}
 )
 
 add_library(psi-compiler SHARED
-  Aggregate.cpp
+  Aggregate.cpp Aggregate.hpp
   Array.hpp
   BuiltinTypes.cpp
   Compiler.cpp Compiler.hpp
   ExpressionCompiler.cpp
   Function.cpp
-  Interface.cpp
+  Implementation.cpp Implementation.hpp
+  Interface.cpp Interface.hpp
   GarbageCollection.hpp
   Macros.cpp Macros.hpp
   Parser.cpp Parser.hpp

@@ -1,9 +1,9 @@
 libc : library {};
 str : pointer(ubyte);
-puts : libc.symbol (function_type (::str -: int)) {"type":"c","name":"puts"};
+puts : libc.symbol (function (::str -: int)) {"type":"c","name":"puts"};
 
 ti : interface (X:type) [
-  invoke : (:X -: str);
+  invoke : function (:X -: str);
 ];
 
 invoke_puts : function (X:type @ ti(X) => a:X) [
@@ -11,7 +11,7 @@ invoke_puts : function (X:type @ ti(X) => a:X) [
 ];
 
 type1 : struct [
-  ti [
+  ti (type1) [
     invoke : (a) [
       {test1}
     ];

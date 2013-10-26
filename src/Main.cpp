@@ -135,7 +135,6 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
   global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
   //global_names["__number__"] = TreePtr<Term>();
   global_names["__brace__"] = string_macro(compile_context, psi_location.named_child("cstring"));
-  global_names["builtin_function"] = builtin_function_macro(compile_context, psi_location.named_child("builtin_function"));
   global_names["number_value"] = number_value_macro(compile_context, psi_location.named_child("number_value"));
   
   global_names["type"] = compile_context.builtins().metatype;
@@ -165,11 +164,9 @@ Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi:
 
   global_names["new"] = new_macro(compile_context, psi_location.named_child("new"));
   global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));
-  global_names["implement"] = implementation_define_macro(compile_context, psi_location.named_child("implement"));
   global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));
   global_names["library"] = library_macro(compile_context, psi_location.named_child("library"));
-  global_names["function"] = function_definition_macro(compile_context, psi_location.named_child("function"));
-  global_names["function_type"] = function_type_macro(compile_context, psi_location.named_child("function_type"));
+  global_names["function"] = function_macro(compile_context, psi_location.named_child("function"));
 
   return evaluate_context_dictionary(module, psi_location, global_names);
 }

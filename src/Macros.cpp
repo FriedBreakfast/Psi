@@ -13,20 +13,20 @@ namespace Psi {
     
     void Macro::evaluate_impl(const void *PSI_UNUSED(result),
                               const Macro& self,
-                              const TreePtr<Term>& PSI_UNUSED(value),
+                              const TreePtr<Term>& value,
                               const PSI_STD::vector<SharedPtr<Parser::Expression> >& PSI_UNUSED(parameters),
                               const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
                               const void *PSI_UNUSED(argument),
                               const SourceLocation& location) {
       CompileError err(self.compile_context().error_context(), location);
       err.info("Evaluate operation not supported");
-      err.info(self.location(), boost::format("on %s") % self.location().logical->error_name(location.logical));
+      err.info(self.location(), boost::format("on %s") % value->location().logical->error_name(location.logical));
       err.end_throw();
     }
 
     void Macro::dot_impl(const void *PSI_UNUSED(result),
                          const Macro& self,
-                         const TreePtr<Term>& PSI_UNUSED(value),
+                         const TreePtr<Term>& value,
                          const SharedPtr<Parser::Expression>& PSI_UNUSED(member),
                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& PSI_UNUSED(parameters),
                          const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
@@ -34,19 +34,19 @@ namespace Psi {
                          const SourceLocation& location) {
       CompileError err(self.compile_context().error_context(), location);
       err.info("Dot operation not supported");
-      err.info(self.location(), boost::format("on %s") % self.location().logical->error_name(location.logical));
+      err.info(self.location(), boost::format("on %s") % value->location().logical->error_name(location.logical));
       err.end_throw();
     }
     
     void Macro::cast_impl(const void *PSI_UNUSED(result),
                           const Macro& self,
-                          const TreePtr<Term>& PSI_UNUSED(value),
+                          const TreePtr<Term>& value,
                           const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
                           const void *PSI_UNUSED(argument),
                           const SourceLocation& location) {
       CompileError err(self.compile_context().error_context(), location);
       err.info("Cast operation not supported");
-      err.info(self.location(), boost::format("on %s") % self.location().logical->error_name(location.logical));
+      err.info(self.location(), boost::format("on %s") % value->location().logical->error_name(location.logical));
       err.end_throw();
     }
     
@@ -91,11 +91,27 @@ namespace Psi {
       return tree_from(::new DefaultMacro(compile_context, location));
     }
     
+    class DefaultTypeMacro : public Macro {
+    public:
+      static const MacroVtable vtable;
+      
+      DefaultTypeMacro(CompileContext& compile_context, const SourceLocation& location)
+      : Macro(&vtable, compile_context, location) {
+      }
+      
+      template<typename V>
+      static void visit(V& v) {
+        visit_base<Macro>(v);
+      }
+    };
+
+    const MacroVtable DefaultTypeMacro::vtable = PSI_COMPILER_MACRO(DefaultTypeMacro, "psi.compiler.DefaultTypeMacro", Macro, TreePtr<Term>, MacroTermArgument);
+
     /**
      * \brief Generate the default implementation of Macro for types.
      */
     TreePtr<> default_type_macro_term(CompileContext& compile_context, const SourceLocation& location) {
-      return tree_from(::new DefaultMacro(compile_context, location));
+      return tree_from(::new DefaultTypeMacro(compile_context, location));
     }
     
     class NamedMemberMacro : public Macro {
@@ -187,25 +203,9 @@ namespace Psi {
       return make_macro(compile_context, location, TreePtr<MacroMemberCallback>(), members);
     }
     
-    struct ConstantMetadataSetup {
-      TreePtr<MetadataType> type;
-      TreePtr<> value;
-      unsigned n_wildcards;
-      /// Extra pattern variables
-      PSI_STD::vector<TreePtr<Term> > pattern;
-      
-      template<typename V>
-      static void visit(V& v) {
-        v("type", &ConstantMetadataSetup::type)
-        ("value", &ConstantMetadataSetup::value)
-        ("n_wildcards", &ConstantMetadataSetup::n_wildcards)
-        ("pattern", &ConstantMetadataSetup::pattern);
-      }
-    };
-    
     namespace {
       class MakeMetadataCallback {
-        std::vector<ConstantMetadataSetup> m_metadata;
+        PSI_STD::vector<ConstantMetadataSetup> m_metadata;
         
       public:
         MakeMetadataCallback(const std::vector<ConstantMetadataSetup>& metadata)
@@ -234,16 +234,7 @@ namespace Psi {
     /**
      * \brief Create a Term which carries multiple metadata annotations.
      */
-    TreePtr<Term> make_annotated_value(const TreePtr<Term>& value, const std::vector<ConstantMetadataSetup>& metadata, const SourceLocation& location) {
-      TreePtr<GenericType> generic = TermBuilder::generic(value->compile_context(), default_, GenericType::primitive_recurse,
-                                                          location, value->type, MakeMetadataCallback(metadata));
-      return TermBuilder::instance_value(TermBuilder::instance(generic, default_, location), value, location);
-    }
-    
-    /**
-     * \brief Create a Term which carries multiple metadata annotations and has an empty value.
-     */
-    TreePtr<Term> make_annotated_type(CompileContext& compile_context, const std::vector<ConstantMetadataSetup>& metadata, const SourceLocation& location) {
+    TreePtr<Term> make_annotated_type(CompileContext& compile_context, const PSI_STD::vector<ConstantMetadataSetup>& metadata, const SourceLocation& location) {
       TreePtr<GenericType> generic = TermBuilder::generic(compile_context, default_, GenericType::primitive_never,
                                                           location, TermBuilder::empty_type(compile_context), MakeMetadataCallback(metadata));
       return TermBuilder::instance(generic, default_, location);
@@ -271,18 +262,19 @@ namespace Psi {
       return make_macro_tag_term(macro, macro->compile_context().builtins().macro_term_tag, location);
     }
     
-    class PointerMacro : public MacroMemberCallback {
+    class PointerMacro : public Macro {
     public:
-      static const MacroMemberCallbackVtable vtable;
+      static const MacroVtable vtable;
 
       PointerMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
+      : Macro(&vtable, compile_context, location) {
       }
       
       static TreePtr<Term> evaluate_impl(const PointerMacro& self,
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const MacroTermArgument& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         if (parameters.size() != 1)
           self.compile_context().error_throw(location, "Pointer macro expects 1 parameter");
@@ -298,14 +290,14 @@ namespace Psi {
       }
     };
     
-    const MacroMemberCallbackVtable PointerMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(PointerMacro, "psi.compiler.PointerMacro", MacroMemberCallback);
+    const MacroVtable PointerMacro::vtable = PSI_COMPILER_MACRO(PointerMacro, "psi.compiler.PointerMacro", Macro, TreePtr<Term>, MacroTermArgument);
 
     /**
      * \brief Pointer macro.
      */
     TreePtr<Term> pointer_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new PointerMacro(compile_context, location));
-      return make_macro_term(make_macro(compile_context, location, callback), location);
+      TreePtr<Macro> m(::new PointerMacro(compile_context, location));
+      return make_macro_term(m, location);
     }
     
     class NamespaceMemberMacro : public Macro {
@@ -423,18 +415,19 @@ namespace Psi {
       };
     }
 
-    class NamespaceMacro : public MacroMemberCallback {
+    class NamespaceMacro : public Macro {
     public:
-      static const MacroMemberCallbackVtable vtable;
+      static const MacroVtable vtable;
       
       NamespaceMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
+      : Macro(&vtable, compile_context, location) {
       }
       
       static TreePtr<Term> evaluate_impl(const NamespaceMacro& self,
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const MacroTermArgument& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         if (parameters.size() != 1)
           self.compile_context().error_throw(location, "Namespace macro expects 1 parameter");
@@ -453,78 +446,26 @@ namespace Psi {
       }
     };
 
-    const MacroMemberCallbackVtable NamespaceMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(NamespaceMacro, "psi.compiler.NamespaceMacro", MacroMemberCallback);
+    const MacroVtable NamespaceMacro::vtable = PSI_COMPILER_MACRO(NamespaceMacro, "psi.compiler.NamespaceMacro", Macro, TreePtr<Term>, MacroTermArgument);
     
     TreePtr<Term> namespace_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new NamespaceMacro(compile_context, location));
-      TreePtr<Macro> m = make_macro(compile_context, location, callback);
+      TreePtr<Macro> m(::new NamespaceMacro(compile_context, location));
       return make_macro_term(m, location);
     }
     
-    class BuiltinFunctionMacro : public MacroMemberCallback {
+    class NumberValueMacro : public Macro {
     public:
-      static const MacroMemberCallbackVtable vtable;
-
-      BuiltinFunctionMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
-      }
-
-      static TreePtr<Term> evaluate_impl(const BuiltinFunctionMacro& self,
-                                         const TreePtr<Term>&,
-                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                         const SourceLocation& location) {
-        if (parameters.size() != 2)
-          self.compile_context().error_throw(location, "Wrong number of parameters to builtin function macro (expected 2)");
-        
-        SharedPtr<Parser::TokenExpression> name, arguments;
-        if (!(name = Parser::expression_as_token_type(parameters[0], Parser::token_brace)))
-          self.compile_context().error_throw(location, "First parameter to builtin function macro is not a {...}");
-        
-        if (!(arguments = Parser::expression_as_token_type(parameters[1], Parser::token_bracket)))
-          self.compile_context().error_throw(location, "Second parameter to builtin function macro is not a (...)");
-        
-        PSI_STD::vector<TreePtr<Term> > argument_types;
-        PSI_STD::vector<SharedPtr<Parser::Expression> > argument_expressions = Parser::parse_positional_list(self.compile_context().error_context(), location.logical, arguments->text);
-        for (PSI_STD::vector<SharedPtr<Parser::Expression> >::iterator ii = argument_expressions.begin(), ie = argument_expressions.end(); ii != ie; ++ii)
-          argument_types.push_back(compile_term(*ii, evaluate_context, location.logical));
-        
-        if (argument_types.empty())
-          self.compile_context().error_throw(location, "Builtin function macro types argument must contain at least one entry (the return type, which should be last)");
-
-        TreePtr<Term> result_type = argument_types.back();
-        argument_types.pop_back();
-       
-        String name_s = name->text.str();
-        PSI_NOT_IMPLEMENTED();
-      }
-      
-      template<typename Visitor>
-      static void visit(Visitor& v) {
-        visit_base<MacroMemberCallback>(v);
-      }
-    };
-
-    const MacroMemberCallbackVtable BuiltinFunctionMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(BuiltinFunctionMacro, "psi.compiler.BuiltinFunctionMacro", MacroMemberCallback);
-    
-    TreePtr<Term> builtin_function_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new BuiltinFunctionMacro(compile_context, location));
-      TreePtr<Macro> m = make_macro(compile_context, location, callback);
-      return make_macro_term(m, location);
-    }
-    
-    class NumberValueMacro : public MacroMemberCallback {
-    public:
-      static const MacroMemberCallbackVtable vtable;
+      static const MacroVtable vtable;
 
       NumberValueMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
+      : Macro(&vtable, compile_context, location) {
       }
 
       static TreePtr<Term> evaluate_impl(const NumberValueMacro& self,
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const MacroTermArgument& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         if (parameters.size() != 2)
           self.compile_context().error_throw(location, "Wrong number of parameters to builtin value macro (expected 3)");
@@ -565,11 +506,10 @@ namespace Psi {
       }
     };
 
-    const MacroMemberCallbackVtable NumberValueMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(NumberValueMacro, "psi.compiler.NumberValueMacro", MacroMemberCallback);
+    const MacroVtable NumberValueMacro::vtable = PSI_COMPILER_MACRO(NumberValueMacro, "psi.compiler.NumberValueMacro", Macro, TreePtr<Term>, MacroTermArgument);
 
     TreePtr<Term> number_value_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new NumberValueMacro(compile_context, location));
-      TreePtr<Macro> m = make_macro(compile_context, location, callback);
+      TreePtr<Macro> m(::new NumberValueMacro(compile_context, location));
       return make_macro_term(m, location);
     }
     
@@ -689,18 +629,19 @@ namespace Psi {
 
     const MacroMemberCallbackVtable LibrarySymbolMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(LibrarySymbolMacro, "psi.compiler.LibrarySymbolMacro", MacroMemberCallback);
 
-    class LibraryMacro : public MacroMemberCallback {
+    class LibraryMacro : public Macro {
     public:
-      static const MacroMemberCallbackVtable vtable;
+      static const MacroVtable vtable;
 
       LibraryMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
+      : Macro(&vtable, compile_context, location) {
       }
 
       static TreePtr<Term> evaluate_impl(const LibraryMacro& self,
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const MacroTermArgument& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         TreePtr<TargetCallback> callback;
         switch (parameters.size()) {
@@ -733,25 +674,26 @@ namespace Psi {
       }
     };
 
-    const MacroMemberCallbackVtable LibraryMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(LibraryMacro, "psi.compiler.LibraryMacro", MacroMemberCallback);
+    const MacroVtable LibraryMacro::vtable = PSI_COMPILER_MACRO(LibraryMacro, "psi.compiler.LibraryMacro", Macro, TreePtr<Term>, MacroTermArgument);
 
     TreePtr<Term> library_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new LibraryMacro(compile_context, location));
-      return make_macro_term(make_macro(compile_context, location, callback), location);
+      TreePtr<Macro> m(::new LibraryMacro(compile_context, location));
+      return make_macro_term(m, location);
     }
     
-    class StringMacro : public MacroMemberCallback {
+    class StringMacro : public Macro {
     public:
-      static const MacroMemberCallbackVtable vtable;
+      static const VtableType vtable;
       
       StringMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
+      : Macro(&vtable, compile_context, location) {
       }
 
       static TreePtr<Term> evaluate_impl(const StringMacro& self,
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const MacroTermArgument& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         if (parameters.size() != 1)
           self.compile_context().error_throw(location, "String macro expects one argument");
@@ -773,28 +715,29 @@ namespace Psi {
       }
     };
     
-    const MacroMemberCallbackVtable StringMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(StringMacro, "psi.compiler.StringMacro", MacroMemberCallback);
+    const MacroVtable StringMacro::vtable = PSI_COMPILER_MACRO(StringMacro, "psi.compiler.StringMacro", Macro, TreePtr<Term>, MacroTermArgument);
 
     /**
      * \brief Macro which generates C strings.
      */
     TreePtr<Term> string_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new StringMacro(compile_context, location));
-      return make_macro_term(make_macro(compile_context, location, callback), location);
+      TreePtr<Macro> m(::new StringMacro(compile_context, location));
+      return make_macro_term(m, location);
     }
 
-    class NewMacro : public MacroMemberCallback {
+    class NewMacro : public Macro {
     public:
-      static const MacroMemberCallbackVtable vtable;
+      static const VtableType vtable;
       
       NewMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
+      : Macro(&vtable, compile_context, location) {
       }
 
       static TreePtr<Term> evaluate_impl(const NewMacro& self,
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const MacroTermArgument& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         if (parameters.size() != 1)
           self.compile_context().error_throw(location, "new macro expects one argument");
@@ -804,14 +747,14 @@ namespace Psi {
       }
     };
     
-    const MacroMemberCallbackVtable NewMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(NewMacro, "psi.compiler.NewMacro", MacroMemberCallback);
+    const MacroVtable NewMacro::vtable = PSI_COMPILER_MACRO(NewMacro, "psi.compiler.NewMacro", Macro, TreePtr<Term>, MacroTermArgument);
 
     /**
      * \brief Macro which constructs default values.
      */
     TreePtr<Term> new_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new NewMacro(compile_context, location));
-      return make_macro_term(make_macro(compile_context, location, callback), location);
+      TreePtr<Macro> m(::new NewMacro(compile_context, location));
+      return make_macro_term(m, location);
     }
     
 #if 0
@@ -847,18 +790,19 @@ namespace Psi {
     const RewriteCallbackVtable MacroDefineMacroCallback::vtable = PSI_COMPILER_REWRITE_CALLBACK(MacroDefineMacroCallback, "psi.compiler.MacroDefineMacroCallback", RewriteCallback);
 #endif
 
-    class MacroDefineMacro : public MacroMemberCallback {
+    class MacroDefineMacro : public Macro {
     public:
       static const VtableType vtable;
 
       MacroDefineMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
+      : Macro(&vtable, compile_context, location) {
       }
 
       static TreePtr<Term> evaluate_impl(const MacroDefineMacro& self,
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const MacroTermArgument& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
         if (parameters.size() != 2)
           self.compile_context().error_throw(location, "macro macro expects two arguments");
@@ -890,14 +834,14 @@ namespace Psi {
       }
     };
 
-    const MacroMemberCallbackVtable MacroDefineMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(MacroDefineMacro, "psi.compiler.MacroDefineMacro", MacroMemberCallback);
+    const MacroVtable MacroDefineMacro::vtable = PSI_COMPILER_MACRO(MacroDefineMacro, "psi.compiler.MacroDefineMacro", Macro, TreePtr<Term>, MacroTermArgument);
     
     /**
      * Return a term which is a macro for defining new macros.
      */
     TreePtr<Term> macro_define_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new MacroDefineMacro(compile_context, location));
-      return make_macro_term(make_macro(compile_context, location, callback), location);
+      TreePtr<Macro> m(::new MacroDefineMacro(compile_context, location));
+      return make_macro_term(m, location);
     }
   }
 }

@@ -60,7 +60,7 @@ TvmScope* TvmScope::put_scope(TvmScope *given) {
   }
 }
 
-TvmGenericScope *TvmScope::generic_put_scope(TvmScope *given) {
+TvmGenericScope *TvmScope::generic_put_scope(TvmScope *PSI_DEBUG_PARAMETER(given)) {
   TvmScope *scope = this;
   while (!scope->m_in_progress_generic_scope) {
     scope = scope->m_parent.get();

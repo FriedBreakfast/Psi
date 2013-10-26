@@ -6,16 +6,6 @@
 
 namespace Psi {
   namespace Compiler {
-    OverloadType::OverloadType(const TreeVtable *vtable, CompileContext& compile_context, unsigned n_implicit_,
-                               const PSI_STD::vector<TreePtr<Term> >& pattern_,
-                               const PSI_STD::vector<TreePtr<OverloadValue> >& values_,
-                               const SourceLocation& location)
-    : Tree(vtable, compile_context, location),
-    n_implicit(n_implicit_),
-    pattern(pattern_),
-    values(values_) {
-    }
-    
     const SIVtable OverloadType::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.OverloadType", Tree);
 
     /**
@@ -30,29 +20,6 @@ namespace Psi {
     }
     
     const SIVtable OverloadValue::vtable = PSI_COMPILER_TREE_ABSTRACT("psi.compiler.OverloadValue", Tree);
-    
-    Interface::Interface(const PSI_STD::vector<InterfaceBase>& bases_,
-                         const TreePtr<Term>& type_,
-                         unsigned n_implicit,
-                         const std::vector<TreePtr<Term> >& pattern,
-                         const PSI_STD::vector<TreePtr<Implementation> >& values,
-                         const std::vector<TreePtr<Term> >& derived_pattern_,
-                         const SourceLocation& location)
-    : OverloadType(&vtable, type_->compile_context(), n_implicit, pattern, PSI_STD::vector<TreePtr<OverloadValue> >(values.begin(), values.end()), location),
-    derived_pattern(derived_pattern_),
-    type(type_),
-    bases(bases_) {
-    }
-    
-    TreePtr<Interface> Interface::new_(const PSI_STD::vector<InterfaceBase>& bases,
-                                       const TreePtr<Term>& type,
-                                       unsigned n_implicit,
-                                       const PSI_STD::vector<TreePtr<Term> >& pattern,
-                                       const PSI_STD::vector<TreePtr<Implementation> >& values,
-                                       const PSI_STD::vector<TreePtr<Term> >& derived_pattern,
-                                       const SourceLocation& location) {
-      return tree_from(::new Interface(bases, type, n_implicit, pattern, values, derived_pattern, location));
-    }
     
     template<typename V>
     void Interface::visit(V& v) {
@@ -99,25 +66,7 @@ namespace Psi {
     }
     
     const TreeVtable Implementation::vtable = PSI_COMPILER_TREE(Implementation, "psi.compiler.Implementation", OverloadValue);
-   
-    MetadataType::MetadataType(CompileContext& compile_context,
-                               unsigned n_implicit,
-                               const PSI_STD::vector<TreePtr<Term> >& pattern,
-                               const PSI_STD::vector<TreePtr<Metadata> >& values,
-                               const SIType& type_,
-                               const SourceLocation& location)
-    : OverloadType(&vtable, compile_context, n_implicit, pattern, PSI_STD::vector<TreePtr<OverloadValue> >(values.begin(), values.end()), location),
-    type(type_) {
-    }
-    
-    /**
-     * MetadataType constructor function.
-     */
-    TreePtr<MetadataType> MetadataType::new_(CompileContext& compile_context, unsigned n_implicit, const PSI_STD::vector<TreePtr<Term> >& pattern,
-                                             const PSI_STD::vector<TreePtr<Metadata> >& values, const SIType& type, const SourceLocation& location) {
-      return TreePtr<MetadataType>(::new MetadataType(compile_context, n_implicit, pattern, values, type, location));
-    }
-    
+
     template<typename V>
     void MetadataType::visit(V& v) {
       visit_base<OverloadType>(v);
@@ -279,8 +228,9 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Term> > match_scratch;
 
       // Find all possible matching overloads
-      for (unsigned ii = 0, ie = type->values.size(); ii != ie; ++ii) {
-        const TreePtr<OverloadValue>& v = type->values[ii];
+      const PSI_STD::vector<TreePtr<OverloadValue> >& type_values = type->values();
+      for (unsigned ii = 0, ie = type_values.size(); ii != ie; ++ii) {
+        const TreePtr<OverloadValue>& v = type_values[ii];
         PSI_ASSERT(v && (!v->overload_type || (v->overload_type == type)));
         if(overload_pattern_match(v->pattern, parameters, v->n_wildcards, match_scratch))
           results.push_back(OverloadLookupResult(v, match_scratch));
@@ -301,8 +251,19 @@ namespace Psi {
         }
       }
       
-      if (results.empty())
-        type->compile_context().error_throw(location, boost::format("Could not find overload for %s") % type->location().logical->error_name(location.logical));
+      if (results.empty()) {
+        std::ostringstream overload_name;
+        overload_name << type->location().logical->error_name(location.logical) << '(';
+        for (unsigned ii = 0, ie = parameters.size(); ii != ie; ++ii) {
+          if (ii) overload_name << ", ";
+          overload_name << parameters[ii]->location().logical->error_name(location.logical);
+        }
+        overload_name << ')';
+        
+        CompileError err(type->compile_context().error_context(), location);
+        err.info(boost::format("Could not find overload for %s") % overload_name.str());
+        err.end_throw();
+      }
       
       /* 
        * Attempt to select the most specific overload.

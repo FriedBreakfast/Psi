@@ -26,6 +26,8 @@ namespace Psi {
           st_double_quote
         } quote_state;
         
+        quote_state = st_no_quote;
+        
         for (; ii != ie; ++ii) {
           if (*ii == '\\') {
             ++ii;

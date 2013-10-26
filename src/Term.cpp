@@ -58,10 +58,13 @@ namespace Psi {
       static TreePtr<Term> rewrite_impl(ParameterizeRewriter& self, const TreePtr<Term>& term) {
         if (tree_isa<Anonymous>(term)) {
           PSI_STD::vector<TreePtr<Anonymous> >::const_iterator it = std::find(self.m_elements->begin(), self.m_elements->end(), term);
-          if (it != self.m_elements->end())
-            return TermBuilder::parameter(self.rewrite(term->type), self.m_depth, it - self.m_elements->begin(), *self.m_location);
-          else
+          if (it != self.m_elements->end()) {
+            // Depth of parameter types is defined relative to the parameter's own depth
+            ParameterizeRewriter child(self.m_location, self.m_elements, 0);
+            return TermBuilder::parameter(child.rewrite(term->type), self.m_depth, it - self.m_elements->begin(), *self.m_location);
+          } else {
             return term;
+          }
         } else if (TreePtr<Functional> func = dyn_treeptr_cast<Functional>(term)) {
           if (tree_isa<ParameterizedType>(func)) {
             ParameterizeRewriter child(self.m_location, self.m_elements, self.m_depth + 1);
@@ -102,7 +105,14 @@ namespace Psi {
           if (param->depth == self.m_depth) {
             if (param->index >= self.m_elements->size())
               term->compile_context().error_throw(*self.m_location, "Parameter index out of range");
-            return (*self.m_elements)[param->index];
+            const TreePtr<Term>& result = (*self.m_elements)[param->index];
+
+            SpecializeRewriter child(self.m_location, self.m_elements, 0);
+            TreePtr<Term> type = child.rewrite(param->type);
+            if (!type->convert_match(result->type))
+              term->compile_context().error_throw(*self.m_location, "Type mismatch in term substitution");
+
+            return result;
           } else {
             return param;
           }
@@ -144,7 +154,8 @@ namespace Psi {
         if (tree_isa<Statement>(term)) {
           PSI_STD::vector<TreePtr<Statement> >::const_iterator it = std::find(self.m_statements->begin(), self.m_statements->end(), term);
           if (it != self.m_statements->end()) {
-            TreePtr<Term> type = self.rewrite((*it)->type);
+            AnonymizeRewriter child(self.m_location, self.m_parameter_types, self.m_parameter_map, self.m_statements, 0);
+            TreePtr<Term> type = child.rewrite((*it)->type);
 
             unsigned index;
             PSI_STD::map<TreePtr<Statement>, unsigned>::iterator jt = self.m_parameter_map->find(*it);
@@ -169,7 +180,8 @@ namespace Psi {
           }
         } else {
           // Anything not functional is replaced by an anonymous value
-          TreePtr<Term> type = self.rewrite(term->type);
+          AnonymizeRewriter child(self.m_location, self.m_parameter_types, self.m_parameter_map, self.m_statements, 0);
+          TreePtr<Term> type = child.rewrite(term->type);
           unsigned index = self.m_parameter_types->size();
           self.m_parameter_types->push_back(type);
           return TermBuilder::parameter(type, self.m_depth, index, *self.m_location);
@@ -250,7 +262,8 @@ namespace Psi {
         if (TreePtr<Parameter> parameter = dyn_treeptr_cast<Parameter>(lhs_unwrapped)) {
           if (parameter->depth == self.m_depth) {
             // Check type also matches
-            if (!self.compare(parameter->type, rhs_unwrapped->type))
+            MatchComparator child(self.m_wildcards, 0, self.m_upref_mode);
+            if (!child.compare(parameter->type, rhs_unwrapped->type))
               return false;
 
             if (parameter->index >= self.m_wildcards->size())

@@ -498,7 +498,7 @@ PSI_STD::vector<SharedPtr<Statement> > ParserImpl::parse_namespace() {
 SharedPtr<Statement> ParserImpl::parse_namespace_entry() {
   PhysicalSourceLocation loc = lex().loc_begin();
   
-  if (lex().accept(tok_eof))
+  if (!lex().reject(tok_eof) || !lex().reject(';'))
     return SharedPtr<Statement>();
   
   lex().expect(tok_id);

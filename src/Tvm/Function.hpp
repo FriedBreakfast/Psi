@@ -374,6 +374,9 @@ namespace Psi {
       /// If a parameter is used as the type of a parameter in its own
       /// functions argument list, then this is zero. For each function
       /// type it is then nested inside, this should increase by one.
+      ///
+      /// Note that depths in the type of this term are defined relative to
+      /// this depth.
       unsigned depth() const {return m_depth;}
       /// \brief Get the parameter number of this parameter in its
       /// function.

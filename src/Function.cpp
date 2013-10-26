@@ -3,6 +3,7 @@
 #include "Parser.hpp"
 #include "Tree.hpp"
 #include "Utility.hpp"
+#include "Interface.hpp"
 #include "TermBuilder.hpp"
 
 #include <boost/format.hpp>
@@ -44,52 +45,33 @@ namespace Psi {
         return compile_from_bracket(m_body, m_body_context, self->location());
       }
     };
-
-    struct FunctionInfo {
-      /// \brief C type.
-      TreePtr<FunctionType> type;
-      /// \brief Name-to-position map.
-      PSI_STD::map<String, unsigned> names;
-
-      template<typename V>
-      static void visit(V& v) {
-        v("type", &FunctionInfo::type)
-        ("names", &FunctionInfo::names);
-      }
+    
+    /**
+     * \brief Function argument information, from which function types can be produced.
+     */
+    struct FunctionArgumentInfo {
+      PSI_STD::map<String, unsigned> argument_names;
+      PSI_STD::vector<TreePtr<Anonymous> > arguments;
+      PSI_STD::vector<ParameterMode> argument_modes;
+      PSI_STD::vector<TreePtr<InterfaceValue> > interfaces;
+      TreePtr<Term> result_type;
+      ResultMode result_mode;
     };
-    
-    /**
-     * \brief Map a result mode name to a result mode number.
-     */
-    boost::optional<ResultMode> result_mode_from_name(String name) {
-      if (name == "value") return result_mode_by_value;
-      else if (name == "const") return result_mode_functional;
-      else if (name == "take") return result_mode_rvalue;
-      else if (name == "ref") return result_mode_lvalue;
-      else return boost::none;
-    }
-    
-    /**
-     * \brief Common function compilation.
-     *
-     * Figures out the C-level function type and details of how to generate function
-     * arguments from what the user writes.
-     */
-    FunctionInfo compile_function_common(const SharedPtr<Parser::Expression>& function_arguments,
-                                         CompileContext& compile_context,
-                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                         const SourceLocation& location) {
-      FunctionInfo result;
 
-      SharedPtr<Parser::TokenExpression> function_arguments_expr, funtion_interfaces_expr;
+    /**
+     * Compile function argument specification.
+     */
+    FunctionArgumentInfo compile_function_arguments(const SharedPtr<Parser::Expression>& function_arguments,
+                                                    CompileContext& compile_context,
+                                                    const TreePtr<EvaluateContext>& evaluate_context,
+                                                    const SourceLocation& location) {
+      SharedPtr<Parser::TokenExpression> function_arguments_expr;
       if (!(function_arguments_expr = expression_as_token_type(function_arguments, Parser::token_bracket)))
         compile_context.error_throw(location, "Function arguments not enclosed in (...)");
       
       Parser::ArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(compile_context.error_context(), location.logical, function_arguments_expr->text);
+      FunctionArgumentInfo result;
       std::map<String, TreePtr<Term> > argument_map;
-      PSI_STD::vector<TreePtr<Anonymous> > argument_list;
-      PSI_STD::vector<ParameterMode> argument_modes;
-      PSI_STD::vector<TreePtr<InterfaceValue> > interfaces;
       
       // Handle implicit arguments for which=0, explicit arguments for which=1
       for (unsigned which = 0; which < 2; ++which) {
@@ -116,12 +98,12 @@ namespace Psi {
             TreePtr<Term> argument_type = compile_term(argument_expr.type, argument_context, argument_location.logical);
             TermMode argument_mode = is_implicit ? term_mode_value : parameter_to_term_mode(argument_expr.mode);
             TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, argument_mode, argument_location);
-            argument_list.push_back(argument);
-            argument_modes.push_back(is_implicit ? parameter_mode_functional : argument_expr.mode);
+            result.arguments.push_back(argument);
+            result.argument_modes.push_back(is_implicit ? parameter_mode_functional : argument_expr.mode);
 
             if (argument_expr.name) {
               argument_map[expr_name] = argument;
-              result.names[expr_name] = argument_list.size();
+              result.argument_names[expr_name] = result.arguments.size();
             }
           } else {
             // An interface specification
@@ -131,36 +113,48 @@ namespace Psi {
               SourceLocation interface_location(argument_expr.location, location.logical);
               compile_context.error_throw(interface_location, "Interface description did not evaluate to an interface");
             }
-            interfaces.push_back(interface_cast);
+            result.interfaces.push_back(interface_cast);
           }
         }
       }
       
-      PSI_ASSERT(argument_list.size() == argument_modes.size());
-      
+      PSI_ASSERT(result.arguments.size() == result.argument_modes.size());
+
       // Handle return type
       TreePtr<EvaluateContext> result_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_map, evaluate_context);
-      TreePtr<Term> result_type;
-      ResultMode result_mode;
       if (parsed_arguments.return_type) {
-        result_type = compile_term(parsed_arguments.return_type, result_context, location.logical);
-        result_mode = parsed_arguments.return_mode;
+        result.result_type = compile_term(parsed_arguments.return_type, result_context, location.logical);
+        result.result_mode = parsed_arguments.return_mode;
       } else {
-        result_type = compile_context.builtins().empty_type;
-        result_mode = result_mode_by_value;
+        result.result_type = compile_context.builtins().empty_type;
+        result.result_mode = result_mode_by_value;
       }
-      
-      // Generate function type - parameterize parameters!
-      PSI_STD::vector<FunctionParameterType> argument_types;
-      for (unsigned ii = 0, ie = argument_list.size(); ii != ie; ++ii)
-        argument_types.push_back(FunctionParameterType(argument_modes[ii], argument_list[ii]->type->parameterize(argument_list[ii]->location(), argument_list)));
-      TreePtr<Term> result_type_param = result_type->parameterize(result_type->location(), argument_list);
-      for (PSI_STD::vector<TreePtr<InterfaceValue> >::iterator ii = interfaces.begin(), ie = interfaces.end(); ii != ie; ++ii)
-        *ii = treeptr_cast<InterfaceValue>((*ii)->parameterize((*ii)->location(), argument_list));
-      
-      result.type = TermBuilder::function_type(result_mode, result_type_param, argument_types, interfaces, location);
 
       return result;
+    }
+
+    struct FunctionInfo {
+      /// \brief C type.
+      TreePtr<FunctionType> type;
+      /// \brief Name-to-position map.
+      PSI_STD::map<String, unsigned> names;
+    };
+    
+    /**
+     * Convert a FunctionArgumentInfo to a function type.
+     */
+    TreePtr<FunctionType> function_arguments_to_type(const FunctionArgumentInfo& arg_info, const SourceLocation& location) {
+      // Generate function type - parameterize parameters!
+      PSI_STD::vector<FunctionParameterType> argument_types;
+      for (unsigned ii = 0, ie = arg_info.arguments.size(); ii != ie; ++ii)
+        argument_types.push_back(FunctionParameterType(arg_info.argument_modes[ii], arg_info.arguments[ii]->type->parameterize(arg_info.arguments[ii]->location(), arg_info.arguments)));
+      TreePtr<Term> result_type = arg_info.result_type->parameterize(result_type->location(), arg_info.arguments);
+      
+      PSI_STD::vector<TreePtr<InterfaceValue> > interfaces;
+      for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = arg_info.interfaces.begin(), ie = arg_info.interfaces.end(); ii != ie; ++ii)
+        interfaces.push_back(treeptr_cast<InterfaceValue>((*ii)->parameterize((*ii)->location(), arg_info.arguments)));
+      
+      return TermBuilder::function_type(arg_info.result_mode, result_type, argument_types, interfaces, location);
     }
     
     /**
@@ -199,6 +193,30 @@ namespace Psi {
 
       return TermBuilder::function_call(function, all_arguments, location);
     }
+    
+    /**
+     * \brief Parse arguments for a macro which has the syntax of a function call.
+     */
+    PSI_STD::vector<TreePtr<Term> > compile_call_arguments(const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
+                                                           const TreePtr<EvaluateContext>& evaluate_context,
+                                                           const SourceLocation& location) {
+      CompileContext& compile_context = evaluate_context->compile_context();
+
+      if (arguments.size() != 1)
+        compile_context.error_throw(location, boost::format("call incovation expects one macro argument, got %s") % arguments.size());
+      
+      SharedPtr<Parser::TokenExpression> parameters_expr;
+      if (!(parameters_expr = Parser::expression_as_token_type(arguments[0], Parser::token_bracket)))
+        compile_context.error_throw(location, "Parameters argument to call is not a (...)");
+
+      PSI_STD::vector<SharedPtr<Parser::Expression> > parsed_arguments = Parser::parse_positional_list(compile_context.error_context(), location.logical, parameters_expr->text);
+      
+      PSI_STD::vector<TreePtr<Term> > result;
+      for (PSI_STD::vector<SharedPtr<Parser::Expression> >::const_iterator ii = parsed_arguments.begin(), ie = parsed_arguments.end(); ii != ie; ++ii)
+        result.push_back(compile_term(*ii, evaluate_context, location.logical));
+      
+      return result;
+    }
 
     /**
      * \brief Compile a function invocation.
@@ -210,32 +228,16 @@ namespace Psi {
                                               const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context,
                                               const SourceLocation& location) {
-      CompileContext& compile_context = evaluate_context->compile_context();
-
-      if (arguments.size() != 1)
-        compile_context.error_throw(location, boost::format("function incovation expects one macro arguments, got %s") % arguments.size());
-      
-      SharedPtr<Parser::TokenExpression> parameters_expr;
-      if (!(parameters_expr = expression_as_token_type(arguments[0], Parser::token_bracket)))
-        compile_context.error_throw(location, "Parameters argument to function invocation is not a (...)");
-
-      PSI_STD::vector<SharedPtr<Parser::Expression> > parsed_arguments = Parser::parse_positional_list(compile_context.error_context(), location.logical, parameters_expr->text);
-      
-      PSI_STD::vector<TreePtr<Term> > explicit_arguments;
-      for (PSI_STD::vector<SharedPtr<Parser::Expression> >::const_iterator ii = parsed_arguments.begin(), ie = parsed_arguments.end(); ii != ie; ++ii) {
-        TreePtr<Term> value = compile_term(*ii, evaluate_context, location.logical);
-        explicit_arguments.push_back(value);
-      }
-      
+      PSI_STD::vector<TreePtr<Term> > explicit_arguments = compile_call_arguments(arguments, evaluate_context, location);
       return function_call(function, explicit_arguments, location);
     }
 
-    class FunctionInvokeCallback : public MacroMemberCallback {
+    class FunctionInvokeCallback : public Macro {
     public:
-      static const MacroMemberCallbackVtable vtable;
+      static const MacroVtable vtable;
 
       FunctionInvokeCallback(const TreePtr<Term>& function_, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, function_->compile_context(), location),
+      : Macro(&vtable, function_->compile_context(), location),
       function(function_) {
       }
       
@@ -243,7 +245,7 @@ namespace Psi {
       
       template<typename V>
       static void visit(V& v) {
-        visit_base<MacroMemberCallback>(v);
+        visit_base<Macro>(v);
         v("function", &FunctionInvokeCallback::function);
       }
 
@@ -251,13 +253,13 @@ namespace Psi {
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const MacroTermArgument&,
                                          const SourceLocation& location) {
         return compile_function_invocation(self.function, arguments, evaluate_context, location);
       }
     };
 
-    const MacroMemberCallbackVtable FunctionInvokeCallback::vtable =
-    PSI_COMPILER_MACRO_MEMBER_CALLBACK(FunctionInvokeCallback, "psi.compiler.FunctionInvokeCallback", MacroMemberCallback);
+    const MacroVtable FunctionInvokeCallback::vtable = PSI_COMPILER_MACRO(FunctionInvokeCallback, "psi.compiler.FunctionInvokeCallback", Macro, TreePtr<Term>, MacroTermArgument);
 
     /**
      * Create a macro for invoking a function.
@@ -267,139 +269,152 @@ namespace Psi {
      * expected by \c info.
      */
     TreePtr<Term> function_invoke_macro(const TreePtr<Term>& func, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new FunctionInvokeCallback(func, location));
-      TreePtr<Macro> macro = make_macro(func->compile_context(), location, callback);
+      TreePtr<Macro> macro(::new FunctionInvokeCallback(func, location));
       return make_macro_term(macro, location);
     }
 
     /**
-     * Compile a function definition, and return a macro for invoking it.
-     *
-     * \todo Implement return jump target.
+     * \brief Function macro.
      */
-    TreePtr<Term> compile_function_definition(const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
-                                              const TreePtr<EvaluateContext>& evaluate_context,
-                                              const SourceLocation& location) {
-      CompileContext& compile_context = evaluate_context->compile_context();
-
-      SharedPtr<Parser::Expression> type_arg;
-      if (arguments.size() == 2) {
-        type_arg = arguments[0];
-      } else {
-        compile_context.error_throw(location, boost::format("function macro expects 2 arguments, got %s") % arguments.size());
-      }
-
-      SharedPtr<Parser::TokenExpression> body;
-      if (!(body = expression_as_token_type(arguments[1], Parser::token_square_bracket)))
-        compile_context.error_throw(location, "Last (body) parameter to function definition is not a [...]");
-
-      FunctionInfo common = compile_function_common(type_arg, compile_context, evaluate_context, location);
-
-      PSI_STD::vector<TreePtr<Term> > parameter_trees_term; // This exists because C++ won't convert vector<derived> to vector<base>
-      PSI_STD::vector<TreePtr<Anonymous> > parameter_trees;
-      for (PSI_STD::vector<FunctionParameterType>::const_iterator ii = common.type->parameter_types.begin(), ie = common.type->parameter_types.end(); ii != ie; ++ii) {
-        TreePtr<Anonymous> param = common.type->parameter_after(ii->type->location(), parameter_trees_term);
-        parameter_trees.push_back(param);
-        parameter_trees_term.push_back(param);
-      }
-
-      PSI_STD::map<String, TreePtr<Term> > argument_values;
-      for (PSI_STD::map<String, unsigned>::iterator ii = common.names.begin(), ie = common.names.end(); ii != ie; ++ii)
-        argument_values[ii->first] = parameter_trees[ii->second];
-
-      TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_values, evaluate_context);
-
-      /// \todo Implement function linkage specification.
-      return TermBuilder::function(evaluate_context->module(), common.type, link_private, parameter_trees, TreePtr<JumpTarget>(), location,
-                                   FunctionBodyCompiler(body_context, body));
-    }
-
-    /**
-     * \brief Callback to use for constructing interfaces which define functions.
-     */
-    class FunctionDefineCallback : public MacroMemberCallback {
+    class FunctionMacro : public Macro {
     public:
-      static const MacroMemberCallbackVtable vtable;
+      static const MacroVtable vtable;
       
-      FunctionDefineCallback(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
+      FunctionMacro(CompileContext& compile_context, const SourceLocation& location)
+      : Macro(&vtable, compile_context, location) {
       }
       
-      static TreePtr<Term> evaluate_impl(const FunctionDefineCallback&,
+      static TreePtr<Term> evaluate_impl(const FunctionMacro& self,
                                          const TreePtr<Term>&,
                                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                         const MacroTermArgument&,
                                          const SourceLocation& location) {
-        return compile_function_definition(arguments, evaluate_context, location);
+        switch (arguments.size()) {
+        case 1: {
+          FunctionArgumentInfo arg_info = compile_function_arguments(arguments[0], self.compile_context(), evaluate_context, location);
+          return function_arguments_to_type(arg_info, location);
+        }
+          
+        case 2: {
+          CompileContext& compile_context = evaluate_context->compile_context();
+
+          SharedPtr<Parser::Expression> type_arg = arguments[0];
+
+          FunctionArgumentInfo arg_info = compile_function_arguments(arguments[0], self.compile_context(), evaluate_context, location);
+
+          SharedPtr<Parser::TokenExpression> body;
+          if (!(body = Parser::expression_as_token_type(arguments[1], Parser::token_square_bracket)))
+            compile_context.error_throw(location, "Body parameter to function definition is not a [...]");
+          
+          TreePtr<FunctionType> type = function_arguments_to_type(arg_info, location);
+
+          PSI_STD::map<String, TreePtr<Term> > argument_values;
+          for (PSI_STD::map<String, unsigned>::const_iterator ii = arg_info.argument_names.begin(), ie = arg_info.argument_names.end(); ii != ie; ++ii)
+            argument_values[ii->first] = arg_info.arguments[ii->second];
+
+          TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_values, evaluate_context);
+
+          /// \todo Implement function linkage specification.
+          return TermBuilder::function(evaluate_context->module(), type, link_private, arg_info.arguments, TreePtr<JumpTarget>(), location,
+                                      FunctionBodyCompiler(body_context, body));
+        }
+          
+        default:
+          self.compile_context().error_throw(location, "function macro expects one or two arguments");
+        }
       }
       
       template<typename V>
       static void visit(V& v) {
-        visit_base<MacroMemberCallback>(v);
+        visit_base<Macro>(v);
       }
     };
 
-    const MacroMemberCallbackVtable FunctionDefineCallback::vtable =
-    PSI_COMPILER_MACRO_MEMBER_CALLBACK(FunctionDefineCallback, "psi.compiler.FunctionDefineCallback", MacroMemberCallback);
+    const MacroVtable FunctionMacro::vtable = PSI_COMPILER_MACRO(FunctionMacro, "psi.compiler.FunctionMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    
+    class FunctionInterfaceMemberCallback : public InterfaceMemberCallback {
+    public:
+      static const VtableType vtable;
+      
+      FunctionInterfaceMemberCallback(CompileContext& compile_context, const SourceLocation& location)
+      : InterfaceMemberCallback(&vtable, compile_context, location) {}
+
+      static TreePtr<Term> evaluate_impl(const FunctionInterfaceMemberCallback& self,
+                                         const PSI_STD::vector<unsigned>& path,
+                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const SourceLocation& location) {
+        PSI_NOT_IMPLEMENTED();
+      }
+      
+      static TreePtr<Term> implement_impl(const FunctionInterfaceMemberCallback& self,
+                                          const SharedPtr<Parser::Expression>& value,
+                                          const TreePtr<EvaluateContext>& evaluate_context,
+                                          const SourceLocation& location) {
+        PSI_NOT_IMPLEMENTED();
+      }
+    };
+    
+    const InterfaceMemberCallbackVtable FunctionInterfaceMemberCallback::vtable = PSI_COMPILER_INTERFACE_MEMBER_CALLBACK(FunctionInterfaceMemberCallback, "psi.compiler.FunctionInterfaceMemberCallback", InterfaceMemberCallback);
+    
+    class FunctionInterfaceMemberMacro : public Macro {
+    public:
+      static const MacroVtable vtable;
+      
+      FunctionInterfaceMemberMacro(CompileContext& compile_context, const SourceLocation& location)
+      : Macro(&vtable, compile_context, location) {}
+      template<typename V> static void visit(V& v) {visit_base<Macro>(v);}
+      
+      static InterfaceMemberResult evaluate_impl(const FunctionInterfaceMemberMacro& self,
+                                                 const TreePtr<Term>& PSI_UNUSED(value),
+                                                 const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
+                                                 const TreePtr<EvaluateContext>& evaluate_context,
+                                                 const InterfaceMemberArgument& argument,
+                                                 const SourceLocation& location) {
+        if (arguments.size() != 1)
+          self.compile_context().error_throw(location, boost::format("function macro in interface definition expects 1 argument, got %s") % arguments.size());
+
+        SharedPtr<Parser::Expression> type_arg = arguments[0];
+
+        FunctionArgumentInfo info = compile_function_arguments(type_arg, self.compile_context(), evaluate_context, location);
+        // Note that the indices in info.argument_names might need to
+        // be incremented since an argument has been inserted at the front,
+        // but they aren't actually used here
+        info.arguments.insert(info.arguments.begin(), TermBuilder::anonymous(argument.self_pointer_type, term_mode_value, location));
+        info.argument_modes.insert(info.argument_modes.begin(), parameter_mode_functional);
+        
+        InterfaceMemberResult result;
+        result.type = function_arguments_to_type(info, location);
+        result.callback.reset(::new FunctionInterfaceMemberCallback(self.compile_context(), location));
+        
+        return result;
+      }
+    };
+    
+    const MacroVtable FunctionInterfaceMemberMacro::vtable = PSI_COMPILER_MACRO(FunctionInterfaceMemberMacro, "psi.compiler.FunctionInterfaceMemberMacro", Macro, InterfaceMemberResult, InterfaceMemberArgument);
 
     /**
      * \brief Create a callback to the function definition function.
      */
-    TreePtr<Term> function_definition_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new FunctionDefineCallback(compile_context, location));
-      TreePtr<Macro> macro = make_macro(compile_context, location, callback);
-      return make_macro_term(macro, location);
-    }
-    
-    /**
-     * Compile a function definition, and return a macro for invoking it.
-     *
-     * \todo Implement return jump target.
-     */
-    TreePtr<Term> compile_function_type(const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
-                                        const TreePtr<EvaluateContext>& evaluate_context,
-                                        const SourceLocation& location) {
-      CompileContext& compile_context = evaluate_context->compile_context();
-
-      SharedPtr<Parser::Expression> type_arg;
-      if (arguments.size() == 1) {
-        type_arg = arguments[0];
-      } else {
-        compile_context.error_throw(location, boost::format("function_type macro expects 1 argument, got %s") % arguments.size());
-      }
-
-      return compile_function_common(type_arg, compile_context, evaluate_context, location).type;
-    }
-
-    class FunctionTypeCallback : public MacroMemberCallback {
-    public:
-      static const MacroMemberCallbackVtable vtable;
+    TreePtr<Term> function_macro(CompileContext& compile_context, const SourceLocation& location) {
+      PSI_STD::vector<ConstantMetadataSetup> md;
       
-      FunctionTypeCallback(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
-      }
-
-      static TreePtr<Term> evaluate_impl(const FunctionTypeCallback&,
-                                         const TreePtr<Term>&,
-                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
-                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                         const SourceLocation& location) {
-        return compile_function_type(arguments, evaluate_context, location);
-      }
-
-      template<typename V>
-      static void visit(V& v) {
-        visit_base<MacroMemberCallback>(v);
-      }
-    };
-    
-    const MacroMemberCallbackVtable FunctionTypeCallback::vtable =
-    PSI_COMPILER_MACRO_MEMBER_CALLBACK(FunctionTypeCallback, "psi.compiler.FunctionTypeCallback", MacroMemberCallback);
-
-    TreePtr<Term> function_type_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new FunctionTypeCallback(compile_context, location));
-      TreePtr<Macro> macro = make_macro(compile_context, location, callback);
-      return make_macro_term(macro, location);
+      ConstantMetadataSetup term_eval;
+      term_eval.type = compile_context.builtins().type_macro;
+      term_eval.value.reset(::new FunctionMacro(compile_context, location));
+      term_eval.n_wildcards = 0;
+      term_eval.pattern.push_back(compile_context.builtins().macro_term_tag);
+      md.push_back(term_eval);
+      
+      ConstantMetadataSetup interface_eval;
+      interface_eval.type = compile_context.builtins().type_macro;
+      interface_eval.value.reset(::new FunctionInterfaceMemberMacro(compile_context, location));
+      interface_eval.n_wildcards = 0;
+      interface_eval.pattern.push_back(compile_context.builtins().macro_interface_member_tag);
+      md.push_back(interface_eval);
+      
+      return make_annotated_type(compile_context, md, location);
     }
   }
 }

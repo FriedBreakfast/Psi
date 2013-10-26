@@ -334,44 +334,6 @@ namespace Psi {
     &EvaluateContextWrapper<derived>::overload_list \
   }
 
-    class MacroMemberCallback;
-
-    /**
-     * \see MacroEvaluateCallback
-     */
-    struct MacroMemberCallbackVtable {
-      TreeVtable base;
-      void (*evaluate) (TreePtr<Term>*, const MacroMemberCallback*, const TreePtr<Term>*, const PSI_STD::vector<SharedPtr<Parser::Expression> >*, const TreePtr<EvaluateContext>*, const SourceLocation*);
-    };
-
-    class MacroMemberCallback : public Tree {
-    public:
-      typedef MacroMemberCallbackVtable VtableType;
-      static const SIVtable vtable;
-
-      MacroMemberCallback(const MacroMemberCallbackVtable *vptr, CompileContext& compile_context, const SourceLocation& location)
-      : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location) {
-      }
-
-      TreePtr<Term> evaluate(const TreePtr<Term>& value, const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location) const {
-        ResultStorage<TreePtr<Term> > rs;
-        derived_vptr(this)->evaluate(rs.ptr(), this, &value, &parameters, &evaluate_context, &location);
-        return rs.done();
-      }
-    };
-
-    template<typename Derived>
-    struct MacroMemberCallbackWrapper : NonConstructible {
-      static void evaluate(TreePtr<Term> *out, const MacroMemberCallback *self, const TreePtr<Term> *value, const PSI_STD::vector<SharedPtr<Parser::Expression> > *parameters, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location) {
-        new (out) TreePtr<Term> (Derived::evaluate_impl(*static_cast<const Derived*>(self), *value, *parameters, *evaluate_context, *location));
-      }
-    };
-
-#define PSI_COMPILER_MACRO_MEMBER_CALLBACK(derived,name,super) { \
-    PSI_COMPILER_TREE(derived,name,super), \
-    &MacroMemberCallbackWrapper<derived>::evaluate \
-  }
-    
     class MetadataType;
     
     struct BuiltinTypes {
@@ -402,6 +364,8 @@ namespace Psi {
       TreePtr<MetadataType> macro;
       /// \brief The macro interface for type values.
       TreePtr<MetadataType> type_macro;
+      /// \brief The macro interface for the meta-type.
+      TreePtr<MetadataType> metatype_macro;
       /// \brief Library metadata tag
       TreePtr<MetadataType> library_tag;
       /// \brief Namespace metadata tag
@@ -416,6 +380,8 @@ namespace Psi {
       TreePtr<Term> macro_term_tag;
       /// \brief Type for evaluating a Macro which is an aggregate member.
       TreePtr<Term> macro_member_tag;
+      /// \brief Type for evaluating a Macro which is an interface member.
+      TreePtr<Term> macro_interface_member_tag;
     };
     
     class Function;
@@ -505,7 +471,7 @@ namespace Psi {
     class Block;
     class Namespace;
 
-    PSI_COMPILER_EXPORT void compile_expression(void *result, const SharedPtr<Parser::Expression>& expression, const TreePtr<EvaluateContext>& evaluate_context, const TreePtr<Term>& mode_tag, const void *arg, const LogicalSourceLocationPtr& source);
+    void compile_expression(void *result, const SharedPtr<Parser::Expression>& expression, const TreePtr<EvaluateContext>& evaluate_context, const TreePtr<Term>& mode_tag, const void *arg, const LogicalSourceLocationPtr& source);
     
     /// \copydoc compile_expression(void *result, const SharedPtr<Parser::Expression>& expression, const TreePtr<EvaluateContext>& evaluate_context, const TreePtr<Term>& arg_type, void *arg, const LogicalSourceLocationPtr& source)
     template<typename Result, typename Arg>
@@ -515,27 +481,24 @@ namespace Psi {
       return rs.done();
     }
     
-    PSI_COMPILER_EXPORT TreePtr<Term> compile_term(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
+    TreePtr<Term> compile_block(const PSI_STD::vector<SharedPtr<Parser::Statement> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
+    TreePtr<Term> compile_from_bracket(const SharedPtr<Parser::TokenExpression>& expr, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
+    TreePtr<Macro> expression_macro(const TreePtr<EvaluateContext>& context, const TreePtr<Term>& expr, const TreePtr<Term>& tag_type, const SourceLocation& location);
     
-    PSI_COMPILER_EXPORT TreePtr<Term> compile_block(const PSI_STD::vector<SharedPtr<Parser::Statement> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
-    PSI_COMPILER_EXPORT TreePtr<Term> compile_from_bracket(const SharedPtr<Parser::TokenExpression>& expr, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
-    PSI_COMPILER_EXPORT TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
-    PSI_COMPILER_EXPORT TreePtr<Macro> expression_macro(const TreePtr<EvaluateContext>& context, const TreePtr<Term>& expr, const TreePtr<Term>& tag_type, const SourceLocation& location);
+    TreePtr<Term> type_combine(const TreePtr<Term>& lhs, const TreePtr<Term>& rhs);
 
+    TreePtr<Term> compile_function_invocation(const TreePtr<Term>& function, const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
+                                              const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
+    PSI_STD::vector<TreePtr<Term> > compile_call_arguments(const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
+                                                           const TreePtr<EvaluateContext>& evaluate_context,
+                                                           const SourceLocation& location);
+
+    PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_module(const TreePtr<Module>& module, const TreePtr<EvaluateContext>& next, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
     PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);
-    PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_module(const TreePtr<Module>& module, const TreePtr<EvaluateContext>& next, const SourceLocation& location);
 
-    PSI_COMPILER_EXPORT TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroMemberCallback>&, const std::map<String, TreePtr<MacroMemberCallback> >&);
-    PSI_COMPILER_EXPORT TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const TreePtr<MacroMemberCallback>&);
-    PSI_COMPILER_EXPORT TreePtr<Macro> make_macro(CompileContext&, const SourceLocation&, const std::map<String, TreePtr<MacroMemberCallback> >&);
-    PSI_COMPILER_EXPORT TreePtr<Term> make_macro_tag_term(const TreePtr<Macro>& macro, const TreePtr<Term>& tag, const SourceLocation& location);
-    PSI_COMPILER_EXPORT TreePtr<Term> make_macro_term(const TreePtr<Macro>& macro, const SourceLocation& location);
-    
-    PSI_COMPILER_EXPORT TreePtr<Term> type_combine(const TreePtr<Term>& lhs, const TreePtr<Term>& rhs);
-
-    PSI_COMPILER_EXPORT TreePtr<Term> compile_function_invocation(const TreePtr<Term>& function, const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
-                                                                  const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
+    PSI_COMPILER_EXPORT TreePtr<Term> compile_term(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
+    PSI_COMPILER_EXPORT TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
 
     /**
      * \brief Callback which compile_script calls on each statement.

@@ -55,7 +55,11 @@ namespace Psi {
 
       virtual ValuePtr<> rewrite(const ValuePtr<>& term) {
         if (ValuePtr<ParameterPlaceholder> parameter = dyn_cast<ParameterPlaceholder>(term)) {
+          std::size_t old_depth = m_depth;
+          m_depth = 0;
           ValuePtr<> type = rewrite(term->type());
+          m_depth = old_depth;
+          
           for (unsigned i = 0, e = m_parameters.size(); i != e; ++i) {
             if (m_parameters[i] == term)
               return FunctionalBuilder::parameter(type, m_depth, i, m_parameters[i]->location());

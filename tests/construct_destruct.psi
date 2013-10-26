@@ -1,5 +1,5 @@
 libc : library {};
-puts : libc.symbol (function_type (::pointer(ubyte) -: int)) {"type":"c","name":"puts"};
+puts : libc.symbol (function (::pointer(ubyte) -: int)) {"type":"c","name":"puts"};
 
 test_type : struct [
   x : int;

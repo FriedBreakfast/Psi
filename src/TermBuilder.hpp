@@ -50,6 +50,7 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
   }
   
   static TreePtr<TypeInstance> instance(const TreePtr<GenericType>& generic, const PSI_STD::vector<TreePtr<Term> >& parameters, const SourceLocation& location);
+  static TreePtr<TypeInstance> instance(const TreePtr<GenericType>& generic, const SourceLocation& location);
 //@}
   
 /// \name Constructors

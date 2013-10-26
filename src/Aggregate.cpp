@@ -1,92 +1,15 @@
 #include "Macros.hpp"
 #include "Parser.hpp"
 #include "Enums.hpp"
+#include "Implementation.hpp"
 #include "Interface.hpp"
 #include "TermBuilder.hpp"
+#include "Aggregate.hpp"
 
 #include <boost/format.hpp>
 
 namespace Psi {
 namespace Compiler {
-/**
- * \brief Parameters to lifecycle functions.
- */
-struct AggregateLifecycleParameters {
-  /// \brief Generic specialization parameters
-  PSI_STD::vector<TreePtr<Term> > parameters;
-  
-  /// \brief Destination variable
-  TreePtr<Term> dest;
-  /// \brief Source variable, if a two parameter function
-  TreePtr<Term> src;
-};
-
-struct AggregateMovableParameter {
-  /// \brief Containing generic type
-  TreePtr<GenericType> generic;
-  /// \brief Initialization parameters
-  AggregateLifecycleParameters lc_init;
-  /// \brief Move parameters
-  AggregateLifecycleParameters lc_move;
-  /// \brief Finalization parameters
-  AggregateLifecycleParameters lc_fini;
-};
-
-struct AggregateMovableResult {
-  /// \brief Initialization code
-  TreePtr<Term> lc_init;
-  /// \brief Move code
-  TreePtr<Term> lc_move;
-  /// \brief Finalization code
-  TreePtr<Term> lc_fini;
-  
-  template<typename V>
-  static void visit(V& v) {
-    v("lc_init", &AggregateMovableResult::lc_init)
-    ("lc_move", &AggregateMovableResult::lc_move)
-    ("lc_fini", &AggregateMovableResult::lc_fini);
-  }
-};
-
-struct AggregateCopyableParameter {
-  /// \brief Containing generic type
-  TreePtr<GenericType> generic;
-  /// \brief Copy parameters
-  AggregateLifecycleParameters lc_copy;
-};
-
-struct AggregateCopyableResult {
-  /// \brief Copy code
-  TreePtr<Term> lc_copy;
-  
-  template<typename V>
-  static void visit(V& v) {
-    v("lc_copy", &AggregateCopyableResult::lc_copy);
-  }
-};
-
-/**
- * \brief Result returned from aggregate member macros.
- */
-struct AggregateMemberResult {
-  AggregateMemberResult() : no_move(false), no_copy(false) {}
-  
-  /// \brief Member type, or no data if NULL.
-  TreePtr<Term> member_type;
-  
-  /// \brief Do not generate movable interface
-  PsiBool no_move;
-  /// \brief Do not generate copyable interface
-  PsiBool no_copy;
-  
-  /// \brief Callback to generate movable interface functions
-  SharedDelayedValue<AggregateMovableResult, AggregateMovableParameter> movable_callback;
-  /// \brief Callback to generate copyable interface functions
-  SharedDelayedValue<AggregateCopyableResult, AggregateCopyableParameter> copyable_callback;
-  /// \brief Callback to generate interface overloads
-  SharedDelayedValue<PSI_STD::vector<TreePtr<OverloadValue> >, TreePtr<GenericType> > overloads_callback;
-};
-
 /**
  * \brief Result of building members of an aggregate.
  */
@@ -108,7 +31,7 @@ struct AggregateBodyResult {
   /// \brief Callback to generate copyable interface functions
   PSI_STD::vector<SharedDelayedValue<AggregateCopyableResult, AggregateCopyableParameter> > copyable_callbacks;
   /// \brief Callback to generate interface overloads
-  PSI_STD::vector<SharedDelayedValue<PSI_STD::vector<TreePtr<OverloadValue> >, TreePtr<GenericType> > > overload_callbacks;
+  PSI_STD::vector<SharedDelayedValue<PSI_STD::vector<TreePtr<OverloadValue> >, AggregateMemberArgument> > overload_callbacks;
   
   template<typename V>
   static void visit(V& v) {
@@ -140,6 +63,11 @@ public:
     result.no_move = false;
     result.no_copy = false;
     
+    AggregateMemberArgument member_argument;
+    member_argument.generic = generic;
+    member_argument.parameters = m_arguments.list;
+    member_argument.instance = TermBuilder::instance(generic, vector_from<TreePtr<Term> >(m_arguments.list), generic->location());
+    
     PSI_STD::vector<SourceLocation> movable_locations, copyable_locations;
     
     // Handle members
@@ -165,7 +93,7 @@ public:
         }
         
         AggregateMemberResult member_result = compile_expression<AggregateMemberResult>
-          (stmt.expression, member_context, generic->compile_context().builtins().macro_member_tag, generic, stmt_location.logical);
+          (stmt.expression, member_context, generic->compile_context().builtins().macro_member_tag, member_argument, stmt_location.logical);
         
         if (member_result.member_type) {
           result.members.push_back(member_result.member_type->parameterize(stmt_location, m_arguments.list));
@@ -250,9 +178,14 @@ public:
   PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const TreePtr<GenericType>& generic) {
     const AggregateBodyResult& body = m_body.get(generic);
 
+    AggregateMemberArgument member_argument;
+    member_argument.generic = generic;
+    member_argument.parameters = m_arguments.list;
+    member_argument.instance = TermBuilder::instance(generic, vector_from<TreePtr<Term> >(m_arguments.list), generic->location());
+
     PSI_STD::vector<TreePtr<OverloadValue> > overloads;
-    for (PSI_STD::vector<SharedDelayedValue<PSI_STD::vector<TreePtr<OverloadValue> >, TreePtr<GenericType> > >::const_iterator ii = body.overload_callbacks.begin(), ie = body.overload_callbacks.end(); ii != ie; ++ii) {
-      const PSI_STD::vector<TreePtr<OverloadValue> >& member_overloads = ii->get(generic);
+    for (PSI_STD::vector<SharedDelayedValue<PSI_STD::vector<TreePtr<OverloadValue> >, AggregateMemberArgument> >::const_iterator ii = body.overload_callbacks.begin(), ie = body.overload_callbacks.end(); ii != ie; ++ii) {
+      const PSI_STD::vector<TreePtr<OverloadValue> >& member_overloads = ii->get(member_argument);
       overloads.insert(overloads.end(), member_overloads.begin(), member_overloads.end());
     }
     
@@ -463,13 +396,16 @@ public:
     PatternArguments arguments;
     if (generic_parameters_expr)
       arguments = parse_pattern_arguments(evaluate_context, location, generic_parameters_expr->text);
+    
+    if (!arguments.dependent.empty())
+      self.compile_context().error_throw(location, "struct parameter specification should not contain dependent parameters");
 
     AggregateBodyDelayedValue shared_callback(self.compile_context(), location,
                                               AggregateBodyCallback(arguments, members_expr->text, evaluate_context));
     
     
-    
-    TreePtr<GenericType> generic = TermBuilder::generic(self.compile_context(), arguments.pattern, StructPrimitiveModeCallback(shared_callback), location,
+    PSI_STD::vector<TreePtr<Term> > pattern = arguments_to_pattern(arguments.list);
+    TreePtr<GenericType> generic = TermBuilder::generic(self.compile_context(), pattern, StructPrimitiveModeCallback(shared_callback), location,
                                                         StructTypeCallback(shared_callback), AggregateOverloadsCallback(arguments, evaluate_context, shared_callback));
 
     if (generic->pattern.empty()) {
@@ -498,7 +434,7 @@ public:
                                              const TreePtr<Term>& value,
                                              const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                              const TreePtr<EvaluateContext>& evaluate_context,
-                                             const TreePtr<GenericType>& argument,
+                                             const AggregateMemberArgument& argument,
                                              const SourceLocation& location) {
     TreePtr<Term> expanded = expression_macro(evaluate_context, value, self.compile_context().builtins().macro_term_tag, location)
       ->evaluate<TreePtr<Term> >(value, parameters, evaluate_context, EmptyType(), location);
@@ -511,7 +447,7 @@ public:
                                         const SharedPtr<Parser::Expression>& member,
                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                        const TreePtr<GenericType>& argument,
+                                        const AggregateMemberArgument& argument,
                                         const SourceLocation& location) {
     TreePtr<Term> expanded = expression_macro(evaluate_context, value, self.compile_context().builtins().macro_term_tag, location)
       ->dot<TreePtr<Term> >(value, member, parameters, evaluate_context, EmptyType(), location);
@@ -532,13 +468,13 @@ public:
   static AggregateMemberResult cast_impl(const DefaultMemberMacro& self,
                                          const TreePtr<Term>& PSI_UNUSED(value),
                                          const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
-                                         const TreePtr<GenericType>& PSI_UNUSED(argument),
+                                         const AggregateMemberArgument& PSI_UNUSED(argument),
                                          const SourceLocation& location) {
     self.compile_context().error_throw(location, "Aggregate member is not a type");
   }
 };
 
-const MacroVtable DefaultMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultMemberMacro, "psi.compiler.DefaultMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, TreePtr<GenericType>);
+const MacroVtable DefaultMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultMemberMacro, "psi.compiler.DefaultMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, AggregateMemberArgument);
 
 /**
  * Generate the default macro implementation for aggregate members.
@@ -557,7 +493,7 @@ public:
   static AggregateMemberResult cast_impl(const DefaultTypeMemberMacro& PSI_UNUSED(self),
                                          const TreePtr<Term>& value,
                                          const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
-                                         const TreePtr<GenericType>& PSI_UNUSED(argument),
+                                         const AggregateMemberArgument& PSI_UNUSED(argument),
                                          const SourceLocation& PSI_UNUSED(location)) {
     AggregateMemberResult result;
     result.member_type = value;
@@ -565,7 +501,7 @@ public:
   }
 };
 
-const MacroVtable DefaultTypeMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultTypeMemberMacro, "psi.compiler.DefaultTypeMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, TreePtr<GenericType>);
+const MacroVtable DefaultTypeMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultTypeMemberMacro, "psi.compiler.DefaultTypeMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, AggregateMemberArgument);
 
 /**
  * Generate the default macro implementation for aggregate members which are types.
@@ -652,7 +588,7 @@ public:
                                              const TreePtr<Term>& PSI_UNUSED(value),
                                              const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                                              const TreePtr<EvaluateContext>& evaluate_context,
-                                             const TreePtr<GenericType>& PSI_UNUSED(argument),
+                                             const AggregateMemberArgument& PSI_UNUSED(argument),
                                              const SourceLocation& location) {
     if (parameters.size() != 2)
       self.compile_context().error_throw(location, "Lifecycle macro expects two arguments");
@@ -698,7 +634,7 @@ public:
   }
 };
 
-const MacroVtable LifecycleMacro::vtable = PSI_COMPILER_MACRO(LifecycleMacro, "psi.compiler.LifecycleMacro", Macro, AggregateMemberResult, TreePtr<GenericType>);
+const MacroVtable LifecycleMacro::vtable = PSI_COMPILER_MACRO(LifecycleMacro, "psi.compiler.LifecycleMacro", Macro, AggregateMemberResult, AggregateMemberArgument);
 
 /// \brief Create the \c __init__ macro
 TreePtr<Term> lifecycle_init_macro(CompileContext& compile_context, const SourceLocation& location) {
@@ -742,7 +678,7 @@ public:
   static AggregateMemberResult cast_impl(const LifecycleDisableMacro& self,
                                          const TreePtr<Term>& PSI_UNUSED(value),
                                          const TreePtr<EvaluateContext>& PSI_UNUSED(evaluate_context),
-                                         const TreePtr<GenericType>& PSI_UNUSED(argument),
+                                         const AggregateMemberArgument& PSI_UNUSED(argument),
                                          const SourceLocation& PSI_UNUSED(location)) {
     AggregateMemberResult result;
     result.no_move = true;
@@ -752,7 +688,7 @@ public:
   }
 };
 
-const MacroVtable LifecycleDisableMacro::vtable = PSI_COMPILER_MACRO(LifecycleDisableMacro, "psi.compiler.LifecycleDisableMacro", Macro, AggregateMemberResult, TreePtr<GenericType>);
+const MacroVtable LifecycleDisableMacro::vtable = PSI_COMPILER_MACRO(LifecycleDisableMacro, "psi.compiler.LifecycleDisableMacro", Macro, AggregateMemberResult, AggregateMemberArgument);
 
 /// \brief Create the \c __no_move__ macro
 TreePtr<Term> lifecycle_no_move_macro(CompileContext& compile_context, const SourceLocation& location) {

@@ -4,338 +4,507 @@
 #include "TermBuilder.hpp"
 #include "Macros.hpp"
 #include "Parser.hpp"
+#include "Aggregate.hpp"
+#include "Implementation.hpp"
+
+#include <boost/format.hpp>
 
 namespace Psi {
-  namespace Compiler {
-    /**
-     * Parse generic arguments to an aggregate type.
-     */
-    PatternArguments parse_pattern_arguments(const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location, const Parser::Text& text) {
-      PatternArguments result;
+namespace Compiler {
+/**
+  * Parse generic arguments to an aggregate type, returning a list of anonymous terms and names for each argument.
+  */
+PatternArguments parse_pattern_arguments(const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location, const Parser::Text& text) {
+  PatternArguments result;
 
-      PSI_STD::vector<SharedPtr<Parser::FunctionArgument> > generic_parameters_parsed =
-        Parser::parse_type_argument_declarations(evaluate_context->compile_context().error_context(), location.logical, text);
-        
-      for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = generic_parameters_parsed.begin(), ie = generic_parameters_parsed.end(); ii != ie; ++ii) {
-        PSI_ASSERT(*ii && (*ii)->type);
-        const Parser::FunctionArgument& argument_expr = **ii;
-        
-        String expr_name;
-        LogicalSourceLocationPtr argument_logical_location;
-        if (argument_expr.name) {
-          expr_name = String(argument_expr.name->begin, argument_expr.name->end);
-          argument_logical_location = location.logical->new_child(expr_name);
-        } else {
-          argument_logical_location = location.logical;
-        }
-        SourceLocation argument_location(argument_expr.location, argument_logical_location);
+  PSI_STD::vector<SharedPtr<Parser::FunctionArgument> > generic_parameters_parsed =
+    Parser::parse_type_argument_declarations(evaluate_context->compile_context().error_context(), location.logical, text);
+    
+  for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = generic_parameters_parsed.begin(), ie = generic_parameters_parsed.end(); ii != ie; ++ii) {
+    PSI_ASSERT(*ii && (*ii)->type);
+    const Parser::FunctionArgument& argument_expr = **ii;
+    
+    String expr_name;
+    LogicalSourceLocationPtr argument_logical_location;
+    if (argument_expr.name) {
+      expr_name = String(argument_expr.name->begin, argument_expr.name->end);
+      argument_logical_location = location.logical->new_child(expr_name);
+    } else {
+      argument_logical_location = location.logical;
+    }
+    SourceLocation argument_location(argument_expr.location, argument_logical_location);
 
-        if (argument_expr.mode != parameter_mode_input)
-          evaluate_context->compile_context().error_throw(argument_location, "Generic type parameters must be declared with ':'");
+    if (argument_expr.mode != parameter_mode_input)
+      evaluate_context->compile_context().error_throw(argument_location, "Pattern parameters must be declared with ':'");
 
-        TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, result.names, evaluate_context);
-        TreePtr<Term> argument_type = compile_term(argument_expr.type, argument_context, argument_location.logical);
-        result.pattern.push_back(argument_type->parameterize(argument_location, result.list));
-        TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, term_mode_value, argument_location);
-        result.list.push_back(argument);
+    TreePtr<EvaluateContext> argument_context = evaluate_context_dictionary(evaluate_context->module(), argument_location, result.names, evaluate_context);
+    TreePtr<Term> argument_type = compile_term(argument_expr.type, argument_context, argument_location.logical);
+    TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, term_mode_value, argument_location);
+    result.list.push_back(argument);
 
-        if (argument_expr.name)
-          result.names[expr_name] = argument;
-      }
-      
-      return result;
+    if (argument_expr.name)
+      result.names[expr_name] = argument;
+  }
+  
+  return result;
+}
+
+/**
+  * \brief Convert a list of anonymous terms to a pattern of their types suitable for use with function types, generic types, etc.
+  */
+PSI_STD::vector<TreePtr<Term> > arguments_to_pattern(const PSI_STD::vector<TreePtr<Anonymous> >& arguments, const PSI_STD::vector<TreePtr<Anonymous> >& previous) {
+  PSI_STD::vector<TreePtr<Anonymous> > my_arguments = previous;
+  PSI_STD::vector<TreePtr<Term> > result;
+  for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = arguments.begin(), ie = arguments.end(); ii != ie; ++ii) {
+    result.push_back((*ii)->type->parameterize((*ii)->location(), previous));
+    my_arguments.push_back(*ii);
+  }
+  return result;
+}
+
+/**
+  * Meta-information about an interface.
+  */
+class InterfaceMetadata : public Tree {
+public:
+  static const VtableType vtable;
+  
+  struct Entry {
+    String name;
+    TreePtr<InterfaceMemberCallback> callback;
+    
+    Entry(const String& name_, const TreePtr<InterfaceMemberCallback>& callback_)
+    : name(name_), callback(callback_) {}
+    
+    template<typename V>
+    static void visit(V& v) {
+      v("name", &Entry::name)
+      ("callback", &Entry::callback);
+    }
+  };
+  
+  PSI_STD::vector<Entry> entries;
+  PSI_STD::map<String, unsigned> entry_names;
+  
+  InterfaceMetadata(CompileContext& compile_context, const PSI_STD::vector<Entry>& entries_, const SourceLocation& location)
+  : Tree(&vtable, compile_context, location), entries(entries_) {
+    unsigned index = 0;
+    for (PSI_STD::vector<Entry>::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii, ++index)
+      entry_names.insert(std::make_pair(ii->name, index));
+  }
+  
+  template<typename V>
+  static void visit(V& v) {
+    visit_base<Tree>(v);
+    v("entries", &InterfaceMetadata::entries)
+    ("entry_names", &InterfaceMetadata::entry_names);
+  }
+};
+
+const TreeVtable InterfaceMetadata::vtable = PSI_COMPILER_TREE(InterfaceMetadata, "psi.compiler.InterfaceMetadata", Tree);
+
+namespace {
+  struct InterfaceDefineCommonResult {
+    /// \brief Interface generic member type
+    TreePtr<Term> member_type;
+    /// \brief Callbacks used to define and evaluate interface members
+    TreePtr<InterfaceMetadata> metadata;
+    
+    template<typename V>
+    static void visit(V& v) {
+      v("member_type", &InterfaceDefineCommonResult::member_type)
+      ("metadata", &InterfaceDefineCommonResult::metadata);
+    }
+  };
+  
+  class InterfaceDefineCommonCallback {
+    PatternArguments m_arguments;
+    TreePtr<EvaluateContext> m_evaluate_context;
+    Parser::Text m_text;
+    
+  public:
+    InterfaceDefineCommonCallback(const PatternArguments& arguments, const TreePtr<EvaluateContext>& evaluate_context, const Parser::Text& text)
+    : m_arguments(arguments), m_evaluate_context(evaluate_context), m_text(text) {
     }
     
-    /**
-     * Create a new interface.
-     */
-    class InterfaceDefineMacro : public MacroMemberCallback {
-    public:
-      static const MacroMemberCallbackVtable vtable;
-
-      InterfaceDefineMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
-      }
-
-      static TreePtr<Term> evaluate_impl(const InterfaceDefineMacro& self,
-                                         const TreePtr<Term>& value,
-                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                         const SourceLocation& location) {
-        if (parameters.size() != 2)
-          self.compile_context().error_throw(location, "Interface definition expects 2 parameters");
-
-        SharedPtr<Parser::TokenExpression> types_expr, members_expr;
-        if (!(types_expr = expression_as_token_type(parameters[0], Parser::token_bracket)))
-          self.compile_context().error_throw(location, "First (types) parameter to interface macro is not a (...)");
-        if (!(members_expr = expression_as_token_type(parameters[1], Parser::token_square_bracket)))
-          self.compile_context().error_throw(location, "Second (members) parameter to interface macro is not a [...]");
-
-        PatternArguments args = parse_pattern_arguments(evaluate_context, location, types_expr->text);
-        TreePtr<EvaluateContext> member_context = evaluate_context_dictionary(evaluate_context->module(), location, args.names, evaluate_context);	  
-
-        PSI_STD::vector<SharedPtr<Parser::Statement> > members = Parser::parse_statement_list(self.compile_context().error_context(), location.logical, members_expr->text);
-        
-        PSI_NOT_IMPLEMENTED();
-      }
-    };
-
-    const MacroMemberCallbackVtable InterfaceDefineMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(InterfaceDefineMacro, "psi.compiler.InterfaceDefineMacro", MacroMemberCallback);
-
-    /**
-     * Return a term which is a macro for defining new interfaces.
-     */
-    TreePtr<Term> interface_define_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new InterfaceDefineMacro(compile_context, location));
-      TreePtr<Macro> m = make_macro(compile_context, location, callback);
-      return make_macro_term(m, location);
-    }
-
-    /**
-     * Define a new macro.
-     */
-    class ImplementationDefineMacro : public MacroMemberCallback {
-    public:
-      static const MacroMemberCallbackVtable vtable;
-
-      ImplementationDefineMacro(CompileContext& compile_context, const SourceLocation& location)
-      : MacroMemberCallback(&vtable, compile_context, location) {
-      }
-
-      static TreePtr<Term> evaluate_impl(const ImplementationDefineMacro& self,
-                                         const TreePtr<Term>& value,
-                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                         const SourceLocation& location) {
-        PSI_NOT_IMPLEMENTED();
-      }
-    };
-
-    const MacroMemberCallbackVtable ImplementationDefineMacro::vtable = PSI_COMPILER_MACRO_MEMBER_CALLBACK(ImplementationDefineMacro, "psi.compiler.ImplementationDefineMacro", MacroMemberCallback);
-
-    /**
-     * Return a term which is a macro for creating interface implementations.
-     */
-    TreePtr<Term> implementation_define_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<MacroMemberCallback> callback(::new ImplementationDefineMacro(compile_context, location));
-      TreePtr<Macro> m = make_macro(compile_context, location, callback);
-      return make_macro_term(m, location);
+    template<typename V>
+    static void visit(V& v) {
+      v("arguments", &InterfaceDefineCommonCallback::m_arguments)
+      ("evaluate_context", &InterfaceDefineCommonCallback::m_evaluate_context);
     }
     
-    class ImplementationHelperWrapperGeneric {
-      PSI_STD::vector<TreePtr<Term> > m_pattern_parameters;
-      PSI_STD::vector<TreePtr<Term> > m_members;
-
-      TreePtr<GenericType> m_inner_generic;
-      PSI_STD::vector<TreePtr<Term> > m_inner_parameters;
-
-    public:
-      typedef GenericType TreeResultType;
+    InterfaceDefineCommonResult evaluate(const TreePtr<GenericType>& generic) {
+      CompileContext& compile_context = generic->compile_context();
+      const SourceLocation& location = generic->location();
       
-      ImplementationHelperWrapperGeneric(const PSI_STD::vector<TreePtr<Term> >& pattern_parameters, const PSI_STD::vector<TreePtr<Term> >& members,
-                                         const TreePtr<GenericType>& inner_generic, const PSI_STD::vector<TreePtr<Term> >& inner_parameters)
-      : m_pattern_parameters(pattern_parameters), m_members(members),
-      m_inner_generic(inner_generic), m_inner_parameters(inner_parameters) {
-      }
+      TreePtr<EvaluateContext> member_context = evaluate_context_dictionary(m_evaluate_context->module(), location, m_arguments.names, m_evaluate_context);        
+      PSI_STD::vector<SharedPtr<Parser::Statement> > members = Parser::parse_namespace(compile_context.error_context(), location.logical, m_text);
       
-      TreePtr<Term> evaluate(const TreePtr<GenericType>& self) {
-        TreePtr<Term> instance = TermBuilder::instance(self, m_pattern_parameters, self->location());
-        TreePtr<Term> upref = TermBuilder::upref(instance, 0, TermBuilder::upref_null(self->compile_context()), self->location());
-        upref = TermBuilder::upref(default_, m_members.size(), upref, self->location());
-        m_inner_parameters.insert(m_inner_parameters.begin(), upref);
-        TreePtr<Term> inner_instance = TermBuilder::instance(m_inner_generic, m_inner_parameters, self->location());
-        m_members.push_back(inner_instance);
-        TreePtr<Term> wrapper_struct = TermBuilder::struct_type(self->compile_context(), m_members, self->location());
-        return wrapper_struct;
-      }
-      
-      template<typename V>
-      static void visit(V& v) {
-        v("pattern_parameters", &ImplementationHelperWrapperGeneric::m_pattern_parameters)
-        ("members", &ImplementationHelperWrapperGeneric::m_members)
-        ("inner_generic", &ImplementationHelperWrapperGeneric::m_inner_generic)
-        ("inner_parameters", &ImplementationHelperWrapperGeneric::m_inner_parameters);
-      }
-    };
-    
-    /**
-     * \param generic_parameters Parameters to the interface generic type.
-     * This should have one element fewer than the number of parameters to the
-     * generic itself: the first parameter is expected to be an upward reference
-     * to the outer data structure which is filled in here.
-     */
-    ImplementationHelper::ImplementationHelper(const SourceLocation& location,
-                                               const TreePtr<Interface>& interface,
-                                               const PSI_STD::vector<TreePtr<Anonymous> >& pattern_parameters,
-                                               const PSI_STD::vector<TreePtr<Term> >& generic_parameters,
-                                               const PSI_STD::vector<TreePtr<InterfaceValue> >& pattern_interfaces)
-    : m_location(location),
-    m_interface(interface),
-    m_pattern_parameters(pattern_parameters),
-    m_generic_parameters(generic_parameters),
-    m_pattern_interfaces(pattern_interfaces) {
-      PSI_STD::vector<TreePtr<Term> > type_pattern;
-      
-      if (TreePtr<Exists> interface_exists = term_unwrap_dyn_cast<Exists>(m_interface->type))
-        if (TreePtr<PointerType> interface_ptr = term_unwrap_dyn_cast<PointerType>(interface_exists->result))
-          if (TreePtr<TypeInstance> interface_inst = term_unwrap_dyn_cast<TypeInstance>(interface_ptr->target_type))
-            m_generic = interface_inst->generic;
-        
-      if (!m_generic)
-        interface->compile_context().error_throw(location, "ImplementationHelper is only suitable for interfaces whose value is of the form Exists.PointerType.Instance", CompileError::error_internal);
+      InterfaceMemberArgument member_argument;
+      member_argument.generic = generic;
+      member_argument.parameters.push_back(TermBuilder::anonymous(TermBuilder::upref_type(compile_context), term_mode_value, location));
+      member_argument.parameters.insert(member_argument.parameters.end(), m_arguments.list.begin(), m_arguments.list.end());
+      member_argument.self_pointer_type = TermBuilder::pointer(TermBuilder::instance(generic, member_argument.parameters, location), location);
       
       PSI_STD::vector<TreePtr<Term> > member_types;
-      for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = pattern_parameters.begin(), ie = pattern_parameters.end(); ii != ie; ++ii) {
-        TreePtr<Term> parameterized = (*ii)->parameterize(location, pattern_parameters);
-        type_pattern.push_back(parameterized);
-        TreePtr<Term> type = TermBuilder::constant(parameterized, location);
-        member_types.push_back(type);
-        m_wrapper_member_values.push_back(TermBuilder::default_value(type, location));
-      }
-      
-      for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = pattern_interfaces.begin(), ie = pattern_interfaces.end(); ii != ie; ++ii) {
-        TreePtr<Term> value = (*ii)->parameterize(location, pattern_parameters);
-        member_types.push_back(value->type);
-        m_wrapper_member_values.push_back(value);
-      }
-      
-      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = generic_parameters.begin(), ie = generic_parameters.end(); ii != ie; ++ii)
-        m_interface_parameters.push_back((*ii)->parameterize(location, pattern_parameters));
+      PSI_STD::vector<InterfaceMetadata::Entry> metadata_entries;
 
-      m_wrapper_generic = TermBuilder::generic(interface->compile_context(), type_pattern, GenericType::primitive_always, location,
-                                               ImplementationHelperWrapperGeneric(type_pattern, member_types, m_generic, m_interface_parameters));
-      
-      TreePtr<Term> wrapper_instance = TermBuilder::instance(m_wrapper_generic, type_pattern, location);
-      
-      // Need a double upward reference: one for the struct and one for the containing generic
-      TreePtr<Term> upref = TermBuilder::upref(wrapper_instance, 0, TermBuilder::upref_null(interface->compile_context()), location);
-      upref = TermBuilder::upref(default_, m_wrapper_member_values.size(), upref, location);
-      
-      m_generic_parameters.insert(m_generic_parameters.begin(), upref);
-    }
-    
-    /**
-     * \brief Begin generating a function for use in an interface.
-     * 
-     * The first argument to the function type \c type is assumed to be the interface
-     * reference.
-     */
-    ImplementationHelper::FunctionSetup ImplementationHelper::function_setup(const TreePtr<FunctionType>& type, const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations) {
-      FunctionSetup result;
-      result.location = location;
-      result.function_type = type;
-      
-      PSI_STD::vector<TreePtr<Term> > previous_arguments;
-      for (std::size_t ii = 0, ie = type->parameter_types.size(); ii != ie; ++ii) {
-        const SourceLocation& loc = (ie - ii) <= parameter_locations.size() ?
-          parameter_locations[parameter_locations.size() - (ie - ii)] : location;
-        TreePtr<Anonymous> param = type->parameter_after(loc, previous_arguments);
-        previous_arguments.push_back(param);
-        result.parameters.push_back(param);
+      for (PSI_STD::vector<SharedPtr<Parser::Statement> >::const_iterator ii = members.begin(), ie = members.end(); ii != ie; ++ii) {
+        if (*ii && (*ii)->expression) {
+          Parser::Statement& stmt = **ii;
+          PSI_ASSERT(stmt.name);
+          String name = stmt.name->str();
+          SourceLocation member_location(stmt.location, location.logical->new_child(name));
+          
+          if (stmt.mode != statement_mode_value)
+            compile_context.error_throw(location, boost::format("Interface member '%s' not defined with ':'") % name);
+          
+          InterfaceMemberResult member = compile_expression<InterfaceMemberResult>
+            (stmt.expression, member_context, compile_context.builtins().macro_interface_member_tag, member_argument, member_location.logical);
+          
+          if (!member.type)
+            compile_context.error_throw(location, boost::format("Interface member '%s' did not give a type") % name);
+          if (!member.callback)
+            compile_context.error_throw(location, boost::format("Interface member '%s' did not return an evaluation callback") % name);
+
+          member_types.push_back(member.type->parameterize(member_location, m_arguments.list));
+          metadata_entries.push_back(InterfaceMetadata::Entry(name, member.callback));
+        }
       }
       
-      result.implementation = TermBuilder::outer_pointer(result.parameters.front(), result.parameters.front()->location());
+      InterfaceDefineCommonResult result;
+      result.member_type = TermBuilder::struct_type(compile_context, member_types, location);
+      result.metadata.reset(::new InterfaceMetadata(compile_context, metadata_entries, location));
       
       return result;
     }
+  };
+  
+  typedef SharedDelayedValue<InterfaceDefineCommonResult, TreePtr<GenericType> > InterfaceDefineCommonDelayedValue;
+  
+  class InterfaceDefineMemberCallback {
+    InterfaceDefineCommonDelayedValue m_common;
     
-    TreePtr<Term> ImplementationHelper::function_finish(const ImplementationHelper::FunctionSetup& setup, const TreePtr<Module>& module,
-                                                        const TreePtr<Term>& body, const TreePtr<JumpTarget>& return_target) {
-      TreePtr<Term> wrapped_body = body;
-      int offset = 0;
-      PSI_STD::vector<TreePtr<Term> > solidify_values;
-      for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = m_pattern_parameters.begin(), ie = m_pattern_parameters.end(); ii != ie; ++ii, ++offset)
-        solidify_values.push_back(TermBuilder::ptr_target(TermBuilder::element_pointer(setup.implementation, offset, setup.location), setup.location));
-      if (!solidify_values.empty())
-        wrapped_body = TermBuilder::solidify_during(solidify_values, wrapped_body, setup.location);
-      
-      PSI_STD::vector<TreePtr<Implementation> > implementations;
-      for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = m_pattern_interfaces.begin(), ie = m_pattern_interfaces.end(); ii != ie; ++ii, ++offset) {
-        TreePtr<Term> ptr_value = TermBuilder::ptr_target(TermBuilder::element_pointer(setup.implementation, offset, setup.location), setup.location);
-        TreePtr<Term> value = TermBuilder::ptr_target(ptr_value, setup.location);
-        implementations.push_back(Implementation::new_(default_, value, (*ii)->interface, 0, (*ii)->parameters, true, default_, setup.location));
-      }
-      
-      TreePtr<Term> inner_implementation = TermBuilder::element_pointer(setup.implementation, m_wrapper_member_values.size(), setup.location);
-      for (PSI_STD::vector<Interface::InterfaceBase>::const_iterator ii = m_interface->bases.begin(), ie = m_interface->bases.end(); ii != ie; ++ii) {
-        TreePtr<Term> value = inner_implementation;
-        for (PSI_STD::vector<int>::const_iterator ji = ii->path.begin(), je = ii->path.end(); ji != je; ++ji)
-          value = TermBuilder::element_pointer(value, *ji, setup.location);
-        value = TermBuilder::ptr_target(value, setup.location);
-        PSI_STD::vector<TreePtr<Term> > parameters;
-        for (PSI_STD::vector<TreePtr<Term> >::const_iterator ji = ii->parameters.begin(), je = ii->parameters.end(); ji != je; ++ji)
-          parameters.push_back((*ji)->specialize(setup.location, m_generic_parameters));
-        TreePtr<Implementation> impl = Implementation::new_(default_, value, ii->interface, 0, parameters, true, default_, setup.location);
-        implementations.push_back(impl);
-      }
-      
-      if (!implementations.empty())
-        wrapped_body = TermBuilder::introduce_implementation(implementations, wrapped_body, setup.location);
-      
-      PSI_STD::vector<TreePtr<Anonymous> > parameters = m_pattern_parameters;
-      parameters.insert(parameters.end(), setup.parameters.begin(), setup.parameters.end());
-      
-      PSI_STD::vector<FunctionParameterType> parameter_types;
-      for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = m_pattern_parameters.begin(), ie = m_pattern_parameters.end(); ii != ie; ++ii)
-        parameter_types.push_back(FunctionParameterType(parameter_mode_phantom, (*ii)->type->parameterize(setup.location, parameters)));
-
-      for (std::size_t ii = 0, ie = setup.parameters.size(); ii != ie; ++ii)
-        parameter_types.push_back(FunctionParameterType(setup.function_type->parameter_types[ii].mode, setup.parameters[ii]->type->parameterize(setup.location, parameters)));
-      
-      PSI_STD::vector<TreePtr<InterfaceValue> > function_interfaces;
-      PSI_STD::vector<TreePtr<Term> > setup_parameters_term(setup.parameters.begin(), setup.parameters.end());
-      for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = setup.function_type->interfaces.begin(), ie = setup.function_type->interfaces.end(); ii != ie; ++ii)
-        function_interfaces.push_back(treeptr_cast<InterfaceValue>((*ii)->specialize(setup.location, setup_parameters_term)->parameterize(setup.location, parameters)));
-      
-      TreePtr<Term> result_type = setup.function_type->result_type_after(setup.location, setup_parameters_term)->parameterize(setup.location, parameters);
-      TreePtr<FunctionType> function_type = TermBuilder::function_type(setup.function_type->result_mode, result_type, parameter_types, function_interfaces, setup.location);
-      /// \todo Implementation functions should inherit their linkage from the implementation
-      TreePtr<Global> function = TermBuilder::function(module, function_type, link_private, parameters, return_target, setup.location, wrapped_body);
-      return TermBuilder::ptr_to(function, setup.location);
-    }
+  public:
+    InterfaceDefineMemberCallback(const InterfaceDefineCommonDelayedValue& common) : m_common(common) {}
+    template<typename V> static void visit(V& v) {v("common", &InterfaceDefineMemberCallback::m_common);}
     
-    TreePtr<Implementation> ImplementationHelper::finish(const TreePtr<Term>& inner_value) {
-      TreePtr<TypeInstance> inner_generic_instance =
-        treeptr_cast<TypeInstance>(treeptr_cast<StructType>(m_wrapper_generic->member_type())->members[m_wrapper_member_values.size()]);
-      TreePtr<Term> inner_value_parameterized = inner_value->parameterize(m_location, m_pattern_parameters);
-      m_wrapper_member_values.push_back(TermBuilder::instance_value(inner_generic_instance, inner_value_parameterized, m_location));
-      
-      PSI_STD::vector<TreePtr<Term> > type_pattern;
-      for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = m_pattern_parameters.begin(), ie = m_pattern_parameters.end(); ii != ie; ++ii)
-        type_pattern.push_back((*ii)->parameterize(m_location, m_pattern_parameters));
+    TreePtr<Term> evaluate(const TreePtr<GenericType>& generic) {
+      return m_common.get(generic).member_type;
+    }
+  };
+}
 
-      TreePtr<Term> struct_value = TermBuilder::struct_value(inner_value->compile_context(), m_wrapper_member_values, m_location);
-      TreePtr<TypeInstance> wrapper_instance = TermBuilder::instance(m_wrapper_generic, type_pattern, m_location);
-      TreePtr<Term> value = TermBuilder::instance_value(wrapper_instance, struct_value, m_location);
-      
-      return Implementation::new_(default_, value, m_interface, 0, m_interface_parameters, false,
-                                  vector_of<int>(0,m_wrapper_member_values.size()-1), m_location);
-    }
-
-    TreePtr<FunctionType> ImplementationHelper::member_function_type(int index, const SourceLocation& location) {
-      TreePtr<StructType> st = term_unwrap_dyn_cast<StructType>(m_generic->member_type());
-      if (!st)
-        m_generic->compile_context().error_throw(location, "ImplementationHelper::member_function_type used on generic which is not a struct", CompileError::error_internal);
-      
-      TreePtr<PointerType> pt = term_unwrap_dyn_cast<PointerType>(st->members[index]);
-      if (!pt)
-        m_generic->compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a pointer", CompileError::error_internal);
-      
-      TreePtr<FunctionType> ft = term_unwrap_dyn_cast<FunctionType>(pt->target_type);
-      if (!ft)
-        m_generic->compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a function pointer", CompileError::error_internal);
-      
-      return treeptr_cast<FunctionType>(pt->target_type->specialize(location, m_generic_parameters));
-    }
-    
-    /**
-     * Shortcut for:
-     * 
-     * \code this->function_setup(this->member_function_type(index, location), location, parameter_locations) \endcode
-     */
-    ImplementationHelper::FunctionSetup ImplementationHelper::member_function_setup(int index, const SourceLocation& location,
-                                                                                    const PSI_STD::vector<SourceLocation>& parameter_locations) {
-      return function_setup(member_function_type(index, location), location, parameter_locations);
-    }
+class InterfaceTermEvaluateMacro : public Macro {
+  TreePtr<Interface> m_interface;
+  TreePtr<InterfaceMetadata> m_metadata;
+  
+public:
+  static const VtableType vtable;
+  
+  InterfaceTermEvaluateMacro(const TreePtr<Interface>& interface, const TreePtr<InterfaceMetadata>& metadata, const SourceLocation& location)
+  : Macro(&vtable, interface->compile_context(), location),
+  m_interface(interface),
+  m_metadata(metadata) {
   }
+  
+  template<typename V>
+  static void visit(V& v) {
+    visit_base<Macro>(v);
+    v("interface", &InterfaceTermEvaluateMacro::m_interface)
+    ("metadata", &InterfaceTermEvaluateMacro::m_metadata);
+  }
+  
+  static TreePtr<Term> evaluate_impl(const InterfaceTermEvaluateMacro& self,
+                                      const TreePtr<Term>& PSI_UNUSED(value),
+                                      const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                      const TreePtr<EvaluateContext>& evaluate_context,
+                                      const MacroTermArgument& PSI_UNUSED(argument),
+                                      const SourceLocation& location) {
+    PSI_STD::vector<TreePtr<Term> > arguments = compile_call_arguments(parameters, evaluate_context, location);
+    return TermBuilder::interface_value(self.m_interface, arguments, location);
+  }
+
+  static TreePtr<Term> dot_impl(const InterfaceTermEvaluateMacro& self,
+                                const TreePtr<Term>& PSI_UNUSED(value),
+                                const SharedPtr<Parser::Expression>& member,
+                                const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                const TreePtr<EvaluateContext>& evaluate_context,
+                                const MacroTermArgument& PSI_UNUSED(argument),
+                                const SourceLocation& location) {
+    // Call to a member
+    SharedPtr<Parser::TokenExpression> ident;
+    if (!(ident = Parser::expression_as_token_type(member, Parser::token_identifier)))
+      self.compile_context().error_throw(location, "Interface member name after '.' is not an identifier");
+    
+    String name = ident->text.str();
+    PSI_STD::map<String, unsigned>::const_iterator name_it = self.m_metadata->entry_names.find(name);
+    if (name_it == self.m_metadata->entry_names.end()) {
+      CompileError err(self.compile_context().error_context(), location);
+      err.info(boost::format("Interface '%s' does not have a member named '%s'") % self.m_interface->location().logical->error_name(location.logical) % name);
+      err.info(self.m_interface->location(), "Interface defined here");
+      err.end_throw();
+    }
+    
+    const InterfaceMetadata::Entry& entry = self.m_metadata->entries[name_it->second];
+    return entry.callback->evaluate(vector_of<unsigned>(0, name_it->second), parameters,
+                                    evaluate_context, location);
+  }
+};
+
+const MacroVtable InterfaceTermEvaluateMacro::vtable = PSI_COMPILER_MACRO(InterfaceTermEvaluateMacro, "psi.compiler.InterfaceTermEvaluateMacro", Macro, TreePtr<Term>, MacroTermArgument);
+
+namespace {
+  class InterfaceAggregateMemberCallback {
+    TreePtr<Interface> m_interface;
+    TreePtr<InterfaceMetadata> m_metadata;
+    TreePtr<EvaluateContext> m_evaluate_context;
+    SourceLocation m_location;
+    SharedPtr<Parser::TokenExpression> m_parameters_expression, m_body_expression;
+    
+  public:
+    InterfaceAggregateMemberCallback(const TreePtr<Interface>& interface, const TreePtr<InterfaceMetadata>& metadata,
+                                     const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location,
+                                     const SharedPtr<Parser::TokenExpression>& parameters_expression,
+                                     const SharedPtr<Parser::TokenExpression>& body_expression)
+    : m_interface(interface), m_metadata(metadata),
+    m_evaluate_context(evaluate_context), m_location(location),
+    m_parameters_expression(parameters_expression), m_body_expression(body_expression) {}
+    
+    template<typename V>
+    static void visit(V& v) {
+      v("interface", &InterfaceAggregateMemberCallback::m_interface)
+      ("metadata", &InterfaceAggregateMemberCallback::m_metadata)
+      ("evaluate_context", &InterfaceAggregateMemberCallback::m_evaluate_context)
+      ("location", &InterfaceAggregateMemberCallback::m_location)
+      ("parameters_expression", &InterfaceAggregateMemberCallback::m_parameters_expression)
+      ("body_expression", &InterfaceAggregateMemberCallback::m_body_expression);
+    }
+    
+    PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const AggregateMemberArgument& argument) {
+      CompileContext& compile_context = argument.generic->compile_context();
+      
+      PSI_STD::vector<TreePtr<Anonymous> > wildcards;
+      PSI_STD::vector<TreePtr<Term> > interface_parameters;
+      if (m_parameters_expression) {
+        PSI_NOT_IMPLEMENTED();
+      } else {
+        // Default is a single argument which is the containing type
+        wildcards = argument.parameters;
+        interface_parameters.push_back(argument.instance);
+      }
+      
+      ImplementationHelper helper(m_location, m_interface, wildcards, interface_parameters, default_);
+
+      PSI_STD::vector<TreePtr<Term> > entry_values(m_metadata->entries.size());
+      PSI_STD::vector<SharedPtr<Parser::Statement> > entries = Parser::parse_namespace(compile_context.error_context(), m_location.logical, m_body_expression->text);
+      for (PSI_STD::vector<SharedPtr<Parser::Statement> >::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii) {
+        if (*ii) {
+          const Parser::Statement& stmt = **ii;
+          PSI_ASSERT(stmt.name && stmt.expression); // Enforced by parser
+          String name = stmt.name->str();
+          PSI_STD::map<String, unsigned>::const_iterator name_it = m_metadata->entry_names.find(name);
+          if (name_it == m_metadata->entry_names.end())
+            compile_context.error_throw(m_location.relocate(stmt.location), boost::format("Interface '%s' has no member named '%s'") % m_interface->location().logical->error_name(m_location.logical) % name);
+          PSI_ASSERT(name_it->second < entry_values.size());
+          if (entry_values[name_it->second])
+            compile_context.error_throw(m_location.relocate(stmt.location), boost::format("Multiple values specified for '%s'") % name);
+          
+          const InterfaceMetadata::Entry& entry = m_metadata->entries[name_it->second];
+          PSI_ASSERT(name == entry.name);
+          SourceLocation value_loc(stmt.location, m_location.logical->new_child(name));
+          TreePtr<Term> value = entry.callback->implement(stmt.expression, m_evaluate_context, value_loc);
+          
+          entry_values[name_it->second] = value;
+        }
+      }
+      
+      bool failed = false;
+      for (std::size_t ii = 0, ie = entry_values.size(); ii != ie; ++ii) {
+        if (!entry_values[ii])
+          compile_context.error_context().error(m_location, boost::format("No value specified for '%s'") % m_metadata->entries[ii].name);
+      }
+      if (failed)
+        throw CompileException();
+      
+      TreePtr<Term> inner_value = TermBuilder::struct_value(compile_context, entry_values, m_location);
+      TreePtr<Implementation> impl = helper.finish(inner_value);
+      return vector_of<TreePtr<OverloadValue> >(impl);
+    }
+  };
+}
+
+class InterfaceAggregateMemberMacro : public Macro {
+  TreePtr<Interface> m_interface;
+  TreePtr<InterfaceMetadata> m_metadata;
+  
+public:
+  static const VtableType vtable;
+  
+  InterfaceAggregateMemberMacro(const TreePtr<Interface>& interface, const TreePtr<InterfaceMetadata>& metadata, const SourceLocation& location)
+  : Macro(&vtable, interface->compile_context(), location),
+  m_interface(interface),
+  m_metadata(metadata) {
+  }
+
+  template<typename V>
+  static void visit(V& v) {
+    visit_base<Macro>(v);
+    v("interface", &InterfaceAggregateMemberMacro::m_interface)
+    ("metadata", &InterfaceAggregateMemberMacro::m_metadata);
+  }
+  
+  static AggregateMemberResult evaluate_impl(const InterfaceAggregateMemberMacro& self,
+                                             const TreePtr<Term>& PSI_UNUSED(value),
+                                             const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                             const TreePtr<EvaluateContext>& evaluate_context,
+                                             const AggregateMemberArgument& PSI_UNUSED(argument),
+                                             const SourceLocation& location) {
+    SharedPtr<Parser::TokenExpression> params_expr, body;
+    switch (parameters.size()) {
+    case 1: {
+      if (!(body = Parser::expression_as_token_type(parameters[0], Parser::token_square_bracket)))
+        self.compile_context().error_throw(location, "Argument to implementation is not a [...]");
+      break;
+    }
+      
+    case 2: {
+      if (!(params_expr = Parser::expression_as_token_type(parameters[0], Parser::token_square_bracket)))
+        self.compile_context().error_throw(location, "First argument to implementation is not a (...)");
+      if (!(body = Parser::expression_as_token_type(parameters[1], Parser::token_square_bracket)))
+        self.compile_context().error_throw(location, "Second argument to implementation is not a [...]");
+      break;
+    }
+      
+    default:
+      self.compile_context().error_throw(location, "Interface implementation expects a single argument");
+    }
+
+    AggregateMemberResult result;
+    result.overloads_callback.reset(self.compile_context(), location,
+                                    InterfaceAggregateMemberCallback(self.m_interface, self.m_metadata, evaluate_context,
+                                                                     location, params_expr, body));
+    return result;
+  }
+};
+
+const MacroVtable InterfaceAggregateMemberMacro::vtable = PSI_COMPILER_MACRO(InterfaceAggregateMemberMacro, "psi.compiler.InterfaceAggregateMemberMacro", Macro, AggregateMemberResult, AggregateMemberArgument);
+
+namespace {
+  /**
+    * Callback which generates parameter-less type which
+    * presents the interface syntactic interface.
+    */
+  class InterfaceDefineUserOverloadCallback {
+    TreePtr<GenericType> m_generic;
+    InterfaceDefineCommonDelayedValue m_common;
+    TreePtr<Interface> m_interface;
+    
+  public:
+    InterfaceDefineUserOverloadCallback(const TreePtr<GenericType>& generic, const InterfaceDefineCommonDelayedValue& common, const TreePtr<Interface>& interface)
+    : m_generic(generic), m_common(common), m_interface(interface) {}
+    
+    template<typename V>
+    static void visit(V& v) {
+      v("generic", &InterfaceDefineUserOverloadCallback::m_generic)
+      ("common", &InterfaceDefineUserOverloadCallback::m_common)
+      ("interface", &InterfaceDefineUserOverloadCallback::m_interface);
+    }
+    
+    PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const TreePtr<GenericType>& frontend) {
+      CompileContext& compile_context = frontend->compile_context();
+      const SourceLocation& location = frontend->location();
+      
+      const InterfaceDefineCommonResult& common_result = m_common.get(m_generic);
+      TreePtr<Term> instance = TermBuilder::instance(frontend, location);
+      
+      PSI_STD::vector<TreePtr<OverloadValue> > result;
+      TreePtr<Macro> eval(::new InterfaceTermEvaluateMacro(m_interface, common_result.metadata, location));
+      result.push_back(Metadata::new_(eval, compile_context.builtins().type_macro, 0, vector_of(instance, compile_context.builtins().macro_term_tag), location));
+      TreePtr<Macro> member(::new InterfaceAggregateMemberMacro(m_interface, common_result.metadata, location));
+      result.push_back(Metadata::new_(member, compile_context.builtins().type_macro, 0, vector_of(instance, compile_context.builtins().macro_member_tag), location));
+      
+      return result;
+    }
+  };
+}
+
+/**
+  * Create a new interface.
+  */
+class InterfaceDefineMacro : public Macro {
+public:
+  static const MacroVtable vtable;
+
+  InterfaceDefineMacro(CompileContext& compile_context, const SourceLocation& location)
+  : Macro(&vtable, compile_context, location) {
+  }
+
+  static TreePtr<Term> evaluate_impl(const InterfaceDefineMacro& self,
+                                      const TreePtr<Term>& PSI_UNUSED(value),
+                                      const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                      const TreePtr<EvaluateContext>& evaluate_context,
+                                      const MacroTermArgument& PSI_UNUSED(argument),
+                                      const SourceLocation& location) {
+    if (parameters.size() != 2)
+      self.compile_context().error_throw(location, "Interface definition expects 2 parameters");
+
+    SharedPtr<Parser::TokenExpression> types_expr, members_expr;
+    if (!(types_expr = Parser::expression_as_token_type(parameters[0], Parser::token_bracket)))
+      self.compile_context().error_throw(location, "First (types) parameter to interface macro is not a (...)");
+    if (!(members_expr = Parser::expression_as_token_type(parameters[1], Parser::token_square_bracket)))
+      self.compile_context().error_throw(location, "Second (members) parameter to interface macro is not a [...]");
+
+    PatternArguments args = parse_pattern_arguments(evaluate_context, location, types_expr->text);
+    if (args.list.empty())
+      self.compile_context().error_throw(location, "Interface definition must have at least one parameter");
+    
+    
+    PSI_STD::vector<TreePtr<Anonymous> > generic_args;
+    generic_args.push_back(TermBuilder::anonymous(TermBuilder::upref_type(self.compile_context()), term_mode_value, location));
+    generic_args.insert(generic_args.end(), args.list.begin(), args.list.end());
+    generic_args.insert(generic_args.end(), args.dependent.begin(), args.dependent.end());
+
+    PSI_STD::vector<TreePtr<Term> > generic_pattern = arguments_to_pattern(generic_args);
+    InterfaceDefineCommonDelayedValue common(self.compile_context(), location,
+                                              InterfaceDefineCommonCallback(args, evaluate_context, members_expr->text));
+    TreePtr<GenericType> generic_type = TermBuilder::generic(self.compile_context(), generic_pattern, GenericType::primitive_always,
+                                                              location, InterfaceDefineMemberCallback(common));
+    
+    PSI_STD::vector<TreePtr<Term> > interface_pattern = arguments_to_pattern(args.list);
+    PSI_STD::vector<TreePtr<Term> > derived_pattern = arguments_to_pattern(args.dependent, args.list);
+    
+    // Build value type of interface
+    PSI_STD::vector<TreePtr<Term> > generic_instance_args;
+    TreePtr<Term> upref = TermBuilder::parameter(self.compile_context().builtins().upref_type, 0, 0, location);
+    generic_instance_args.push_back(upref);
+    for (unsigned which = 0, idx = 0; which < 2; ++which) {
+      const PSI_STD::vector<TreePtr<Term> >& p = (which==0) ? interface_pattern : derived_pattern;
+      for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = p.begin(), ie = p.end(); ii != ie; ++ii, ++idx)
+        generic_instance_args.push_back(TermBuilder::parameter(*ii, 1, idx, default_));
+    }
+    TreePtr<Term> generic_instance = TermBuilder::instance(generic_type, generic_instance_args, location);
+    TreePtr<Term> generic_instance_ptr = TermBuilder::pointer(generic_instance, upref, location);
+    TreePtr<Term> exists = TermBuilder::exists(generic_instance_ptr, vector_of<TreePtr<Term> >(self.compile_context().builtins().upref_type), location);
+    
+    TreePtr<Interface> interface = Interface::new_(0, interface_pattern, default_, derived_pattern, exists, default_, location);
+    
+    TreePtr<GenericType> frontend_type = TermBuilder::generic(self.compile_context(), default_, GenericType::primitive_never,
+                                                              location, TermBuilder::empty_type(self.compile_context()),
+                                                              InterfaceDefineUserOverloadCallback(generic_type, common, interface));
+    
+    return TermBuilder::instance(frontend_type, default_, location);
+  }
+};
+
+const MacroVtable InterfaceDefineMacro::vtable = PSI_COMPILER_MACRO(InterfaceDefineMacro, "psi.compiler.InterfaceDefineMacro", Macro, TreePtr<Term>, MacroTermArgument);
+
+/**
+  * Return a term which is a macro for defining new interfaces.
+  */
+TreePtr<Term> interface_define_macro(CompileContext& compile_context, const SourceLocation& location) {
+  TreePtr<Macro> m(::new InterfaceDefineMacro(compile_context, location));
+  return make_macro_term(m, location);
+}
+}
 }

@@ -20,6 +20,7 @@ namespace Psi {
 #define PSI_CHECK(cond) PSI_ASSERT(cond)
   PSI_ATTRIBUTE((PSI_NORETURN,PSI_ASSERT_EXPORT_ATTR)) void assert_fail(DebugLocation, const char *test, const char *msg);
   PSI_ASSERT_EXPORT void warning_fail(DebugLocation, const char *test, const char *msg);
+#define PSI_DEBUG_PARAMETER(p) p
 #elif !PSI_DOXYGEN
 #define PSI_ASSERT_MSG(cond,msg) void()
 #define PSI_ASSERT(cond) void()
@@ -30,6 +31,7 @@ namespace Psi {
 #define PSI_WARNING_FAIL2(msg1,msg2) void()
 #define PSI_NOT_IMPLEMENTED() (std::abort())
 #define PSI_CHECK(cond) do {if (!(cond)) PSI_UNREACHABLE();} while(false)
+#define PSI_DEBUG_PARAMETER(p) PSI_UNUSED(p)
 #else
   /**
    * \brief Require that a condition is true.
