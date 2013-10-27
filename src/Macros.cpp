@@ -369,9 +369,10 @@ namespace Psi {
     const MacroVtable NamespaceMemberMacro::vtable = PSI_COMPILER_MACRO_RAW(NamespaceMemberMacro, "psi.compiler.NamespaceMemberMacro", Macro);
     
     class NamespaceMacroMetadata : public Metadata {
-      static PSI_STD::vector<TreePtr<Term> > make_pattern(CompileContext& compile_context, const SourceLocation& location) {
-        PSI_STD::vector<TreePtr<Term> > result;
-        result.push_back(TermBuilder::parameter(compile_context.builtins().metatype, 0, 0, location));
+      static OverloadPattern make_pattern(CompileContext& compile_context, const SourceLocation& location) {
+        OverloadPattern result;
+        result.n_wildcards = 1;
+        result.pattern.push_back(TermBuilder::parameter(compile_context.builtins().metatype, 0, 0, location));
         return result;
       }
       
@@ -380,7 +381,7 @@ namespace Psi {
       
       NamespaceMacroMetadata(CompileContext& compile_context, const SourceLocation& location)
       : Metadata(&vtable, compile_context, compile_context.builtins().macro,
-                 1, make_pattern(compile_context, location), location) {
+                 make_pattern(compile_context, location), location) {
       }
       
       static TreePtr<> get_impl(const NamespaceMacroMetadata& PSI_UNUSED(self), const PSI_STD::vector<TreePtr<Term> >& wildcards, const SourceLocation& location) {

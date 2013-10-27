@@ -470,6 +470,7 @@ namespace Psi {
     
     class Block;
     class Namespace;
+    class InterfaceValue;
 
     void compile_expression(void *result, const SharedPtr<Parser::Expression>& expression, const TreePtr<EvaluateContext>& evaluate_context, const TreePtr<Term>& mode_tag, const void *arg, const LogicalSourceLocationPtr& source);
     
@@ -481,11 +482,11 @@ namespace Psi {
       return rs.done();
     }
     
+
     TreePtr<Term> compile_block(const PSI_STD::vector<SharedPtr<Parser::Statement> >&, const TreePtr<EvaluateContext>&, const SourceLocation&);
     TreePtr<Term> compile_from_bracket(const SharedPtr<Parser::TokenExpression>& expr, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
+    TreePtr<InterfaceValue> compile_interface_value(const SharedPtr<Parser::Expression>& , const TreePtr<EvaluateContext>& evaluate_context, const LogicalSourceLocationPtr& location);
     TreePtr<Macro> expression_macro(const TreePtr<EvaluateContext>& context, const TreePtr<Term>& expr, const TreePtr<Term>& tag_type, const SourceLocation& location);
-    
-    TreePtr<Term> type_combine(const TreePtr<Term>& lhs, const TreePtr<Term>& rhs);
 
     TreePtr<Term> compile_function_invocation(const TreePtr<Term>& function, const PSI_STD::vector<SharedPtr<Parser::Expression> >& arguments,
                                               const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);
@@ -496,6 +497,7 @@ namespace Psi {
     PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_module(const TreePtr<Module>& module, const TreePtr<EvaluateContext>& next, const SourceLocation& location);
     PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
     PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);
+    PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_dictionary(const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
 
     PSI_COMPILER_EXPORT TreePtr<Term> compile_term(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
     PSI_COMPILER_EXPORT TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);

@@ -15,6 +15,7 @@ struct ImplementationFunctionSetup {
 
 ImplementationFunctionSetup implementation_function_setup(const TreePtr<FunctionType>& type, const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations=PSI_STD::vector<SourceLocation>());
 TreePtr<Term> implementation_function_finish(const ImplementationSetup& impl_setup, const ImplementationFunctionSetup& setup, const TreePtr<Module>& module, const TreePtr<Term>& body, const TreePtr<JumpTarget>& return_target=TreePtr<JumpTarget>());
+OverloadPattern implementation_overload_pattern(const PSI_STD::vector<TreePtr<Term> >& pattern, const PSI_STD::vector<TreePtr<Anonymous> >& wildcards, const SourceLocation& location);
 
 /**
  * \brief Helper class for implementing interfaces.
@@ -22,7 +23,7 @@ TreePtr<Term> implementation_function_finish(const ImplementationSetup& impl_set
 class ImplementationHelper {
   ImplementationSetup m_setup;
   SourceLocation m_location;
-  PSI_STD::vector<TreePtr<Term> > m_interface_parameters_pattern;
+  OverloadPattern m_overload_pattern;
 
   TreePtr<GenericType> m_generic;
   PSI_STD::vector<TreePtr<Term> > m_generic_parameters;
@@ -41,6 +42,7 @@ public:
   TreePtr<Term> member_type(int index, const SourceLocation& location);
   TreePtr<FunctionType> member_function_type(int index, const SourceLocation& location);
   
+  ImplementationValue finish_value(const TreePtr<Term>& inner_value);
   TreePtr<Implementation> finish(const TreePtr<Term>& inner_value);
 };
 }

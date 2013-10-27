@@ -33,18 +33,32 @@ struct ImplementationSetup {
   pattern_parameters(pattern_parameters_),
   pattern_interfaces(pattern_interfaces_),
   interface_parameters(interface_parameters_) {}
+  
+  template<typename V>
+  static void visit(V& v) {
+    v("interface", &ImplementationSetup::interface)
+    ("pattern_parameters", &ImplementationSetup::pattern_parameters)
+    ("pattern_interfaces", &ImplementationSetup::pattern_interfaces)
+    ("interface_parameters", &ImplementationSetup::interface_parameters);
+  }
 };
 
 struct ImplementationMemberSetup {
   ImplementationSetup base;
   TreePtr<Term> type;
+  
+  template<typename V>
+  static void visit(V& v) {
+    v("base", &ImplementationMemberSetup::base)
+    ("type", &ImplementationMemberSetup::type);
+  }
 };
 
 class InterfaceMemberCallback;
 
 struct InterfaceMemberCallbackVtable {
   TreeVtable base;
-  void (*evaluate) (TreePtr<Term> *result, const InterfaceMemberCallback *self, const PSI_STD::vector<unsigned> *path, const PSI_STD::vector<SharedPtr<Parser::Expression> > *parameters, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location);
+  void (*evaluate) (TreePtr<Term> *result, const InterfaceMemberCallback *self, const TreePtr<Interface> *interface, const PSI_STD::vector<unsigned> *path, const PSI_STD::vector<SharedPtr<Parser::Expression> > *parameters, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location);
   void (*implement) (TreePtr<Term> *result, const InterfaceMemberCallback *self, const ImplementationMemberSetup *setup, const SharedPtr<Parser::Expression> *value, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location);
 };
 
@@ -58,12 +72,13 @@ public:
   InterfaceMemberCallback(const VtableType *vptr, CompileContext& compile_context, const SourceLocation& location)
   : Tree(PSI_COMPILER_VPTR_UP(Tree, vptr), compile_context, location) {}
   
-  TreePtr<Term> evaluate(const PSI_STD::vector<unsigned>& path,
+  TreePtr<Term> evaluate(const TreePtr<Interface>& interface,
+                         const PSI_STD::vector<unsigned>& path,
                          const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
                          const TreePtr<EvaluateContext>& evaluate_context,
                          const SourceLocation& location) const {
     ResultStorage<TreePtr<Term> > rs;
-    derived_vptr(this)->evaluate(rs.ptr(), this, &path, &parameters, &evaluate_context, &location);
+    derived_vptr(this)->evaluate(rs.ptr(), this, &interface, &path, &parameters, &evaluate_context, &location);
     return rs.done();
   }
   
@@ -79,8 +94,8 @@ public:
 
 template<typename Derived, typename Impl=Derived>
 struct InterfaceMemberCallbackWrapper {
-  static void evaluate(TreePtr<Term> *result, const InterfaceMemberCallback *self, const PSI_STD::vector<unsigned> *path, const PSI_STD::vector<SharedPtr<Parser::Expression> > *parameters, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location) {
-    new (result) TreePtr<Term> (Impl::evaluate_impl(*static_cast<const Derived*>(self), *path, *parameters, *evaluate_context, *location));
+  static void evaluate(TreePtr<Term> *result, const InterfaceMemberCallback *self, const TreePtr<Interface> *interface, const PSI_STD::vector<unsigned> *path, const PSI_STD::vector<SharedPtr<Parser::Expression> > *parameters, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location) {
+    new (result) TreePtr<Term> (Impl::evaluate_impl(*static_cast<const Derived*>(self), *interface, *path, *parameters, *evaluate_context, *location));
   }
   
   static void implement(TreePtr<Term> *result, const InterfaceMemberCallback *self, const ImplementationMemberSetup *setup, const SharedPtr<Parser::Expression> *value, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location) {
@@ -130,6 +145,7 @@ struct PatternArguments {
 
 PatternArguments parse_pattern_arguments(const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location, const Parser::Text& text);
 PSI_STD::vector<TreePtr<Term> > arguments_to_pattern(const PSI_STD::vector<TreePtr<Anonymous> >& arguments, const PSI_STD::vector<TreePtr<Anonymous> >& =PSI_STD::vector<TreePtr<Anonymous> >());
+TreePtr<Term> interface_member_pattern(const TreePtr<Interface>& interface, const PSI_STD::vector<unsigned>& path, const SourceLocation& location);
 }
 }
 

@@ -8,6 +8,7 @@
 #include "TermBuilder.hpp"
 
 #include <boost/format.hpp>
+#include <boost/next_prior.hpp>
 
 namespace Psi {
   namespace Compiler {
@@ -70,7 +71,7 @@ namespace Psi {
       if (!(function_arguments_expr = expression_as_token_type(function_arguments, Parser::token_bracket)))
         compile_context.error_throw(location, "Function arguments not enclosed in (...)");
       
-      Parser::ArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(compile_context.error_context(), location.logical, function_arguments_expr->text);
+      Parser::FunctionArgumentDeclarations parsed_arguments = Parser::parse_function_argument_declarations(compile_context.error_context(), location.logical, function_arguments_expr->text);
       FunctionArgumentInfo result;
       std::map<String, TreePtr<Term> > argument_map;
       
@@ -99,22 +100,17 @@ namespace Psi {
             TreePtr<Term> argument_type = compile_term(argument_expr.type, argument_context, argument_location.logical);
             TermMode argument_mode = is_implicit ? term_mode_value : parameter_to_term_mode(argument_expr.mode);
             TreePtr<Anonymous> argument = TermBuilder::anonymous(argument_type, argument_mode, argument_location);
-            result.arguments.push_back(argument);
-            result.argument_modes.push_back(is_implicit ? parameter_mode_functional : argument_expr.mode);
 
             if (argument_expr.name) {
               argument_map[expr_name] = argument;
               result.argument_names[expr_name] = result.arguments.size();
             }
+
+            result.arguments.push_back(argument);
+            result.argument_modes.push_back(is_implicit ? parameter_mode_functional : argument_expr.mode);
           } else {
             // An interface specification
-            TreePtr<Term> interface = compile_term(argument_expr.type, argument_context, location.logical);
-            TreePtr<InterfaceValue> interface_cast = term_unwrap_dyn_cast<InterfaceValue>(interface);
-            if (!interface_cast) {
-              SourceLocation interface_location(argument_expr.location, location.logical);
-              compile_context.error_throw(interface_location, "Interface description did not evaluate to an interface");
-            }
-            result.interfaces.push_back(interface_cast);
+            result.interfaces.push_back(compile_interface_value(argument_expr.type, argument_context, location.logical));
           }
         }
       }
@@ -149,7 +145,7 @@ namespace Psi {
       PSI_STD::vector<FunctionParameterType> argument_types;
       for (unsigned ii = 0, ie = arg_info.arguments.size(); ii != ie; ++ii)
         argument_types.push_back(FunctionParameterType(arg_info.argument_modes[ii], arg_info.arguments[ii]->type->parameterize(arg_info.arguments[ii]->location(), arg_info.arguments)));
-      TreePtr<Term> result_type = arg_info.result_type->parameterize(result_type->location(), arg_info.arguments);
+      TreePtr<Term> result_type = arg_info.result_type->parameterize(arg_info.result_type->location(), arg_info.arguments);
       
       PSI_STD::vector<TreePtr<InterfaceValue> > interfaces;
       for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = arg_info.interfaces.begin(), ie = arg_info.interfaces.end(); ii != ie; ++ii)
@@ -188,8 +184,8 @@ namespace Psi {
       all_arguments.insert(all_arguments.end(), explicit_arguments.begin(), explicit_arguments.end());
       
       for (unsigned ii = 0, ie = explicit_arguments.size(); ii != ie; ++ii) {
-        if (!ftype->parameter_types[ii].type->match(explicit_arguments[ii]->type, all_arguments, 0, Term::upref_match_read))
-          function->compile_context().error_throw(explicit_arguments[ii]->location(), "Incorrect argument type");
+        if (!ftype->parameter_types[ii].type->match(explicit_arguments[ii]->type, Term::upref_match_read, all_arguments))
+          compile_context.error_throw(location, boost::format("Incorrect argument type at position %d") % (ii+1));
       }
 
       return TermBuilder::function_call(function, all_arguments, location);
@@ -311,8 +307,10 @@ namespace Psi {
           TreePtr<FunctionType> type = function_arguments_to_type(arg_info, location);
 
           PSI_STD::map<String, TreePtr<Term> > argument_values;
-          for (PSI_STD::map<String, unsigned>::const_iterator ii = arg_info.argument_names.begin(), ie = arg_info.argument_names.end(); ii != ie; ++ii)
+          for (PSI_STD::map<String, unsigned>::const_iterator ii = arg_info.argument_names.begin(), ie = arg_info.argument_names.end(); ii != ie; ++ii) {
+            PSI_ASSERT(ii->second < arg_info.arguments.size());
             argument_values[ii->first] = arg_info.arguments[ii->second];
+          }
 
           TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(evaluate_context->module(), location, argument_values, evaluate_context);
 
@@ -342,11 +340,43 @@ namespace Psi {
       : InterfaceMemberCallback(&vtable, compile_context, location) {}
 
       static TreePtr<Term> evaluate_impl(const FunctionInterfaceMemberCallback& self,
+                                         const TreePtr<Interface>& interface,
                                          const PSI_STD::vector<unsigned>& path,
-                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters_expr,
                                          const TreePtr<EvaluateContext>& evaluate_context,
                                          const SourceLocation& location) {
-        PSI_NOT_IMPLEMENTED();
+        TreePtr<Term> pattern = interface_member_pattern(interface, path, location);
+        
+        TreePtr<FunctionType> function_pattern;
+        if (TreePtr<PointerType> ptr_pattern = term_unwrap_dyn_cast<PointerType>(pattern))
+          function_pattern = term_unwrap_dyn_cast<FunctionType>(ptr_pattern->target_type);
+        
+        if (!function_pattern)
+          self.compile_context().error_throw(location, "Interface member is not a pointer-to-function as is expected", CompileError::error_internal);
+        
+        PSI_STD::vector<TreePtr<Term> > parameters = compile_call_arguments(parameters_expr, evaluate_context, location);
+        if (parameters.size() != function_pattern->parameter_types.size() - 1)
+          self.compile_context().error_throw(location, boost::format("Wrong number of parameters to function call, expected %d, got %d") % (function_pattern->parameter_types.size()-1) % parameters.size());
+        
+        PSI_STD::vector<TreePtr<Term> > function_wildcards;
+        PSI_STD::vector<TreePtr<Term> > interface_wildcards(interface->pattern.size());
+        for (std::size_t ii = 0, ie = parameters.size(); ii != ie; ++ii) {
+          if (!function_pattern->parameter_types[ii+1].type->match2(parameters[ii]->type, Term::upref_match_read, function_wildcards, interface_wildcards))
+            self.compile_context().error_throw(location, "Function parameters do not match interface pattern");
+        }
+        
+        if (std::count(interface_wildcards.begin(), interface_wildcards.end(), TreePtr<Term>()) > 0)
+          self.compile_context().error_throw(location, "Parameters passed to interface function matched required pattern, but did not give values for all interface parameters");
+        
+        TreePtr<Term> interface_val = TermBuilder::interface_value(interface, interface_wildcards, location);
+        TreePtr<Term> member_ptr = TermBuilder::exists_value(interface_val, location);
+        for (PSI_STD::vector<unsigned>::const_iterator ii = path.begin(), ie = path.end(); ii != ie; ++ii)
+          member_ptr = TermBuilder::element_pointer(member_ptr, *ii, location);
+        
+        TreePtr<Term> function_ref = TermBuilder::ptr_target(TermBuilder::ptr_target(member_ptr, location), location);
+        parameters.insert(parameters.begin(), interface_val);
+        
+        return TermBuilder::function_call(function_ref, parameters, location);
       }
       
       static TreePtr<Term> implement_impl(const FunctionInterfaceMemberCallback& self,

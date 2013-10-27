@@ -149,7 +149,23 @@ namespace Psi {
     TreePtr<Term> compile_term(const SharedPtr<Parser::Expression>& expression,
                                const TreePtr<EvaluateContext>& evaluate_context,
                                const LogicalSourceLocationPtr& source) {
-      return compile_expression<TreePtr<Term> >(expression, evaluate_context, evaluate_context->compile_context().builtins().macro_term_tag, Empty(), source);
+      return compile_expression<TreePtr<Term> >(expression, evaluate_context, evaluate_context->compile_context().builtins().macro_term_tag, MacroTermArgument(), source);
+    }
+    
+    /**
+     * \brief Compile an interface constraint description.
+     */
+    TreePtr<InterfaceValue> compile_interface_value(const SharedPtr<Parser::Expression>& expression,
+                                                    const TreePtr<EvaluateContext>& evaluate_context,
+                                                    const LogicalSourceLocationPtr& source) {
+      /// \todo Create an interface value constraint macro
+      TreePtr<Term> interface = compile_term(expression, evaluate_context, source);
+      TreePtr<InterfaceValue> interface_cast = term_unwrap_dyn_cast<InterfaceValue>(interface);
+      if (!interface_cast) {
+        SourceLocation interface_location(expression->location, source);
+        evaluate_context->compile_context().error_throw(interface_location, "Interface description did not evaluate to an interface");
+      }
+      return interface_cast;
     }
     
     StatementMode statement_mode(StatementMode base_mode, const TreePtr<Term>& value, const SourceLocation& location) {

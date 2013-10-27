@@ -475,6 +475,10 @@ namespace Psi {
       return evaluate_context_dictionary(module, location, entries, TreePtr<EvaluateContext>());
     }
 
+    TreePtr<EvaluateContext> evaluate_context_dictionary(const SourceLocation& location, const std::map<String, TreePtr<Term> >& names, const TreePtr<EvaluateContext>& parent) {
+      return evaluate_context_dictionary(parent->module(), location, names, parent);
+    }
+
     class EvaluateContextModule : public EvaluateContext {
     public:
       static const EvaluateContextVtable vtable;

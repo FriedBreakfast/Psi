@@ -20,6 +20,8 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
   static TreePtr<Term> pointer(const TreePtr<Term>& type, const TreePtr<Term>& upref, const SourceLocation& location);
   static TreePtr<Term> pointer(const TreePtr<Term>& type, const SourceLocation& location);
   static TreePtr<Term> exists(const TreePtr<Term>& result_type, const PSI_STD::vector<TreePtr<Term> >& parameter_types, const SourceLocation& location);
+  static TreePtr<Term> exists_parameter(const TreePtr<Term>& exists_term, unsigned index, const SourceLocation& location);
+  static TreePtr<Term> exists_value(const TreePtr<Term>& exists_term, const SourceLocation& location);
   static TreePtr<Term> constant(const TreePtr<Term>& value, const SourceLocation& location);
   static TreePtr<FunctionType> function_type(ResultMode result_mode, const TreePtr<Term>& result_type,
                                              const PSI_STD::vector<FunctionParameterType>& parameter_types,
@@ -82,6 +84,7 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
   static TreePtr<Term> element_value(const TreePtr<Term>& aggregate, unsigned index, const SourceLocation& location);
   static TreePtr<Term> element_pointer(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location);
   static TreePtr<Term> element_pointer(const TreePtr<Term>& aggregate, unsigned index, const SourceLocation& location);
+  static TreePtr<Term> element_type(const TreePtr<Term>& aggregate_type, unsigned index, const SourceLocation& location);
   static TreePtr<Term> ptr_target(const TreePtr<Term>& pointer, const SourceLocation& location);
   static TreePtr<Term> ptr_to(const TreePtr<Term>& value, const SourceLocation& location);
   static TreePtr<Term> outer_pointer(const TreePtr<Term>& reference, const SourceLocation& location);

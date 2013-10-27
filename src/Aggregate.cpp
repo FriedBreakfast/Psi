@@ -408,7 +408,6 @@ public:
     AggregateBodyDelayedValue shared_callback(self.compile_context(), location,
                                               AggregateBodyCallback(arguments, members_expr->text, evaluate_context));
     
-    
     PSI_STD::vector<TreePtr<Term> > pattern = arguments_to_pattern(arguments.list);
     TreePtr<GenericType> generic = TermBuilder::generic(self.compile_context(), pattern, StructPrimitiveModeCallback(shared_callback), location,
                                                         StructTypeCallback(shared_callback), AggregateOverloadsCallback(arguments, evaluate_context, shared_callback));

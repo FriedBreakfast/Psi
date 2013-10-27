@@ -286,7 +286,8 @@ namespace Psi {
         upref_match_ignore
       };
       
-      PSI_COMPILER_EXPORT bool match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth, UprefMatchMode upref_mode) const;
+      PSI_COMPILER_EXPORT bool match(const TreePtr<Term>& value, UprefMatchMode upref_mode, PSI_STD::vector<TreePtr<Term> >& wildcards) const;
+      PSI_COMPILER_EXPORT bool match2(const TreePtr<Term>& value, UprefMatchMode upref_mode, PSI_STD::vector<TreePtr<Term> >& wildcards_0, PSI_STD::vector<TreePtr<Term> >& wildcards_1) const;
       PSI_COMPILER_EXPORT bool convert_match(const TreePtr<Term>& value) const;
       PSI_COMPILER_EXPORT TreePtr<Term> parameterize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Anonymous> >& elements) const;
       PSI_COMPILER_EXPORT TreePtr<Term> specialize(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values) const;

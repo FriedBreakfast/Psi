@@ -278,6 +278,100 @@ namespace Psi {
     }
 
     const FunctionalVtable Exists::vtable = PSI_COMPILER_FUNCTIONAL(Exists, "psi.compiler.Exists", ParameterizedType);
+    
+    ExistsParameter::ExistsParameter(const TreePtr<Term>& exists_, unsigned index_, const SourceLocation& location)
+    : Functional(&vtable),
+    exists(TermBuilder::to_functional(exists_, location)),
+    index(index_) {
+    }
+    
+    template<typename V>
+    void ExistsParameter::visit(V& v) {
+      visit_base<Functional>(v);
+      v("exists", &ExistsParameter::exists)
+      ("index", &ExistsParameter::index);
+    }
+    
+    TermResultInfo ExistsParameter::check_type_impl(const ExistsParameter& self) {
+      PSI_ASSERT(self.exists->pure);
+      
+      TreePtr<Exists> ex = term_unwrap_dyn_cast<Exists>(self.exists->type);
+      if (!ex)
+        self.compile_context().error_throw(self.location(), "Parameter to ExistsParameter is not of type Exists");
+      
+      if (self.index >= ex->parameter_types.size())
+        self.compile_context().error_throw(self.location(), "ExistsParameter index is out of range");
+      
+      TermResultInfo result;
+      result.pure = true;
+      result.mode = term_mode_value;
+      
+      PSI_STD::vector<TreePtr<Term> > previous;
+      for (unsigned ii = 0, ie = self.index; ii != ie; ++ii)
+        previous.push_back(TermBuilder::exists_parameter(ex, ii, self.location()));
+      
+      result.type = ex->parameter_type_after(self.location(), previous);
+      
+      return result;
+    }
+
+    TermTypeInfo ExistsParameter::type_info_impl(const ExistsParameter& self) {
+      TreePtr<Exists> ex = term_unwrap_dyn_cast<Exists>(self.exists->type);
+      if (!ex)
+        self.compile_context().error_throw(self.location(), "Parameter to ExistsParameter is not of type Exists");
+      
+      if (self.index >= ex->parameter_types.size())
+        self.compile_context().error_throw(self.location(), "ExistsParameter index is out of range");
+
+      TermTypeInfo result;
+      result.type_fixed_size = false;
+      switch (ex->parameter_types[self.index]->type_info().type_mode) {
+      case type_mode_metatype: result.type_mode = type_mode_complex; break;
+      case type_mode_primitive: result.type_mode = type_mode_none; break;
+      default: PSI_FAIL("Invalid Exists parameter type mode");
+      }
+      
+      return result;
+    }
+
+    const FunctionalVtable ExistsParameter::vtable = PSI_COMPILER_FUNCTIONAL(ExistsParameter, "psi.compiler.ExistsParameter", Functional);
+
+    ExistsValue::ExistsValue(const TreePtr<Term>& exists_, const SourceLocation& location)
+    : Functional(&vtable),
+    exists(TermBuilder::to_functional(exists_, location)) {
+    }
+    
+    template<typename V>
+    void ExistsValue::visit(V& v) {
+      visit_base<Functional>(v);
+      v("exists", &ExistsValue::exists);
+    }
+    
+    TermResultInfo ExistsValue::check_type_impl(const ExistsValue& self) {
+      PSI_ASSERT(self.exists->pure);
+      
+      TreePtr<Exists> ex = term_unwrap_dyn_cast<Exists>(self.exists->type);
+      if (!ex)
+        self.compile_context().error_throw(self.location(), "Parameter to ExistsValue is not of type Exists");
+      
+      TermResultInfo result;
+      result.pure = true;
+      result.mode = term_mode_value;
+
+      PSI_STD::vector<TreePtr<Term> > parameters;
+      for (unsigned ii = 0, ie = ex->parameter_types.size(); ii != ie; ++ii)
+        parameters.push_back(TermBuilder::exists_parameter(self.exists, ii, self.location()));
+      
+      result.type = ex->result_after(self.location(), parameters);
+      
+      return result;
+    }
+    
+    TermTypeInfo ExistsValue::type_info_impl(const ExistsValue& self) {
+      return self.exists->type_info();
+    }
+    
+    const FunctionalVtable ExistsValue::vtable = PSI_COMPILER_FUNCTIONAL(ExistsValue, "psi.compiler.ExistsValue", Functional);
 
     FunctionType::FunctionType(ResultMode result_mode_, const TreePtr<Term>& result_type_, const PSI_STD::vector<FunctionParameterType>& parameter_types_,
                                const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces_, const SourceLocation& location)

@@ -692,6 +692,40 @@ namespace Psi {
       PSI_STD::vector<TreePtr<Term> > parameter_types;
     };
     
+    /**
+     * \brief Term which represents the value of an Exists parameter.
+     */
+    class ExistsParameter : public Functional {
+    public:
+      PSI_COMPILER_EXPORT static const VtableType vtable;
+      
+      ExistsParameter(const TreePtr<Term>& exists, unsigned index, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      static TermResultInfo check_type_impl(const ExistsParameter& self);
+      static TermTypeInfo type_info_impl(const ExistsParameter& self);
+      
+      /// \brief A term whose type is an Exists term.
+      TreePtr<Term> exists;
+      /// \brief Parameter index
+      unsigned index;
+    };
+    
+    /**
+     * \brief Term which represents the inner value of an Exists term.
+     */
+    class ExistsValue : public Functional {
+    public:
+      PSI_COMPILER_EXPORT static const VtableType vtable;
+
+      ExistsValue(const TreePtr<Term>& exists, const SourceLocation& location);
+      template<typename V> static void visit(V& v);
+      static TermResultInfo check_type_impl(const ExistsValue& self);
+      static TermTypeInfo type_info_impl(const ExistsValue& self);
+      
+      /// \brief Exists term that this is the constructed value of
+      TreePtr<Term> exists;
+    };
+    
     class FunctionType : public ParameterizedType {
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;

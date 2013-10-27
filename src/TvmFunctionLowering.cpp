@@ -384,10 +384,11 @@ TvmResult TvmFunctionBuilder::build_implementation(const TreePtr<Interface>& int
     wildcards = overload_match(maybe_implementation, parameters, location);
   }
   
-  if (implementation->dynamic) {
-    result = build(implementation->value);
+  const ImplementationValue& impl_value = implementation->implementation_value();
+  if (impl_value.dynamic) {
+    result = build(impl_value.value);
   } else {
-    TreePtr<Term> value = implementation->value->specialize(location, wildcards);
+    TreePtr<Term> value = impl_value.value->specialize(location, wildcards);
     PSI_ASSERT(value->is_functional());
     TvmResult tvm_value = build(value);
     if (tvm_value.scope.scope->depth() <= TvmScope::depth_global) {
@@ -395,7 +396,7 @@ TvmResult TvmFunctionBuilder::build_implementation(const TreePtr<Interface>& int
     } else {
       Tvm::ValuePtr<> ptr = builder().alloca_const(tvm_value.value, location);
       push_cleanup(boost::make_shared<StackFreeCleanup>(ptr, location));
-      for (PSI_STD::vector<int>::const_iterator ii = implementation->path.begin(), ie = implementation->path.end(); ii != ie; ++ii)
+      for (PSI_STD::vector<unsigned>::const_iterator ii = impl_value.path.begin(), ie = impl_value.path.end(); ii != ie; ++ii)
         ptr = Tvm::FunctionalBuilder::element_ptr(ptr, *ii, location);
       
       TvmResult expected_type = build(interface->type_after(parameters, location));

@@ -89,6 +89,39 @@ namespace Psi {
       return ParameterizeRewriter(&location, &elements, 0).rewrite(tree_from(this));
     }
     
+    class DepthIncreaseRewriter : public TermRewriter {
+      const SourceLocation *m_location;
+      unsigned m_depth;
+      
+    public:
+      static const TermRewriterVtable vtable;
+      
+      DepthIncreaseRewriter(const SourceLocation *location, unsigned depth)
+      : TermRewriter(&vtable), m_location(location), m_depth(depth) {
+      }
+      
+      static TreePtr<Term> rewrite_impl(DepthIncreaseRewriter& self, const TreePtr<Term>& term) {
+        if (TreePtr<Parameter> param = dyn_treeptr_cast<Parameter>(term)) {
+          if (param->depth == 0) {
+            return TermBuilder::parameter(param->type, self.m_depth, param->index, *self.m_location);
+          } else {
+            term->compile_context().error_throw(*self.m_location, "Term specialization parameters can only have depth 0");
+          }
+        } else if (TreePtr<Functional> func = dyn_treeptr_cast<Functional>(term)) {
+          if (tree_isa<ParameterizedType>(func)) {
+            DepthIncreaseRewriter child(self.m_location, self.m_depth + 1);
+            return func->rewrite(child, *self.m_location);
+          } else {
+            return func->rewrite(self, *self.m_location);
+          }
+        } else {
+          return term;
+        }
+      }
+    };
+
+    const TermRewriterVtable DepthIncreaseRewriter::vtable = PSI_COMPILER_TERM_REWRITER(DepthIncreaseRewriter, "psi.compiler.DepthIncreaseRewriter", TermRewriter);
+    
     class SpecializeRewriter : public TermRewriter {
       const SourceLocation *m_location;
       const PSI_STD::vector<TreePtr<Term> > *m_elements;
@@ -112,7 +145,7 @@ namespace Psi {
             if (!type->convert_match(result->type))
               term->compile_context().error_throw(*self.m_location, "Type mismatch in term substitution");
 
-            return result;
+            return DepthIncreaseRewriter(self.m_location, self.m_depth).rewrite(result);
           } else {
             return param;
           }
@@ -241,15 +274,25 @@ namespace Psi {
     }
     
     class MatchComparator : public TermComparator {
-      PSI_STD::vector<TreePtr<Term> > *m_wildcards;
       unsigned m_depth;
       Term::UprefMatchMode m_upref_mode;
+      PSI_STD::vector<TreePtr<Term> > *m_wildcards_0, *m_wildcards_1;
       
     public:
       static const TermComparatorVtable vtable;
       
-      MatchComparator(PSI_STD::vector<TreePtr<Term> > *wildcards, unsigned depth, Term::UprefMatchMode upref_mode)
-      : TermComparator(&vtable), m_wildcards(wildcards), m_depth(depth), m_upref_mode(upref_mode) {}
+      MatchComparator(unsigned depth, Term::UprefMatchMode upref_mode,
+                      PSI_STD::vector<TreePtr<Term> > *wildcards_0, PSI_STD::vector<TreePtr<Term> > *wildcards_1)
+      : TermComparator(&vtable), m_depth(depth), m_upref_mode(upref_mode),
+      m_wildcards_0(wildcards_0), m_wildcards_1(wildcards_1) {}
+      
+      MatchComparator make_child(unsigned depth, Term::UprefMatchMode upref_mode) {
+        return MatchComparator(depth, upref_mode, m_wildcards_0, m_wildcards_1);
+      }
+
+      MatchComparator make_child(unsigned depth) {
+        return make_child(depth, m_upref_mode);
+      }
       
       static bool compare_impl(MatchComparator& self, const TreePtr<Term>& lhs, const TreePtr<Term>& rhs) {
         TreePtr<Term> lhs_unwrapped = term_unwrap(lhs), rhs_unwrapped = term_unwrap(rhs);
@@ -260,16 +303,24 @@ namespace Psi {
           return false;
         
         if (TreePtr<Parameter> parameter = dyn_treeptr_cast<Parameter>(lhs_unwrapped)) {
-          if (parameter->depth == self.m_depth) {
+          PSI_STD::vector<TreePtr<Term> > *level;
+          if (parameter->depth == self.m_depth)
+            level = self.m_wildcards_0;
+          else if (parameter->depth == self.m_depth+1)
+            level = self.m_wildcards_1;
+          else
+            level = NULL;
+          
+          if (level) {
             // Check type also matches
-            MatchComparator child(self.m_wildcards, 0, self.m_upref_mode);
+            MatchComparator child = self.make_child(0);
             if (!child.compare(parameter->type, rhs_unwrapped->type))
               return false;
 
-            if (parameter->index >= self.m_wildcards->size())
+            if (parameter->index >= level->size())
               return false;
 
-            TreePtr<Term>& wildcard = (*self.m_wildcards)[parameter->index];
+            TreePtr<Term>& wildcard = (*level)[parameter->index];
             if (wildcard) {
               // This probably isn't the right location to use...
               return rhs_unwrapped->unify(wildcard, wildcard->location());
@@ -313,7 +364,7 @@ namespace Psi {
             if (lhs_ftype->parameter_types.size() != rhs_ftype->parameter_types.size())
               return false;
             
-            MatchComparator arg_child(self.m_wildcards, self.m_depth + 1, self.m_upref_mode);
+            MatchComparator arg_child = self.make_child(self.m_depth + 1);
             for (std::size_t ii = 0, ie = lhs_ftype->parameter_types.size(); ii != ie; ++ii) {
               if (lhs_ftype->parameter_types[ii].mode != rhs_ftype->parameter_types[ii].mode)
                 return false;
@@ -329,10 +380,14 @@ namespace Psi {
             case Term::upref_match_ignore: reverse_upref_mode = Term::upref_match_ignore; break;
             default: PSI_FAIL("Unrecognised enumeration value");
             }
-            MatchComparator arg_result(self.m_wildcards, self.m_depth + 1, reverse_upref_mode);
+            MatchComparator arg_result = self.make_child(self.m_depth + 1, reverse_upref_mode);
+            if (!arg_result.compare(lhs_ftype->result_type, rhs_ftype->result_type))
+              return false;
+            
+            return true;
           } else if (TreePtr<PointerType> lhs_ptr = dyn_treeptr_cast<PointerType>(lhs_unwrapped)) {
             TreePtr<PointerType> rhs_ptr = dyn_treeptr_cast<PointerType>(rhs_unwrapped);
-            MatchComparator child(self.m_wildcards, self.m_depth, Term::upref_match_exact);
+            MatchComparator child = self.make_child(self.m_depth, Term::upref_match_exact);
             if (!child.compare(lhs_ptr->target_type, rhs_ptr->target_type))
               return false;
             if (self.m_upref_mode != Term::upref_match_ignore) {
@@ -342,7 +397,7 @@ namespace Psi {
             return true;
           } else if (TreePtr<Functional> lhs_func = dyn_treeptr_cast<Functional>(lhs_unwrapped)) {
             if (tree_isa<ParameterizedType>(lhs_func)) {
-              MatchComparator child(self.m_wildcards, self.m_depth + 1, self.m_upref_mode);
+              MatchComparator child = self.make_child(self.m_depth + 1);
               return lhs_func->compare(*tree_cast<Functional>(rhs_unwrapped.get()), child);
             } else {
               return lhs_func->compare(*tree_cast<Functional>(rhs_unwrapped.get()), self);
@@ -361,13 +416,23 @@ namespace Psi {
      *
      * \param value Tree to match to.
      * \param wildcards Substitutions to be identified.
-     * \param depth Number of parameter-enclosing terms above this match.
      * 
      * Note that it is important that when \c wildcards is empty, this function simply
      * checks that this tree and \c value are the same.
      */
-    bool Term::match(const TreePtr<Term>& value, PSI_STD::vector<TreePtr<Term> >& wildcards, unsigned depth, UprefMatchMode upref_mode) const {
-      return MatchComparator(&wildcards, depth, upref_mode).compare(tree_from(this), value);
+    bool Term::match(const TreePtr<Term>& value, UprefMatchMode upref_mode, PSI_STD::vector<TreePtr<Term> >& wildcards) const {
+      return MatchComparator(0, upref_mode, &wildcards, NULL).compare(tree_from(this), value);
+    }
+
+    /**
+     * \brief Check whether this tree, which is a pattern, matches a given value.
+     *
+     * \param value Tree to match to.
+     * \param wildcards_0 Substitutions to be identified at depth 0.
+     * \param wildcards_1 Substitutions to be identified at depth 1.
+     */
+    bool Term::match2(const TreePtr<Term>& value, UprefMatchMode upref_mode, PSI_STD::vector<TreePtr<Term> >& wildcards_0, PSI_STD::vector<TreePtr<Term> >& wildcards_1) const {
+      return MatchComparator(0, upref_mode, &wildcards_0, &wildcards_1).compare(tree_from(this), value);
     }
     
     /**
@@ -386,7 +451,7 @@ namespace Psi {
         PSI_NOT_IMPLEMENTED();
       } else {
         PSI_STD::vector<TreePtr<Term> > wildcards;
-        return match(value, wildcards, 0, upref_match_read);
+        return match(value, upref_match_read, wildcards);
       }
     }
 

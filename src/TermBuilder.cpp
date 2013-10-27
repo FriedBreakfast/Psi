@@ -67,6 +67,16 @@ TreePtr<Term> TermBuilder::exists(const TreePtr<Term>& result_type, const PSI_ST
   return result_type->compile_context().get_functional(Exists(result_type, parameter_types, location), location);
 }
 
+/// \brief Get a tree which is the parameter of term whose type is Exists.
+TreePtr<Term> TermBuilder::exists_parameter(const TreePtr<Term>& exists_term, unsigned index, const SourceLocation& location) {
+  return exists_term->compile_context().get_functional(ExistsParameter(exists_term, index, location), location);
+}
+
+/// \brief Get a tree which is the value of a term whose type is Exists.
+TreePtr<Term> TermBuilder::exists_value(const TreePtr<Term>& exists_term, const SourceLocation& location) {
+  return exists_term->compile_context().get_functional(ExistsValue(exists_term, location), location);
+}
+
 /// \brief Get a constant type for a value
 TreePtr<Term> TermBuilder::constant(const TreePtr<Term>& value, const SourceLocation& location) {
   return value->compile_context().get_functional(ConstantType(value, location), location);
@@ -249,6 +259,11 @@ TreePtr<Term> TermBuilder::element_pointer(const TreePtr<Term>& aggregate, const
 /// \copydoc TermBuilder::element_pointer
 TreePtr<Term> TermBuilder::element_pointer(const TreePtr<Term>& aggregate, unsigned index, const SourceLocation& location) {
   return element_pointer(aggregate, size_value(index, aggregate->compile_context(), location), location);
+}
+
+/// \brief Get the type of an aggregate element
+TreePtr<Term> TermBuilder::element_type(const TreePtr<Term>& aggregate_type, unsigned index, const SourceLocation& location) {
+  return ElementValue::element_type(aggregate_type, size_value(index, aggregate_type->compile_context(), location), location);
 }
 
 /**

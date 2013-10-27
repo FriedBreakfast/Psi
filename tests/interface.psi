@@ -6,7 +6,7 @@ ti : interface (X:type) [
   invoke : function (:X -: str);
 ];
 
-invoke_puts : function (X:type @ ti(X) => a:X) [
+invoke_puts : function (X:type @ ti(X), a:X) [
   puts(ti.invoke(a));
 ];
 
@@ -31,6 +31,6 @@ main : function() [
   b : new type2;
   puts(ti.invoke(a));
   puts(ti.invoke(b));
-  invoke_puts(a);
-  invoke_puts(b);
+  invoke_puts(type1, a);
+  invoke_puts(type2, b);
 ];

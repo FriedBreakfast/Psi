@@ -389,7 +389,8 @@ public:
   SharedPtr<FunctionArgument> parse_argument_declare();
   Maybe<Compiler::ResultMode> parse_result_mode();
 
-  ArgumentDeclarations parse_function_argument_declarations();
+  FunctionArgumentDeclarations parse_function_argument_declarations();
+  ImplementationArgumentDeclaration parse_implementation_arguments();
   
 private:
   LexerType *m_lexer;
@@ -824,10 +825,9 @@ Maybe<Compiler::ResultMode> ParserImpl::parse_result_mode() {
   else return Maybe<Compiler::ResultMode>();
 }
 
-ArgumentDeclarations ParserImpl::parse_function_argument_declarations() {
-  ArgumentDeclarations args;
+FunctionArgumentDeclarations ParserImpl::parse_function_argument_declarations() {
+  FunctionArgumentDeclarations args;
   
-  PhysicalSourceLocation result_loc = lex().loc_begin();
   Maybe<Compiler::ResultMode> result_mode = parse_result_mode();
   
   if (!result_mode && lex().reject(tok_eof)) {
@@ -836,7 +836,6 @@ ArgumentDeclarations ParserImpl::parse_function_argument_declarations() {
       args.arguments.swap(args.implicit);
       args.arguments = parse_argument_list_declare();
     }
-    result_loc = lex().loc_begin();
     result_mode = parse_result_mode();
   }
   
@@ -856,9 +855,9 @@ ArgumentDeclarations ParserImpl::parse_function_argument_declarations() {
  * followed by a return type Expression.
  * \param text Text to parse.
  */
-ArgumentDeclarations parse_function_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
+FunctionArgumentDeclarations parse_function_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
   ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end, LexerImpl(text.data_handle));
-  ArgumentDeclarations result = ParserImpl(&lexer).parse_function_argument_declarations();
+  FunctionArgumentDeclarations result = ParserImpl(&lexer).parse_function_argument_declarations();
   lexer.expect(tok_eof);
   return result;
 }
@@ -872,6 +871,26 @@ ArgumentDeclarations parse_function_argument_declarations(CompileErrorContext& e
 PSI_STD::vector<SharedPtr<FunctionArgument> > parse_type_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
   ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end, LexerImpl(text.data_handle));
   PSI_STD::vector<SharedPtr<FunctionArgument> > result = ParserImpl(&lexer).parse_argument_list_declare();
+  lexer.expect(tok_eof);
+  return result;
+}
+
+ImplementationArgumentDeclaration ParserImpl::parse_implementation_arguments() {
+  ImplementationArgumentDeclaration args;
+  
+  if (lex().accept2(tok_id, ':')) {
+    args.pattern = parse_argument_list_declare();
+    lex().expect(tok_op_double_arrow);
+  }
+  
+  args.arguments = parse_positional_list();
+  
+  return args;
+}
+
+ImplementationArgumentDeclaration parse_implementation_arguments(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text) {
+  ParserImpl::LexerType lexer(error_context, SourceLocation(text.location, error_loc), text.begin, text.end, LexerImpl(text.data_handle));
+  ImplementationArgumentDeclaration result = ParserImpl(&lexer).parse_implementation_arguments();
   lexer.expect(tok_eof);
   return result;
 }

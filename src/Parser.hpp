@@ -108,17 +108,23 @@ namespace Psi {
 
     PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
     PSI_STD::vector<TokenExpression> parse_identifier_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
-
-    struct ArgumentDeclarations {
+    
+    struct FunctionArgumentDeclarations {
       PSI_STD::vector<SharedPtr<FunctionArgument> > implicit;
       PSI_STD::vector<SharedPtr<FunctionArgument> > arguments;
-      
       Compiler::ResultMode return_mode;
       SharedPtr<Expression> return_type;
     };
 
     PSI_STD::vector<SharedPtr<FunctionArgument> > parse_type_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
-    ArgumentDeclarations parse_function_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
+    FunctionArgumentDeclarations parse_function_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
+    
+    struct ImplementationArgumentDeclaration {
+      PSI_STD::vector<SharedPtr<FunctionArgument> > pattern;
+      PSI_STD::vector<SharedPtr<Expression> > arguments;
+    };
+    
+    ImplementationArgumentDeclaration parse_implementation_arguments(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
     
     SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpressionType type);
     SharedPtr<Parser::EvaluateExpression> expression_as_evaluate(const SharedPtr<Parser::Expression>& expr);

@@ -557,8 +557,9 @@ TvmResult TvmObjectCompilerBase::get_implementation(const TreePtr<Interface>& in
     wildcards = overload_match(maybe_implementation, parameters, location);
   }
   
-  PSI_ASSERT(!implementation->dynamic);
-  TreePtr<Term> value = implementation->value->specialize(location, wildcards);
+  const ImplementationValue& impl_value = implementation->implementation_value();
+  PSI_ASSERT(!impl_value.dynamic);
+  TreePtr<Term> value = impl_value.value->specialize(location, wildcards);
   PSI_ASSERT(value->is_functional());
   std::set<TreePtr<ModuleGlobal> > my_dependencies;
   TvmResult tvm_value = TvmGlobalBuilder(this, my_dependencies).build(value);
@@ -569,7 +570,7 @@ TvmResult TvmObjectCompilerBase::get_implementation(const TreePtr<Interface>& in
   gvar->set_merge(true);
   
   Tvm::ValuePtr<> ptr = gvar;
-  for (PSI_STD::vector<int>::const_iterator ii = implementation->path.begin(), ie = implementation->path.end(); ii != ie; ++ii)
+  for (PSI_STD::vector<unsigned>::const_iterator ii = impl_value.path.begin(), ie = impl_value.path.end(); ii != ie; ++ii)
     ptr = Tvm::FunctionalBuilder::element_ptr(ptr, *ii, location);
   
   TvmResult expected_type = TvmGlobalBuilder(this, my_dependencies).build(interface->type_after(parameters, location));
