@@ -13,12 +13,39 @@
 
 namespace Psi {
 namespace Compiler {
+struct ImplementationSetup {
+  /// \brief Interface being implemented
+  TreePtr<Interface> interface;
+  /// \brief Parameters which describe the pattern of the implementation
+  PSI_STD::vector<TreePtr<Anonymous> > pattern_parameters;
+  /// \brief Additional interfaces required by the implementation
+  PSI_STD::vector<TreePtr<InterfaceValue> > pattern_interfaces;
+  /// \brief Pattern of interface parameters being implemented, in terms of \c pattern_parameters
+  PSI_STD::vector<TreePtr<Term> > interface_parameters;
+  
+  ImplementationSetup() {}
+  
+  ImplementationSetup(const TreePtr<Interface>& interface_,
+                      const PSI_STD::vector<TreePtr<Anonymous> >& pattern_parameters_,
+                      const PSI_STD::vector<TreePtr<InterfaceValue> >& pattern_interfaces_,
+                      const PSI_STD::vector<TreePtr<Term> >& interface_parameters_)
+  : interface(interface_),
+  pattern_parameters(pattern_parameters_),
+  pattern_interfaces(pattern_interfaces_),
+  interface_parameters(interface_parameters_) {}
+};
+
+struct ImplementationMemberSetup {
+  ImplementationSetup base;
+  TreePtr<Term> type;
+};
+
 class InterfaceMemberCallback;
 
 struct InterfaceMemberCallbackVtable {
   TreeVtable base;
   void (*evaluate) (TreePtr<Term> *result, const InterfaceMemberCallback *self, const PSI_STD::vector<unsigned> *path, const PSI_STD::vector<SharedPtr<Parser::Expression> > *parameters, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location);
-  void (*implement) (TreePtr<Term> *result, const InterfaceMemberCallback *self, const SharedPtr<Parser::Expression> *value, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location);
+  void (*implement) (TreePtr<Term> *result, const InterfaceMemberCallback *self, const ImplementationMemberSetup *setup, const SharedPtr<Parser::Expression> *value, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location);
 };
 
 /**
@@ -40,11 +67,12 @@ public:
     return rs.done();
   }
   
-  TreePtr<Term> implement(const SharedPtr<Parser::Expression>& value,
+  TreePtr<Term> implement(const ImplementationMemberSetup& setup,
+                          const SharedPtr<Parser::Expression>& value,
                           const TreePtr<EvaluateContext>& evaluate_context,
                           const SourceLocation& location) const {
     ResultStorage<TreePtr<Term> > rs;
-    derived_vptr(this)->implement(rs.ptr(), this, &value, &evaluate_context, &location);
+    derived_vptr(this)->implement(rs.ptr(), this, &setup, &value, &evaluate_context, &location);
     return rs.done();
   }
 };
@@ -55,8 +83,8 @@ struct InterfaceMemberCallbackWrapper {
     new (result) TreePtr<Term> (Impl::evaluate_impl(*static_cast<const Derived*>(self), *path, *parameters, *evaluate_context, *location));
   }
   
-  static void implement(TreePtr<Term> *result, const InterfaceMemberCallback *self, const SharedPtr<Parser::Expression> *value, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location) {
-    new (result) TreePtr<Term> (Impl::implement_impl(*static_cast<const Derived*>(self), *value, *evaluate_context, *location));
+  static void implement(TreePtr<Term> *result, const InterfaceMemberCallback *self, const ImplementationMemberSetup *setup, const SharedPtr<Parser::Expression> *value, const TreePtr<EvaluateContext> *evaluate_context, const SourceLocation *location) {
+    new (result) TreePtr<Term> (Impl::implement_impl(*static_cast<const Derived*>(self), *setup, *value, *evaluate_context, *location));
   }
 };
 

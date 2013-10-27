@@ -3,6 +3,85 @@
 
 namespace Psi {
 namespace Compiler {
+/**
+  * \brief Begin generating a function for use in an interface.
+  * 
+  * The first argument to the function type \c type is assumed to be the interface
+  * reference.
+  */
+ImplementationFunctionSetup implementation_function_setup(const TreePtr<FunctionType>& type, const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations) {
+  ImplementationFunctionSetup result;
+  result.location = location;
+  result.function_type = type;
+  
+  PSI_STD::vector<TreePtr<Term> > previous_arguments;
+  for (std::size_t ii = 0, ie = type->parameter_types.size(); ii != ie; ++ii) {
+    const SourceLocation& loc = (ie - ii) <= parameter_locations.size() ?
+      parameter_locations[parameter_locations.size() - (ie - ii)] : location;
+    TreePtr<Anonymous> param = type->parameter_after(loc, previous_arguments);
+    previous_arguments.push_back(param);
+    result.parameters.push_back(param);
+  }
+  
+  result.implementation = TermBuilder::outer_pointer(result.parameters.front(), result.parameters.front()->location());
+  
+  return result;
+}
+
+TreePtr<Term> implementation_function_finish(const ImplementationSetup& impl_setup, const ImplementationFunctionSetup& setup, const TreePtr<Module>& module, const TreePtr<Term>& body, const TreePtr<JumpTarget>& return_target) {
+  TreePtr<Term> wrapped_body = body;
+  int offset = 0;
+  PSI_STD::vector<TreePtr<Term> > solidify_values;
+  for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = impl_setup.pattern_parameters.begin(), ie = impl_setup.pattern_parameters.end(); ii != ie; ++ii, ++offset)
+    solidify_values.push_back(TermBuilder::ptr_target(TermBuilder::element_pointer(setup.implementation, offset, setup.location), setup.location));
+  if (!solidify_values.empty())
+    wrapped_body = TermBuilder::solidify_during(solidify_values, wrapped_body, setup.location);
+  
+  PSI_STD::vector<TreePtr<Implementation> > implementations;
+  for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = impl_setup.pattern_interfaces.begin(), ie = impl_setup.pattern_interfaces.end(); ii != ie; ++ii, ++offset) {
+    TreePtr<Term> ptr_value = TermBuilder::ptr_target(TermBuilder::element_pointer(setup.implementation, offset, setup.location), setup.location);
+    TreePtr<Term> value = TermBuilder::ptr_target(ptr_value, setup.location);
+    implementations.push_back(Implementation::new_(default_, value, (*ii)->interface, 0, (*ii)->parameters, true, default_, setup.location));
+  }
+  
+  TreePtr<Term> inner_implementation = setup.parameters.front();
+  for (PSI_STD::vector<Interface::InterfaceBase>::const_iterator ii = impl_setup.interface->bases.begin(), ie = impl_setup.interface->bases.end(); ii != ie; ++ii) {
+    TreePtr<Term> value = inner_implementation;
+    for (PSI_STD::vector<int>::const_iterator ji = ii->path.begin(), je = ii->path.end(); ji != je; ++ji)
+      value = TermBuilder::element_pointer(value, *ji, setup.location);
+    value = TermBuilder::ptr_target(value, setup.location);
+    PSI_STD::vector<TreePtr<Term> > parameters;
+    for (PSI_STD::vector<TreePtr<Term> >::const_iterator ji = ii->parameters.begin(), je = ii->parameters.end(); ji != je; ++ji)
+      parameters.push_back((*ji)->specialize(setup.location, impl_setup.interface_parameters));
+    TreePtr<Implementation> impl = Implementation::new_(default_, value, ii->interface, 0, parameters, true, default_, setup.location);
+    implementations.push_back(impl);
+  }
+  
+  if (!implementations.empty())
+    wrapped_body = TermBuilder::introduce_implementation(implementations, wrapped_body, setup.location);
+  
+  PSI_STD::vector<TreePtr<Anonymous> > parameters = impl_setup.pattern_parameters;
+  parameters.insert(parameters.end(), setup.parameters.begin(), setup.parameters.end());
+  
+  PSI_STD::vector<FunctionParameterType> parameter_types;
+  for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = impl_setup.pattern_parameters.begin(), ie = impl_setup.pattern_parameters.end(); ii != ie; ++ii)
+    parameter_types.push_back(FunctionParameterType(parameter_mode_phantom, (*ii)->type->parameterize(setup.location, parameters)));
+
+  for (std::size_t ii = 0, ie = setup.parameters.size(); ii != ie; ++ii)
+    parameter_types.push_back(FunctionParameterType(setup.function_type->parameter_types[ii].mode, setup.parameters[ii]->type->parameterize(setup.location, parameters)));
+  
+  PSI_STD::vector<TreePtr<InterfaceValue> > function_interfaces;
+  PSI_STD::vector<TreePtr<Term> > setup_parameters_term(setup.parameters.begin(), setup.parameters.end());
+  for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = setup.function_type->interfaces.begin(), ie = setup.function_type->interfaces.end(); ii != ie; ++ii)
+    function_interfaces.push_back(treeptr_cast<InterfaceValue>((*ii)->specialize(setup.location, setup_parameters_term)->parameterize(setup.location, parameters)));
+  
+  TreePtr<Term> result_type = setup.function_type->result_type_after(setup.location, setup_parameters_term)->parameterize(setup.location, parameters);
+  TreePtr<FunctionType> function_type = TermBuilder::function_type(setup.function_type->result_mode, result_type, parameter_types, function_interfaces, setup.location);
+  /// \todo Implementation functions should inherit their linkage from the implementation
+  TreePtr<Global> function = TermBuilder::function(module, function_type, link_private, parameters, return_target, setup.location, wrapped_body);
+  return TermBuilder::ptr_to(function, setup.location);
+}
+
 namespace {
 class ImplementationHelperWrapperGeneric {
   PSI_STD::vector<TreePtr<Term> > m_pattern_parameters;
@@ -50,160 +129,81 @@ public:
   * \param pattern_interfaces Additional interfaces (further to those required
   * by the general interface) which the implementation depends upon.
   */
-ImplementationHelper::ImplementationHelper(const SourceLocation& location,
-                                           const TreePtr<Interface>& interface,
-                                           const PSI_STD::vector<TreePtr<Anonymous> >& pattern_parameters,
-                                           const PSI_STD::vector<TreePtr<Term> >& generic_parameters,
-                                           const PSI_STD::vector<TreePtr<InterfaceValue> >& pattern_interfaces)
-: m_location(location),
-m_interface(interface),
-m_pattern_parameters(pattern_parameters),
-m_generic_parameters(generic_parameters),
-m_pattern_interfaces(pattern_interfaces) {
+ImplementationHelper::ImplementationHelper(const ImplementationSetup& setup, const SourceLocation& location)
+: m_setup(setup), m_location(location) {
+  CompileContext& compile_context = m_setup.interface->compile_context();
+  
   PSI_STD::vector<TreePtr<Term> > type_pattern;
   
-  if (TreePtr<Exists> interface_exists = term_unwrap_dyn_cast<Exists>(m_interface->type))
+  if (TreePtr<Exists> interface_exists = term_unwrap_dyn_cast<Exists>(m_setup.interface->type))
     if (TreePtr<PointerType> interface_ptr = term_unwrap_dyn_cast<PointerType>(interface_exists->result))
       if (TreePtr<TypeInstance> interface_inst = term_unwrap_dyn_cast<TypeInstance>(interface_ptr->target_type))
         m_generic = interface_inst->generic;
     
   if (!m_generic)
-    interface->compile_context().error_throw(location, "ImplementationHelper is only suitable for interfaces whose value is of the form Exists.PointerType.Instance", CompileError::error_internal);
+    compile_context.error_throw(location, "ImplementationHelper is only suitable for interfaces whose value is of the form Exists.PointerType.Instance", CompileError::error_internal);
   
   PSI_STD::vector<TreePtr<Term> > member_types;
-  for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = pattern_parameters.begin(), ie = pattern_parameters.end(); ii != ie; ++ii) {
-    TreePtr<Term> parameterized = (*ii)->parameterize(location, pattern_parameters);
+  for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = m_setup.pattern_parameters.begin(), ie = m_setup.pattern_parameters.end(); ii != ie; ++ii) {
+    TreePtr<Term> parameterized = (*ii)->parameterize(location, m_setup.pattern_parameters);
     type_pattern.push_back(parameterized);
     TreePtr<Term> type = TermBuilder::constant(parameterized, location);
     member_types.push_back(type);
     m_wrapper_member_values.push_back(TermBuilder::default_value(type, location));
   }
   
-  for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = pattern_interfaces.begin(), ie = pattern_interfaces.end(); ii != ie; ++ii) {
-    TreePtr<Term> value = (*ii)->parameterize(location, pattern_parameters);
+  for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = m_setup.pattern_interfaces.begin(), ie = m_setup.pattern_interfaces.end(); ii != ie; ++ii) {
+    TreePtr<Term> value = (*ii)->parameterize(location, m_setup.pattern_parameters);
     member_types.push_back(value->type);
     m_wrapper_member_values.push_back(value);
   }
   
-  for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = generic_parameters.begin(), ie = generic_parameters.end(); ii != ie; ++ii)
-    m_interface_parameters.push_back((*ii)->parameterize(location, pattern_parameters));
+  for (PSI_STD::vector<TreePtr<Term> >::const_iterator ii = m_setup.interface_parameters.begin(), ie = m_setup.interface_parameters.end(); ii != ie; ++ii)
+    m_interface_parameters_pattern.push_back((*ii)->parameterize(location, m_setup.pattern_parameters));
 
-  m_wrapper_generic = TermBuilder::generic(interface->compile_context(), type_pattern, GenericType::primitive_always, location,
-                                           ImplementationHelperWrapperGeneric(type_pattern, member_types, m_generic, m_interface_parameters));
+  m_wrapper_generic = TermBuilder::generic(compile_context, type_pattern, GenericType::primitive_always, location,
+                                           ImplementationHelperWrapperGeneric(type_pattern, member_types, m_generic, m_interface_parameters_pattern));
   
   TreePtr<Term> wrapper_instance = TermBuilder::instance(m_wrapper_generic, type_pattern, location);
   
   // Need a double upward reference: one for the struct and one for the containing generic
-  TreePtr<Term> upref = TermBuilder::upref(wrapper_instance, 0, TermBuilder::upref_null(interface->compile_context()), location);
+  TreePtr<Term> upref = TermBuilder::upref(wrapper_instance, 0, TermBuilder::upref_null(compile_context), location);
   upref = TermBuilder::upref(default_, m_wrapper_member_values.size(), upref, location);
   
+  m_generic_parameters = m_setup.interface_parameters;
   m_generic_parameters.insert(m_generic_parameters.begin(), upref);
-}
-
-/**
-  * \brief Begin generating a function for use in an interface.
-  * 
-  * The first argument to the function type \c type is assumed to be the interface
-  * reference.
-  */
-ImplementationHelper::FunctionSetup ImplementationHelper::function_setup(const TreePtr<FunctionType>& type, const SourceLocation& location, const PSI_STD::vector<SourceLocation>& parameter_locations) {
-  FunctionSetup result;
-  result.location = location;
-  result.function_type = type;
-  
-  PSI_STD::vector<TreePtr<Term> > previous_arguments;
-  for (std::size_t ii = 0, ie = type->parameter_types.size(); ii != ie; ++ii) {
-    const SourceLocation& loc = (ie - ii) <= parameter_locations.size() ?
-      parameter_locations[parameter_locations.size() - (ie - ii)] : location;
-    TreePtr<Anonymous> param = type->parameter_after(loc, previous_arguments);
-    previous_arguments.push_back(param);
-    result.parameters.push_back(param);
-  }
-  
-  result.implementation = TermBuilder::outer_pointer(result.parameters.front(), result.parameters.front()->location());
-  
-  return result;
-}
-
-TreePtr<Term> ImplementationHelper::function_finish(const ImplementationHelper::FunctionSetup& setup, const TreePtr<Module>& module,
-                                                    const TreePtr<Term>& body, const TreePtr<JumpTarget>& return_target) {
-  TreePtr<Term> wrapped_body = body;
-  int offset = 0;
-  PSI_STD::vector<TreePtr<Term> > solidify_values;
-  for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = m_pattern_parameters.begin(), ie = m_pattern_parameters.end(); ii != ie; ++ii, ++offset)
-    solidify_values.push_back(TermBuilder::ptr_target(TermBuilder::element_pointer(setup.implementation, offset, setup.location), setup.location));
-  if (!solidify_values.empty())
-    wrapped_body = TermBuilder::solidify_during(solidify_values, wrapped_body, setup.location);
-  
-  PSI_STD::vector<TreePtr<Implementation> > implementations;
-  for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = m_pattern_interfaces.begin(), ie = m_pattern_interfaces.end(); ii != ie; ++ii, ++offset) {
-    TreePtr<Term> ptr_value = TermBuilder::ptr_target(TermBuilder::element_pointer(setup.implementation, offset, setup.location), setup.location);
-    TreePtr<Term> value = TermBuilder::ptr_target(ptr_value, setup.location);
-    implementations.push_back(Implementation::new_(default_, value, (*ii)->interface, 0, (*ii)->parameters, true, default_, setup.location));
-  }
-  
-  TreePtr<Term> inner_implementation = TermBuilder::element_pointer(setup.implementation, m_wrapper_member_values.size(), setup.location);
-  for (PSI_STD::vector<Interface::InterfaceBase>::const_iterator ii = m_interface->bases.begin(), ie = m_interface->bases.end(); ii != ie; ++ii) {
-    TreePtr<Term> value = inner_implementation;
-    for (PSI_STD::vector<int>::const_iterator ji = ii->path.begin(), je = ii->path.end(); ji != je; ++ji)
-      value = TermBuilder::element_pointer(value, *ji, setup.location);
-    value = TermBuilder::ptr_target(value, setup.location);
-    PSI_STD::vector<TreePtr<Term> > parameters;
-    for (PSI_STD::vector<TreePtr<Term> >::const_iterator ji = ii->parameters.begin(), je = ii->parameters.end(); ji != je; ++ji)
-      parameters.push_back((*ji)->specialize(setup.location, m_generic_parameters));
-    TreePtr<Implementation> impl = Implementation::new_(default_, value, ii->interface, 0, parameters, true, default_, setup.location);
-    implementations.push_back(impl);
-  }
-  
-  if (!implementations.empty())
-    wrapped_body = TermBuilder::introduce_implementation(implementations, wrapped_body, setup.location);
-  
-  PSI_STD::vector<TreePtr<Anonymous> > parameters = m_pattern_parameters;
-  parameters.insert(parameters.end(), setup.parameters.begin(), setup.parameters.end());
-  
-  PSI_STD::vector<FunctionParameterType> parameter_types;
-  for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = m_pattern_parameters.begin(), ie = m_pattern_parameters.end(); ii != ie; ++ii)
-    parameter_types.push_back(FunctionParameterType(parameter_mode_phantom, (*ii)->type->parameterize(setup.location, parameters)));
-
-  for (std::size_t ii = 0, ie = setup.parameters.size(); ii != ie; ++ii)
-    parameter_types.push_back(FunctionParameterType(setup.function_type->parameter_types[ii].mode, setup.parameters[ii]->type->parameterize(setup.location, parameters)));
-  
-  PSI_STD::vector<TreePtr<InterfaceValue> > function_interfaces;
-  PSI_STD::vector<TreePtr<Term> > setup_parameters_term(setup.parameters.begin(), setup.parameters.end());
-  for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = setup.function_type->interfaces.begin(), ie = setup.function_type->interfaces.end(); ii != ie; ++ii)
-    function_interfaces.push_back(treeptr_cast<InterfaceValue>((*ii)->specialize(setup.location, setup_parameters_term)->parameterize(setup.location, parameters)));
-  
-  TreePtr<Term> result_type = setup.function_type->result_type_after(setup.location, setup_parameters_term)->parameterize(setup.location, parameters);
-  TreePtr<FunctionType> function_type = TermBuilder::function_type(setup.function_type->result_mode, result_type, parameter_types, function_interfaces, setup.location);
-  /// \todo Implementation functions should inherit their linkage from the implementation
-  TreePtr<Global> function = TermBuilder::function(module, function_type, link_private, parameters, return_target, setup.location, wrapped_body);
-  return TermBuilder::ptr_to(function, setup.location);
 }
 
 TreePtr<Implementation> ImplementationHelper::finish(const TreePtr<Term>& inner_value) {
   TreePtr<TypeInstance> inner_generic_instance =
     treeptr_cast<TypeInstance>(treeptr_cast<StructType>(m_wrapper_generic->member_type())->members[m_wrapper_member_values.size()]);
-  TreePtr<Term> inner_value_parameterized = inner_value->parameterize(m_location, m_pattern_parameters);
+  TreePtr<Term> inner_value_parameterized = inner_value->parameterize(m_location, m_setup.pattern_parameters);
   m_wrapper_member_values.push_back(TermBuilder::instance_value(inner_generic_instance, inner_value_parameterized, m_location));
   
   PSI_STD::vector<TreePtr<Term> > type_pattern;
-  for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = m_pattern_parameters.begin(), ie = m_pattern_parameters.end(); ii != ie; ++ii)
-    type_pattern.push_back((*ii)->parameterize(m_location, m_pattern_parameters));
+  for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator ii = m_setup.pattern_parameters.begin(), ie = m_setup.pattern_parameters.end(); ii != ie; ++ii)
+    type_pattern.push_back((*ii)->parameterize(m_location, m_setup.pattern_parameters));
 
   TreePtr<Term> struct_value = TermBuilder::struct_value(inner_value->compile_context(), m_wrapper_member_values, m_location);
   TreePtr<TypeInstance> wrapper_instance = TermBuilder::instance(m_wrapper_generic, type_pattern, m_location);
   TreePtr<Term> value = TermBuilder::instance_value(wrapper_instance, struct_value, m_location);
   
-  return Implementation::new_(default_, value, m_interface, 0, m_interface_parameters, false,
+  return Implementation::new_(default_, value, m_setup.interface, 0, m_interface_parameters_pattern, false,
                               vector_of<int>(0,m_wrapper_member_values.size()-1), m_location);
 }
 
-TreePtr<FunctionType> ImplementationHelper::member_function_type(int index, const SourceLocation& location) {
+TreePtr<Term> ImplementationHelper::member_type(int index, const SourceLocation& location) {
   TreePtr<StructType> st = term_unwrap_dyn_cast<StructType>(m_generic->member_type());
   if (!st)
     m_generic->compile_context().error_throw(location, "ImplementationHelper::member_function_type used on generic which is not a struct", CompileError::error_internal);
   
-  TreePtr<PointerType> pt = term_unwrap_dyn_cast<PointerType>(st->members[index]);
+  return st->members[index]->specialize(location, m_generic_parameters);
+}
+
+TreePtr<FunctionType> ImplementationHelper::member_function_type(int index, const SourceLocation& location) {
+  TreePtr<Term> mt = member_type(index, location);
+
+  TreePtr<PointerType> pt = term_unwrap_dyn_cast<PointerType>(mt);
   if (!pt)
     m_generic->compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a pointer", CompileError::error_internal);
   
@@ -211,7 +211,7 @@ TreePtr<FunctionType> ImplementationHelper::member_function_type(int index, cons
   if (!ft)
     m_generic->compile_context().error_throw(location, "ImplementationHelper::member_function_type member index does not lead to a function pointer", CompileError::error_internal);
   
-  return treeptr_cast<FunctionType>(pt->target_type->specialize(location, m_generic_parameters));
+  return ft;
 }
 
 /**
@@ -219,9 +219,13 @@ TreePtr<FunctionType> ImplementationHelper::member_function_type(int index, cons
   * 
   * \code this->function_setup(this->member_function_type(index, location), location, parameter_locations) \endcode
   */
-ImplementationHelper::FunctionSetup ImplementationHelper::member_function_setup(int index, const SourceLocation& location,
-                                                                                const PSI_STD::vector<SourceLocation>& parameter_locations) {
-  return function_setup(member_function_type(index, location), location, parameter_locations);
+ImplementationFunctionSetup ImplementationHelper::member_function_setup(int index, const SourceLocation& location,
+                                                                        const PSI_STD::vector<SourceLocation>& parameter_locations) {
+  return implementation_function_setup(member_function_type(index, location), location, parameter_locations);
+}
+
+TreePtr<Term> ImplementationHelper::member_function_finish(const ImplementationFunctionSetup& setup, const TreePtr<Module>& module, const TreePtr<Term>& body, const TreePtr<JumpTarget>& return_target) {
+  return implementation_function_finish(m_setup, setup, module, body, return_target);
 }
 }
 }

@@ -104,9 +104,10 @@ namespace Psi {
 
     PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Statement> > parse_statement_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
     PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Statement> > parse_namespace(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
-    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
     PSI_COMPILER_EXPORT SharedPtr<Expression> parse_expression(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
-    PSI_COMPILER_EXPORT PSI_STD::vector<TokenExpression> parse_identifier_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
+
+    PSI_STD::vector<SharedPtr<Expression> > parse_positional_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
+    PSI_STD::vector<TokenExpression> parse_identifier_list(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text&);
 
     struct ArgumentDeclarations {
       PSI_STD::vector<SharedPtr<FunctionArgument> > implicit;
@@ -116,10 +117,11 @@ namespace Psi {
       SharedPtr<Expression> return_type;
     };
 
-    PSI_COMPILER_EXPORT PSI_STD::vector<SharedPtr<FunctionArgument> > parse_type_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
-    PSI_COMPILER_EXPORT ArgumentDeclarations parse_function_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
+    PSI_STD::vector<SharedPtr<FunctionArgument> > parse_type_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
+    ArgumentDeclarations parse_function_argument_declarations(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
     
-    PSI_COMPILER_EXPORT SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpressionType type);
+    SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpressionType type);
+    SharedPtr<Parser::EvaluateExpression> expression_as_evaluate(const SharedPtr<Parser::Expression>& expr);
   }
 }
 

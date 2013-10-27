@@ -4,6 +4,7 @@
 #include "Tree.hpp"
 #include "Utility.hpp"
 #include "Interface.hpp"
+#include "Implementation.hpp"
 #include "TermBuilder.hpp"
 
 #include <boost/format.hpp>
@@ -349,10 +350,45 @@ namespace Psi {
       }
       
       static TreePtr<Term> implement_impl(const FunctionInterfaceMemberCallback& self,
+                                          const ImplementationMemberSetup& setup,
                                           const SharedPtr<Parser::Expression>& value,
                                           const TreePtr<EvaluateContext>& evaluate_context,
                                           const SourceLocation& location) {
-        PSI_NOT_IMPLEMENTED();
+        SharedPtr<Parser::TokenExpression> params_expr, body_expr;
+        SharedPtr<Parser::EvaluateExpression> cast_expr = Parser::expression_as_evaluate(value);
+        if (cast_expr && (cast_expr->parameters.size() == 1)) {
+          params_expr = Parser::expression_as_token_type(cast_expr->object, Parser::token_bracket);
+          body_expr = Parser::expression_as_token_type(cast_expr->parameters[0], Parser::token_square_bracket);
+        }
+        
+        if (!params_expr || !body_expr)
+          self.compile_context().error_throw(location, "Implementation of interface function was not of the form '(...) [...]'");
+
+        PSI_STD::vector<Parser::TokenExpression> parameter_name_exprs = Parser::parse_identifier_list(self.compile_context().error_context(), location.logical, params_expr->text);
+        PSI_STD::vector<SourceLocation> parameter_locations;
+        for (PSI_STD::vector<Parser::TokenExpression>::const_iterator ii = parameter_name_exprs.begin(), ie = parameter_name_exprs.end(); ii != ie; ++ii)
+          parameter_locations.push_back(SourceLocation(ii->location, location.logical->new_child(ii->text.str())));
+        
+        TreePtr<FunctionType> func_type;
+        if (TreePtr<PointerType> ptr_type = term_unwrap_dyn_cast<PointerType>(setup.type))
+          func_type = term_unwrap_dyn_cast<FunctionType>(ptr_type->target_type);
+        
+        if (!func_type)
+          self.compile_context().error_throw(location, "Implementation member was not a function as expected", CompileError::error_internal);
+        
+        ImplementationFunctionSetup fn_setup = implementation_function_setup(func_type, location, parameter_locations);
+        
+        if (parameter_name_exprs.size() > fn_setup.parameters.size())
+          self.compile_context().error_throw(location, boost::format("Too many parameter names in function implementation") % fn_setup.parameters.size() % parameter_name_exprs.size());
+        
+        PSI_STD::map<String, TreePtr<Term> > parameter_names;
+        for (std::size_t ii = 0, ie = parameter_name_exprs.size(); ii != ie; ++ii)
+          parameter_names.insert(std::make_pair(parameter_name_exprs[ii].text.str(), fn_setup.parameters[fn_setup.parameters.size() - (ie - ii)]));
+        
+        TreePtr<EvaluateContext> body_context = evaluate_context_dictionary(evaluate_context->module(), location, parameter_names, evaluate_context);
+        TreePtr<Term> body = compile_from_bracket(body_expr, evaluate_context, location);
+        
+        return implementation_function_finish(setup.base, fn_setup, evaluate_context->module(), body);
       }
     };
     
@@ -385,7 +421,7 @@ namespace Psi {
         info.argument_modes.insert(info.argument_modes.begin(), parameter_mode_functional);
         
         InterfaceMemberResult result;
-        result.type = function_arguments_to_type(info, location);
+        result.type = TermBuilder::pointer(function_arguments_to_type(info, location), location);
         result.callback.reset(::new FunctionInterfaceMemberCallback(self.compile_context(), location));
         
         return result;

@@ -163,12 +163,12 @@ public:
   AggregateOverloadsCallback(const PatternArguments& arguments, const TreePtr<EvaluateContext>& evaluate_context, const AggregateBodyDelayedValue& body)
   : m_arguments(arguments), m_evaluate_context(evaluate_context), m_body(body) {}
 
-  ImplementationHelper::FunctionSetup lc_setup(ImplementationHelper& helper, int index, const char *name) {
+  ImplementationFunctionSetup lc_setup(ImplementationHelper& helper, int index, const char *name) {
     return helper.member_function_setup(index, helper.location().named_child(name), default_);
   }
 
-  ImplementationHelper::FunctionSetup lc_setup(ImplementationHelper& helper, int index, const char *name, AggregateLifecycleParameters& parameters) {
-    ImplementationHelper::FunctionSetup result = lc_setup(helper, index, name);
+  ImplementationFunctionSetup lc_setup(ImplementationHelper& helper, int index, const char *name, AggregateLifecycleParameters& parameters) {
+    ImplementationFunctionSetup result = lc_setup(helper, index, name);
     parameters.dest = result.parameters[1];
     if (result.parameters.size() > 2)
       parameters.src = result.parameters[2];
@@ -195,9 +195,9 @@ public:
 
     AggregateMovableParameter movable_parameter;
     movable_parameter.generic = generic;
-    ImplementationHelper movable_helper(generic->location().named_child("Movable"), generic->compile_context().builtins().movable_interface,
-                                        m_arguments.list, vector_of(instance), default_);
-    ImplementationHelper::FunctionSetup
+    ImplementationHelper movable_helper(ImplementationSetup(generic->compile_context().builtins().movable_interface, m_arguments.list, default_, vector_of(instance)),
+                                        generic->location().named_child("Movable"));
+    ImplementationFunctionSetup
       lc_init      = lc_setup(movable_helper, interface_movable_init, "init", movable_parameter.lc_init),
       lc_fini      = lc_setup(movable_helper, interface_movable_fini, "fini", movable_parameter.lc_fini),
       lc_clear     = lc_setup(movable_helper, interface_movable_clear, "clear"),
@@ -213,9 +213,9 @@ public:
 
     AggregateCopyableParameter copyable_parameter;
     copyable_parameter.generic = generic;
-    ImplementationHelper copyable_helper(generic->location().named_child("Copyable"), generic->compile_context().builtins().copyable_interface,
-                                         m_arguments.list, vector_of(instance), default_);
-    ImplementationHelper::FunctionSetup
+    ImplementationHelper copyable_helper(ImplementationSetup(generic->compile_context().builtins().copyable_interface, m_arguments.list, default_, vector_of(instance)),
+                                         generic->location().named_child("Copyable"));
+    ImplementationFunctionSetup
       lc_copy_init = lc_setup(copyable_helper, interface_copyable_copy_init, "copy_init"),
       lc_copy      = lc_setup(copyable_helper, interface_copyable_copy, "copy", copyable_parameter.lc_copy);
 
@@ -253,29 +253,34 @@ public:
     }
   }
   
-  TreePtr<Term> build_init(ImplementationHelper& helper, const ImplementationHelper::FunctionSetup& f, const PSI_STD::vector<TreePtr<Term> >& body_parts) {
+  TreePtr<Term> build_init(ImplementationHelper& helper, const ImplementationFunctionSetup& f, const PSI_STD::vector<TreePtr<Term> >& body_parts) {
     TreePtr<Term> body = make_body(f.location, body_parts);
     TreePtr<Term> element = TermBuilder::element_value(f.parameters[1], 0, f.location);
     TreePtr<Term> init = TermBuilder::initialize_value(element, TermBuilder::default_value(element->type, f.location), body, f.location);
-    return helper.function_finish(f, m_evaluate_context->module(), init);
+    return helper.member_function_finish(f, m_evaluate_context->module(), init);
   }
 
-  TreePtr<Term> build_fini(ImplementationHelper& helper, const ImplementationHelper::FunctionSetup& f, const TreePtr<Term>& clear_func_ptr) {
+  TreePtr<Term> build_fini(ImplementationHelper& helper, const ImplementationFunctionSetup& f, const TreePtr<Term>& clear_func_ptr) {
     TreePtr<Term> cleanup = TermBuilder::finalize_value(TermBuilder::element_value(f.parameters[1], 0, f.location), f.location);
-    TreePtr<Term> clear_func = TermBuilder::ptr_target(clear_func_ptr, f.location);
-    TreePtr<Term> clear = TermBuilder::function_call(clear_func, vector_of<TreePtr<Term> >(f.parameters[0], f.parameters[1]), f.location);
-    TreePtr<Term> body = TermBuilder::block(f.location, vector_of(clear, cleanup));
-    return helper.function_finish(f, m_evaluate_context->module(), body);
+    TreePtr<Term> body;
+    if (clear_func_ptr) {
+      TreePtr<Term> clear_func = TermBuilder::ptr_target(clear_func_ptr, f.location);
+      TreePtr<Term> clear = TermBuilder::function_call(clear_func, vector_of<TreePtr<Term> >(f.parameters[0], f.parameters[1]), f.location);
+      body = TermBuilder::block(f.location, vector_of(clear, cleanup));
+    } else {
+      body = cleanup;
+    }
+    return helper.member_function_finish(f, m_evaluate_context->module(), body);
   }
   
-  TreePtr<Term> build_clear(ImplementationHelper& helper, const ImplementationHelper::FunctionSetup& f, const PSI_STD::vector<TreePtr<Term> >& body_parts) {
+  TreePtr<Term> build_clear(ImplementationHelper& helper, const ImplementationFunctionSetup& f, const PSI_STD::vector<TreePtr<Term> >& body_parts) {
     TreePtr<Term> extra = make_body(f.location, body_parts);
     TreePtr<Term> element = TermBuilder::element_value(f.parameters[1], 0, f.location);
     TreePtr<Term> cleanup = TermBuilder::assign_value(element, TermBuilder::default_value(element->type, f.location), f.location);
-    return helper.function_finish(f, m_evaluate_context->module(), TermBuilder::block(f.location, vector_of(extra, cleanup)));
+    return helper.member_function_finish(f, m_evaluate_context->module(), TermBuilder::block(f.location, vector_of(extra, cleanup)));
   }
   
-  TreePtr<Term> build_move_init(ImplementationHelper& helper, const ImplementationHelper::FunctionSetup& f, const TreePtr<Term>& move_func_ptr) {
+  TreePtr<Term> build_move_init(ImplementationHelper& helper, const ImplementationFunctionSetup& f, const TreePtr<Term>& move_func_ptr) {
     TreePtr<Term> body, dest = TermBuilder::element_value(f.parameters[1], 0, f.location);
     if (move_func_ptr) {
       TreePtr<Term> move_func = TermBuilder::ptr_target(move_func_ptr, f.location);
@@ -285,10 +290,10 @@ public:
       TreePtr<Term> move_value = TermBuilder::movable(TermBuilder::element_value(f.parameters[2], 0, f.location), f.location);
       body = TermBuilder::initialize_value(dest, move_value, TermBuilder::empty_value(m_evaluate_context->compile_context()), f.location);
     }
-    return helper.function_finish(f, m_evaluate_context->module(), body);
+    return helper.member_function_finish(f, m_evaluate_context->module(), body);
   }
   
-  TreePtr<Term> build_move(ImplementationHelper& helper, const ImplementationHelper::FunctionSetup& f, const PSI_STD::vector<TreePtr<Term> >& body_parts) {
+  TreePtr<Term> build_move(ImplementationHelper& helper, const ImplementationFunctionSetup& f, const PSI_STD::vector<TreePtr<Term> >& body_parts) {
     TreePtr<Term> body;
     if (body_parts.empty()) {
       TreePtr<Term> move_value = TermBuilder::movable(TermBuilder::element_value(f.parameters[2], 0, f.location), f.location);
@@ -296,10 +301,10 @@ public:
     } else {
       body = make_body(f.location, body_parts);
     }
-    return helper.function_finish(f, m_evaluate_context->module(), body);
+    return helper.member_function_finish(f, m_evaluate_context->module(), body);
   }
 
-  TreePtr<Term> build_copy_init(ImplementationHelper& helper, const ImplementationHelper::FunctionSetup& f, const TreePtr<Term>& copy_func_ptr) {
+  TreePtr<Term> build_copy_init(ImplementationHelper& helper, const ImplementationFunctionSetup& f, const TreePtr<Term>& copy_func_ptr) {
     TreePtr<Term> body, dest = TermBuilder::element_value(f.parameters[1], 0, f.location);
     if (copy_func_ptr) {
       TreePtr<Term> copy_func = TermBuilder::ptr_target(copy_func_ptr, f.location);
@@ -309,10 +314,10 @@ public:
       body = TermBuilder::initialize_value(dest, TermBuilder::element_value(f.parameters[2], 0, f.location),
                                            TermBuilder::empty_value(m_evaluate_context->compile_context()), f.location);
     }
-    return helper.function_finish(f, m_evaluate_context->module(), body);
+    return helper.member_function_finish(f, m_evaluate_context->module(), body);
   }
   
-  TreePtr<Term> build_copy(ImplementationHelper& helper, const ImplementationHelper::FunctionSetup& f, const PSI_STD::vector<TreePtr<Term> >& body_parts) {
+  TreePtr<Term> build_copy(ImplementationHelper& helper, const ImplementationFunctionSetup& f, const PSI_STD::vector<TreePtr<Term> >& body_parts) {
     TreePtr<Term> body;
     if (body_parts.empty()) {
       body = TermBuilder::assign_value(TermBuilder::element_value(f.parameters[1], 0, f.location),
@@ -320,7 +325,7 @@ public:
     } else {
       body = make_body(f.location, body_parts);
     }
-    return helper.function_finish(f, m_evaluate_context->module(), body);
+    return helper.member_function_finish(f, m_evaluate_context->module(), body);
   }
 
   template<typename V>

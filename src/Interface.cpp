@@ -119,17 +119,20 @@ namespace {
   
   class InterfaceDefineCommonCallback {
     PatternArguments m_arguments;
+    PSI_STD::vector<TreePtr<Anonymous> > m_generic_args;
     TreePtr<EvaluateContext> m_evaluate_context;
     Parser::Text m_text;
     
   public:
-    InterfaceDefineCommonCallback(const PatternArguments& arguments, const TreePtr<EvaluateContext>& evaluate_context, const Parser::Text& text)
-    : m_arguments(arguments), m_evaluate_context(evaluate_context), m_text(text) {
+    InterfaceDefineCommonCallback(const PatternArguments& arguments, const PSI_STD::vector<TreePtr<Anonymous> >& generic_args,
+                                  const TreePtr<EvaluateContext>& evaluate_context, const Parser::Text& text)
+    : m_arguments(arguments), m_generic_args(generic_args), m_evaluate_context(evaluate_context), m_text(text) {
     }
     
     template<typename V>
     static void visit(V& v) {
       v("arguments", &InterfaceDefineCommonCallback::m_arguments)
+      ("generic_args", &InterfaceDefineCommonCallback::m_generic_args)
       ("evaluate_context", &InterfaceDefineCommonCallback::m_evaluate_context);
     }
     
@@ -142,9 +145,8 @@ namespace {
       
       InterfaceMemberArgument member_argument;
       member_argument.generic = generic;
-      member_argument.parameters.push_back(TermBuilder::anonymous(TermBuilder::upref_type(compile_context), term_mode_value, location));
-      member_argument.parameters.insert(member_argument.parameters.end(), m_arguments.list.begin(), m_arguments.list.end());
-      member_argument.self_pointer_type = TermBuilder::pointer(TermBuilder::instance(generic, member_argument.parameters, location), location);
+      member_argument.parameters = vector_from<TreePtr<Term> >(m_generic_args);
+      member_argument.self_pointer_type = TermBuilder::pointer(TermBuilder::instance(generic, member_argument.parameters, location), m_generic_args.front(), location);
       
       PSI_STD::vector<TreePtr<Term> > member_types;
       PSI_STD::vector<InterfaceMetadata::Entry> metadata_entries;
@@ -167,7 +169,7 @@ namespace {
           if (!member.callback)
             compile_context.error_throw(location, boost::format("Interface member '%s' did not return an evaluation callback") % name);
 
-          member_types.push_back(member.type->parameterize(member_location, m_arguments.list));
+          member_types.push_back(member.type->parameterize(member_location, m_generic_args));
           metadata_entries.push_back(InterfaceMetadata::Entry(name, member.callback));
         }
       }
@@ -284,17 +286,18 @@ namespace {
     PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const AggregateMemberArgument& argument) {
       CompileContext& compile_context = argument.generic->compile_context();
       
-      PSI_STD::vector<TreePtr<Anonymous> > wildcards;
-      PSI_STD::vector<TreePtr<Term> > interface_parameters;
+      ImplementationMemberSetup setup;
+      setup.base.interface = m_interface;
+
       if (m_parameters_expression) {
         PSI_NOT_IMPLEMENTED();
       } else {
         // Default is a single argument which is the containing type
-        wildcards = argument.parameters;
-        interface_parameters.push_back(argument.instance);
+        setup.base.pattern_parameters = argument.parameters;
+        setup.base.interface_parameters.push_back(argument.instance);
       }
       
-      ImplementationHelper helper(m_location, m_interface, wildcards, interface_parameters, default_);
+      ImplementationHelper helper(setup.base, m_location);
 
       PSI_STD::vector<TreePtr<Term> > entry_values(m_metadata->entries.size());
       PSI_STD::vector<SharedPtr<Parser::Statement> > entries = Parser::parse_namespace(compile_context.error_context(), m_location.logical, m_body_expression->text);
@@ -313,7 +316,8 @@ namespace {
           const InterfaceMetadata::Entry& entry = m_metadata->entries[name_it->second];
           PSI_ASSERT(name == entry.name);
           SourceLocation value_loc(stmt.location, m_location.logical->new_child(name));
-          TreePtr<Term> value = entry.callback->implement(stmt.expression, m_evaluate_context, value_loc);
+          setup.type = helper.member_type(name_it->second, value_loc);
+          TreePtr<Term> value = entry.callback->implement(setup, stmt.expression, m_evaluate_context, value_loc);
           
           entry_values[name_it->second] = value;
         }
@@ -369,7 +373,7 @@ public:
     }
       
     case 2: {
-      if (!(params_expr = Parser::expression_as_token_type(parameters[0], Parser::token_square_bracket)))
+      if (!(params_expr = Parser::expression_as_token_type(parameters[0], Parser::token_bracket)))
         self.compile_context().error_throw(location, "First argument to implementation is not a (...)");
       if (!(body = Parser::expression_as_token_type(parameters[1], Parser::token_square_bracket)))
         self.compile_context().error_throw(location, "Second argument to implementation is not a [...]");
@@ -467,9 +471,9 @@ public:
 
     PSI_STD::vector<TreePtr<Term> > generic_pattern = arguments_to_pattern(generic_args);
     InterfaceDefineCommonDelayedValue common(self.compile_context(), location,
-                                              InterfaceDefineCommonCallback(args, evaluate_context, members_expr->text));
+                                             InterfaceDefineCommonCallback(args, generic_args, evaluate_context, members_expr->text));
     TreePtr<GenericType> generic_type = TermBuilder::generic(self.compile_context(), generic_pattern, GenericType::primitive_always,
-                                                              location, InterfaceDefineMemberCallback(common));
+                                                             location, InterfaceDefineMemberCallback(common));
     
     PSI_STD::vector<TreePtr<Term> > interface_pattern = arguments_to_pattern(args.list);
     PSI_STD::vector<TreePtr<Term> > derived_pattern = arguments_to_pattern(args.dependent, args.list);

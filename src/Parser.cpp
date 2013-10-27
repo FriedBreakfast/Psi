@@ -877,7 +877,7 @@ PSI_STD::vector<SharedPtr<FunctionArgument> > parse_type_argument_declarations(C
 }
 
 SharedPtr<Parser::TokenExpression> expression_as_token_type(const SharedPtr<Parser::Expression>& expr, Parser::TokenExpressionType type) {
-  if (expr->expression_type != Parser::expression_token)
+  if (expr->expression_type != expression_token)
     return SharedPtr<Parser::TokenExpression>();
 
   SharedPtr<Parser::TokenExpression> cast_expr = checked_pointer_cast<Parser::TokenExpression>(expr);
@@ -885,6 +885,13 @@ SharedPtr<Parser::TokenExpression> expression_as_token_type(const SharedPtr<Pars
     return SharedPtr<Parser::TokenExpression>();
 
   return cast_expr;
+}
+
+SharedPtr<Parser::EvaluateExpression> expression_as_evaluate(const SharedPtr<Parser::Expression>& expr) {
+  if (expr->expression_type != expression_evaluate)
+    return SharedPtr<Parser::EvaluateExpression>();
+  
+  return checked_pointer_cast<Parser::EvaluateExpression>(expr);
 }
 }
 }
