@@ -6,7 +6,7 @@ ti : interface (X:type) [
   invoke : function (:X -: str);
 ];
 
-invoke_puts : function (X:type @ ti(X), a:X) [
+invoke_puts : function (X::type @ ti(X), a:X) [
   puts(ti.invoke(a));
 ];
 

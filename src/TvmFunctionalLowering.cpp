@@ -128,6 +128,12 @@ struct TvmFunctionalLowererMap {
       }
     }
     
+    for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = function_ty->interfaces.begin(), ie = function_ty->interfaces.end(); ii != ie; ++ii) {
+      TvmResult parameter = builder.build((*ii)->type);
+      scope = TvmScope::join(scope, parameter.scope);
+      parameter_types.push_back(parameter.value);
+    }
+    
     TvmResult result = builder.build(function_ty->result_type);
     scope = TvmScope::join(scope, result.scope);
     Tvm::ValuePtr<> result_type;
@@ -335,7 +341,7 @@ struct TvmFunctionalLowererMap {
   }
   
   static TvmResult build_global_statement(TvmFunctionalBuilder& builder, const TreePtr<GlobalStatement>& stmt) {
-    switch (stmt->mode) {
+    switch (stmt->statement_mode) {
     case statement_mode_functional:
     case statement_mode_ref:
       PSI_ASSERT(stmt->value->pure);

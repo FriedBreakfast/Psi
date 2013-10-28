@@ -164,12 +164,12 @@ namespace Psi {
         else if (TreePtr<Exists> exists = dyn_treeptr_cast<Exists>(my_term))
           my_term = exists->result;
         else if (TreePtr<GlobalStatement> def = dyn_treeptr_cast<GlobalStatement>(my_term)) {
-          if ((def->mode == statement_mode_functional) && def->value->pure)
+          if ((def->statement_mode == statement_mode_functional) && def->value->pure)
             my_term = def->value;
           else
             break;
         } else if (TreePtr<Statement> stmt = dyn_treeptr_cast<Statement>(my_term)) {
-          if ((stmt->mode == statement_mode_functional) && stmt->value->pure)
+          if ((stmt->statement_mode == statement_mode_functional) && stmt->value->pure)
             my_term = stmt->value;
           else
             break;

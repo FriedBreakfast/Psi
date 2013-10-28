@@ -205,22 +205,30 @@ namespace Psi {
       SourceLocation m_location;
       SharedPtr<Parser::Expression> m_statement;
       StatementMode m_mode;
+      bool m_is_result;
+      
+      static StatementMode block_statement_mode(StatementMode base_mode, bool is_result, const TreePtr<Term>& value, const SourceLocation& location) {
+        if (is_result && (base_mode == statement_mode_destroy))
+          base_mode = statement_mode_value;
+        return statement_mode(base_mode, value, location);
+      }
       
     public:
-      BlockEntryCallback(const SourceLocation& location, const SharedPtr<Parser::Expression>& statement, StatementMode mode)
-      : m_location(location), m_statement(statement), m_mode(mode) {
+      BlockEntryCallback(const SourceLocation& location, const SharedPtr<Parser::Expression>& statement, StatementMode mode, bool is_result)
+      : m_location(location), m_statement(statement), m_mode(mode), m_is_result(is_result) {
       }
       
       TreePtr<Statement> evaluate(const TreePtr<EvaluateContext>& context) {
         TreePtr<Term> value = compile_term(m_statement, context, m_location.logical);
-        return TermBuilder::statement(value, statement_mode(m_mode, value, m_location), m_location);
+        return TermBuilder::statement(value, block_statement_mode(m_mode, m_is_result, value, m_location), m_location);
       }
       
       template<typename V>
       static void visit(V& v) {
         v("location", &BlockEntryCallback::m_location)
         ("statement", &BlockEntryCallback::m_statement)
-        ("mode", &BlockEntryCallback::m_mode);
+        ("mode", &BlockEntryCallback::m_mode)
+        ("is_result", &BlockEntryCallback::m_is_result);
       }
     };
     
@@ -257,7 +265,7 @@ namespace Psi {
             }
             SourceLocation statement_location(named_expr.location, logical_location);
             m_statements.push_back(StatementValueType(compile_context(), statement_location,
-                                                      BlockEntryCallback(statement_location, named_expr.expression, (StatementMode)named_expr.mode)));
+                                                      BlockEntryCallback(statement_location, named_expr.expression, (StatementMode)named_expr.mode, boost::next(ii)==ie)));
             m_has_last = true;
             ++index;
           } else {

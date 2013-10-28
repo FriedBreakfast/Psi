@@ -135,7 +135,7 @@ namespace Psi {
 
       TreePtr<Term> value;
       /// \brief How to store the result of this statement.
-      StatementMode mode;
+      StatementMode statement_mode;
       
       GlobalStatement(const TreePtr<Module>& module, const TreePtr<Term>& value, StatementMode mode, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
@@ -186,12 +186,14 @@ namespace Psi {
      * value.
      */
     class Statement : public Term {
+      static TermResultInfo result_info(const TreePtr<Term>& value, StatementMode mode);
+      
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
 
       TreePtr<Term> value;
       /// \brief How to store the result of this statement.
-      StatementMode mode;
+      StatementMode statement_mode;
       
       Statement(const TreePtr<Term>& value, StatementMode mode, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
@@ -202,6 +204,8 @@ namespace Psi {
      * \brief Tree for a block of code.
      */
     class Block : public Term {
+      static bool block_bottom(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value);
+
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
 
@@ -1183,7 +1187,7 @@ namespace Psi {
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
       
-      InterfaceValue(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const TreePtr<Implementation>& implementation);
+      InterfaceValue(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const TreePtr<Implementation>& implementation, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const InterfaceValue& self);
       static TermTypeInfo type_info_impl(const InterfaceValue& self);

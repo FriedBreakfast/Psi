@@ -205,7 +205,7 @@ namespace Psi {
       ValuePtr<> pointer_target_type(const ValuePtr<>& ptr, const SourceLocation& location) {
         ValuePtr<PointerType> target_ptr_type = dyn_cast<PointerType>(ptr->type());
         if (!target_ptr_type)
-          ptr->error_context().error_throw(location, "store target is not a pointer type");
+          ptr->error_context().error_throw(location, "memory operation target is not a pointer type");
         return target_ptr_type->target_type();
       }
     }

@@ -116,8 +116,8 @@ namespace Psi {
                    mode_ == statement_mode_value ? link_private : link_none,
                    location),
     value(value_),
-    mode(mode_) {
-      switch (mode) {
+    statement_mode(mode_) {
+      switch (statement_mode) {
       case statement_mode_destroy:
         compile_context().error_throw(location, "Global statements must have a storage type");
         
@@ -144,7 +144,7 @@ namespace Psi {
     void GlobalStatement::visit(V& v) {
       visit_base<ModuleGlobal>(v);
       v("value", &GlobalStatement::value)
-      ("mode", &GlobalStatement::mode);
+      ("statement_mode", &GlobalStatement::statement_mode);
     }
     
     TermTypeInfo GlobalStatement::type_info_impl(const GlobalStatement& self) {
@@ -527,17 +527,29 @@ namespace Psi {
     }
 
     const TermVtable TryFinally::vtable = PSI_COMPILER_TERM(TryFinally, "psi.compiler.TryFinally", Term);
+    
+    TermResultInfo Statement::result_info(const TreePtr<Term>& value, StatementMode mode) {
+      bool is_bottom = value->mode == term_mode_bottom;
+      switch (mode) {
+      case statement_mode_functional:
+        return TermResultInfo(value->type, is_bottom ? term_mode_bottom : term_mode_value, true);
+        
+      case statement_mode_destroy:
+        return TermResultInfo(TermBuilder::empty_type(value->compile_context()), is_bottom ? term_mode_bottom : term_mode_value, true);
+        
+      case statement_mode_value:
+      case statement_mode_ref:
+        return TermResultInfo(value->type, is_bottom ? term_mode_bottom : term_mode_lref, true);
+        
+      default: PSI_FAIL("Unknown statement mode");
+      }
+    }
 
     Statement::Statement(const TreePtr<Term>& value_, StatementMode mode_, const SourceLocation& location)
-    : Term(&vtable, value_->compile_context(),
-           TermResultInfo(value_->type,
-                          mode_ == statement_mode_functional ? term_mode_value
-                          : mode_ == statement_mode_destroy ? term_mode_bottom
-                          : term_mode_lref, true),
-           location),
+    : Term(&vtable, value_->compile_context(), result_info(value_, mode_), location),
     value(value_),
-    mode(mode_) {
-      switch (mode) {
+    statement_mode(mode_) {
+      switch (statement_mode) {
       case statement_mode_value:
       case statement_mode_destroy:
         break;
@@ -570,13 +582,25 @@ namespace Psi {
     void Statement::visit(Visitor& v) {
       visit_base<Term>(v);
       v("value", &Statement::value)
-      ("mode", &Statement::mode);
+      ("statement_mode", &Statement::statement_mode);
     }
 
     const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
     
+    bool Block::block_bottom(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value) {
+      if (value->mode == term_mode_bottom)
+        return true;
+      
+      for (PSI_STD::vector<TreePtr<Statement> >::const_iterator ii = statements.begin(), ie = statements.end(); ii != ie; ++ii) {
+        if ((*ii)->mode == term_mode_bottom)
+          return true;
+      }
+      
+      return false;
+    }
+    
     Block::Block(const PSI_STD::vector<TreePtr<Statement> >& statements_, const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, TermResultInfo(value_->type, value_->mode, false), location),
+    : Term(&vtable, TermResultInfo(value_->type, block_bottom(statements_, value_) ? term_mode_bottom : value_->mode, false), location),
     statements(statements_),
     value(value_) {
     }
@@ -1446,7 +1470,7 @@ namespace Psi {
     : Term(&vtable, term_result_bottom(target_->compile_context()), location),
     target(target_),
     argument(argument_) {
-      if (target->argument->type != argument->type)
+      if (!target->argument->type->convert_match(argument->type))
         target->compile_context().error_throw(location, "Jump argument has the wrong type");
       
       if (target->argument_mode == result_mode_lvalue) {
@@ -1743,11 +1767,12 @@ namespace Psi {
     const TreeVtable Namespace::vtable = PSI_COMPILER_TREE(Namespace, "psi.compiler.Namespace", Tree);
     
     InterfaceValue::InterfaceValue(const TreePtr<Interface>& interface_, const PSI_STD::vector<TreePtr<Term> >& parameters_,
-                                   const TreePtr<Implementation>& implementation_)
+                                   const TreePtr<Implementation>& implementation_, const SourceLocation& location)
     : Functional(&vtable),
     interface(interface_),
     parameters(parameters_),
     implementation(implementation_) {
+      TermBuilder::to_functional(parameters, location);
     }
     
     template<typename V>
@@ -1759,7 +1784,7 @@ namespace Psi {
     }
     
     TermResultInfo InterfaceValue::check_type_impl(const InterfaceValue& self) {
-      return TermResultInfo(self.interface->type_after(self.parameters, self.location()), term_mode_lref, true);
+      return TermResultInfo(self.interface->type_after(self.parameters, self.location()), term_mode_value, true);
     }
     
     TermTypeInfo InterfaceValue::type_info_impl(const InterfaceValue&) {
@@ -1874,11 +1899,11 @@ namespace Psi {
     const TermVtable IntroduceImplementation::vtable = PSI_COMPILER_TERM(IntroduceImplementation, "psi.compiler.IntroduceImplementation", Term);
     
     FunctionalEvaluate::FunctionalEvaluate(const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, TermResultInfo(value_->type, term_mode_value, true), location),
+    : Term(&vtable, TermResultInfo(value_->type, value_->mode == term_mode_bottom ? term_mode_bottom : term_mode_value, true), location),
     value(value_) {
       if (value->type && !value->type->is_functional())
         compile_context().error_throw(location, "Argument to FunctionalEvaluate does not have functional type", CompileError::error_internal);
-      if (value->pure && (value->mode == term_mode_value))
+      if (value->pure && ((value->mode == term_mode_value) || (value->mode == term_mode_bottom)))
         compile_context().error_throw(location, "Already functional terms should not be wrapped in FunctionalEvaluate", CompileError::error_internal);
     }
     
@@ -1897,7 +1922,7 @@ namespace Psi {
     const TermVtable FunctionalEvaluate::vtable = PSI_COMPILER_TERM(FunctionalEvaluate, "psi.compiler.FunctionalEvaluate", Term);
     
     GlobalEvaluate::GlobalEvaluate(const TreePtr<Module>& module, const TreePtr<Term>& value_, const SourceLocation& location)
-    : ModuleGlobal(&vtable, module, TermResultInfo(value->type, term_mode_value, true), link_none, location), value(value_) {
+    : ModuleGlobal(&vtable, module, TermResultInfo(value_->type, term_mode_value, true), link_none, location), value(value_) {
       if (value->type && !value->type->is_functional())
         compile_context().error_throw(location, "Argument to GlobalEvaluate does not have functional type", CompileError::error_internal);
       if (value->pure && (value->mode == term_mode_value))

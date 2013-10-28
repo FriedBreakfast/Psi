@@ -413,7 +413,7 @@ Tvm::ValuePtr<Tvm::Global> TvmObjectCompilerBase::get_global_bare(const TreePtr<
     }
     
     if (TreePtr<GlobalStatement> stmt = dyn_treeptr_cast<GlobalStatement>(mod_global))
-      if (stmt->mode != statement_mode_value)
+      if (stmt->statement_mode != statement_mode_value)
         compile_context().error_throw(stmt->location(), "Global statements which are not of value-type do not translate directly to TVM, use build_global_statement");
     
     if (m_module == mod_global->module) {
@@ -631,7 +631,7 @@ void TvmObjectCompilerBase::run_module_global(const TreePtr<ModuleGlobal>& globa
     }
   } else if (TreePtr<GlobalStatement> global_stmt = dyn_treeptr_cast<GlobalStatement>(global)) {
     // Only global variable-like statements are built here
-    PSI_ASSERT(global_stmt->mode == statement_mode_value);
+    PSI_ASSERT(global_stmt->statement_mode == statement_mode_value);
     Tvm::ValuePtr<Tvm::GlobalVariable> tvm_gvar = Tvm::value_cast<Tvm::GlobalVariable>(status.lowered);
     TvmResult value;
     try {

@@ -54,13 +54,34 @@ void TvmFunctionBuilder::run_function(const TreePtr<Function>& function, const T
     m_return_target = TermBuilder::exit_target(ftype->result_type, ftype->result_mode, location);
   
   // Can be less due to sret parameters
-  PSI_ASSERT(function->arguments.size() <= output->parameters().size());
+  PSI_ASSERT(function->arguments.size() + ftype->interfaces.size() <= output->parameters().size());
   Tvm::Function::ParameterList::iterator arg_tvm_ii = output->parameters().begin();
   for (PSI_STD::vector<TreePtr<Anonymous> >::const_iterator arg_ii = function->arguments.begin(), arg_ie = function->arguments.end(); arg_ii != arg_ie; ++arg_ii, ++arg_tvm_ii)
     m_state.scope->put(*arg_ii, TvmResult(m_state.scope, *arg_tvm_ii));
   
+  PSI_STD::vector<TreePtr<Term> > term_arguments = vector_from<TreePtr<Term> >(function->arguments);
+
+  PSI_STD::vector<TreePtr<Implementation> > impl;
+  for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator if_ii = ftype->interfaces.begin(), if_ie = ftype->interfaces.end(); if_ii != if_ie; ++if_ii, ++arg_tvm_ii) {
+    const TreePtr<InterfaceValue>& iv = *if_ii;
+    TreePtr<Anonymous> interface_value = TermBuilder::anonymous(iv->type->specialize(location, term_arguments), term_mode_value, location);
+    m_state.scope->put(interface_value, TvmResult(m_state.scope, *arg_tvm_ii));
+    
+    PSI_STD::vector<TreePtr<Term> > parameters;
+    for (PSI_STD::vector<TreePtr<Term> >::const_iterator ji = iv->parameters.begin(), je = iv->parameters.end(); ji != je; ++ji)
+      parameters.push_back((*ji)->specialize(location, term_arguments));
+    
+    impl.push_back(Implementation::new_(iv->interface, OverloadPattern(0, parameters), default_,
+                                        ImplementationValue(interface_value, true), location));
+  }
+  
+  TreePtr<Term> body = function->body();
+  body = TermBuilder::jump_to(m_return_target, body, location);
+  if (!impl.empty())
+    body = TermBuilder::introduce_implementation(impl, body, location);
+  
   m_builder.set_insert_point(output->new_block(location));
-  build(TermBuilder::jump_to(m_return_target, function->body(), location));
+  build(body);
 }
 
 void TvmFunctionBuilder::run_init(const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output) {
@@ -218,8 +239,10 @@ void TvmFunctionBuilder::cleanup_to(const TvmCleanupPtr& top) {
 }
 
 TvmResult TvmFunctionBuilder::build(const TreePtr<Term>& term) {
-  if (boost::optional<TvmResult> r = m_state.scope->get(term))
+  if (boost::optional<TvmResult> r = m_state.scope->get(term)) {
+    PSI_ASSERT((term->result_info().mode == term_mode_bottom) == !r->value);
     return *r;
+  }
   
   TvmResult value;
   if (tree_isa<Functional>(term) || tree_isa<Global>(term)) {
@@ -227,6 +250,7 @@ TvmResult TvmFunctionBuilder::build(const TreePtr<Term>& term) {
   } else {
     value = build_instruction(term);
   }
+  PSI_ASSERT((term->result_info().mode == term_mode_bottom) == !value.value);
   
   if (term->pure)
     m_state.scope->put(term, value);

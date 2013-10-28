@@ -34,7 +34,7 @@ struct TvmFunctionBuilder::InstructionLowering {
       TvmResult value;
       
       Tvm::ValuePtr<> stack_slot;
-      if ((statement->mode == statement_mode_value) || ((statement->mode == statement_mode_destroy) && !statement->value->is_functional())) {
+      if ((statement->statement_mode == statement_mode_value) || ((statement->statement_mode == statement_mode_destroy) && !statement->value->is_functional())) {
         TvmResult type = builder.build(statement->value->type);
         stack_slot = builder.builder().alloca_(type.value, statement->location());
         builder.push_cleanup(boost::make_shared<StackFreeCleanup>(stack_slot, statement->location()));
@@ -46,7 +46,7 @@ struct TvmFunctionBuilder::InstructionLowering {
           value = TvmResult::bottom();
       } else {
         before_statement_cleanup = builder.m_state.cleanup;
-        switch (statement->mode) {
+        switch (statement->statement_mode) {
         case statement_mode_functional: {
           // Let FunctionalEvaluate handler handle this
           value = builder.build(TermBuilder::to_functional(statement->value, statement->location()));
@@ -78,12 +78,12 @@ struct TvmFunctionBuilder::InstructionLowering {
 
       builder.cleanup_to(before_statement_cleanup);
       
-      if ((statement->mode == statement_mode_value) && !statement->value->is_functional()) {
+      if ((statement->statement_mode == statement_mode_value) && !statement->value->is_functional()) {
         PSI_ASSERT(stack_slot);
         builder.push_cleanup(boost::make_shared<DestroyCleanup>(stack_slot, statement->type, statement->location()));
       }
       
-      if (statement->mode != statement_mode_destroy) {
+      if (statement->statement_mode != statement_mode_destroy) {
         builder.m_state.scope->put(statement, value);
       } else {
         builder.m_state.scope->put(statement, TvmResult::bottom());
@@ -217,31 +217,34 @@ struct TvmFunctionBuilder::InstructionLowering {
     if (jump_to->argument) {
       Tvm::ValuePtr<> exit_storage = builder.exit_storage(jump_to->target, jump_to->location());
       // Do not use var.assign here - it might try and destroy the existing stack storage
-      switch (jump_to->target->argument_mode) {
-      case result_mode_by_value:
+      if (jump_to->target->argument_mode == result_mode_by_value) {
         if (!builder.object_construct_term(construct_initialize, exit_storage, jump_to->argument, jump_to->location()))
           return TvmResult::bottom();
-        break;
-      
-      case result_mode_functional: {
-        // Let FunctionalEvaluate handler handle this
-        result_value = builder.build(TermBuilder::to_functional(jump_to->argument, jump_to->location())).value;
-        break;
-      }
-      
-      case result_mode_lvalue: {
-        PSI_ASSERT((jump_to->argument->mode == term_mode_lref) || (jump_to->argument->mode == term_mode_rref));
-        result_value = builder.build(jump_to->argument).value;
-        break;
-      }
-      
-      case result_mode_rvalue: {
-        PSI_ASSERT(jump_to->argument->mode == term_mode_rref);
-        result_value = builder.build(jump_to->argument).value;
-        break;
-      }
-          
-      default: PSI_FAIL("Unrecognised statement storage mode");
+      } else {
+        switch (jump_to->target->argument_mode) {
+        case result_mode_functional: {
+          // Let FunctionalEvaluate handler handle this
+          result_value = builder.build(TermBuilder::to_functional(jump_to->argument, jump_to->location())).value;
+          break;
+        }
+        
+        case result_mode_lvalue: {
+          PSI_ASSERT((jump_to->argument->mode == term_mode_lref) || (jump_to->argument->mode == term_mode_rref));
+          result_value = builder.build(jump_to->argument).value;
+          break;
+        }
+        
+        case result_mode_rvalue: {
+          PSI_ASSERT(jump_to->argument->mode == term_mode_rref);
+          result_value = builder.build(jump_to->argument).value;
+          break;
+        }
+            
+        default: PSI_FAIL("Unrecognised statement storage mode");
+        }
+        
+        if (!result_value)
+          return TvmResult::bottom();
       }
     }
 
@@ -299,8 +302,10 @@ struct TvmFunctionBuilder::InstructionLowering {
     }
     
     // Interfaces go at the end of the argument list
-    for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = ftype->interfaces.begin(), ie = ftype->interfaces.end(); ii != ie; ++ii)
-      tvm_arguments.push_back(builder.build_implementation_value(*ii, call->location()).value);
+    for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = ftype->interfaces.begin(), ie = ftype->interfaces.end(); ii != ie; ++ii) {
+      TreePtr<InterfaceValue> s = treeptr_cast<InterfaceValue>((*ii)->specialize(call->location(), call->arguments));
+      tvm_arguments.push_back(builder.build_implementation_value(s, call->location()).value);
+    }
 
     Tvm::ValuePtr<> result;
     if (TreePtr<BuiltinFunction> builtin = term_unwrap_dyn_cast<BuiltinFunction>(call->target)) {
@@ -358,13 +363,25 @@ struct TvmFunctionBuilder::InstructionLowering {
       return TvmResult(builder.m_state.scope, result);
     }
   }
-
-  static TvmResult build_functional_evaluate(TvmFunctionBuilder& builder, const TreePtr<FunctionalEvaluate>& term) {
-    return builder.build(term->value);
-  }
   
-  static TvmResult run_functional_evaluate(TvmFunctionalBuilder& builder, const TreePtr<FunctionalEvaluate>& term) {
-    return builder.build(term->value);
+  static TvmResult run_functional_evaluate(TvmFunctionBuilder& builder, const TreePtr<FunctionalEvaluate>& term) {
+    switch (term->value->mode) {
+    case term_mode_lref:
+    case term_mode_rref: {
+      TvmResult inner = builder.build(term->value);
+      PSI_ASSERT(!inner.is_bottom());
+      return builder.load(inner.value, term->location());
+    }
+      
+    case term_mode_bottom:
+      return TvmResult::bottom();
+      
+    case term_mode_value:
+      // Argument must always have functional type, so should always be stored functionally
+      return builder.build(term->value);
+      
+    default: PSI_FAIL("Unexpected term mode");
+    }
   }
   
   static TvmResult run_initialize(TvmFunctionBuilder& builder, const TreePtr<InitializeValue>& initialize) {

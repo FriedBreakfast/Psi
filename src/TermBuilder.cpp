@@ -233,7 +233,7 @@ TreePtr<Term> TermBuilder::instance_value(const TreePtr<TypeInstance>& instance,
 
 /// \brief Get the value of an interface with given parameters
 TreePtr<Term> TermBuilder::interface_value(const TreePtr<Interface>& interface, const PSI_STD::vector<TreePtr<Term> >& parameters, const TreePtr<Implementation>& implementation, const SourceLocation& location) {
-  return interface->compile_context().get_functional(InterfaceValue(interface, parameters, implementation), location);
+  return interface->compile_context().get_functional(InterfaceValue(interface, parameters, implementation, location), location);
 }
 
 /// \brief Get the value of an interface with given parameters
@@ -406,7 +406,7 @@ TreePtr<Term> TermBuilder::to_functional(const TreePtr<Term>& value, const Sourc
     return TreePtr<Term>();
   
   PSI_ASSERT(!value->type || value->type->is_functional());
-  if (!value->pure || (value->mode != term_mode_value))
+  if (!value->pure || ((value->mode != term_mode_value) && (value->mode != term_mode_bottom)))
     return functional_eval(value, location);
   else
     return value;
