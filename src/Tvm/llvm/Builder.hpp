@@ -17,11 +17,8 @@
 #include <llvm/PassManager.h>
 #include <llvm/Support/TargetFolder.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
-
-#if PSI_DEBUG
-#include <llvm/ExecutionEngine/JITEventListener.h>
-#endif
 #include "LLVMPopWarnings.hpp"
 
 #include "../Core.hpp"
@@ -38,11 +35,7 @@ namespace Psi {
     namespace LLVM {
       typedef llvm::IRBuilder<true, llvm::TargetFolder, llvm::IRBuilderDefaultInserter<true> > IRBuilder;
       
-      struct ModuleMapping {
-        llvm::Module *module;
-        boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*> globals;
-        ModuleMapping() : module(NULL) {}
-      };
+      typedef boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*> ModuleMapping;
       
       class TargetCallback {
         llvm::Triple m_triple;
@@ -187,13 +180,14 @@ namespace Psi {
       llvm::TargetMachine* host_machine();
 
       struct LLVMJitModule {
+        boost::shared_ptr<llvm::ExecutionEngine> jit;
         ModuleMapping mapping;
         std::size_t load_priority;
       };
 
       class LLVMJit : public Jit {
       public:
-        LLVMJit(const CompileErrorPair& error_loc, const std::string&, const boost::shared_ptr<llvm::TargetMachine>&);
+        LLVMJit(const CompileErrorPair& error_loc, const std::string&, const boost::shared_ptr<llvm::TargetMachine>&, bool use_mcjit);
         virtual ~LLVMJit();
         virtual void destroy();
 
@@ -204,22 +198,24 @@ namespace Psi {
 
       private:
         CompileErrorContext *m_error_context;
+        bool m_use_mcjit;
         llvm::LLVMContext m_llvm_context;
         llvm::PassManagerBuilder m_llvm_pass_builder;
         llvm::PassManager m_llvm_module_pass;
         llvm::CodeGenOpt::Level m_llvm_opt;
+        llvm::TargetOptions m_llvm_target_options;
         TargetCallback m_target_callback;
         llvm::Triple m_target_triple;
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
         std::size_t m_load_priority_max;
         boost::unordered_map<Module*, LLVMJitModule> m_modules;
-#if PSI_DEBUG
-        boost::shared_ptr<llvm::JITEventListener> m_debug_listener;
-#endif
-        boost::shared_ptr<llvm::ExecutionEngine> m_llvm_engine;
+        typedef boost::unordered_map<std::string, std::pair<llvm::ExecutionEngine*, llvm::GlobalValue*> > ExportedSymbolMap;
+        ExportedSymbolMap m_exported_symbols;
 
         void init_llvm_passes();
-        void init_llvm_engine(llvm::Module*);
+        
+        static bool symbol_lookup(void **result, const char *name, void *user_ptr);
+        template<typename T> void preload_symbols(llvm::ExecutionEngine& ee, const T& begin, const T& end);
       };
       
       llvm::CallingConv::ID function_call_convention(const CompileErrorPair& error_loc, CallingConvention cc);

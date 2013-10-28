@@ -115,6 +115,7 @@ if(PSI_TVM_LLVM)
   add_library(psi-tvm-llvm MODULE
     Tvm/llvm/Builder.cpp Tvm/llvm/Builder.hpp
     Tvm/llvm/CallingConventions.cpp Tvm/llvm/CallingConventions.hpp
+    Tvm/llvm/Engine.cpp Tvm/llvm/Engine.hpp
     Tvm/llvm/Function.cpp
     Tvm/llvm/FunctionalConstant.cpp
     Tvm/llvm/FunctionalInstruction.cpp
@@ -123,6 +124,7 @@ if(PSI_TVM_LLVM)
     Tvm/llvm/Target.cpp
     Tvm/llvm/Type.cpp
   )
+  set_source_files_properties(Tvm/llvm/Engine.cpp PROPERTIES COMPILE_FLAGS "${LLVM_CXX_COMPAT_FLAGS}")
   shared_library_setup(psi-tvm-llvm)
 
   set_target_properties(psi-tvm-llvm PROPERTIES COMPILE_FLAGS "${LLVM_CXX_FLAGS}")

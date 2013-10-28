@@ -1,4 +1,5 @@
 #include "Builder.hpp"
+#include "Engine.hpp"
 
 #include "../Aggregate.hpp"
 #include "../Core.hpp"
@@ -7,7 +8,7 @@
 #include "../Recursive.hpp"
 
 #include <boost/lexical_cast.hpp>
-#include <boost/make_shared.hpp>
+#include <boost/format.hpp>
 
 #include "LLVMPushWarnings.hpp"
 #include <llvm/IR/DerivedTypes.h>
@@ -21,15 +22,7 @@
 
 #if PSI_DEBUG
 #include <iostream>
-#include <llvm/CodeGen/MachineFunction.h>
 #endif
-
-/*
- * Do not remove the JIT.h include. Although everything will build
- * fine, the JIT will not be available since JIT.h includes some magic
- * which ensures the JIT is really available.
- */
-#include <llvm/ExecutionEngine/JIT.h>
 
 namespace Psi {
   namespace Tvm {
@@ -259,7 +252,6 @@ namespace Psi {
       
       ModuleMapping ModuleBuilder::run(Module *module) {
         ModuleMapping module_result;
-        module_result.module = m_llvm_module;
         
         AggregateLoweringPass aggregate_lowering_pass(module, target_callback()->aggregate_lowering_callback());
         aggregate_lowering_pass.remove_unions = true;
@@ -309,7 +301,7 @@ namespace Psi {
             result->setAlignment(build_constant_integer(term->alignment()).getZExtValue());
           
           m_global_terms[term] = result;
-          module_result.globals[old_term] = result;
+          module_result[old_term] = result;
         }
         
         for (Module::ModuleMemberList::iterator i = rewritten_module->members().begin(), e = rewritten_module->members().end(); i != e; ++i) {
@@ -514,8 +506,10 @@ namespace Psi {
 
       LLVMJit::LLVMJit(const CompileErrorPair& error_loc,
                        const std::string& host_triple,
-                       const boost::shared_ptr<llvm::TargetMachine>& host_machine)
+                       const boost::shared_ptr<llvm::TargetMachine>& host_machine,
+                       bool use_mcjit)
         : m_error_context(&error_loc.context()),
+          m_use_mcjit(use_mcjit),
           m_target_callback(error_loc, &m_llvm_context, host_machine, host_triple),
           m_target_machine(host_machine),
           m_load_priority_max(0) {
@@ -531,13 +525,13 @@ namespace Psi {
 
       void LLVMJit::destroy() {
         // Run module destructor functions
-        if (m_llvm_engine) {
-          std::map<std::size_t, llvm::Module*> load_order;
-          for (boost::unordered_map<Module*, LLVMJitModule>::const_iterator ii = m_modules.begin(), ie = m_modules.end(); ii != ie; ++ii)
-            load_order.insert(std::make_pair(ii->second.load_priority, ii->second.mapping.module));
-          for (std::map<std::size_t, llvm::Module*>::reverse_iterator ii = load_order.rbegin(), ie = load_order.rend(); ii != ie; ++ii)
-            m_llvm_engine->runStaticConstructorsDestructors(ii->second, true);
-        }
+        std::vector<std::pair<std::size_t, llvm::ExecutionEngine*> > load_order;
+        for (boost::unordered_map<Module*, LLVMJitModule>::const_iterator ii = m_modules.begin(), ie = m_modules.end(); ii != ie; ++ii)
+          load_order.push_back(std::make_pair(ii->second.load_priority, ii->second.jit.get()));
+          
+        std::sort(load_order.begin(), load_order.end());
+        for (std::vector<std::pair<std::size_t, llvm::ExecutionEngine*> >::reverse_iterator ii = load_order.rbegin(), ie = load_order.rend(); ii != ie; ++ii)
+          ii->second->runStaticConstructorsDestructors(true);
         
         delete this;
       }
@@ -559,12 +553,41 @@ namespace Psi {
         
         m_llvm_pass_builder.LibraryInfo = new llvm::TargetLibraryInfo(llvm::Triple(m_target_machine->getTargetTriple()));
         m_llvm_pass_builder.populateModulePassManager(m_llvm_module_pass);
+        
+        m_llvm_target_options.JITEmitDebugInfo = 1;
+        m_llvm_target_options.JITEmitDebugInfoToDisk = 1;
+      }
+      
+      namespace {
+        /// Can symbols with the given linkage mode be shared between object files in the same shared object?
+        bool is_linkage_shared(Linkage l) {
+          return (l != link_import) && (l != link_local);
+        }
       }
 
+      /**
+       * Pre-fill a JIT with a Module's external symbols. This has to be done when the JIT, rather
+       * than the MCJIT, is used, because there is no other way to set custom symbol addresses.
+       * 
+       * Note that this never raises errors, since symbols not found here should be searched by
+       * the usual LLVM methods.
+       */
+      template<typename T>
+      void LLVMJit::preload_symbols(llvm::ExecutionEngine& ee, const T& begin, const T& end) {
+        for (T ii = begin, ie = end; ii != ie; ++ii) {
+          if (ii->isDeclaration()) {
+            void *ptr;
+            if (symbol_lookup(&ptr, ii->getName().data(), this))
+              ee.addGlobalMapping(ii, ptr);
+          }
+        }
+      }
+      
       void LLVMJit::add_module(Module *module) {
-        LLVMJitModule& mapping = m_modules[module];
-        if (mapping.mapping.module)
+        if (m_modules.find(module) != m_modules.end())
           error_context().error_throw(module->location(), "module already exists in this JIT");
+
+        LLVMJitModule mapping;
 
         std::auto_ptr<llvm::Module> llvm_module_auto(new llvm::Module(module->name(), m_llvm_context));
         llvm::Module *llvm_module = llvm_module_auto.get();
@@ -576,38 +599,61 @@ namespace Psi {
         m_llvm_pass_builder.populateFunctionPassManager(fpm);
 
         ModuleBuilder builder(&error_context(), &m_llvm_context, m_target_machine.get(), llvm_module, &fpm, &m_target_callback);
-        ModuleMapping new_mapping = builder.run(module);
+        mapping.mapping = builder.run(module);
         
         m_llvm_module_pass.run(*llvm_module);
 
-#ifdef PSI_DEBUG
+#if PSI_DEBUG
         if (const char *debug_mode = std::getenv("PSI_LLVM_DEBUG")) {
           if ((std::strcmp(debug_mode, "all") == 0) || (std::strcmp(debug_mode, "ir") == 0))
             llvm_module->dump();
         }
 #endif
-
-        mapping.mapping = new_mapping;
-
-        if (!m_llvm_engine) {
-          init_llvm_engine(llvm_module);
-        } else {
-          m_llvm_engine->addModule(llvm_module);
+        
+        mapping.jit.reset(psi_tvm_llvm_make_execution_engine(llvm_module_auto.release(), m_use_mcjit, m_llvm_opt, m_llvm_target_options,
+                                                             &LLVMJit::symbol_lookup, this));
+        mapping.load_priority = 0;
+        
+        PSI_ASSERT_MSG(mapping.jit, "LLVM JIT creation failed - most likely the JIT has not been linked in");
+        
+        std::pair<boost::unordered_map<Module*, LLVMJitModule>::iterator, bool> ins_result = m_modules.insert(std::make_pair(module, mapping));
+        PSI_ASSERT(ins_result.second);
+        
+        LLVMJitModule& jit_module = ins_result.first->second;
+        // Add to global symbol list
+        for (ModuleMapping::const_iterator ii = jit_module.mapping.begin(), ie = jit_module.mapping.end(); ii != ie; ++ii) {
+          if (is_linkage_shared(ii->first->linkage()))
+            m_exported_symbols[ii->first->name()] = std::make_pair(jit_module.jit.get(), ii->second);
         }
 
-        llvm_module_auto.release();
-        
-        mapping.load_priority = m_load_priority_max++;
-        m_llvm_engine->runStaticConstructorsDestructors(llvm_module, false);
+        if (!m_use_mcjit) {
+          // Must inject all known external symbols before any jit compilation occurs,
+          // because non-MC JIT doesn't allow symbol lookups to be hooked
+          preload_symbols(*jit_module.jit, llvm_module->global_begin(), llvm_module->global_end()); // Global variables
+          preload_symbols(*jit_module.jit, llvm_module->begin(), llvm_module->end()); // Functions
+        }
+
+        jit_module.load_priority = ++m_load_priority_max;
+        jit_module.jit->runStaticConstructorsDestructors(false);
       }
       
       void LLVMJit::remove_module(Module *module) {
         boost::unordered_map<Module*, LLVMJitModule>::iterator it = m_modules.find(module);
         if (it == m_modules.end())
           error_context().error_throw(module->location(), "module not present");
-        m_llvm_engine->runStaticConstructorsDestructors(it->second.mapping.module, true);
-        m_llvm_engine->removeModule(it->second.mapping.module);
-        delete it->second.mapping.module;
+        
+        // Erase from exported symbol table
+        const LLVMJitModule& jit_module = it->second;
+        for (ModuleMapping::const_iterator ii = jit_module.mapping.begin(), ie = jit_module.mapping.end(); ii != ie; ++ii) {
+          if (is_linkage_shared(ii->first->linkage())) {
+            ExportedSymbolMap::iterator ji = m_exported_symbols.find(ii->first->name());
+            PSI_ASSERT(ji != m_exported_symbols.end());
+            if (ji->second.first == jit_module.jit.get())
+              m_exported_symbols.erase(ji);
+          }
+        }
+        
+        jit_module.jit->runStaticConstructorsDestructors(true);
         m_modules.erase(it);
       }
       
@@ -617,18 +663,27 @@ namespace Psi {
         if (it == m_modules.end())
           error_context().error_throw(global->location(), "Module does not appear to be available in this JIT");
         
-        boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator jt = it->second.mapping.globals.find(global);
-        PSI_ASSERT(jt != it->second.mapping.globals.end());
+        boost::unordered_map<ValuePtr<Global>, llvm::GlobalValue*>::iterator jt = it->second.mapping.find(global);
+        PSI_ASSERT(jt != it->second.mapping.end());
         
-        return m_llvm_engine->getPointerToGlobal(jt->second);
+        return it->second.jit->getPointerToGlobal(jt->second);
       }
 
       /**
-       * Create the LLVM Jit.
+       * Symbol resolver callback.
        */
-      void LLVMJit::init_llvm_engine(llvm::Module *module) {
-        m_llvm_engine.reset(llvm::ExecutionEngine::create(module, false, 0, m_llvm_opt, false));
-        PSI_ASSERT_MSG(m_llvm_engine, "LLVM engine creation failed - most likely neither the JIT nor interpreter have been linked in");
+      bool LLVMJit::symbol_lookup(void** result, const char* name, void* user_ptr) {
+        LLVMJit& self = *static_cast<LLVMJit*>(user_ptr);
+        
+        std::string name_s(name);
+        ExportedSymbolMap::const_iterator it = self.m_exported_symbols.find(name_s);
+        if (it != self.m_exported_symbols.end()) {
+          *result = it->second.first->getPointerToGlobal(it->second.second);
+          return true;
+        }
+        
+        // Use LLVMs normal symbol resolution
+        return false;
       }
     }
   }
@@ -636,6 +691,9 @@ namespace Psi {
 
 extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) Psi::Tvm::Jit* tvm_jit_new(const Psi::CompileErrorPair& error_handler, const Psi::PropertyValue& config) {
   llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmPrinter();
+  llvm::InitializeNativeTargetAsmParser();
+  
   std::string host = llvm::sys::getDefaultTargetTriple();
 
   std::string error_msg;
@@ -647,5 +705,7 @@ extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) Psi::Tvm::Jit* tvm_jit_new(const Psi::Com
   if (!tm)
     error_handler.error_throw("Failed to create target machine");
   
-  return new Psi::Tvm::LLVM::LLVMJit(error_handler, host, tm);
+  bool use_mcjit = config.path_bool("use_mcjit");
+  
+  return new Psi::Tvm::LLVM::LLVMJit(error_handler, host, tm, use_mcjit);
 }

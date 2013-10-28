@@ -136,7 +136,8 @@ enum OptionKeys {
   opt_key_test_list,
   opt_key_run_tests,
   opt_key_verbose,
-  opt_key_no_fork
+  opt_key_no_fork,
+  opt_key_no_signals
 };
 
 /**
@@ -154,6 +155,7 @@ void run_main_parse_args(int argc, const char **argv, std::vector<std::string>& 
   desc.opts.push_back(option_description(opt_key_run_tests, true, 'r', "", "Run tests matching a pattern"));
   desc.opts.push_back(option_description(opt_key_verbose, false, 'v', "", "Print all log messages"));
   desc.opts.push_back(option_description(opt_key_no_fork, false, '\0', "no-fork", "Do not run tests in a subprocess"));
+  desc.opts.push_back(option_description(opt_key_no_signals, false, '\0', "no-signals", "Do not install signal handlers"));
   
   Psi::OptionParser parser(desc, argc, argv);
   while (!parser.empty()) {
@@ -206,6 +208,10 @@ void run_main_parse_args(int argc, const char **argv, std::vector<std::string>& 
       
     case opt_key_no_fork:
       options.fork = false;
+      break;
+      
+    case opt_key_no_signals:
+      options.catch_signals = false;
       break;
       
     default: PSI_FAIL("Unexpected option key");

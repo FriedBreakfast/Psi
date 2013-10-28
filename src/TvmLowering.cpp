@@ -783,7 +783,6 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_module_global(const TreePtr<Mod
   while (!queue.empty()) {
     TreePtr<ModuleGlobal> current = queue.back();
     queue.pop_back();
-    PSI_ASSERT(current->module == global->module);
     TvmGlobalStatus& status = m_built_globals[current];
     
     switch (status.status) {

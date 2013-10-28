@@ -21,7 +21,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER MATCHES "clang")
 endif()
 
 # Locate LLVM
-set(PSI_LLVM_MODULES engine ipo)
+set(PSI_LLVM_MODULES engine mcjit ipo)
 find_program(LLVM_CONFIG NAMES llvm-config)
 if(LLVM_CONFIG)
   set(PSI_TVM_LLVM 1)
@@ -46,6 +46,8 @@ if(PSI_TVM_LLVM AND NOT LLVM_VERSION VERSION_EQUAL "3.3")
   message(SEND_ERROR "LLVM must be version 3.3, you have ${LLVM_VERSION}")
 endif()
 
+# Copy LLVM flags for case where we need to inherit from LLVM classes (grrr...)
+set(LLVM_CXX_COMPAT_FLAGS "${LLVM_CXX_FLAGS}")
 # Try to eliminate LLVM compilation flags which we don't need
 string(REGEX REPLACE "-[WOfg][^ ]*" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
 
