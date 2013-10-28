@@ -298,12 +298,14 @@ struct TvmFunctionBuilder::InstructionLowering {
       tvm_arguments.push_back(arg_result.value);
     }
     
-    if (!ftype->interfaces.empty())
-      PSI_NOT_IMPLEMENTED();
+    // Interfaces go at the end of the argument list
+    for (PSI_STD::vector<TreePtr<InterfaceValue> >::const_iterator ii = ftype->interfaces.begin(), ie = ftype->interfaces.end(); ii != ie; ++ii)
+      tvm_arguments.push_back(builder.build_implementation_value(*ii, call->location()).value);
 
     Tvm::ValuePtr<> result;
     if (TreePtr<BuiltinFunction> builtin = term_unwrap_dyn_cast<BuiltinFunction>(call->target)) {
       PSI_ASSERT(ftype->result_mode == result_mode_functional);
+      PSI_ASSERT(ftype->interfaces.empty());
       PSI_NOT_IMPLEMENTED();
     } else {
       TvmResult target_result = builder.build(call->target);

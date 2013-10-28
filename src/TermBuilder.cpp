@@ -243,7 +243,7 @@ TreePtr<Term> TermBuilder::interface_value(const TreePtr<Interface>& interface, 
 
 /// \brief Get the value of an aggregate member from an aggregate.
 TreePtr<Term> TermBuilder::element_value(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location) {
-  return aggregate->compile_context().get_functional(ElementValue(aggregate, index), location);
+  return aggregate->compile_context().get_functional(ElementValue(aggregate, index, location), location);
 }
 
 /// \copydoc TermBuilder::element_value
@@ -253,7 +253,7 @@ TreePtr<Term> TermBuilder::element_value(const TreePtr<Term>& aggregate, unsigne
 
 /// \brief Get a pointer to an element of an aggreagte from a poiner to that aggregate
 TreePtr<Term> TermBuilder::element_pointer(const TreePtr<Term>& aggregate, const TreePtr<Term>& index, const SourceLocation& location) {
-  return aggregate->compile_context().get_functional(ElementPointer(aggregate, index), location);
+  return aggregate->compile_context().get_functional(ElementPointer(aggregate, index, location), location);
 }
 
 /// \copydoc TermBuilder::element_pointer

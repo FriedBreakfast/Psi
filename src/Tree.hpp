@@ -449,7 +449,7 @@ namespace Psi {
     class ElementValue : public Functional {
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
-      ElementValue(const TreePtr<Term>& value, const TreePtr<Term>& index);
+      ElementValue(const TreePtr<Term>& value, const TreePtr<Term>& index, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const ElementValue& self);
       static TermTypeInfo type_info_impl(const ElementValue& self);
@@ -468,7 +468,7 @@ namespace Psi {
     class ElementPointer : public Functional {
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
-      ElementPointer(const TreePtr<Term>& value, const TreePtr<Term>& index);
+      ElementPointer(const TreePtr<Term>& value, const TreePtr<Term>& index, const SourceLocation& location);
       template<typename V> static void visit(V& v);
       static TermResultInfo check_type_impl(const ElementPointer& self);
       static TermTypeInfo type_info_impl(const ElementPointer& self);

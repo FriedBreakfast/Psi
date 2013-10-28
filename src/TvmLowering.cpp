@@ -193,6 +193,13 @@ m_tvm_context(&tvm_context) {
 }
 
 /**
+ * \brief Wrapper around build_implementation for the simple case where an InterfaceValue is available.
+ */
+TvmResult TvmFunctionalBuilder::build_implementation_value(const TreePtr<InterfaceValue>& interface_value, const SourceLocation& location) {
+  return build_implementation(interface_value->interface, interface_value->parameters, location, interface_value->implementation);
+}
+
+/**
  * \brief Lower a generic type.
  */
 TvmResult tvm_lower_generic(TvmScope& scope, TvmFunctionalBuilder& builder, const TreePtr<GenericType>& generic) {
@@ -236,12 +243,8 @@ TvmResult tvm_lower_generic(TvmScope& scope, TvmFunctionalBuilder& builder, cons
   if (is_outer_generic) {
     PSI_ASSERT(scope.m_in_progress_generic_scope == &generic_scope);
     scope.m_in_progress_generic_scope = NULL;
-#if PSI_DEBUG
-    TvmScope *result_scope = generic_scope.generics.empty() ? static_cast<TvmScope*>(NULL) : generic_scope.generics.begin()->second.scope.scope;
-#endif
     for (TvmGenericScope::GenericMapType::const_iterator ii = generic_scope.generics.begin(), ie = generic_scope.generics.end(); ii != ie; ++ii) {
       TvmResult r = ii->second;
-      PSI_ASSERT(r.scope.scope == result_scope);
       r.scope.in_progress_generic = false;
       scope.put_generic(ii->first, r);
     }

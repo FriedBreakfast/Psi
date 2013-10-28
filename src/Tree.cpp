@@ -36,8 +36,10 @@ namespace Psi {
       else if (tree_isa<BottomType>(rhs.type))
         ri.type = lhs.type;
       else {
-        ri.type = rhs.type;
-        lhs.type->unify(ri.type, location);
+        Maybe<TreePtr<Term> > type = lhs.type->unify(rhs.type, Term::upref_unify_short, location);
+        if (!type)
+          lhs.type->compile_context().error_throw(location, "Cannot unify result types");
+        ri.type = *type;
       }
       
       return ri;
@@ -806,10 +808,10 @@ namespace Psi {
     
     const FunctionalVtable PointerCast::vtable = PSI_COMPILER_FUNCTIONAL(PointerCast, "psi.compiler.PointerCast", Functional);
     
-    ElementValue::ElementValue(const TreePtr<Term>& value_, const TreePtr<Term>& index_)
+    ElementValue::ElementValue(const TreePtr<Term>& value_, const TreePtr<Term>& index_, const SourceLocation& location)
     : Functional(&vtable),
     value(value_),
-    index(index_) {
+    index(TermBuilder::to_functional(index_, location)) {
     }
 
     template<typename V>
@@ -866,10 +868,10 @@ namespace Psi {
     
     const FunctionalVtable ElementValue::vtable = PSI_COMPILER_FUNCTIONAL(ElementValue, "psi.compiler.ElementValue", Functional);
     
-    ElementPointer::ElementPointer(const TreePtr<Term>& pointer_, const TreePtr<Term>& index_)
+    ElementPointer::ElementPointer(const TreePtr<Term>& pointer_, const TreePtr<Term>& index_, const SourceLocation& location)
     : Functional(&vtable),
-    pointer(pointer_),
-    index(index_) {
+    pointer(TermBuilder::to_functional(pointer_, location)),
+    index(TermBuilder::to_functional(index_, location)) {
     }
 
     template<typename V>

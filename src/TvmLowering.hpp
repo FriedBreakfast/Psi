@@ -307,6 +307,8 @@ namespace Psi {
                                              const SourceLocation& location, const TreePtr<Implementation>& maybe_implementation=TreePtr<Implementation>()) = 0;
       /// Load a value from memory
       virtual TvmResult load(const Tvm::ValuePtr<>& ptr, const SourceLocation& location) = 0;
+
+      TvmResult build_implementation_value(const TreePtr<InterfaceValue>& interface, const SourceLocation& location);
     };
     
     void tvm_lower_function(TvmObjectCompilerBase& tvm_compiler, const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output, std::set<TreePtr<ModuleGlobal> >& dependencies);

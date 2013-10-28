@@ -255,12 +255,123 @@ namespace Psi {
     }
     
     class UnifyRewriter : public TermBinaryRewriter {
+      Term::UprefUnifyMode m_upref_mode;
+      
     public:
       static const TermBinaryRewriterVtable vtable;
-      UnifyRewriter() : TermBinaryRewriter(&vtable) {}
+      UnifyRewriter(Term::UprefUnifyMode upref_mode) : TermBinaryRewriter(&vtable), m_upref_mode(upref_mode) {}
       
-      static bool binary_rewrite_impl(UnifyRewriter& self, TreePtr<Term>& lhs, const TreePtr<Term>& rhs, const SourceLocation& location) {
-        PSI_NOT_IMPLEMENTED();
+      static Maybe<TreePtr<Term> > binary_rewrite_impl(UnifyRewriter& self, const TreePtr<Term>& lhs, const TreePtr<Term>& rhs, const SourceLocation& location) {
+        TreePtr<Term> lhs_unwrapped = term_unwrap(lhs), rhs_unwrapped = term_unwrap(rhs);
+
+        if (!lhs_unwrapped)
+          return rhs_unwrapped ? Maybe<TreePtr<Term> >() : TreePtr<Term>();
+        else if (!rhs_unwrapped)
+          return maybe_none;
+
+        if (!lhs_unwrapped->pure || !rhs_unwrapped->pure)
+          return maybe_none;
+
+        if (lhs_unwrapped == rhs_unwrapped)
+          return lhs_unwrapped;
+        
+        // Note upref_match_exact cast is handled implicitly by lhs_unwrapped == rhs_unwrapped
+        if (tree_isa<UpwardReferenceNull>(lhs_unwrapped)) {
+          switch (self.m_upref_mode) {
+          case Term::upref_unify_ignore:
+          case Term::upref_unify_short: return lhs_unwrapped;
+          case Term::upref_unify_long: return rhs_unwrapped;
+          case Term::upref_unify_exact: return tree_isa<UpwardReferenceNull>(rhs_unwrapped) ? lhs_unwrapped : Maybe<TreePtr<Term> >();
+          default: PSI_FAIL("Unrecognised enumeration value");
+          }
+        } else if (tree_isa<UpwardReferenceNull>(rhs_unwrapped)) {
+          switch (self.m_upref_mode) {
+          case Term::upref_unify_ignore:
+          case Term::upref_unify_short: return rhs_unwrapped;
+          case Term::upref_unify_long: return lhs_unwrapped;
+          case Term::upref_unify_exact: return tree_isa<UpwardReferenceNull>(lhs_unwrapped) ? rhs_unwrapped : Maybe<TreePtr<Term> >();
+          default: PSI_FAIL("Unrecognised enumeration value");
+          }
+        }
+
+        if (si_vptr(lhs_unwrapped.get()) == si_vptr(rhs_unwrapped.get())) {
+          if (TreePtr<UpwardReference> lhs_upref = dyn_treeptr_cast<UpwardReference>(lhs_unwrapped)) {
+            TreePtr<UpwardReference> rhs_upref = treeptr_cast<UpwardReference>(rhs_unwrapped);
+            
+            Maybe<TreePtr<Term> > outer_index = self.binary_rewrite(lhs_upref->outer_index, rhs_upref->outer_index, location);
+            if (!outer_index)
+              return maybe_none;
+            
+            TreePtr<Term> outer_type;
+            if (!term_unwrap_isa<UpwardReference>(lhs_upref->next) || !term_unwrap_isa<UpwardReference>(rhs_upref->next)) {
+              Maybe<TreePtr<Term> > outer_type_m = self.binary_rewrite(lhs_upref->outer_type(), rhs_upref->outer_type(), location);
+              if (!outer_type_m)
+                return maybe_none;
+              outer_type = *outer_type_m;
+            }
+            
+            Maybe<TreePtr<Term> > next = self.binary_rewrite(lhs_upref->next, rhs_upref->next, location);
+            if (!next)
+              return maybe_none;
+            
+            return TermBuilder::upref(outer_type, *outer_index, *next, location);
+          } else if (TreePtr<FunctionType> lhs_ftype = dyn_treeptr_cast<FunctionType>(lhs_unwrapped)) {
+            // Need to reverse the upward reference mode for the result
+            TreePtr<FunctionType> rhs_ftype = treeptr_cast<FunctionType>(rhs_unwrapped);
+            PSI_ASSERT(lhs_ftype->interfaces.empty() && rhs_ftype->interfaces.empty());
+
+            if (lhs_ftype->result_mode != rhs_ftype->result_mode)
+              return maybe_none;
+
+            if (lhs_ftype->parameter_types.size() != rhs_ftype->parameter_types.size())
+              return maybe_none;
+            
+            PSI_STD::vector<FunctionParameterType> arg_types;
+            for (std::size_t ii = 0, ie = lhs_ftype->parameter_types.size(); ii != ie; ++ii) {
+              FunctionParameterType arg;
+              if (lhs_ftype->parameter_types[ii].mode != rhs_ftype->parameter_types[ii].mode)
+                return maybe_none;
+              arg.mode = lhs_ftype->parameter_types[ii].mode;
+              Maybe<TreePtr<Term> > arg_type = self.binary_rewrite(lhs_ftype->parameter_types[ii].type, rhs_ftype->parameter_types[ii].type, location);
+              if (!arg_type)
+                return maybe_none;
+              arg.type = *arg_type;
+            }
+
+            Term::UprefUnifyMode reverse_upref_mode;
+            switch (self.m_upref_mode) {
+            case Term::upref_unify_short: reverse_upref_mode = Term::upref_unify_long; break;
+            case Term::upref_unify_long: reverse_upref_mode = Term::upref_unify_short; break;
+            case Term::upref_unify_exact: reverse_upref_mode = Term::upref_unify_exact; break;
+            case Term::upref_unify_ignore: reverse_upref_mode = Term::upref_unify_ignore; break;
+            default: PSI_FAIL("Unrecognised enumeration value");
+            }
+            Maybe<TreePtr<Term> > result_type = UnifyRewriter(reverse_upref_mode).binary_rewrite(lhs_ftype->result_type, rhs_ftype->result_type, location);
+            if (!result_type)
+              return maybe_none;
+            
+            return TermBuilder::function_type(lhs_ftype->result_mode, *result_type, arg_types, default_, location);
+          } else if (TreePtr<PointerType> lhs_ptr = dyn_treeptr_cast<PointerType>(lhs_unwrapped)) {
+            TreePtr<PointerType> rhs_ptr = treeptr_cast<PointerType>(rhs_unwrapped);
+            Maybe<TreePtr<Term> > target = UnifyRewriter(Term::upref_unify_exact).binary_rewrite(lhs_ptr->target_type, rhs_ptr->target_type, location);
+            if (!target)
+              return maybe_none;
+            TreePtr<Term> upref;
+            if (self.m_upref_mode != Term::upref_unify_ignore) {
+              Maybe<TreePtr<Term> > upref_m = self.binary_rewrite(lhs_ptr->upref, rhs_ptr->upref, location);
+              if (!upref_m)
+                return maybe_none;
+              upref = *upref_m;
+            } else {
+              upref = TermBuilder::upref_null(lhs_ptr->compile_context());
+            }
+            return TermBuilder::pointer(*target, upref, location);
+          } else if (TreePtr<Functional> lhs_func = dyn_treeptr_cast<Functional>(lhs_unwrapped)) {
+            return lhs_func->binary_rewrite(*tree_cast<Functional>(rhs_unwrapped.get()), self, location);
+          }
+        }
+        
+        return maybe_none;
       }
     };
 
@@ -269,8 +380,8 @@ namespace Psi {
     /**
      * \brief Attempt to create a term which will match both this and src.
      */
-    bool Term::unify(TreePtr<Term>& other, const SourceLocation& location) const {
-      return UnifyRewriter().binary_rewrite(other, tree_from(this), location);
+    Maybe<TreePtr<Term> > Term::unify(const TreePtr<Term>& other, UprefUnifyMode upref_mode, const SourceLocation& location) const {
+      return UnifyRewriter(upref_mode).binary_rewrite(tree_from(this), other, location);
     }
     
     class MatchComparator : public TermComparator {
@@ -323,7 +434,11 @@ namespace Psi {
             TreePtr<Term>& wildcard = (*level)[parameter->index];
             if (wildcard) {
               // This probably isn't the right location to use...
-              return rhs_unwrapped->unify(wildcard, wildcard->location());
+              // The unification mode also won't do exactly what is required,
+              // because in principle there can be multiple constraints
+              // on upref chains (i.e. shortest and longest) and the current
+              // match algorithm doesn't allow for that.
+              return rhs_unwrapped->unify(wildcard, Term::upref_unify_exact, wildcard->location());
             } else {
               wildcard = rhs_unwrapped;
               return true;
@@ -386,7 +501,7 @@ namespace Psi {
             
             return true;
           } else if (TreePtr<PointerType> lhs_ptr = dyn_treeptr_cast<PointerType>(lhs_unwrapped)) {
-            TreePtr<PointerType> rhs_ptr = dyn_treeptr_cast<PointerType>(rhs_unwrapped);
+            TreePtr<PointerType> rhs_ptr = treeptr_cast<PointerType>(rhs_unwrapped);
             MatchComparator child = self.make_child(self.m_depth, Term::upref_match_exact);
             if (!child.compare(lhs_ptr->target_type, rhs_ptr->target_type))
               return false;

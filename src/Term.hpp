@@ -112,7 +112,7 @@ namespace Psi {
     
     struct TermBinaryRewriterVtable {
       SIVtable base;
-      PsiBool (*binary_rewrite) (TermBinaryRewriter*, TreePtr<Term>*, const TreePtr<Term>*, const SourceLocation*);
+      void (*binary_rewrite) (Maybe<TreePtr<Term> >*, TermBinaryRewriter*, const TreePtr<Term>*, const TreePtr<Term>*, const SourceLocation*);
     };
     
     class TermBinaryRewriter : public SIBase {
@@ -128,15 +128,17 @@ namespace Psi {
        * The result is placed into \c lhs. The return value indicates whether
        * the operation was successful.
        */
-      bool binary_rewrite(TreePtr<Term>& lhs, const TreePtr<Term>& rhs, const SourceLocation& location) {
-        return derived_vptr(this)->binary_rewrite(this, &lhs, &rhs, &location);
+      Maybe<TreePtr<Term> > binary_rewrite(const TreePtr<Term>& lhs, const TreePtr<Term>& rhs, const SourceLocation& location) {
+        ResultStorage<Maybe<TreePtr<Term> > > rs;
+        derived_vptr(this)->binary_rewrite(rs.ptr(), this, &lhs, &rhs, &location);
+        return rs.done();
       }
     };
     
     template<typename Derived>
     struct TermBinaryRewriterWrapper : NonConstructible {
-      static PsiBool rewrite(TermBinaryRewriter *self, TreePtr<Term> *lhs, const TreePtr<Term> *rhs, const SourceLocation *location) {
-        return Derived::binary_rewrite_impl(*static_cast<Derived*>(self), *lhs, *rhs, *location);
+      static void rewrite(Maybe<TreePtr<Term> > *out, TermBinaryRewriter *self, const TreePtr<Term> *lhs, const TreePtr<Term> *rhs, const SourceLocation *location) {
+        new (out) Maybe<TreePtr<Term> > (Derived::binary_rewrite_impl(*static_cast<Derived*>(self), *lhs, *rhs, *location));
       }
     };
 
@@ -276,9 +278,16 @@ namespace Psi {
         const TermTypeInfo& tri = type_info();
         return ((tri.type_mode == type_mode_metatype) || (tri.type_mode == type_mode_primitive)) && tri.type_fixed_size;
       }
+
+      enum UprefUnifyMode {
+        upref_unify_short,
+        upref_unify_long,
+        upref_unify_exact,
+        upref_unify_ignore
+      };
       
-      PSI_COMPILER_EXPORT bool unify(TreePtr<Term>& other, const SourceLocation& location) const;
-      
+      PSI_COMPILER_EXPORT Maybe<TreePtr<Term> > unify(const TreePtr<Term>& other, UprefUnifyMode upref_mode, const SourceLocation& location) const;
+
       enum UprefMatchMode {
         upref_match_read,
         upref_match_write,
@@ -566,7 +575,7 @@ namespace Psi {
       void (*check_type) (TermResultInfo*, const Functional*);
       Functional* (*clone) (const Functional*);
       void (*rewrite) (TreePtr<Term>*, const Functional*,TermRewriter*,const SourceLocation*);
-      PsiBool (*binary_rewrite) (TreePtr<Term>*,const Functional*,const Functional*,TermBinaryRewriter*,const SourceLocation*);
+      void (*binary_rewrite) (Maybe<TreePtr<Term> >*,const Functional*,const Functional*,TermBinaryRewriter*,const SourceLocation*);
       PsiBool (*compare) (const Functional*,const Functional*,TermComparator*);
     };
     
@@ -621,8 +630,11 @@ namespace Psi {
         return rs.done();
       }
       
-      bool binary_rewrite(TreePtr<Term>& output, const Functional& other, TermBinaryRewriter& rewriter, const SourceLocation& location) const {
-        return derived_vptr(this)->binary_rewrite(&output, this, &other, &rewriter, &location);
+      Maybe<TreePtr<Term> > binary_rewrite(const Functional& other, TermBinaryRewriter& rewriter, const SourceLocation& location) const {
+        PSI_ASSERT(si_vptr(this) == si_vptr(&other));
+        ResultStorage<Maybe<TreePtr<Term> > > rs;
+        derived_vptr(this)->binary_rewrite(rs.ptr(), this, &other, &rewriter, &location);
+        return rs.done();
       }
       
       bool compare(const Functional& other, TermComparator& cmp) const {
@@ -669,16 +681,15 @@ namespace Psi {
       }
       
       template<typename Derived>
-      static bool binary_rewrite_impl(TreePtr<Term>& output, const Derived& lhs, const Derived& rhs, TermBinaryRewriter& rewriter, const SourceLocation& location) {
+      static Maybe<TreePtr<Term> > binary_rewrite_impl(const Derived& lhs, const Derived& rhs, TermBinaryRewriter& rewriter, const SourceLocation& location) {
         TermBinaryRewriterVisitor rw(&rewriter, &location);
         Derived copy(lhs);
         boost::array<Derived*, 2> ptr = {{&copy, const_cast<Derived*>(&rhs)}};
         visit_members(rw, ptr);
         if (rw.result) {
-          output = lhs.compile_context().get_functional(copy, location);
-          return true;
+          return lhs.compile_context().get_functional(copy, location);
         } else {
-          return false;
+          return Maybe<TreePtr<Term> >();
         }
       }
       
@@ -721,8 +732,8 @@ namespace Psi {
         new (out) TreePtr<Term> (Derived::rewrite_impl(*static_cast<const Derived*>(self), *cmp, *location));
       }
       
-      static PsiBool binary_rewrite(TreePtr<Term> *out, const Functional *lhs, const Functional *rhs, TermBinaryRewriter *cmp, const SourceLocation *location) {
-        return Derived::binary_rewrite_impl(*out, *static_cast<const Derived*>(lhs), *static_cast<const Derived*>(rhs), *cmp, *location);
+      static void binary_rewrite(Maybe<TreePtr<Term> > *out, const Functional *lhs, const Functional *rhs, TermBinaryRewriter *cmp, const SourceLocation *location) {
+        new (out) Maybe<TreePtr<Term> >(Derived::binary_rewrite_impl(*static_cast<const Derived*>(lhs), *static_cast<const Derived*>(rhs), *cmp, *location));
       }
       
       static PsiBool compare(const Functional *lhs, const Functional *rhs, TermComparator* cmp) {
