@@ -250,6 +250,11 @@ namespace Psi {
       
       typedef boost::unordered_map<TreePtr<ModuleGlobal>, TvmGlobalStatus> BuiltGlobalMap;
       BuiltGlobalMap m_built_globals;
+      BuiltGlobalMap m_pending_built_globals;
+      const TvmGlobalStatus& built_or_pending_global(const TreePtr<ModuleGlobal>& global);
+
+      // This is const so that all uses of m_built_globals can be easily located
+      const BuiltGlobalMap& built_globals() const {return m_built_globals;}
       
       std::vector<boost::shared_ptr<Tvm::Module> > m_built_modules;
       typedef std::vector<std::pair<TvmJitObjectCompiler*, boost::shared_ptr<Tvm::Module> > > CurrentModuleList;
@@ -257,7 +262,11 @@ namespace Psi {
       
       typedef boost::unordered_map<TreePtr<LibrarySymbol>, Tvm::ValuePtr<Tvm::Global> > LibrarySymbolMap;
       LibrarySymbolMap m_library_symbols;
+      LibrarySymbolMap m_pending_library_symbols;
       boost::shared_ptr<Tvm::Module> m_library_module;
+
+      // This is const so that all uses of m_library_symbols can be easily located
+      const LibrarySymbolMap& library_symbols() const {return m_library_symbols;}
       
       typedef boost::unordered_map<TreePtr<Module>, boost::shared_ptr<TvmJitObjectCompiler> > ModuleCompilerMap;
       ModuleCompilerMap m_modules;
@@ -266,9 +275,13 @@ namespace Psi {
       std::set<TreePtr<ModuleGlobal> > initializer_dependencies(const TreePtr<ModuleGlobal>& global, bool already_built);
       Tvm::ValuePtr<Tvm::Global> build_module_global(const TreePtr<ModuleGlobal>& global);
       Tvm::ValuePtr<Tvm::Global> build_library_symbol(const TreePtr<LibrarySymbol>& lib_sym);
+      void jit_commit();
+      void jit_rollback();
 
     public:
       TvmJitCompiler(TvmTargetScope& target, const PropertyValue& jit_configuration);
+      void jit_compile(const std::vector<TreePtr<Global> >& globals);
+      void *jit_get(const TreePtr<Global>& global);
       void *compile(const TreePtr<Global>& global);
       void load_library(const TreePtr<Library>& library);
     };

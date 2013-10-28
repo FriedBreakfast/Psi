@@ -670,13 +670,13 @@ void TvmJitObjectCompiler::notify_existing_global(const TreePtr<Global>& global,
   Tvm::ValuePtr<Tvm::Global> previous;
   
   if (TreePtr<ModuleGlobal> module_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
-    TvmJitCompiler::BuiltGlobalMap& globals = jit_compiler().m_built_globals;
+    TvmJitCompiler::BuiltGlobalMap& globals = jit_compiler().m_pending_built_globals;
     TvmJitCompiler::BuiltGlobalMap::iterator it = globals.find(module_global);
     if (it == globals.end())
       compile_context().error_throw(global->location(), boost::format("Conflicting global symbol name: %s") % tvm_global->name());
     previous = it->second.lowered;
   } else if (TreePtr<LibrarySymbol> lib_sym = dyn_treeptr_cast<LibrarySymbol>(global)) {
-    TvmJitCompiler::LibrarySymbolMap& symbols = jit_compiler().m_library_symbols;
+    TvmJitCompiler::LibrarySymbolMap& symbols = jit_compiler().m_pending_library_symbols;
     TvmJitCompiler::LibrarySymbolMap::iterator it = symbols.find(lib_sym);
     if (it == symbols.end())
       it = symbols.insert(std::make_pair(lib_sym, tvm_global)).first;
@@ -691,7 +691,7 @@ void TvmJitObjectCompiler::notify_existing_global(const TreePtr<Global>& global,
 }
 
 void TvmJitObjectCompiler::notify_global(const TreePtr<ModuleGlobal>& global, const Tvm::ValuePtr<Tvm::Global>& tvm_global) {
-  TvmGlobalStatus& status = jit_compiler().m_built_globals[global];
+  TvmGlobalStatus& status = jit_compiler().m_pending_built_globals[global];
   if (!status.lowered)
     status.lowered = tvm_global;
 }
@@ -703,7 +703,7 @@ void TvmJitObjectCompiler::notify_external_global(const TreePtr<ModuleGlobal>& g
 
 void TvmJitObjectCompiler::notify_library_symbol(const TreePtr<LibrarySymbol>& lib_sym, const Tvm::ValuePtr<Tvm::Global>& tvm_global) {
   jit_compiler().load_library(lib_sym->library);
-  Tvm::ValuePtr<Tvm::Global>& common = jit_compiler().m_library_symbols[lib_sym];
+  Tvm::ValuePtr<Tvm::Global>& common = jit_compiler().m_pending_library_symbols[lib_sym];
   if (!common)
     common = tvm_global;
 }
@@ -713,6 +713,19 @@ TvmJitCompiler::TvmJitCompiler(TvmTargetScope& target, const PropertyValue& jit_
   boost::shared_ptr<Tvm::JitFactory> factory =
     Tvm::JitFactory::get_specific(target.compile_context().error_context().bind(SourceLocation::root_location("(jit)")), jit_configuration);
   m_jit = factory->create_jit();
+}
+
+/**
+ * \brief Get the status of a built or pending global.
+ */
+const TvmGlobalStatus& TvmJitCompiler::built_or_pending_global(const TreePtr<ModuleGlobal>& global) {
+  BuiltGlobalMap::const_iterator built_it = built_globals().find(global);
+  if (built_it != built_globals().end()) {
+    PSI_ASSERT(built_it->second.status == TvmGlobalStatus::global_built_all);
+    return built_it->second;
+  } else {
+    return m_pending_built_globals[global];
+  }
 }
 
 /**
@@ -745,12 +758,12 @@ std::set<TreePtr<ModuleGlobal> > TvmJitCompiler::initializer_dependencies(const 
   queue.push_back(global);
   
   while (!queue.empty()) {
-    TvmGlobalStatus& q_status = m_built_globals[queue.back()];
+    const TvmGlobalStatus& q_status = built_or_pending_global(queue.back());
     queue.pop_back();
       
     std::set<TreePtr<ModuleGlobal> > dependency_visited;
     for (std::set<TreePtr<ModuleGlobal> >::const_iterator ji = q_status.dependencies.begin(), je = q_status.dependencies.end(); ji != je; ++ji) {
-      TvmGlobalStatus& j_status = m_built_globals[*ji];
+      const TvmGlobalStatus& j_status = built_or_pending_global(*ji);
       if (j_status.status == TvmGlobalStatus::global_built) {
         if (j_status.init)
           dependencies.insert(*ji);
@@ -778,12 +791,18 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_module_global(const TreePtr<Mod
   queue.push_back(global);
   visited.insert(global);
   
+  PSI_ASSERT(built_globals().find(global) == built_globals().end());
+  
   CompileContext& compile_context = m_target->compile_context();
   
   while (!queue.empty()) {
     TreePtr<ModuleGlobal> current = queue.back();
     queue.pop_back();
-    TvmGlobalStatus& status = m_built_globals[current];
+    
+    if (built_globals().find(current) != built_globals().end())
+      continue;
+    
+    TvmGlobalStatus& status = m_pending_built_globals[current];
     
     switch (status.status) {
     case TvmGlobalStatus::global_built:
@@ -817,7 +836,7 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_module_global(const TreePtr<Mod
   std::vector<TreePtr<ModuleGlobal> > sorted;
   std::multimap<TreePtr<ModuleGlobal>, TreePtr<ModuleGlobal> > dependencies;
   for (std::set<TreePtr<ModuleGlobal> >::const_iterator ii = visited.begin(), ie = visited.end(); ii != ie; ++ii) {
-    TvmGlobalStatus& status = m_built_globals[*ii];
+    const TvmGlobalStatus& status = built_or_pending_global(*ii);
     if ((status.status != TvmGlobalStatus::global_built) || !status.init)
       continue;
     
@@ -837,10 +856,10 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_module_global(const TreePtr<Mod
     unsigned priority = 0;
     std::set<TreePtr<ModuleGlobal> > init_deps = initializer_dependencies(*ii, true);
     for (std::set<TreePtr<ModuleGlobal> >::const_iterator ji = init_deps.begin(), je = init_deps.end(); ji != je; ++ji)
-      priority = std::max(priority, m_built_globals[*ji].priority + 1);
+      priority = std::max(priority, built_or_pending_global(*ji).priority + 1);
     
     TvmJitObjectCompiler& module = module_compiler((*ii)->module);
-    TvmGlobalStatus& status = m_built_globals[*ii];
+    TvmGlobalStatus& status = m_pending_built_globals[*ii];
     status.status = TvmGlobalStatus::global_built_all;
     status.priority = priority;
     
@@ -851,20 +870,20 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_module_global(const TreePtr<Mod
   }
 
   for (std::set<TreePtr<ModuleGlobal> >::const_iterator ii = visited.begin(), ie = visited.end(); ii != ie; ++ii) {
-    TvmGlobalStatus& status = m_built_globals[*ii];
+    TvmGlobalStatus& status = m_pending_built_globals[*ii];
     if (status.status != TvmGlobalStatus::global_built)
       continue;
     
     unsigned priority = 0;
     std::set<TreePtr<ModuleGlobal> > init_deps = initializer_dependencies(*ii, false);
     for (std::set<TreePtr<ModuleGlobal> >::const_iterator ji = init_deps.begin(), je = init_deps.end(); ji != je; ++ji)
-      priority = std::max(priority, m_built_globals[*ji].priority);
+      priority = std::max(priority, built_or_pending_global(*ji).priority);
     
     status.status = TvmGlobalStatus::global_built_all;
     status.priority = priority;
   }
   
-  TvmGlobalStatus& result_status = m_built_globals[global];
+  TvmGlobalStatus& result_status = m_pending_built_globals[global];
   PSI_ASSERT(result_status.status == TvmGlobalStatus::global_built_all);
   return result_status.lowered;
 }
@@ -877,8 +896,8 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_module_global(const TreePtr<Mod
  * same lookup mechanism.
  */
 Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_library_symbol(const TreePtr<LibrarySymbol>& lib_sym) {
-  LibrarySymbolMap::iterator lib_sym_it = m_library_symbols.find(lib_sym);
-  if (lib_sym_it != m_library_symbols.end())
+  LibrarySymbolMap::const_iterator lib_sym_it = library_symbols().find(lib_sym);
+  if (lib_sym_it != library_symbols().end())
     return lib_sym_it->second;
   
   load_library(lib_sym->library);
@@ -896,7 +915,7 @@ Tvm::ValuePtr<Tvm::Global> TvmJitCompiler::build_library_symbol(const TreePtr<Li
     result->set_linkage(sym.linkage);
   }
   
-  m_library_symbols.insert(std::make_pair(lib_sym, result));
+  m_pending_library_symbols.insert(std::make_pair(lib_sym, result));
   return result;
 }
 
@@ -909,18 +928,9 @@ void TvmJitCompiler::load_library(const TreePtr<Library>& library) {
 }
 
 /**
- * \brief Just-in-time compile a symbol.
+ * Update all modules in the low-level JIT.
  */
-void* TvmJitCompiler::compile(const TreePtr<Global>& global) {
-  Tvm::ValuePtr<Tvm::Global> built;
-  if (TreePtr<ModuleGlobal> module_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
-    built = build_module_global(module_global);
-  } else if (TreePtr<LibrarySymbol> lib_sym = dyn_treeptr_cast<LibrarySymbol>(global)) {
-    built = build_library_symbol(lib_sym);
-  } else {
-    m_target->compile_context().error_throw(global->location(), "Cannot build global: unknown tree type");
-  }
-  
+void TvmJitCompiler::jit_commit() {
   // Ensure all modules are up to date in the JIT
   while (!m_current_modules.empty()) {
     CurrentModuleList::value_type& val = m_current_modules.back();
@@ -930,13 +940,86 @@ void* TvmJitCompiler::compile(const TreePtr<Global>& global) {
     m_current_modules.pop_back();
   }
   
+  m_built_globals.insert(m_pending_built_globals.begin(), m_pending_built_globals.end());
+  m_pending_built_globals.clear();
+  
   if (m_library_module) {
     m_built_modules.push_back(m_library_module);
     m_jit->add_module(m_library_module.get());
     m_library_module.reset();
+    m_library_symbols.insert(m_pending_library_symbols.begin(), m_pending_library_symbols.end());
+    m_pending_library_symbols.clear();
+  }
+}
+
+/**
+ * Remove the result of pending compilations from the current JIT state.
+ */
+void TvmJitCompiler::jit_rollback() {
+  m_current_modules.clear();
+  m_pending_built_globals.clear();
+  m_library_module.reset();
+  m_pending_library_symbols.clear();
+}
+
+/**
+ * \brief JIT compile a set of symbols.
+ * 
+ * Symbols given will then be available through jit_get.
+ */
+void TvmJitCompiler::jit_compile(const std::vector<TreePtr<Global> >& globals) {
+  // Update the JIT before compiling anything so that exception rollback doesn't
+  // hit anything else
+  jit_commit();
+  
+  try {
+    for (std::vector<TreePtr<Global> >::const_iterator ii = globals.begin(), ie = globals.end(); ii != ie; ++ii) {
+      Tvm::ValuePtr<Tvm::Global> built;
+      if (TreePtr<ModuleGlobal> module_global = dyn_treeptr_cast<ModuleGlobal>(*ii)) {
+        built = build_module_global(module_global);
+      } else if (TreePtr<LibrarySymbol> lib_sym = dyn_treeptr_cast<LibrarySymbol>(*ii)) {
+        built = build_library_symbol(lib_sym);
+      } else {
+        m_target->compile_context().error_throw((*ii)->location(), "Cannot build global: unknown tree type");
+      }
+    }
+  } catch (CompileException&) {
+    jit_rollback();
+    throw;
   }
   
-  return m_jit->get_symbol(built);
+  jit_commit();
+}
+
+/**
+ * \brief Get the address of a symbol which has already been compiled.
+ */
+void* TvmJitCompiler::jit_get(const TreePtr<Global>& global) {
+  Tvm::ValuePtr<Tvm::Global> tvm_global;
+  
+  if (TreePtr<ModuleGlobal> module_global = dyn_treeptr_cast<ModuleGlobal>(global)) {
+    BuiltGlobalMap::const_iterator it = built_globals().find(module_global);
+    if (it == built_globals().end())
+      global->compile_context().error_throw(global->location(), "Global has not been JIT compiled");
+    tvm_global = it->second.lowered;
+  } else if (TreePtr<LibrarySymbol> lib_sym = dyn_treeptr_cast<LibrarySymbol>(global)) {
+    LibrarySymbolMap::const_iterator it = library_symbols().find(lib_sym);
+    if (it == library_symbols().end())
+      global->compile_context().error_throw(global->location(), "Global has not been JIT compiled");
+    tvm_global = it->second;
+  } else {
+    global->compile_context().error_throw(global->location(), "Cannot build global: unknown tree type");
+  }
+  
+  return m_jit->get_symbol(tvm_global);
+}
+
+/**
+ * \brief Just-in-time compile a symbol.
+ */
+void* TvmJitCompiler::compile(const TreePtr<Global>& global) {
+  jit_compile(vector_of(global));
+  return jit_get(global);
 }
 
 const PropertyValue& TvmJit::target_configuration(CompileErrorPair& err_loc, const PropertyValue& configuration) {
