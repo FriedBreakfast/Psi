@@ -15,7 +15,7 @@
     the package of test.psi.  To run the tests use the command:
     "adb shell am instrument -w test.psi.tests/android.test.InstrumentationTestRunner"
     -->
-    <instrumentation android:name="android.test.InstrumentationTestRunner"
+    <instrumentation android:name="zeta.psi.tests.TestLoader"
                      android:targetPackage="zeta.psi"
                      android:label="Tests for psi"/>
 </manifest>
