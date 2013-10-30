@@ -2,6 +2,7 @@ set(MINGW_PREFIX "/usr/bin" CACHE FILEPATH "MinGW binary directory")
 set(MINGW_TARGET "i586" CACHE STRING "MinGW target name")
 
 set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_CROSSCOMPILING TRUE)
 
 set(CMAKE_FIND_ROOT_PATH ${MINGW_PREFIX})
 set(CMAKE_C_COMPILER ${MINGW_TARGET}-mingw32msvc-gcc)

@@ -2,7 +2,7 @@
 #define HPP_PSI_TVM_TEST
 
 #include "../ErrorContext.hpp"
-#include "../Test.hpp"
+#include "../Test/Test.hpp"
 #include "Core.hpp"
 #include "Jit.hpp"
 

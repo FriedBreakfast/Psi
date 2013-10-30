@@ -7,6 +7,7 @@
 namespace Psi {
 namespace Platform {
 namespace Unix {
+#if PSI_WITH_EXEC
 pid_t sys_fork_exec(int stdin_fd, int stdout_fd, int stderr_fd, char *const*args_ptr) {
   pid_t child_pid = vfork();
   if (child_pid == 0) {
@@ -34,6 +35,7 @@ pid_t sys_fork_exec(int stdin_fd, int stdout_fd, int stderr_fd, char *const*args
 int sys_pipe(int fds[2]) {
   return pipe(fds);
 }
+#endif
 
 char* sys_strerror_r(int errnum, char *buf, size_t buflen) {
   int code = strerror_r(errnum, buf, buflen);

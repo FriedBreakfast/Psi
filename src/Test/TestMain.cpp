@@ -1,3 +1,4 @@
+#define PSI_TEST_MAIN
 #include "Test.hpp"
 
 int main(int argc, const char **argv) {

@@ -4,7 +4,7 @@
 #include <sstream>
 #include <stdexcept>
 
-#include "Export.hpp"
+#include "../Export.hpp"
 
 /**
  * This is basically a rip-off of Boost.Test, but I'm bloody tired of spending my days
@@ -37,6 +37,22 @@ namespace Psi {
       virtual void message(const TestLocation& loc, const std::string& str) = 0;
       virtual void check(const TestLocation& loc, Level level, bool passed, const std::string& cond_str, const std::string& cond_fmt) = 0;
       virtual void except(const std::string& what) = 0;
+    };
+    
+    class StreamLogger : public TestLogger {
+      std::ostream *os;
+      std::string name;
+      unsigned error_count;
+      LogLevel print_level;
+      TestLocation last_location;
+      
+    public:
+      StreamLogger(std::ostream *os_, const std::string& name_, LogLevel print_level_);
+      
+      virtual bool passed();
+      virtual void message(const TestLocation& loc, const std::string& str);
+      virtual void check(const TestLocation& loc, Level, bool passed, const std::string& cond_str, const std::string& cond_fmt);
+      virtual void except(const std::string& what);
     };
     
     class TestCaseBase;
@@ -121,7 +137,14 @@ namespace Psi {
       check_condition(loc, level, same, s, ss.str());
     }
 
+#ifdef PSI_TEST_MAIN
     PSI_TEST_EXPORT int run_main(int argc, const char **argv);
+#endif
+    
+    const TestSuite* test_suite_list();
+    void set_test_logger(TestLogger *logger);
+    std::string test_case_name(const TestCaseBase *tc);
+    bool glob(const std::string& s, const std::string& pattern);
   }
 }
 

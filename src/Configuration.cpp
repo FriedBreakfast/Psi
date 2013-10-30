@@ -1,6 +1,6 @@
 #include "Configuration.hpp"
 #include "Config.h"
-#include "Platform.hpp"
+#include "Platform/Platform.hpp"
 
 #include <cstdlib>
 #include <fstream>

@@ -5,7 +5,7 @@
 #include <boost/optional.hpp>
 
 #include "Platform.hpp"
-#include "PropertyValue.hpp"
+#include "../PropertyValue.hpp"
 
 namespace Psi {
   namespace Platform {

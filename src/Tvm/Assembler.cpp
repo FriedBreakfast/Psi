@@ -8,7 +8,6 @@
 
 #include <cstring>
 
-#include <boost/lexical_cast.hpp>
 #include <boost/next_prior.hpp>
 
 namespace Psi {

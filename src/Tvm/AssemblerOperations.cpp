@@ -1,7 +1,6 @@
 #include <boost/assign.hpp>
 #include <boost/format.hpp>
 #include <boost/function.hpp>
-#include <boost/lexical_cast.hpp>
 
 #include "Aggregate.hpp"
 #include "Assembler.hpp"

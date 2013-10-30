@@ -335,7 +335,7 @@ void* CJit::get_symbol(const ValuePtr<Global>& symbol) {
 }
 }
 
-extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) Psi::Tvm::Jit* tvm_jit_new(const Psi::CompileErrorPair& error_handler, const Psi::PropertyValue& configuration) {
+PSI_TVM_JIT_EXPORT(c, error_handler, configuration) {
   boost::shared_ptr<Psi::Tvm::CBackend::CCompiler> compiler = Psi::Tvm::CBackend::detect_c_compiler(error_handler, configuration);
   return new Psi::Tvm::CBackend::CJit(error_handler.context(), compiler, configuration);
 }

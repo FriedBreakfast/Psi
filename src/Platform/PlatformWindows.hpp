@@ -12,10 +12,10 @@
 #include <string>
 #include <boost/noncopyable.hpp>
 
-#include "CppCompiler.hpp"
-#include "Export.hpp"
 #include "Platform.hpp"
-#include "Utility.hpp"
+#include "../CppCompiler.hpp"
+#include "../Export.hpp"
+#include "../Utility.hpp"
 
 namespace Psi {
   namespace Platform {
@@ -90,7 +90,7 @@ namespace Psi {
         ~LibraryHandle();
         HMODULE get() {return m_handle;}
 
-        friend void swap(LibraryHandle& a, LibraryHandle& b);
+        PSI_COMPILER_COMMON_EXPORT friend void swap(LibraryHandle& a, LibraryHandle& b);
       };
 
       PSI_COMPILER_COMMON_EXPORT std::string error_string(DWORD error);

@@ -1,5 +1,6 @@
 #include "CallingConventions.hpp"
 #include "../FunctionalBuilder.hpp"
+#include </home/james/programming/boost-1.53/install/include/boost/iterator/iterator_concepts.hpp>
 
 #include <boost/format.hpp>
 
@@ -24,6 +25,15 @@ public:
      */
     mode_in_register,
     mode_ignore,
+    /**
+     * Weird ARM argument passing mode where the start of an argument
+     * is passed in registers and the remainder on the stack.
+     * 
+     * coerce_type is expected to hold a struct which has two members,
+     * the first of which is the register part and the second the
+     * "by value" part.
+     */
+    mode_arm_split
   };
   
   struct ParameterInfo {
@@ -38,10 +48,19 @@ public:
   };
   
   struct FunctionTypeInfo {
+    bool is_sret; ///< Whether this function returns by sret, either generated or set by the front-end
     bool left_to_right;
     ParameterInfo result;
     std::vector<ParameterInfo> parameters;
   };
+  
+  FunctionTypeInfo function_type_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& function_type, const SourceLocation& location, bool left_to_right=false) {
+    FunctionTypeInfo fti;
+    fti.left_to_right = left_to_right;
+    fti.result = return_info(rewriter, function_type, location);
+    fti.is_sret = function_type->sret() || (fti.result.mode == mode_by_value);
+    return fti;
+  }
   
   static ParameterInfo parameter_by_value(unsigned alignment) {
     ParameterInfo pi;
@@ -72,6 +91,15 @@ public:
     pi.alignment = 0;
     pi.coerce_type = coerce_type;
     pi.coerce_expand = coerce_expand;
+    return pi;
+  }
+  
+  static ParameterInfo parameter_arm_split(unsigned alignment, const ValuePtr<>& reg_part, const ValuePtr<>& stack_part, const SourceLocation& location) {
+    ParameterInfo pi;
+    pi.mode = mode_arm_split;
+    pi.alignment = alignment;
+    pi.coerce_type = FunctionalBuilder::struct_type(reg_part->context(), vector_of(reg_part, stack_part), location);
+    pi.coerce_expand = false;
     return pi;
   }
 
@@ -125,12 +153,21 @@ public:
             parameters.push_back(runner.builder().load(member_ptr, term->location()));
             parameter_types.push_back(ParameterType(sty->member_type(ji), make_attributes(pi, pt.attributes, false)));
           }
+        } else if (pi.mode == mode_arm_split) {
+          ValuePtr<StructType> sty = value_cast<StructType>(pi.coerce_type);
+          ValuePtr<> reg_part = runner.builder().load(FunctionalBuilder::element_ptr(ptr, 0, term->location()), term->location());
+          parameters.push_back(reg_part);
+          parameter_types.push_back(ParameterType(reg_part->type(), make_attributes(parameter_register(), pt.attributes, false)));
+          ValuePtr<> stack_part = FunctionalBuilder::element_ptr(ptr, 1, term->location());
+          parameters.push_back(stack_part);
+          parameter_types.push_back(ParameterType(stack_part->type(), make_attributes(parameter_by_value(pi.alignment), pt.attributes, false)));
         } else {
           parameters.push_back(runner.builder().load(ptr, term->location()));
           parameter_types.push_back(ParameterType(pi.coerce_type, make_attributes(pi, pt.attributes, false)));
         }
         runner.builder().freea(ptr, term->location());
       } else {
+        PSI_ASSERT(pi.mode != mode_arm_split);
         parameters.push_back(value.register_value());
         parameter_types.push_back(ParameterType(value.register_value()->type(), make_attributes(pi, pt.attributes, false)));
       }
@@ -204,6 +241,11 @@ public:
           ValuePtr<StructType> sty = value_cast<StructType>(pi.coerce_type);
           for (unsigned ji = 0, je = sty->n_members(); ji != je; ++ji)
             parameter_types.push_back(ParameterType(sty->member_type(ji), make_attributes(pi, pt.attributes, false)));
+        } else if (pi.mode == mode_arm_split) {
+          ValuePtr<StructType> sty = value_cast<StructType>(pi.coerce_type);
+          parameter_types.push_back(ParameterType(sty->member_type(0), make_attributes(parameter_register(), pt.attributes, false)));
+          parameter_types.push_back(ParameterType(FunctionalBuilder::pointer_type(sty->member_type(1), ftype->location()),
+                                                  make_attributes(parameter_by_value(pi.alignment), pt.attributes, false)));
         } else {
           parameter_types.push_back(ParameterType(pi.coerce_type, make_attributes(pi, pt.attributes, false)));
         }
@@ -274,6 +316,13 @@ public:
             ValuePtr<> member_ptr = Tvm::FunctionalBuilder::element_ptr(ptr, ji, src_value->location());
             runner.builder().store(*target_param_it++, member_ptr, src_value->location());
           }
+        } else if (pi.mode == mode_arm_split) {
+          ValuePtr<StructType> sty = value_cast<StructType>(pi.coerce_type);
+          // Register part
+          runner.builder().store(*target_param_it++, FunctionalBuilder::element_ptr(ptr, 0, src_value->location()), src_value->location());
+          // Stack part
+          ValuePtr<> stack_part = runner.builder().load(*target_param_it++, src_value->location());
+          runner.builder().store(stack_part, FunctionalBuilder::element_ptr(ptr, 1, src_value->location()), src_value->location());
         } else {
           runner.builder().store(*target_param_it++, ptr, src_value->location());
         }
@@ -294,6 +343,7 @@ public:
     LoweredValue lv = runner.rewrite_value(value);
     
     ParameterInfo ret_info = return_info(runner, ftype, ftype->location());
+    PSI_ASSERT(ret_info.mode != mode_arm_split);
     if (ret_info.mode == mode_by_value) {
       runner.store_value(lv, runner.new_function()->parameters().back(), location);
       return runner.builder().return_void(location);
@@ -308,6 +358,14 @@ public:
     } else {
       return runner.builder().return_(lv.register_value(), location);
     }
+  }
+  
+  // Get the index of the last non-sret argument, plus one
+  static std::size_t argument_count(const ValuePtr<FunctionType>& ftype) {
+    std::size_t n = ftype->parameter_types().size();
+    if (ftype->sret())
+      --n;
+    return n;
   }
   
 private:
@@ -486,6 +544,10 @@ class CallingConventionHandler_x86_64_SystemV : public CallingConventionSimple {
       return FunctionalBuilder::float_type(rewriter.context(), FloatType::fp_x86_80, location);
 
     case amd64_integer: {
+      // Pointers must be kept as pointers
+      if (isa<IntegerType>(orig_type) || isa<PointerType>(orig_type))
+        return ValuePtr<>();
+      
       IntegerType::Width width;
       switch (size) {
       case 1:  width = IntegerType::i8; break;
@@ -578,12 +640,16 @@ class CallingConventionHandler_x86_64_SystemV : public CallingConventionSimple {
   virtual FunctionTypeInfo parameter_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& function_type, const SourceLocation& location) {
     unsigned n_regs = 6, n_sse_regs = 8;
     
-    FunctionTypeInfo fti;
-    fti.left_to_right = false;
-    for (std::size_t ii = function_type->n_phantom(), ie = function_type->parameter_types().size(); ii != ie; ++ii)
+    FunctionTypeInfo fti = function_type_info(rewriter, function_type, location);
+    if (fti.is_sret)
+      --n_regs;
+    
+    for (std::size_t ii = function_type->n_phantom(), ie = argument_count(function_type); ii != ie; ++ii)
       fti.parameters.push_back(amd64_handle_parameter(rewriter, function_type->parameter_types()[ii], n_regs, n_sse_regs, location));
     
-    fti.result = return_info(rewriter, function_type, location);
+    if (function_type->sret())
+      fti.parameters.push_back(parameter_default());
+    
     return fti;
   }
   
@@ -601,6 +667,9 @@ class CallingConventionHandler_x86_cdecl : public CallingConventionSimple {
   bool register_return;
   
   ValuePtr<> coercion_type(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, unsigned size, const ValuePtr<>& orig_type, const SourceLocation& location) {
+    if (isa<IntegerType>(orig_type) || isa<PointerType>(orig_type))
+      return ValuePtr<>();
+    
     PSI_ASSERT((1 <= size) && (size <= 8));
     unsigned short_size = 1 + (size - 1) % 4;
     PSI_ASSERT((1 <= short_size) && (short_size <= 4));
@@ -611,10 +680,6 @@ class CallingConventionHandler_x86_cdecl : public CallingConventionSimple {
     else w = IntegerType::i32;
     
     if (size <= 4) {
-      if (ValuePtr<IntegerType> int_ty = dyn_cast<IntegerType>(orig_type)) {
-        if (int_ty->width() == w)
-          return ValuePtr<>();
-      }
       return FunctionalBuilder::int_type(rewriter.context(), w, false, location);
     } else {
       std::vector<ValuePtr<> > entries;
@@ -625,9 +690,9 @@ class CallingConventionHandler_x86_cdecl : public CallingConventionSimple {
   }
   
   virtual FunctionTypeInfo parameter_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& function_type, const SourceLocation& location) {
-    FunctionTypeInfo fti;
-    fti.left_to_right = false;
-    for (std::size_t ii = function_type->n_phantom(), ie = function_type->parameter_types().size(); ii != ie; ++ii) {
+    FunctionTypeInfo fti = function_type_info(rewriter, function_type, location);
+    
+    for (std::size_t ii = function_type->n_phantom(), ie = argument_count(function_type); ii != ie; ++ii) {
       ValuePtr<> simple_type = rewriter.simplify_argument_type(function_type->parameter_types()[ii].value);
       if (isa<StructType>(simple_type) || isa<UnionType>(simple_type) || isa<ArrayType>(simple_type)) {
         AggregateLayout layout = rewriter.aggregate_layout(simple_type, location, false);
@@ -640,7 +705,9 @@ class CallingConventionHandler_x86_cdecl : public CallingConventionSimple {
       }
     }
     
-    fti.result = return_info(rewriter, function_type, location);
+    if (function_type->sret())
+      fti.parameters.push_back(parameter_default());
+
     return fti;
   }
 
@@ -666,12 +733,97 @@ public:
   CallingConventionHandler_x86_cdecl(bool register_return_) : register_return(register_return_) {}
 };
 
+class CallingConventionHandler_arm_eabi : public CallingConventionSimple {
+  bool hard_float;
+  
+  ValuePtr<> coercion_type(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, unsigned size, unsigned alignment, const ValuePtr<>& orig_type, const SourceLocation& location) {
+    if (size <= 4) {
+      if (isa<IntegerType>(orig_type) || isa<PointerType>(orig_type))
+        return ValuePtr<>();
+      
+      IntegerType::Width w;
+      if (size == 1) w = IntegerType::i8;
+      else if (size == 2) w = IntegerType::i16;
+      else w = IntegerType::i32;
+      
+      return FunctionalBuilder::int_type(rewriter.context(), w, false, location);
+    } else {
+      ValuePtr<> word_type;
+      unsigned n_words;
+      if (alignment > 4) {
+        n_words = (size + 7) / 8;
+        word_type = FunctionalBuilder::int_type(rewriter.context(), IntegerType::i64, false, location);
+      } else {
+        n_words = (size + 3) / 4;
+        word_type = FunctionalBuilder::int_type(rewriter.context(), IntegerType::i32, false, location);
+      }
+      return FunctionalBuilder::array_type(word_type, n_words, location);
+    }
+  }
+  
+  virtual FunctionTypeInfo parameter_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& function_type, const SourceLocation& location) {
+    std::size_t n_core_regs = 4;
+    bool stack_used = false;
+    
+    FunctionTypeInfo fti = function_type_info(rewriter, function_type, location);
+    if (fti.is_sret)
+      --n_core_regs;
+    
+    for (std::size_t ii = function_type->n_phantom(), ie = argument_count(function_type); ii != ie; ++ii) {
+      ValuePtr<> simple_type = rewriter.simplify_argument_type(function_type->parameter_types()[ii].value);
+      AggregateLayout layout = rewriter.aggregate_layout(simple_type, location, false);
+      if (layout.alignment == 8)
+        n_core_regs &= ~1; // Round-to-even
+      
+      if (layout.size <= n_core_regs*4) {
+        fti.parameters.push_back(parameter_default(coercion_type(rewriter, layout.size, layout.alignment, simple_type, location)));
+        n_core_regs -= (layout.size + 3) / 4;
+      } else if (!stack_used && (n_core_regs > 0)) {
+        ValuePtr<> reg_part = coercion_type(rewriter, n_core_regs * 4, layout.alignment, default_, location);
+        ValuePtr<> stack_part = coercion_type(rewriter, align_to(layout.size - n_core_regs*4, layout.alignment), layout.alignment, default_, location);
+        fti.parameters.push_back(parameter_arm_split(layout.alignment, default_, default_, location));
+        n_core_regs = 0;
+      } else {
+        PSI_ASSERT(n_core_regs == 0);
+        fti.parameters.push_back(parameter_by_value(layout.alignment));
+      }
+    }
+    
+    if (function_type->sret())
+      fti.parameters.push_back(parameter_default());
+    
+    return fti;
+  }
+
+  virtual ParameterInfo return_info(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& function_type, const SourceLocation& location) {
+    if (function_type->sret())
+      return parameter_ignore();
+    
+    ValuePtr<> simple_type = rewriter.simplify_argument_type(function_type->result_type().value);
+    AggregateLayout layout = rewriter.aggregate_layout(simple_type, location, false);
+    if (isa<StructType>(simple_type) || isa<UnionType>(simple_type) || isa<ArrayType>(simple_type)) {
+      if (layout.size == 0)
+        return parameter_ignore();
+      else if (layout.size > 4)
+        return parameter_by_value(layout.alignment);
+      else
+        return parameter_default(coercion_type(rewriter, layout.size, layout.alignment, simple_type, location));
+    } else {
+      return parameter_default();
+    }
+  }
+  
+public:
+  CallingConventionHandler_arm_eabi(bool hard_float_) : hard_float(hard_float_) {}
+};
+
 void calling_convention_handler(const CompileErrorPair& error_loc, llvm::Triple triple, CallingConvention cc, UniquePtr<CallingConventionHandler>& result) {
   switch (cc) {
   case cconv_c:
     switch (triple.getArch()) {
     case llvm::Triple::x86_64:
       switch (triple.getOS()) {
+      case llvm::Triple::FreeBSD:
       case llvm::Triple::Linux: result.reset(new CallingConventionHandler_x86_64_SystemV()); return;
       default: break;
       }
@@ -683,6 +835,19 @@ void calling_convention_handler(const CompileErrorPair& error_loc, llvm::Triple 
       case llvm::Triple::FreeBSD:
       case llvm::Triple::MinGW32:
       case llvm::Triple::Win32: result.reset(new CallingConventionHandler_x86_cdecl(true)); return;
+      default: break;
+      }
+      break;
+      
+    case llvm::Triple::arm:
+      switch (triple.getOS()) {
+      case llvm::Triple::Linux:
+        switch (triple.getEnvironment()) {
+        case llvm::Triple::GNUEABIHF: result.reset(new CallingConventionHandler_arm_eabi(true)); return;
+        case llvm::Triple::GNUEABI:
+        case llvm::Triple::Android: result.reset(new CallingConventionHandler_arm_eabi(false)); return;
+        default: break;
+        }
       default: break;
       }
       break;

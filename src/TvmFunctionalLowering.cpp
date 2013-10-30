@@ -6,7 +6,6 @@
 #include "Tvm/Recursive.hpp"
 
 #include <boost/format.hpp>
-#include <boost/lexical_cast.hpp>
 
 namespace Psi {
 namespace Compiler {
@@ -48,34 +47,6 @@ struct TvmFunctionalLowererMap {
     TvmResult target = builder.build(pointer_ty->target_type);
     TvmResult upref = builder.build(pointer_ty->upref);
     return TvmResult(target.scope, Tvm::FunctionalBuilder::pointer_type(target.value, upref.value, pointer_ty->location()));
-  }
-  
-  static Tvm::ValuePtr<> build_int_type(Tvm::Context& context, const SourceLocation& location, bool is_signed, const std::vector<std::string>& parts) {
-    if (parts.size() != 3)
-      return Tvm::ValuePtr<>();
-    
-    Tvm::IntegerType::Width width;
-    if (parts[2] == "ptr") {
-      width = Tvm::IntegerType::iptr;
-    } else {
-      unsigned bits;
-      try {
-        bits = boost::lexical_cast<unsigned>(parts[2]);
-      } catch (...) {
-        return Tvm::ValuePtr<>();
-      }
-      
-      switch (bits) {
-      case 8: width = Tvm::IntegerType::i8; break;
-      case 16: width = Tvm::IntegerType::i16; break;
-      case 32: width = Tvm::IntegerType::i32; break;
-      case 64: width = Tvm::IntegerType::i64; break;
-      case 128: width = Tvm::IntegerType::i128; break;
-      default: return Tvm::ValuePtr<>();
-      }
-    }
-
-    return Tvm::FunctionalBuilder::int_type(context, width, is_signed, location);
   }
   
   static TvmResult build_number_type(TvmFunctionalBuilder& builder, const TreePtr<NumberType>& number_ty) {

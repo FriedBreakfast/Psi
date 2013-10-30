@@ -18,11 +18,11 @@ class PsiInterpreter(object):
   is assumed to be an error message.
   '''
   
-  def __init__(self, path, *args):
+  def __init__(self, path, args=[], universal_newlines=True):
     '''
     Path: path to Psi interpreter
     '''
-    self._child = subprocess.Popen([path, '--testprompt'] + list(args), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    self._child = subprocess.Popen([path, '--testprompt'] + list(args), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=universal_newlines)
     
   def close(self):
     self._child.stdin.close()

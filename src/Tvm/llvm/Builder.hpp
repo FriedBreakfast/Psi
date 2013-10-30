@@ -17,8 +17,6 @@
 #include <llvm/PassManager.h>
 #include <llvm/Support/TargetFolder.h>
 #include <llvm/Target/TargetMachine.h>
-#include <llvm/Target/TargetOptions.h>
-#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include "LLVMPopWarnings.hpp"
 
 #include "../Core.hpp"
@@ -39,6 +37,7 @@ namespace Psi {
       
       class TargetCallback {
         llvm::Triple m_triple;
+        bool m_use_mcjit;
         UniquePtr<AggregateLoweringPass::TargetCallback> m_aggregate_lowering_callback;
         
       public:
@@ -52,11 +51,14 @@ namespace Psi {
         }
         
         llvm::Function* exception_personality_routine(llvm::Module *module, const std::string& basename);
+        
+        /// \brief Whether to use the MCJIT on this target.
+        bool use_mcjit() const {return m_use_mcjit;}
       };
 
       class ModuleBuilder {
       public:
-        ModuleBuilder(CompileErrorContext *error_context, llvm::LLVMContext*, llvm::TargetMachine*, llvm::Module*, llvm::FunctionPassManager*, TargetCallback*);
+        ModuleBuilder(CompileErrorContext *error_context, llvm::LLVMContext*, llvm::TargetMachine*, llvm::Module*, TargetCallback*);
         ~ModuleBuilder();
         
         /// \brief Get the context to use for error reporting
@@ -97,7 +99,6 @@ namespace Psi {
         llvm::LLVMContext *m_llvm_context;
         llvm::Triple m_llvm_triple;
         llvm::TargetMachine *m_llvm_target_machine;
-        llvm::FunctionPassManager *m_llvm_function_pass;
         llvm::Module *m_llvm_module;
         TargetCallback *m_target_callback;
 
@@ -187,7 +188,7 @@ namespace Psi {
 
       class LLVMJit : public Jit {
       public:
-        LLVMJit(const CompileErrorPair& error_loc, const std::string&, const boost::shared_ptr<llvm::TargetMachine>&, bool use_mcjit);
+        LLVMJit(const CompileErrorPair& error_loc, const std::string&, const boost::shared_ptr<llvm::TargetMachine>&, const PropertyValue& config);
         virtual ~LLVMJit();
         virtual void destroy();
 
@@ -197,22 +198,19 @@ namespace Psi {
         virtual void* get_symbol(const ValuePtr<Global>&);
 
       private:
+        PropertyValue m_config;
         CompileErrorContext *m_error_context;
-        bool m_use_mcjit;
         llvm::LLVMContext m_llvm_context;
-        llvm::PassManagerBuilder m_llvm_pass_builder;
         llvm::PassManager m_llvm_module_pass;
         llvm::CodeGenOpt::Level m_llvm_opt;
-        llvm::TargetOptions m_llvm_target_options;
         TargetCallback m_target_callback;
-        llvm::Triple m_target_triple;
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
         std::size_t m_load_priority_max;
         boost::unordered_map<Module*, LLVMJitModule> m_modules;
         typedef boost::unordered_map<std::string, std::pair<llvm::ExecutionEngine*, llvm::GlobalValue*> > ExportedSymbolMap;
         ExportedSymbolMap m_exported_symbols;
 
-        void init_llvm_passes();
+        void populate_pass_manager(llvm::PassManager& pm);
         
         static bool symbol_lookup(void **result, const char *name, void *user_ptr);
         template<typename T> void preload_symbols(llvm::ExecutionEngine& ee, const T& begin, const T& end);

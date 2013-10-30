@@ -11,13 +11,12 @@
 #include <fstream>
 #include <string>
 
-#if PSI_ENABLE_READLINE
+#if PSI_HAVE_READLINE
 #include <readline.h>
 #include <history.h>
 #endif
 
 #include <boost/format.hpp>
-#include <boost/lexical_cast.hpp>
 #include <boost/scoped_array.hpp>
 
 #include "Parser.hpp"
@@ -25,7 +24,7 @@
 #include "Tree.hpp"
 #include "Macros.hpp"
 #include "TermBuilder.hpp"
-#include "Platform.hpp"
+#include "Platform/Platform.hpp"
 
 #include "Configuration.hpp"
 #include "OptionParser.hpp"
@@ -256,7 +255,7 @@ int psi_interpreter_run_file(const OptionSet& opts) {
 }
 
 namespace {
-#if PSI_ENABLE_READLINE
+#if PSI_HAVE_READLINE
   template<typename T>
   class ScopedMallocPtr : public boost::noncopyable {
     T *m_ptr;
@@ -269,7 +268,7 @@ namespace {
 #endif
   
   boost::optional<std::string> interpreter_read_line(bool test_mode, const char *prompt) {
-#if PSI_ENABLE_READLINE
+#if PSI_HAVE_READLINE
     if (!test_mode) {
       ScopedMallocPtr<char> line(readline(prompt));
       if (line.get()) {
@@ -404,7 +403,9 @@ int psi_interpreter_repl(const OptionSet& opts) {
     }
     
     try {
-      std::string unique = boost::lexical_cast<std::string>(start_line);
+      std::ostringstream unique_ss;
+      unique_ss << start_line;
+      std::string unique = unique_ss.str();
 
       SourceLocation location = input_location.named_child(unique);
       location.physical.first_column = location.physical.last_column = 1;

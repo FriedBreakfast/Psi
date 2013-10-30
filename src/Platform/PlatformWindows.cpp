@@ -1,8 +1,8 @@
 #include "PlatformWindows.hpp"
 #include "Platform.hpp"
-#include "Array.hpp"
-#include "Utility.hpp"
-#include "PropertyValue.hpp"
+#include "../Array.hpp"
+#include "../Utility.hpp"
+#include "../PropertyValue.hpp"
 
 #include <fstream>
 #include <cctype>

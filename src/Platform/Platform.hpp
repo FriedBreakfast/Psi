@@ -4,8 +4,8 @@
 #include <boost/optional.hpp>
 #include <iosfwd>
 
-#include "Runtime.hpp"
-#include "PropertyValue.hpp"
+#include "../Runtime.hpp"
+#include "../PropertyValue.hpp"
 
 #if defined(_WIN32)
 #include "PlatformImplWindows.hpp"
@@ -106,6 +106,7 @@ PSI_COMPILER_COMMON_EXPORT boost::optional<Path> find_in_path(const Path& name);
  */
 PSI_COMPILER_COMMON_EXPORT boost::shared_ptr<PlatformLibrary> load_library(const Path& path);
 
+#if PSI_WITH_TEMPFILE
 /**
  * \brief Temporary path helper class.
  * 
@@ -125,7 +126,9 @@ public:
   void delete_();
   const Path& path() const {return m_path;}
 };
+#endif
 
+#if PSI_WITH_EXEC
 /**
  * Run a command and send data to its standard in, capture standard out and return the result.
  * 
@@ -140,6 +143,7 @@ PSI_COMPILER_COMMON_EXPORT int exec_communicate(const Path& command, const std::
 
 PSI_COMPILER_COMMON_EXPORT void exec_communicate_check(const Path& command, const std::vector<std::string>& args, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
 PSI_COMPILER_COMMON_EXPORT void exec_communicate_check(const Path& command, const std::string& input="", std::string *output_out=NULL, std::string *output_err=NULL);
+#endif
 
 /**
  * Read configuration data from files and update a configuration map.

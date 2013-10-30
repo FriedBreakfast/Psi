@@ -7,7 +7,6 @@
 #include "../Functional.hpp"
 #include "../Recursive.hpp"
 
-#include <boost/lexical_cast.hpp>
 #include <boost/format.hpp>
 
 #include "LLVMPushWarnings.hpp"
@@ -18,6 +17,10 @@
 #include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetLibraryInfo.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
+#if PSI_DEBUG
+#include <llvm/Analysis/Verifier.h>
+#endif
 #include "LLVMPopWarnings.hpp"
 
 #if PSI_DEBUG
@@ -202,10 +205,10 @@ namespace Psi {
 
       ModuleBuilder::ModuleBuilder(CompileErrorContext *error_context,
                                    llvm::LLVMContext *llvm_context, llvm::TargetMachine *target_machine, llvm::Module *llvm_module,
-                                   llvm::FunctionPassManager *llvm_function_pass, TargetCallback *target_callback)
+                                   TargetCallback *target_callback)
         : m_error_context(error_context), m_llvm_context(llvm_context),
         m_llvm_triple(target_machine->getTargetTriple()), m_llvm_target_machine(target_machine),
-        m_llvm_function_pass(llvm_function_pass), m_llvm_module(llvm_module), m_target_callback(target_callback) {
+        m_llvm_module(llvm_module), m_target_callback(target_callback) {
         m_llvm_memcpy = intrinsic_memcpy(*llvm_module, target_machine);
         m_llvm_memset = intrinsic_memset(*llvm_module, target_machine);
         m_llvm_stacksave = intrinsic_stacksave(*llvm_module);
@@ -315,7 +318,6 @@ namespace Psi {
               llvm::Function *llvm_func = llvm::cast<llvm::Function>(llvm_term);
               FunctionBuilder fb(this, func, llvm_func);
               fb.run();
-              m_llvm_function_pass->run(*llvm_func);
             }
           } else {
             PSI_ASSERT(term->term_type() == term_global_variable);
@@ -507,13 +509,14 @@ namespace Psi {
       LLVMJit::LLVMJit(const CompileErrorPair& error_loc,
                        const std::string& host_triple,
                        const boost::shared_ptr<llvm::TargetMachine>& host_machine,
-                       bool use_mcjit)
-        : m_error_context(&error_loc.context()),
-          m_use_mcjit(use_mcjit),
+                       const PropertyValue& config)
+        : m_config(config),
+          m_error_context(&error_loc.context()),
           m_target_callback(error_loc, &m_llvm_context, host_machine, host_triple),
           m_target_machine(host_machine),
           m_load_priority_max(0) {
-        init_llvm_passes();
+
+        populate_pass_manager(m_llvm_module_pass);
       }
       
       /**
@@ -536,26 +539,27 @@ namespace Psi {
         delete this;
       }
       
-      void LLVMJit::init_llvm_passes() {
-        m_llvm_pass_builder.OptLevel = 0;
+      void LLVMJit::populate_pass_manager(llvm::PassManager& pm) {
+#if PSI_DEBUG
+        pm.add(llvm::createVerifierPass(llvm::AbortProcessAction));
+#endif
+        pm.add(new llvm::TargetLibraryInfo(llvm::Triple(m_target_machine->getTargetTriple())));
+        m_target_machine->addAnalysisPasses(pm);
+        if (const llvm::DataLayout *td = m_target_machine->getDataLayout())
+          pm.add(new llvm::DataLayout(*td));
+
+        llvm::PassManagerBuilder pb;
+        pb.OptLevel = 0;
         
-        if (const char *opt_mode = std::getenv("PSI_LLVM_OPT")) {
-          try {
-            m_llvm_pass_builder.OptLevel = boost::lexical_cast<unsigned>(opt_mode);
-          } catch (boost::bad_lexical_cast&) {
-          }
-        }
+        if (boost::optional<int> opt_level = m_config.path_int("opt"))
+          pb.OptLevel = *opt_level;
         
-        if (m_llvm_pass_builder.OptLevel >= 2)
+        if (pb.OptLevel >= 2)
           m_llvm_opt = llvm::CodeGenOpt::Aggressive;         
         else
           m_llvm_opt = llvm::CodeGenOpt::Default;
-        
-        m_llvm_pass_builder.LibraryInfo = new llvm::TargetLibraryInfo(llvm::Triple(m_target_machine->getTargetTriple()));
-        m_llvm_pass_builder.populateModulePassManager(m_llvm_module_pass);
-        
-        m_llvm_target_options.JITEmitDebugInfo = 1;
-        m_llvm_target_options.JITEmitDebugInfoToDisk = 1;
+
+        pb.populateModulePassManager(m_llvm_module_pass);
       }
       
       namespace {
@@ -595,23 +599,20 @@ namespace Psi {
         llvm_module->setTargetTriple(m_target_machine->getTargetTriple());
         llvm_module->setDataLayout(m_target_machine->getDataLayout()->getStringRepresentation());
         
-        llvm::FunctionPassManager fpm(llvm_module);
-        m_llvm_pass_builder.populateFunctionPassManager(fpm);
-
-        ModuleBuilder builder(&error_context(), &m_llvm_context, m_target_machine.get(), llvm_module, &fpm, &m_target_callback);
+        ModuleBuilder builder(&error_context(), &m_llvm_context, m_target_machine.get(), llvm_module, &m_target_callback);
         mapping.mapping = builder.run(module);
         
-        m_llvm_module_pass.run(*llvm_module);
-
 #if PSI_DEBUG
         if (const char *debug_mode = std::getenv("PSI_LLVM_DEBUG")) {
           if ((std::strcmp(debug_mode, "all") == 0) || (std::strcmp(debug_mode, "ir") == 0))
             llvm_module->dump();
         }
 #endif
+
+        m_llvm_module_pass.run(*llvm_module);
         
-        mapping.jit.reset(psi_tvm_llvm_make_execution_engine(llvm_module_auto.release(), m_use_mcjit, m_llvm_opt, m_llvm_target_options,
-                                                             &LLVMJit::symbol_lookup, this));
+        mapping.jit.reset(psi_tvm_llvm_make_execution_engine(llvm_module_auto.release(), m_target_callback.use_mcjit(),
+                                                             m_llvm_opt, m_target_machine->Options, &LLVMJit::symbol_lookup, this));
         mapping.load_priority = 0;
         
         PSI_ASSERT_MSG(mapping.jit, "LLVM JIT creation failed - most likely the JIT has not been linked in");
@@ -626,7 +627,7 @@ namespace Psi {
             m_exported_symbols[ii->first->name()] = std::make_pair(jit_module.jit.get(), ii->second);
         }
 
-        if (!m_use_mcjit) {
+        if (!m_target_callback.use_mcjit()) {
           // Must inject all known external symbols before any jit compilation occurs,
           // because non-MC JIT doesn't allow symbol lookups to be hooked
           preload_symbols(*jit_module.jit, llvm_module->global_begin(), llvm_module->global_end()); // Global variables
@@ -689,7 +690,7 @@ namespace Psi {
   }
 }
 
-extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) Psi::Tvm::Jit* tvm_jit_new(const Psi::CompileErrorPair& error_handler, const Psi::PropertyValue& config) {
+PSI_TVM_JIT_EXPORT(llvm, error_handler, config) {
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::InitializeNativeTargetAsmParser();
@@ -701,11 +702,12 @@ extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) Psi::Tvm::Jit* tvm_jit_new(const Psi::Com
   if (!target)
     error_handler.error_throw("Could not get LLVM target: " + error_msg);
 
-  boost::shared_ptr<llvm::TargetMachine> tm(target->createTargetMachine(host, "", "", llvm::TargetOptions()));
+  llvm::TargetOptions target_opts;
+  target_opts.JITEmitDebugInfo = 1;
+
+  boost::shared_ptr<llvm::TargetMachine> tm(target->createTargetMachine(host, "", "", target_opts));
   if (!tm)
     error_handler.error_throw("Failed to create target machine");
   
-  bool use_mcjit = config.path_bool("use_mcjit");
-  
-  return new Psi::Tvm::LLVM::LLVMJit(error_handler, host, tm, use_mcjit);
+  return new Psi::Tvm::LLVM::LLVMJit(error_handler, host, tm, config);
 }

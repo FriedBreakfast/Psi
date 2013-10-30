@@ -1,7 +1,7 @@
 #include "TvmLowering.hpp"
 #include "TermBuilder.hpp"
 #include "TopologicalSort.hpp"
-#include "PlatformCompile.hpp"
+#include "Platform/PlatformCompile.hpp"
 
 #include "Tvm/FunctionalBuilder.hpp"
 #include "Tvm/Function.hpp"

@@ -20,6 +20,7 @@ const char *PlatformError::what() const throw() {
 PlatformLibrary::~PlatformLibrary() {
 }
 
+#if PSI_WITH_EXEC
 /**
  * \brief Execute a command and check it is successful.
  * 
@@ -48,5 +49,6 @@ void exec_communicate_check(const Path& command, const std::vector<std::string>&
 void exec_communicate_check(const Path& command, const std::string& input, std::string *output_out, std::string *output_err) {
   return exec_communicate_check(command, std::vector<std::string>(), input, output_out, output_err);
 }
+#endif
 }
 }

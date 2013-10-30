@@ -1,31 +1,11 @@
 #include "Compiler.hpp"
 #include "TvmLowering.hpp"
 
-#if PSI_DEBUG
-#include <cstdlib>
-#include <iostream>
-#include "GCChecker.h"
-#endif
-
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/format.hpp>
 
-#if PSI_DEBUG && defined(__GNUC__) && defined(__ELF__)
-extern "C" {
-size_t psi_gcchecker_blocks(psi_gcchecker_block **ptr) __attribute__((weak));
-
-size_t psi_gcchecker_blocks(psi_gcchecker_block **ptr) {
-  *ptr = 0;
-  return 0;
-}
-
-void psi_gcchecker_set_free_hook(psi_gcchecker_hook_type,void*) __attribute__((weak));
-void psi_gcchecker_set_free_hook(psi_gcchecker_hook_type,void*) {}
-}
-#endif
-
-#if defined(__linux__)
+#if PSI_HAVE_EXECINFO
 #include <execinfo.h>
 #endif
 
@@ -46,30 +26,6 @@ namespace Psi {
     }
 
 #if PSI_DEBUG
-    namespace {
-      bool scan_block(void *base, size_t size, const std::set<void*>& pointers) {
-        void **ptrs = reinterpret_cast<void**>(base);
-        for (std::size_t count = size / sizeof(void*); count; --count, ++ptrs) {
-          if (pointers.find(*ptrs) != pointers.end())
-            return true;
-        }
-        return false;
-      }
-      
-      void gc_free_hook(void *base, size_t size, void *userdata) {
-        CompileContext *compile_context = static_cast<CompileContext*>(userdata);
-        if (scan_block(base, size, compile_context->object_pointers())) {
-          PSI_WARNING_FAIL("Freed block with remaining object pointers");
-#ifdef __linux__
-          const unsigned n_bt = 40;
-          void *bt[n_bt];
-          unsigned depth = backtrace(bt, n_bt);
-          backtrace_symbols_fd(bt, std::min(n_bt, depth), 2);
-#endif
-        }
-      }
-    }
-    
     std::set<void*> CompileContext::object_pointers() {
       std::set<void*> pointers;
       BOOST_FOREACH(Object& t, m_gc_list)
@@ -86,10 +42,6 @@ namespace Psi {
     m_root_location(PhysicalSourceLocation(), LogicalSourceLocation::new_root()) {
       PSI_ASSERT(error_context);
       
-#if PSI_DEBUG && defined(__GNUC__) && defined(__ELF__)
-      if (std::getenv("PSI_GC_FREECHECK"))
-        psi_gcchecker_set_free_hook(gc_free_hook, this);
-#endif
 #if PSI_OBJECT_PTR_DEBUG
       m_object_ptr_offset = 0;
 #endif
@@ -243,33 +195,6 @@ namespace Psi {
         }
         std::cerr << "Remaining object count: " << m_gc_list.size() << '\n';
         std::cerr << "Total references over: " << refs_over << ", under: " << refs_under << '\n';
-          
-#if defined(__GNUC__) && defined(__ELF__)
-        psi_gcchecker_block *blocks;
-        size_t n_blocks = psi_gcchecker_blocks(&blocks);
-#else
-        psi_gcchecker_block *blocks = NULL;
-        size_t n_blocks = 0;
-#endif
-        if (blocks) {
-          // Identify block each object belongs to
-          std::set<void*> pointers;
-          BOOST_FOREACH(Object& t, m_gc_list)
-            pointers.insert(&t);
-          
-          for (size_t i = 0; i != n_blocks; ++i) {
-            if (scan_block(blocks[i].base, blocks[i].size, pointers)) {
-              std::cerr << "Block appears to have pointer to object: " << blocks[i].base << ':' << blocks[i].size << std::endl;
-              unsigned count = 0;
-              while ((count < PSI_GCCHECKER_BACKTRACE_COUNT) && blocks[i].backtrace[count])
-                ++count;
-#ifdef __linux__
-              backtrace_symbols_fd(blocks[i].backtrace, count, 2);
-#endif
-            }
-          }
-          std::free(blocks);
-        }
       }
 #endif
 
@@ -288,15 +213,11 @@ namespace Psi {
         object_ptr_backtrace(ii->second);
       }
 #endif
-
-#if PSI_DEBUG && defined(__GNUC__) && defined(__ELF__)
-      psi_gcchecker_set_free_hook(NULL, NULL);
-#endif
     }
     
 #if PSI_OBJECT_PTR_DEBUG
     void CompileContext::object_ptr_backtrace(const ObjectPtrSetValue& value) {
-#ifdef __linux__
+#if PSI_HAVE_EXECINFO
       unsigned n = 0;
       for (; (n < object_ptr_backtrace_depth) && value.backtrace[n]; ++n);
       backtrace_symbols_fd(value.backtrace, n, 2);
@@ -307,7 +228,7 @@ namespace Psi {
       ObjectPtrSetValue value;
       value.obj = obj;
       std::fill_n(value.backtrace, object_ptr_backtrace_depth, static_cast<void*>(NULL));
-#ifdef __linux__
+#if PSI_HAVE_EXECINFO
       backtrace(value.backtrace, object_ptr_backtrace_depth);
 #endif
       

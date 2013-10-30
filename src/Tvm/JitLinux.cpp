@@ -29,16 +29,16 @@ namespace Psi {
       LibHandle m_handle;
       
     public:
-      LinuxJitFactory(const CompileErrorPair& error_handler, const std::string& soname, LibHandle& handle, const PropertyValue& config)
+      LinuxJitFactory(const CompileErrorPair& error_handler, const std::string& soname, const std::string& symname, LibHandle& handle, const PropertyValue& config)
       : JitFactoryCommon(error_handler, config) {
         m_handle.swap(handle);
         
         dlerror();
-        m_callback = reinterpret_cast<JitFactoryCallback>(dlsym(m_handle.get(), "tvm_jit_new"));
+        m_callback = reinterpret_cast<JitFactoryCallback>(dlsym(m_handle.get(), symname.c_str()));
         if (!m_callback) {
           const char *err = dlerror();
           std::string err_msg;
-          err_msg = err ? err : "tvm_jit_new symbol is null";
+          err_msg = err ? err : symname + " symbol is null";
           error_handler.error_throw("Cannot get JIT factory method in " + soname + ": " + err_msg);
         }
       }
@@ -48,6 +48,7 @@ namespace Psi {
         if (!sobase)
           error_handler.error_throw("JIT 'kind' key missing from configuration");
         std::string soname = "libpsi-tvm-" + *sobase + ".so";
+        std::string symname = "psi_tvm_jit_new_" + *sobase;
         /* 
          * I use RTLD_GLOBAL here because it's a bad idea to combine RTLD_LOCAL with
          * C++ due to vague linkage (this can break cross-library exception handling,
@@ -58,7 +59,7 @@ namespace Psi {
         if (!handle.get())
           error_handler.error_throw("Cannot load JIT from " + soname + ": " + dlerror());
         
-        return boost::make_shared<LinuxJitFactory>(error_handler, soname, boost::ref(handle), boost::cref(config));
+        return boost::make_shared<LinuxJitFactory>(error_handler, soname, symname, boost::ref(handle), boost::cref(config));
       }
     };
 

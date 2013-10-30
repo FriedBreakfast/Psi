@@ -1,11 +1,9 @@
-#include <dlfcn.h>
-#include <sstream>
-
-#include <boost/make_shared.hpp>
-
+#include "../Runtime.hpp"
+#include "PlatformWindows.hpp"
 #include "PlatformCompile.hpp"
-#include "PlatformUnix.hpp"
-#include "Runtime.hpp"
+
+#include <sstream>
+#include <boost/make_shared.hpp>
 
 namespace Psi {
 namespace Platform {
@@ -16,13 +14,19 @@ boost::shared_ptr<PlatformLibrary> load_module(const PropertyValue& args) {
   if (args.has_key("dirs"))
     dirs = args.get("dirs").str_list();
 
-  boost::shared_ptr<Unix::LibraryUnix> lib = boost::make_shared<Unix::LibraryUnix>(std::max<std::size_t>(1, libs.size()));
+  boost::shared_ptr<Windows::LibraryWindows> lib = boost::make_shared<Windows::LibraryWindows>(std::max<std::size_t>(libs.size(), 1));
   
   /*
-  * If no libraries are listed, use default-linked stuff, i.e. libc.
-  */
+    * If no libraries are listed, use the handle for the calling process.
+    *
+    * I've basically copied this behaviour from the Linux version of this file;
+    * I don't know whether this will allow getting CRT functions.
+    */
   if (libs.empty()) {
-    void *handle = dlopen(NULL, RTLD_NOW);
+    // Again, to prevent exceptions in push_back so I can be lazy about
+    // exception handling in dlopen().
+    HMODULE handle;
+    GetModuleHandleEx(0, NULL, &handle);
     if (!handle)
       throw PlatformError("Failed get handle to main executable");
     lib->add_handle(handle);
@@ -35,10 +39,10 @@ boost::shared_ptr<PlatformLibrary> load_module(const PropertyValue& args) {
     
     for (std::vector<std::string>::const_iterator ji = dirs.begin(), je = dirs.end(); ji != je; ++ji) {
       ss.clear();
-      ss << *ji << '/' << "lib" << *ii << ".so";
+      ss << *ji << '/' << *ii << ".dll";
       const std::string& ss_str = ss.str();
       
-      if (void *handle = dlopen(ss_str.c_str(), RTLD_NOW|RTLD_GLOBAL)) {
+      if (HMODULE handle = LoadLibrary(ss_str.c_str())) {
         lib->add_handle(handle);
         found = true;
         break;
@@ -49,12 +53,12 @@ boost::shared_ptr<PlatformLibrary> load_module(const PropertyValue& args) {
     if (!found) {
       // Finally, check default search path
       ss.clear();
-      ss << "lib" << *ii << ".so";
+      ss << *ii << ".dll";
       const std::string& ss_str = ss.str();
-      if (void *handle = dlopen(ss_str.c_str(), RTLD_NOW|RTLD_GLOBAL)) {
+      if (HMODULE handle = LoadLibrary(ss_str.c_str())) {
         lib->add_handle(handle);
       } else {
-        throw PlatformError("Shared object not found: " + *ii);
+        throw PlatformError("DLL not found: " + *ii);
       }
     }
   }

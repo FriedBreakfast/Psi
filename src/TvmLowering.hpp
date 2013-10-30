@@ -7,7 +7,7 @@
 
 #include "Tree.hpp"
 #include "SharedMap.hpp"
-#include "PlatformCompile.hpp"
+#include "Platform/PlatformCompile.hpp"
 
 #include "Tvm/Core.hpp"
 #include "Tvm/Jit.hpp"

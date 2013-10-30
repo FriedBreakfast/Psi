@@ -126,6 +126,7 @@ public:
   std::vector<std::string> str_list() const;
   
   boost::optional<std::string> path_str(const std::string& key) const;
+  boost::optional<int> path_int(const std::string& key) const;
   bool path_bool(const std::string& key) const;
   const PropertyValue *path_value_ptr(const std::string& name) const;
   PropertyValue path_value(const std::string& key) const;

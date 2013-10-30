@@ -7,6 +7,7 @@
 namespace Psi {
 namespace Platform {
 namespace Unix {
+#if PSI_WITH_EXEC
 namespace {
 struct linux_dirent {
   long           d_ino;
@@ -27,7 +28,7 @@ int safe_atoi(const char *s) {
 
 int close_on_exec_all() {
   const unsigned buffer_size = 1024;
-  char buffer[1024];
+  char buffer[buffer_size];
   int nbytes, offset;
   linux_dirent *ent;
 
@@ -87,9 +88,15 @@ pid_t sys_fork_exec(int stdin_fd, int stdout_fd, int stderr_fd, char *const*args
 int sys_pipe(int fds[2]) {
   return pipe2(fds, O_CLOEXEC);
 }
+#endif
 
 char* sys_strerror_r(int errnum, char *buf, size_t buflen) {
+#if !defined(__ANDROID__)
   return strerror_r(errnum, buf, buflen);
+#else
+  int code = strerror_r(errnum, buf, buflen);
+  return (code == 0) ? buf : NULL;
+#endif
 }
 }
 }

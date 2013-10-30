@@ -1,5 +1,5 @@
 #include "PropertyValue.hpp"
-#include "Platform.hpp"
+#include "Platform/Platform.hpp"
 
 #include <locale>
 #include <sstream>
@@ -196,6 +196,13 @@ boost::optional<std::string> PropertyValue::path_str(const std::string& key) con
   const PropertyValue *pv = path_value_ptr(key);
   if (pv && (pv->type() == t_str))
     return std::string(pv->str());
+  return boost::none;
+}
+
+boost::optional<int> PropertyValue::path_int(const std::string& key) const {
+  const PropertyValue *pv = path_value_ptr(key);
+  if (pv && (pv->type() == t_integer))
+    return pv->integer();
   return boost::none;
 }
 

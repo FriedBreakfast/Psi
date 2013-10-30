@@ -115,6 +115,23 @@ namespace Psi {
       JitFactoryCallback m_callback;
       PropertyValue m_config;
     };
+
+#if !PSI_TVM_JIT_STATIC
+#define PSI_TVM_JIT_EXPORT(name,arg_eh,arg_conf) extern "C" PSI_ATTRIBUTE((PSI_EXPORT)) Psi::Tvm::Jit* psi_tvm_jit_new_##name(const Psi::CompileErrorPair& arg_eh, const Psi::PropertyValue& arg_conf)
+#else
+    struct JitRegisterStatic {
+      const char *name;
+      JitFactoryCommon::JitFactoryCallback callback;
+      const JitRegisterStatic *next;
+
+      JitRegisterStatic(const char *name, JitFactoryCommon::JitFactoryCallback callback);
+    };
+    
+#define PSI_TVM_JIT_EXPORT(name,arg_eh,arg_conf) \
+    extern "C" ::Psi::Tvm::Jit* psi_tvm_jit_new_##name(const ::Psi::CompileErrorPair&, const ::Psi::PropertyValue&); \
+    namespace { const ::Psi::Tvm::JitRegisterStatic psi_tvm_jit_new_register_##name(#name, &psi_tvm_jit_new_##name); } \
+    extern "C" ::Psi::Tvm::Jit* psi_tvm_jit_new_##name(const ::Psi::CompileErrorPair& arg_eh, const ::Psi::PropertyValue& arg_conf)
+#endif
   }
 }
 

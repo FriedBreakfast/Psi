@@ -5,7 +5,7 @@
 #include "../Function.hpp"
 #include "../Number.hpp"
 #include "../Jit.hpp"
-#include "../../Platform.hpp"
+#include "../../Platform/Platform.hpp"
 
 #include "CModule.hpp"
 
@@ -70,7 +70,7 @@ public:
   virtual void compile_library(const CompileErrorPair& err_loc, const Platform::Path& output_file, const std::string& source) = 0;
   
   /// \brief Compile and load a shared library
-  virtual boost::shared_ptr<Platform::PlatformLibrary> compile_load_library(const CompileErrorPair& err_loc, const std::string& source);
+  virtual boost::shared_ptr<Platform::PlatformLibrary> compile_load_library(const CompileErrorPair& err_loc, const std::string& source) = 0;
 };
 
 /**

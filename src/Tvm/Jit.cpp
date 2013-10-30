@@ -1,5 +1,5 @@
 #include "Jit.hpp"
-#include "../Platform.hpp"
+#include "../Platform/Platform.hpp"
 
 #include <boost/make_shared.hpp>
 #include <boost/ref.hpp>

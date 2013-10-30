@@ -5,7 +5,6 @@
 #include <map>
 #include <boost/assign/list_of.hpp>
 #include <boost/format.hpp>
-#include <boost/lexical_cast.hpp>
 
 namespace Psi {
   namespace Compiler {
@@ -487,20 +486,19 @@ namespace Psi {
         if (!NumberType::is_integer(number_type->scalar_type))
           self.compile_context().error_throw(location, "Non-integer numerical constants of are not supported");
 
-        std::string data_s = data->text.str();
+        std::stringstream ss;
+        ss << data->text.str();
         uint64_t value;
         if (NumberType::is_signed(number_type->scalar_type)) {
-          try {
-            value = boost::lexical_cast<int64_t>(data_s);
-          } catch (boost::bad_lexical_cast&) {
-            self.compile_context().error_throw(location, boost::format("'%s' is not a valid signed integer") % data_s);
-          }
+          int64_t value_signed;
+          ss >> value_signed;
+          if (ss.fail() || !ss.eof())
+            self.compile_context().error_throw(location, boost::format("'%s' is not a valid signed integer") % data->text.str());
+          value = value_signed;
         } else {
-          try {
-            value = boost::lexical_cast<uint64_t>(data_s);
-          } catch (boost::bad_lexical_cast&) {
-            self.compile_context().error_throw(location, boost::format("'%s' is not a valid unsigned integer") % data_s);
-          }
+          ss >> value;
+          if (ss.fail() || !ss.eof())
+            self.compile_context().error_throw(location, boost::format("'%s' is not a valid unsigned integer") % data->text.str());
         }
        
         return TermBuilder::integer_value(self.compile_context(), (NumberType::ScalarType)number_type->scalar_type, value, location);

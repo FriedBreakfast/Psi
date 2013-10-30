@@ -7,6 +7,8 @@
 #cmakedefine01 PSI_DEBUG
 /// Enable advanced TreePtr instrumentation (very slow)
 #cmakedefine01 PSI_OBJECT_PTR_DEBUG
+/// Require JIT compilers to be statically linked in
+#cmakedefine01 PSI_TVM_JIT_STATIC
 /// Whether tcc has been compiled into the C backend
 #cmakedefine01 PSI_TVM_CC_TCCLIB
 /// Whether the LLVM backend is being built
@@ -34,6 +36,15 @@
 #define PSI_TVM_CC_TCC_PATH "${PSI_TVM_CC_TCC_PATH}"
 
 /// Whether to enable readline support in the command line interface
-#cmakedefine01 PSI_ENABLE_READLINE
+#cmakedefine01 PSI_HAVE_READLINE
+/// Whether ucontext.h is present
+#cmakedefine01 PSI_HAVE_UCONTEXT
+/// Whether execinfo.h is present
+#cmakedefine01 PSI_HAVE_EXECINFO
+
+/// Whether to include functions which launch external processes
+#cmakedefine01 PSI_WITH_EXEC
+/// Whether to include functions which create temporary files
+#cmakedefine01 PSI_WITH_TEMPFILE
 
 #endif

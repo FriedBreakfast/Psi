@@ -1,0 +1,2 @@
+APP_ABI := ${ndk_targets}
+

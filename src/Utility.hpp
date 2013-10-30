@@ -89,7 +89,7 @@ namespace Psi {
   };
   
   namespace {
-    struct MaybeNone {} maybe_none;
+    PSI_ATTRIBUTE((PSI_UNUSED_ATTR)) struct MaybeNone {} maybe_none;
   }
   
   template<typename T>

@@ -2,7 +2,7 @@
 
 #include "Test.hpp"
 #include "Assembler.hpp"
-#include "../Platform.hpp"
+#include "../Platform/Platform.hpp"
 #include "../Configuration.hpp"
 #include "../ErrorContext.hpp"
 #include "../PropertyValue.hpp"

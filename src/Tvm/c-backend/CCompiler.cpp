@@ -1,6 +1,6 @@
 #include "Builder.hpp"
 #include "CModule.hpp"
-#include "../../Platform.hpp"
+#include "../../Platform/Platform.hpp"
 
 #include <stdio.h>
 #include <fstream>
@@ -20,24 +20,6 @@ CCompiler::CCompiler() {
 }
 
 void CCompiler::emit_alignment(CModuleEmitter& PSI_UNUSED(emitter), unsigned PSI_UNUSED(alignment)) {
-}
-
-namespace {
-  struct LibraryTempFilePair {
-    Platform::TemporaryPath path;
-    boost::shared_ptr<Platform::PlatformLibrary> library;
-  };
-}
-
-boost::shared_ptr<Platform::PlatformLibrary> CCompiler::compile_load_library(const CompileErrorPair& err_loc, const std::string& source) {
-  boost::shared_ptr<LibraryTempFilePair> result = boost::make_shared<LibraryTempFilePair>();
-  compile_library(err_loc, result->path.path(), source);
-  try {
-    result->library = Platform::load_library(result->path.path());
-  } catch (Platform::PlatformError& ex) {
-    err_loc.error_throw(boost::format("Failed to load compiled library at %s: %s") % result->path.path() % ex.what());
-  }
-  return boost::shared_ptr<Platform::PlatformLibrary>(result, result->library.get());
 }
 
 /**
@@ -158,6 +140,24 @@ public:
       }
     }
   }
+
+#if PSI_WITH_TEMPFILE
+  struct LibraryTempFilePair {
+    Platform::TemporaryPath path;
+    boost::shared_ptr<Platform::PlatformLibrary> library;
+  };
+
+  boost::shared_ptr<Platform::PlatformLibrary> compile_load_library(const CompileErrorPair& err_loc, const std::string& source) {
+    boost::shared_ptr<LibraryTempFilePair> result = boost::make_shared<LibraryTempFilePair>();
+    compile_library(err_loc, result->path.path(), source);
+    try {
+      result->library = Platform::load_library(result->path.path());
+    } catch (Platform::PlatformError& ex) {
+      err_loc.error_throw(boost::format("Failed to load compiled library at %s: %s") % result->path.path() % ex.what());
+    }
+    return boost::shared_ptr<Platform::PlatformLibrary>(result, result->library.get());
+  }
+#endif
   
   /**
    * \brief Parse compiler types.
@@ -254,6 +254,7 @@ public:
 };
 }
 
+#if PSI_WITH_EXEC
 class CCompilerMSVC : public CCompilerCommon {
   Platform::Path m_path;
   unsigned m_version;
@@ -393,6 +394,7 @@ public:
     return boost::make_shared<CCompilerMSVC>(common_info, path, version);
   }
 };
+#endif
 
 /**
  * Base class for compilers which implement GCC \c __attribute__ extension.
@@ -459,6 +461,7 @@ public:
     aw.done();
   }
   
+#if PSI_WITH_EXEC
   static void run_gcc_common(const CompileErrorPair& err_loc, const Platform::Path& path,
                              const Platform::Path& output_file, const std::string& source,
                              const std::vector<std::string>& extra) {
@@ -500,8 +503,10 @@ public:
           << "), (int)__alignof__(" << ty.name << "));\n";
     }
   }
+#endif
 };
 
+#if PSI_WITH_EXEC
 class CCompilerGCC : public CCompilerGCCLike {
   Platform::Path m_path;
   unsigned m_major_version, m_minor_version;
@@ -578,7 +583,9 @@ public:
     return boost::make_shared<CCompilerGCC>(common_info, path, version_major, version_minor);
   }
 };
+#endif
 
+#if PSI_WITH_EXEC
 class CCompilerClang : public CCompilerGCCLike {
   Platform::Path m_path;
   unsigned m_major_version, m_minor_version;
@@ -644,7 +651,9 @@ public:
     return boost::make_shared<CCompilerClang>(common_info, path, version_major, version_minor);
   }
 };
+#endif
 
+#if PSI_WITH_EXEC
 class CCompilerTCC : public CCompilerGCCLike {
   Platform::Path m_path;
   unsigned m_major_version, m_minor_version;
@@ -744,6 +753,7 @@ public:
     return boost::make_shared<CCompilerTCC>(common_info, path, version_major, version_minor);
   }
 };
+#endif
 
 #if PSI_TVM_CC_TCCLIB
 namespace {

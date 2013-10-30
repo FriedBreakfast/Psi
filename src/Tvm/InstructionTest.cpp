@@ -3,8 +3,7 @@
 #include "Instructions.hpp"
 #include "Jit.hpp"
 
-#if defined(__linux__ ) || defined(__APPLE__)
-#define UNIX_LIKE
+#if PSI_HAVE_UCONTEXT
 #include <signal.h>
 #include <ucontext.h>
 #endif
@@ -353,8 +352,8 @@ namespace Psi {
       f(true, 0);
     }
     
+#if PSI_HAVE_UCONTEXT
     namespace EvaluateTest2Help {
-#ifdef UNIX_LIKE
       bool tripped;
       ucontext_t context;
 
@@ -384,7 +383,6 @@ namespace Psi {
         return false;
         
       }
-#endif
     }
     
     PSI_TEST_CASE(EvaluateTest2) {
@@ -402,10 +400,9 @@ namespace Psi {
       typedef void (*func_type) (Jit::Boolean, Jit::UInt32);
       func_type f = reinterpret_cast<func_type>(jit_single("f", src));
       
-#ifdef UNIX_LIKE
       PSI_TEST_CHECK(EvaluateTest2Help::wrapper(f));
-#endif
     }
+#endif
 
     PSI_TEST_SUITE_END()    
   }

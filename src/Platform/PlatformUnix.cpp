@@ -1,4 +1,4 @@
-#include "Array.hpp"
+#include "../Array.hpp"
 #include "PlatformUnix.hpp"
 
 #include <boost/format.hpp>
@@ -263,6 +263,7 @@ Path Path::filename() const {
     return m_data.path.substr(n+1);
 }
 
+#if PSI_WITH_EXEC
 namespace {
 /**
  * RAII class for Unix file descriptors.
@@ -464,7 +465,9 @@ int exec_communicate(const Path& command, const std::vector<std::string>& args, 
   
   return child_status;
 }
+#endif
 
+#if PSI_WITH_TEMPFILE
 TemporaryPath::TemporaryPath() {
   m_data.deleted = true; // Prevent delete until we have a filename
   Unix::MallocPtr<char> name(tempnam(NULL, NULL));
@@ -486,6 +489,7 @@ void TemporaryPath::delete_() {
     m_data.deleted = true;
   }
 }
+#endif
 
 boost::shared_ptr<PlatformLibrary> load_library(const Path& path) {
   boost::shared_ptr<Unix::LibraryUnix> lib = boost::make_shared<Unix::LibraryUnix>(1);

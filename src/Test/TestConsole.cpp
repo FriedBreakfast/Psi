@@ -1,10 +1,9 @@
-#include "Assert.hpp"
+#define PSI_TEST_MAIN
 #include "Test.hpp"
-#include "OptionParser.hpp"
+#include "../Assert.hpp"
+#include "../OptionParser.hpp"
 
-#include <iostream>
 #include <map>
-#include <vector>
 
 #ifdef __unix__
 #include <errno.h>
@@ -12,117 +11,19 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/wait.h>
-#include <ucontext.h>
 #include <unistd.h>
 
-#ifdef __linux__
+#if PSI_HAVE_UCONTEXT
+#include <ucontext.h>
+#endif
+
+#if PSI_HAVE_EXECINFO
 #include <execinfo.h>
 #endif
 #endif
 
 namespace Psi {
 namespace Test {
-namespace {
-  // This will initialize before constructors because it is a constant
-  const TestSuite *global_suite_list = NULL;
-}
-
-RequiredCheckFailed::RequiredCheckFailed() {
-}
-
-RequiredCheckFailed::~RequiredCheckFailed() throw() {
-}
-
-const char* RequiredCheckFailed::what() const throw() {
-  return "psi-test required check failed";
-}
-
-TestSuite::TestSuite(const char* name)
-: m_name(name), m_test_cases(NULL) {
-  m_next = global_suite_list;
-  global_suite_list = this;
-}
-
-TestCaseBase::TestCaseBase(TestSuite& suite, const char* name)
-: m_suite(&suite), m_name(name) {
-  // Append to list
-  m_next = suite.m_test_cases;
-  suite.m_test_cases = this;
-}
-
-std::string test_case_name(const TestCaseBase *tc) {
-  std::stringstream ss;
-  ss << tc->suite()->name() << '.' << tc->name();
-  return ss.str();
-}
-
-namespace {
-  TestLogger *current_logger = NULL;
-}
-
-void check_condition(const TestLocation& loc, Level level, bool passed, const std::string& cond_str, const std::string& cond_fmt) {
-  current_logger->check(loc, level, passed, cond_str, cond_fmt);
-  if (!passed) {
-    if (level == level_require)
-      throw RequiredCheckFailed();
-  }
-}
-
-bool glob_partial(const std::string& s, const std::string& p, std::size_t s_idx, std::size_t p_idx, std::size_t p_rem) {
-  std::size_t s_n = s.size(), p_n = p.size();
-  while (p_idx < p_n) {
-    if ((p[p_idx] == '*') || (p[p_idx] == '?')) {
-      // Merge '*' and '?' occurences
-      while (p_idx < p_n) {
-        if (p[p_idx] == '?') {
-          ++p_idx;
-          --p_rem;
-          if (s_idx == s_n)
-            return false;
-          ++s_idx;
-        } else if (p[p_idx] == '*') {
-          ++p_idx;
-        } else {
-          break;
-        }
-      }
-      
-      PSI_ASSERT(p_rem + s_idx <= s_n);
-      std::size_t nmax = s_n - s_idx - p_rem;
-      for (std::size_t offset = 0; offset < nmax; ++offset) {
-        if (glob_partial(s, p, s_idx + offset, p_idx, p_rem))
-          return true;
-      }
-      
-      return false;
-    } else {
-      if ((s_idx == s_n) || (s[s_idx] != p[p_idx]))
-        return false;
-      ++s_idx;
-      ++p_idx;
-      --p_rem;
-    }
-  }
-  
-  return true;
-}
-
-/**
-  * Check whether a string matches a wildcard pattern
-  */
-bool glob(const std::string& s, const std::string& pattern) {
-  std::size_t char_count = 0;
-  for (std::string::const_iterator ii = pattern.begin(), ie = pattern.end(); ii != ie; ++ii) {
-    if (*ii != '*')
-      ++char_count;
-  }
-  
-  if (char_count > s.size())
-    return false;
-  
-  return glob_partial(s, pattern, 0, 0, char_count);
-}
-
 struct TestRunOptions {
   bool verbose;
   bool fork;
@@ -175,7 +76,7 @@ void run_main_parse_args(int argc, const char **argv, std::vector<std::string>& 
 
     case opt_key_suite_list: {
       std::vector<std::string> names;
-      for (const TestSuite *ts = global_suite_list; ts; ts = ts->next())
+      for (const TestSuite *ts = test_suite_list(); ts; ts = ts->next())
         names.push_back(ts->name());
       std::sort(names.begin(), names.end());
       for (std::vector<std::string>::const_iterator ii = names.begin(), ie = names.end(); ii != ie; ++ii)
@@ -185,7 +86,7 @@ void run_main_parse_args(int argc, const char **argv, std::vector<std::string>& 
       
     case opt_key_test_list: {
       std::vector<std::string> names;
-      for (const TestSuite *ts = global_suite_list; ts; ts = ts->next()) {
+      for (const TestSuite *ts = test_suite_list(); ts; ts = ts->next()) {
         for (const TestCaseBase *tc = ts->test_cases(); tc; tc = tc->next()) {
           std::string name = test_case_name(tc);
           if (glob(name, val.value))
@@ -219,63 +120,11 @@ void run_main_parse_args(int argc, const char **argv, std::vector<std::string>& 
   }
 }
 
-class StreamLogger : public TestLogger {
-  std::ostream *os;
-  std::string name;
-  unsigned error_count;
-  LogLevel print_level;
-  TestLocation last_location;
-  
-public:
-  StreamLogger(std::ostream *os_, const std::string& name_, LogLevel print_level_)
-  : os(os_), name(name_), error_count(0), print_level(print_level_), last_location(NULL, 0) {
-  }
-  
-  virtual bool passed() {return !error_count;}
-  
-  virtual void message(const TestLocation& loc, const std::string& str) {
-    last_location = loc;
-    *os << loc.file << ':' << loc.line << ": " << str << std::endl;
-  }
-  
-  virtual void check(const TestLocation& loc, Level, bool passed, const std::string& cond_str, const std::string& cond_fmt) {
-    last_location = loc;
-    
-    bool print = false;
-    const char *state = "";
-    if (!passed) {
-      print = true;
-      state = "failed";
-      ++error_count;
-    } else if (print_level == log_level_all) {
-      print = true;
-      state = "passed";
-    }
-    
-    if (print) {
-      *os << loc.file << ':' << loc.line << ": check " << state << ": " << cond_str;
-      if (!cond_fmt.empty())
-        *os << " [" << cond_fmt << ']';
-      *os << std::endl;
-    }
-  }
-  
-  virtual void except(const std::string& what) {
-    ++error_count;
-    *os << "Exception occurred: " << what << '\n';
-    if (last_location.file)
-      *os << "Last location was: " << last_location.file << ':' << last_location.line << '\n';
-    else
-      *os << "No checks have been performed so no previous location is available\n";
-    *os << std::flush;
-  }
-};
-
 bool run_test_case_common(const TestCaseBase *tc, const TestRunOptions& options) {
   std::string name = test_case_name(tc);
 
   StreamLogger logger(&std::cerr, name, options.verbose ? log_level_all : log_level_fail);
-  current_logger = &logger;
+  set_test_logger(&logger);
   try {
     tc->run();
   } catch (std::exception& ex) {
@@ -288,7 +137,7 @@ bool run_test_case_common(const TestCaseBase *tc, const TestRunOptions& options)
 }
 
 #ifdef __unix__
-#ifdef __linux__
+#if PSI_HAVE_EXECINFO && PSI_HAVE_UCONTEXT
 namespace {
 bool signal_exiting;
 ucontext_t signal_exit_context;
@@ -308,7 +157,7 @@ void signal_handler(int PSI_UNUSED(signum), siginfo_t *PSI_UNUSED(info), void *P
 #endif
 
 bool run_test_case_signals(const TestCaseBase *tc, const TestRunOptions& options) {
-#ifdef __linux__
+#if PSI_HAVE_EXECINFO && PSI_HAVE_UCONTEXT
   if (options.catch_signals) {
     signal_exiting = false;
     if (getcontext(&signal_exit_context) != 0) {
@@ -403,7 +252,7 @@ int run_main(int argc, const char** argv) {
   
   std::map<std::string, const TestCaseBase*> test_cases;
 
-  for (const TestSuite *ts = global_suite_list; ts; ts = ts->next()) {
+  for (const TestSuite *ts = test_suite_list(); ts; ts = ts->next()) {
     for (const TestCaseBase *tc = ts->test_cases(); tc; tc = tc->next()) {
       std::string name = test_case_name(tc);
       if (test_patterns.empty()) {

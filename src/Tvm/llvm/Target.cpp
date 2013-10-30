@@ -165,11 +165,12 @@ namespace Psi {
        * using the llvm::Triple class.
        */
       TargetCallback::TargetCallback(const CompileErrorPair& error_loc, llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine, const std::string& triple)
-      : m_triple(triple) {
+      : m_triple(triple), m_use_mcjit(false) {
         bool accept = false;
         switch (m_triple.getArch()) {
         case llvm::Triple::x86_64:
           switch (m_triple.getOS()) {
+          case llvm::Triple::FreeBSD:
           case llvm::Triple::Linux: accept = true; break;
           default: break;
           }
@@ -185,6 +186,20 @@ namespace Psi {
           }
           break;
 
+        case llvm::Triple::arm:
+          m_use_mcjit = true;
+          switch (m_triple.getOS()) {
+          case llvm::Triple::Linux:
+            switch (m_triple.getEnvironment()) {
+            case llvm::Triple::GNUEABIHF:
+            case llvm::Triple::GNUEABI:
+            case llvm::Triple::Android: accept = true; break;
+            default: break;
+            }
+          default: break;
+          }
+          break;
+        
         default:
           break;
         }

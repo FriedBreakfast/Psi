@@ -3,8 +3,10 @@ project(Psi)
 
 include(CPack)
 include(CTest)
+include(CheckIncludeFile)
 
-include(DetectPlatform.cmake)
+include(cmake/DetectPlatform.cmake)
+detect_platform(PSI_HOST_TRIPLE PSI_HOST_CPU PSI_HOST_CPU_VERSION PSI_HOST_OS PSI_HOST_ABI)
 
 # Enable -fvisibility=hidden on GCC
 include(GenerateExportHeader)
@@ -13,11 +15,32 @@ add_compiler_export_flags()
 set(PSI_DEBUG 0 CACHE BOOL "Enable debug checks")
 set(PSI_ENABLE_VALGRIND 0 CACHE BOOL "Enable Valgrind support")
 set(PSI_OBJECT_PTR_DEBUG 0 CACHE BOOL "Enable object pointer debug checks (very expensive)")
+set(PSI_COMBINE_LIBRARIES 0 CACHE BOOL "Combine all backend libraries into a single library")
+set(PSI_COMBINE_MODULES 0 CACHE BOOL "Combine all backend libraries into a single library")
 mark_as_advanced(PSI_OBJECT_PTR_DEBUG)
+
+if(PSI_COMBINE_LIBRARIES AND PSI_COMBINE_MODULES)
+  set(PSI_TVM_JIT_STATIC 1)
+endif()
+
+# Does the target have a command line?
+if(ANDROID OR NACL)
+  set(PSI_WITH_EXEC 0)
+  set(PSI_WITH_TEMPFILE 0)
+  set(PSI_WITH_CMDLINE 0)
+else()
+  set(PSI_WITH_EXEC 1)
+  set(PSI_WITH_TEMPFILE 1)
+  set(PSI_WITH_CMDLINE 1)
+endif()
+
+if(PSI_DEBUG)
+  enable_testing()
+endif()
 
 # Set up useful compiler flags
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER MATCHES "clang")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -std=c++98")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -std=gnu++98")
 endif()
 
 # Locate LLVM
@@ -37,6 +60,21 @@ else()
     string(REPLACE ";" " " LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
     set(LLVM_LDFLAGS -L${LLVM_LIBRARY_DIRS})
     llvm_map_components_to_libraries(LLVM_LIBS ${PSI_LLVM_MODULES})
+    
+    if(NOT LLVM_REQUIRES_EH)
+      if(CMAKE_COMPILER_IS_GNUCXX)
+        set(LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS} -fno-exceptions")
+      elseif(MSVC)
+        set(LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS} /EHs-c-")
+      endif()
+    endif()
+    if(NOT LLVM_REQUIRES_RTTI)
+      if(CMAKE_COMPILER_IS_GNUCXX)
+        set(LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS} -fno-rtti")
+      elseif(MSVC)
+        set(LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS} /GR-")
+      endif()
+    endif()
   else()
     set(PSI_TVM_LLVM 0)
   endif()
@@ -46,24 +84,29 @@ if(PSI_TVM_LLVM AND NOT LLVM_VERSION VERSION_EQUAL "3.3")
   message(SEND_ERROR "LLVM must be version 3.3, you have ${LLVM_VERSION}")
 endif()
 
-# Copy LLVM flags for case where we need to inherit from LLVM classes (grrr...)
-set(LLVM_CXX_COMPAT_FLAGS "${LLVM_CXX_FLAGS}")
-# Try to eliminate LLVM compilation flags which we don't need
-string(REGEX REPLACE "-[WOfg][^ ]*" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
+if(PSI_TVM_LLVM)
+  # Copy LLVM flags for case where we need to inherit from LLVM classes (grrr...)
+  set(LLVM_CXX_COMPAT_FLAGS "${LLVM_CXX_FLAGS}")
+  # Try to eliminate LLVM compilation flags which we don't need
+  string(REGEX REPLACE "-[WOfg][^ ]*" "" LLVM_CXX_FLAGS "${LLVM_CXX_FLAGS}")
 
-# Have to ensure _GLIBCXX_DEBUG is consistently defined everywhere otherwise the binary inteface may break
-if (LLVM_CXX_FLAGS MATCHES "_GLIBCXX_DEBUG")
-  message(SEND_ERROR "Please compile LLVM without _GLIBCXX_DEBUG defined")
+  # Have to ensure _GLIBCXX_DEBUG is consistently defined everywhere otherwise the binary inteface may break
+  if (LLVM_CXX_FLAGS MATCHES "_GLIBCXX_DEBUG")
+    message(SEND_ERROR "Please compile LLVM without _GLIBCXX_DEBUG defined")
+  endif()
 endif()
 
-if(CMAKE_COMPILER_IS_GNUCC)
-  set(PSI_TVM_CC_SYSTEM_KIND_DEFAULT "gcc")
-elseif(CMAKE_C_COMPILER MATCHES clang)
-  set(PSI_TVM_CC_SYSTEM_KIND_DEFAULT "clang")
-endif()
+if(PSI_WITH_CMDLINE)
+  if(CMAKE_COMPILER_IS_GNUCC)
+    set(PSI_TVM_CC_SYSTEM_KIND_DEFAULT "gcc")
+  elseif(CMAKE_C_COMPILER MATCHES clang)
+    set(PSI_TVM_CC_SYSTEM_KIND_DEFAULT "clang")
+  endif()
 
-set(PSI_TVM_CC_SYSTEM_PATH ${CMAKE_C_COMPILER} CACHE FILEPATH "Path to system C compiler")
-set(PSI_TVM_CC_SYSTEM_KIND ${PSI_TVM_CC_SYSTEM_KIND_DEFAULT} CACHE STRING "Kind of C compiler at PSI_TVM_CC_SYSTEM_PATH, should be 'gcc', 'clang' or 'tcc'")
+  set(PSI_TVM_CC_SYSTEM_PATH ${CMAKE_C_COMPILER} CACHE FILEPATH "Path to system C compiler")
+  set(PSI_TVM_CC_SYSTEM_KIND ${PSI_TVM_CC_SYSTEM_KIND_DEFAULT} CACHE STRING "Kind of C compiler at PSI_TVM_CC_SYSTEM_PATH, should be 'gcc', 'clang' or 'tcc'")
+  set(PSI_TVM_C 1)
+endif()
 
 # Find TCC
 find_library(TCC_LIB tcc)
@@ -75,18 +118,9 @@ if(TCC_LIB AND TCC_INCLUDE AND TCC_PATH AND TCC_CC_INCLUDE)
   set(PSI_TVM_CC_TCCLIB 1)
   set(PSI_TVM_CC_TCC_INCLUDE ${TCC_CC_INCLUDE})
   set(PSI_TVM_CC_TCC_PATH ${TCC_PATH})
+  set(PSI_TVM_C 1)
 else()
   set(PSI_TVM_CC_TCCLIB 0)
-endif()
-
-if(WIN32 OR NOT PSI_TVM_LLVM)
-  if (PSI_TVM_CC_TCCLIB)
-    set(PSI_TVM_JIT_DEFAULT "tcclib")
-  else()
-    set(PSI_TVM_JIT_DEFAULT "cc")
-  endif()
-else()
-  set(PSI_TVM_JIT_DEFAULT "llvm")
 endif()
 
 set(PSI_TVM_JIT "llvm" CACHE STRING "Default JIT compiler to use")
@@ -95,13 +129,18 @@ if(NOT PSI_TVM_LLVM)
 endif()
 
 # Locate Boost
-find_package(Boost 1.36.0 REQUIRED)
+find_path(BOOST_INCLUDE_DIR boost/optional.hpp DOC "Boost include path")
+if(NOT EXISTS ${BOOST_INCLUDE_DIR}/boost/optional.hpp)
+  message(FATAL_ERROR "Boost not found")
+endif()
 
 # Locate readline or libedit
-find_path(READLINE_INCLUDE readline.h PATHS /usr/include/readline /usr/include/editline)
-find_library(READLINE_LIB NAMES readline edit)
-if(READLINE_INCLUDE AND READLINE_LIB)
-  set(PSI_ENABLE_READLINE 1)
+if(PSI_WITH_CMDLINE)
+  find_path(READLINE_INCLUDE readline.h PATHS /usr/include/readline /usr/include/editline)
+  find_library(READLINE_LIB NAMES readline edit)
+  if(READLINE_INCLUDE AND READLINE_LIB)
+    set(PSI_ENABLE_READLINE 1)
+  endif()
 endif()
 
 add_custom_target(doc)
@@ -148,8 +187,6 @@ if(SPHINX_BUILD)
   add_dependencies(doc-tar doc-sphinx)
 endif()
 
-enable_testing()
-
 macro(shared_library_setup name)
   # Ensure MinGW doesn't add lib* prefix to generated DLLs
   if (WIN32)
@@ -157,5 +194,10 @@ macro(shared_library_setup name)
   endif()
 endmacro()
 
+check_include_file(ucontext.h PSI_HAVE_UCONTEXT)
+check_include_file(execinfo.h PSI_HAVE_EXECINFO)
+
 add_subdirectory(src)
-add_subdirectory(tests)
+if(PSI_WITH_CMDLINE)
+  add_subdirectory(tests)
+endif()
