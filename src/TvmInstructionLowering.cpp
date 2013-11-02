@@ -24,6 +24,7 @@ struct TvmFunctionBuilder::InstructionLowering {
   */
   static TvmResult run_block(TvmFunctionBuilder& builder, const TreePtr<Block>& block) {
     TvmCleanupPtr initial_cleanup = builder.m_state.cleanup;
+    TvmScopePtr initial_scope = builder.m_state.scope;
     Tvm::ValuePtr<> initial_result_storage = builder.m_current_result_storage;
     builder.m_current_result_storage.reset();
     
@@ -91,10 +92,33 @@ struct TvmFunctionBuilder::InstructionLowering {
       }
     }
     
-    builder.m_current_result_storage = initial_result_storage;
-    TvmResult result = builder.build(block->value);
-    builder.cleanup_to(initial_cleanup);
-    return result;
+    Tvm::ValuePtr<> result;
+    switch (block->mode) {
+    case term_mode_value:
+      if (block->type->is_register_type()) {
+        result = builder.build_functional(block->value, block->location()).value;
+      } else {
+        PSI_ASSERT(initial_result_storage);
+        bool good = builder.object_construct_term(construct_initialize, initial_result_storage, block->value, block->location());
+        result = good ? initial_result_storage : Tvm::ValuePtr<>();
+      }
+      break;
+      
+    case term_mode_lref:
+    case term_mode_rref:
+      PSI_ASSERT((block->value->mode == term_mode_lref) || (block->value->mode == term_mode_rref));
+      result = builder.build(block->value).value;
+      break;
+      
+    default: PSI_FAIL("Unexpected enum value here");
+    }
+
+    if (result) {
+      builder.cleanup_to(initial_cleanup);
+      return TvmResult(initial_scope, result);
+    } else {
+      return TvmResult::bottom();
+    }
   }
 
   /**
@@ -365,23 +389,7 @@ struct TvmFunctionBuilder::InstructionLowering {
   }
   
   static TvmResult run_functional_evaluate(TvmFunctionBuilder& builder, const TreePtr<FunctionalEvaluate>& term) {
-    switch (term->value->mode) {
-    case term_mode_lref:
-    case term_mode_rref: {
-      TvmResult inner = builder.build(term->value);
-      PSI_ASSERT(!inner.is_bottom());
-      return builder.load(inner.value, term->location());
-    }
-      
-    case term_mode_bottom:
-      return TvmResult::bottom();
-      
-    case term_mode_value:
-      // Argument must always have functional type, so should always be stored functionally
-      return builder.build(term->value);
-      
-    default: PSI_FAIL("Unexpected term mode");
-    }
+    return builder.build_functional(term->value, term->location());
   }
   
   static TvmResult run_initialize(TvmFunctionBuilder& builder, const TreePtr<InitializeValue>& initialize) {

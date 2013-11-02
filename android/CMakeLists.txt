@@ -44,14 +44,13 @@ function(add_platform name arch cmake_arch llvm_arch llvm_triple)
     -DANDROID_STANDALONE=${toolchain_dir}
     -DANDROID_PROCESSOR=${cmake_arch}
   )
-  set(common_flags -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
 
   if(NOT IS_DIRECTORY ${arch_dir}/llvm-build)
     file(MAKE_DIRECTORY ${arch_dir}/llvm-build)
     set(llvm_toolchain_flags ${toolchain_flags} -DLLVM_HOST_TRIPLE=${llvm_triple})
   endif()
     
-  execute_process(COMMAND ${CMAKE_COMMAND} ${LLVM_SOURCE} ${common_flags} ${llvm_toolchain_flags}
+  execute_process(COMMAND ${CMAKE_COMMAND} ${LLVM_SOURCE} ${llvm_toolchain_flags}
     -DLLVM_TABLEGEN=${LLVM_TABLEGEN}
     -DLLVM_BUILD_TOOLS=0
     -DLLVM_TARGETS_TO_BUILD=${llvm_arch}
@@ -70,8 +69,9 @@ function(add_platform name arch cmake_arch llvm_arch llvm_triple)
     set(psi_toolchain_flags ${toolchain_flags} -G${CMAKE_GENERATOR})
   endif()
 
-  execute_process(COMMAND ${CMAKE_COMMAND} ${PSI_SOURCE} ${common_flags} ${psi_toolchain_flags}
+  execute_process(COMMAND ${CMAKE_COMMAND} ${PSI_SOURCE} ${psi_toolchain_flags}
     -DLLVM_DIR=${arch_dir}/llvm/share/llvm/cmake
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DPSI_DEBUG=${PSI_DEBUG}
     -DPSI_COMBINE_LIBRARIES=1
     -DPSI_COMBINE_MODULES=1

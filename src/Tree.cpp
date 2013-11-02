@@ -587,29 +587,34 @@ namespace Psi {
 
     const TermVtable Statement::vtable = PSI_COMPILER_TERM(Statement, "psi.compiler.Statement", Term);
     
-    bool Block::block_bottom(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value) {
+    TermMode Block::block_mode(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value, bool ref) {
       if (value->mode == term_mode_bottom)
-        return true;
+        return term_mode_bottom;
       
       for (PSI_STD::vector<TreePtr<Statement> >::const_iterator ii = statements.begin(), ie = statements.end(); ii != ie; ++ii) {
         if ((*ii)->mode == term_mode_bottom)
-          return true;
+          return term_mode_bottom;
       }
       
-      return false;
+      if (ref)
+        return value->mode;
+      
+      return term_mode_value;
     }
     
-    Block::Block(const PSI_STD::vector<TreePtr<Statement> >& statements_, const TreePtr<Term>& value_, const SourceLocation& location)
-    : Term(&vtable, TermResultInfo(value_->type, block_bottom(statements_, value_) ? term_mode_bottom : value_->mode, false), location),
+    Block::Block(const PSI_STD::vector<TreePtr<Statement> >& statements_, const TreePtr<Term>& value_, bool value_reference_, const SourceLocation& location)
+    : Term(&vtable, TermResultInfo(value_->type, block_mode(statements_, value_, value_reference_), false), location),
     statements(statements_),
-    value(value_) {
+    value(value_),
+    value_reference(value_reference_) {
     }
 
     template<typename Visitor>
     void Block::visit(Visitor& v) {
       visit_base<Term>(v);
       v("statements", &Block::statements)
-      ("value", &Block::value);
+      ("value", &Block::value)
+      ("value_reference", &Block::value_reference);
     }
     
     TermTypeInfo Block::type_info_impl(const Block& self) {

@@ -267,6 +267,31 @@ void TvmFunctionBuilder::build_void(const TreePtr<Term>& term) {
   cleanup_to(cleanup);
 }
 
+/**
+ * \brief Force a term to functional mode, i.e. not a reference.
+ */
+TvmResult TvmFunctionBuilder::build_functional(const TreePtr<Term>& term, const SourceLocation& location) {
+  PSI_ASSERT(term->type->is_register_type());
+  
+  switch (term->mode) {
+  case term_mode_lref:
+  case term_mode_rref: {
+    TvmResult inner = build(term);
+    PSI_ASSERT(!inner.is_bottom());
+    return load(inner.value, location);
+  }
+    
+  case term_mode_bottom:
+    return TvmResult::bottom();
+    
+  case term_mode_value:
+    // Argument must always have functional type, so should always be stored functionally
+    return build(term);
+    
+  default: PSI_FAIL("Unexpected term mode");
+  }
+}
+
 TvmResult TvmFunctionBuilder::build_generic(const TreePtr<GenericType>& generic) {
   return tvm_lower_generic(*m_state.scope, *this, generic);
 }

@@ -7,7 +7,7 @@
 #include <boost/format.hpp>
 #include <boost/make_shared.hpp>
 
-#if PSI_TVM_CC_TCCLIB
+#if PSI_HAVE_TCC
 #include <libtcc.h>
 #endif
 
@@ -755,7 +755,7 @@ public:
 };
 #endif
 
-#if PSI_TVM_CC_TCCLIB
+#if PSI_HAVE_TCC
 namespace {
 class TCCError : public std::exception {
   std::string m_msg;
@@ -996,7 +996,7 @@ boost::shared_ptr<CCompiler> detect_c_compiler(const CompileErrorPair& err_loc, 
   if (!kind)
     err_loc.error_throw("C compiler kind not specified (property 'kind' missing): should be one of 'gcc', 'clang', 'tcc' or 'tcclib'");
 
-#if PSI_TVM_CC_TCCLIB
+#if PSI_HAVE_TCC
   if (*kind == "tcclib")
     return CCompilerTCCLib::detect(err_loc, configuration);
 #endif

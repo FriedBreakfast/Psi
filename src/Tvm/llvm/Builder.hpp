@@ -19,6 +19,7 @@
 #include <llvm/Target/TargetMachine.h>
 #include "LLVMPopWarnings.hpp"
 
+#include "Engine.hpp"
 #include "../Core.hpp"
 #include "../AggregateLowering.hpp"
 #include "../Jit.hpp"
@@ -37,7 +38,6 @@ namespace Psi {
       
       class TargetCallback {
         llvm::Triple m_triple;
-        bool m_use_mcjit;
         UniquePtr<AggregateLoweringPass::TargetCallback> m_aggregate_lowering_callback;
         
       public:
@@ -52,8 +52,7 @@ namespace Psi {
         
         llvm::Function* exception_personality_routine(llvm::Module *module, const std::string& basename);
         
-        /// \brief Whether to use the MCJIT on this target.
-        bool use_mcjit() const {return m_use_mcjit;}
+        static llvm::Triple jit_triple();
       };
 
       class ModuleBuilder {
@@ -119,6 +118,7 @@ namespace Psi {
         *m_llvm_invariant_start, *m_llvm_invariant_end,
         *m_llvm_eh_exception, *m_llvm_eh_selector, *m_llvm_eh_typeid_for;
 
+        bool use_dllimport();
         llvm::GlobalValue::LinkageTypes llvm_linkage_for(Linkage linkage);
         void apply_linkage(Linkage linkage, llvm::GlobalValue *value);
       };
@@ -180,9 +180,12 @@ namespace Psi {
 
       llvm::TargetMachine* host_machine();
 
+      typedef boost::unordered_map<ValuePtr<Global>, void*> ModuleJitMapping;
+
       struct LLVMJitModule {
         boost::shared_ptr<llvm::ExecutionEngine> jit;
         ModuleMapping mapping;
+        ModuleJitMapping jit_mapping;
         std::size_t load_priority;
       };
 
@@ -207,13 +210,12 @@ namespace Psi {
         boost::shared_ptr<llvm::TargetMachine> m_target_machine;
         std::size_t m_load_priority_max;
         boost::unordered_map<Module*, LLVMJitModule> m_modules;
-        typedef boost::unordered_map<std::string, std::pair<llvm::ExecutionEngine*, llvm::GlobalValue*> > ExportedSymbolMap;
+        typedef boost::unordered_map<std::string, void*> ExportedSymbolMap;
         ExportedSymbolMap m_exported_symbols;
 
         void populate_pass_manager(llvm::PassManager& pm);
         
         static bool symbol_lookup(void **result, const char *name, void *user_ptr);
-        template<typename T> void preload_symbols(llvm::ExecutionEngine& ee, const T& begin, const T& end);
       };
       
       llvm::CallingConv::ID function_call_convention(const CompileErrorPair& error_loc, CallingConvention cc);

@@ -278,6 +278,13 @@ namespace Psi {
       return m_jit->jit_compiler().compile(global);
     }
     
+    /**
+     * \brief Compile many globals at once using the JIT.
+     */
+    void CompileContext::jit_compile_many(const PSI_STD::vector<TreePtr<Global> >& globals) {
+      m_jit->jit_compiler().jit_compile(globals);
+    }
+    
     namespace {
       struct FunctionalEqualsData {
         std::size_t hash;

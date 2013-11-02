@@ -320,7 +320,7 @@ TreePtr<Statement> TermBuilder::statement(const TreePtr<Term>& value, StatementM
 
 /// \brief Create a block
 TreePtr<Term> TermBuilder::block(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& result, const SourceLocation& location) {
-  return tree_from(::new Block(statements, result, location));
+  return tree_from(::new Block(statements, result, false, location));
 }
 
 TreePtr<Term> TermBuilder::block(const SourceLocation& location, const PSI_STD::vector<TreePtr<Term> >& values, const TreePtr<Term>& result) {

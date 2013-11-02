@@ -127,6 +127,7 @@ public:
   void run_function(const TreePtr<Function>& function, const Tvm::ValuePtr<Tvm::Function>& output);
   void run_init(const TreePtr<Term>& body, const Tvm::ValuePtr<Tvm::Function>& output);
   void build_void(const TreePtr<Term>& term);
+  TvmResult build_functional(const TreePtr<Term>& term, const SourceLocation& location);
 
   virtual TvmResult build(const TreePtr<Term>& term);
   virtual TvmResult build_generic(const TreePtr<GenericType>& generic);

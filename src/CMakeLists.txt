@@ -1,8 +1,8 @@
 include_directories(${BOOST_INCLUDE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
-if(TCC_INCLUDE)
+if(PSI_HAVE_TCC)
   include_directories(${TCC_INCLUDE})
 endif()
-if(PSI_ENABLE_READLINE)
+if(PSI_HAVE_READLINE)
   include_directories(${READLINE_INCLUDE})
 endif()
 
@@ -161,7 +161,7 @@ psi_library(PSI_TVM_LIB psi-tvm
 psi_library_link(PSI_TVM_LIB ${CMAKE_DL_LIBS})
 psi_library_link_targets(PSI_TVM_LIB ${PSI_ASSERT_LIB} ${PSI_COMPILER_COMMON_LIB})
 
-if(PSI_TVM_LLVM)
+if(PSI_HAVE_LLVM)
   psi_module(PSI_TVM_LLVM_LIB psi-tvm-llvm
     Tvm/llvm/Builder.cpp Tvm/llvm/Builder.hpp
     Tvm/llvm/CallingConventions.cpp Tvm/llvm/CallingConventions.hpp
@@ -243,7 +243,7 @@ if (PSI_WITH_CMDLINE)
   OptionParser.cpp OptionParser.hpp
   )
   target_link_libraries(psi ${PSI_COMPILER_LIB})
-  if(PSI_ENABLE_READLINE)
+  if(PSI_HAVE_READLINE)
     target_link_libraries(psi ${READLINE_LIB})
   endif()
 endif()
@@ -276,12 +276,12 @@ if(BUILD_TESTING)
     set_property(TEST psi-tvm-test-${name} PROPERTY ENVIRONMENT "PSI_CONFIG_EXTRA=${config}")
   endmacro()
 
-  if(PSI_TVM_LLVM)
+  if(PSI_HAVE_LLVM)
     add_tvm_test(llvm "tvm.jit=\"llvm\"")
   endif()
   if(PSI_TVM_C)
     add_tvm_test(cc "tvm.jit=\"cc\"")
-    if(PSI_TVM_CC_TCCLIB)
+    if(PSI_HAVE_TCC)
       target_link_libraries(psi-tvm-c ${TCC_LIB})
       add_tvm_test(tcc "tvm.jit=\"tcclib\"")
     endif()

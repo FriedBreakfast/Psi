@@ -12,6 +12,7 @@
 #include <llvm/ADT/Triple.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Support/Host.h>
 #include <llvm/Support/TargetRegistry.h>
 #include "LLVMPopWarnings.hpp"
 
@@ -165,7 +166,7 @@ namespace Psi {
        * using the llvm::Triple class.
        */
       TargetCallback::TargetCallback(const CompileErrorPair& error_loc, llvm::LLVMContext *context, const boost::shared_ptr<llvm::TargetMachine>& target_machine, const std::string& triple)
-      : m_triple(triple), m_use_mcjit(false) {
+      : m_triple(triple) {
         bool accept = false;
         switch (m_triple.getArch()) {
         case llvm::Triple::x86_64:
@@ -187,7 +188,6 @@ namespace Psi {
           break;
 
         case llvm::Triple::arm:
-          m_use_mcjit = true;
           switch (m_triple.getOS()) {
           case llvm::Triple::Linux:
             switch (m_triple.getEnvironment()) {
@@ -210,6 +210,23 @@ namespace Psi {
         m_aggregate_lowering_callback.reset(new AggregateTargetCallbackLLVM(context, m_triple, target_machine));
       }
       
+      /**
+       * Perform any necessary adjustments to the target triple for JIT compilation.
+       */
+      llvm::Triple TargetCallback::jit_triple() {
+        llvm::Triple result(llvm::sys::getProcessTriple());
+        switch (result.getOS()) {
+        case llvm::Triple::Cygwin:
+        case llvm::Triple::Win32:
+        case llvm::Triple::MinGW32:
+          result.setEnvironment(llvm::Triple::ELF);
+          break;
+          
+        default: break;
+        }
+        
+        return result;
+      }
 
       /**
        * \brief Exception personality routine set up for Linux with DWARF2 unwinding.

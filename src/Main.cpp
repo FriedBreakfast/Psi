@@ -422,8 +422,7 @@ int psi_interpreter_repl(const OptionSet& opts) {
       CompileScriptResult script = compile_script(statements, evaluate_context, EvaluateCallback(statements.size()), location);
 
       // Force immediate compilation and loading
-      for (PSI_STD::vector<TreePtr<Global> >::const_iterator ii = script.globals.begin(), ie = script.globals.end(); ii != ie; ++ii)
-        compile_context.jit_compile(*ii);
+      compile_context.jit_compile_many(script.globals);
 
       // Only add names to map if they compiled correctly
       for (PSI_STD::map<String, TreePtr<Term> >::const_iterator ii = script.names.begin(), ie = script.names.end(); ii != ie; ++ii)

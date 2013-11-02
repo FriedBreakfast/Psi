@@ -13,7 +13,7 @@ namespace {
 }
 
 /**
- * \brief Set configuration keys built into the compiler.
+ * rief Set configuration keys built into the compiler.
  */
 void configuration_builtin(PropertyValue& config) {
   config["tvm"]["jit"] = PSI_TVM_JIT;
@@ -24,7 +24,7 @@ void configuration_builtin(PropertyValue& config) {
     config["tvm"]["cc"]["path"] = PSI_TVM_CC_SYSTEM_PATH;
   }
 
-#if PSI_TVM_CC_TCCLIB
+#if PSI_HAVE_TCC
   config["tvm"]["tcclib"]["kind"] = "c";
   config["tvm"]["tcclib"]["cckind"] = "tcclib";
   if (str_nonempty(PSI_TVM_CC_TCC_INCLUDE))
@@ -33,7 +33,7 @@ void configuration_builtin(PropertyValue& config) {
     config["tvm"]["tcclib"]["path"] = PSI_TVM_CC_TCC_PATH;
 #endif
     
-#if PSI_TVM_LLVM
+#if PSI_HAVE_LLVM
   config["tvm"]["llvm"]["kind"] = "llvm";
 #endif
   
@@ -59,7 +59,7 @@ void configuration_environment(PropertyValue& pv) {
 }
 
 /**
- * \brief Read system configuration files.
+ * rief Read system configuration files.
  * 
  * These are in a system dependent but fixed location.
  */

@@ -453,6 +453,7 @@ namespace Psi {
       const BuiltinTypes& builtins() {return m_builtins;}
       
       void* jit_compile(const TreePtr<Global>& global);
+      void jit_compile_many(const PSI_STD::vector<TreePtr<Global> >& globals);
 
       template<typename T>
       TreePtr<T> get_functional(const T& t, const SourceLocation& location) {

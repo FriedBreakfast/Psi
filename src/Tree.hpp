@@ -204,17 +204,19 @@ namespace Psi {
      * \brief Tree for a block of code.
      */
     class Block : public Term {
-      static bool block_bottom(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value);
+      static TermMode block_mode(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value, bool ref);
 
     public:
       PSI_COMPILER_EXPORT static const VtableType vtable;
 
-      Block(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value, const SourceLocation& location);
+      Block(const PSI_STD::vector<TreePtr<Statement> >& statements, const TreePtr<Term>& value, bool value_reference, const SourceLocation& location);
       template<typename Visitor> static void visit(Visitor& v);
       static TermTypeInfo type_info_impl(const Block& self);
 
       PSI_STD::vector<TreePtr<Statement> > statements;
       TreePtr<Term> value;
+      /// \brief Whether the result of this block is a reference when \c value is itself a reference.
+      PsiBool value_reference;
     };
     
     /**

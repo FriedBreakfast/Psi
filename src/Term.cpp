@@ -479,14 +479,7 @@ namespace Psi {
             if (lhs_ftype->parameter_types.size() != rhs_ftype->parameter_types.size())
               return false;
             
-            MatchComparator arg_child = self.make_child(self.m_depth + 1);
-            for (std::size_t ii = 0, ie = lhs_ftype->parameter_types.size(); ii != ie; ++ii) {
-              if (lhs_ftype->parameter_types[ii].mode != rhs_ftype->parameter_types[ii].mode)
-                return false;
-              if (!arg_child.compare(lhs_ftype->parameter_types[ii].type, rhs_ftype->parameter_types[ii].type))
-                return false;
-            }
-            
+            // Reverse constraint mode applies in arguments
             Term::UprefMatchMode reverse_upref_mode;
             switch (self.m_upref_mode) {
             case Term::upref_match_read: reverse_upref_mode = Term::upref_match_write; break;
@@ -495,7 +488,15 @@ namespace Psi {
             case Term::upref_match_ignore: reverse_upref_mode = Term::upref_match_ignore; break;
             default: PSI_FAIL("Unrecognised enumeration value");
             }
-            MatchComparator arg_result = self.make_child(self.m_depth + 1, reverse_upref_mode);
+            MatchComparator arg_child = self.make_child(self.m_depth + 1, reverse_upref_mode);
+            for (std::size_t ii = 0, ie = lhs_ftype->parameter_types.size(); ii != ie; ++ii) {
+              if (lhs_ftype->parameter_types[ii].mode != rhs_ftype->parameter_types[ii].mode)
+                return false;
+              if (!arg_child.compare(lhs_ftype->parameter_types[ii].type, rhs_ftype->parameter_types[ii].type))
+                return false;
+            }
+            
+            MatchComparator arg_result = self.make_child(self.m_depth + 1);
             if (!arg_result.compare(lhs_ftype->result_type, rhs_ftype->result_type))
               return false;
             

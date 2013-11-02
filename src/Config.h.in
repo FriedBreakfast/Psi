@@ -9,10 +9,6 @@
 #cmakedefine01 PSI_OBJECT_PTR_DEBUG
 /// Require JIT compilers to be statically linked in
 #cmakedefine01 PSI_TVM_JIT_STATIC
-/// Whether tcc has been compiled into the C backend
-#cmakedefine01 PSI_TVM_CC_TCCLIB
-/// Whether the LLVM backend is being built
-#cmakedefine01 PSI_TVM_LLVM
 
 // Host system definitions. See DetectPlatform.cmake for values
 // Note that this reflects the minimum system that the program is expected to run on, not the actual host
@@ -41,6 +37,10 @@
 #cmakedefine01 PSI_HAVE_UCONTEXT
 /// Whether execinfo.h is present
 #cmakedefine01 PSI_HAVE_EXECINFO
+/// Whether the tcclib library is available
+#cmakedefine01 PSI_HAVE_TCC
+/// Whether LLVM is available
+#cmakedefine01 PSI_HAVE_LLVM
 
 /// Whether to include functions which launch external processes
 #cmakedefine01 PSI_WITH_EXEC
