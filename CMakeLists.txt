@@ -80,8 +80,8 @@ else()
   endif()
 endif()
 
-if(PSI_HAVE_LLVM AND NOT LLVM_VERSION VERSION_EQUAL "3.3")
-  message(SEND_ERROR "LLVM must be version 3.3, you have ${LLVM_VERSION}")
+if(PSI_HAVE_LLVM AND NOT LLVM_VERSION VERSION_EQUAL "3.4svn")
+  message(SEND_ERROR "LLVM must be version 3.4svn, you have ${LLVM_VERSION}")
 endif()
 
 if(PSI_HAVE_LLVM)

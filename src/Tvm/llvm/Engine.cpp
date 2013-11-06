@@ -28,13 +28,13 @@ public:
   CallbackMemoryManagerMC(SymbolCallbackType symbol_callback, void *user_ptr)
   : m_symbol_callback(symbol_callback), m_user_ptr(user_ptr) {}
   virtual ~CallbackMemoryManagerMC() {}
-
-  virtual void *getPointerToNamedFunction(const std::string& name, bool AbortOnFailure = true) {
+  
+  virtual uint64_t getSymbolAddress(const std::string& name) {
     void *result;
     if (m_symbol_callback(&result, name.c_str(), m_user_ptr))
-      return result;
+      return (uint64_t)result;
     
-    return llvm::SectionMemoryManager::getPointerToNamedFunction(name, AbortOnFailure);
+    return llvm::SectionMemoryManager::getSymbolAddress(name);
   }
 
 private:
@@ -72,7 +72,7 @@ extern "C" llvm::ExecutionEngine* psi_tvm_llvm_make_execution_engine(llvm::Modul
   eb.setUseMCJIT(true);
   if (!(memory_manager = new (std::nothrow) CallbackMemoryManagerMC(symbol_callback, user_ptr)))
     goto error_1;
-  eb.setJITMemoryManager(memory_manager);
+  eb.setMCJITMemoryManager(memory_manager);
   
   ee = eb.create();
   if (ee)

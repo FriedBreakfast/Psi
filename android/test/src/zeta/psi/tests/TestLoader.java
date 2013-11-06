@@ -32,9 +32,9 @@ public class TestLoader extends InstrumentationTestRunner {
     protected void runTest() {
       runPsiTest(address);
     }
-  };
+  }
   
   private static void addPsiTest(TestSuite suite, String testName, long address) {
     suite.addTest(new PsiTestRunner(testName, address));
   }
-};
+}

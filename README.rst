@@ -1,4 +1,4 @@
-.. |llvm version| replace:: 3.3
+.. |llvm version| replace:: 3.4svn
 
 Psi
 ===
@@ -46,7 +46,7 @@ You will need the following tools:
 * CMake_
 * C++ compiler: you must use `GNU G++`_ on Linux. On Windows either MinGW_ or `Visual C++`_
   can be used.
-* LLVM_: must be version |llvm version| in order to work correctly. Earlier and later
+* LLVM_: must be downloaded from Subversion in order to work correctly. Earlier and later
   versions will probably not work since the LLVM project tends to tweak their API a little
   in each version. It's usually best to download and build LLVM manually rather than attempt
   to get it from a Linux package manager.

@@ -379,7 +379,6 @@ int psi_interpreter_repl(const OptionSet& opts) {
   CompileContext compile_context(&error_context, opts.configuration);
 
   SourceLocation input_location = compile_context.root_location().named_child("_input");
-  SourceLocation print_locaiton = compile_context.root_location().named_child("_print");
   
   TreePtr<Module> global_module = Module::new_(compile_context, "psi", compile_context.root_location().named_child("psi"));
   TreePtr<EvaluateContext> root_evaluate_context = create_globals(global_module);

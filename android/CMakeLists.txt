@@ -54,6 +54,8 @@ function(add_platform name arch cmake_arch llvm_arch llvm_triple)
     -DLLVM_TABLEGEN=${LLVM_TABLEGEN}
     -DLLVM_BUILD_TOOLS=0
     -DLLVM_TARGETS_TO_BUILD=${llvm_arch}
+    -DLLVM_EXTERNAL_COMPILER_RT_BUILD=0
+    -DLLVM_EXTERNAL_MSBUILD_BUILD=0
     -DCMAKE_INSTALL_PREFIX=${arch_dir}/llvm
   WORKING_DIRECTORY ${arch_dir}/llvm-build RESULT_VARIABLE exit)
   if(exit)

@@ -91,7 +91,7 @@ int sys_pipe(int fds[2]) {
 #endif
 
 char* sys_strerror_r(int errnum, char *buf, size_t buflen) {
-#if !defined(__ANDROID__)
+#if defined(__GLIBC__) && (!defined(__USE_XOPEN2K) || defined(__USE_GNU))
   return strerror_r(errnum, buf, buflen);
 #else
   int code = strerror_r(errnum, buf, buflen);
