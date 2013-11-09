@@ -719,9 +719,41 @@ namespace Psi {
     /**
      * \brief Macro which generates C strings.
      */
-    TreePtr<Term> string_macro(CompileContext& compile_context, const SourceLocation& location) {
-      TreePtr<Macro> m(::new StringMacro(compile_context, location));
-      return make_macro_term(m, location);
+    TreePtr<> string_macro(CompileContext& compile_context, const SourceLocation& location) {
+      return TreePtr<Macro>(::new StringMacro(compile_context, location));
+    }
+
+    class BracketMacro : public Macro {
+    public:
+      static const VtableType vtable;
+      
+      BracketMacro(CompileContext& compile_context, const SourceLocation& location)
+      : Macro(&vtable, compile_context, location) {
+      }
+
+      static TreePtr<Term> evaluate_impl(const BracketMacro& self,
+                                         const TreePtr<Term>&,
+                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                         const TreePtr<EvaluateContext>& evaluate_context,
+                                         const MacroTermArgument& PSI_UNUSED(argument),
+                                         const SourceLocation& location) {
+        if (parameters.size() != 1)
+          self.compile_context().error_throw(location, "Bracket macro expects one argument");
+        
+        SharedPtr<Parser::TokenExpression> value_expr;
+        if (!(value_expr = Parser::expression_as_token_type(parameters[0], Parser::token_bracket)))
+          self.compile_context().error_throw(location, "Argument to bracket macro is not a (...)");
+        
+        return compile_from_bracket(value_expr, evaluate_context, location);
+      }
+    };
+    
+    const MacroVtable BracketMacro::vtable = PSI_COMPILER_MACRO(BracketMacro, "psi.compiler.BracketMacro", Macro, MacroTermArgument);
+    /**
+     * Evaluate (...) brackets by compiling their contents as a blocks.
+     */
+    TreePtr<> bracket_macro(CompileContext& compile_context, const SourceLocation& location) {
+      return TreePtr<Macro>(::new BracketMacro(compile_context, location));
     }
 
     class NewMacro : public Macro {

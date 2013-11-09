@@ -384,6 +384,15 @@ namespace Psi {
       TreePtr<Term> macro_interface_member_tag;
       /// \brief Type for evaluating a Macro which is an interface definition.
       TreePtr<Term> macro_interface_definition_tag;
+      
+      /// \brief Type used to look up macros for evaluating numbers
+      TreePtr<Term> evaluate_number_tag;
+      /// \brief Type used to look up macros for evaluating (...)
+      TreePtr<Term> evaluate_bracket_tag;
+      /// \brief Type used to look up macros for evaluating {...}
+      TreePtr<Term> evaluate_brace_tag;
+      /// \brief Type used to look up macros for evaluating [...]
+      TreePtr<Term> evaluate_square_bracket_tag;
     };
     
     class Function;
@@ -501,6 +510,7 @@ namespace Psi {
     PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
     PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_dictionary(const TreePtr<Module>&, const SourceLocation&, const std::map<String, TreePtr<Term> >&);
     PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_dictionary(const SourceLocation&, const std::map<String, TreePtr<Term> >&, const TreePtr<EvaluateContext>&);
+    PSI_COMPILER_EXPORT TreePtr<EvaluateContext> evaluate_context_root(const TreePtr<Module>& module);
 
     PSI_COMPILER_EXPORT TreePtr<Term> compile_term(const SharedPtr<Parser::Expression>&, const TreePtr<EvaluateContext>&, const LogicalSourceLocationPtr&);
     PSI_COMPILER_EXPORT TreePtr<Namespace> compile_namespace(const PSI_STD::vector<SharedPtr<Parser::Statement> >& statements, const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location);

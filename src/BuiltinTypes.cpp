@@ -25,12 +25,18 @@ namespace Psi {
         return MetadataType::new_(wildcard_type->compile_context(), 0, pattern, values, reinterpret_cast<const SIVtable*>(&TreeType::vtable), location);
       }
       
-      TreePtr<Metadata> make_default_macro(const TreePtr<Term>& tag, const TreePtr<>& value, bool tag_only=false) {
+      TreePtr<Metadata> make_default_macro(const TreePtr<Term>& tag, const TreePtr<>& value) {
         PSI_STD::vector<TreePtr<Term> > pattern;
-        if (!tag_only)
-          pattern.push_back(TermBuilder::parameter(tag->compile_context().builtins().metatype, 0, 0, value->location()));
+        pattern.push_back(TermBuilder::parameter(tag->compile_context().builtins().metatype, 0, 0, value->location()));
         pattern.push_back(tag);
-        return Metadata::new_(value, default_, tag_only?0:1, pattern, value->location());
+        return Metadata::new_(value, default_, 1, pattern, value->location());
+      }
+      
+      TreePtr<Metadata> make_fixed_macro(const TreePtr<Term>& tag, const TreePtr<Term>& type, const TreePtr<>& value) {
+        PSI_STD::vector<TreePtr<Term> > pattern;
+        pattern.push_back(type);
+        pattern.push_back(tag);
+        return Metadata::new_(value, default_, 0, pattern, value->location());
       }
       
       TreePtr<MetadataType> make_metadata_macro(CompileContext& compile_context, const SourceLocation& location) {
@@ -52,6 +58,8 @@ namespace Psi {
         PSI_STD::vector<TreePtr<Metadata> > values;
         values.push_back(make_default_macro(compile_context.builtins().macro_term_tag, default_type_macro_term(compile_context, location.named_child("TermDefault"))));
         values.push_back(make_default_macro(compile_context.builtins().macro_member_tag, default_type_macro_member(compile_context, location.named_child("AggregateMemberDefault"))));
+        values.push_back(make_fixed_macro(compile_context.builtins().macro_term_tag, compile_context.builtins().evaluate_brace_tag, string_macro(compile_context, location.named_child("CString"))));
+        values.push_back(make_fixed_macro(compile_context.builtins().macro_term_tag, compile_context.builtins().evaluate_bracket_tag, bracket_macro(compile_context, location.named_child("Bracket"))));
         return MetadataType::new_(compile_context, 0, pattern, values, reinterpret_cast<const SIVtable*>(&Macro::vtable), location);
       }
       
@@ -60,7 +68,8 @@ namespace Psi {
         pattern.push_back(TermBuilder::parameter(compile_context.builtins().metatype, 0, 0, location));
         
         PSI_STD::vector<TreePtr<Metadata> > values;
-        values.push_back(make_default_macro(compile_context.builtins().macro_term_tag, default_type_macro_term(compile_context, location.named_child("TermDefault")), true));
+        TreePtr<> value = default_type_macro_term(compile_context, location.named_child("TermDefault"));
+        values.push_back(Metadata::new_(value, default_, 0, vector_of(compile_context.builtins().macro_term_tag), value->location()));
         return MetadataType::new_(compile_context, 0, pattern, values, reinterpret_cast<const SIVtable*>(&Macro::vtable), location);
       }
       
@@ -159,6 +168,11 @@ namespace Psi {
       macro_interface_member_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroInterfaceMemberTag"));
       macro_interface_definition_tag= make_generic_type(empty_type, psi_compiler_location.named_child("MacroInterfaceDefinitionTag"));
 
+      evaluate_number_tag = make_generic_type(empty_type, psi_compiler_location.named_child("EvaluateNumberTag"));
+      evaluate_bracket_tag = make_generic_type(empty_type, psi_compiler_location.named_child("EvaluateBracketTag"));
+      evaluate_brace_tag = make_generic_type(empty_type, psi_compiler_location.named_child("EvaluateBraceTag"));
+      evaluate_square_bracket_tag = make_generic_type(empty_type, psi_compiler_location.named_child("EvaluateSquareBracketTag"));
+
       macro = make_metadata_macro(compile_context, psi_compiler_location.named_child("Macro"));
       type_macro = make_metadata_type_macro(compile_context, psi_compiler_location.named_child("TypeMacro"));
       metatype_macro = make_metadata_metatype_macro(compile_context, psi_compiler_location.named_child("MetatypeMacro"));
@@ -169,6 +183,47 @@ namespace Psi {
       /// \todo Need to add default implementations of Movable and Copyable for builtin types
       movable_interface = make_movable_copyable_interface(*this, true, psi_compiler_location.named_child("Movable"));
       copyable_interface = make_movable_copyable_interface(*this, false, psi_compiler_location.named_child("Copyable"));
+    }
+    
+    TreePtr<EvaluateContext> evaluate_context_root(const TreePtr<Module>& module) {
+      CompileContext& compile_context = module->compile_context();
+      SourceLocation psi_location = compile_context.root_location().named_child("psi");
+
+      PSI_STD::map<Psi::String, TreePtr<Term> > global_names;
+      global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
+      
+      global_names["type"] = compile_context.builtins().metatype;
+      global_names["pointer"] = pointer_macro(compile_context, psi_location.named_child("pointer"));
+      global_names["struct"] = struct_macro(compile_context, psi_location.named_child("struct"));
+      
+      global_names["bool"] = TermBuilder::boolean_type(compile_context);
+      
+      global_names["byte"] = TermBuilder::number_type(compile_context, NumberType::n_i8);
+      global_names["short"] = TermBuilder::number_type(compile_context, NumberType::n_i16);
+      global_names["int"] = TermBuilder::number_type(compile_context, NumberType::n_i32);
+      global_names["long"] = TermBuilder::number_type(compile_context, NumberType::n_i64);
+      global_names["size"] = TermBuilder::number_type(compile_context, NumberType::n_iptr);
+
+      global_names["ubyte"] = TermBuilder::number_type(compile_context, NumberType::n_u8);
+      global_names["ushort"] = TermBuilder::number_type(compile_context, NumberType::n_u16);
+      global_names["uint"] = TermBuilder::number_type(compile_context, NumberType::n_u32);
+      global_names["ulong"] = TermBuilder::number_type(compile_context, NumberType::n_u64);
+      global_names["usize"] = TermBuilder::number_type(compile_context, NumberType::n_uptr);
+      
+      global_names["__init__"] = lifecycle_init_macro(compile_context, psi_location.named_child("__init__"));
+      global_names["__fini__"] = lifecycle_fini_macro(compile_context, psi_location.named_child("__fini__"));
+      global_names["__move__"] = lifecycle_move_macro(compile_context, psi_location.named_child("__move__"));
+      global_names["__copy__"] = lifecycle_copy_macro(compile_context, psi_location.named_child("__copy__"));
+      global_names["__no_move__"] = lifecycle_no_move_macro(compile_context, psi_location.named_child("__no_move__"));
+      global_names["__no_copy__"] = lifecycle_no_copy_macro(compile_context, psi_location.named_child("__no_copy__"));
+
+      global_names["new"] = new_macro(compile_context, psi_location.named_child("new"));
+      global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));
+      global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));
+      global_names["library"] = library_macro(compile_context, psi_location.named_child("library"));
+      global_names["function"] = function_macro(compile_context, psi_location.named_child("function"));
+
+      return evaluate_context_dictionary(module, psi_location, global_names);
     }
   }
 }

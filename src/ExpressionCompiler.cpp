@@ -12,6 +12,7 @@ namespace Psi {
      * Get the Macro tree associated with an expression.
      */
     TreePtr<Macro> expression_macro(const TreePtr<EvaluateContext>& context, const TreePtr<Term>& expr, const TreePtr<Term>& tag_type, const SourceLocation& location) {
+      PSI_ASSERT(expr && tag_type);
       CompileContext& compile_context = context->compile_context();
       if (!expr->type) {
         return metadata_lookup_as<Macro>(compile_context.builtins().metatype_macro, context, tag_type, location);
@@ -71,30 +72,7 @@ namespace Psi {
       case Parser::expression_token: {
         const Parser::TokenExpression& token_expression = checked_cast<Parser::TokenExpression&>(*expression);
 
-        switch (token_expression.token_type) {
-        case Parser::token_bracket:
-        case Parser::token_brace:
-        case Parser::token_square_bracket: {
-          std::pair<const char*, const char*> bracket_type = bracket_token_strings(token_expression.token_type);
-
-          LookupResult<TreePtr<Term> > first = evaluate_context->lookup(bracket_type.first, location);
-          switch (first.type()) {
-          case lookup_result_type_none:
-            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator missing") % bracket_type.second % bracket_type.first);
-          case lookup_result_type_conflict:
-            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: '%s' operator lookup ambiguous") % bracket_type.second % bracket_type.first);
-          default: break;
-          }
-
-          if (!first.value())
-            compile_context.error_throw(location, boost::format("Cannot evaluate %s bracket: successful lookup of '%s' returned NULL value") % bracket_type.second % bracket_type.first, CompileError::error_internal);
-
-          PSI_STD::vector<SharedPtr<Parser::Expression> > expression_list(1, expression);
-          expression_macro(evaluate_context, first.value(), mode_tag, location)->evaluate_raw(result, first.value(), expression_list, evaluate_context, arg, location);
-          return;
-        }
-
-        case Parser::token_identifier: {
+        if (token_expression.token_type == Parser::token_identifier) {
           String name = token_expression.text.str();
           LookupResult<TreePtr<Term> > id = evaluate_context->lookup(name, location);
 
@@ -108,31 +86,22 @@ namespace Psi {
             compile_context.error_throw(location, boost::format("Successful lookup of '%s' returned NULL value") % name, CompileError::error_internal);
 
           expression_macro(evaluate_context, id.value(), mode_tag, location)->cast_raw(result, id.value(), evaluate_context, arg, location);
-          return;
-        }
-        
-        case Parser::token_number: {
-          LookupResult<TreePtr<Term> > first = evaluate_context->lookup("__number__", location);
-          switch (first.type()) {
-          case lookup_result_type_none:
-            compile_context.error_throw(location, "Cannot evaluate number: '__number__' operator missing");
-          case lookup_result_type_conflict:
-            compile_context.error_throw(location, "Cannot evaluate number: '__number__' operator lookup ambiguous");
-          default: break;
+        } else {
+          TreePtr<Term> first_value;
+          switch (token_expression.token_type) {
+          case Parser::token_bracket: first_value = compile_context.builtins().evaluate_bracket_tag; break;
+          case Parser::token_brace: first_value = compile_context.builtins().evaluate_brace_tag; break;
+          case Parser::token_square_bracket: first_value = compile_context.builtins().evaluate_square_bracket_tag; break;
+          case Parser::token_number: first_value = compile_context.builtins().evaluate_number_tag; break;
+          default: PSI_FAIL("Unknown token type");
           }
           
-          if (!first.value())
-            compile_context.error_throw(location, "Cannot evaluate number: successful lookup of '__number__' returned NULL value", CompileError::error_internal);
-
           PSI_STD::vector<SharedPtr<Parser::Expression> > expression_list(1, expression);
-          expression_macro(evaluate_context, first.value(), mode_tag, location)->evaluate_raw(result, first.value(), expression_list, evaluate_context, arg, location);
+          expression_macro(evaluate_context, first_value, mode_tag, location)->evaluate_raw(result, first_value, expression_list, evaluate_context, arg, location);
           return;
         }
-
-        default:
-          PSI_FAIL("Unknown token type");
-        }
-      }
+        return;
+     }
 
       default:
         PSI_FAIL("unknown expression type");

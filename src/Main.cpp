@@ -22,7 +22,6 @@
 #include "Parser.hpp"
 #include "Compiler.hpp"
 #include "Tree.hpp"
-#include "Macros.hpp"
 #include "TermBuilder.hpp"
 #include "Platform/Platform.hpp"
 
@@ -124,52 +123,6 @@ namespace {
   }
 }
 
-Psi::Compiler::TreePtr<Psi::Compiler::EvaluateContext> create_globals(const Psi::Compiler::TreePtr<Psi::Compiler::Module>& module) {
-  using namespace Psi::Compiler;
-
-  CompileContext& compile_context = module->compile_context();
-  Psi::SourceLocation psi_location = module->location();
-  
-  PSI_STD::map<Psi::String, TreePtr<Term> > global_names;
-  global_names["namespace"] = namespace_macro(compile_context, psi_location.named_child("namespace"));
-  //global_names["__number__"] = TreePtr<Term>();
-  global_names["__brace__"] = string_macro(compile_context, psi_location.named_child("cstring"));
-  global_names["number_value"] = number_value_macro(compile_context, psi_location.named_child("number_value"));
-  
-  global_names["type"] = compile_context.builtins().metatype;
-  global_names["pointer"] = pointer_macro(compile_context, psi_location.named_child("pointer"));
-  global_names["struct"] = struct_macro(compile_context, psi_location.named_child("struct"));
-  
-  global_names["bool"] = TermBuilder::boolean_type(compile_context);
-  
-  global_names["byte"] = TermBuilder::number_type(compile_context, NumberType::n_i8);
-  global_names["short"] = TermBuilder::number_type(compile_context, NumberType::n_i16);
-  global_names["int"] = TermBuilder::number_type(compile_context, NumberType::n_i32);
-  global_names["long"] = TermBuilder::number_type(compile_context, NumberType::n_i64);
-  global_names["size"] = TermBuilder::number_type(compile_context, NumberType::n_iptr);
-
-  global_names["ubyte"] = TermBuilder::number_type(compile_context, NumberType::n_u8);
-  global_names["ushort"] = TermBuilder::number_type(compile_context, NumberType::n_u16);
-  global_names["uint"] = TermBuilder::number_type(compile_context, NumberType::n_u32);
-  global_names["ulong"] = TermBuilder::number_type(compile_context, NumberType::n_u64);
-  global_names["usize"] = TermBuilder::number_type(compile_context, NumberType::n_uptr);
-  
-  global_names["__init__"] = lifecycle_init_macro(compile_context, psi_location.named_child("__init__"));
-  global_names["__fini__"] = lifecycle_fini_macro(compile_context, psi_location.named_child("__fini__"));
-  global_names["__move__"] = lifecycle_move_macro(compile_context, psi_location.named_child("__move__"));
-  global_names["__copy__"] = lifecycle_copy_macro(compile_context, psi_location.named_child("__copy__"));
-  global_names["__no_move__"] = lifecycle_no_move_macro(compile_context, psi_location.named_child("__no_move__"));
-  global_names["__no_copy__"] = lifecycle_no_copy_macro(compile_context, psi_location.named_child("__no_copy__"));
-
-  global_names["new"] = new_macro(compile_context, psi_location.named_child("new"));
-  global_names["interface"] = interface_define_macro(compile_context, psi_location.named_child("interface"));
-  global_names["macro"] = macro_define_macro(compile_context, psi_location.named_child("macro"));
-  global_names["library"] = library_macro(compile_context, psi_location.named_child("library"));
-  global_names["function"] = function_macro(compile_context, psi_location.named_child("function"));
-
-  return evaluate_context_dictionary(module, psi_location, global_names);
-}
-
 Psi::Parser::Text url_location(const Psi::String& url, const Psi::SharedPtrHandle& data_handle, const char *text_begin, const char *text_end, unsigned first_line=1) {
   using namespace Psi;
   using namespace Psi::Compiler;
@@ -217,7 +170,7 @@ int psi_interpreter_run_file(const OptionSet& opts) {
   CompileContext compile_context(&error_context, opts.configuration);
   TreePtr<Module> global_module = Module::new_(compile_context, "psi", compile_context.root_location().named_child("psi"));
   TreePtr<Module> my_module = Module::new_(compile_context, "main", compile_context.root_location());
-  TreePtr<EvaluateContext> root_evaluate_context = create_globals(global_module);
+  TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_root(my_module);
   TreePtr<EvaluateContext> module_evaluate_context = evaluate_context_module(my_module, root_evaluate_context, my_module->location());
   Parser::Text file_text = url_location(*opts.filename, source_text, Psi::vector_begin_ptr(*source_text), Psi::vector_end_ptr(*source_text));
   
@@ -381,7 +334,7 @@ int psi_interpreter_repl(const OptionSet& opts) {
   SourceLocation input_location = compile_context.root_location().named_child("_input");
   
   TreePtr<Module> global_module = Module::new_(compile_context, "psi", compile_context.root_location().named_child("psi"));
-  TreePtr<EvaluateContext> root_evaluate_context = create_globals(global_module);
+  TreePtr<EvaluateContext> root_evaluate_context = evaluate_context_root(global_module);
   
   std::map<String, TreePtr<Term> > names;
   
