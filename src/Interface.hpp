@@ -110,18 +110,6 @@ struct InterfaceMemberCallbackWrapper {
   }
 
 /**
- * \brief Type passed to interface member construction.
- */
-struct InterfaceMemberArgument {
-  /// \brief Generic type that the interface will generate
-  TreePtr<GenericType> generic;
-  /// \brief Interface type parameters
-  PSI_STD::vector<TreePtr<Term> > parameters;
-  /// \brief Pointer type for internal references to the interface; should be used as a function parameter
-  TreePtr<Term> self_pointer_type;
-};
-
-/**
  * \brief Result of interface member construction.
  */
 struct InterfaceMemberResult {
@@ -129,6 +117,20 @@ struct InterfaceMemberResult {
   TreePtr<Term> type;
   /// \brief Callback used to implement and evaluate this member
   TreePtr<InterfaceMemberCallback> callback;
+};
+
+/**
+ * \brief Type passed to interface member construction.
+ */
+struct InterfaceMemberArgument {
+  typedef InterfaceMemberResult EvaluateResultType;
+  
+  /// \brief Generic type that the interface will generate
+  TreePtr<GenericType> generic;
+  /// \brief Interface type parameters
+  PSI_STD::vector<TreePtr<Term> > parameters;
+  /// \brief Pointer type for internal references to the interface; should be used as a function parameter
+  TreePtr<Term> self_pointer_type;
 };
 
 struct PatternArguments {
@@ -141,6 +143,13 @@ struct PatternArguments {
     v("list", &PatternArguments::list)
     ("names", &PatternArguments::names);
   }
+};
+
+typedef PSI_STD::vector<TreePtr<Implementation> > ImplementationDefineResult;
+
+struct ImplementationDefineArgument {
+  typedef ImplementationDefineResult EvaluateResultType;
+  TreePtr<Interface> interface;
 };
 
 PatternArguments parse_pattern_arguments(const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location, const Parser::Text& text);

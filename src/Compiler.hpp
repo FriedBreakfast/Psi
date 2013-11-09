@@ -41,7 +41,7 @@ namespace Psi {
     class EvaluateContext;
     
     /// \brief Type passed to macros during term evaluation
-    struct MacroTermArgument {};
+    struct MacroTermArgument {typedef TreePtr<Term> EvaluateResultType;};
     
     /**
      * \brief Low-level macro interface.
@@ -95,14 +95,14 @@ namespace Psi {
         derived_vptr(this)->dot(result, this, &value, &member, &parameters, &evaluate_context, argument, &location);
       }
       
-      template<typename Result, typename Arg>
-      Result dot(const TreePtr<Term>& value,
-                 const SharedPtr<Parser::Expression>& member,
-                 const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                 const TreePtr<EvaluateContext>& evaluate_context,
-                 const Arg& argument,
-                 const SourceLocation& location) const {
-        ResultStorage<Result> rs;
+      template<typename Arg>
+      typename Arg::EvaluateResultType dot(const TreePtr<Term>& value,
+                                           const SharedPtr<Parser::Expression>& member,
+                                           const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                           const TreePtr<EvaluateContext>& evaluate_context,
+                                           const Arg& argument,
+                                           const SourceLocation& location) const {
+        ResultStorage<typename Arg::EvaluateResultType> rs;
         dot_raw(rs.ptr(), value, member, parameters, evaluate_context, &argument, location);
         return rs.done();
       }
@@ -115,12 +115,12 @@ namespace Psi {
         derived_vptr(this)->cast(result, this, &value, &evaluate_context, argument, &location);
       }
       
-      template<typename Result, typename Arg>
-      Result cast(const TreePtr<Term>& value,
-                  const TreePtr<EvaluateContext>& evaluate_context,
-                  const Arg& argument,
-                  const SourceLocation& location) const {
-        ResultStorage<Result> rs;
+      template<typename Arg>
+      typename Arg::EvaluateResultType cast(const TreePtr<Term>& value,
+                                            const TreePtr<EvaluateContext>& evaluate_context,
+                                            const Arg& argument,
+                                            const SourceLocation& location) const {
+        ResultStorage<typename Arg::EvaluateResultType> rs;
         derived_vptr(this)->cast(rs.ptr(), this, &value, &evaluate_context, &argument, &location);
         return rs.done();
       }
@@ -153,34 +153,34 @@ namespace Psi {
                             const SourceLocation& location);
       
       template<typename Arg>
-      static DefaultConstructor evaluate_impl(const Macro& self,
-                                              const TreePtr<Term>& value,
-                                              const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                              const TreePtr<EvaluateContext>& evaluate_context,
-                                              const Arg& argument,
-                                              const SourceLocation& location) {
+      static typename Arg::EvaluateResultType evaluate_impl(const Macro& self,
+                                                            const TreePtr<Term>& value,
+                                                            const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                                            const TreePtr<EvaluateContext>& evaluate_context,
+                                                            const Arg& argument,
+                                                            const SourceLocation& location) {
         evaluate_impl(NULL, self, value, parameters, evaluate_context, &argument, location);
         PSI_FAIL("unreachable");
       }
 
       template<typename Arg>
-      static DefaultConstructor dot_impl(const Macro& self,
-                                         const TreePtr<Term>& value,
-                                         const SharedPtr<Parser::Expression>& member,
-                                         const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                         const TreePtr<EvaluateContext>& evaluate_context,
-                                         const Arg& argument,
-                                         const SourceLocation& location) {
+      static typename Arg::EvaluateResultType dot_impl(const Macro& self,
+                                                       const TreePtr<Term>& value,
+                                                       const SharedPtr<Parser::Expression>& member,
+                                                       const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                                       const TreePtr<EvaluateContext>& evaluate_context,
+                                                       const Arg& argument,
+                                                       const SourceLocation& location) {
         dot_impl(NULL, self, value, member, parameters, evaluate_context, &argument, location);
         PSI_FAIL("unreachable");
       }
       
       template<typename Arg>
-      static DefaultConstructor cast_impl(const Macro& self,
-                                          const TreePtr<Term>& value,
-                                          const TreePtr<EvaluateContext>& evaluate_context,
-                                          const Arg& argument,
-                                          const SourceLocation& location) {
+      static typename Arg::EvaluateResultType cast_impl(const Macro& self,
+                                                        const TreePtr<Term>& value,
+                                                        const TreePtr<EvaluateContext>& evaluate_context,
+                                                        const Arg& argument,
+                                                        const SourceLocation& location) {
         cast_impl(NULL, self, value, evaluate_context, &argument, location);
         PSI_FAIL("unreachable");
       }
@@ -199,30 +199,30 @@ namespace Psi {
     /**
      * \brief Wrapper to simplify implementing MacroVtable in C++.
      */
-    template<typename EvalResult, typename EvalArg, typename Derived, typename Impl=Derived>
+    template<typename EvalArg, typename Derived, typename Impl=Derived>
     struct MacroWrapper : NonConstructible {
       static void evaluate(void* out, const Macro *self, const TreePtr<Term> *value, const PSI_STD::vector<SharedPtr<Parser::Expression> > *parameters,
                            const TreePtr<EvaluateContext> *evaluate_context, const void *arg, const SourceLocation *location) {
-        new (out) EvalResult (Impl::evaluate_impl(*static_cast<const Derived*>(self), *value, *parameters, *evaluate_context, *static_cast<const EvalArg*>(arg), *location));
+        new (out) typename EvalArg::EvaluateResultType (Impl::evaluate_impl(*static_cast<const Derived*>(self), *value, *parameters, *evaluate_context, *static_cast<const EvalArg*>(arg), *location));
       }
 
       static void dot(void* out, const Macro *self, const TreePtr<Term> *value, const SharedPtr<Parser::Expression> *member,
                       const PSI_STD::vector<SharedPtr<Parser::Expression> > *parameters, const TreePtr<EvaluateContext> *evaluate_context,
                       const void *arg, const SourceLocation *location) {
-        new (out) EvalResult (Impl::dot_impl(*static_cast<const Derived*>(self), *value, *member, *parameters, *evaluate_context, *static_cast<const EvalArg*>(arg), *location));
+        new (out) typename EvalArg::EvaluateResultType (Impl::dot_impl(*static_cast<const Derived*>(self), *value, *member, *parameters, *evaluate_context, *static_cast<const EvalArg*>(arg), *location));
       }
       
       static void cast(void* out, const Macro *self, const TreePtr<Term> *value, const TreePtr<EvaluateContext> *evaluate_context,
                        const void *arg, const SourceLocation *location) {
-        new (out) EvalResult (Impl::cast_impl(*static_cast<const Derived*>(self), *value, *evaluate_context, *static_cast<const EvalArg*>(arg), *location));
+        new (out) typename EvalArg::EvaluateResultType (Impl::cast_impl(*static_cast<const Derived*>(self), *value, *evaluate_context, *static_cast<const EvalArg*>(arg), *location));
       }
     };
 
-#define PSI_COMPILER_MACRO(derived,name,super,eval_result,eval_arg) { \
+#define PSI_COMPILER_MACRO(derived,name,super,eval_arg) { \
     PSI_COMPILER_TREE(derived,name,super), \
-    &MacroWrapper<eval_result,eval_arg,derived>::evaluate, \
-    &MacroWrapper<eval_result,eval_arg,derived>::dot, \
-    &MacroWrapper<eval_result,eval_arg,derived>::cast \
+    &MacroWrapper<eval_arg,derived>::evaluate, \
+    &MacroWrapper<eval_arg,derived>::dot, \
+    &MacroWrapper<eval_arg,derived>::cast \
   }
   
     /**
@@ -382,6 +382,8 @@ namespace Psi {
       TreePtr<Term> macro_member_tag;
       /// \brief Type for evaluating a Macro which is an interface member.
       TreePtr<Term> macro_interface_member_tag;
+      /// \brief Type for evaluating a Macro which is an interface definition.
+      TreePtr<Term> macro_interface_definition_tag;
     };
     
     class Function;

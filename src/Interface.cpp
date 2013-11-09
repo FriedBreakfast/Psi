@@ -143,6 +143,375 @@ public:
 
 const TreeVtable InterfaceMetadata::vtable = PSI_COMPILER_TREE(InterfaceMetadata, "psi.compiler.InterfaceMetadata", Tree);
 
+class InterfaceTermEvaluateMacro : public Macro {
+  TreePtr<Interface> m_interface;
+  TreePtr<InterfaceMetadata> m_metadata;
+  
+public:
+  static const VtableType vtable;
+  
+  InterfaceTermEvaluateMacro(const TreePtr<Interface>& interface, const TreePtr<InterfaceMetadata>& metadata, const SourceLocation& location)
+  : Macro(&vtable, interface->compile_context(), location),
+  m_interface(interface),
+  m_metadata(metadata) {
+  }
+  
+  template<typename V>
+  static void visit(V& v) {
+    visit_base<Macro>(v);
+    v("interface", &InterfaceTermEvaluateMacro::m_interface)
+    ("metadata", &InterfaceTermEvaluateMacro::m_metadata);
+  }
+  
+  static TreePtr<Term> evaluate_impl(const InterfaceTermEvaluateMacro& self,
+                                     const TreePtr<Term>& PSI_UNUSED(value),
+                                     const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                     const TreePtr<EvaluateContext>& evaluate_context,
+                                     const MacroTermArgument& PSI_UNUSED(argument),
+                                     const SourceLocation& location) {
+    PSI_STD::vector<TreePtr<Term> > arguments = compile_call_arguments(parameters, evaluate_context, location);
+    return TermBuilder::interface_value(self.m_interface, arguments, location);
+  }
+
+  static TreePtr<Term> dot_impl(const InterfaceTermEvaluateMacro& self,
+                                const TreePtr<Term>& PSI_UNUSED(value),
+                                const SharedPtr<Parser::Expression>& member,
+                                const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                const TreePtr<EvaluateContext>& evaluate_context,
+                                const MacroTermArgument& PSI_UNUSED(argument),
+                                const SourceLocation& location) {
+    // Call to a member
+    SharedPtr<Parser::TokenExpression> ident;
+    if (!(ident = Parser::expression_as_token_type(member, Parser::token_identifier)))
+      self.compile_context().error_throw(location, "Interface member name after '.' is not an identifier");
+    
+    String name = ident->text.str();
+    PSI_STD::map<String, unsigned>::const_iterator name_it = self.m_metadata->entry_names.find(name);
+    if (name_it == self.m_metadata->entry_names.end()) {
+      CompileError err(self.compile_context().error_context(), location);
+      err.info(boost::format("Interface '%s' does not have a member named '%s'") % self.m_interface->location().logical->error_name(location.logical) % name);
+      err.info(self.m_interface->location(), "Interface defined here");
+      err.end_throw();
+    }
+    
+    const InterfaceMetadata::Entry& entry = self.m_metadata->entries[name_it->second];
+    return entry.callback->evaluate(self.m_interface, vector_of<unsigned>(0, name_it->second),
+                                    parameters, evaluate_context, location);
+  }
+};
+
+const MacroVtable InterfaceTermEvaluateMacro::vtable = PSI_COMPILER_MACRO(InterfaceTermEvaluateMacro, "psi.compiler.InterfaceTermEvaluateMacro", Macro, MacroTermArgument);
+
+namespace {
+  struct ImplementationCommonResult {
+    ImplementationSetup implementation_setup;
+    TreePtr<EvaluateContext> body_context;
+    
+    template<typename V>
+    static void visit(V& v) {
+      v("implementation_setup", &ImplementationCommonResult::implementation_setup)
+      ("body_context", &ImplementationCommonResult::body_context);
+    }
+  };
+  
+  typedef SharedDelayedValue<ImplementationCommonResult, Empty> InterfaceAggregateMemberCommon;
+  
+  class ImplementationCommonCallback {
+    TreePtr<Interface> m_interface;
+    SharedPtr<Parser::Expression> m_parameters_expression;
+    TreePtr<EvaluateContext> m_evaluate_context;
+    SourceLocation m_location;
+
+  public:
+    ImplementationCommonCallback(const TreePtr<Interface>& interface, const SharedPtr<Parser::Expression>& parameters_expression,
+                                 const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location)
+    : m_interface(interface), m_parameters_expression(parameters_expression),
+    m_evaluate_context(evaluate_context), m_location(location) {}
+    
+    template<typename V>
+    static void visit(V& v) {
+      v("interface", &ImplementationCommonCallback::m_interface)
+      ("parameters_expression", &ImplementationCommonCallback::m_parameters_expression)
+      ("evaluate_context", &ImplementationCommonCallback::m_evaluate_context)
+      ("location", &ImplementationCommonCallback::m_location);
+    }
+    
+    ImplementationCommonResult evaluate(Empty) {
+      CompileContext& compile_context = m_interface->compile_context();
+      
+      ImplementationCommonResult result;
+      result.implementation_setup.interface = m_interface;
+      
+      SharedPtr<Parser::TokenExpression> parameters_expression;
+      if (!(parameters_expression = Parser::expression_as_token_type(m_parameters_expression, Parser::token_bracket)))
+        compile_context.error_throw(m_location.relocate(m_parameters_expression->location), "Parameters to an interface implementation should be declared using (...)");
+
+      /// \todo Need to figure out how to implicitly include parameters to generic if they are used
+      Parser::ImplementationArgumentDeclaration args = Parser::parse_implementation_arguments(compile_context.error_context(), m_location.logical, parameters_expression->text);
+      PSI_STD::map<String, TreePtr<Term> > names;
+      
+      for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = args.pattern.begin(), ie = args.pattern.end(); ii != ie; ++ii) {
+        TreePtr<EvaluateContext> child_context = evaluate_context_dictionary(m_location, names, m_evaluate_context);
+        
+        Parser::FunctionArgument& arg = **ii;
+        if (!arg.is_interface) {
+          if (!arg.name)
+            compile_context.error_throw(m_location.relocate(arg.location), "Anonymous arguments not allowed in implementation patterns.");
+          
+          String name = arg.name->str();
+          SourceLocation child_location(arg.location, m_location.logical->new_child(name));
+          TreePtr<Term> type = compile_term(arg.type, child_context, child_location.logical);
+          names.insert(std::make_pair(name, type));
+          result.implementation_setup.pattern_parameters.push_back(TermBuilder::anonymous(type, term_mode_value, child_location));
+        } else {
+          result.implementation_setup.pattern_interfaces.push_back(compile_interface_value(arg.type, child_context, m_location.logical));
+        }
+      }
+      
+      result.body_context = evaluate_context_dictionary(m_location, names, m_evaluate_context);
+      for (PSI_STD::vector<SharedPtr<Parser::Expression> >::const_iterator ii = args.arguments.begin(), ie = args.arguments.end(); ii != ie; ++ii)
+        result.implementation_setup.interface_parameters.push_back(compile_term(*ii, result.body_context, m_location.logical));
+      
+      return result;
+    }
+  };
+  
+  class ImplementationPatternCallback {
+    InterfaceAggregateMemberCommon m_common;
+    SourceLocation m_location;
+    
+  public:
+    ImplementationPatternCallback(const InterfaceAggregateMemberCommon& common, const SourceLocation& location)
+    : m_common(common), m_location(location) {}
+    
+    template<typename V>
+    static void visit(V& v) {
+      v("common", &ImplementationPatternCallback::m_common)
+      ("location", &ImplementationPatternCallback::m_location);
+    }
+    
+    OverloadPattern evaluate(Empty) {
+      const ImplementationCommonResult& common = m_common.get(Empty());
+      return implementation_overload_pattern(common.implementation_setup.interface_parameters,
+                                             common.implementation_setup.pattern_parameters,
+                                             m_location);
+    }
+  };
+  
+  class ImplementationValueCallback {
+    InterfaceAggregateMemberCommon m_common;
+    TreePtr<InterfaceMetadata> m_metadata;
+    SharedPtr<Parser::Expression> m_body_expression;
+    SourceLocation m_location;
+    
+  public:
+    ImplementationValueCallback(const InterfaceAggregateMemberCommon& common, const TreePtr<InterfaceMetadata>& metadata,
+                                const SharedPtr<Parser::Expression>& body_expression, const SourceLocation& location)
+    : m_common(common), m_metadata(metadata), m_body_expression(body_expression), m_location(location) {}
+    
+    template<typename V>
+    static void visit(V& v) {
+      v("common", &ImplementationValueCallback::m_common)
+      ("metadata", &ImplementationValueCallback::m_metadata)
+      ("body_expression", &ImplementationValueCallback::m_body_expression)
+      ("location", &ImplementationValueCallback::m_location);
+    }
+
+    ImplementationValue evaluate(Empty) {
+      CompileContext& compile_context = m_metadata->compile_context();
+
+      SharedPtr<Parser::TokenExpression> body_expression;
+      if (!(body_expression = Parser::expression_as_token_type(m_body_expression, Parser::token_square_bracket)))
+        compile_context.error_throw(m_location.relocate(m_body_expression->location), "Body of an interface implementation should be declared with [...]");
+
+      const ImplementationCommonResult& common = m_common.get(Empty());
+      ImplementationMemberSetup setup;
+      setup.base = common.implementation_setup;
+      
+      ImplementationHelper helper(setup.base, m_location);
+
+      PSI_STD::vector<TreePtr<Term> > entry_values(m_metadata->entries.size());
+      PSI_STD::vector<SharedPtr<Parser::Statement> > entries = Parser::parse_namespace(compile_context.error_context(), m_location.logical, body_expression->text);
+      for (PSI_STD::vector<SharedPtr<Parser::Statement> >::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii) {
+        if (*ii) {
+          const Parser::Statement& stmt = **ii;
+          PSI_ASSERT(stmt.name && stmt.expression); // Enforced by parser
+          String name = stmt.name->str();
+          PSI_STD::map<String, unsigned>::const_iterator name_it = m_metadata->entry_names.find(name);
+          if (name_it == m_metadata->entry_names.end())
+            compile_context.error_throw(m_location.relocate(stmt.location), boost::format("Interface '%s' has no member named '%s'") % setup.base.interface->location().logical->error_name(m_location.logical) % name);
+          PSI_ASSERT(name_it->second < entry_values.size());
+          if (entry_values[name_it->second])
+            compile_context.error_throw(m_location.relocate(stmt.location), boost::format("Multiple values specified for '%s'") % name);
+          
+          const InterfaceMetadata::Entry& entry = m_metadata->entries[name_it->second];
+          PSI_ASSERT(name == entry.name);
+          SourceLocation value_loc(stmt.location, m_location.logical->new_child(name));
+          setup.type = helper.member_type(name_it->second, value_loc);
+          TreePtr<Term> value = entry.callback->implement(setup, stmt.expression, common.body_context, value_loc);
+          
+          entry_values[name_it->second] = value;
+        }
+      }
+      
+      bool failed = false;
+      for (std::size_t ii = 0, ie = entry_values.size(); ii != ie; ++ii) {
+        if (!entry_values[ii])
+          compile_context.error_context().error(m_location, boost::format("No value specified for '%s'") % m_metadata->entries[ii].name);
+      }
+      if (failed)
+        throw CompileException();
+      
+      return helper.finish_value(TermBuilder::struct_value(compile_context, entry_values, m_location));
+    }
+  };
+}
+
+class InterfaceImplementationDefineMacro : public Macro {
+  TreePtr<Interface> m_interface;
+  TreePtr<InterfaceMetadata> m_metadata;
+  
+public:
+  static const VtableType vtable;
+  
+  InterfaceImplementationDefineMacro(const TreePtr<Interface>& interface, const TreePtr<InterfaceMetadata>& metadata, const SourceLocation& location)
+  : Macro(&vtable, interface->compile_context(), location),
+  m_interface(interface),
+  m_metadata(metadata) {
+  }
+
+  template<typename V>
+  static void visit(V& v) {
+    visit_base<Macro>(v);
+    v("interface", &InterfaceImplementationDefineMacro::m_interface)
+    ("metadata", &InterfaceImplementationDefineMacro::m_metadata);
+  }
+  
+  static ImplementationDefineResult evaluate_impl(const InterfaceImplementationDefineMacro& self,
+                                                  const TreePtr<Term>& PSI_UNUSED(value),
+                                                  const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                                  const TreePtr<EvaluateContext>& evaluate_context,
+                                                  const ImplementationDefineArgument& PSI_UNUSED(argument),
+                                                  const SourceLocation& location) {
+    if (parameters.size() != 2)
+      self.compile_context().error_throw(location, "Interface definition expects two parameters; (...) [...]");
+
+    InterfaceAggregateMemberCommon common;
+    common.reset(self.compile_context(), location,
+                 ImplementationCommonCallback(self.m_interface, parameters[0], evaluate_context, location));
+
+    TreePtr<Implementation> value = Implementation::new_(self.m_interface, ImplementationPatternCallback(common, location), default_,
+                                                         ImplementationValueCallback(common, self.m_metadata, parameters[1], location), location);
+
+    return ImplementationDefineResult(1, value);
+  }
+};
+
+const MacroVtable InterfaceImplementationDefineMacro::vtable = PSI_COMPILER_MACRO(InterfaceImplementationDefineMacro, "psi.compiler.InterfaceImplementationDefineMacro", Macro, ImplementationDefineArgument);
+
+namespace {  
+  class InterfaceAggregateMemberCallback {
+    TreePtr<Interface> m_interface;
+    TreePtr<InterfaceMetadata> m_metadata;
+    TreePtr<EvaluateContext> m_evaluate_context;
+    SourceLocation m_location;
+    SharedPtr<Parser::Expression> m_parameters_expression, m_body_expression;
+    
+  public:
+    InterfaceAggregateMemberCallback(const TreePtr<Interface>& interface, const TreePtr<InterfaceMetadata>& metadata,
+                                     const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location,
+                                     const SharedPtr<Parser::Expression>& parameters_expression,
+                                     const SharedPtr<Parser::Expression>& body_expression)
+    : m_interface(interface), m_metadata(metadata),
+    m_evaluate_context(evaluate_context), m_location(location),
+    m_parameters_expression(parameters_expression), m_body_expression(body_expression) {}
+    
+    template<typename V>
+    static void visit(V& v) {
+      v("interface", &InterfaceAggregateMemberCallback::m_interface)
+      ("metadata", &InterfaceAggregateMemberCallback::m_metadata)
+      ("evaluate_context", &InterfaceAggregateMemberCallback::m_evaluate_context)
+      ("location", &InterfaceAggregateMemberCallback::m_location)
+      ("parameters_expression", &InterfaceAggregateMemberCallback::m_parameters_expression)
+      ("body_expression", &InterfaceAggregateMemberCallback::m_body_expression);
+    }
+    
+    PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const AggregateMemberArgument& argument) {
+      CompileContext& compile_context = argument.generic->compile_context();
+      
+      InterfaceAggregateMemberCommon common;
+      if (m_parameters_expression) {
+        common.reset(compile_context, m_location,
+                     ImplementationCommonCallback(m_interface, m_parameters_expression,
+                                                  m_evaluate_context, m_location));
+      } else {
+        ImplementationCommonResult result;
+        result.implementation_setup.interface = m_interface;
+        result.implementation_setup.pattern_parameters = argument.parameters;
+        result.implementation_setup.interface_parameters.push_back(argument.instance);
+        result.body_context = m_evaluate_context;
+        common.reset(compile_context, m_location, result);
+      }
+      
+      TreePtr<Implementation> impl = Implementation::new_(m_interface, ImplementationPatternCallback(common, m_location), default_,
+                                                          ImplementationValueCallback(common, m_metadata, m_body_expression, m_location), m_location);
+      
+      return vector_of<TreePtr<OverloadValue> >(impl);
+    }
+  };
+}
+
+class InterfaceAggregateMemberMacro : public Macro {
+  TreePtr<Interface> m_interface;
+  TreePtr<InterfaceMetadata> m_metadata;
+  
+public:
+  static const VtableType vtable;
+  
+  InterfaceAggregateMemberMacro(const TreePtr<Interface>& interface, const TreePtr<InterfaceMetadata>& metadata, const SourceLocation& location)
+  : Macro(&vtable, interface->compile_context(), location),
+  m_interface(interface),
+  m_metadata(metadata) {
+  }
+
+  template<typename V>
+  static void visit(V& v) {
+    visit_base<Macro>(v);
+    v("interface", &InterfaceAggregateMemberMacro::m_interface)
+    ("metadata", &InterfaceAggregateMemberMacro::m_metadata);
+  }
+  
+  static AggregateMemberResult evaluate_impl(const InterfaceAggregateMemberMacro& self,
+                                             const TreePtr<Term>& PSI_UNUSED(value),
+                                             const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                             const TreePtr<EvaluateContext>& evaluate_context,
+                                             const AggregateMemberArgument& PSI_UNUSED(argument),
+                                             const SourceLocation& location) {
+    SharedPtr<Parser::Expression> params_expr, body;
+    switch (parameters.size()) {
+    case 1:
+      body = parameters[0];
+      break;
+      
+    case 2:
+      params_expr = parameters[0];
+      body = parameters[1];
+      break;
+      
+    default:
+      self.compile_context().error_throw(location, "Interface implementation expects a single argument");
+    }
+    
+    AggregateMemberResult result;
+    result.overloads_callback.reset(self.compile_context(), location,
+                                    InterfaceAggregateMemberCallback(self.m_interface, self.m_metadata, evaluate_context,
+                                                                     location, params_expr, body));
+    return result;
+  }
+};
+
+const MacroVtable InterfaceAggregateMemberMacro::vtable = PSI_COMPILER_MACRO(InterfaceAggregateMemberMacro, "psi.compiler.InterfaceAggregateMemberMacro", Macro, AggregateMemberArgument);
+
 namespace {
   struct InterfaceDefineCommonResult {
     /// \brief Interface generic member type
@@ -235,331 +604,7 @@ namespace {
       return m_common.get(generic).member_type;
     }
   };
-}
-
-class InterfaceTermEvaluateMacro : public Macro {
-  TreePtr<Interface> m_interface;
-  TreePtr<InterfaceMetadata> m_metadata;
   
-public:
-  static const VtableType vtable;
-  
-  InterfaceTermEvaluateMacro(const TreePtr<Interface>& interface, const TreePtr<InterfaceMetadata>& metadata, const SourceLocation& location)
-  : Macro(&vtable, interface->compile_context(), location),
-  m_interface(interface),
-  m_metadata(metadata) {
-  }
-  
-  template<typename V>
-  static void visit(V& v) {
-    visit_base<Macro>(v);
-    v("interface", &InterfaceTermEvaluateMacro::m_interface)
-    ("metadata", &InterfaceTermEvaluateMacro::m_metadata);
-  }
-  
-  static TreePtr<Term> evaluate_impl(const InterfaceTermEvaluateMacro& self,
-                                      const TreePtr<Term>& PSI_UNUSED(value),
-                                      const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                      const TreePtr<EvaluateContext>& evaluate_context,
-                                      const MacroTermArgument& PSI_UNUSED(argument),
-                                      const SourceLocation& location) {
-    PSI_STD::vector<TreePtr<Term> > arguments = compile_call_arguments(parameters, evaluate_context, location);
-    return TermBuilder::interface_value(self.m_interface, arguments, location);
-  }
-
-  static TreePtr<Term> dot_impl(const InterfaceTermEvaluateMacro& self,
-                                const TreePtr<Term>& PSI_UNUSED(value),
-                                const SharedPtr<Parser::Expression>& member,
-                                const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                const TreePtr<EvaluateContext>& evaluate_context,
-                                const MacroTermArgument& PSI_UNUSED(argument),
-                                const SourceLocation& location) {
-    // Call to a member
-    SharedPtr<Parser::TokenExpression> ident;
-    if (!(ident = Parser::expression_as_token_type(member, Parser::token_identifier)))
-      self.compile_context().error_throw(location, "Interface member name after '.' is not an identifier");
-    
-    String name = ident->text.str();
-    PSI_STD::map<String, unsigned>::const_iterator name_it = self.m_metadata->entry_names.find(name);
-    if (name_it == self.m_metadata->entry_names.end()) {
-      CompileError err(self.compile_context().error_context(), location);
-      err.info(boost::format("Interface '%s' does not have a member named '%s'") % self.m_interface->location().logical->error_name(location.logical) % name);
-      err.info(self.m_interface->location(), "Interface defined here");
-      err.end_throw();
-    }
-    
-    const InterfaceMetadata::Entry& entry = self.m_metadata->entries[name_it->second];
-    return entry.callback->evaluate(self.m_interface, vector_of<unsigned>(0, name_it->second),
-                                    parameters, evaluate_context, location);
-  }
-};
-
-const MacroVtable InterfaceTermEvaluateMacro::vtable = PSI_COMPILER_MACRO(InterfaceTermEvaluateMacro, "psi.compiler.InterfaceTermEvaluateMacro", Macro, TreePtr<Term>, MacroTermArgument);
-
-namespace {
-  struct InterfaceAggregateMemberCommonResult {
-    ImplementationSetup implementation_setup;
-    TreePtr<EvaluateContext> body_context;
-    
-    template<typename V>
-    static void visit(V& v) {
-      v("implementation_setup", &InterfaceAggregateMemberCommonResult::implementation_setup)
-      ("body_context", &InterfaceAggregateMemberCommonResult::body_context);
-    }
-  };
-  
-  typedef SharedDelayedValue<InterfaceAggregateMemberCommonResult, Empty> InterfaceAggregateMemberCommon;
-  
-  class InterfaceAggregateMemberCommonCallback {
-    TreePtr<Interface> m_interface;
-    SharedPtr<Parser::TokenExpression> m_parameters_expression;
-    TreePtr<EvaluateContext> m_evaluate_context;
-    SourceLocation m_location;
-
-  public:
-    InterfaceAggregateMemberCommonCallback(const TreePtr<Interface>& interface, const SharedPtr<Parser::TokenExpression>& parameters_expression,
-                                           const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location)
-    : m_interface(interface), m_parameters_expression(parameters_expression),
-    m_evaluate_context(evaluate_context), m_location(location) {}
-    
-    template<typename V>
-    static void visit(V& v) {
-      v("interface", &InterfaceAggregateMemberCommonCallback::m_interface)
-      ("parameters_expression", &InterfaceAggregateMemberCommonCallback::m_parameters_expression)
-      ("evaluate_context", &InterfaceAggregateMemberCommonCallback::m_evaluate_context)
-      ("location", &InterfaceAggregateMemberCommonCallback::m_location);
-    }
-    
-    InterfaceAggregateMemberCommonResult evaluate(Empty) {
-      CompileContext& compile_context = m_interface->compile_context();
-      
-      InterfaceAggregateMemberCommonResult result;
-      result.implementation_setup.interface = m_interface;
-
-      /// \todo Need to figure out how to implicitly include parameters to generic if they are used
-      Parser::ImplementationArgumentDeclaration args = Parser::parse_implementation_arguments(compile_context.error_context(), m_location.logical, m_parameters_expression->text);
-      PSI_STD::map<String, TreePtr<Term> > names;
-      
-      for (PSI_STD::vector<SharedPtr<Parser::FunctionArgument> >::const_iterator ii = args.pattern.begin(), ie = args.pattern.end(); ii != ie; ++ii) {
-        TreePtr<EvaluateContext> child_context = evaluate_context_dictionary(m_location, names, m_evaluate_context);
-        
-        Parser::FunctionArgument& arg = **ii;
-        if (!arg.is_interface) {
-          if (!arg.name)
-            compile_context.error_throw(m_location.relocate(arg.location), "Anonymous arguments not allowed in implementation patterns.");
-          
-          String name = arg.name->str();
-          SourceLocation child_location(arg.location, m_location.logical->new_child(name));
-          TreePtr<Term> type = compile_term(arg.type, child_context, child_location.logical);
-          names.insert(std::make_pair(name, type));
-          result.implementation_setup.pattern_parameters.push_back(TermBuilder::anonymous(type, term_mode_value, child_location));
-        } else {
-          result.implementation_setup.pattern_interfaces.push_back(compile_interface_value(arg.type, child_context, m_location.logical));
-        }
-      }
-      
-      result.body_context = evaluate_context_dictionary(m_location, names, m_evaluate_context);
-      for (PSI_STD::vector<SharedPtr<Parser::Expression> >::const_iterator ii = args.arguments.begin(), ie = args.arguments.end(); ii != ie; ++ii)
-        result.implementation_setup.interface_parameters.push_back(compile_term(*ii, result.body_context, m_location.logical));
-      
-      return result;
-    }
-  };
-  
-  class InterfaceAggregateMemberPatternCallback {
-    InterfaceAggregateMemberCommon m_common;
-    SourceLocation m_location;
-    
-  public:
-    InterfaceAggregateMemberPatternCallback(const InterfaceAggregateMemberCommon& common, const SourceLocation& location)
-    : m_common(common), m_location(location) {}
-    
-    template<typename V>
-    static void visit(V& v) {
-      v("common", &InterfaceAggregateMemberPatternCallback::m_common)
-      ("location", &InterfaceAggregateMemberPatternCallback::m_location);
-    }
-    
-    OverloadPattern evaluate(Empty) {
-      const InterfaceAggregateMemberCommonResult& common = m_common.get(Empty());
-      return implementation_overload_pattern(common.implementation_setup.interface_parameters,
-                                             common.implementation_setup.pattern_parameters,
-                                             m_location);
-    }
-  };
-  
-  class InterfaceAggregateMemberValueCallback {
-    InterfaceAggregateMemberCommon m_common;
-    TreePtr<InterfaceMetadata> m_metadata;
-    SharedPtr<Parser::TokenExpression> m_body_expression;
-    SourceLocation m_location;
-    
-  public:
-    InterfaceAggregateMemberValueCallback(const InterfaceAggregateMemberCommon& common, const TreePtr<InterfaceMetadata>& metadata,
-                                          const SharedPtr<Parser::TokenExpression>& body_expression, const SourceLocation& location)
-    : m_common(common), m_metadata(metadata), m_body_expression(body_expression), m_location(location) {}
-    
-    template<typename V>
-    static void visit(V& v) {
-      v("common", &InterfaceAggregateMemberValueCallback::m_common)
-      ("metadata", &InterfaceAggregateMemberValueCallback::m_metadata)
-      ("body_expression", &InterfaceAggregateMemberValueCallback::m_body_expression)
-      ("location", &InterfaceAggregateMemberValueCallback::m_location);
-    }
-
-    ImplementationValue evaluate(Empty) {
-      CompileContext& compile_context = m_metadata->compile_context();
-      
-      const InterfaceAggregateMemberCommonResult& common = m_common.get(Empty());
-      ImplementationMemberSetup setup;
-      setup.base = common.implementation_setup;
-      
-      ImplementationHelper helper(setup.base, m_location);
-
-      PSI_STD::vector<TreePtr<Term> > entry_values(m_metadata->entries.size());
-      PSI_STD::vector<SharedPtr<Parser::Statement> > entries = Parser::parse_namespace(compile_context.error_context(), m_location.logical, m_body_expression->text);
-      for (PSI_STD::vector<SharedPtr<Parser::Statement> >::const_iterator ii = entries.begin(), ie = entries.end(); ii != ie; ++ii) {
-        if (*ii) {
-          const Parser::Statement& stmt = **ii;
-          PSI_ASSERT(stmt.name && stmt.expression); // Enforced by parser
-          String name = stmt.name->str();
-          PSI_STD::map<String, unsigned>::const_iterator name_it = m_metadata->entry_names.find(name);
-          if (name_it == m_metadata->entry_names.end())
-            compile_context.error_throw(m_location.relocate(stmt.location), boost::format("Interface '%s' has no member named '%s'") % setup.base.interface->location().logical->error_name(m_location.logical) % name);
-          PSI_ASSERT(name_it->second < entry_values.size());
-          if (entry_values[name_it->second])
-            compile_context.error_throw(m_location.relocate(stmt.location), boost::format("Multiple values specified for '%s'") % name);
-          
-          const InterfaceMetadata::Entry& entry = m_metadata->entries[name_it->second];
-          PSI_ASSERT(name == entry.name);
-          SourceLocation value_loc(stmt.location, m_location.logical->new_child(name));
-          setup.type = helper.member_type(name_it->second, value_loc);
-          TreePtr<Term> value = entry.callback->implement(setup, stmt.expression, common.body_context, value_loc);
-          
-          entry_values[name_it->second] = value;
-        }
-      }
-      
-      bool failed = false;
-      for (std::size_t ii = 0, ie = entry_values.size(); ii != ie; ++ii) {
-        if (!entry_values[ii])
-          compile_context.error_context().error(m_location, boost::format("No value specified for '%s'") % m_metadata->entries[ii].name);
-      }
-      if (failed)
-        throw CompileException();
-      
-      return helper.finish_value(TermBuilder::struct_value(compile_context, entry_values, m_location));
-    }
-  };
-  
-  class InterfaceAggregateMemberCallback {
-    TreePtr<Interface> m_interface;
-    TreePtr<InterfaceMetadata> m_metadata;
-    TreePtr<EvaluateContext> m_evaluate_context;
-    SourceLocation m_location;
-    SharedPtr<Parser::TokenExpression> m_parameters_expression, m_body_expression;
-    
-  public:
-    InterfaceAggregateMemberCallback(const TreePtr<Interface>& interface, const TreePtr<InterfaceMetadata>& metadata,
-                                     const TreePtr<EvaluateContext>& evaluate_context, const SourceLocation& location,
-                                     const SharedPtr<Parser::TokenExpression>& parameters_expression,
-                                     const SharedPtr<Parser::TokenExpression>& body_expression)
-    : m_interface(interface), m_metadata(metadata),
-    m_evaluate_context(evaluate_context), m_location(location),
-    m_parameters_expression(parameters_expression), m_body_expression(body_expression) {}
-    
-    template<typename V>
-    static void visit(V& v) {
-      v("interface", &InterfaceAggregateMemberCallback::m_interface)
-      ("metadata", &InterfaceAggregateMemberCallback::m_metadata)
-      ("evaluate_context", &InterfaceAggregateMemberCallback::m_evaluate_context)
-      ("location", &InterfaceAggregateMemberCallback::m_location)
-      ("parameters_expression", &InterfaceAggregateMemberCallback::m_parameters_expression)
-      ("body_expression", &InterfaceAggregateMemberCallback::m_body_expression);
-    }
-    
-    PSI_STD::vector<TreePtr<OverloadValue> > evaluate(const AggregateMemberArgument& argument) {
-      CompileContext& compile_context = argument.generic->compile_context();
-      
-      InterfaceAggregateMemberCommon common;
-      if (m_parameters_expression) {
-        common.reset(compile_context, m_location,
-                     InterfaceAggregateMemberCommonCallback(m_interface, m_parameters_expression,
-                                                            m_evaluate_context, m_location));
-      } else {
-        InterfaceAggregateMemberCommonResult result;
-        result.implementation_setup.interface = m_interface;
-        result.implementation_setup.pattern_parameters = argument.parameters;
-        result.implementation_setup.interface_parameters.push_back(argument.instance);
-        result.body_context = m_evaluate_context;
-        common.reset(compile_context, m_location, result);
-      }
-      
-      TreePtr<Implementation> impl = Implementation::new_(m_interface, InterfaceAggregateMemberPatternCallback(common, m_location), default_,
-                                                          InterfaceAggregateMemberValueCallback(common, m_metadata, m_body_expression, m_location), m_location);
-      
-      return vector_of<TreePtr<OverloadValue> >(impl);
-    }
-  };
-}
-
-class InterfaceAggregateMemberMacro : public Macro {
-  TreePtr<Interface> m_interface;
-  TreePtr<InterfaceMetadata> m_metadata;
-  
-public:
-  static const VtableType vtable;
-  
-  InterfaceAggregateMemberMacro(const TreePtr<Interface>& interface, const TreePtr<InterfaceMetadata>& metadata, const SourceLocation& location)
-  : Macro(&vtable, interface->compile_context(), location),
-  m_interface(interface),
-  m_metadata(metadata) {
-  }
-
-  template<typename V>
-  static void visit(V& v) {
-    visit_base<Macro>(v);
-    v("interface", &InterfaceAggregateMemberMacro::m_interface)
-    ("metadata", &InterfaceAggregateMemberMacro::m_metadata);
-  }
-  
-  static AggregateMemberResult evaluate_impl(const InterfaceAggregateMemberMacro& self,
-                                             const TreePtr<Term>& PSI_UNUSED(value),
-                                             const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                             const TreePtr<EvaluateContext>& evaluate_context,
-                                             const AggregateMemberArgument& PSI_UNUSED(argument),
-                                             const SourceLocation& location) {
-    SharedPtr<Parser::TokenExpression> params_expr, body;
-    switch (parameters.size()) {
-    case 1: {
-      if (!(body = Parser::expression_as_token_type(parameters[0], Parser::token_square_bracket)))
-        self.compile_context().error_throw(location, "Argument to implementation is not a [...]");
-      break;
-    }
-      
-    case 2: {
-      if (!(params_expr = Parser::expression_as_token_type(parameters[0], Parser::token_bracket)))
-        self.compile_context().error_throw(location, "First argument to implementation is not a (...)");
-      if (!(body = Parser::expression_as_token_type(parameters[1], Parser::token_square_bracket)))
-        self.compile_context().error_throw(location, "Second argument to implementation is not a [...]");
-      break;
-    }
-      
-    default:
-      self.compile_context().error_throw(location, "Interface implementation expects a single argument");
-    }
-    
-    AggregateMemberResult result;
-    result.overloads_callback.reset(self.compile_context(), location,
-                                    InterfaceAggregateMemberCallback(self.m_interface, self.m_metadata, evaluate_context,
-                                                                     location, params_expr, body));
-    return result;
-  }
-};
-
-const MacroVtable InterfaceAggregateMemberMacro::vtable = PSI_COMPILER_MACRO(InterfaceAggregateMemberMacro, "psi.compiler.InterfaceAggregateMemberMacro", Macro, AggregateMemberResult, AggregateMemberArgument);
-
-namespace {
   /**
     * Callback which generates parameter-less type which
     * presents the interface syntactic interface.
@@ -592,7 +637,64 @@ namespace {
       result.push_back(Metadata::new_(eval, compile_context.builtins().type_macro, 0, vector_of(instance, compile_context.builtins().macro_term_tag), location));
       TreePtr<Macro> member(::new InterfaceAggregateMemberMacro(m_interface, common_result.metadata, location));
       result.push_back(Metadata::new_(member, compile_context.builtins().type_macro, 0, vector_of(instance, compile_context.builtins().macro_member_tag), location));
+      TreePtr<Macro> def(::new InterfaceImplementationDefineMacro(m_interface, common_result.metadata, location));
+      result.push_back(Metadata::new_(def, compile_context.builtins().type_macro, 0, vector_of(instance, compile_context.builtins().macro_interface_definition_tag), location));
       
+      return result;
+    }
+  };
+  
+  /**
+   * Callback which generates implementations defined along with the interface.
+   */
+  class InterfaceDefineValuesCallback {
+    SharedPtr<Parser::TokenExpression> m_defs;
+    TreePtr<EvaluateContext> m_evaluate_context;
+    
+  public:
+    InterfaceDefineValuesCallback(const SharedPtr<Parser::TokenExpression>& defs,
+                                  const TreePtr<EvaluateContext>& evaluate_context)
+    : m_defs(defs), m_evaluate_context(evaluate_context) {
+    }
+    
+    template<typename V>
+    static void visit(V& v) {
+      v("defs", &InterfaceDefineValuesCallback::m_defs)
+      ("evaluate_context", &InterfaceDefineValuesCallback::m_evaluate_context);
+    }
+    
+    PSI_STD::vector<TreePtr<Implementation> > evaluate(const TreePtr<Interface>& interface) {
+      CompileContext& compile_context = interface->compile_context();
+      
+      ImplementationDefineArgument arg;
+      arg.interface = interface;
+      
+      PSI_STD::vector<TreePtr<Implementation> > result;
+
+      PSI_STD::vector<SharedPtr<Parser::Statement> > statements = Parser::parse_statement_list(compile_context.error_context(), interface->location().logical, m_defs->text);
+      for (PSI_STD::vector<SharedPtr<Parser::Statement> >::const_iterator ii = statements.begin(), ie = statements.end(); ii != ie; ++ii) {
+        if (*ii) {
+          const Parser::Statement& stmt = **ii;
+          SourceLocation location = interface->location().relocate(stmt.location);
+
+          if (stmt.name)
+            compile_context.error_throw(location, "Interface implementations should not be named");
+          
+          ImplementationDefineResult overloads = compile_expression<ImplementationDefineResult>(stmt.expression, m_evaluate_context, compile_context.builtins().macro_interface_definition_tag, arg, location.logical);
+          for (ImplementationDefineResult::const_iterator ji = overloads.begin(), je = overloads.end(); ji != je; ++ji) {
+            if (!*ji)
+              compile_context.error_throw(location, "Interface define expression returned NULL");
+            
+            if ((*ji)->overload_type && ((*ji)->overload_type != interface)) {
+              compile_context.error_throw(location, boost::format("Expected interface definition for %s, got definition for %s")
+                % interface->location().logical->error_name(location.logical)
+                % (*ji)->overload_type->location().logical->error_name(location.logical));
+            }
+          }
+          result.insert(result.end(), overloads.begin(), overloads.end());
+        }
+      }
+
       return result;
     }
   };
@@ -610,13 +712,26 @@ public:
   }
 
   static TreePtr<Term> evaluate_impl(const InterfaceDefineMacro& self,
-                                      const TreePtr<Term>& PSI_UNUSED(value),
-                                      const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
-                                      const TreePtr<EvaluateContext>& evaluate_context,
-                                      const MacroTermArgument& PSI_UNUSED(argument),
-                                      const SourceLocation& location) {
-    if (parameters.size() != 2)
-      self.compile_context().error_throw(location, "Interface definition expects 2 parameters");
+                                     const TreePtr<Term>& PSI_UNUSED(value),
+                                     const PSI_STD::vector<SharedPtr<Parser::Expression> >& parameters,
+                                     const TreePtr<EvaluateContext>& evaluate_context,
+                                     const MacroTermArgument& PSI_UNUSED(argument),
+                                     const SourceLocation& location) {
+    SharedPtr<Parser::TokenExpression> defs_expr;
+    switch (parameters.size()) {
+    case 2:
+      break;
+
+    case 4:
+      if (!Parser::expression_is_str(parameters[2], "where"))
+        self.compile_context().error_throw(location.relocate(parameters[2]->location), "Expected 'where'");
+      if (!(defs_expr = Parser::expression_as_token_type(parameters[3], Parser::token_square_bracket)))
+        self.compile_context().error_throw(location.relocate(parameters[3]->location), "Expected [...] expression");
+      break;
+
+    default:
+      self.compile_context().error_throw(location, "Interface definition expects 2 or 4 parameters");
+    }
 
     SharedPtr<Parser::TokenExpression> types_expr, members_expr;
     if (!(types_expr = Parser::expression_as_token_type(parameters[0], Parser::token_bracket)))
@@ -656,7 +771,8 @@ public:
     TreePtr<Term> generic_instance_ptr = TermBuilder::pointer(generic_instance, upref, location);
     TreePtr<Term> exists = TermBuilder::exists(generic_instance_ptr, vector_of<TreePtr<Term> >(self.compile_context().builtins().upref_type), location);
     
-    TreePtr<Interface> interface = Interface::new_(0, interface_pattern, default_, derived_pattern, exists, default_, location);
+    TreePtr<Interface> interface = Interface::new_(0, interface_pattern, InterfaceDefineValuesCallback(defs_expr, evaluate_context),
+                                                   derived_pattern, exists, default_, location);
     
     TreePtr<GenericType> frontend_type = TermBuilder::generic(self.compile_context(), default_, GenericType::primitive_never,
                                                               location, TermBuilder::empty_type(self.compile_context()),
@@ -666,7 +782,7 @@ public:
   }
 };
 
-const MacroVtable InterfaceDefineMacro::vtable = PSI_COMPILER_MACRO(InterfaceDefineMacro, "psi.compiler.InterfaceDefineMacro", Macro, TreePtr<Term>, MacroTermArgument);
+const MacroVtable InterfaceDefineMacro::vtable = PSI_COMPILER_MACRO(InterfaceDefineMacro, "psi.compiler.InterfaceDefineMacro", Macro, MacroTermArgument);
 
 /**
   * Return a term which is a macro for defining new interfaces.

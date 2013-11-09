@@ -420,7 +420,7 @@ public:
   }
 };
 
-const MacroVtable StructMacro::vtable = PSI_COMPILER_MACRO(StructMacro, "psi.compiler.StructMacro", Macro, TreePtr<Term>, MacroTermArgument);
+const MacroVtable StructMacro::vtable = PSI_COMPILER_MACRO(StructMacro, "psi.compiler.StructMacro", Macro, MacroTermArgument);
 
 TreePtr<Term> struct_macro(CompileContext& compile_context, const SourceLocation& location) {
   TreePtr<Macro> callback(::new StructMacro(compile_context, location));
@@ -441,8 +441,8 @@ public:
                                              const AggregateMemberArgument& argument,
                                              const SourceLocation& location) {
     TreePtr<Term> expanded = expression_macro(evaluate_context, value, self.compile_context().builtins().macro_term_tag, location)
-      ->evaluate<TreePtr<Term> >(value, parameters, evaluate_context, EmptyType(), location);
-    return expression_macro(evaluate_context, expanded, self.compile_context().builtins().macro_member_tag, location)->cast<AggregateMemberResult>
+      ->evaluate<TreePtr<Term> >(value, parameters, evaluate_context, MacroTermArgument(), location);
+    return expression_macro(evaluate_context, expanded, self.compile_context().builtins().macro_member_tag, location)->cast
       (expanded, evaluate_context, argument, location);
   }
   
@@ -454,8 +454,8 @@ public:
                                         const AggregateMemberArgument& argument,
                                         const SourceLocation& location) {
     TreePtr<Term> expanded = expression_macro(evaluate_context, value, self.compile_context().builtins().macro_term_tag, location)
-      ->dot<TreePtr<Term> >(value, member, parameters, evaluate_context, EmptyType(), location);
-    return expression_macro(evaluate_context, expanded, self.compile_context().builtins().macro_member_tag, location)->cast<AggregateMemberResult>
+      ->dot(value, member, parameters, evaluate_context, MacroTermArgument(), location);
+    return expression_macro(evaluate_context, expanded, self.compile_context().builtins().macro_member_tag, location)->cast
       (expanded, evaluate_context, argument, location);
   }
 };
@@ -478,7 +478,7 @@ public:
   }
 };
 
-const MacroVtable DefaultMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultMemberMacro, "psi.compiler.DefaultMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, AggregateMemberArgument);
+const MacroVtable DefaultMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultMemberMacro, "psi.compiler.DefaultMemberMacro", DefaultMemberMacroCommon, AggregateMemberArgument);
 
 /**
  * Generate the default macro implementation for aggregate members.
@@ -505,7 +505,7 @@ public:
   }
 };
 
-const MacroVtable DefaultTypeMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultTypeMemberMacro, "psi.compiler.DefaultTypeMemberMacro", DefaultMemberMacroCommon, AggregateMemberResult, AggregateMemberArgument);
+const MacroVtable DefaultTypeMemberMacro::vtable = PSI_COMPILER_MACRO(DefaultTypeMemberMacro, "psi.compiler.DefaultTypeMemberMacro", DefaultMemberMacroCommon, AggregateMemberArgument);
 
 /**
  * Generate the default macro implementation for aggregate members which are types.
@@ -638,7 +638,7 @@ public:
   }
 };
 
-const MacroVtable LifecycleMacro::vtable = PSI_COMPILER_MACRO(LifecycleMacro, "psi.compiler.LifecycleMacro", Macro, AggregateMemberResult, AggregateMemberArgument);
+const MacroVtable LifecycleMacro::vtable = PSI_COMPILER_MACRO(LifecycleMacro, "psi.compiler.LifecycleMacro", Macro, AggregateMemberArgument);
 
 /// \brief Create the \c __init__ macro
 TreePtr<Term> lifecycle_init_macro(CompileContext& compile_context, const SourceLocation& location) {
@@ -692,7 +692,7 @@ public:
   }
 };
 
-const MacroVtable LifecycleDisableMacro::vtable = PSI_COMPILER_MACRO(LifecycleDisableMacro, "psi.compiler.LifecycleDisableMacro", Macro, AggregateMemberResult, AggregateMemberArgument);
+const MacroVtable LifecycleDisableMacro::vtable = PSI_COMPILER_MACRO(LifecycleDisableMacro, "psi.compiler.LifecycleDisableMacro", Macro, AggregateMemberArgument);
 
 /// \brief Create the \c __no_move__ macro
 TreePtr<Term> lifecycle_no_move_macro(CompileContext& compile_context, const SourceLocation& location) {

@@ -62,17 +62,7 @@ struct AggregateCopyableResult {
   }
 };
 
-/**
- * \brief Argument passed to aggregate member evaluations.
- */
-struct AggregateMemberArgument {
-  /// \brief Generic type whose member is being built
-  TreePtr<GenericType> generic;
-  /// \brief Parameters used to set-up generic type.
-  PSI_STD::vector<TreePtr<Anonymous> > parameters;
-  /// \brief Generic type \c generic specialized with \c parameters
-  TreePtr<Term> instance;
-};
+struct AggregateMemberArgument;
 
 /**
  * \brief Result returned from aggregate member macros.
@@ -94,6 +84,20 @@ struct AggregateMemberResult {
   SharedDelayedValue<AggregateCopyableResult, AggregateCopyableParameter> copyable_callback;
   /// \brief Callback to generate interface overloads
   SharedDelayedValue<PSI_STD::vector<TreePtr<OverloadValue> >, AggregateMemberArgument> overloads_callback;
+};
+
+/**
+ * \brief Argument passed to aggregate member evaluations.
+ */
+struct AggregateMemberArgument {
+  typedef AggregateMemberResult EvaluateResultType;
+  
+  /// \brief Generic type whose member is being built
+  TreePtr<GenericType> generic;
+  /// \brief Parameters used to set-up generic type.
+  PSI_STD::vector<TreePtr<Anonymous> > parameters;
+  /// \brief Generic type \c generic specialized with \c parameters
+  TreePtr<Term> instance;
 };
 }
 }

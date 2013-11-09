@@ -78,7 +78,7 @@ namespace Psi {
       }
     };
 
-    const MacroVtable DefaultMacro::vtable = PSI_COMPILER_MACRO(DefaultMacro, "psi.compiler.DefaultMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable DefaultMacro::vtable = PSI_COMPILER_MACRO(DefaultMacro, "psi.compiler.DefaultMacro", Macro, MacroTermArgument);
 
     /**
      * \brief Generate the default implementation of Macro.
@@ -104,7 +104,7 @@ namespace Psi {
       }
     };
 
-    const MacroVtable DefaultTypeMacro::vtable = PSI_COMPILER_MACRO(DefaultTypeMacro, "psi.compiler.DefaultTypeMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable DefaultTypeMacro::vtable = PSI_COMPILER_MACRO(DefaultTypeMacro, "psi.compiler.DefaultTypeMacro", Macro, MacroTermArgument);
 
     /**
      * \brief Generate the default implementation of Macro for types.
@@ -172,7 +172,7 @@ namespace Psi {
     };
 
     const MacroVtable NamedMemberMacro::vtable =
-    PSI_COMPILER_MACRO(NamedMemberMacro, "psi.compiler.NamedMemberMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    PSI_COMPILER_MACRO(NamedMemberMacro, "psi.compiler.NamedMemberMacro", Macro, MacroTermArgument);
 
     /**
      * \brief Create an interface macro.
@@ -289,7 +289,7 @@ namespace Psi {
       }
     };
     
-    const MacroVtable PointerMacro::vtable = PSI_COMPILER_MACRO(PointerMacro, "psi.compiler.PointerMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable PointerMacro::vtable = PSI_COMPILER_MACRO(PointerMacro, "psi.compiler.PointerMacro", Macro, MacroTermArgument);
 
     /**
      * \brief Pointer macro.
@@ -446,7 +446,7 @@ namespace Psi {
       }
     };
 
-    const MacroVtable NamespaceMacro::vtable = PSI_COMPILER_MACRO(NamespaceMacro, "psi.compiler.NamespaceMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable NamespaceMacro::vtable = PSI_COMPILER_MACRO(NamespaceMacro, "psi.compiler.NamespaceMacro", Macro, MacroTermArgument);
     
     TreePtr<Term> namespace_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<Macro> m(::new NamespaceMacro(compile_context, location));
@@ -505,7 +505,7 @@ namespace Psi {
       }
     };
 
-    const MacroVtable NumberValueMacro::vtable = PSI_COMPILER_MACRO(NumberValueMacro, "psi.compiler.NumberValueMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable NumberValueMacro::vtable = PSI_COMPILER_MACRO(NumberValueMacro, "psi.compiler.NumberValueMacro", Macro, MacroTermArgument);
 
     TreePtr<Term> number_value_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<Macro> m(::new NumberValueMacro(compile_context, location));
@@ -673,7 +673,7 @@ namespace Psi {
       }
     };
 
-    const MacroVtable LibraryMacro::vtable = PSI_COMPILER_MACRO(LibraryMacro, "psi.compiler.LibraryMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable LibraryMacro::vtable = PSI_COMPILER_MACRO(LibraryMacro, "psi.compiler.LibraryMacro", Macro, MacroTermArgument);
 
     TreePtr<Term> library_macro(CompileContext& compile_context, const SourceLocation& location) {
       TreePtr<Macro> m(::new LibraryMacro(compile_context, location));
@@ -714,7 +714,7 @@ namespace Psi {
       }
     };
     
-    const MacroVtable StringMacro::vtable = PSI_COMPILER_MACRO(StringMacro, "psi.compiler.StringMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable StringMacro::vtable = PSI_COMPILER_MACRO(StringMacro, "psi.compiler.StringMacro", Macro, MacroTermArgument);
 
     /**
      * \brief Macro which generates C strings.
@@ -746,7 +746,7 @@ namespace Psi {
       }
     };
     
-    const MacroVtable NewMacro::vtable = PSI_COMPILER_MACRO(NewMacro, "psi.compiler.NewMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable NewMacro::vtable = PSI_COMPILER_MACRO(NewMacro, "psi.compiler.NewMacro", Macro, MacroTermArgument);
 
     /**
      * \brief Macro which constructs default values.
@@ -833,7 +833,7 @@ namespace Psi {
       }
     };
 
-    const MacroVtable MacroDefineMacro::vtable = PSI_COMPILER_MACRO(MacroDefineMacro, "psi.compiler.MacroDefineMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable MacroDefineMacro::vtable = PSI_COMPILER_MACRO(MacroDefineMacro, "psi.compiler.MacroDefineMacro", Macro, MacroTermArgument);
     
     /**
      * Return a term which is a macro for defining new macros.

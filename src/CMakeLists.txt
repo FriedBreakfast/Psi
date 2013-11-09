@@ -170,6 +170,7 @@ if(PSI_HAVE_LLVM)
     Tvm/llvm/FunctionalConstant.cpp
     Tvm/llvm/FunctionalInstruction.cpp
     Tvm/llvm/Instructions.cpp
+    Tvm/llvm/JIT.cpp
     Tvm/llvm/LLVMPushWarnings.hpp Tvm/llvm/LLVMPopWarnings.hpp
     Tvm/llvm/Target.cpp
     Tvm/llvm/Type.cpp

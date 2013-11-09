@@ -256,7 +256,7 @@ namespace Psi {
       }
     };
 
-    const MacroVtable FunctionInvokeCallback::vtable = PSI_COMPILER_MACRO(FunctionInvokeCallback, "psi.compiler.FunctionInvokeCallback", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable FunctionInvokeCallback::vtable = PSI_COMPILER_MACRO(FunctionInvokeCallback, "psi.compiler.FunctionInvokeCallback", Macro, MacroTermArgument);
 
     /**
      * Create a macro for invoking a function.
@@ -330,7 +330,7 @@ namespace Psi {
       }
     };
 
-    const MacroVtable FunctionMacro::vtable = PSI_COMPILER_MACRO(FunctionMacro, "psi.compiler.FunctionMacro", Macro, TreePtr<Term>, MacroTermArgument);
+    const MacroVtable FunctionMacro::vtable = PSI_COMPILER_MACRO(FunctionMacro, "psi.compiler.FunctionMacro", Macro, MacroTermArgument);
     
     class FunctionInterfaceMemberCallback : public InterfaceMemberCallback {
     public:
@@ -458,7 +458,7 @@ namespace Psi {
       }
     };
     
-    const MacroVtable FunctionInterfaceMemberMacro::vtable = PSI_COMPILER_MACRO(FunctionInterfaceMemberMacro, "psi.compiler.FunctionInterfaceMemberMacro", Macro, InterfaceMemberResult, InterfaceMemberArgument);
+    const MacroVtable FunctionInterfaceMemberMacro::vtable = PSI_COMPILER_MACRO(FunctionInterfaceMemberMacro, "psi.compiler.FunctionInterfaceMemberMacro", Macro, InterfaceMemberArgument);
 
     /**
      * \brief Create a callback to the function definition function.

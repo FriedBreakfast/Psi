@@ -126,6 +126,7 @@ namespace Psi {
     
     ImplementationArgumentDeclaration parse_implementation_arguments(CompileErrorContext& error_context, const LogicalSourceLocationPtr& error_loc, const Text& text);
     
+    bool expression_is_str(const SharedPtr<Expression>& expr, const char *str);
     SharedPtr<TokenExpression> expression_as_token_type(const SharedPtr<Expression>& expr, TokenExpressionType type);
     SharedPtr<Parser::EvaluateExpression> expression_as_evaluate(const SharedPtr<Parser::Expression>& expr);
   }

@@ -408,7 +408,7 @@ namespace Psi {
          * 
          * \param runner Holds per-pass data.
          */
-        virtual void lower_function_call(FunctionRunner& runner, const ValuePtr<Call>& term) = 0;
+        virtual void lower_function_call(FunctionRunner& runner, const ValuePtr<Call>& term);
 
         /**
          * Create a return instruction to return the given value
@@ -418,7 +418,7 @@ namespace Psi {
          * 
          * \return The actual return instruction created.
          */
-        virtual ValuePtr<Instruction> lower_return(FunctionRunner& runner, const ValuePtr<>& value, const SourceLocation& location) = 0;
+        virtual ValuePtr<Instruction> lower_return(FunctionRunner& runner, const ValuePtr<>& value, const SourceLocation& location);
 
         /**
          * Change a function's type and add entry code to decode
@@ -435,7 +435,7 @@ namespace Psi {
          * 
          * \param function Function being lowered.
          */
-        virtual ValuePtr<Function> lower_function(AggregateLoweringPass& runner, const ValuePtr<Function>& function) = 0;
+        virtual ValuePtr<Function> lower_function(AggregateLoweringPass& runner, const ValuePtr<Function>& function);
         
         /**
          * Create necessary entry code into a function to convert low level
@@ -445,23 +445,16 @@ namespace Psi {
          * 
          * \param target_function Newly created function.
          */
-        virtual void lower_function_entry(FunctionRunner& runner, const ValuePtr<Function>& source_function, const ValuePtr<Function>& target_function) = 0;
+        virtual void lower_function_entry(FunctionRunner& runner, const ValuePtr<Function>& source_function, const ValuePtr<Function>& target_function);
         
         /**
          * \brief Get the largest type with size less than or equal to that specified.
          * 
          * \param size Requested size, which must be a power of two.
-         */
-        virtual std::pair<ValuePtr<>, std::size_t> type_from_size(Context& context, std::size_t size, const SourceLocation& location) = 0;
-
-        /**
-         * \brief Get the type with alignment closest to the specified alignment.
          * 
-         * \return A type with an alignment is less than or equal to \c aligment.
-         * Its size must be the same as its alignment. The first member of the
-         * pair is the type, the second member of the pair is the size of the first.
+         * The default implementation returns an integer assuming that n/8 bits is a byte.
          */
-        virtual std::pair<ValuePtr<>, std::size_t> type_from_alignment(Context& context, std::size_t alignment, const SourceLocation& location) = 0;
+        virtual std::pair<ValuePtr<>, std::size_t> type_from_size(Context& context, std::size_t size, const SourceLocation& location);
         
         /**
          * \brief Get the size and alignment of a type.
@@ -480,7 +473,7 @@ namespace Psi {
          * \c ptr and then reading back a value of type \c result_type from \c ptr+shift,
          * with zero padding surrounding \c value.
          */
-        virtual ValuePtr<> byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int shift, const SourceLocation& location) = 0;
+        virtual ValuePtr<> byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int shift, const SourceLocation& location);
       };
 
     private:

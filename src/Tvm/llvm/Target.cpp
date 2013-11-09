@@ -51,7 +51,6 @@ namespace Psi {
         virtual void lower_function_entry(AggregateLoweringPass::FunctionRunner&, const ValuePtr<Function>&, const ValuePtr<Function>&);
         virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>&, const SourceLocation& location);
         virtual std::pair<ValuePtr<>, std::size_t> type_from_size(Context& context, std::size_t size, const SourceLocation& location);
-        virtual std::pair<ValuePtr<>, std::size_t> type_from_alignment(Context& context, std::size_t alignment, const SourceLocation& location);
         virtual ValuePtr<> byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int offset, const SourceLocation& location);
       };
       
@@ -128,16 +127,6 @@ namespace Psi {
         
         ValuePtr<> int_type = FunctionalBuilder::int_type(context, width, false, location);
         return std::make_pair(int_type, my_size);
-      }
-      
-      std::pair<ValuePtr<>, std::size_t> AggregateTargetCallbackLLVM::type_from_alignment(Context& context, std::size_t alignment, const SourceLocation& location) {
-        unsigned real_alignment = std::min(alignment, std::size_t(16));
-        for (; real_alignment > 1; real_alignment /= 2) {
-          unsigned abi_alignment = target_data_layout()->getABIIntegerTypeAlignment(real_alignment*8);
-          if (abi_alignment == real_alignment)
-            break;
-        }
-        return type_from_size(context, real_alignment, location);
       }
 
       ValuePtr<> AggregateTargetCallbackLLVM::byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int offset, const SourceLocation& location) {

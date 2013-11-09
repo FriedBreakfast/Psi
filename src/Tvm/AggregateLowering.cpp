@@ -16,6 +16,67 @@ namespace Psi {
   namespace Tvm {
     AggregateLoweringPass::TargetCallback::~TargetCallback() {
     }
+    
+    namespace {
+      ValuePtr<FunctionType> lower_function_type(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& ftype) {
+        unsigned n_phantom = ftype->n_phantom();
+        std::vector<ParameterType> parameter_types;
+        for (std::size_t ii = 0, ie = ftype->parameter_types().size() - n_phantom; ii != ie; ++ii)
+          parameter_types.push_back(rewriter.rewrite_type(ftype->parameter_types()[ii + n_phantom].value).register_type());
+        ValuePtr<> result_type = rewriter.rewrite_type(ftype->result_type().value).register_type();
+        return FunctionalBuilder::function_type(ftype->calling_convention(), result_type, parameter_types, 0, ftype->sret(), ftype->location());
+      }
+    }
+    
+    void AggregateLoweringPass::TargetCallback::lower_function_call(FunctionRunner& runner, const ValuePtr<Call>& term) {
+      ValuePtr<FunctionType> ftype = lower_function_type(runner, term->target_function_type());
+
+      std::vector<ValuePtr<> > parameters;
+      std::size_t n_phantom = term->target_function_type()->n_phantom();
+      for (std::size_t ii = 0, ie = ftype->parameter_types().size(); ii != ie; ++ii)
+        parameters.push_back(runner.rewrite_value_register(term->parameters[ii + n_phantom]).value);
+      
+      ValuePtr<> lowered_target = runner.rewrite_value_register(term->target).value;
+      ValuePtr<> cast_target = FunctionalBuilder::pointer_cast(lowered_target, ftype, term->location());
+      ValuePtr<> result = runner.builder().call(cast_target, parameters, term->location());
+      runner.add_mapping(term, LoweredValue::register_(runner.rewrite_type(term->type()), false, result));
+    }
+    
+    ValuePtr<Instruction> AggregateLoweringPass::TargetCallback::lower_return(FunctionRunner& runner, const ValuePtr<>& value, const SourceLocation& location) {
+      ValuePtr<> lowered = runner.rewrite_value_register(value).value;
+      return runner.builder().return_(lowered, location);
+    }
+    
+    ValuePtr<Function> AggregateLoweringPass::TargetCallback::lower_function(AggregateLoweringPass& pass, const ValuePtr<Function>& function) {
+      ValuePtr<FunctionType> ftype = lower_function_type(pass.global_rewriter(), function->function_type());
+      return pass.target_module()->new_function(function->name(), ftype, function->location());
+    }
+    
+    void AggregateLoweringPass::TargetCallback::lower_function_entry(FunctionRunner& runner, const ValuePtr<Function>& source_function, const ValuePtr<Function>& target_function) {
+      Function::ParameterList::iterator ii = source_function->parameters().begin(), ie = source_function->parameters().end();
+      Function::ParameterList::iterator ji = target_function->parameters().begin();
+      std::advance(ii, source_function->function_type()->n_phantom());
+      for (; ii != ie; ++ii, ++ji)
+        runner.add_mapping(*ii, LoweredValue::register_(runner.rewrite_type((*ii)->type()), false, *ji));
+    }
+    
+    std::pair<ValuePtr<>, std::size_t> AggregateLoweringPass::TargetCallback::type_from_size(Context& context, std::size_t size, const SourceLocation& location) {
+      std::size_t my_size = std::min(size, std::size_t(8));
+      IntegerType::Width width;
+      switch (my_size) {
+      case 1: width = IntegerType::i8; break;
+      case 2: width = IntegerType::i16; break;
+      case 4: width = IntegerType::i32; break;
+      case 8: width = IntegerType::i64; break;
+      default: PSI_FAIL("type_from_size argument was not a power of two");
+      }
+      
+      return std::make_pair(FunctionalBuilder::int_type(context, width, false, location), size);
+    }
+  
+    ValuePtr<> AggregateLoweringPass::TargetCallback::byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int shift, const SourceLocation& location) {
+      PSI_NOT_IMPLEMENTED();
+    }
 
     /**
      * \brief Return a type with identical lowered representation but a different origin.
@@ -824,9 +885,9 @@ namespace Psi {
         for (std::vector<ExplodeEntry>::const_iterator ji = entries.begin(), je = entries.end(); ji != je; ++ji) {
           std::size_t delta = (ji->offset - offset) / ji->tsa.alignment;
           if (delta >= 1) {
-            std::pair<ValuePtr<>, std::size_t> pad_type = target_callback->type_from_alignment(context(), ji->tsa.alignment, location);
-            PSI_ASSERT(pad_type.second == ji->tsa.alignment);
-            type_entries.insert(type_entries.end(), delta, pad_type.first);
+            std::pair<ValuePtr<>, std::size_t> pad_type = target_callback->type_from_size(context(), ji->tsa.alignment, location);
+            std::size_t pad_delta = (ji->offset - offset) / pad_type.second;
+            type_entries.insert(type_entries.end(), pad_delta, pad_type.first);
           }
           type_entries.push_back(ji->value);
           offset += ji->tsa.size;
@@ -851,10 +912,10 @@ namespace Psi {
         for (std::vector<ExplodeEntry>::const_iterator ji = entries.begin(), je = entries.end(); ji != je; ++ji) {
           std::size_t delta = (ji->offset - offset) / ji->tsa.alignment;
           if (delta >= 1) {
-            std::pair<ValuePtr<>, std::size_t> pad_type = target_callback->type_from_alignment(context(), ji->tsa.alignment, location);
-            PSI_ASSERT(pad_type.second == ji->tsa.alignment);
+            std::pair<ValuePtr<>, std::size_t> pad_type = target_callback->type_from_size(context(), ji->tsa.alignment, location);
+            std::size_t pad_delta = (ji->offset - offset) / pad_type.second;
             ValuePtr<> pad_value = FunctionalBuilder::undef(pad_type.first, location);
-            value_entries.insert(value_entries.end(), delta, pad_value);
+            value_entries.insert(value_entries.end(), pad_delta, pad_value);
           }
           value_entries.push_back(ji->value);
           offset += ji->tsa.size;
@@ -974,7 +1035,7 @@ namespace Psi {
           explode_constant_value(array_val->value(ii), entries, offset, location, expand_aggregates);
         offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
       } else {
-        PSI_FAIL("Unexpected tree type in constant explosion");
+        PSI_FAIL("Unexpected tree type in constant explosion (unions should be handled by UnionValue operation lowering)");
       }
     }
     
@@ -1004,7 +1065,7 @@ namespace Psi {
         if ((std::distance(first, last) == 1) && (first->tsa.size == tsa.size) && (first->offset == offset)) {
           result = FunctionalBuilder::bit_cast(first->value, type, location);
         } else {
-          std::pair<ValuePtr<>, std::size_t> integer_type = target_callback->type_from_size(context(), tsa.size, location);
+          std::pair<ValuePtr<>, std::size_t> integer_type = target_callback->type_from_size(context(), tsa.alignment, location);
           PSI_ASSERT(tsa.size == integer_type.second);
           result = FunctionalBuilder::zero(integer_type.first, location);
           for (; first != last; ++first) {
@@ -1032,7 +1093,7 @@ namespace Psi {
         offset = (offset + tsa.alignment - 1) & ~(tsa.alignment - 1);
         return FunctionalBuilder::array_value(array_ty->element_type(), elements, location);
       } else {
-        PSI_FAIL("Unexpected tree type in constant implosion");
+        PSI_FAIL("Unexpected tree type in constant implosion (unions should be handled by UnionValue operation lowering)");
       }
     }
     

@@ -3,7 +3,6 @@
 
 #include "../AggregateLowering.hpp"
 #include "../FunctionalBuilder.hpp"
-#include "../Jit.hpp"
 
 #include <list>
 #include <iostream>
@@ -20,56 +19,7 @@ class CModuleCallback : public AggregateLoweringPass::TargetCallback {
 public:
   CModuleCallback(CCompiler *c_compiler) : m_c_compiler(c_compiler) {}
   
-  ValuePtr<FunctionType> lower_function_type(AggregateLoweringPass::AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionType>& ftype) {
-    unsigned n_phantom = ftype->n_phantom();
-    std::vector<ParameterType> parameter_types;
-    for (std::size_t ii = 0, ie = ftype->parameter_types().size() - n_phantom; ii != ie; ++ii)
-      parameter_types.push_back(rewriter.rewrite_type(ftype->parameter_types()[ii + n_phantom].value).register_type());
-    ValuePtr<> result_type = rewriter.rewrite_type(ftype->result_type().value).register_type();
-    return FunctionalBuilder::function_type(ftype->calling_convention(), result_type, parameter_types, 0, ftype->sret(), ftype->location());
-  }
-  
-  virtual void lower_function_call(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<Call>& term) {
-    ValuePtr<FunctionType> ftype = lower_function_type(runner, term->target_function_type());
-
-    std::vector<ValuePtr<> > parameters;
-    std::size_t n_phantom = term->target_function_type()->n_phantom();
-    for (std::size_t ii = 0, ie = ftype->parameter_types().size(); ii != ie; ++ii)
-      parameters.push_back(runner.rewrite_value_register(term->parameters[ii + n_phantom]).value);
-    
-    ValuePtr<> lowered_target = runner.rewrite_value_register(term->target).value;
-    ValuePtr<> cast_target = FunctionalBuilder::pointer_cast(lowered_target, ftype, term->location());
-    ValuePtr<> result = runner.builder().call(cast_target, parameters, term->location());
-    runner.add_mapping(term, LoweredValue::register_(runner.rewrite_type(term->type()), false, result));
-  }
-  
-  virtual ValuePtr<Instruction> lower_return(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<>& value, const SourceLocation& location) {
-    ValuePtr<> lowered = runner.rewrite_value_register(value).value;
-    return runner.builder().return_(lowered, location);
-  }
-  
-  virtual ValuePtr<Function> lower_function(AggregateLoweringPass& pass, const ValuePtr<Function>& function) {
-    ValuePtr<FunctionType> ftype = lower_function_type(pass.global_rewriter(), function->function_type());
-    return pass.target_module()->new_function(function->name(), ftype, function->location());
-  }
-  
-  virtual void lower_function_entry(AggregateLoweringPass::FunctionRunner& runner, const ValuePtr<Function>& source_function, const ValuePtr<Function>& target_function) {
-    Function::ParameterList::iterator ii = source_function->parameters().begin(), ie = source_function->parameters().end();
-    Function::ParameterList::iterator ji = target_function->parameters().begin();
-    std::advance(ii, source_function->function_type()->n_phantom());
-    for (; ii != ie; ++ii, ++ji)
-      runner.add_mapping(*ii, LoweredValue::register_(runner.rewrite_type((*ii)->type()), false, *ji));
-  }
-  
-  virtual std::pair<ValuePtr<>, std::size_t> type_from_size(Context& context, std::size_t size, const SourceLocation& location) {
-    PSI_NOT_IMPLEMENTED();
-  }
-  
-  virtual std::pair<ValuePtr<>, std::size_t> type_from_alignment(Context& context, std::size_t alignment, const SourceLocation& location) {
-    PSI_NOT_IMPLEMENTED();
-  }
-  
-  virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>& type, const SourceLocation& location) {
+  virtual TypeSizeAlignment type_size_alignment(const ValuePtr<>& type, const SourceLocation& PSI_UNUSED(location)) {
     const PrimitiveType *pt;
     if (ValuePtr<IntegerType> int_type = dyn_cast<IntegerType>(type)) {
       pt = &m_c_compiler->primitive_types.int_types[int_type->width()];
@@ -89,10 +39,6 @@ public:
     if (pt->name.empty())
       type->context().error_context().error_throw(type->location(), "Primitive type not supported");
     return TypeSizeAlignment(pt->size, pt->alignment);
-  }
-  
-  virtual ValuePtr<> byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int shift, const SourceLocation& location) {
-    PSI_NOT_IMPLEMENTED();
   }
 };
 

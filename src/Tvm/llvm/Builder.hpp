@@ -178,46 +178,6 @@ namespace Psi {
       llvm::Type* float_type(llvm::LLVMContext&, FloatType::Width);
       ///@}
 
-      llvm::TargetMachine* host_machine();
-
-      typedef boost::unordered_map<ValuePtr<Global>, void*> ModuleJitMapping;
-
-      struct LLVMJitModule {
-        boost::shared_ptr<llvm::ExecutionEngine> jit;
-        ModuleMapping mapping;
-        ModuleJitMapping jit_mapping;
-        std::size_t load_priority;
-      };
-
-      class LLVMJit : public Jit {
-      public:
-        LLVMJit(const CompileErrorPair& error_loc, const std::string&, const boost::shared_ptr<llvm::TargetMachine>&, const PropertyValue& config);
-        virtual ~LLVMJit();
-        virtual void destroy();
-
-        CompileErrorContext& error_context() {return *m_error_context;}
-        virtual void add_module(Module*);
-        virtual void remove_module(Module*);
-        virtual void* get_symbol(const ValuePtr<Global>&);
-
-      private:
-        PropertyValue m_config;
-        CompileErrorContext *m_error_context;
-        llvm::LLVMContext m_llvm_context;
-        llvm::PassManager m_llvm_module_pass;
-        llvm::CodeGenOpt::Level m_llvm_opt;
-        TargetCallback m_target_callback;
-        boost::shared_ptr<llvm::TargetMachine> m_target_machine;
-        std::size_t m_load_priority_max;
-        boost::unordered_map<Module*, LLVMJitModule> m_modules;
-        typedef boost::unordered_map<std::string, void*> ExportedSymbolMap;
-        ExportedSymbolMap m_exported_symbols;
-
-        void populate_pass_manager(llvm::PassManager& pm);
-        
-        static bool symbol_lookup(void **result, const char *name, void *user_ptr);
-      };
-      
       llvm::CallingConv::ID function_call_convention(const CompileErrorPair& error_loc, CallingConvention cc);
       llvm::AttributeSet function_type_attributes(llvm::LLVMContext& ctx, const ValuePtr<FunctionType>& ftype);
     }

@@ -157,6 +157,7 @@ namespace Psi {
       macro_term_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroTermTag"));
       macro_member_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroMemberTag"));
       macro_interface_member_tag = make_generic_type(empty_type, psi_compiler_location.named_child("MacroInterfaceMemberTag"));
+      macro_interface_definition_tag= make_generic_type(empty_type, psi_compiler_location.named_child("MacroInterfaceDefinitionTag"));
 
       macro = make_metadata_macro(compile_context, psi_compiler_location.named_child("Macro"));
       type_macro = make_metadata_type_macro(compile_context, psi_compiler_location.named_child("TypeMacro"));

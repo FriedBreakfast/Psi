@@ -895,6 +895,24 @@ ImplementationArgumentDeclaration parse_implementation_arguments(CompileErrorCon
   return result;
 }
 
+/**
+ * Check whether an expression is a simple string.
+ */
+bool expression_is_str(const SharedPtr<Expression>& expr, const char *str) {
+  if (expr->expression_type != expression_token)
+    return false;
+  
+  const Parser::TokenExpression& tok = checked_cast<const Parser::TokenExpression&>(*expr);
+  if (tok.token_type != token_identifier)
+    return false;
+  
+  std::size_t n = std::strlen(str);
+  if (tok.text.begin + n != tok.text.end)
+    return false;
+  
+  return std::equal(tok.text.begin, tok.text.end, str);
+}
+
 SharedPtr<Parser::TokenExpression> expression_as_token_type(const SharedPtr<Parser::Expression>& expr, Parser::TokenExpressionType type) {
   if (expr->expression_type != expression_token)
     return SharedPtr<Parser::TokenExpression>();

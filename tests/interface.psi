@@ -4,6 +4,12 @@ puts : libc.symbol (function (::str -: int)) {"type":"c","name":"puts"};
 
 ti : interface (X:type) [
   invoke : function (:X -: str);
+] where [
+  ti (type3) [
+    invoke : (a) [
+      {test3}
+    ];
+  ];
 ];
 
 invoke_puts : function (X::type @ ti(X), a:X) [
@@ -26,11 +32,16 @@ type2 : struct [
   ];
 ];
 
+type3 : struct [];
+
 main : function() [
   a : new type1;
   b : new type2;
+  c : new type3;
   puts(ti.invoke(a));
   puts(ti.invoke(b));
+  puts(ti.invoke(c));
   invoke_puts(type1, a);
   invoke_puts(type2, b);
+  invoke_puts(type3, c);
 ];
