@@ -1,6 +1,5 @@
 #include "CallingConventions.hpp"
 #include "../FunctionalBuilder.hpp"
-#include </home/james/programming/boost-1.53/install/include/boost/iterator/iterator_concepts.hpp>
 
 #include <boost/format.hpp>
 
