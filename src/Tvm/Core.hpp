@@ -20,6 +20,12 @@
 #include "../Utility.hpp"
 #include "../Array.hpp"
 
+#if PSI_DEBUG
+#define PSI_TVM_EXPORT_DEBUG PSI_TVM_EXPORT
+#else
+#define PSI_TVM_EXPORT_DEBUG PSI_LOCAL
+#endif
+
 namespace Psi {
   /**
    * A low level compiler system which should basically be
@@ -193,15 +199,15 @@ namespace Psi {
      * FunctionalTermBackend and InstructionTermBackend and then
      * wrapping that in either FunctionalTerm or InstructionTerm.
      */
-    class PSI_TVM_EXPORT Value {
+    class PSI_TVM_EXPORT_DEBUG Value {
       friend class Context;
       friend struct GCIncrementVisitor;
       friend struct GCDecerementVisitor;
       
       /// Disable general new operator
-      static void* operator new (size_t) {PSI_FAIL("Value::new should never be called");}
+      static void* operator new (size_t);
       /// Disable placement new
-      static void* operator new (size_t, void*) {PSI_FAIL("Value::new should never be called");}
+      static void* operator new (size_t, void*);
 
     public:
       virtual ~Value();
@@ -261,7 +267,7 @@ namespace Psi {
       void dump();
 #endif
 
-      std::size_t hash_value() const;
+      inline std::size_t hash_value() const;
       
       template<typename V>
       static void visit(V& v) {
@@ -277,7 +283,7 @@ namespace Psi {
       SourceLocation m_location;
       boost::intrusive::list_member_hook<> m_value_list_hook;
       
-      void destroy();
+      PSI_TVM_EXPORT void destroy();
       virtual void gc_increment() = 0;
       virtual void gc_decrement() = 0;
       virtual void gc_clear() = 0;
@@ -438,7 +444,7 @@ namespace Psi {
       virtual ValuePtr<> rewrite(const ValuePtr<>& value) = 0;
     };    
 
-    class PSI_TVM_EXPORT HashableValue : public Value {
+    class PSI_TVM_EXPORT_DEBUG HashableValue : public Value {
       friend class Context;
       friend std::size_t Value::hash_value() const;
 
@@ -485,13 +491,20 @@ namespace Psi {
       virtual std::pair<const char*,std::size_t> hash_impl() const = 0;
       virtual HashableValue* clone() const = 0;
     };
+    
+   inline std::size_t Value::hash_value() const {
+      if (const HashableValue *ht = dyn_cast<HashableValue>(this))
+        return ht->m_hash;
+      else
+        return boost::hash_value(this);
+    }
 
 #define PSI_TVM_HASHABLE_DECL(Type) \
     PSI_TVM_VALUE_DECL(Type) \
   private: \
     virtual ValuePtr<> check_type() const; \
   public: \
-    static const char operation[]; \
+    PSI_TVM_EXPORT static const char operation[]; \
     virtual ValuePtr<HashableValue> rewrite(RewriteCallback& callback) const; \
     virtual Value* disassembler_source(); \
     template<typename V> static void visit(V& v); \
@@ -563,13 +576,13 @@ namespace Psi {
     /**
      * \brief Base class for globals: these are GlobalVariableTerm and FunctionTerm.
      */
-    class PSI_TVM_EXPORT Global : public Value {
+    class PSI_TVM_EXPORT_DEBUG Global : public Value {
       friend class GlobalVariable;
       friend class Function;
       friend class Module;
 
     public:
-      ValuePtr<> value_type() const;
+      inline ValuePtr<> value_type() const;
       /// \brief Get the module this global belongs to.
       Module* module() const {return m_module;}
       /// \brief Get the name of this global within the module.
@@ -612,12 +625,12 @@ namespace Psi {
     /**
      * \brief Global variable.
      */
-    class PSI_TVM_EXPORT GlobalVariable : public Global {
+    class PSI_TVM_EXPORT_DEBUG GlobalVariable : public Global {
       PSI_TVM_VALUE_DECL(GlobalVariable);
       friend class Module;
 
     public:
-      void set_value(const ValuePtr<>& value);
+      PSI_TVM_EXPORT void set_value(const ValuePtr<>& value);
       /// \brief Get the initial value of this global.
       const ValuePtr<>& value() const {return m_value;}
 

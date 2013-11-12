@@ -10,6 +10,9 @@ m_location(loc.physical), m_current(start), m_end(end), m_token_start(start) {
   m_location.last_line = m_location.first_line;
 }
 
+LexerPosition::~LexerPosition() {
+}
+
 CompileErrorPair LexerPosition::error_loc(const PhysicalSourceLocation& loc) {
   return CompileErrorPair(*m_error_context, SourceLocation(loc, m_error_location));
 }

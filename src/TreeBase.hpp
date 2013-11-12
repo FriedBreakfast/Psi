@@ -89,9 +89,9 @@ namespace Psi {
       SourceLocation m_location;
 
       /// Disable general new operator
-      static void* operator new (size_t) {PSI_FAIL("Tree::new should never be called");}
+      static void* operator new (size_t);
       /// Disable placement new
-      static void* operator new (size_t, void*) {PSI_FAIL("Tree::new should never be called");}
+      static void* operator new (size_t, void*);
 
       Tree(const TreeVtable *vptr);
 

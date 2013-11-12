@@ -7,6 +7,9 @@
 
 namespace Psi {
   namespace Tvm {
+    Jit::~Jit() {
+    }
+    
     JitFactory::JitFactory(const CompileErrorPair& error_handler)
     : m_error_handler(error_handler) {
     }

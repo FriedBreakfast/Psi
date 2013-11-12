@@ -23,20 +23,8 @@ namespace Psi {
   /**
    * \brief Base class for types which should never be constructed.
    */
-  class PSI_COMPILER_COMMON_EXPORT NonConstructible {
+  class NonConstructible {
     NonConstructible();
-  };
-
-  /**
-   * \brief Base class for non-copyable types.
-   *
-   * \internal This is used instead of boost::noncopyable so we can control Win32 DLL exports.
-   */
-  class PSI_COMPILER_COMMON_EXPORT NonCopyable {
-    NonCopyable(const NonCopyable&);
-    NonCopyable& operator = (const NonCopyable&);
-  public:
-    NonCopyable() {}
   };
 
   /**
@@ -596,7 +584,7 @@ namespace Psi {
    * Each string should be allocated with malloc() since it is freed
    * with free().
    */
-  class PSI_COMPILER_COMMON_EXPORT CStringArray : public NonCopyable {
+  class PSI_COMPILER_COMMON_EXPORT CStringArray : boost::noncopyable {
     std::size_t m_length;
     char **m_strings;
   

@@ -15,7 +15,7 @@ namespace Psi {
     /**
      * \brief Base class for terms which belong to a block.
      */
-    class PSI_TVM_EXPORT BlockMember : public Value {
+    class PSI_TVM_EXPORT_DEBUG BlockMember : public Value {
       friend class Block;
 
     public:
@@ -39,14 +39,14 @@ namespace Psi {
       Block *m_block;
     };
     
-    class PSI_TVM_EXPORT InstructionVisitor {
+    class PSI_TVM_EXPORT_DEBUG InstructionVisitor {
     public:
       virtual void next(ValuePtr<>& ptr) = 0;
     };
     
     class Instruction;
     
-    class PSI_TVM_EXPORT InstructionVisitorWrapper : public ValuePtrVisitorBase<InstructionVisitorWrapper> {
+    class PSI_TVM_EXPORT_DEBUG InstructionVisitorWrapper : public ValuePtrVisitorBase<InstructionVisitorWrapper> {
       InstructionVisitor *m_callback;
     public:
       InstructionVisitorWrapper(InstructionVisitor *callback) : m_callback(callback) {}
@@ -69,7 +69,7 @@ namespace Psi {
      * created by implementing InstructionTermBackend and wrapping
      * that in InstructionTerm.
      */
-    class PSI_TVM_EXPORT Instruction : public BlockMember {
+    class PSI_TVM_EXPORT_DEBUG Instruction : public BlockMember {
       friend class Block;
       
     public:
@@ -98,7 +98,7 @@ namespace Psi {
     /**
      * \brief Base class for instructions which terminate blocks.
      */
-    class PSI_TVM_EXPORT TerminatorInstruction : public Instruction {
+    class PSI_TVM_EXPORT_DEBUG TerminatorInstruction : public Instruction {
     public:
       TerminatorInstruction(Context& context, const char *operation, const SourceLocation& location);
       
@@ -121,7 +121,7 @@ namespace Psi {
 #define PSI_TVM_INSTRUCTION_DECL(Type) \
     PSI_TVM_VALUE_DECL(Type) \
   public: \
-    static const char operation[]; \
+    PSI_TVM_EXPORT static const char operation[]; \
     virtual void type_check(); \
     virtual void instruction_visit(InstructionVisitor& callback); \
     template<typename V> static void visit(V& v); \
@@ -158,17 +158,17 @@ namespace Psi {
      *
      * \sa http://en.wikipedia.org/wiki/Static_single_assignment_form
      */
-    class PSI_TVM_EXPORT Phi : public BlockMember {
+    class PSI_TVM_EXPORT_DEBUG Phi : public BlockMember {
       PSI_TVM_VALUE_DECL(Phi)
       friend class Block;
 
     public:
-      void add_edge(const ValuePtr<Block>& block, const ValuePtr<>& value);
+      PSI_TVM_EXPORT void add_edge(const ValuePtr<Block>& block, const ValuePtr<>& value);
       /// \brief Get incoming edge list
       const std::vector<PhiEdge>& edges() const {return m_edges;}
       
       /// \brief Get the value from a specific source block.
-      ValuePtr<> incoming_value_from(const ValuePtr<Block>& block);
+      PSI_TVM_EXPORT ValuePtr<> incoming_value_from(const ValuePtr<Block>& block);
 
       void remove();
 
@@ -186,7 +186,7 @@ namespace Psi {
      * \brief Block (list of instructions) inside a function. The
      * value of this term is the label used to jump to this block.
      */
-    class PSI_TVM_EXPORT Block : public Value {
+    class PSI_TVM_EXPORT_DEBUG Block : public Value {
       PSI_TVM_VALUE_DECL(Block);
       friend class Function;
       friend class Instruction;
@@ -195,11 +195,11 @@ namespace Psi {
       typedef ValueList<Instruction, &Instruction::m_instruction_list_hook> InstructionList;
       typedef ValueList<Phi, &Phi::m_phi_list_hook> PhiList;
 
-      ValuePtr<Phi> insert_phi(const ValuePtr<>& type, const SourceLocation& location);
-      void insert_instruction(const ValuePtr<Instruction>& insn, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
+      PSI_TVM_EXPORT ValuePtr<Phi> insert_phi(const ValuePtr<>& type, const SourceLocation& location);
+      PSI_TVM_EXPORT void insert_instruction(const ValuePtr<Instruction>& insn, const ValuePtr<Instruction>& before=ValuePtr<Instruction>());
       
-      void erase_phi(Phi& phi);
-      void erase_instruction(Instruction& instruction);
+      PSI_TVM_EXPORT void erase_phi(Phi& phi);
+      PSI_TVM_EXPORT void erase_instruction(Instruction& instruction);
 
       const InstructionList& instructions() const {return m_instructions;}
       const PhiList& phi_nodes() const {return m_phi_nodes;}
@@ -255,7 +255,7 @@ namespace Psi {
 
     class Function;
 
-    class PSI_TVM_EXPORT FunctionParameter : public Value {
+    class PSI_TVM_EXPORT_DEBUG FunctionParameter : public Value {
       PSI_TVM_VALUE_DECL(FunctionParameter);
       friend class Function;
     public:
@@ -286,7 +286,7 @@ namespace Psi {
     /**
      * \brief Function.
      */
-    class PSI_TVM_EXPORT Function : public Global {
+    class PSI_TVM_EXPORT_DEBUG Function : public Global {
       PSI_TVM_VALUE_DECL(Function);
       friend class Module;
     public:
@@ -299,7 +299,7 @@ namespace Psi {
        * type, whereas the actual type of this term is a pointer to
        * that type.
        */
-      ValuePtr<FunctionType> function_type() const;
+      PSI_TVM_EXPORT ValuePtr<FunctionType> function_type() const;
 
       /** \brief Get the parameters for this funtion */
       const ParameterList& parameters() const {return m_parameters;}
@@ -313,12 +313,12 @@ namespace Psi {
 
       const BlockList& blocks() {return m_blocks;}
 
-      ValuePtr<Block> new_block(const SourceLocation& location,
-                                const ValuePtr<Block>& dominator=ValuePtr<Block>(),
-                                const ValuePtr<Block>& landing_pad=ValuePtr<Block>());
-      ValuePtr<Block> new_landing_pad(const SourceLocation& location,
-                                const ValuePtr<Block>& dominator=ValuePtr<Block>(),
-                                const ValuePtr<Block>& landing_pad=ValuePtr<Block>());
+      PSI_TVM_EXPORT ValuePtr<Block> new_block(const SourceLocation& location,
+                                               const ValuePtr<Block>& dominator=ValuePtr<Block>(),
+                                               const ValuePtr<Block>& landing_pad=ValuePtr<Block>());
+      PSI_TVM_EXPORT ValuePtr<Block> new_landing_pad(const SourceLocation& location,
+                                                     const ValuePtr<Block>& dominator=ValuePtr<Block>(),
+                                                     const ValuePtr<Block>& landing_pad=ValuePtr<Block>());
 
       void add_term_name(const ValuePtr<>& term, const std::string& name);
       const TermNameMap& term_name_map() {return m_name_map;}
@@ -355,7 +355,7 @@ namespace Psi {
     /**
      * \brief Term type appearing in dependent types of completed function types.
      */
-    class PSI_TVM_EXPORT ResolvedParameter : public HashableValue {
+    class PSI_TVM_EXPORT_DEBUG ResolvedParameter : public HashableValue {
       PSI_TVM_HASHABLE_DECL(ResolvedParameter)
       
     private:
@@ -417,7 +417,7 @@ namespace Psi {
      * function call (note that there is no <tt>result_of</tt> term,
      * since the result must be the appropriate term itself).
      */
-    class PSI_TVM_EXPORT FunctionType : public HashableValue {
+    class PSI_TVM_EXPORT_DEBUG FunctionType : public HashableValue {
       PSI_TVM_HASHABLE_DECL(FunctionType)
       friend class Context;
 
@@ -467,7 +467,7 @@ namespace Psi {
      * \note This is implemented next to FunctionType because they work in a
      * similar way, not because they are particularly conceptually related.
      */
-    class PSI_TVM_EXPORT Exists : public HashableValue {
+    class PSI_TVM_EXPORT_DEBUG Exists : public HashableValue {
       PSI_TVM_HASHABLE_DECL(Exists)
 
     public:
@@ -490,7 +490,7 @@ namespace Psi {
     /**
      * \brief Used to unwrap a value whose type is an exists term.
      */
-    class PSI_TVM_EXPORT Unwrap : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG Unwrap : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(Unwrap)
       
     public:
@@ -506,7 +506,7 @@ namespace Psi {
     /**
      * \brief Used to replace exists parameters in unwrapped values.
      */
-    class PSI_TVM_EXPORT UnwrapParameter : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG UnwrapParameter : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(UnwrapParameter)
       
     public:
@@ -527,7 +527,7 @@ namespace Psi {
     /**
      * \brief Introduce exists quantification to a value.
      */
-    class PSI_TVM_EXPORT IntroduceExists : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG IntroduceExists : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(IntroduceExists)
       
     public:
@@ -548,7 +548,7 @@ namespace Psi {
      * 
      * This is used by function type, recursive and exists.
      */
-    class PSI_TVM_EXPORT ParameterPlaceholder : public Value {
+    class PSI_TVM_EXPORT_DEBUG ParameterPlaceholder : public Value {
       PSI_TVM_VALUE_DECL(ParameterPlaceholder);
     private:
       friend class Context;
@@ -564,7 +564,7 @@ namespace Psi {
     /**
      * Helper class for inserting instructions into blocks.
      */
-    class PSI_TVM_EXPORT InstructionInsertPoint {
+    class PSI_TVM_EXPORT_DEBUG InstructionInsertPoint {
       ValuePtr<Block> m_block;
       ValuePtr<Instruction> m_instruction;
 

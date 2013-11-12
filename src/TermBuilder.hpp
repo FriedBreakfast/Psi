@@ -6,7 +6,7 @@
 
 namespace Psi {
 namespace Compiler {
-struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
+struct TermBuilder : NonConstructible {
 /// \name Types
 //@{
   static TreePtr<Term> metatype(CompileContext& compile_context);
@@ -23,9 +23,9 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
   static TreePtr<Term> exists_parameter(const TreePtr<Term>& exists_term, unsigned index, const SourceLocation& location);
   static TreePtr<Term> exists_value(const TreePtr<Term>& exists_term, const SourceLocation& location);
   static TreePtr<Term> constant(const TreePtr<Term>& value, const SourceLocation& location);
-  static TreePtr<FunctionType> function_type(ResultMode result_mode, const TreePtr<Term>& result_type,
-                                             const PSI_STD::vector<FunctionParameterType>& parameter_types,
-                                             const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces, const SourceLocation& location);
+  PSI_COMPILER_EXPORT static TreePtr<FunctionType> function_type(ResultMode result_mode, const TreePtr<Term>& result_type,
+                                                                 const PSI_STD::vector<FunctionParameterType>& parameter_types,
+                                                                 const PSI_STD::vector<TreePtr<InterfaceValue> >& interfaces, const SourceLocation& location);
   static TreePtr<ArrayType> array_type(const TreePtr<Term>& element_type, const TreePtr<Term>& length, const SourceLocation& location);
   static TreePtr<ArrayType> array_type(const TreePtr<Term>& element_type, unsigned length, const SourceLocation& location);
   static TreePtr<StructType> struct_type(CompileContext& compile_context, const PSI_STD::vector<TreePtr<Term> >& member_types, const SourceLocation& location);
@@ -126,6 +126,11 @@ struct PSI_COMPILER_EXPORT TermBuilder : NonConstructible {
                                         const T& body_callback, const String& symbol_name=String()) {
     return tree_from(::new Function(module, symbol_name, type, linkage, arguments, return_target, location, body_callback));
   }
+  
+  PSI_COMPILER_EXPORT static TreePtr<ModuleGlobal> function(const TreePtr<Module>& module, const TreePtr<FunctionType>& type, Linkage linkage,
+                                                            const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
+                                                            const TreePtr<JumpTarget>& return_target, const SourceLocation& location,
+                                                            const TreePtr<Term>& body, const String& symbol_name=String());
   
   /**
    * \brief Create a global variable.

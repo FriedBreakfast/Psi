@@ -6,11 +6,7 @@
 #include "FunctionalBuilder.hpp"
 #include "Utility.hpp"
 
-#include <boost/next_prior.hpp>
-#include <set>
-#include <map>
-#include <queue>
-#include <utility>
+#include <boost/make_shared.hpp>
 
 namespace Psi {
   namespace Tvm {
@@ -77,7 +73,35 @@ namespace Psi {
     ValuePtr<> AggregateLoweringPass::TargetCallback::byte_shift(const ValuePtr<>& value, const ValuePtr<>& result_type, int shift, const SourceLocation& location) {
       PSI_NOT_IMPLEMENTED();
     }
-
+    
+    LoweredType::Base::Base(Mode mode_, const ValuePtr<>& origin_, const ValuePtr<>& size_, const ValuePtr<>& alignment_)
+    : mode(mode_), origin(origin_), size(size_), alignment(alignment_) {
+    }
+    
+    LoweredType::RegisterType::RegisterType(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& register_type_)
+    : Base(mode_register, origin, size, alignment), register_type(register_type_) {
+    }
+    
+    LoweredType::SplitType::SplitType(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const EntryVector& entries_)
+    : Base(mode_split, origin, size, alignment), entries(entries_) {
+      PSI_ASSERT(all_global(entries));
+    }
+    
+    /// \brief Construct a lowered type which is stored in a register
+    LoweredType LoweredType::register_(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& register_type) {
+      return LoweredType(boost::make_shared<RegisterType>(origin, size, alignment, register_type));
+    }
+    
+    /// \brief Construct a lowered type which is split into component types
+    LoweredType LoweredType::split(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const EntryVector& entries) {
+      return LoweredType(boost::make_shared<SplitType>(origin, size, alignment, entries));
+    }
+    
+    /// \brief Construct a lowered type which is treated as a black box
+    LoweredType LoweredType::blob(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment) {
+      return LoweredType(boost::make_shared<Base>(mode_blob, origin, size, alignment));
+    }
+    
     /**
      * \brief Return a type with identical lowered representation but a different origin.
      */
@@ -748,6 +772,9 @@ namespace Psi {
     AggregateLoweringPass::ModuleLevelRewriter::ModuleLevelRewriter(AggregateLoweringPass *pass)
     : AggregateLoweringRewriter(pass) {
     }
+    
+    AggregateLoweringPass::ModuleLevelRewriter::~ModuleLevelRewriter() {
+    }
 
     LoweredValue AggregateLoweringPass::ModuleLevelRewriter::bitcast(const LoweredType& type, const LoweredValue& input, const SourceLocation& location) {
       std::vector<ExplodeEntry> exploded;
@@ -820,6 +847,9 @@ namespace Psi {
     pointer_arithmetic_to_bytes(false),
     flatten_globals(false),
     memcpy_to_bytes(false) {
+    }
+    
+    AggregateLoweringPass::~AggregateLoweringPass() {
     }
 
     /**

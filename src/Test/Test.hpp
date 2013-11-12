@@ -81,6 +81,7 @@ namespace Psi {
       
     public:
       TestCaseBase(TestSuite& suite, const char *name);
+      virtual ~TestCaseBase();
       virtual void run() const = 0;
       const TestSuite *suite() const {return m_suite;}
       const char *name() const {return m_name;}

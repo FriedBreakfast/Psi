@@ -759,11 +759,11 @@ namespace Psi {
     class Function : public ModuleGlobal {
       DelayedValue<TreePtr<Term>, TreePtr<Function> > m_body;
       PSI_COMPILER_EXPORT TreePtr<Function> get_ptr() const;
-      PSI_COMPILER_EXPORT void check_type();
+      void check_type();
       PSI_COMPILER_EXPORT void body_check_type(TreePtr<Term>& body) const;
       
     public:
-      PSI_COMPILER_EXPORT static const VtableType vtable;
+      static const VtableType vtable;
       
       template<typename BodyCallback>
       Function(const TreePtr<Module>& module,
@@ -781,7 +781,7 @@ namespace Psi {
         check_type();
       }
 
-      PSI_COMPILER_EXPORT ~Function();
+      ~Function();
 
       /// \brief Argument values.
       PSI_STD::vector<TreePtr<Anonymous> > arguments;

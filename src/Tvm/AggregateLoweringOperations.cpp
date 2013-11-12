@@ -5,7 +5,7 @@
 
 namespace Psi {
   namespace Tvm {
-    struct AggregateLoweringPass::TypeTermRewriter {
+    struct PSI_LOCAL AggregateLoweringPass::TypeTermRewriter {
       static LoweredType array_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<ArrayType>& term) {
         LoweredValueSimple length = rewriter.rewrite_value_register(term->length());
         LoweredType element_type = rewriter.rewrite_type(term->element_type());
@@ -136,7 +136,7 @@ namespace Psi {
       static LoweredType primitive_type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<FunctionalValue>& type) {
         PSI_ASSERT(type->is_type());
         
-        class TrivialRewriteCallback : public RewriteCallback {
+        class PSI_LOCAL TrivialRewriteCallback : public RewriteCallback {
         public:
           TrivialRewriteCallback(Context& context) : RewriteCallback(context) {}
           virtual ValuePtr<> rewrite(const ValuePtr<>&) {
@@ -224,7 +224,7 @@ namespace Psi {
       return TypeTermRewriter::parameter_type_rewrite(rewriter, type);
     }
 
-    struct AggregateLoweringPass::FunctionalTermRewriter {
+    struct PSI_LOCAL AggregateLoweringPass::FunctionalTermRewriter {
       static LoweredValue type_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<>& term) {
         LoweredType ty = rewriter.rewrite_type(term);
         LoweredType meta_ty = rewriter.rewrite_type(term->type());
@@ -242,7 +242,7 @@ namespace Psi {
       }
 
       static LoweredValue default_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<HashableValue>& term) {
-        class Callback : public RewriteCallback {
+        class PSI_LOCAL Callback : public RewriteCallback {
           AggregateLoweringRewriter *m_rewriter;
           bool m_global;
           
@@ -776,7 +776,7 @@ namespace Psi {
       return FunctionalTermRewriter::callback_map.call(rewriter, term);
     }
 
-    struct AggregateLoweringPass::InstructionTermRewriter {
+    struct PSI_LOCAL AggregateLoweringPass::InstructionTermRewriter {
       static LoweredValue return_rewrite(FunctionRunner& runner, const ValuePtr<Return>& term) {
         // Clean up all remaining allocas()
         runner.alloca_free(ValuePtr<>(), term->location());

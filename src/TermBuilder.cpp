@@ -421,6 +421,16 @@ void TermBuilder::to_functional(PSI_STD::vector<TreePtr<Term> >& values, const S
 }
 
 /**
+ * \brief Create a global function.
+ */
+TreePtr<ModuleGlobal> TermBuilder::function(const TreePtr<Module>& module, const TreePtr<FunctionType>& type, Linkage linkage,
+                                            const PSI_STD::vector<TreePtr<Anonymous> >& arguments,
+                                            const TreePtr<JumpTarget>& return_target, const SourceLocation& location,
+                                            const TreePtr<Term>& body, const String& symbol_name) {
+  return tree_from(::new Function(module, symbol_name, type, linkage, arguments, return_target, location, body));
+}
+
+/**
  * \brief Get a global variable.
  * 
  * This constructor does not support self-referencing globals, and hence

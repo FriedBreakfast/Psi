@@ -12,7 +12,7 @@ namespace Psi {
     /**
      * Base class for types which rewrite entire modules.
      */
-    class PSI_TVM_EXPORT ModuleRewriter : public NonCopyable {
+    class PSI_TVM_EXPORT ModuleRewriter : boost::noncopyable {
       Module *m_source_module;
       std::auto_ptr<Module> m_target_module;
       typedef boost::unordered_map<ValuePtr<Global>, ValuePtr<Global> > GlobalMapType;
@@ -24,6 +24,7 @@ namespace Psi {
       
     public:
       ModuleRewriter(Module*, Context* =0);
+      virtual ~ModuleRewriter();
       
       /// \brief The module being rewritten
       Module *source_module() {return m_source_module;}

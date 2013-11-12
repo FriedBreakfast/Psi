@@ -108,7 +108,8 @@ namespace Psi {
     }
 
     Object::Object(const Object& src)
-    : m_reference_count(0),
+    : boost::intrusive::list_base_hook<>(),
+    m_reference_count(0),
     m_compile_context(NULL) {
       PSI_COMPILER_SI_INIT(src.m_vptr);
     }

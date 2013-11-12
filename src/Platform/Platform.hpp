@@ -116,7 +116,7 @@ PSI_COMPILER_COMMON_EXPORT boost::shared_ptr<PlatformLibrary> load_library(const
  * at that path (if one exists).
  * This does not create the file.
  */
-class PSI_COMPILER_COMMON_EXPORT TemporaryPath : public NonCopyable {
+class PSI_COMPILER_COMMON_EXPORT TemporaryPath : boost::noncopyable {
   TemporaryPathData m_data;
   Path m_path;
   

@@ -16,6 +16,9 @@ namespace Psi {
     m_target_module(new Module(target_context ? target_context : &source_module->context(), source_module->name(), source_module->location())) {
     }
     
+    ModuleRewriter::~ModuleRewriter() {
+    }
+    
     /**
      * \brief Add a mapping to the global variable map.
      * 

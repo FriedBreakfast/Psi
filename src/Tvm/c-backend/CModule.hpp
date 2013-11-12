@@ -62,7 +62,7 @@ PSI_SMALL_ENUM(COperatorType) {
 #undef PSI_TVM_C_OP
 };
 
-class SinglyLinkedListBase : public NonCopyable {
+class SinglyLinkedListBase : public boost::noncopyable {
   template<typename> friend class SinglyLinkedList;
   SinglyLinkedListBase *m_next;
 public:

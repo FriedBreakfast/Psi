@@ -31,7 +31,7 @@ namespace Psi {
      * via pointer equality. This is particularly required for type
      * checking, but also applies to other terms.
      */
-    class PSI_TVM_EXPORT FunctionalValue : public HashableValue {
+    class PSI_TVM_EXPORT_DEBUG FunctionalValue : public HashableValue {
       friend class Context;
       friend class Value;
       template<typename> friend class FunctionalTermWithData;
@@ -64,7 +64,7 @@ namespace Psi {
       visit_members(vw, c); \
     }
     
-    class PSI_TVM_EXPORT UnaryOp : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG UnaryOp : public FunctionalValue {
     protected:
       UnaryOp(const ValuePtr<>& parameter, const SourceLocation& location);
       
@@ -83,7 +83,7 @@ namespace Psi {
     };
     
 #define PSI_TVM_UNARY_OP_DECL(name,base) \
-    class PSI_TVM_EXPORT name : public base { \
+    class PSI_TVM_EXPORT_DEBUG name : public base { \
       PSI_TVM_FUNCTIONAL_DECL(name) \
       \
     public: \
@@ -101,7 +101,7 @@ namespace Psi {
       visit_base<base>(v); \
     }
     
-    class PSI_TVM_EXPORT BinaryOp : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG BinaryOp : public FunctionalValue {
     public:
       const ValuePtr<>& lhs() const {return m_lhs;}
       const ValuePtr<>& rhs() const {return m_rhs;}
@@ -123,7 +123,7 @@ namespace Psi {
     };
 
 #define PSI_TVM_BINARY_OP_DECL(name,base) \
-    class PSI_TVM_EXPORT name : public base { \
+    class PSI_TVM_EXPORT_DEBUG name : public base { \
       PSI_TVM_FUNCTIONAL_DECL(name) \
     public: \
       name(const ValuePtr<>& lhs, const ValuePtr<>& rhs, const SourceLocation& location); \
@@ -140,21 +140,21 @@ namespace Psi {
       visit_base<base>(v); \
     }
     
-    class PSI_TVM_EXPORT Type : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG Type : public FunctionalValue {
     public:
       Type(Context& context, const SourceLocation& location);
     public:
       template<typename V> static void visit(V& v) {visit_base<FunctionalValue>(v);}
     };
     
-    class PSI_TVM_EXPORT Constructor : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG Constructor : public FunctionalValue {
     protected:
       Constructor(Context& context, const SourceLocation& location);
     public:
       template<typename V> static void visit(V& v) {visit_base<FunctionalValue>(v);}
     };
     
-    class PSI_TVM_EXPORT AggregateOp : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG AggregateOp : public FunctionalValue {
     protected:
       AggregateOp(Context& context, const SourceLocation& location);
     public:

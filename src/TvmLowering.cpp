@@ -3,6 +3,7 @@
 #include "TopologicalSort.hpp"
 #include "Platform/PlatformCompile.hpp"
 
+#include "Tvm/Aggregate.hpp"
 #include "Tvm/FunctionalBuilder.hpp"
 #include "Tvm/Function.hpp"
 #include "Tvm/Recursive.hpp"

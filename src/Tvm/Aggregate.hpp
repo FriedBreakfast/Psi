@@ -20,7 +20,7 @@ namespace Psi {
      * This is not equivalent to a struct, union or array
      * with no elements.
      */
-    class PSI_TVM_EXPORT EmptyType : public Type {
+    class PSI_TVM_EXPORT_DEBUG EmptyType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(EmptyType)
     public:
       EmptyType(Context& context, const SourceLocation& location);
@@ -29,13 +29,13 @@ namespace Psi {
     /**
      * \brief The unique value of the empty type.
      */
-    class PSI_TVM_EXPORT EmptyValue : public Constructor {
+    class PSI_TVM_EXPORT_DEBUG EmptyValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(EmptyValue)
     public:
       EmptyValue(Context& context, const SourceLocation& location);
     };
     
-    class PSI_TVM_EXPORT OuterPtr : public AggregateOp {
+    class PSI_TVM_EXPORT_DEBUG OuterPtr : public AggregateOp {
       PSI_TVM_FUNCTIONAL_DECL(OuterPtr)
       
     public:
@@ -51,7 +51,7 @@ namespace Psi {
     /**
      * \brief Type of upward references.
      */
-    class PSI_TVM_EXPORT UpwardReferenceType : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG UpwardReferenceType : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(UpwardReference)
       
     public:
@@ -61,7 +61,7 @@ namespace Psi {
     /**
      * \brief Upward reference value.
      */
-    class PSI_TVM_EXPORT UpwardReference : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG UpwardReference : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(UpwardReference)
       
     public:
@@ -85,7 +85,7 @@ namespace Psi {
       virtual bool match_impl(const FunctionalValue& other, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const;
     };
     
-    class PSI_TVM_EXPORT UpwardReferenceNull : public HashableValue {
+    class PSI_TVM_EXPORT_DEBUG UpwardReferenceNull : public HashableValue {
       PSI_TVM_HASHABLE_DECL(UpwardReferenceUnknown)
       
     public:
@@ -96,7 +96,7 @@ namespace Psi {
     /**
      * \brief A type which can only have a single value.
      */
-    class PSI_TVM_EXPORT ConstantType : public Type {
+    class PSI_TVM_EXPORT_DEBUG ConstantType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(ConstantType)
     public:
       ConstantType(const ValuePtr<>& value, const SourceLocation& location);
@@ -111,7 +111,7 @@ namespace Psi {
     /**
      * \brief The type of a BlockTerm.
      */
-    class PSI_TVM_EXPORT BlockType : public Type {
+    class PSI_TVM_EXPORT_DEBUG BlockType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(BlockType)      
     public:
       BlockType(Context& context, const SourceLocation& location);
@@ -122,7 +122,7 @@ namespace Psi {
      * 
      * \c sizeof and \c alignof are measure in units of this type.
      */
-    class PSI_TVM_EXPORT ByteType : public Type {
+    class PSI_TVM_EXPORT_DEBUG ByteType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(ByteType)
     public:
       ByteType(Context& context, const SourceLocation& location);
@@ -134,7 +134,7 @@ namespace Psi {
      * This is the \c type term: all terms which can be used as types are
      * themselves of type \c type except \c type, which has no type.
      */
-    class PSI_TVM_EXPORT Metatype : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG Metatype : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(Metatype)
     public:
       Metatype(Context& context, const SourceLocation& location);
@@ -148,7 +148,7 @@ namespace Psi {
      * code generation, where the other types use this to construct a
      * type.
      */
-    class PSI_TVM_EXPORT MetatypeValue : public Constructor {
+    class PSI_TVM_EXPORT_DEBUG MetatypeValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(MetatypeValue)
     public:
       
@@ -190,7 +190,7 @@ namespace Psi {
     /**
      * \brief A pointer type.
      */
-    class PSI_TVM_EXPORT PointerType : public Type {
+    class PSI_TVM_EXPORT_DEBUG PointerType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(PointerType)
     public:
       PointerType(const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location);
@@ -206,11 +206,19 @@ namespace Psi {
       static void hashable_check_source(PointerType& self, CheckSourceParameter& parameter);
       virtual bool match_impl(const FunctionalValue& other, std::vector<ValuePtr<> >& parameters, unsigned depth, UprefMatchMode upref_mode) const;
     };
+    
+    /**
+     * \brief Get the value type of a global, i.e. the type pointed to
+     * by the global's value.
+     */
+    inline ValuePtr<> Global::value_type() const {
+      return value_cast<PointerType>(type())->target_type();
+    }
 
     /**
      * \brief Cast a pointer from one type to another while keeping its address the same.
      */
-    class PSI_TVM_EXPORT PointerCast : public AggregateOp {
+    class PSI_TVM_EXPORT_DEBUG PointerCast : public AggregateOp {
       PSI_TVM_FUNCTIONAL_DECL(PointerCast)
     public:
       PointerCast(const ValuePtr<>& pointer, const ValuePtr<>& target_type, const ValuePtr<>& upref, const SourceLocation& location);
@@ -236,7 +244,7 @@ namespace Psi {
      * whether it is signed or unsigned. The \c offset parameter
      * is measured in units of the pointed-to type.
      */
-    class PSI_TVM_EXPORT PointerOffset : public AggregateOp {
+    class PSI_TVM_EXPORT_DEBUG PointerOffset : public AggregateOp {
       PSI_TVM_FUNCTIONAL_DECL(PointerOffset)
     public:
       PointerOffset(const ValuePtr<>& pointer, const ValuePtr<>& offset, const SourceLocation& location);
@@ -258,7 +266,7 @@ namespace Psi {
     /**
      * \brief An array type - a collection of identical elements of fixed length.
      */
-    class PSI_TVM_EXPORT ArrayType : public Type {
+    class PSI_TVM_EXPORT_DEBUG ArrayType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(ArrayType)
     public:
       ArrayType(const ValuePtr<>& element_type, const ValuePtr<>& length, const SourceLocation& location);
@@ -278,7 +286,7 @@ namespace Psi {
     /**
      * \brief Constructs a value for ArrayType from a list of element values.
      */
-    class PSI_TVM_EXPORT ArrayValue : public Constructor {
+    class PSI_TVM_EXPORT_DEBUG ArrayValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(ArrayValue)
       
     public:
@@ -301,7 +309,7 @@ namespace Psi {
     /**
      * \brief The struct type, which contains a series of values of different types.
      */
-    class PSI_TVM_EXPORT StructType : public Type {
+    class PSI_TVM_EXPORT_DEBUG StructType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(StructType)
     public:
       StructType(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
@@ -320,7 +328,7 @@ namespace Psi {
     /**
      * \brief Constructs a value of type StructType from the values of the individual elements.
      */
-    class PSI_TVM_EXPORT StructValue : public Constructor {
+    class PSI_TVM_EXPORT_DEBUG StructValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(StructValue)
     public:
       StructValue(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
@@ -342,7 +350,7 @@ namespace Psi {
      * This should be considered an internal operation, and not be
      * created by the user.
      */
-    class PSI_TVM_EXPORT StructElementOffset : public AggregateOp {
+    class PSI_TVM_EXPORT_DEBUG StructElementOffset : public AggregateOp {
       PSI_TVM_FUNCTIONAL_DECL(StructElementOffset)
     public:
       StructElementOffset(const ValuePtr<>& struct_type, unsigned index, const SourceLocation& location);
@@ -361,7 +369,7 @@ namespace Psi {
      * \brief The union type - a type which holds a value of one type
      * from a set of possible types.
      */
-    class PSI_TVM_EXPORT UnionType : public Type {
+    class PSI_TVM_EXPORT_DEBUG UnionType : public Type {
       PSI_TVM_FUNCTIONAL_DECL(UnionType)
     public:
       UnionType(Context& context, const std::vector<ValuePtr<> >& members, const SourceLocation& location);
@@ -370,8 +378,8 @@ namespace Psi {
       unsigned n_members() const {return m_members.size();}
       /// \brief Get the type of the given member.
       const ValuePtr<>& member_type(unsigned i) const {return m_members[i];}
-      int index_of_type(const ValuePtr<>& type) const;
-      bool contains_type(const ValuePtr<>& type) const;
+      PSI_TVM_EXPORT int index_of_type(const ValuePtr<>& type) const;
+      PSI_TVM_EXPORT bool contains_type(const ValuePtr<>& type) const;
       
     private:
       std::vector<ValuePtr<> > m_members;
@@ -383,7 +391,7 @@ namespace Psi {
      * \brief Constructs a value for UnionType from the type plus the value
      * of the member this particular instance is holding.
      */
-    class PSI_TVM_EXPORT UnionValue : public Constructor {
+    class PSI_TVM_EXPORT_DEBUG UnionValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(UnionValue)
     public:
       UnionValue(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location);
@@ -398,7 +406,7 @@ namespace Psi {
       ValuePtr<> m_value;
     };
     
-    class PSI_TVM_EXPORT ApplyValue : public Constructor {
+    class PSI_TVM_EXPORT_DEBUG ApplyValue : public Constructor {
       PSI_TVM_FUNCTIONAL_DECL(ApplyValue)
     public:
       ApplyValue(const ValuePtr<>& type, const ValuePtr<>& value, const SourceLocation& location);
@@ -415,7 +423,7 @@ namespace Psi {
     /**
      * \brief Get the value of an element of an aggregate from an aggregate value.
      */
-    class PSI_TVM_EXPORT ElementValue : public AggregateOp {
+    class PSI_TVM_EXPORT_DEBUG ElementValue : public AggregateOp {
       PSI_TVM_FUNCTIONAL_DECL(ElementValue)
     public:
       ElementValue(const ValuePtr<>& aggregate, const ValuePtr<>& index, const SourceLocation& location);
@@ -438,7 +446,7 @@ namespace Psi {
      * entirely equivalent to PointerCast, but I put it in
      * because it's semantically different.
      */
-    class PSI_TVM_EXPORT ElementPtr : public AggregateOp {
+    class PSI_TVM_EXPORT_DEBUG ElementPtr : public AggregateOp {
       PSI_TVM_FUNCTIONAL_DECL(ElementPtr)
     public:
       ElementPtr(const ValuePtr<>& aggregate_ptr, const ValuePtr<>& index, const SourceLocation& location);
@@ -463,7 +471,7 @@ namespace Psi {
      * Note that this is not like wrapping a function in another function:
      * it does not adjust the pointer, merely the type.
      */
-    class PSI_TVM_EXPORT FunctionSpecialize : public FunctionalValue {
+    class PSI_TVM_EXPORT_DEBUG FunctionSpecialize : public FunctionalValue {
       PSI_TVM_FUNCTIONAL_DECL(FunctionSpecialize)
     public:
       FunctionSpecialize(const ValuePtr<>& function, const std::vector<ValuePtr<> >& parameters, const SourceLocation& location);

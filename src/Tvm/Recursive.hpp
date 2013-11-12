@@ -7,7 +7,7 @@
 
 namespace Psi {
   namespace Tvm {
-    class PSI_TVM_EXPORT RecursiveParameter : public Value {
+    class PSI_TVM_EXPORT_DEBUG RecursiveParameter : public Value {
       PSI_TVM_VALUE_DECL(RecursiveParameter);
       friend class Context;
       friend class RecursiveType;
@@ -25,7 +25,7 @@ namespace Psi {
 
       template<typename V> static void visit(V& v);
 
-      static ValuePtr<RecursiveParameter> create(const ValuePtr<>& type, bool phantom, const SourceLocation& location);
+      PSI_TVM_EXPORT static ValuePtr<RecursiveParameter> create(const ValuePtr<>& type, bool phantom, const SourceLocation& location);
 
     private:
       RecursiveParameter(Context& context, const ValuePtr<>& type, bool phantom, const SourceLocation& location);
@@ -45,17 +45,17 @@ namespace Psi {
      * RecursiveTerm using Context::new_recursive, create the type as
      * normal and then call #resolve to finalize the type.
      */
-    class PSI_TVM_EXPORT RecursiveType : public Value {
+    class PSI_TVM_EXPORT_DEBUG RecursiveType : public Value {
       PSI_TVM_VALUE_DECL(RecursiveType)
 
     public:
       typedef ValueList<RecursiveParameter, &RecursiveParameter::m_parameter_list_hook> ParameterList;
       
-      static ValuePtr<RecursiveType> create(Context& context,
-                                            RecursiveType::ParameterList& parameters,
-                                            const SourceLocation& location);
+      PSI_TVM_EXPORT static ValuePtr<RecursiveType> create(Context& context,
+                                                           RecursiveType::ParameterList& parameters,
+                                                           const SourceLocation& location);
 
-      void resolve(const ValuePtr<>& term);
+      PSI_TVM_EXPORT void resolve(const ValuePtr<>& term);
       const ParameterList& parameters() const {return m_parameters;}
       const ValuePtr<>& result() {return m_result;}
       
@@ -76,7 +76,7 @@ namespace Psi {
       ParameterList m_parameters;
     };
 
-    class PSI_TVM_EXPORT ApplyType : public HashableValue {
+    class PSI_TVM_EXPORT_DEBUG ApplyType : public HashableValue {
       PSI_TVM_HASHABLE_DECL(ApplyType)
       friend class Context;
       ValuePtr<RecursiveType> m_recursive;
@@ -88,7 +88,7 @@ namespace Psi {
                  const SourceLocation& location);
 
       std::size_t n_parameters() {return m_parameters.size();}
-      ValuePtr<> unpack();
+      PSI_TVM_EXPORT ValuePtr<> unpack();
 
       const ValuePtr<RecursiveType>& recursive() const {return m_recursive;}
       const std::vector<ValuePtr<> >& parameters() const {return m_parameters;}

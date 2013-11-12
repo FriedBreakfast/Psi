@@ -78,13 +78,6 @@ namespace Psi {
       delete this;
     }
 
-    std::size_t Value::hash_value() const {
-      if (const HashableValue *ht = dyn_cast<HashableValue>(this))
-        return ht->m_hash;
-      else
-        return boost::hash_value(this);
-    }
-    
     /**
      * \brief Check that an operation can be used with a given source
      * 
@@ -267,14 +260,6 @@ namespace Psi {
       m_name(name),
       m_module(module),
       m_linkage(link_private) {
-    }
-
-    /**
-     * \brief Get the value type of a global, i.e. the type pointed to
-     * by the global's value.
-     */
-    ValuePtr<> Global::value_type() const {
-      return value_cast<PointerType>(type())->target_type();
     }
     
     /**

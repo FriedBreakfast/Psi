@@ -50,6 +50,8 @@ namespace Psi {
         UIntPtr align;
       };
       
+      virtual ~Jit();
+      
       /**
        * Add a module to this JIT.
        */
@@ -81,12 +83,14 @@ namespace Psi {
      * This holds the reference to the JIT dynamic module and is
      * responsible for system-specific load and unload.
      */
-    class PSI_TVM_EXPORT JitFactory {
+    class JitFactory {
       CompileErrorPair m_error_handler;
 
-    public:
+    protected:
       JitFactory(const CompileErrorPair& error_handler);
       virtual ~JitFactory();
+
+    public:
       
       /// \brief Get error reporting location
       const CompileErrorPair& error_handler() const {return m_error_handler;}
@@ -100,9 +104,9 @@ namespace Psi {
        * This function gets a specific JIT; the configuration passed in should be a description
        * of a particular JIT rather than a global configuration with a selector passed to get().
        */
-      static boost::shared_ptr<JitFactory> get_specific(const CompileErrorPair& error_handler, const PropertyValue& config);
+      PSI_TVM_EXPORT static boost::shared_ptr<JitFactory> get_specific(const CompileErrorPair& error_handler, const PropertyValue& config);
 
-      static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const PropertyValue& config);
+      PSI_TVM_EXPORT static boost::shared_ptr<JitFactory> get(const CompileErrorPair& error_handler, const PropertyValue& config);
     };
     
     class JitFactoryCommon : public JitFactory, public boost::enable_shared_from_this<JitFactoryCommon> {

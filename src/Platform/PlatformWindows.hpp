@@ -36,7 +36,7 @@ namespace Psi {
        * sized data members.
        */
       template<typename T, typename Len, Len T::*LenPtr, unsigned static_length=256>
-      class DynamicLengthBuffer : public NonCopyable {
+      class DynamicLengthBuffer : boost::noncopyable {
         AlignedStorage<sizeof(T) + static_length, PSI_ALIGNOF(T)> m_static;
         Len m_length;
         T *m_ptr;
@@ -81,7 +81,7 @@ namespace Psi {
       /**
        * RAII wrapper around FreeLibrary.
        */
-      class PSI_COMPILER_COMMON_EXPORT LibraryHandle : public NonCopyable {
+      class PSI_COMPILER_COMMON_EXPORT LibraryHandle : boost::noncopyable {
         HMODULE m_handle;
         
       public:

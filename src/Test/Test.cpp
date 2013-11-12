@@ -36,6 +36,9 @@ TestCaseBase::TestCaseBase(TestSuite& suite, const char* name)
   suite.m_test_cases = this;
 }
 
+TestCaseBase::~TestCaseBase() {
+}
+
 std::string test_case_name(const TestCaseBase *tc) {
   std::stringstream ss;
   ss << tc->suite()->name() << '.' << tc->name();

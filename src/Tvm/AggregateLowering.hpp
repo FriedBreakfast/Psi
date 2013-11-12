@@ -10,10 +10,6 @@
 #include "../SharedMap.hpp"
 
 #include <boost/unordered_map.hpp>
-#include <boost/unordered_set.hpp>
-#include <boost/make_shared.hpp>
-
-#include <set>
 
 namespace Psi {
   namespace Tvm {
@@ -49,13 +45,23 @@ namespace Psi {
       }
 #endif
       
-      struct Base : CheckedCastBase {Mode mode; ValuePtr<> origin; ValuePtr<> size; ValuePtr<> alignment;
-      Base(Mode mode_, const ValuePtr<>& origin_, const ValuePtr<>& size_, const ValuePtr<>& alignment_)
-      : mode(mode_), origin(origin_), size(size_), alignment(alignment_) {}};
-      struct RegisterType : Base {ValuePtr<> register_type; RegisterType(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& register_type_)
-      : Base(mode_register, origin, size, alignment), register_type(register_type_) {}};
-      struct SplitType : Base {EntryVector entries; SplitType(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const EntryVector& entries_)
-      : Base(mode_split, origin, size, alignment), entries(entries_) {PSI_ASSERT(all_global(entries));}};
+      struct PSI_TVM_EXPORT_DEBUG Base : CheckedCastBase {
+        Base(Mode mode_, const ValuePtr<>& origin_, const ValuePtr<>& size_, const ValuePtr<>& alignment_);
+        Mode mode;
+        ValuePtr<> origin;
+        ValuePtr<> size;
+        ValuePtr<> alignment;
+      };
+      
+      struct PSI_TVM_EXPORT_DEBUG RegisterType : Base {
+        RegisterType(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& register_type_);
+        ValuePtr<> register_type;
+      };
+      
+      struct PSI_TVM_EXPORT_DEBUG SplitType : Base {
+        SplitType(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const EntryVector& entries_);
+        EntryVector entries;
+      };
       
       boost::shared_ptr<const Base> m_value;
       
@@ -64,15 +70,9 @@ namespace Psi {
     public:
       LoweredType() {}
       
-      /// \brief Construct a lowered type which is stored in a register
-      static LoweredType register_(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& register_type)
-      {return LoweredType(boost::make_shared<RegisterType>(origin, size, alignment, register_type));}
-      /// \brief Construct a lowered type which is split into component types
-      static LoweredType split(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const EntryVector& entries)
-      {return LoweredType(boost::make_shared<SplitType>(origin, size, alignment, entries));}
-      /// \brief Construct a lowered type which is treated as a black box
-      static LoweredType blob(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment)
-      {return LoweredType(boost::make_shared<Base>(mode_blob, origin, size, alignment));}
+      static LoweredType register_(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const ValuePtr<>& register_type);
+      static LoweredType split(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment, const EntryVector& entries);
+      static LoweredType blob(const ValuePtr<>& origin, const ValuePtr<>& size, const ValuePtr<>& alignment);
 
       LoweredType with_origin(const ValuePtr<>& new_origin);
       
@@ -232,7 +232,7 @@ namespace Psi {
       class AggregateLoweringRewriter;
       
       /// \brief Computes offsets and alignment of struct-like (and thereby also array-like) data structures.
-      class ElementOffsetGenerator {
+      class PSI_LOCAL ElementOffsetGenerator {
         AggregateLoweringRewriter *m_rewriter;
         SourceLocation m_location;
         bool m_global;
@@ -256,7 +256,7 @@ namespace Psi {
         void next(const ValuePtr<>& type);
       };    
       
-      class PSI_TVM_EXPORT AggregateLoweringRewriter {
+      class PSI_LOCAL AggregateLoweringRewriter {
         friend class FunctionRunner;
         friend class GlobalVariableRunner;
         friend class AggregateLoweringPass;
@@ -309,22 +309,22 @@ namespace Psi {
          */
         virtual LoweredValue bitcast(const LoweredType& type, const LoweredValue& value, const SourceLocation& location) = 0;
 
-        LoweredType lookup_type(const ValuePtr<>& type);
+        PSI_TVM_EXPORT LoweredType lookup_type(const ValuePtr<>& type);
 
-        LoweredValueSimple rewrite_value_register(const ValuePtr<>&);
-        LoweredValue lookup_value(const ValuePtr<>&);
-        LoweredValueSimple lookup_value_register(const ValuePtr<>&);
+        PSI_TVM_EXPORT LoweredValueSimple rewrite_value_register(const ValuePtr<>&);
+        PSI_TVM_EXPORT LoweredValue lookup_value(const ValuePtr<>&);
+        PSI_TVM_EXPORT LoweredValueSimple lookup_value_register(const ValuePtr<>&);
         
-        ValuePtr<> simplify_argument_type(const ValuePtr<>& type);
-        ValuePtr<> unwrap_exists(const ValuePtr<Exists>& exists);
+        PSI_TVM_EXPORT ValuePtr<> simplify_argument_type(const ValuePtr<>& type);
+        PSI_TVM_EXPORT ValuePtr<> unwrap_exists(const ValuePtr<Exists>& exists);
         
-        AggregateLayout aggregate_layout(const ValuePtr<>& type, const SourceLocation& location, bool with_members=true);
+        PSI_TVM_EXPORT AggregateLayout aggregate_layout(const ValuePtr<>& type, const SourceLocation& location, bool with_members=true);
       };
 
       /**
        * Class which actually runs the pass, and holds per-run data.
        */
-      class PSI_TVM_EXPORT FunctionRunner : public AggregateLoweringRewriter {
+      class PSI_LOCAL FunctionRunner : public AggregateLoweringRewriter {
         ValuePtr<Function> m_old_function, m_new_function;
         InstructionBuilder m_builder;
         
@@ -369,26 +369,27 @@ namespace Psi {
         /// \brief Return an InstructionBuilder set to the current instruction insert point.
         InstructionBuilder& builder() {return m_builder;}
         
-        void add_mapping(const ValuePtr<>& source, const LoweredValue& target);
-        ValuePtr<Block> rewrite_block(const ValuePtr<Block>&);
-        ValuePtr<Block> prepare_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location);
-        ValuePtr<Block> prepare_cond_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location);
+        PSI_TVM_EXPORT void add_mapping(const ValuePtr<>& source, const LoweredValue& target);
+        PSI_TVM_EXPORT ValuePtr<Block> rewrite_block(const ValuePtr<Block>&);
+        PSI_TVM_EXPORT ValuePtr<Block> prepare_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location);
+        PSI_TVM_EXPORT ValuePtr<Block> prepare_cond_jump(const ValuePtr<Block>& source, const ValuePtr<Block>& target, const SourceLocation& location);
         
-        ValuePtr<> alloca_(const LoweredType& type, const SourceLocation& location);
-        LoweredValue load_value(const LoweredType& type, const ValuePtr<>& ptr, const SourceLocation& location);
-        void store_value(const LoweredValue& value, const ValuePtr<>& ptr, const SourceLocation& location);
+        PSI_TVM_EXPORT ValuePtr<> alloca_(const LoweredType& type, const SourceLocation& location);
+        PSI_TVM_EXPORT LoweredValue load_value(const LoweredType& type, const ValuePtr<>& ptr, const SourceLocation& location);
+        PSI_TVM_EXPORT void store_value(const LoweredValue& value, const ValuePtr<>& ptr, const SourceLocation& location);
 
-        void alloca_push(const ValuePtr<Instruction>& alloc_insn);
-        void alloca_free(const ValuePtr<>& alloc_insn, const SourceLocation& location);
+        PSI_TVM_EXPORT void alloca_push(const ValuePtr<Instruction>& alloc_insn);
+        PSI_TVM_EXPORT void alloca_free(const ValuePtr<>& alloc_insn, const SourceLocation& location);
 
-        virtual LoweredType rewrite_type(const ValuePtr<>&);
-        virtual LoweredValue rewrite_value(const ValuePtr<>&);
-        virtual LoweredValue bitcast(const LoweredType& type, const LoweredValue& value, const SourceLocation& location);
+        PSI_TVM_EXPORT virtual LoweredType rewrite_type(const ValuePtr<>&);
+        PSI_TVM_EXPORT virtual LoweredValue rewrite_value(const ValuePtr<>&);
+        PSI_TVM_EXPORT virtual LoweredValue bitcast(const LoweredType& type, const LoweredValue& value, const SourceLocation& location);
       };
       
-      class PSI_TVM_EXPORT ModuleLevelRewriter : public AggregateLoweringRewriter {
+      class PSI_LOCAL ModuleLevelRewriter : public AggregateLoweringRewriter {
       public:
         ModuleLevelRewriter(AggregateLoweringPass*);
+        virtual ~ModuleLevelRewriter();
         virtual LoweredValue bitcast(const LoweredType& type, const LoweredValue& input, const SourceLocation& location);
         virtual LoweredType rewrite_type(const ValuePtr<>&);
         virtual LoweredValue rewrite_value(const ValuePtr<>&);
@@ -481,14 +482,14 @@ namespace Psi {
       struct FunctionalTermRewriter;
       struct InstructionTermRewriter;
       
-      static LoweredType type_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<HashableValue>& term);
-      static LoweredType type_term_rewrite_parameter(AggregateLoweringRewriter& rewriter, const ValuePtr<>& term);
-      static LoweredValue hashable_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<HashableValue>& term);
-      static LoweredValue instruction_term_rewrite(FunctionRunner& runner, const ValuePtr<Instruction>& insn);
+      PSI_LOCAL static LoweredType type_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<HashableValue>& term);
+      PSI_LOCAL static LoweredType type_term_rewrite_parameter(AggregateLoweringRewriter& rewriter, const ValuePtr<>& term);
+      PSI_LOCAL static LoweredValue hashable_term_rewrite(AggregateLoweringRewriter& rewriter, const ValuePtr<HashableValue>& term);
+      PSI_LOCAL static LoweredValue instruction_term_rewrite(FunctionRunner& runner, const ValuePtr<Instruction>& insn);
       
       ModuleLevelRewriter m_global_rewriter;
       
-      struct ExplodeEntry {
+      struct PSI_LOCAL ExplodeEntry {
         std::size_t offset;
         TypeSizeAlignment tsa;
         ValuePtr<> value;
@@ -497,14 +498,14 @@ namespace Psi {
       struct ExplodeCompareStart;
       struct ExplodeCompareEnd;
       
-      void explode_lowered_type(const LoweredType& type, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
-      void explode_constant_value(const ValuePtr<>& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location, bool expand_aggregates);
-      void explode_lowered_value(const LoweredValue& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location, bool expand_aggregates);
-      ValuePtr<> implode_constant_value(const ValuePtr<>& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
-      LoweredValue implode_lowered_value(const LoweredType& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
+      PSI_LOCAL void explode_lowered_type(const LoweredType& type, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
+      PSI_LOCAL void explode_constant_value(const ValuePtr<>& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location, bool expand_aggregates);
+      PSI_LOCAL void explode_lowered_value(const LoweredValue& value, std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location, bool expand_aggregates);
+      PSI_LOCAL ValuePtr<> implode_constant_value(const ValuePtr<>& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
+      PSI_LOCAL LoweredValue implode_lowered_value(const LoweredType& type, const std::vector<ExplodeEntry>& entries, std::size_t& offset, const SourceLocation& location);
 
-      std::pair<ValuePtr<>, ValuePtr<> > build_global_type(const ValuePtr<>& type, const SourceLocation& location);
-      ValuePtr<> build_global_value(const ValuePtr<>& value, const SourceLocation& location);
+      PSI_LOCAL std::pair<ValuePtr<>, ValuePtr<> > build_global_type(const ValuePtr<>& type, const SourceLocation& location);
+      PSI_LOCAL ValuePtr<> build_global_value(const ValuePtr<>& value, const SourceLocation& location);
 
       virtual void update_implementation(bool);
       
@@ -512,6 +513,7 @@ namespace Psi {
 
     public:
       AggregateLoweringPass(Module*, TargetCallback*, Context* =0);
+      virtual ~AggregateLoweringPass();
 
       /// \brief Get the (target) context of this pass
       Context& context() {return target_module()->context();}

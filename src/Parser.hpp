@@ -13,9 +13,9 @@
 
 namespace Psi {
   namespace Parser {
-    struct PSI_COMPILER_EXPORT Text {
+    struct Text {
       Text();
-      Text(const PhysicalSourceLocation& location, const Psi::SharedPtrHandle& data_handle, const char *begin, const char *end);
+      PSI_COMPILER_EXPORT Text(const PhysicalSourceLocation& location, const Psi::SharedPtrHandle& data_handle, const char *begin, const char *end);
       String str() const;
 
       PhysicalSourceLocation location;

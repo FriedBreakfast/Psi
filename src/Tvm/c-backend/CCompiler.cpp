@@ -863,7 +863,7 @@ public:
   }
 };
 
-class StdioTempFile : public NonCopyable {
+class StdioTempFile : boost::noncopyable {
   FILE *m_fp;
 public:
   StdioTempFile() {

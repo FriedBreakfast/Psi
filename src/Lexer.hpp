@@ -10,6 +10,7 @@ namespace Psi {
 class PSI_COMPILER_COMMON_EXPORT LexerPosition {
 public:
   LexerPosition(CompileErrorContext& error_context, const SourceLocation& loc, const char *start, const char *end);
+  ~LexerPosition();
 
   PSI_ATTRIBUTE((PSI_NORETURN)) void error(const PhysicalSourceLocation& loc, const ErrorMessage& message);
   CompileErrorPair error_loc(const PhysicalSourceLocation& loc);

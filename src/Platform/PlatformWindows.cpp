@@ -272,7 +272,7 @@ std::vector<WCHAR> escape_command_line(const Path& command, const std::vector<st
 
 namespace {
 template<typename T=HANDLE>
-class Handle : public NonCopyable {
+class Handle : boost::noncopyable {
 public:
   HANDLE handle;
   Handle() : handle(NULL) {}

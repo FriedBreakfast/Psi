@@ -20,7 +20,7 @@ namespace Platform {
 namespace Unix {
 /// Template class which owns a pointer allocated by malloc()
 template<typename T>
-class MallocPtr : public NonCopyable, public PointerBase<T> {
+class MallocPtr : boost::noncopyable, public PointerBase<T> {
 public:
   MallocPtr(T *ptr=NULL) : PointerBase<T>(ptr) {}
   ~MallocPtr() {reset();}
