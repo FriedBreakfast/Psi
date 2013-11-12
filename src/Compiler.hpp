@@ -475,9 +475,7 @@ namespace Psi {
       CompileErrorContext& error_context() {return *m_error_context;}
       
       /// Forwards to CompileErrorContext::error_throw
-      PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const std::string& message, unsigned flags=0) {error_context().error_throw(loc, message, flags);}
-      /// Forwards to CompileErrorContext::error_throw
-      template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_context().error_throw(loc, message, flags);}
+      PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const ErrorMessage& message, unsigned flags=0) {error_context().error_throw(loc, message, flags);}
     };
     
     class Block;

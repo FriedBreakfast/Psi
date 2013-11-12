@@ -236,6 +236,7 @@ if(PSI_COMBINE_LIBRARIES)
   add_library(psi-combined SHARED ${PSI_COMBINED_SOURCES})
   shared_library_setup(psi-combined)
   target_link_libraries(psi-combined ${PSI_COMBINED_LINK})
+  install(TARGETS psi-combined LIBRARY DESTINATION lib)
 endif()
 
 if (PSI_WITH_CMDLINE)

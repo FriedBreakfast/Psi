@@ -3,6 +3,7 @@
 #include "../Assert.hpp"
 #include "../OptionParser.hpp"
 
+#include <iostream>
 #include <map>
 
 #ifdef __unix__

@@ -1,5 +1,3 @@
-add_subdirectory(interactive)
-
 find_package(PythonInterp REQUIRED)
 
 macro(add_psi_test name)
@@ -10,3 +8,5 @@ add_psi_test(import)
 add_psi_test(construct_destruct)
 add_psi_test(construct_destruct_global)
 add_psi_test(interface)
+
+add_subdirectory(interactive)

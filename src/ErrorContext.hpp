@@ -5,6 +5,7 @@
 #include "SourceLocation.hpp"
 
 #include <sstream>
+#include <boost/format/format_fwd.hpp>
 
 /**
  * \file
@@ -23,6 +24,21 @@ public:
 class PSI_COMPILER_COMMON_EXPORT CompileErrorContext;
 
 /**
+ * A class which encapsulates error message formatting,
+ * converting various different types to strings.
+ */
+class PSI_COMPILER_COMMON_EXPORT ErrorMessage {
+  std::string m_str;
+  
+public:
+  ErrorMessage(const char *s);
+  ErrorMessage(const std::string& s);
+  ErrorMessage(const boost::format& fmt);
+  
+  const std::string& str() const {return m_str;}
+};
+
+/**
  * \brief Class used for error reporting.
  */
 class PSI_COMPILER_COMMON_EXPORT CompileError {
@@ -36,25 +52,15 @@ public:
     error_warning=1,
     error_internal=2
   };
-
-  template<typename T>
-  static std::string to_str(const T& t) {
-    std::ostringstream ss;
-    ss << t;
-    return ss.str();
-  }
   
   CompileError(CompileErrorContext& context, const SourceLocation& location, unsigned flags=0);
 
-  void info(const std::string& message);
-  void info(const SourceLocation& location, const std::string& message);
+  void info(const ErrorMessage& message);
+  void info(const SourceLocation& location, const ErrorMessage& message);
   void end();
   PSI_ATTRIBUTE((PSI_NORETURN)) void end_throw();
 
   const SourceLocation& location() {return m_location;}
-
-  template<typename T> void info(const T& message) {info(to_str(message));}
-  template<typename T> void info(const SourceLocation& location, const T& message) {info(location, to_str(message));}
 };
 
 class CompileErrorPair;
@@ -77,10 +83,8 @@ public:
   /// \brief Bind to a location to create a CompileErrorPair
   CompileErrorPair bind(const SourceLocation& location);
 
-  void error(const SourceLocation& loc, const std::string& message, unsigned flags=0);
-  PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const std::string& message, unsigned flags=0);
-  template<typename T> void error(const SourceLocation& loc, const T& message, unsigned flags=0) {error(loc, CompileError::to_str(message), flags);}
-  template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const T& message, unsigned flags=0) {error_throw(loc, CompileError::to_str(message), flags);}
+  void error(const SourceLocation& loc, const ErrorMessage& message, unsigned flags=0);
+  PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const SourceLocation& loc, const ErrorMessage& message, unsigned flags=0);
 };
 
 /**
@@ -94,13 +98,9 @@ public:
   CompileErrorPair(CompileErrorContext& context, const SourceLocation& location);
   
   /// Forwards to CompileErrorContext::error
-  void error(const std::string& message, unsigned flags=0) const {m_context->error(m_location, message, flags);}
+  void error(const ErrorMessage& message, unsigned flags=0) const {m_context->error(m_location, message, flags);}
   /// Forwards to CompileErrorContext::error_throw
-  PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const std::string& message, unsigned flags=0) const {m_context->error_throw(m_location, message, flags);}
-  /// Forwards to CompileErrorContext::error
-  template<typename T> void error(const T& message, unsigned flags=0) const {m_context->error(m_location, message, flags);}
-  /// Forwards to CompileErrorContext::error_throw
-  template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const T& message, unsigned flags=0) const {m_context->error_throw(m_location, message, flags);}
+  PSI_ATTRIBUTE((PSI_NORETURN)) void error_throw(const ErrorMessage& message, unsigned flags=0) const {m_context->error_throw(m_location, message, flags);}
   
   /// \brief Get the underlying error context
   CompileErrorContext& context() const {return *m_context;}

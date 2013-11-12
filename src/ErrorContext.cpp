@@ -3,18 +3,27 @@
 #include <boost/format.hpp>
 
 namespace Psi {
+ErrorMessage::ErrorMessage(const char* s) : m_str(s) {
+}
+
+ErrorMessage::ErrorMessage(const std::string& s) : m_str(s) {
+}
+
+ErrorMessage::ErrorMessage(const boost::format& fmt) : m_str(fmt.str()) {
+}
+
 CompileErrorContext::CompileErrorContext(std::ostream *error_stream)
 : m_error_stream(error_stream),
 m_error_occurred(false) {
 }
 
-void CompileErrorContext::error(const SourceLocation& loc, const std::string& message, unsigned flags) {
+void CompileErrorContext::error(const SourceLocation& loc, const ErrorMessage& message, unsigned flags) {
   CompileError error(*this, loc, flags);
   error.info(message);
   error.end();
 }
 
-void CompileErrorContext::error_throw(const SourceLocation& loc, const std::string& message, unsigned flags) {
+void CompileErrorContext::error_throw(const SourceLocation& loc, const ErrorMessage& message, unsigned flags) {
   error(loc, message, flags);
   throw CompileException();
 }
@@ -50,17 +59,17 @@ CompileError::CompileError(CompileErrorContext& context, const SourceLocation& l
   }
 }
 
-void CompileError::info(const std::string& message) {
+void CompileError::info(const ErrorMessage& message) {
   info(m_location, message);
 }
 
-void CompileError::info(const SourceLocation& location, const std::string& message) {
+void CompileError::info(const SourceLocation& location, const ErrorMessage& message) {
   if (location.physical.file) {
     m_context->error_stream() << boost::format("%s:%s:%s: %s\n")
-      % location.physical.file->url % location.physical.first_line % m_type % message;
+      % location.physical.file->url % location.physical.first_line % m_type % message.str();
   } else {
     m_context->error_stream() << boost::format("(no file):%s:%s: %s\n")
-      % location.physical.first_line % m_type % message;
+      % location.physical.first_line % m_type % message.str();
   }
 }
 

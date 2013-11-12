@@ -14,7 +14,7 @@ CompileErrorPair LexerPosition::error_loc(const PhysicalSourceLocation& loc) {
   return CompileErrorPair(*m_error_context, SourceLocation(loc, m_error_location));
 }
 
-void LexerPosition::error(const PhysicalSourceLocation& loc, const std::string& message) {
+void LexerPosition::error(const PhysicalSourceLocation& loc, const ErrorMessage& message) {
   error_loc(loc).error_throw(message);
 }
 

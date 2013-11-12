@@ -11,8 +11,7 @@ class PSI_COMPILER_COMMON_EXPORT LexerPosition {
 public:
   LexerPosition(CompileErrorContext& error_context, const SourceLocation& loc, const char *start, const char *end);
 
-  PSI_ATTRIBUTE((PSI_NORETURN)) void error(const PhysicalSourceLocation& loc, const std::string& message);
-  template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error(const PhysicalSourceLocation& loc, const T& message) {error(loc, CompileError::to_str(message));}
+  PSI_ATTRIBUTE((PSI_NORETURN)) void error(const PhysicalSourceLocation& loc, const ErrorMessage& message);
   CompileErrorPair error_loc(const PhysicalSourceLocation& loc);
 
   /// \brief Has the end of the character stream been reached
@@ -90,7 +89,7 @@ public:
     m_values_end = 1;
   }
   
-  template<typename T> PSI_ATTRIBUTE((PSI_NORETURN)) void error(const PhysicalSourceLocation& loc, const T& message) {m_position.error(loc, message);}
+  PSI_ATTRIBUTE((PSI_NORETURN)) void error(const PhysicalSourceLocation& loc, const ErrorMessage& message) {m_position.error(loc, message);}
   CompileErrorPair error_loc(const PhysicalSourceLocation& loc) {return m_position.error_loc(loc);}
 
   /**
